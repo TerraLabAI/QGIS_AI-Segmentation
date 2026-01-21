@@ -1,11 +1,7 @@
-# Downloaded SAM models (~109 MB)
 models/
 
-# Installed Python dependencies (numpy, onnxruntime)
-# These are auto-installed to a version-specific folder
 python3.*/
 
-# Python cache
 __pycache__/
 */__pycache__/
 *.pyc
@@ -16,8 +12,6 @@ __pycache__/
 *.swp
 *.swo
 
-# Cache directories (created next to processed rasters)
 .ai_segmentation_cache/
 
-# macOS system files
 .DS_Store
