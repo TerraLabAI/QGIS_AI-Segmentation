@@ -46,18 +46,37 @@ def mask_to_polygons(
         List of QgsGeometry polygons
     """
     if mask is None or mask.sum() == 0:
+        QgsMessageLog.logMessage(
+            f"mask_to_polygons: Empty or None mask (sum={mask.sum() if mask is not None else 'None'})",
+            "AI Segmentation",
+            level=Qgis.Warning
+        )
         return []
 
     try:
+        QgsMessageLog.logMessage(
+            f"mask_to_polygons: mask shape={mask.shape}, non-zero pixels={mask.sum()}, "
+            f"extent={transform_info.get('extent', 'N/A')}, "
+            f"original_size={transform_info.get('original_size', 'N/A')}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
         # Find contours using a simple algorithm
         contours = find_contours(mask)
+
+        QgsMessageLog.logMessage(
+            f"mask_to_polygons: Found {len(contours)} contours",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         if not contours:
             return []
 
         # Convert contours to QgsGeometry
         geometries = []
-        for contour in contours:
+        for i, contour in enumerate(contours):
             if len(contour) < 3:
                 continue
 
@@ -66,6 +85,17 @@ def mask_to_polygons(
             for px, py in contour:
                 mx, my = pixel_to_map_coords(px, py, transform_info)
                 map_points.append(QgsPointXY(mx, my))
+
+            # Log first contour details for debugging
+            if i == 0 and len(contour) > 0:
+                first_px, first_py = contour[0]
+                first_mx, first_my = map_points[0].x(), map_points[0].y()
+                QgsMessageLog.logMessage(
+                    f"First contour: {len(contour)} points, "
+                    f"pixel[0]=({first_px}, {first_py}) -> map=({first_mx:.2f}, {first_my:.2f})",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
 
             # Close the polygon
             if map_points[0] != map_points[-1]:
@@ -84,24 +114,109 @@ def mask_to_polygons(
 
                 if geom.isGeosValid():
                     geometries.append(geom)
+                else:
+                    QgsMessageLog.logMessage(
+                        f"Contour {i}: Invalid geometry after creation",
+                        "AI Segmentation",
+                        level=Qgis.Warning
+                    )
+
+        QgsMessageLog.logMessage(
+            f"mask_to_polygons: Created {len(geometries)} valid geometries",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+        # Fallback: if no valid geometries but mask has pixels, create bounding box
+        if not geometries and mask.sum() > 0:
+            QgsMessageLog.logMessage(
+                "mask_to_polygons: No contours found, creating bounding box fallback",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            bbox_geom = create_bounding_box_polygon(mask, transform_info)
+            if bbox_geom:
+                geometries.append(bbox_geom)
 
         return geometries
 
     except Exception as e:
+        import traceback
         QgsMessageLog.logMessage(
-            f"Failed to convert mask to polygons: {str(e)}",
+            f"Failed to convert mask to polygons: {str(e)}\n{traceback.format_exc()}",
             "AI Segmentation",
             level=Qgis.Warning
         )
         return []
 
 
+def create_bounding_box_polygon(
+    mask: np.ndarray,
+    transform_info: dict
+) -> Optional[QgsGeometry]:
+    """
+    Create a bounding box polygon from mask pixels as a fallback.
+
+    Args:
+        mask: Binary mask (H, W)
+        transform_info: Transform info with extent and original_size
+
+    Returns:
+        QgsGeometry polygon or None
+    """
+    try:
+        # Find non-zero pixels
+        rows, cols = np.where(mask > 0)
+        if len(rows) == 0:
+            return None
+
+        # Get bounding box in pixel coordinates
+        min_row, max_row = rows.min(), rows.max()
+        min_col, max_col = cols.min(), cols.max()
+
+        # Convert corners to map coordinates
+        # Note: pixel coords are (col, row) = (x, y)
+        tl = pixel_to_map_coords(min_col, min_row, transform_info)  # top-left
+        tr = pixel_to_map_coords(max_col, min_row, transform_info)  # top-right
+        br = pixel_to_map_coords(max_col, max_row, transform_info)  # bottom-right
+        bl = pixel_to_map_coords(min_col, max_row, transform_info)  # bottom-left
+
+        points = [
+            QgsPointXY(tl[0], tl[1]),
+            QgsPointXY(tr[0], tr[1]),
+            QgsPointXY(br[0], br[1]),
+            QgsPointXY(bl[0], bl[1]),
+            QgsPointXY(tl[0], tl[1]),  # Close the polygon
+        ]
+
+        line = QgsLineString([p for p in points])
+        polygon = QgsPolygon()
+        polygon.setExteriorRing(line)
+        geom = QgsGeometry(polygon)
+
+        QgsMessageLog.logMessage(
+            f"Created bounding box: pixel ({min_col}, {min_row}) to ({max_col}, {max_row}), "
+            f"map ({tl[0]:.2f}, {tl[1]:.2f}) to ({br[0]:.2f}, {br[1]:.2f})",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+        return geom if geom.isGeosValid() else None
+
+    except Exception as e:
+        QgsMessageLog.logMessage(
+            f"Failed to create bounding box: {str(e)}",
+            "AI Segmentation",
+            level=Qgis.Warning
+        )
+        return None
+
+
 def find_contours(mask: np.ndarray) -> List[List[Tuple[int, int]]]:
     """
-    Find contours in a binary mask using a simple boundary-following algorithm.
+    Find contours in a binary mask.
 
-    This is a simplified implementation that works without OpenCV.
-    For production use, consider using skimage.measure.find_contours.
+    Tries to use skimage if available, falls back to simple boundary-following.
 
     Args:
         mask: Binary mask (H, W)
@@ -109,6 +224,33 @@ def find_contours(mask: np.ndarray) -> List[List[Tuple[int, int]]]:
     Returns:
         List of contours, each contour is a list of (x, y) pixel coordinates
     """
+    # Try to use scikit-image if available (better quality)
+    try:
+        from skimage import measure
+        # find_contours returns contours as (row, col) coordinates
+        raw_contours = measure.find_contours(mask.astype(float), 0.5)
+        contours = []
+        for contour in raw_contours:
+            # Convert from (row, col) to (x, y) = (col, row)
+            points = [(int(c[1]), int(c[0])) for c in contour]
+            if len(points) >= 3:
+                contours.append(points)
+        QgsMessageLog.logMessage(
+            f"find_contours (skimage): Found {len(contours)} contours",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        return contours
+    except ImportError:
+        pass
+
+    # Fallback to simple boundary-following algorithm
+    QgsMessageLog.logMessage(
+        "find_contours: Using simple boundary algorithm (skimage not available)",
+        "AI Segmentation",
+        level=Qgis.Info
+    )
+
     contours = []
     h, w = mask.shape
     visited = np.zeros_like(mask, dtype=bool)
@@ -230,9 +372,15 @@ def pixel_to_map_coords(
     original_size = transform_info["original_size"]
 
     x_min, y_min, x_max, y_max = extent
-    height, width = original_size
+
+    # original_size can be a tuple (H, W) or a list [H, W]
+    if isinstance(original_size, (list, tuple)):
+        height, width = original_size[0], original_size[1]
+    else:
+        height = width = original_size
 
     # Calculate map coordinates
+    # pixel_x is column (0 to width-1), pixel_y is row (0 to height-1)
     map_x = x_min + (pixel_x / width) * (x_max - x_min)
     map_y = y_max - (pixel_y / height) * (y_max - y_min)
 
