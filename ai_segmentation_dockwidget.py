@@ -107,12 +107,18 @@ class AISegmentationDockWidget(QDockWidget):
         self.deps_progress = QProgressBar()
         self.deps_progress.setRange(0, 100)
         self.deps_progress.setVisible(False)
+        self.deps_progress.setTextVisible(True)
+        self.deps_progress.setFormat("%p%")
         layout.addWidget(self.deps_progress)
 
-        # Progress message
+        # Progress message - more prominent styling
         self.deps_progress_label = QLabel("")
-        self.deps_progress_label.setStyleSheet("color: gray; font-size: 10px;")
+        self.deps_progress_label.setStyleSheet(
+            "color: #1976d2; font-size: 11px; padding: 4px; "
+            "background-color: #e3f2fd; border-radius: 3px;"
+        )
         self.deps_progress_label.setVisible(False)
+        self.deps_progress_label.setWordWrap(True)
         layout.addWidget(self.deps_progress_label)
 
         # Install button
@@ -380,17 +386,51 @@ class AISegmentationDockWidget(QDockWidget):
         self._update_ui_state()
 
     def set_install_progress(self, percent: int, message: str):
-        """Update installation progress."""
+        """Update installation progress with detailed status."""
         self.deps_progress.setValue(percent)
         self.deps_progress_label.setText(message)
 
         if percent == 0:
+            # Starting installation
             self.deps_progress.setVisible(True)
             self.deps_progress_label.setVisible(True)
             self.install_button.setEnabled(False)
+            self.install_button.setText("Installing...")
+            self.deps_status_label.setText("Installing...")
+            self.deps_status_label.setStyleSheet("color: #1976d2;")  # Blue
         elif percent >= 100:
+            # Installation complete
             self.deps_progress.setVisible(False)
-            self.deps_progress_label.setVisible(False)
+            # Keep the message visible for a moment to show final status
+            if "failed" in message.lower() or "✗" in message:
+                self.deps_progress_label.setStyleSheet(
+                    "color: #d32f2f; font-size: 11px; padding: 4px; "
+                    "background-color: #ffebee; border-radius: 3px;"
+                )
+                self.install_button.setEnabled(True)
+                self.install_button.setText("Retry Installation")
+            else:
+                self.deps_progress_label.setStyleSheet(
+                    "color: #388e3c; font-size: 11px; padding: 4px; "
+                    "background-color: #e8f5e9; border-radius: 3px;"
+                )
+        else:
+            # In progress - update colors based on status
+            if "✓" in message:
+                self.deps_progress_label.setStyleSheet(
+                    "color: #388e3c; font-size: 11px; padding: 4px; "
+                    "background-color: #e8f5e9; border-radius: 3px;"
+                )
+            elif "failed" in message.lower() or "✗" in message:
+                self.deps_progress_label.setStyleSheet(
+                    "color: #d32f2f; font-size: 11px; padding: 4px; "
+                    "background-color: #ffebee; border-radius: 3px;"
+                )
+            else:
+                self.deps_progress_label.setStyleSheet(
+                    "color: #1976d2; font-size: 11px; padding: 4px; "
+                    "background-color: #e3f2fd; border-radius: 3px;"
+                )
 
     def set_models_status(self, ok: bool, message: str):
         """Update model status display."""
