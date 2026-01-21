@@ -356,26 +356,34 @@ def _is_file_based_layer(layer: QgsRasterLayer) -> bool:
     return os.path.isfile(source)
 
 
-def get_features_path(layer: QgsRasterLayer) -> str:
+def get_features_path(layer: QgsRasterLayer, model_id: str = None) -> str:
     """
-    Get the path where features should be cached for a layer.
+    Get the path where features should be cached for a layer and model.
 
-    For file-based layers: cache in .ai_segmentation_cache next to the file
+    Cache is stored per-model to support multiple model architectures.
+
+    For file-based layers: cache in .ai_segmentation_cache/{model_id}/ next to the file
     For web-based layers: cache in a user temp directory with hashed name
 
     Args:
         layer: QgsRasterLayer
+        model_id: Model identifier. If None, uses "default" (backward compatibility)
 
     Returns:
         Path for features cache (without extension)
     """
+    from .model_registry import DEFAULT_MODEL_ID
+
+    if model_id is None:
+        model_id = DEFAULT_MODEL_ID
+
     source = layer.source()
 
     if _is_file_based_layer(layer):
         # File-based layer: cache next to the source file
         source_path = Path(source)
-        cache_dir = source_path.parent / ".ai_segmentation_cache"
-        cache_dir.mkdir(exist_ok=True)
+        cache_dir = source_path.parent / ".ai_segmentation_cache" / model_id
+        cache_dir.mkdir(parents=True, exist_ok=True)
         return str(cache_dir / source_path.stem)
     else:
         # Web-based layer (XYZ, WMS, etc.): use a temp directory
@@ -386,7 +394,7 @@ def get_features_path(layer: QgsRasterLayer) -> str:
 
         # Use a persistent cache directory in user's home
         cache_base = Path.home() / ".qgis_ai_segmentation_cache"
-        cache_dir = cache_base / cache_hash
+        cache_dir = cache_base / cache_hash / model_id
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Use layer name as the stem for readability
@@ -394,17 +402,18 @@ def get_features_path(layer: QgsRasterLayer) -> str:
         return str(cache_dir / layer_name)
 
 
-def has_cached_features(layer: QgsRasterLayer) -> bool:
+def has_cached_features(layer: QgsRasterLayer, model_id: str = None) -> bool:
     """
-    Check if a layer has cached features.
+    Check if a layer has cached features for a specific model.
 
     Args:
         layer: QgsRasterLayer
+        model_id: Model identifier. If None, uses DEFAULT_MODEL_ID
 
     Returns:
-        True if cached features exist
+        True if cached features exist for the specified model
     """
-    features_path = get_features_path(layer)
+    features_path = get_features_path(layer, model_id)
     return (
         os.path.exists(f"{features_path}.npy") and
         os.path.exists(f"{features_path}.json")

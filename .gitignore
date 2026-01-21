@@ -11,8 +11,6 @@ __pycache__/
 *.pyc
 *.pyo
 
-# IDE / editor
-.claude/
 .vscode/
 .idea/
 *.swp
@@ -20,3 +18,6 @@ __pycache__/
 
 # Cache directories (created next to processed rasters)
 .ai_segmentation_cache/
+
+# macOS system files
+.DS_Store

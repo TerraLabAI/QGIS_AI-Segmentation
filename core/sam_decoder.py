@@ -3,6 +3,7 @@ SAM Mask Decoder for AI Segmentation
 
 Handles real-time mask prediction from point prompts using pre-encoded features.
 This is the lightweight component that enables interactive segmentation on CPU.
+Supports multiple model architectures through parameterized configuration.
 """
 
 import os
@@ -10,6 +11,8 @@ from typing import List, Tuple, Optional
 import numpy as np
 
 from qgis.core import QgsMessageLog, Qgis
+
+from .model_registry import ModelConfig, get_model_config, DEFAULT_MODEL_ID
 
 # SAM constants
 SAM_INPUT_SIZE = 1024
@@ -21,20 +24,28 @@ class SAMDecoder:
     SAM Mask Decoder using ONNX Runtime.
 
     Takes pre-encoded image features and point prompts to generate
-    segmentation masks in real-time.
+    segmentation masks in real-time. Supports multiple model architectures
+    through configuration-driven tensor name mapping.
     """
 
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: str = None, model_config: ModelConfig = None):
         """
         Initialize the SAM decoder.
 
         Args:
             model_path: Path to the ONNX decoder model file
+            model_config: Model configuration for tensor names and shapes.
+                          If None, uses DEFAULT_MODEL_ID config.
         """
         self.model_path = model_path
         self.session = None
         self.input_names = None
         self.output_names = None
+
+        # Store model configuration for tensor name mapping
+        if model_config is None:
+            model_config = get_model_config(DEFAULT_MODEL_ID)
+        self._model_config = model_config
 
     def load_model(self, model_path: str = None) -> bool:
         """
@@ -242,10 +253,10 @@ class SAMDecoder:
         multimask_output: bool
     ) -> dict:
         """
-        Prepare inputs for the decoder model using exact name mapping.
+        Prepare inputs for the decoder model using config-driven name mapping.
 
-        Uses a dictionary with exact input names to avoid substring matching
-        issues (e.g., "mask_input" matching "has_mask_input").
+        Uses model configuration to map logical input names to actual ONNX
+        tensor names, supporting multiple model architectures (SAM, SAM2, etc.).
 
         Args:
             features: Image embeddings from encoder
@@ -257,24 +268,38 @@ class SAMDecoder:
         Returns:
             Dictionary of inputs for the ONNX session
         """
-        # Exact input name mapping for SAM ViT-B ONNX model
-        # Source: HuggingFace visheratin/segment-anything-vit-b
-        INPUT_VALUES = {
+        # Get tensor name mapping from model config
+        tensor_names = self._model_config.decoder_input_names
+        mask_shape = self._model_config.mask_input_shape
+
+        # Logical input values - keys are logical names
+        LOGICAL_VALUES = {
             "image_embeddings": features,                                    # (1, 256, 64, 64)
             "point_coords": point_coords,                                    # (1, N, 2)
             "point_labels": point_labels,                                    # (1, N)
-            "mask_input": np.zeros((1, 1, 256, 256), dtype=np.float32),      # (1, 1, 256, 256)
+            "mask_input": np.zeros(mask_shape, dtype=np.float32),            # From config
             "has_mask_input": np.array([0], dtype=np.float32),               # (1,) - rank 1!
             "orig_im_size": np.array(original_size, dtype=np.float32),       # (2,)
         }
 
         inputs = {}
         for name in self.input_names:
-            if name in INPUT_VALUES:
-                inputs[name] = INPUT_VALUES[name]
-            else:
+            # Try to find this ONNX input name in our tensor mapping
+            matched = False
+            for logical_name, onnx_name in tensor_names.items():
+                if onnx_name == name and logical_name in LOGICAL_VALUES:
+                    inputs[name] = LOGICAL_VALUES[logical_name]
+                    matched = True
+                    break
+
+            # Fallback: try direct name match (for backward compatibility)
+            if not matched and name in LOGICAL_VALUES:
+                inputs[name] = LOGICAL_VALUES[name]
+                matched = True
+
+            if not matched:
                 QgsMessageLog.logMessage(
-                    f"Unknown decoder input: {name}",
+                    f"Unknown decoder input: {name} (model: {self._model_config.model_id})",
                     "AI Segmentation",
                     level=Qgis.Warning
                 )
@@ -286,7 +311,7 @@ class SAMDecoder:
         Validate input tensor shapes before ONNX inference.
 
         Catches shape mismatches early with clear error messages instead of
-        cryptic ONNX runtime errors.
+        cryptic ONNX runtime errors. Uses model config for expected ranks.
 
         Args:
             inputs: Dictionary of input name to numpy array
@@ -294,22 +319,23 @@ class SAMDecoder:
         Returns:
             True if all shapes are valid, False otherwise
         """
-        EXPECTED_RANKS = {
-            "image_embeddings": 4,   # (1, 256, 64, 64)
-            "point_coords": 3,       # (1, N, 2)
-            "point_labels": 2,       # (1, N)
-            "mask_input": 4,         # (1, 1, 256, 256)
-            "has_mask_input": 1,     # (1,)
-            "orig_im_size": 1,       # (2,)
-        }
+        # Get expected ranks from model config, with fallback defaults
+        expected_ranks = self._model_config.decoder_input_ranks
+        tensor_names = self._model_config.decoder_input_names
+
+        # Build reverse mapping: ONNX name -> logical name
+        onnx_to_logical = {v: k for k, v in tensor_names.items()}
 
         for name, tensor in inputs.items():
             actual_rank = len(tensor.shape)
-            expected_rank = EXPECTED_RANKS.get(name)
+
+            # Try to find expected rank via logical name
+            logical_name = onnx_to_logical.get(name, name)
+            expected_rank = expected_ranks.get(logical_name)
 
             if expected_rank is not None and actual_rank != expected_rank:
                 QgsMessageLog.logMessage(
-                    f"Input shape mismatch for '{name}': "
+                    f"Input shape mismatch for '{name}' (logical: {logical_name}): "
                     f"got rank {actual_rank} (shape {tensor.shape}), "
                     f"expected rank {expected_rank}",
                     "AI Segmentation",

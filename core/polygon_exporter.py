@@ -114,12 +114,7 @@ def mask_to_polygons(
 
                 if geom.isGeosValid():
                     geometries.append(geom)
-                else:
-                    QgsMessageLog.logMessage(
-                        f"Contour {i}: Invalid geometry after creation",
-                        "AI Segmentation",
-                        level=Qgis.Warning
-                    )
+                # Skip invalid geometries silently - this is normal for the simple contour algorithm
 
         QgsMessageLog.logMessage(
             f"mask_to_polygons: Created {len(geometries)} valid geometries",
