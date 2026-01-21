@@ -155,8 +155,8 @@ class AISegmentationPlugin:
         Called by QGIS when the plugin is loaded.
         NOTE: We do NOT check dependencies here - only when panel opens.
         """
-        # Create action for the plugin
-        icon_path = str(self.plugin_dir / "resources" / "icons" / "ai_segmentation_icon.png")
+        # Create action for the plugin with SVG icon
+        icon_path = str(self.plugin_dir / "resources" / "icons" / "ai_segmentation_icon.svg")
         if not os.path.exists(icon_path):
             icon = QIcon()
         else:
@@ -170,9 +170,9 @@ class AISegmentationPlugin:
         self.action.setCheckable(True)
         self.action.triggered.connect(self.toggle_dock_widget)
 
-        # Add to menu and toolbar
+        # Add to Plugins menu (not Raster menu) and toolbar
         self.iface.addToolBarIcon(self.action)
-        self.iface.addPluginToRasterMenu("&AI Segmentation", self.action)
+        self.iface.addPluginToMenu("&AI Segmentation", self.action)
 
         # Create dock widget
         self.dock_widget = AISegmentationDockWidget(self.iface.mainWindow())
@@ -220,7 +220,7 @@ class AISegmentationPlugin:
     def unload(self):
         """Unload the plugin."""
         # Remove menu and toolbar items
-        self.iface.removePluginRasterMenu("&AI Segmentation", self.action)
+        self.iface.removePluginMenu("&AI Segmentation", self.action)
         self.iface.removeToolBarIcon(self.action)
 
         # Remove dock widget
@@ -522,11 +522,52 @@ class AISegmentationPlugin:
         """Handle map tool deactivation."""
         self.dock_widget.set_segmentation_active(False)
 
+    def _is_output_layer_valid(self) -> bool:
+        """
+        Safely check if the output layer exists and is valid.
+
+        This handles the case where the user manually deletes the layer
+        from QGIS, which would cause the underlying C++ object to be
+        deleted while the Python reference still exists.
+
+        Returns:
+            True if output_layer exists and is valid, False otherwise
+        """
+        if self.output_layer is None:
+            return False
+
+        # Check if underlying C++ object was deleted (e.g., user removed layer)
+        try:
+            if sip.isdeleted(self.output_layer):
+                QgsMessageLog.logMessage(
+                    "Output layer C++ object was deleted externally",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+                self.output_layer = None
+                return False
+        except Exception:
+            self.output_layer = None
+            return False
+
+        # Now safe to call methods on the layer
+        try:
+            return self.output_layer.isValid()
+        except RuntimeError:
+            # In case sip.isdeleted() didn't catch it
+            QgsMessageLog.logMessage(
+                "Output layer became invalid",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            self.output_layer = None
+            return False
+
     def _create_output_layer(self, source_layer: QgsRasterLayer):
         """Create output vector layer."""
         from .core.polygon_exporter import create_output_layer
 
-        if self.output_layer is None or not self.output_layer.isValid():
+        if not self._is_output_layer_valid():
             self.output_layer = create_output_layer(
                 source_layer.crs(),
                 "AI_Segmentation_Output"
@@ -908,7 +949,12 @@ class AISegmentationPlugin:
             )
             return
 
-        if self.output_layer is None:
+        if not self._is_output_layer_valid():
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                "No Output Layer",
+                "Output layer is not available. Please restart segmentation."
+            )
             return
 
         from .core.polygon_exporter import add_mask_to_layer
@@ -927,7 +973,7 @@ class AISegmentationPlugin:
 
     def _on_export(self, output_path: str):
         """Export to GeoPackage."""
-        if self.output_layer is None or self.output_layer.featureCount() == 0:
+        if not self._is_output_layer_valid() or self.output_layer.featureCount() == 0:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 "Nothing to Export",
