@@ -13,6 +13,28 @@ about=AI Segmentation brings the power of Meta's Segment Anything Model (SAM) to
     - Export results as GeoPackage polygons
     - Works on Windows, macOS, and Linux
 
+    EXTERNAL DEPENDENCIES:
+    This plugin requires external Python packages (numpy, onnxruntime) that are not bundled with QGIS.
+    After first startup, an installation dialog will assist you. Alternatively, install manually:
+    
+    Windows (OSGeo4W Shell):
+        python -m pip install numpy onnxruntime
+    
+    macOS/Linux (Terminal):
+        pip3 install numpy onnxruntime
+    
+    Then restart QGIS.
+
+    UNINSTALLATION:
+    When you uninstall the plugin via QGIS Plugin Manager, dependencies and models
+    are automatically removed (they are stored inside the plugin folder).
+    
+    Cache files for encoded images may remain in:
+    - ~/.qgis_ai_segmentation_cache/ (web layers cache)
+    - .ai_segmentation_cache/ folders next to your GeoTIFF files
+    
+    You can safely delete these folders manually if needed.
+
 tracker=https://github.com/QGIS_AI-Segmentation/issues
 repository=https://github.com/QGIS_AI-Segmentation
 
