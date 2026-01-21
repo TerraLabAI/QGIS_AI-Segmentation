@@ -609,9 +609,21 @@ class AISegmentationPlugin:
     # ==================== Click Handling ====================
 
     def _on_positive_click(self, point):
-        """Handle positive click."""
+        """Handle positive click - adds foreground point (include this area)."""
         if self.sam_model is None or not self.sam_model.is_ready:
+            QgsMessageLog.logMessage(
+                f"Model not ready: sam_model={self.sam_model is not None}, is_ready={self.sam_model.is_ready if self.sam_model else 'N/A'}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            self.dock_widget.set_status("Model not ready - please wait")
             return
+
+        QgsMessageLog.logMessage(
+            f"Positive click at ({point.x():.2f}, {point.y():.2f})",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         self.current_mask, self.current_score = self.sam_model.add_positive_point(
             point.x(), point.y()
@@ -619,9 +631,16 @@ class AISegmentationPlugin:
         self._update_ui_after_click()
 
     def _on_negative_click(self, point):
-        """Handle negative click."""
+        """Handle negative click - adds background point (exclude this area)."""
         if self.sam_model is None or not self.sam_model.is_ready:
+            self.dock_widget.set_status("Model not ready - please wait")
             return
+
+        QgsMessageLog.logMessage(
+            f"Negative click at ({point.x():.2f}, {point.y():.2f})",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         self.current_mask, self.current_score = self.sam_model.add_negative_point(
             point.x(), point.y()
@@ -634,14 +653,27 @@ class AISegmentationPlugin:
         self.dock_widget.set_point_count(pos_count, neg_count)
 
         if self.current_mask is not None:
-            self.dock_widget.set_status(f"Mask score: {self.current_score:.3f}")
+            mask_pixels = int(self.current_mask.sum())
+            QgsMessageLog.logMessage(
+                f"Segmentation result: score={self.current_score:.3f}, mask_pixels={mask_pixels}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            self.dock_widget.set_status(f"✓ Segmented! Score: {self.current_score:.2f} ({mask_pixels} pixels)")
             self._update_mask_visualization()
         else:
+            QgsMessageLog.logMessage(
+                "Segmentation returned None - check model and coordinates",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            self.dock_widget.set_status("⚠ No mask generated - try clicking elsewhere")
             self._clear_mask_visualization()
 
     def _update_mask_visualization(self):
         """Update the rubber band and preview layer to show the current segmentation mask."""
         if self.mask_rubber_band is None:
+            QgsMessageLog.logMessage("No rubber band available", "AI Segmentation", level=Qgis.Warning)
             return
 
         if self.current_mask is None or self.sam_model is None:
@@ -654,23 +686,42 @@ class AISegmentationPlugin:
 
             # Convert mask to polygon geometries
             transform_info = self.sam_model.get_transform_info()
+            QgsMessageLog.logMessage(
+                f"Transform info keys: {list(transform_info.keys())}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+
             geometries = mask_to_polygons(self.current_mask, transform_info)
+            QgsMessageLog.logMessage(
+                f"Generated {len(geometries)} polygons from mask",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
 
             if geometries:
                 # Combine all geometries into one for the rubber band
                 combined = QgsGeometry.unaryUnion(geometries)
                 if combined and not combined.isEmpty():
+                    QgsMessageLog.logMessage(
+                        f"Displaying mask: area={combined.area():.2f}",
+                        "AI Segmentation",
+                        level=Qgis.Info
+                    )
                     self.mask_rubber_band.setToGeometry(combined, None)
                     # Also update the preview layer
                     self._update_preview_layer(geometries)
                 else:
+                    QgsMessageLog.logMessage("Combined geometry is empty", "AI Segmentation", level=Qgis.Warning)
                     self._clear_mask_visualization()
             else:
+                QgsMessageLog.logMessage("No geometries generated from mask", "AI Segmentation", level=Qgis.Warning)
                 self._clear_mask_visualization()
 
         except Exception as e:
+            import traceback
             QgsMessageLog.logMessage(
-                f"Failed to visualize mask: {str(e)}",
+                f"Failed to visualize mask: {str(e)}\n{traceback.format_exc()}",
                 "AI Segmentation",
                 level=Qgis.Warning
             )

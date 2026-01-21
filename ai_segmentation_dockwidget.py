@@ -200,15 +200,15 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Active mode instructions (shown when segmentation is active)
         self.active_instructions_label = QLabel(
-            "🎯 POINT MODE ACTIVE\n"
-            "• Left-click: Add foreground point (include)\n"
-            "• Right-click: Add background point (exclude)\n"
-            "• Ctrl+Z: Undo last point\n"
-            "• Escape: Stop segmentation"
+            "🎯 CLICK ON THE MAP!\n\n"
+            "🟢 Left-click = INCLUDE (click on object)\n"
+            "🔴 Right-click = EXCLUDE (refine edges)\n\n"
+            "The mask will appear after each click.\n"
+            "Use Ctrl+Z to undo, Escape to stop."
         )
         self.active_instructions_label.setStyleSheet(
-            "color: #1976d2; font-size: 10px; font-weight: bold; "
-            "background-color: #e3f2fd; padding: 8px; border-radius: 4px;"
+            "color: #1976d2; font-size: 11px; font-weight: bold; "
+            "background-color: #e3f2fd; padding: 10px; border-radius: 4px;"
         )
         self.active_instructions_label.setWordWrap(True)
         self.active_instructions_label.setVisible(False)

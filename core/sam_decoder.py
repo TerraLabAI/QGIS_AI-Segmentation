@@ -168,15 +168,66 @@ class SAMDecoder:
             masks = outputs[0]  # (1, num_masks, H, W)
             scores = outputs[1] if len(outputs) > 1 else None  # (1, num_masks)
 
+            QgsMessageLog.logMessage(
+                f"Decoder raw output: masks shape={masks.shape}, original_size={original_size}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+
+            # Check if masks need to be upsampled to original size
+            # SAM decoder often outputs at 256x256 which needs resizing
+            mask_h, mask_w = masks.shape[-2:]
+            orig_h, orig_w = original_size
+
+            if mask_h != orig_h or mask_w != orig_w:
+                QgsMessageLog.logMessage(
+                    f"Upsampling masks from ({mask_h}, {mask_w}) to ({orig_h}, {orig_w})",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+                masks = self._upsample_masks(masks, (orig_h, orig_w))
+
             return masks, scores
 
         except Exception as e:
+            import traceback
             QgsMessageLog.logMessage(
-                f"Decoding failed: {str(e)}",
+                f"Decoding failed: {str(e)}\n{traceback.format_exc()}",
                 "AI Segmentation",
                 level=Qgis.Critical
             )
             return None, None
+
+    def _upsample_masks(
+        self,
+        masks: np.ndarray,
+        target_size: Tuple[int, int]
+    ) -> np.ndarray:
+        """
+        Upsample masks to target size using bilinear interpolation.
+
+        Args:
+            masks: Input masks (1, num_masks, H, W)
+            target_size: Target (height, width)
+
+        Returns:
+            Upsampled masks (1, num_masks, target_H, target_W)
+        """
+        from .image_utils import resize_image
+
+        batch, num_masks, src_h, src_w = masks.shape
+        tgt_h, tgt_w = target_size
+
+        # Resize each mask
+        upsampled = np.zeros((batch, num_masks, tgt_h, tgt_w), dtype=masks.dtype)
+
+        for b in range(batch):
+            for m in range(num_masks):
+                mask_2d = masks[b, m]
+                # Use resize_image for upsampling
+                upsampled[b, m] = resize_image(mask_2d, target_size)
+
+        return upsampled
 
     def _prepare_decoder_inputs(
         self,
@@ -247,11 +298,28 @@ class SAMDecoder:
             Returns (None, 0.0) on error
         """
         if len(points) == 0:
+            QgsMessageLog.logMessage(
+                "predict_mask: No points provided",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
             return None, 0.0
+
+        QgsMessageLog.logMessage(
+            f"predict_mask: {len(points)} points, labels={labels}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         # Prepare prompts
         point_coords, point_labels = self.prepare_prompts(
             points, labels, transform_info
+        )
+
+        QgsMessageLog.logMessage(
+            f"SAM coords: {point_coords.tolist()}, labels: {point_labels.tolist()}",
+            "AI Segmentation",
+            level=Qgis.Info
         )
 
         # Decode
@@ -264,7 +332,18 @@ class SAMDecoder:
         )
 
         if masks is None:
+            QgsMessageLog.logMessage(
+                "predict_mask: decode returned None",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
             return None, 0.0
+
+        QgsMessageLog.logMessage(
+            f"Decode result: masks shape={masks.shape}, scores={scores}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         if return_best and scores is not None:
             # Select best mask based on score
@@ -278,6 +357,12 @@ class SAMDecoder:
 
         # Apply threshold to get binary mask
         binary_mask = (mask > MASK_THRESHOLD).astype(np.uint8)
+
+        QgsMessageLog.logMessage(
+            f"Binary mask: shape={binary_mask.shape}, pixels={binary_mask.sum()}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         return binary_mask, score
 
