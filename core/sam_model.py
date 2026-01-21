@@ -1,42 +1,83 @@
-        self._features: Optional[dict] = None  
+from pathlib import Path
+from typing import Tuple, Optional, List, Callable
+import numpy as np
+
+from qgis.core import QgsRasterLayer, QgsMessageLog, Qgis
+
+from .model_registry import (
+    ModelConfig,
+    get_model_config,
+    get_all_models,
+    DEFAULT_MODEL_ID,
+)
+from .model_manager import (
+    models_exist,
+    model_exists,
+    download_model,
+    get_encoder_path,
+    get_decoder_path,
+    get_installed_models,
+    get_first_installed_model,
+    migrate_legacy_models,
+)
+from .sam_encoder import (
+    SAMEncoder,
+    save_features,
+    load_features,
+    get_features_path,
+    has_cached_features,
+)
+from .sam_decoder import SAMDecoder, PromptManager
+
+
+class SAMModel:
+
+    def __init__(self, model_id: str = None):
+        migrate_legacy_models()
+
+        if model_id is None:
+            model_id = get_first_installed_model() or DEFAULT_MODEL_ID
+
+        self._model_id = model_id
+        self._model_config: ModelConfig = get_model_config(model_id)
+
+        self._encoder: Optional[SAMEncoder] = None
+        self._decoder: Optional[SAMDecoder] = None
+        self._loaded = False
+
+        self._current_layer: Optional[QgsRasterLayer] = None
+        self._features: Optional[dict] = None
         self._transform_info: dict = {}
 
         self.prompts = PromptManager()
 
     @property
     def model_id(self) -> str:
-        
         return self._model_id
 
     @property
     def model_config(self) -> ModelConfig:
-        
         return self._model_config
 
     @property
     def is_loaded(self) -> bool:
-        
         return self._loaded
 
     @property
     def is_ready(self) -> bool:
-        
         return self._loaded and self._features is not None
 
     @property
     def models_available(self) -> bool:
-        
         return model_exists(self._model_id)
 
     def download_models(
         self,
         progress_callback: Optional[Callable[[int, str], None]] = None
     ) -> Tuple[bool, str]:
-        
         return download_model(self._model_id, progress_callback)
 
     def load(self) -> Tuple[bool, str]:
-        
         if not model_exists(self._model_id):
             return False, f"Models not downloaded for {self._model_config.display_name}. Call download_models() first."
 
@@ -64,7 +105,6 @@
             return False, f"Failed to load models: {str(e)}"
 
     def switch_model(self, model_id: str, force_reload: bool = False) -> Tuple[bool, str]:
-        
         if model_id == self._model_id and not force_reload:
             return True, f"Already using {self._model_config.display_name}"
 
@@ -84,7 +124,6 @@
         return self.load()
 
     def _unload_model(self):
-        
         self._encoder = None
         self._decoder = None
         self._loaded = False
@@ -95,7 +134,6 @@
         progress_callback: Optional[Callable[[int, str], None]] = None,
         force_encode: bool = False
     ) -> Tuple[bool, str]:
-        
         if not self._loaded:
             return False, "Models not loaded. Call load() first."
 
@@ -152,7 +190,6 @@
         points: List[Tuple[float, float]],
         labels: List[int]
     ) -> Tuple[Optional[np.ndarray], float]:
-        
         if not self.is_ready:
             QgsMessageLog.logMessage(
                 "Model not ready for segmentation",
@@ -169,7 +206,6 @@
         )
 
     def segment_with_prompts(self) -> Tuple[Optional[np.ndarray], float]:
-        
         if not self.prompts.has_points():
             return None, 0.0
 
@@ -177,42 +213,34 @@
         return self.segment(points, labels)
 
     def add_positive_point(self, x: float, y: float) -> Tuple[Optional[np.ndarray], float]:
-        
         self.prompts.add_positive(x, y)
         return self.segment_with_prompts()
 
     def add_negative_point(self, x: float, y: float) -> Tuple[Optional[np.ndarray], float]:
-        
         self.prompts.add_negative(x, y)
         return self.segment_with_prompts()
 
     def undo_point(self) -> Tuple[Optional[np.ndarray], float]:
-        
         self.prompts.undo()
         if self.prompts.has_points():
             return self.segment_with_prompts()
         return None, 0.0
 
     def clear_points(self):
-        
         self.prompts.clear()
 
     def clear_features(self):
-        
         self._features = None
         self._transform_info = {}
         self._current_layer = None
 
     def get_transform_info(self) -> dict:
-        
         return self._transform_info.copy()
 
     def get_current_layer(self) -> Optional[QgsRasterLayer]:
-        
         return self._current_layer
 
     def unload(self):
-        
         self._encoder = None
         self._decoder = None
         self._loaded = False
