@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="30" fill="#2E7D32" stroke="#1B5E20" stroke-width="2"/>
+
+  <!-- Stylized segmentation polygon -->
+  <path d="M 20 45 L 15 30 L 25 18 L 42 15 L 50 28 L 48 42 L 35 50 Z"
+        fill="none"
+        stroke="#FFFFFF"
+        stroke-width="2.5"
+        stroke-linejoin="round"/>
+
+  <!-- AI/Neural network dots -->
+  <circle cx="20" cy="45" r="3" fill="#81C784"/>
+  <circle cx="15" cy="30" r="3" fill="#81C784"/>
+  <circle cx="25" cy="18" r="3" fill="#81C784"/>
+  <circle cx="42" cy="15" r="3" fill="#81C784"/>
+  <circle cx="50" cy="28" r="3" fill="#81C784"/>
+  <circle cx="48" cy="42" r="3" fill="#81C784"/>
+  <circle cx="35" cy="50" r="3" fill="#81C784"/>
+
+  <!-- Center click point -->
+  <circle cx="32" cy="32" r="4" fill="#FFEB3B"/>
+  <circle cx="32" cy="32" r="2" fill="#FDD835"/>
+</svg>

@@ -1,0 +1,35 @@
+[general]
+name=AI Segmentation
+qgisMinimumVersion=3.28
+description=AI-powered image segmentation for geospatial data using SAM (Segment Anything Model)
+version=1.0.0
+author=QGIS AI-Segmentation Team
+
+about=AI Segmentation brings the power of Meta's Segment Anything Model (SAM) to QGIS for interactive segmentation of satellite imagery, orthophotos, and other geospatial rasters.
+
+    Features:
+    - Interactive point-based segmentation (click to segment)
+    - Pre-encoding for real-time performance on CPU
+    - Export results as GeoPackage polygons
+    - Works on Windows, macOS, and Linux
+
+tracker=https://github.com/QGIS_AI-Segmentation/issues
+repository=https://github.com/QGIS_AI-Segmentation
+
+hasProcessingProvider=no
+
+tags=segmentation, AI, machine learning, SAM, deep learning, remote sensing, satellite, raster
+
+homepage=https://github.com/QGIS_AI-Segmentation
+category=Raster
+icon=resources/icons/ai_segmentation_icon.png
+
+experimental=True
+deprecated=False
+
+changelog=
+    1.0.0 - Initial release
+        - Interactive point-based segmentation
+        - SAM ViT-B model support
+        - GeoPackage export
+        - Cross-platform CPU inference
