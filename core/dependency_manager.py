@@ -8,16 +8,28 @@ IMPORTANT Windows note:
 - sys.executable returns QGIS.exe, NOT the Python interpreter!
 - We must use 'python' command or find the actual Python path within QGIS installation
 - Packages are installed to a local directory within the plugin folder
+- Uses CREATE_NO_WINDOW flag to avoid black console window appearing
 """
 
 import subprocess
 import sys
 import os
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Callable
 import importlib.util
 
 from qgis.core import QgsMessageLog, Qgis, QgsSettings
+
+# Windows-specific flags to hide console window
+if sys.platform == "win32":
+    # These prevent the black console window from appearing
+    CREATE_NO_WINDOW = 0x08000000
+    STARTUPINFO = subprocess.STARTUPINFO()
+    STARTUPINFO.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    STARTUPINFO.wShowWindow = subprocess.SW_HIDE
+else:
+    CREATE_NO_WINDOW = 0
+    STARTUPINFO = None
 
 # Required packages with minimum versions
 REQUIRED_PACKAGES = [
@@ -254,6 +266,8 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
     even when the Python executable cannot be called from outside QGIS
     (common issue with QGIS 3.44+ on macOS using vcpkg).
 
+    ADVANTAGE: Does NOT open a console window on Windows!
+    
     Installs to a local directory within the plugin folder.
 
     Args:
@@ -287,11 +301,23 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
         "AI Segmentation",
         level=Qgis.Info
     )
+    QgsMessageLog.logMessage(
+        "Using pip module method (no console window)",
+        "AI Segmentation",
+        level=Qgis.Info
+    )
 
     try:
         # Install with --target to local directory
-        # Use --quiet to reduce output noise
-        args = ["install", "-U", f"--target={PACKAGES_INSTALL_DIR}", "--quiet", package_spec]
+        # Remove --quiet to see more progress in logs
+        # Use --progress-bar off for cleaner log output
+        args = [
+            "install", 
+            "-U", 
+            f"--target={PACKAGES_INSTALL_DIR}", 
+            "--progress-bar", "off",
+            package_spec
+        ]
 
         QgsMessageLog.logMessage(
             f"pip args: {args}",
@@ -299,22 +325,28 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
             level=Qgis.Info
         )
 
-        # Capture return code
+        # Note: pip_main writes directly to stdout/stderr
+        # On Windows this stays within QGIS, no console window
         return_code = pip_main(args)
 
         if return_code == 0:
             QgsMessageLog.logMessage(
-                f"Successfully installed {package_spec}",
+                f"✓ Successfully installed {package_spec} via pip module",
                 "AI Segmentation",
                 level=Qgis.Success
             )
             return True, f"Installed {package_spec}"
         else:
+            QgsMessageLog.logMessage(
+                f"✗ pip module returned error code {return_code} for {package_spec}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
             return False, f"pip returned error code {return_code}"
 
     except Exception as e:
         QgsMessageLog.logMessage(
-            f"Error installing {package_name}: {str(e)}",
+            f"Error installing {package_name} via pip module: {str(e)}",
             "AI Segmentation",
             level=Qgis.Warning
         )
@@ -337,7 +369,11 @@ def ensure_packages_dir_in_path():
         )
 
 
-def install_package_via_subprocess(package_name: str, version: str = None) -> Tuple[bool, str]:
+def install_package_via_subprocess(
+    package_name: str, 
+    version: str = None,
+    progress_callback: Optional[Callable[[str], None]] = None
+) -> Tuple[bool, str]:
     """
     Install a package using subprocess to a local directory.
 
@@ -345,9 +381,13 @@ def install_package_via_subprocess(package_name: str, version: str = None) -> Tu
     folder using --target flag. This avoids permission issues and keeps
     packages isolated per Python version.
 
+    On Windows, uses CREATE_NO_WINDOW flag to prevent black console window.
+    Uses Popen with real-time output reading for better user feedback.
+
     Args:
         package_name: Name of the package to install
         version: Optional version specifier
+        progress_callback: Optional callback for progress messages (line by line)
 
     Returns:
         Tuple of (success, message)
@@ -374,6 +414,7 @@ def install_package_via_subprocess(package_name: str, version: str = None) -> Tu
         )
 
         # Build pip command - install to local directory with --target
+        # Use --progress-bar off for cleaner output in logs
         cmd = [
             python_path,
             "-m",
@@ -381,6 +422,7 @@ def install_package_via_subprocess(package_name: str, version: str = None) -> Tu
             "install",
             "-U",  # Upgrade if already exists
             f"--target={PACKAGES_INSTALL_DIR}",
+            "--progress-bar", "off",  # Cleaner output for parsing
             package_spec
         ]
 
@@ -390,16 +432,60 @@ def install_package_via_subprocess(package_name: str, version: str = None) -> Tu
             level=Qgis.Info
         )
 
-        # Run pip install with proper error handling
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=300,  # 5 minute timeout
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"}
-        )
+        # Prepare subprocess kwargs with Windows-specific flags to hide console
+        popen_kwargs = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,  # Merge stderr into stdout
+            "text": True,
+            "bufsize": 1,  # Line buffered
+            "env": {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        }
+        
+        # On Windows: Hide the console window
+        if sys.platform == "win32":
+            popen_kwargs["creationflags"] = CREATE_NO_WINDOW
+            popen_kwargs["startupinfo"] = STARTUPINFO
 
-        if result.returncode == 0:
+        # Use Popen for real-time output reading
+        process = subprocess.Popen(cmd, **popen_kwargs)
+        
+        output_lines = []
+        last_status = ""
+        
+        # Read output line by line for real-time feedback
+        while True:
+            line = process.stdout.readline()
+            if line == "" and process.poll() is not None:
+                break
+            if line:
+                line = line.strip()
+                output_lines.append(line)
+                
+                # Log each line
+                QgsMessageLog.logMessage(
+                    f"  pip: {line}",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+                
+                # Parse interesting lines for progress callback
+                if progress_callback:
+                    if "Downloading" in line:
+                        last_status = f"Downloading {package_name}..."
+                        progress_callback(last_status)
+                    elif "Installing" in line:
+                        last_status = f"Installing {package_name}..."
+                        progress_callback(last_status)
+                    elif "Collecting" in line:
+                        last_status = f"Collecting {package_name}..."
+                        progress_callback(last_status)
+                    elif "Successfully installed" in line:
+                        last_status = f"Installed {package_name} ✓"
+                        progress_callback(last_status)
+        
+        return_code = process.poll()
+        
+        if return_code == 0:
             QgsMessageLog.logMessage(
                 f"Successfully installed {package_spec}",
                 "AI Segmentation",
@@ -407,13 +493,13 @@ def install_package_via_subprocess(package_name: str, version: str = None) -> Tu
             )
             return True, f"Installed {package_spec}"
         else:
-            error_msg = result.stderr or result.stdout or "Unknown error"
+            error_output = "\n".join(output_lines[-10:])  # Last 10 lines
             QgsMessageLog.logMessage(
-                f"Failed to install {package_spec}: {error_msg}",
+                f"Failed to install {package_spec}: exit code {return_code}",
                 "AI Segmentation",
                 level=Qgis.Warning
             )
-            return False, f"Failed: {error_msg[:200]}"
+            return False, f"Failed (exit {return_code}): {error_output[:200]}"
 
     except subprocess.TimeoutExpired:
         return False, f"Installation timed out (5 min)"
@@ -428,50 +514,69 @@ def install_package_via_subprocess(package_name: str, version: str = None) -> Tu
         return False, f"Error: {str(e)[:200]}"
 
 
-def install_package(package_name: str, version: str = None) -> Tuple[bool, str]:
+def install_package(
+    package_name: str, 
+    version: str = None,
+    progress_callback: Optional[Callable[[str], None]] = None
+) -> Tuple[bool, str]:
     """
     Install a Python package using the best available method.
 
     On macOS with QGIS 3.44+ (vcpkg build), uses pip module directly.
-    On other platforms, uses subprocess to call pip.
+    On Windows, prefers pip module (no console window), with subprocess fallback.
+    On Linux, uses subprocess (usually works fine).
 
     Args:
         package_name: Name of the package to install
         version: Optional version specifier
+        progress_callback: Optional callback for progress messages
 
     Returns:
         Tuple of (success, message)
     """
-    # On macOS, prefer pip module method (works with vcpkg Python)
-    if sys.platform == "darwin":
+    # On macOS and Windows, prefer pip module method (no console window)
+    if sys.platform in ("darwin", "win32"):
+        platform_name = "macOS" if sys.platform == "darwin" else "Windows"
         QgsMessageLog.logMessage(
-            "macOS detected: using pip module method for installation",
+            f"{platform_name} detected: using pip module method (no console window)",
             "AI Segmentation",
             level=Qgis.Info
         )
+        if progress_callback:
+            progress_callback(f"Installing {package_name} via pip module...")
+            
         success, msg = install_package_via_pip_module(package_name, version)
         if success:
             return success, msg
+            
         # Fallback to subprocess if pip module fails
         QgsMessageLog.logMessage(
-            "pip module method failed, trying subprocess...",
+            "pip module method failed, trying subprocess (hidden console)...",
             "AI Segmentation",
             level=Qgis.Info
         )
-        return install_package_via_subprocess(package_name, version)
+        if progress_callback:
+            progress_callback(f"Retrying {package_name} via subprocess...")
+            
+        return install_package_via_subprocess(package_name, version, progress_callback)
 
-    # On Windows/Linux, use subprocess (usually works fine)
-    return install_package_via_subprocess(package_name, version)
+    # On Linux, use subprocess (usually works fine)
+    return install_package_via_subprocess(package_name, version, progress_callback)
 
 
 def install_all_dependencies(
-    progress_callback=None
+    progress_callback: Optional[Callable[[int, int, str], None]] = None
 ) -> Tuple[bool, List[str]]:
     """
     Install all missing dependencies to local plugin directory.
 
+    Provides detailed progress feedback suitable for UI display.
+
     Args:
         progress_callback: Optional callback function(current, total, message)
+            - current: current step (0-based)
+            - total: total number of steps
+            - message: human-readable status message
 
     Returns:
         Tuple of (all_success, list of messages)
@@ -484,16 +589,23 @@ def install_all_dependencies(
     if not missing:
         return True, ["All dependencies are already installed"]
 
-    # Check if we can find Python first
+    # Check if we can find Python first (not critical if using pip module)
     python_path = get_python_path()
-    if python_path is None:
-        return False, ["Cannot find Python executable. " + get_manual_install_instructions()]
+    QgsMessageLog.logMessage(
+        f"Python path: {python_path}",
+        "AI Segmentation",
+        level=Qgis.Info
+    )
 
     QgsMessageLog.logMessage(
         f"Installing {len(missing)} packages to: {PACKAGES_INSTALL_DIR}",
         "AI Segmentation",
         level=Qgis.Info
     )
+    
+    if progress_callback:
+        packages_str = ", ".join([name for name, _ in missing])
+        progress_callback(0, len(missing), f"Preparing to install: {packages_str}")
 
     messages = []
     all_success = True
@@ -501,20 +613,41 @@ def install_all_dependencies(
 
     for i, (package_name, version) in enumerate(missing):
         if progress_callback:
-            progress_callback(i, total, f"Installing {package_name}...")
+            progress_callback(i, total, f"Installing {package_name}... ({i+1}/{total})")
 
-        success, msg = install_package(package_name, version)
-        messages.append(msg)
+        # Create a sub-callback for detailed pip progress
+        def pip_progress(msg: str):
+            if progress_callback:
+                # Keep the step number but update the message
+                progress_callback(i, total, msg)
+        
+        success, msg = install_package(package_name, version, pip_progress)
+        messages.append(f"{package_name}: {msg}")
 
-        if not success:
+        if success:
+            QgsMessageLog.logMessage(
+                f"✓ {package_name} installed successfully",
+                "AI Segmentation",
+                level=Qgis.Success
+            )
+            if progress_callback:
+                progress_callback(i + 1, total, f"✓ {package_name} installed")
+        else:
+            QgsMessageLog.logMessage(
+                f"✗ {package_name} installation failed: {msg}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
             all_success = False
+            if progress_callback:
+                progress_callback(i + 1, total, f"✗ {package_name} failed")
             break  # Stop on first failure
 
     if progress_callback:
         if all_success:
-            progress_callback(total, total, "Installation complete! Please restart QGIS.")
+            progress_callback(total, total, "✓ Installation complete! Please restart QGIS.")
         else:
-            progress_callback(total, total, "Installation failed. See details below.")
+            progress_callback(total, total, "✗ Installation failed. See details below.")
 
     return all_success, messages
 

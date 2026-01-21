@@ -38,13 +38,18 @@ from .ai_segmentation_maptool import AISegmentationMapTool
 
 
 class InstallWorker(QThread):
-    """Worker thread for dependency installation."""
+    """Worker thread for dependency installation.
+    
+    Runs pip installation in background thread to avoid blocking QGIS UI.
+    Emits progress updates for real-time feedback in the dock widget.
+    """
 
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(bool, list)  # success, messages
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._last_message = ""
 
     def run(self):
         """Run the installation process."""
@@ -52,13 +57,33 @@ class InstallWorker(QThread):
             from .core.dependency_manager import install_all_dependencies
 
             def callback(current, total, msg):
-                percent = int((current / total) * 100) if total > 0 else 0
-                self.progress.emit(percent, msg)
+                # Calculate percentage (handle edge cases)
+                if total > 0:
+                    # Use floating point for smoother progress
+                    percent = int((current / total) * 100)
+                else:
+                    percent = 0
+                
+                # Only emit if message changed (avoid UI flicker)
+                if msg != self._last_message:
+                    self._last_message = msg
+                    self.progress.emit(percent, msg)
 
+            # Emit initial progress
+            self.progress.emit(0, "Starting installation...")
+            
             success, messages = install_all_dependencies(callback)
+            
+            # Emit completion
+            if success:
+                self.progress.emit(100, "✓ Installation complete!")
+            else:
+                self.progress.emit(100, "✗ Installation failed")
+                
             self.finished.emit(success, messages)
 
         except Exception as e:
+            self.progress.emit(100, f"✗ Error: {str(e)[:50]}")
             self.finished.emit(False, [str(e)])
 
 
