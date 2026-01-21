@@ -234,11 +234,13 @@ if not model_exists("sam2_large"):
 
 ## Key Considerations
 
+- MANDATORY : Don't put comments in the code or only minimal one, like really minimal
+
 - **Raster layer support**: The plugin supports both:
   - **File-based rasters** (GeoTIFF, JPEG, PNG, etc.) - uses native resolution
   - **Web layers** (XYZ, WMS, Google Satellite) - renders at max_size resolution
   - Note: For web layers, the current map extent is used and rendered at a fixed resolution
-- **Language**: All code and comments in English
+- **Language**: All code and small comments in English
 - **QGIS Compatibility**: Target QGIS 3.28 LTR minimum
 - **No GPU Required**: Use `onnxruntime` CPU provider, not `onnxruntime-gpu`
 - **Coordinate Systems**: Preserve source raster CRS throughout

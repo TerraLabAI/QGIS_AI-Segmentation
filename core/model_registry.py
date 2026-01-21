@@ -40,7 +40,7 @@ class ModelConfig:
     # Tensor name mappings (different between SAM and SAM2)
     # Maps logical name -> actual ONNX tensor name
     encoder_input_name: str
-    encoder_output_name: str
+    encoder_output_names: Dict[str, str]  # Map logical name -> ONNX name
 
     # Decoder tensor names - key is logical name, value is ONNX name
     decoder_input_names: Dict[str, str]
@@ -48,6 +48,23 @@ class ModelConfig:
 
     # Expected tensor ranks for validation
     decoder_input_ranks: Dict[str, int]
+
+    # Model architecture type (affects encoder/decoder behavior)
+    is_sam2: bool = False
+
+    # Mask threshold for binarization
+    # Most models output logits (threshold 0.0), but some output 0-255 scaled values
+    mask_threshold: float = 0.0
+
+    # Coordinate space for point_coords input
+    # True = coordinates in original pixel space (0 to width/height)
+    # False = coordinates in SAM 1024x1024 space (scaled)
+    # Models with orig_im_size input typically expect original pixel coords
+    coords_in_original_space: bool = False
+
+    # Some SAM2 models may have inverted Y axis convention
+    # True = Y coordinate needs to be inverted (Y' = max_Y - Y)
+    invert_y_coord: bool = False
 
     @property
     def total_size_mb(self) -> int:
@@ -85,8 +102,11 @@ SAM_VIT_B = ModelConfig(
     feature_shape=(1, 256, 64, 64),
     mask_input_shape=(1, 1, 256, 256),
 
-    encoder_input_name="input_image",
-    encoder_output_name="image_embeddings",
+    # SAM encoder: input is "x", output is "image_embeddings"
+    encoder_input_name="x",
+    encoder_output_names={
+        "image_embeddings": "image_embeddings",
+    },
 
     decoder_input_names={
         "image_embeddings": "image_embeddings",
@@ -109,6 +129,8 @@ SAM_VIT_B = ModelConfig(
         "has_mask_input": 1,    # (1,)
         "orig_im_size": 1,      # (2,)
     },
+
+    is_sam2=False,
 )
 
 SAM2_BASE_PLUS = ModelConfig(
@@ -127,12 +149,19 @@ SAM2_BASE_PLUS = ModelConfig(
     feature_shape=(1, 256, 64, 64),
     mask_input_shape=(1, 1, 256, 256),
 
+    # SAM2 encoder: input is "image", outputs are 3 tensors
     encoder_input_name="image",
-    encoder_output_name="image_embeddings",
+    encoder_output_names={
+        "image_embed": "image_embed",
+        "high_res_feats_0": "high_res_feats_0",
+        "high_res_feats_1": "high_res_feats_1",
+    },
 
-    # SAM2 has slightly different tensor names
+    # SAM2 decoder requires high-resolution features from encoder
     decoder_input_names={
-        "image_embeddings": "image_embeddings",
+        "image_embed": "image_embed",
+        "high_res_feats_0": "high_res_feats_0",
+        "high_res_feats_1": "high_res_feats_1",
         "point_coords": "point_coords",
         "point_labels": "point_labels",
         "mask_input": "mask_input",
@@ -145,13 +174,27 @@ SAM2_BASE_PLUS = ModelConfig(
     },
 
     decoder_input_ranks={
-        "image_embeddings": 4,
-        "point_coords": 3,
-        "point_labels": 2,
-        "mask_input": 4,
-        "has_mask_input": 1,
-        "orig_im_size": 1,
+        "image_embed": 4,         # (1, 256, 64, 64)
+        "high_res_feats_0": 4,    # (1, 32, 256, 256)
+        "high_res_feats_1": 4,    # (1, 64, 128, 128)
+        "point_coords": 3,        # (1, N, 2)
+        "point_labels": 2,        # (1, N)
+        "mask_input": 4,          # (1, 1, 256, 256)
+        "has_mask_input": 1,      # (1,)
+        "orig_im_size": 1,        # (2,)
     },
+
+    is_sam2=True,
+
+    # This model outputs 0-255 scaled values, not logits
+    mask_threshold=127.5,
+
+    # SAM2 Base+ expects coordinates in original pixel space
+    # (it uses orig_im_size to normalize internally)
+    coords_in_original_space=True,
+
+    # SAM2 may have inverted Y-axis convention
+    invert_y_coord=True,
 )
 
 SAM2_LARGE = ModelConfig(
@@ -170,16 +213,24 @@ SAM2_LARGE = ModelConfig(
     feature_shape=(1, 256, 64, 64),
     mask_input_shape=(1, 1, 256, 256),
 
+    # SAM2 encoder: input is "image", outputs are 3 tensors
     encoder_input_name="image",
-    encoder_output_name="image_embeddings",
+    encoder_output_names={
+        "image_embed": "image_embed",
+        "high_res_feats_0": "high_res_feats_0",
+        "high_res_feats_1": "high_res_feats_1",
+    },
 
+    # SAM2 Large decoder - NOTE: does NOT have orig_im_size input
     decoder_input_names={
-        "image_embeddings": "image_embeddings",
+        "image_embed": "image_embed",
+        "high_res_feats_0": "high_res_feats_0",
+        "high_res_feats_1": "high_res_feats_1",
         "point_coords": "point_coords",
         "point_labels": "point_labels",
         "mask_input": "mask_input",
         "has_mask_input": "has_mask_input",
-        "orig_im_size": "orig_im_size",
+        # No orig_im_size for SAM2 Large!
     },
     decoder_output_names={
         "masks": "masks",
@@ -187,13 +238,19 @@ SAM2_LARGE = ModelConfig(
     },
 
     decoder_input_ranks={
-        "image_embeddings": 4,
-        "point_coords": 3,
-        "point_labels": 2,
-        "mask_input": 4,
-        "has_mask_input": 1,
-        "orig_im_size": 1,
+        "image_embed": 4,         # (1, 256, 64, 64)
+        "high_res_feats_0": 4,    # (1, 32, 256, 256)
+        "high_res_feats_1": 4,    # (1, 64, 128, 128)
+        "point_coords": 3,        # (1, N, 2)
+        "point_labels": 2,        # (1, N)
+        "mask_input": 4,          # (1, 1, 256, 256)
+        "has_mask_input": 1,      # (1,)
     },
+
+    is_sam2=True,
+
+    # SAM2 may have inverted Y-axis convention
+    invert_y_coord=True,
 )
 
 

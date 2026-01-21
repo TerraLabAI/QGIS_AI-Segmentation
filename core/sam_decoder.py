@@ -16,7 +16,8 @@ from .model_registry import ModelConfig, get_model_config, DEFAULT_MODEL_ID
 
 # SAM constants
 SAM_INPUT_SIZE = 1024
-MASK_THRESHOLD = 0.0  # Threshold for binary mask
+# Note: Mask threshold is now per-model (see ModelConfig.mask_threshold)
+# Most models use 0.0 (logits), but some output 0-255 scaled values (threshold ~127.5)
 
 
 class SAMDecoder:
@@ -115,10 +116,30 @@ class SAMDecoder:
         """
         from .image_utils import map_point_to_sam_coords
 
+        # Check if model expects coordinates in original pixel space or 1024 space
+        use_original_space = self._model_config.coords_in_original_space
+        invert_y = self._model_config.invert_y_coord
+
+        # Get the max Y value for inversion (depends on coordinate space)
+        original_size = transform_info["original_size"]  # (H, W)
+        scale = transform_info["scale"]
+        if use_original_space:
+            max_y = original_size[0]  # Height in original pixel space
+        else:
+            max_y = int(original_size[0] * scale)  # Height in 1024 space
+
         # Convert map coordinates to SAM coordinates
         sam_points = []
         for x, y in points:
-            sam_x, sam_y = map_point_to_sam_coords(x, y, transform_info)
+            sam_x, sam_y = map_point_to_sam_coords(
+                x, y, transform_info,
+                scale_to_sam_space=not use_original_space
+            )
+
+            # Invert Y if required by the model
+            if invert_y:
+                sam_y = max_y - sam_y
+
             sam_points.append([sam_x, sam_y])
 
         # Create arrays in the format SAM expects
@@ -130,7 +151,7 @@ class SAMDecoder:
 
     def decode(
         self,
-        features: np.ndarray,
+        features: dict,
         point_coords: np.ndarray,
         point_labels: np.ndarray,
         transform_info: dict,
@@ -140,7 +161,9 @@ class SAMDecoder:
         Decode features with point prompts to generate masks.
 
         Args:
-            features: Pre-encoded image features
+            features: Dictionary of pre-encoded image features
+                     SAM: {"image_embeddings": array}
+                     SAM2: {"image_embed": array, "high_res_feats_0": array, "high_res_feats_1": array}
             point_coords: Point coordinates array (1, N, 2)
             point_labels: Point labels array (1, N)
             transform_info: Transform info from encoding
@@ -163,7 +186,6 @@ class SAMDecoder:
             original_size = transform_info["original_size"]
 
             # Prepare inputs based on model requirements
-            # Standard SAM decoder inputs
             inputs = self._prepare_decoder_inputs(
                 features,
                 point_coords,
@@ -174,10 +196,25 @@ class SAMDecoder:
 
             # Validate input shapes before inference
             if not self._validate_input_shapes(inputs):
+                QgsMessageLog.logMessage(
+                    f"[DECODER DEBUG] Input validation FAILED!",
+                    "AI Segmentation",
+                    level=Qgis.Critical
+                )
                 return None, None
 
             # Run inference
+            QgsMessageLog.logMessage(
+                f"[DECODER DEBUG] Running ONNX inference with outputs: {self.output_names}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
             outputs = self.session.run(self.output_names, inputs)
+            QgsMessageLog.logMessage(
+                f"[DECODER DEBUG] ONNX inference completed! Got {len(outputs)} outputs",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
 
             # Parse outputs (typically masks and iou_predictions)
             masks = outputs[0]  # (1, num_masks, H, W)
@@ -246,7 +283,7 @@ class SAMDecoder:
 
     def _prepare_decoder_inputs(
         self,
-        features: np.ndarray,
+        features: dict,
         point_coords: np.ndarray,
         point_labels: np.ndarray,
         original_size: Tuple[int, int],
@@ -259,7 +296,9 @@ class SAMDecoder:
         tensor names, supporting multiple model architectures (SAM, SAM2, etc.).
 
         Args:
-            features: Image embeddings from encoder
+            features: Dictionary of image embeddings from encoder
+                     SAM: {"image_embeddings": array}
+                     SAM2: {"image_embed": array, "high_res_feats_0": array, "high_res_feats_1": array}
             point_coords: Point coordinates array (1, N, 2)
             point_labels: Point labels array (1, N)
             original_size: Original image size (H, W)
@@ -271,25 +310,38 @@ class SAMDecoder:
         # Get tensor name mapping from model config
         tensor_names = self._model_config.decoder_input_names
         mask_shape = self._model_config.mask_input_shape
+        is_sam2 = self._model_config.is_sam2
 
-        # Logical input values - keys are logical names
-        LOGICAL_VALUES = {
-            "image_embeddings": features,                                    # (1, 256, 64, 64)
+        # Build logical input values from features dictionary and other inputs
+        LOGICAL_VALUES = {}
+
+        # Add features from encoder (different names for SAM vs SAM2)
+        for key, value in features.items():
+            LOGICAL_VALUES[key] = value
+
+        # Add standard inputs
+        LOGICAL_VALUES.update({
             "point_coords": point_coords,                                    # (1, N, 2)
             "point_labels": point_labels,                                    # (1, N)
             "mask_input": np.zeros(mask_shape, dtype=np.float32),            # From config
             "has_mask_input": np.array([0], dtype=np.float32),               # (1,) - rank 1!
-            "orig_im_size": np.array(original_size, dtype=np.float32),       # (2,)
-        }
+        })
+
+        # orig_im_size handling - SAM2 Large doesn't have this input
+        if "orig_im_size" in tensor_names:
+            # Use int32 for SAM2 Base+, float32 for SAM
+            dtype = np.int32 if is_sam2 else np.float32
+            LOGICAL_VALUES["orig_im_size"] = np.array(original_size, dtype=dtype)
 
         inputs = {}
         for name in self.input_names:
             # Try to find this ONNX input name in our tensor mapping
             matched = False
             for logical_name, onnx_name in tensor_names.items():
-                if onnx_name == name and logical_name in LOGICAL_VALUES:
-                    inputs[name] = LOGICAL_VALUES[logical_name]
-                    matched = True
+                if onnx_name == name:
+                    if logical_name in LOGICAL_VALUES:
+                        inputs[name] = LOGICAL_VALUES[logical_name]
+                        matched = True
                     break
 
             # Fallback: try direct name match (for backward compatibility)
@@ -299,10 +351,38 @@ class SAMDecoder:
 
             if not matched:
                 QgsMessageLog.logMessage(
-                    f"Unknown decoder input: {name} (model: {self._model_config.model_id})",
+                    f"Unknown/missing decoder input: {name} (model: {self._model_config.model_id})",
                     "AI Segmentation",
                     level=Qgis.Warning
                 )
+
+        # Log the inputs we're sending with detailed shapes
+        QgsMessageLog.logMessage(
+            f"[DECODER DEBUG] Model: {self._model_config.model_id}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"[DECODER DEBUG] Features keys: {list(features.keys())}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        for name, tensor in inputs.items():
+            QgsMessageLog.logMessage(
+                f"[DECODER DEBUG] Input '{name}': shape={tensor.shape}, dtype={tensor.dtype}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+        QgsMessageLog.logMessage(
+            f"[DECODER DEBUG] point_coords values: {point_coords}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"[DECODER DEBUG] original_size: {original_size}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         return inputs
 
@@ -347,7 +427,7 @@ class SAMDecoder:
 
     def predict_mask(
         self,
-        features: np.ndarray,
+        features: dict,
         points: List[Tuple[float, float]],
         labels: List[int],
         transform_info: dict,
@@ -357,7 +437,9 @@ class SAMDecoder:
         High-level method to predict a mask from points.
 
         Args:
-            features: Pre-encoded image features
+            features: Dictionary of pre-encoded image features
+                     SAM: {"image_embeddings": array}
+                     SAM2: {"image_embed": array, "high_res_feats_0": array, "high_res_feats_1": array}
             points: List of (x, y) points in map coordinates
             labels: List of labels (1=positive, 0=negative)
             transform_info: Transform info from encoding
@@ -434,14 +516,17 @@ class SAMDecoder:
             )
             return None, 0.0
 
+        # Get model-specific threshold
+        mask_threshold = self._model_config.mask_threshold
+
         # Log all candidate masks and their scores
         QgsMessageLog.logMessage(
-            f"SAM returned {masks.shape[1]} mask candidates:",
+            f"SAM returned {masks.shape[1]} mask candidates (threshold={mask_threshold}):",
             "AI Segmentation",
             level=Qgis.Info
         )
         for i in range(masks.shape[1]):
-            mask_pixels = (masks[0, i] > MASK_THRESHOLD).sum()
+            mask_pixels = (masks[0, i] > mask_threshold).sum()
             score_val = scores[0, i] if scores is not None else 0.0
             QgsMessageLog.logMessage(
                 f"  Mask {i+1}: score={score_val:.3f}, pixels={mask_pixels}",
@@ -464,8 +549,8 @@ class SAMDecoder:
             mask = masks[0, 0]
             score = float(scores[0, 0]) if scores is not None else 1.0
 
-        # Apply threshold to get binary mask
-        binary_mask = (mask > MASK_THRESHOLD).astype(np.uint8)
+        # Apply model-specific threshold to get binary mask
+        binary_mask = (mask > mask_threshold).astype(np.uint8)
         mask_pixels = int(binary_mask.sum())
 
         QgsMessageLog.logMessage(

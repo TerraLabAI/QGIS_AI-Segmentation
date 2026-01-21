@@ -33,6 +33,8 @@ class SAMEncoder:
 
     Encodes geospatial raster images into feature embeddings that can be
     used for fast interactive segmentation.
+
+    Supports both SAM (single output) and SAM2 (multiple outputs).
     """
 
     def __init__(self, model_path: str = None):
@@ -45,7 +47,7 @@ class SAMEncoder:
         self.model_path = model_path
         self.session = None
         self.input_name = None
-        self.output_name = None
+        self.output_names = []  # List of output names (SAM2 has multiple)
 
     def load_model(self, model_path: str = None) -> bool:
         """
@@ -77,12 +79,17 @@ class SAMEncoder:
                 providers=['CPUExecutionProvider']
             )
 
-            # Get input/output names
+            # Get input/output names (SAM2 has multiple outputs)
             self.input_name = self.session.get_inputs()[0].name
-            self.output_name = self.session.get_outputs()[0].name
+            self.output_names = [out.name for out in self.session.get_outputs()]
 
             QgsMessageLog.logMessage(
                 f"Encoder model loaded: {self.model_path}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            QgsMessageLog.logMessage(
+                f"Encoder outputs: {self.output_names}",
                 "AI Segmentation",
                 level=Qgis.Info
             )
@@ -153,7 +160,7 @@ class SAMEncoder:
         self,
         image: np.ndarray,
         progress_callback: Callable[[int, str], None] = None
-    ) -> Tuple[Optional[np.ndarray], dict]:
+    ) -> Tuple[Optional[dict], dict]:
         """
         Encode an image into SAM feature embeddings.
 
@@ -162,7 +169,10 @@ class SAMEncoder:
             progress_callback: Optional callback(percent, message)
 
         Returns:
-            Tuple of (features, transform_info) or (None, {}) on error
+            Tuple of (features_dict, transform_info) or (None, {}) on error
+            features_dict maps output name -> numpy array
+            For SAM: {"image_embeddings": array}
+            For SAM2: {"image_embed": array, "high_res_feats_0": array, "high_res_feats_1": array}
         """
         if self.session is None:
             QgsMessageLog.logMessage(
@@ -182,26 +192,28 @@ class SAMEncoder:
             if progress_callback:
                 progress_callback(30, "Running encoder (this may take a while)...")
 
-            # Run inference
-            features = self.session.run(
-                [self.output_name],
-                {self.input_name: preprocessed}
-            )[0]
+            # Run inference - get all outputs (SAM2 has multiple)
+            outputs = self.session.run(self.output_names, {self.input_name: preprocessed})
+
+            # Build features dictionary mapping output name -> array
+            features_dict = {}
+            for i, name in enumerate(self.output_names):
+                features_dict[name] = outputs[i]
+                QgsMessageLog.logMessage(
+                    f"Encoder output '{name}': shape={outputs[i].shape}",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
 
             if progress_callback:
                 progress_callback(100, "Encoding complete!")
 
-            QgsMessageLog.logMessage(
-                f"Image encoded. Features shape: {features.shape}",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-
-            return features, transform_info
+            return features_dict, transform_info
 
         except Exception as e:
+            import traceback
             QgsMessageLog.logMessage(
-                f"Encoding failed: {str(e)}",
+                f"Encoding failed: {str(e)}\n{traceback.format_exc()}",
                 "AI Segmentation",
                 level=Qgis.Critical
             )
@@ -259,7 +271,7 @@ class SAMEncoder:
 
 
 def save_features(
-    features: np.ndarray,
+    features: dict,
     transform_info: dict,
     output_path: str
 ) -> bool:
@@ -267,7 +279,7 @@ def save_features(
     Save encoded features to disk.
 
     Args:
-        features: Feature embeddings array
+        features: Dictionary of feature embeddings {name: array}
         transform_info: Dictionary with transform information
         output_path: Path to save the features (without extension)
 
@@ -275,8 +287,8 @@ def save_features(
         True if saved successfully
     """
     try:
-        # Save features as .npy
-        np.save(f"{output_path}.npy", features)
+        # Save features as .npz (multiple arrays in one file)
+        np.savez(f"{output_path}.npz", **features)
 
         # Save transform info as JSON
         with open(f"{output_path}.json", 'w') as f:
@@ -292,22 +304,23 @@ def save_features(
             json.dump(info, f, indent=2)
 
         QgsMessageLog.logMessage(
-            f"Features saved to: {output_path}",
+            f"Features saved to: {output_path} (keys: {list(features.keys())})",
             "AI Segmentation",
             level=Qgis.Info
         )
         return True
 
     except Exception as e:
+        import traceback
         QgsMessageLog.logMessage(
-            f"Failed to save features: {str(e)}",
+            f"Failed to save features: {str(e)}\n{traceback.format_exc()}",
             "AI Segmentation",
             level=Qgis.Critical
         )
         return False
 
 
-def load_features(features_path: str) -> Tuple[Optional[np.ndarray], dict]:
+def load_features(features_path: str) -> Tuple[Optional[dict], dict]:
     """
     Load encoded features from disk.
 
@@ -315,10 +328,39 @@ def load_features(features_path: str) -> Tuple[Optional[np.ndarray], dict]:
         features_path: Path to features file (without extension)
 
     Returns:
-        Tuple of (features, transform_info) or (None, {}) on error
+        Tuple of (features_dict, transform_info) or (None, {}) on error
+        features_dict maps output name -> numpy array
     """
     try:
-        features = np.load(f"{features_path}.npy")
+        # Try new format (.npz) first
+        npz_path = f"{features_path}.npz"
+        npy_path = f"{features_path}.npy"
+
+        if os.path.exists(npz_path):
+            # New format: dictionary of features
+            loaded = np.load(npz_path)
+            features = {key: loaded[key] for key in loaded.files}
+            QgsMessageLog.logMessage(
+                f"Loaded features from npz (keys: {list(features.keys())})",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+        elif os.path.exists(npy_path):
+            # Legacy format: single array (SAM ViT-B)
+            single_features = np.load(npy_path)
+            features = {"image_embeddings": single_features}
+            QgsMessageLog.logMessage(
+                f"Loaded features from legacy npy format",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+        else:
+            QgsMessageLog.logMessage(
+                f"No features file found at: {features_path}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            return None, {}
 
         with open(f"{features_path}.json", 'r') as f:
             transform_info = json.load(f)
@@ -326,8 +368,9 @@ def load_features(features_path: str) -> Tuple[Optional[np.ndarray], dict]:
         return features, transform_info
 
     except Exception as e:
+        import traceback
         QgsMessageLog.logMessage(
-            f"Failed to load features: {str(e)}",
+            f"Failed to load features: {str(e)}\n{traceback.format_exc()}",
             "AI Segmentation",
             level=Qgis.Critical
         )
@@ -413,8 +456,22 @@ def has_cached_features(layer: QgsRasterLayer, model_id: str = None) -> bool:
     Returns:
         True if cached features exist for the specified model
     """
+    from .model_registry import get_model_config, DEFAULT_MODEL_ID
+
+    if model_id is None:
+        model_id = DEFAULT_MODEL_ID
+
+    config = get_model_config(model_id)
     features_path = get_features_path(layer, model_id)
-    return (
-        os.path.exists(f"{features_path}.npy") and
-        os.path.exists(f"{features_path}.json")
-    )
+    json_exists = os.path.exists(f"{features_path}.json")
+
+    # SAM2 models require .npz format (multiple outputs)
+    # SAM models can use either .npz or legacy .npy format
+    if config.is_sam2:
+        npz_exists = os.path.exists(f"{features_path}.npz")
+        return json_exists and npz_exists
+    else:
+        # Legacy SAM: accept either format
+        npz_exists = os.path.exists(f"{features_path}.npz")
+        npy_exists = os.path.exists(f"{features_path}.npy")
+        return json_exists and (npz_exists or npy_exists)

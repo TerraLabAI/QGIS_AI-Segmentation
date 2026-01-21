@@ -81,7 +81,7 @@ class SAMModel:
 
         # Current layer state
         self._current_layer: Optional[QgsRasterLayer] = None
-        self._features: Optional[np.ndarray] = None
+        self._features: Optional[dict] = None  # Dict of encoder outputs
         self._transform_info: dict = {}
 
         # Prompt manager for interactive segmentation
