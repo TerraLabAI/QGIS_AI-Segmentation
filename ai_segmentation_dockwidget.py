@@ -2,10 +2,8 @@
 Dock Widget for AI Segmentation
 
 Main user interface panel for the segmentation plugin.
+Simplified interface - no manual encoding required.
 """
-
-import os
-from pathlib import Path
 
 from qgis.PyQt.QtWidgets import (
     QDockWidget,
@@ -15,20 +13,14 @@ from qgis.PyQt.QtWidgets import (
     QGroupBox,
     QLabel,
     QPushButton,
-    QComboBox,
     QProgressBar,
     QFileDialog,
-    QMessageBox,
     QFrame,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtGui import QFont
 
-from qgis.core import (
-    QgsProject,
-    QgsRasterLayer,
-    QgsMapLayerProxyModel,
-)
+from qgis.core import QgsRasterLayer, QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
 
 
@@ -36,20 +28,21 @@ class AISegmentationDockWidget(QDockWidget):
     """
     Main dock widget for the AI Segmentation plugin.
 
-    Provides controls for:
-    - Selecting source raster layer
-    - Encoding images
-    - Managing segmentation prompts
-    - Exporting results
+    Simplified interface:
+    - Select layer
+    - Start Segmentation (auto-downloads models, auto-encodes)
+    - Click to segment
+    - Export results
     """
 
     # Signals
-    encode_requested = pyqtSignal(object)  # QgsRasterLayer
+    download_models_requested = pyqtSignal()
+    start_segmentation_requested = pyqtSignal(object)  # QgsRasterLayer
     clear_points_requested = pyqtSignal()
     undo_requested = pyqtSignal()
     save_mask_requested = pyqtSignal()
     export_requested = pyqtSignal(str)  # output path
-    tool_activation_requested = pyqtSignal(bool)  # activate/deactivate
+    stop_segmentation_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         """Initialize the dock widget."""
@@ -67,8 +60,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.setWidget(self.main_widget)
 
         # State
-        self._encoding_in_progress = False
-        self._features_loaded = False
+        self._models_ready = False
+        self._segmentation_active = False
+        self._layer_ready = False
 
     def _setup_ui(self):
         """Set up the user interface."""
@@ -84,11 +78,11 @@ class AISegmentationDockWidget(QDockWidget):
         # Separator
         self._add_separator()
 
+        # Model Status Section
+        self._setup_model_section()
+
         # Source Layer Section
         self._setup_source_section()
-
-        # Encoding Section
-        self._setup_encoding_section()
 
         # Segmentation Section
         self._setup_segmentation_section()
@@ -109,6 +103,30 @@ class AISegmentationDockWidget(QDockWidget):
         line.setFrameShadow(QFrame.Sunken)
         self.main_layout.addWidget(line)
 
+    def _setup_model_section(self):
+        """Set up the model status section."""
+        group = QGroupBox("Model")
+        layout = QVBoxLayout(group)
+
+        # Model status label
+        self.model_status_label = QLabel("Checking models...")
+        layout.addWidget(self.model_status_label)
+
+        # Progress bar (hidden by default)
+        self.model_progress = QProgressBar()
+        self.model_progress.setRange(0, 100)
+        self.model_progress.setValue(0)
+        self.model_progress.setVisible(False)
+        layout.addWidget(self.model_progress)
+
+        # Download button (hidden when models are ready)
+        self.download_button = QPushButton("Download Models (~109 MB)")
+        self.download_button.clicked.connect(self._on_download_clicked)
+        self.download_button.setVisible(False)
+        layout.addWidget(self.download_button)
+
+        self.main_layout.addWidget(group)
+
     def _setup_source_section(self):
         """Set up the source layer selection section."""
         group = QGroupBox("Source Layer")
@@ -121,30 +139,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.layer_combo.setShowCrs(True)
         self.layer_combo.layerChanged.connect(self._on_layer_changed)
         layout.addWidget(self.layer_combo)
-
-        self.main_layout.addWidget(group)
-
-    def _setup_encoding_section(self):
-        """Set up the image encoding section."""
-        group = QGroupBox("Image Encoding")
-        layout = QVBoxLayout(group)
-
-        # Status label
-        self.encoding_status_label = QLabel("Status: No layer selected")
-        layout.addWidget(self.encoding_status_label)
-
-        # Progress bar
-        self.encoding_progress = QProgressBar()
-        self.encoding_progress.setRange(0, 100)
-        self.encoding_progress.setValue(0)
-        self.encoding_progress.setVisible(False)
-        layout.addWidget(self.encoding_progress)
-
-        # Encode button
-        self.encode_button = QPushButton("Encode Image")
-        self.encode_button.setEnabled(False)
-        self.encode_button.clicked.connect(self._on_encode_clicked)
-        layout.addWidget(self.encode_button)
 
         self.main_layout.addWidget(group)
 
@@ -161,16 +155,28 @@ class AISegmentationDockWidget(QDockWidget):
         instructions.setStyleSheet("color: gray; font-style: italic;")
         layout.addWidget(instructions)
 
+        # Preparation progress (hidden by default)
+        self.prep_progress = QProgressBar()
+        self.prep_progress.setRange(0, 100)
+        self.prep_progress.setValue(0)
+        self.prep_progress.setVisible(False)
+        layout.addWidget(self.prep_progress)
+
+        # Preparation status label
+        self.prep_status_label = QLabel("")
+        self.prep_status_label.setStyleSheet("color: gray;")
+        self.prep_status_label.setVisible(False)
+        layout.addWidget(self.prep_status_label)
+
         # Point counter
         self.point_counter_label = QLabel("Points: 0 positive, 0 negative")
         layout.addWidget(self.point_counter_label)
 
-        # Tool activation button
-        self.activate_tool_button = QPushButton("Start Segmentation")
-        self.activate_tool_button.setCheckable(True)
-        self.activate_tool_button.setEnabled(False)
-        self.activate_tool_button.clicked.connect(self._on_tool_activation_clicked)
-        layout.addWidget(self.activate_tool_button)
+        # Start/Stop button
+        self.start_button = QPushButton("Start Segmentation")
+        self.start_button.setEnabled(False)
+        self.start_button.clicked.connect(self._on_start_clicked)
+        layout.addWidget(self.start_button)
 
         # Button row
         button_layout = QHBoxLayout()
@@ -217,29 +223,23 @@ class AISegmentationDockWidget(QDockWidget):
 
     # Slots
 
+    def _on_download_clicked(self):
+        """Handle download button click."""
+        self.download_models_requested.emit()
+
     def _on_layer_changed(self, layer):
         """Handle layer selection change."""
-        if layer and isinstance(layer, QgsRasterLayer):
-            self.encoding_status_label.setText("Status: Ready to encode")
-            self.encode_button.setEnabled(True)
-            self._features_loaded = False
-            self._update_ui_state()
+        self._layer_ready = False
+        self._update_ui_state()
+
+    def _on_start_clicked(self):
+        """Handle start/stop button click."""
+        if self._segmentation_active:
+            self.stop_segmentation_requested.emit()
         else:
-            self.encoding_status_label.setText("Status: No layer selected")
-            self.encode_button.setEnabled(False)
-            self._features_loaded = False
-            self._update_ui_state()
-
-    def _on_encode_clicked(self):
-        """Handle encode button click."""
-        layer = self.layer_combo.currentLayer()
-        if layer:
-            self.encode_requested.emit(layer)
-
-    def _on_tool_activation_clicked(self, checked):
-        """Handle tool activation toggle."""
-        self.tool_activation_requested.emit(checked)
-        self._update_tool_button_state(checked)
+            layer = self.layer_combo.currentLayer()
+            if layer:
+                self.start_segmentation_requested.emit(layer)
 
     def _on_clear_clicked(self):
         """Handle clear button click."""
@@ -270,19 +270,57 @@ class AISegmentationDockWidget(QDockWidget):
         """Get the currently selected raster layer."""
         return self.layer_combo.currentLayer()
 
-    def set_encoding_progress(self, value: int, message: str = ""):
-        """Update encoding progress."""
-        self.encoding_progress.setValue(value)
-        if message:
-            self.encoding_status_label.setText(f"Status: {message}")
+    def set_models_status(self, ready: bool, message: str):
+        """Update model status display."""
+        self._models_ready = ready
+        self.model_status_label.setText(message)
 
-        if value == 0:
-            self.encoding_progress.setVisible(True)
-            self._encoding_in_progress = True
-        elif value >= 100:
-            self.encoding_progress.setVisible(False)
-            self._encoding_in_progress = False
-            self._features_loaded = True
+        if ready:
+            self.model_status_label.setStyleSheet("color: green;")
+            self.download_button.setVisible(False)
+        else:
+            self.model_status_label.setStyleSheet("color: orange;")
+            self.download_button.setVisible(True)
+
+        self._update_ui_state()
+
+    def set_download_progress(self, percent: int, message: str):
+        """Update download progress."""
+        self.model_progress.setValue(percent)
+        self.model_status_label.setText(message)
+
+        if percent == 0:
+            self.model_progress.setVisible(True)
+            self.download_button.setEnabled(False)
+        elif percent >= 100:
+            self.model_progress.setVisible(False)
+            self.download_button.setVisible(False)
+
+    def set_preparation_progress(self, percent: int, message: str):
+        """Update layer preparation (encoding) progress."""
+        self.prep_progress.setValue(percent)
+        self.prep_status_label.setText(message)
+
+        if percent == 0:
+            self.prep_progress.setVisible(True)
+            self.prep_status_label.setVisible(True)
+            self.start_button.setEnabled(False)
+        elif percent >= 100:
+            self.prep_progress.setVisible(False)
+            self.prep_status_label.setVisible(False)
+            self._layer_ready = True
+            self._update_ui_state()
+
+    def set_segmentation_active(self, active: bool):
+        """Set segmentation active state."""
+        self._segmentation_active = active
+
+        if active:
+            self.start_button.setText("Stop Segmentation")
+            self.start_button.setStyleSheet("background-color: #f44336; color: white;")
+        else:
+            self.start_button.setText("Start Segmentation")
+            self.start_button.setStyleSheet("")
 
         self._update_ui_state()
 
@@ -292,41 +330,24 @@ class AISegmentationDockWidget(QDockWidget):
             f"Points: {positive} positive, {negative} negative"
         )
         has_points = positive > 0 or negative > 0
-        self.clear_button.setEnabled(has_points and self._features_loaded)
-        self.undo_button.setEnabled(has_points and self._features_loaded)
-        self.save_mask_button.setEnabled(has_points and self._features_loaded)
+        self.clear_button.setEnabled(has_points and self._segmentation_active)
+        self.undo_button.setEnabled(has_points and self._segmentation_active)
+        self.save_mask_button.setEnabled(has_points and self._segmentation_active)
 
     def set_status(self, message: str):
         """Set the status bar message."""
         self.status_label.setText(message)
 
-    def set_features_loaded(self, loaded: bool):
-        """Set whether features are loaded."""
-        self._features_loaded = loaded
-        self._update_ui_state()
-
     def _update_ui_state(self):
         """Update UI element enabled states."""
         has_layer = self.layer_combo.currentLayer() is not None
-        can_segment = has_layer and self._features_loaded and not self._encoding_in_progress
 
-        self.encode_button.setEnabled(has_layer and not self._encoding_in_progress)
-        self.activate_tool_button.setEnabled(can_segment)
-        self.export_button.setEnabled(can_segment)
+        # Start button enabled when:
+        # - Models are ready
+        # - Layer is selected
+        # OR segmentation is active (to allow stopping)
+        can_start = self._models_ready and has_layer
+        self.start_button.setEnabled(can_start or self._segmentation_active)
 
-        if self._features_loaded:
-            self.encoding_status_label.setText("Status: Ready for segmentation")
-
-    def _update_tool_button_state(self, active: bool):
-        """Update the tool activation button state."""
-        if active:
-            self.activate_tool_button.setText("Stop Segmentation")
-            self.activate_tool_button.setStyleSheet("background-color: #4CAF50; color: white;")
-        else:
-            self.activate_tool_button.setText("Start Segmentation")
-            self.activate_tool_button.setStyleSheet("")
-
-    def set_tool_active(self, active: bool):
-        """Set the tool active state from external source."""
-        self.activate_tool_button.setChecked(active)
-        self._update_tool_button_state(active)
+        # Export enabled when layer is ready
+        self.export_button.setEnabled(self._layer_ready)

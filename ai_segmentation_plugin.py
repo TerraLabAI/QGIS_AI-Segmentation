@@ -2,13 +2,14 @@
 AI Segmentation - AI-powered segmentation plugin for QGIS
 
 Main plugin class that coordinates all components.
+Designed for stability - silent startup, checks only when panel opens.
 """
 
 import os
 from pathlib import Path
 from typing import Optional
 
-from qgis.PyQt.QtWidgets import QAction, QMessageBox, QProgressDialog
+from qgis.PyQt.QtWidgets import QAction, QMessageBox
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal
 
@@ -17,66 +18,98 @@ from qgis.core import (
     QgsRasterLayer,
     QgsMessageLog,
     Qgis,
-    QgsApplication,
 )
 from qgis.gui import QgisInterface
 
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
-from .core.sam_decoder import SAMDecoder, PromptManager
 
 
-class EncodingWorker(QThread):
-    """
-    Worker thread for image encoding.
-
-    Runs the heavy encoding process in a separate thread
-    to keep the UI responsive.
-    """
+class InstallWorker(QThread):
+    """Worker thread for dependency installation."""
 
     progress = pyqtSignal(int, str)
-    finished = pyqtSignal(object, dict)  # features, transform_info
-    error = pyqtSignal(str)
+    finished = pyqtSignal(bool, list)  # success, messages
 
-    def __init__(self, encoder, layer, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.encoder = encoder
+
+    def run(self):
+        """Run the installation process."""
+        try:
+            from .core.dependency_manager import install_all_dependencies
+
+            def callback(current, total, msg):
+                percent = int((current / total) * 100) if total > 0 else 0
+                self.progress.emit(percent, msg)
+
+            success, messages = install_all_dependencies(callback)
+            self.finished.emit(success, messages)
+
+        except Exception as e:
+            self.finished.emit(False, [str(e)])
+
+
+class DownloadWorker(QThread):
+    """Worker thread for model downloading."""
+
+    progress = pyqtSignal(int, str)
+    finished = pyqtSignal(bool, str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def run(self):
+        """Run the download process."""
+        try:
+            from .core.model_manager import download_models
+
+            success, message = download_models(
+                progress_callback=lambda p, m: self.progress.emit(p, m)
+            )
+            self.finished.emit(success, message)
+
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+
+class PreparationWorker(QThread):
+    """Worker thread for layer preparation (encoding)."""
+
+    progress = pyqtSignal(int, str)
+    finished = pyqtSignal(bool, str)
+
+    def __init__(self, sam_model, layer, parent=None):
+        super().__init__(parent)
+        self.sam_model = sam_model
         self.layer = layer
 
     def run(self):
-        """Run the encoding process."""
+        """Run the preparation process."""
         try:
-            features, transform_info = self.encoder.encode_raster_layer(
+            success, message = self.sam_model.prepare_layer(
                 self.layer,
                 progress_callback=lambda p, m: self.progress.emit(p, m)
             )
-
-            if features is not None:
-                self.finished.emit(features, transform_info)
-            else:
-                self.error.emit("Encoding failed - check the log for details")
+            self.finished.emit(success, message)
 
         except Exception as e:
-            self.error.emit(str(e))
+            self.finished.emit(False, str(e))
 
 
 class AISegmentationPlugin:
     """
     Main plugin class for AI Segmentation.
 
-    Handles:
-    - Plugin initialization and UI setup
-    - Dependency checking and installation
-    - Coordination between encoder, decoder, map tool, and UI
+    Key design principles:
+    - SILENT startup: No popups or checks at QGIS startup
+    - Lazy initialization: Only check dependencies when panel opens
+    - Clear feedback: Show all status in the plugin panel
+    - Stability first: Never crash QGIS
     """
 
     def __init__(self, iface: QgisInterface):
-        """
-        Initialize the plugin.
-
-        Args:
-            iface: QGIS interface instance
-        """
+        """Initialize the plugin."""
         self.iface = iface
         self.plugin_dir = Path(__file__).parent
 
@@ -85,30 +118,26 @@ class AISegmentationPlugin:
         self.map_tool: Optional[AISegmentationMapTool] = None
         self.action: Optional[QAction] = None
 
-        # SAM components
-        self.encoder = None
-        self.decoder: Optional[SAMDecoder] = None
-        self.prompt_manager: Optional[PromptManager] = None
+        # SAM model (lazy loaded)
+        self.sam_model = None
 
         # State
-        self.current_features = None
-        self.current_transform_info = None
         self.current_mask = None
         self.current_score = 0.0
         self.output_layer = None
+        self._initialized = False  # Track if we've done first-time setup
 
-        # Worker thread
-        self.encoding_worker = None
-
-        # Paths to ONNX models
-        self.encoder_model_path = self.plugin_dir / "models" / "sam_vit_b_encoder.onnx"
-        self.decoder_model_path = self.plugin_dir / "models" / "sam_vit_b_decoder.onnx"
+        # Worker threads
+        self.install_worker = None
+        self.download_worker = None
+        self.prep_worker = None
 
     def initGui(self):
         """
         Initialize the plugin GUI.
 
         Called by QGIS when the plugin is loaded.
+        NOTE: We do NOT check dependencies here - only when panel opens.
         """
         # Create action for the plugin
         icon_path = str(self.plugin_dir / "resources" / "icons" / "ai_segmentation_icon.png")
@@ -135,12 +164,14 @@ class AISegmentationPlugin:
         self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
 
         # Connect dock widget signals
-        self.dock_widget.encode_requested.connect(self._on_encode_requested)
+        self.dock_widget.install_dependencies_requested.connect(self._on_install_requested)
+        self.dock_widget.download_models_requested.connect(self._on_download_requested)
+        self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
+        self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
         self.dock_widget.clear_points_requested.connect(self._on_clear_points)
         self.dock_widget.undo_requested.connect(self._on_undo)
         self.dock_widget.save_mask_requested.connect(self._on_save_mask)
         self.dock_widget.export_requested.connect(self._on_export)
-        self.dock_widget.tool_activation_requested.connect(self._on_tool_activation)
 
         # Add dock widget to QGIS
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
@@ -151,18 +182,15 @@ class AISegmentationPlugin:
         self.map_tool.negative_click.connect(self._on_negative_click)
         self.map_tool.tool_deactivated.connect(self._on_tool_deactivated)
 
-        # Initialize prompt manager
-        self.prompt_manager = PromptManager()
-
-        # Check dependencies on startup
-        self._check_dependencies()
+        # Log that plugin loaded (but don't do any heavy work)
+        QgsMessageLog.logMessage(
+            "AI Segmentation plugin loaded (checks deferred until panel opens)",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
     def unload(self):
-        """
-        Unload the plugin.
-
-        Called by QGIS when the plugin is unloaded.
-        """
+        """Unload the plugin."""
         # Remove menu and toolbar items
         self.iface.removePluginRasterMenu("&AI Segmentation", self.action)
         self.iface.removeToolBarIcon(self.action)
@@ -180,9 +208,15 @@ class AISegmentationPlugin:
             self.map_tool = None
 
         # Clean up workers
-        if self.encoding_worker and self.encoding_worker.isRunning():
-            self.encoding_worker.terminate()
-            self.encoding_worker.wait()
+        for worker in [self.install_worker, self.download_worker, self.prep_worker]:
+            if worker and worker.isRunning():
+                worker.terminate()
+                worker.wait()
+
+        # Unload SAM model
+        if self.sam_model:
+            self.sam_model.unload()
+            self.sam_model = None
 
     def toggle_dock_widget(self, checked: bool):
         """Toggle the dock widget visibility."""
@@ -194,213 +228,236 @@ class AISegmentationPlugin:
         if self.action:
             self.action.setChecked(visible)
 
-    def _check_dependencies(self):
-        """Check and install required dependencies."""
+        # First time panel opens: do initialization
+        if visible and not self._initialized:
+            self._initialized = True
+            self._do_first_time_setup()
+
+    def _do_first_time_setup(self):
+        """
+        First-time setup when panel opens.
+
+        This is where we check dependencies and models - NOT at startup.
+        """
+        QgsMessageLog.logMessage(
+            "Panel opened - checking dependencies...",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+        # Step 1: Check dependencies
         try:
-            from .core.dependency_manager import (
-                get_missing_dependencies,
-                install_all_dependencies,
-                verify_installation
-            )
+            from .core.dependency_manager import all_dependencies_installed, get_missing_dependencies
 
-            missing = get_missing_dependencies()
-
-            if missing:
-                reply = QMessageBox.question(
-                    self.iface.mainWindow(),
-                    "AI Segmentation - Missing Dependencies",
-                    f"AI Segmentation requires the following packages:\n"
-                    f"{', '.join([f'{name} {ver}' for name, ver in missing])}\n\n"
-                    f"Would you like to install them now?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-
-                if reply == QMessageBox.Yes:
-                    self._install_dependencies()
-                else:
-                    self.dock_widget.set_status("Dependencies missing - functionality limited")
+            if all_dependencies_installed():
+                # Dependencies OK, check models
+                self.dock_widget.set_dependency_status(True, "Dependencies OK ✓")
+                self._check_models()
             else:
-                # Verify installation
-                success, msg = verify_installation()
-                if success:
-                    QgsMessageLog.logMessage(msg, "AI Segmentation", level=Qgis.Info)
-                    self._initialize_models()
-                else:
-                    QgsMessageLog.logMessage(msg, "AI Segmentation", level=Qgis.Warning)
+                # Show what's missing
+                missing = get_missing_dependencies()
+                missing_str = ", ".join([f"{name}" for name, _ in missing])
+                self.dock_widget.set_dependency_status(
+                    False,
+                    f"Missing: {missing_str}"
+                )
+                self.dock_widget.set_status("Click 'Install Dependencies' to continue")
 
         except Exception as e:
             QgsMessageLog.logMessage(
-                f"Dependency check failed: {str(e)}",
+                f"Dependency check error: {str(e)}",
                 "AI Segmentation",
                 level=Qgis.Warning
             )
+            self.dock_widget.set_dependency_status(False, f"Error: {str(e)[:50]}")
 
-    def _install_dependencies(self):
-        """Install missing dependencies with a progress dialog."""
-        from .core.dependency_manager import (
-            install_all_dependencies,
-            verify_installation
-        )
+    def _check_models(self):
+        """Check if models are downloaded and load them."""
+        try:
+            from .core.model_manager import models_exist
 
-        progress = QProgressDialog(
-            "Installing dependencies...",
-            "Cancel",
-            0, 100,
-            self.iface.mainWindow()
-        )
-        progress.setWindowModality(Qt.WindowModal)
-        progress.show()
+            if models_exist():
+                self._load_models()
+            else:
+                self.dock_widget.set_models_status(False, "Models not downloaded")
+                self.dock_widget.set_status("Click 'Download Models' to continue")
 
-        def update_progress(current, total, message):
-            percent = int((current / total) * 100) if total > 0 else 0
-            progress.setValue(percent)
-            progress.setLabelText(message)
-            QgsApplication.processEvents()
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                f"Model check error: {str(e)}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            self.dock_widget.set_models_status(False, f"Error: {str(e)[:50]}")
 
-        success, messages = install_all_dependencies(update_progress)
-        progress.close()
+    def _load_models(self):
+        """Load SAM models."""
+        try:
+            from .core.sam_model import SAMModel
 
+            self.sam_model = SAMModel()
+            success, message = self.sam_model.load()
+
+            if success:
+                self.dock_widget.set_models_status(True, "Models ready ✓")
+                self.dock_widget.set_status("Ready - select a layer and start!")
+                QgsMessageLog.logMessage(
+                    "SAM models loaded successfully",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+            else:
+                self.dock_widget.set_models_status(False, f"Load failed")
+                self.dock_widget.set_status(f"Error: {message[:50]}")
+
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                f"Failed to load models: {str(e)}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            self.dock_widget.set_models_status(False, "Load failed")
+
+    # ==================== Installation ====================
+
+    def _on_install_requested(self):
+        """Handle dependency installation request."""
+        self.dock_widget.set_install_progress(0, "Starting installation...")
+
+        self.install_worker = InstallWorker()
+        self.install_worker.progress.connect(self._on_install_progress)
+        self.install_worker.finished.connect(self._on_install_finished)
+        self.install_worker.start()
+
+    def _on_install_progress(self, percent: int, message: str):
+        """Handle installation progress."""
+        self.dock_widget.set_install_progress(percent, message)
+
+    def _on_install_finished(self, success: bool, messages: list):
+        """Handle installation completion."""
         if success:
+            self.dock_widget.set_install_progress(100, "Installed! Restart QGIS.")
+            self.dock_widget.set_dependency_status(True, "Restart QGIS to use")
+            self.dock_widget.set_status("Please restart QGIS to complete setup")
+
             QMessageBox.information(
                 self.iface.mainWindow(),
                 "Installation Complete",
-                "Dependencies installed successfully.\n"
+                "Dependencies installed successfully!\n\n"
                 "Please restart QGIS for changes to take effect."
             )
         else:
+            # Show error with manual instructions
+            from .core.dependency_manager import get_manual_install_instructions
+
+            error_text = "\n".join(messages)
+            manual_instructions = get_manual_install_instructions()
+
+            self.dock_widget.set_install_progress(0, "Installation failed")
+            self.dock_widget.set_dependency_status(False, "Install failed")
+            self.dock_widget.set_status("See error details below")
+
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 "Installation Failed",
-                "Some dependencies could not be installed:\n" +
-                "\n".join(messages)
+                f"Automatic installation failed:\n{error_text}\n\n"
+                f"Please install manually:\n\n{manual_instructions}"
             )
 
-    def _initialize_models(self):
-        """Initialize SAM encoder and decoder models."""
-        # Check if models exist
-        if not self.encoder_model_path.exists():
-            QgsMessageLog.logMessage(
-                f"Encoder model not found at: {self.encoder_model_path}\n"
-                "Please download the SAM ViT-B ONNX models.",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
-            self.dock_widget.set_status("Models not found - see log")
-            return
+    # ==================== Model Download ====================
 
-        if not self.decoder_model_path.exists():
-            QgsMessageLog.logMessage(
-                f"Decoder model not found at: {self.decoder_model_path}\n"
-                "Please download the SAM ViT-B ONNX models.",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
-            self.dock_widget.set_status("Models not found - see log")
-            return
+    def _on_download_requested(self):
+        """Handle model download request."""
+        self.dock_widget.set_download_progress(0, "Starting download...")
 
-        try:
-            from .core.sam_encoder import SAMEncoder
+        self.download_worker = DownloadWorker()
+        self.download_worker.progress.connect(self._on_download_progress)
+        self.download_worker.finished.connect(self._on_download_finished)
+        self.download_worker.start()
 
-            # Initialize encoder
-            self.encoder = SAMEncoder()
-            if not self.encoder.load_model(str(self.encoder_model_path)):
-                self.dock_widget.set_status("Failed to load encoder")
-                return
+    def _on_download_progress(self, percent: int, message: str):
+        """Handle download progress."""
+        self.dock_widget.set_download_progress(percent, message)
 
-            # Initialize decoder
-            self.decoder = SAMDecoder()
-            if not self.decoder.load_model(str(self.decoder_model_path)):
-                self.dock_widget.set_status("Failed to load decoder")
-                return
+    def _on_download_finished(self, success: bool, message: str):
+        """Handle download completion."""
+        if success:
+            self.dock_widget.set_download_progress(100, "Download complete!")
+            self._load_models()
+        else:
+            self.dock_widget.set_models_status(False, "Download failed")
+            self.dock_widget.set_status(f"Error: {message[:50]}")
 
-            self.dock_widget.set_status("Ready")
-            QgsMessageLog.logMessage(
-                "SAM models loaded successfully",
-                "AI Segmentation",
-                level=Qgis.Success
-            )
-
-        except Exception as e:
-            QgsMessageLog.logMessage(
-                f"Failed to initialize models: {str(e)}",
-                "AI Segmentation",
-                level=Qgis.Critical
-            )
-            self.dock_widget.set_status("Model initialization failed")
-
-    def _on_encode_requested(self, layer: QgsRasterLayer):
-        """Handle encoding request from UI."""
-        if not self.encoder:
             QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Encoder Not Ready",
-                "The SAM encoder is not initialized.\n"
-                "Please check that the ONNX models are installed."
+                "Download Failed",
+                f"Failed to download models:\n{message}\n\n"
+                "Please check your internet connection and try again."
+            )
+
+    # ==================== Segmentation ====================
+
+    def _on_start_segmentation(self, layer: QgsRasterLayer):
+        """Handle start segmentation request."""
+        if self.sam_model is None or not self.sam_model.is_loaded:
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                "Not Ready",
+                "Please download models first."
             )
             return
 
-        # Check for cached features
-        from .core.sam_encoder import has_cached_features, load_features, get_features_path
+        # Check if layer is already prepared
+        if self.sam_model.is_ready and self.sam_model.get_current_layer() == layer:
+            self._activate_segmentation_tool()
+            return
 
-        if has_cached_features(layer):
-            reply = QMessageBox.question(
+        # Need to prepare layer
+        self.dock_widget.set_preparation_progress(0, "Preparing layer...")
+
+        self.prep_worker = PreparationWorker(self.sam_model, layer)
+        self.prep_worker.progress.connect(self._on_prep_progress)
+        self.prep_worker.finished.connect(
+            lambda s, m: self._on_prep_finished(s, m, layer)
+        )
+        self.prep_worker.start()
+
+    def _on_prep_progress(self, percent: int, message: str):
+        """Handle preparation progress."""
+        self.dock_widget.set_preparation_progress(percent, message)
+
+    def _on_prep_finished(self, success: bool, message: str, layer: QgsRasterLayer):
+        """Handle preparation completion."""
+        if success:
+            self.dock_widget.set_preparation_progress(100, "Ready!")
+            self._create_output_layer(layer)
+            self._activate_segmentation_tool()
+        else:
+            self.dock_widget.set_preparation_progress(0, "")
+            QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Cached Features Found",
-                "This image has been encoded before.\n"
-                "Use cached features?",
-                QMessageBox.Yes | QMessageBox.No
+                "Preparation Failed",
+                f"Failed to prepare layer:\n{message}"
             )
 
-            if reply == QMessageBox.Yes:
-                features_path = get_features_path(layer)
-                self.current_features, self.current_transform_info = load_features(features_path)
+    def _activate_segmentation_tool(self):
+        """Activate the segmentation map tool."""
+        self.iface.mapCanvas().setMapTool(self.map_tool)
+        self.dock_widget.set_segmentation_active(True)
+        self.dock_widget.set_status("Click on the map to segment")
 
-                if self.current_features is not None:
-                    self.dock_widget.set_encoding_progress(100, "Features loaded from cache")
-                    self.dock_widget.set_features_loaded(True)
-                    self._create_output_layer(layer)
-                    return
+    def _on_stop_segmentation(self):
+        """Handle stop segmentation request."""
+        self.iface.mapCanvas().unsetMapTool(self.map_tool)
+        self.dock_widget.set_segmentation_active(False)
+        self.dock_widget.set_status("Ready")
 
-        # Start encoding in a worker thread
-        self.dock_widget.set_encoding_progress(0, "Starting encoding...")
-
-        self.encoding_worker = EncodingWorker(self.encoder, layer)
-        self.encoding_worker.progress.connect(self._on_encoding_progress)
-        self.encoding_worker.finished.connect(
-            lambda f, t: self._on_encoding_finished(f, t, layer)
-        )
-        self.encoding_worker.error.connect(self._on_encoding_error)
-        self.encoding_worker.start()
-
-    def _on_encoding_progress(self, percent: int, message: str):
-        """Handle encoding progress updates."""
-        self.dock_widget.set_encoding_progress(percent, message)
-
-    def _on_encoding_finished(self, features, transform_info, layer):
-        """Handle encoding completion."""
-        self.current_features = features
-        self.current_transform_info = transform_info
-
-        # Save features to cache
-        from .core.sam_encoder import save_features, get_features_path
-        features_path = get_features_path(layer)
-        save_features(features, transform_info, features_path)
-
-        self.dock_widget.set_encoding_progress(100, "Encoding complete!")
-        self.dock_widget.set_features_loaded(True)
-        self._create_output_layer(layer)
-
-    def _on_encoding_error(self, error_message: str):
-        """Handle encoding error."""
-        self.dock_widget.set_encoding_progress(0, "Encoding failed")
-        QMessageBox.critical(
-            self.iface.mainWindow(),
-            "Encoding Error",
-            f"Failed to encode image:\n{error_message}"
-        )
+    def _on_tool_deactivated(self):
+        """Handle map tool deactivation."""
+        self.dock_widget.set_segmentation_active(False)
 
     def _create_output_layer(self, source_layer: QgsRasterLayer):
-        """Create or get the output vector layer."""
+        """Create output vector layer."""
         from .core.polygon_exporter import create_output_layer
 
         if self.output_layer is None or not self.output_layer.isValid():
@@ -410,95 +467,65 @@ class AISegmentationPlugin:
             )
             QgsProject.instance().addMapLayer(self.output_layer)
 
-    def _on_tool_activation(self, activate: bool):
-        """Handle tool activation request."""
-        if activate:
-            if self.current_features is None:
-                QMessageBox.warning(
-                    self.iface.mainWindow(),
-                    "No Features",
-                    "Please encode an image first."
-                )
-                self.dock_widget.set_tool_active(False)
-                return
-
-            self.iface.mapCanvas().setMapTool(self.map_tool)
-            self.dock_widget.set_status("Click on the map to segment")
-        else:
-            self.iface.mapCanvas().unsetMapTool(self.map_tool)
-            self.dock_widget.set_status("Ready")
-
-    def _on_tool_deactivated(self):
-        """Handle map tool deactivation."""
-        self.dock_widget.set_tool_active(False)
+    # ==================== Click Handling ====================
 
     def _on_positive_click(self, point):
-        """Handle positive (foreground) click."""
-        self.prompt_manager.add_positive(point.x(), point.y())
-        self._update_segmentation()
+        """Handle positive click."""
+        if self.sam_model is None or not self.sam_model.is_ready:
+            return
+
+        self.current_mask, self.current_score = self.sam_model.add_positive_point(
+            point.x(), point.y()
+        )
+        self._update_ui_after_click()
 
     def _on_negative_click(self, point):
-        """Handle negative (background) click."""
-        self.prompt_manager.add_negative(point.x(), point.y())
-        self._update_segmentation()
-
-    def _update_segmentation(self):
-        """Update segmentation based on current prompts."""
-        if self.current_features is None or self.decoder is None:
+        """Handle negative click."""
+        if self.sam_model is None or not self.sam_model.is_ready:
             return
 
-        points, labels = self.prompt_manager.get_all_points()
-
-        # Update UI
-        pos_count, neg_count = self.prompt_manager.point_count
-        self.dock_widget.set_point_count(pos_count, neg_count)
-
-        if not points:
-            return
-
-        # Run decoder
-        self.current_mask, self.current_score = self.decoder.predict_mask(
-            self.current_features,
-            points,
-            labels,
-            self.current_transform_info
+        self.current_mask, self.current_score = self.sam_model.add_negative_point(
+            point.x(), point.y()
         )
+        self._update_ui_after_click()
+
+    def _update_ui_after_click(self):
+        """Update UI after click."""
+        pos_count, neg_count = self.sam_model.prompts.point_count
+        self.dock_widget.set_point_count(pos_count, neg_count)
 
         if self.current_mask is not None:
             self.dock_widget.set_status(f"Mask score: {self.current_score:.3f}")
-            # TODO: Display mask preview on canvas
 
     def _on_clear_points(self):
-        """Clear all prompt points."""
-        self.prompt_manager.clear()
+        """Clear all points."""
+        if self.sam_model:
+            self.sam_model.clear_points()
+
         self.current_mask = None
         self.current_score = 0.0
         self.dock_widget.set_point_count(0, 0)
         self.dock_widget.set_status("Points cleared")
-        # TODO: Clear mask preview
 
     def _on_undo(self):
-        """Undo the last point."""
-        if self.prompt_manager.undo():
-            self._update_segmentation()
+        """Undo last point."""
+        if self.sam_model is None:
+            return
+
+        self.current_mask, self.current_score = self.sam_model.undo_point()
+        self._update_ui_after_click()
 
     def _on_save_mask(self):
-        """Save the current mask to the output layer."""
+        """Save current mask."""
         if self.current_mask is None:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 "No Mask",
-                "No segmentation mask to save.\n"
                 "Click on the map to create a segmentation first."
             )
             return
 
         if self.output_layer is None:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                "No Output Layer",
-                "Output layer not created."
-            )
             return
 
         from .core.polygon_exporter import add_mask_to_layer
@@ -506,24 +533,22 @@ class AISegmentationPlugin:
         count = add_mask_to_layer(
             self.output_layer,
             self.current_mask,
-            self.current_transform_info,
+            self.sam_model.get_transform_info(),
             self.current_score
         )
 
         if count > 0:
             self.dock_widget.set_status(f"Saved {count} polygon(s)")
-            # Clear for next segmentation
             self._on_clear_points()
         else:
             self.dock_widget.set_status("Failed to save mask")
 
     def _on_export(self, output_path: str):
-        """Export the output layer to a file."""
+        """Export to GeoPackage."""
         if self.output_layer is None or self.output_layer.featureCount() == 0:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 "Nothing to Export",
-                "No segmentation results to export.\n"
                 "Save some masks first."
             )
             return
