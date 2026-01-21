@@ -294,28 +294,37 @@ class PromptManager:
         """Initialize the prompt manager."""
         self.positive_points: List[Tuple[float, float]] = []
         self.negative_points: List[Tuple[float, float]] = []
+        # Track order of all point additions for proper LIFO undo
+        self.prompt_history: List[str] = []  # "positive" or "negative"
 
     def add_positive(self, x: float, y: float):
         """Add a positive (foreground) point."""
         self.positive_points.append((x, y))
+        self.prompt_history.append("positive")
 
     def add_negative(self, x: float, y: float):
         """Add a negative (background) point."""
         self.negative_points.append((x, y))
+        self.prompt_history.append("negative")
 
     def undo(self) -> bool:
         """
         Remove the last added point (either positive or negative).
 
+        Uses prompt_history to properly implement LIFO (Last-In-First-Out)
+        behavior, removing the most recently added point regardless of type.
+
         Returns:
             True if a point was removed
         """
-        # We need to track the order of all points to undo properly
-        # For simplicity, just remove from positive first, then negative
-        if self.positive_points:
+        if not self.prompt_history:
+            return False
+
+        last_type = self.prompt_history.pop()
+        if last_type == "positive" and self.positive_points:
             self.positive_points.pop()
             return True
-        elif self.negative_points:
+        elif last_type == "negative" and self.negative_points:
             self.negative_points.pop()
             return True
         return False
@@ -324,6 +333,7 @@ class PromptManager:
         """Clear all points."""
         self.positive_points.clear()
         self.negative_points.clear()
+        self.prompt_history.clear()
 
     def get_all_points(self) -> Tuple[List[Tuple[float, float]], List[int]]:
         """

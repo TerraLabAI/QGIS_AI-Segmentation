@@ -70,7 +70,63 @@ Models are automatically downloaded from HuggingFace on first run:
 1. **Encoding (Heavy)**: `sam_encoder.py` processes the raster once, saves features to `.ai_segmentation_cache/`
 2. **Decoding (Light)**: `sam_decoder.py` runs in ~50-200ms per click using cached features
 
-This is hidden from users - they just click "Start Segmentation" and it works.
+This is hidden from users - they just click "Start Point Mode" and it works.
+
+## Map Tool Mechanism (CRITICAL)
+
+### How Point Clicking Works in QGIS
+
+QGIS uses a **Map Tool** system to handle mouse interactions on the map canvas:
+- By default, the "Pan" tool (hand icon) is active - it only pans the map
+- To place points, you must **activate a custom QgsMapTool**
+- When active, the cursor changes (e.g., to a crosshair) and clicks are captured
+
+### Our Implementation
+
+```
+ai_segmentation_maptool.py    → AISegmentationMapTool (inherits QgsMapTool)
+ai_segmentation_plugin.py     → Main coordinator
+ai_segmentation_dockwidget.py → UI with "Start Point Mode" button
+```
+
+### Activation Flow
+
+```
+1. User clicks "▶ Start Point Mode" button
+   ↓
+2. dock_widget emits start_segmentation_requested signal
+   ↓
+3. plugin._on_start_segmentation() is called
+   ↓
+4. If layer needs preparation → runs PreparationWorker (encoding)
+   ↓
+5. plugin._activate_segmentation_tool() is called:
+   self.iface.mapCanvas().setMapTool(self.map_tool)  ← THIS IS KEY
+   ↓
+6. Cursor changes to crosshair, clicks are now captured
+   ↓
+7. AISegmentationMapTool.canvasPressEvent() handles clicks
+   ↓
+8. Emits positive_click or negative_click signal
+   ↓
+9. Plugin calls SAM model to generate mask
+```
+
+### Key Code Locations
+
+- **Tool creation**: `ai_segmentation_plugin.py:186` - `AISegmentationMapTool(self.iface.mapCanvas())`
+- **Tool activation**: `ai_segmentation_plugin.py:499` - `self.iface.mapCanvas().setMapTool(self.map_tool)`
+- **Click handling**: `ai_segmentation_maptool.py:120-139` - `canvasPressEvent()`
+- **Signal connection**: `ai_segmentation_plugin.py:187-188` - connects click signals to handlers
+
+### Important: Why Button Must Be Enabled
+
+The "Start Point Mode" button is only enabled when:
+1. Dependencies are installed (`_dependencies_ok = True`)
+2. Models are downloaded and loaded (`_models_ok = True`)
+3. A raster layer is selected (`layer_combo.currentLayer() is not None`)
+
+See `ai_segmentation_dockwidget.py:_update_ui_state()` for the logic.
 
 ## User Experience Flow
 
@@ -81,13 +137,24 @@ This is hidden from users - they just click "Start Segmentation" and it works.
    → "Models not downloaded" → Click "Download Models"
    → Progress bar shows download (~109MB)
    → "Models ready ✓"
-4. Select raster layer
-5. Click "Start Segmentation"
+4. Select raster layer from dropdown
+5. Click "▶ Start Point Mode" button
    → If first time: "Preparing layer..." (auto-encode, 1-5 min)
    → If cached: instant start
-6. Click on map → instant segmentation
-7. Save masks, export to GeoPackage
+   → Cursor changes to CROSSHAIR ← User can now click on map!
+6. Left-click on map → foreground point (green marker)
+7. Right-click on map → background point (red marker)
+8. Mask appears instantly after each click
+9. Click "Save Current Mask" to save
+10. Click "■ Stop Point Mode" or press Escape to exit
+11. Export to GeoPackage when done
 ```
+
+### Keyboard Shortcuts (when Point Mode is active)
+- **Left-click**: Add foreground point (include this area)
+- **Right-click**: Add background point (exclude this area)
+- **Ctrl+Z**: Undo last point
+- **Escape**: Stop point mode and return to normal pan tool
 
 ## Development Commands
 
@@ -118,12 +185,18 @@ if not models_exist():
 
 ## Key Considerations
 
+- **Raster layer support**: The plugin supports both:
+  - **File-based rasters** (GeoTIFF, JPEG, PNG, etc.) - uses native resolution
+  - **Web layers** (XYZ, WMS, Google Satellite) - renders at max_size resolution
+  - Note: For web layers, the current map extent is used and rendered at a fixed resolution
 - **Language**: All code and comments in English
 - **QGIS Compatibility**: Target QGIS 3.28 LTR minimum
 - **No GPU Required**: Use `onnxruntime` CPU provider, not `onnxruntime-gpu`
 - **Coordinate Systems**: Preserve source raster CRS throughout
 - **Memory**: Handle large rasters by limiting read size (see `max_size` in `image_utils.py`)
-- **Caching**: Features are cached per-image in `.ai_segmentation_cache/` folders
+- **Caching**: Features are cached per-image:
+  - **File-based rasters** (GeoTIFF, etc.): `.ai_segmentation_cache/` folder next to the file
+  - **Web-based layers** (XYZ, WMS, Google Satellite): `~/.qgis_ai_segmentation_cache/<hash>/` in user home
 - **Plug-and-play**: Users should never need to manually download or configure models
 
 ## Code Style
@@ -135,7 +208,11 @@ if not models_exist():
 
 ## TODO / Roadmap
 
-- [ ] Add mask preview overlay on map canvas
+- [x] Add mask preview overlay on map canvas (RubberBand + Preview Layer)
+- [x] LIFO undo with prompt_history tracking
+- [x] Ctrl+Z keyboard shortcut for undo
+- [x] Cancel buttons for download/preparation
+- [x] Layer change detection (auto-stop segmentation)
 - [ ] Add bounding box prompt support
 - [ ] Add GPU support (optional)
 - [ ] Create Processing algorithm for batch mode

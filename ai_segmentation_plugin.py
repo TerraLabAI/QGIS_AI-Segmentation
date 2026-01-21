@@ -16,10 +16,13 @@ from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal
 from qgis.core import (
     QgsProject,
     QgsRasterLayer,
+    QgsVectorLayer,
     QgsMessageLog,
     Qgis,
     QgsWkbTypes,
     QgsGeometry,
+    QgsFeature,
+    QgsFillSymbol,
 )
 from qgis.gui import QgisInterface, QgsRubberBand
 from qgis.PyQt.QtGui import QColor
@@ -137,6 +140,7 @@ class AISegmentationPlugin:
 
         # Visual feedback
         self.mask_rubber_band: Optional[QgsRubberBand] = None
+        self.preview_layer: Optional['QgsVectorLayer'] = None
 
     def initGui(self):
         """
@@ -172,6 +176,8 @@ class AISegmentationPlugin:
         # Connect dock widget signals
         self.dock_widget.install_dependencies_requested.connect(self._on_install_requested)
         self.dock_widget.download_models_requested.connect(self._on_download_requested)
+        self.dock_widget.cancel_download_requested.connect(self._on_cancel_download)
+        self.dock_widget.cancel_preparation_requested.connect(self._on_cancel_preparation)
         self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
         self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
         self.dock_widget.clear_points_requested.connect(self._on_clear_points)
@@ -187,6 +193,7 @@ class AISegmentationPlugin:
         self.map_tool.positive_click.connect(self._on_positive_click)
         self.map_tool.negative_click.connect(self._on_negative_click)
         self.map_tool.tool_deactivated.connect(self._on_tool_deactivated)
+        self.map_tool.undo_requested.connect(self._on_undo)
 
         # Create rubber band for mask visualization
         self.mask_rubber_band = QgsRubberBand(
@@ -226,6 +233,11 @@ class AISegmentationPlugin:
         if self.mask_rubber_band:
             self.iface.mapCanvas().scene().removeItem(self.mask_rubber_band)
             self.mask_rubber_band = None
+
+        # Remove preview layer
+        if self.preview_layer is not None:
+            QgsProject.instance().removeMapLayer(self.preview_layer.id())
+            self.preview_layer = None
 
         # Clean up workers
         for worker in [self.install_worker, self.download_worker, self.prep_worker]:
@@ -415,6 +427,33 @@ class AISegmentationPlugin:
                 "Please check your internet connection and try again."
             )
 
+    def _on_cancel_download(self):
+        """Handle cancel download request."""
+        if self.download_worker and self.download_worker.isRunning():
+            self.download_worker.terminate()
+            self.download_worker.wait()
+            self.dock_widget.set_download_progress(0, "Cancelled")
+            self.dock_widget.set_models_status(False, "Download cancelled")
+            self.dock_widget.set_status("Download cancelled by user")
+            QgsMessageLog.logMessage(
+                "Model download cancelled by user",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+
+    def _on_cancel_preparation(self):
+        """Handle cancel preparation request."""
+        if self.prep_worker and self.prep_worker.isRunning():
+            self.prep_worker.terminate()
+            self.prep_worker.wait()
+            self.dock_widget.set_preparation_progress(0, "Cancelled")
+            self.dock_widget.set_status("Layer preparation cancelled by user")
+            QgsMessageLog.logMessage(
+                "Layer preparation cancelled by user",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+
     # ==================== Segmentation ====================
 
     def _on_start_segmentation(self, layer: QgsRasterLayer):
@@ -490,6 +529,83 @@ class AISegmentationPlugin:
             )
             QgsProject.instance().addMapLayer(self.output_layer)
 
+        # Also create preview layer for current mask visualization
+        self._create_preview_layer(source_layer.crs())
+
+    def _create_preview_layer(self, crs):
+        """
+        Create a temporary memory layer for mask preview visualization.
+
+        This layer appears in the Layers panel and shows the current
+        segmentation mask in real-time.
+        """
+        # Remove existing preview layer if any
+        if self.preview_layer is not None:
+            QgsProject.instance().removeMapLayer(self.preview_layer.id())
+            self.preview_layer = None
+
+        # Create memory layer
+        self.preview_layer = QgsVectorLayer(
+            f"Polygon?crs={crs.authid()}",
+            "AI_Segmentation_Preview",
+            "memory"
+        )
+
+        if not self.preview_layer.isValid():
+            QgsMessageLog.logMessage(
+                "Failed to create preview layer",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            return
+
+        # Style with semi-transparent blue fill
+        symbol = QgsFillSymbol.createSimple({
+            'color': '0,120,255,100',  # Semi-transparent blue
+            'outline_color': '0,80,200,255',  # Darker blue outline
+            'outline_width': '0.5'
+        })
+        self.preview_layer.renderer().setSymbol(symbol)
+
+        # Add to project but don't select it
+        QgsProject.instance().addMapLayer(self.preview_layer, False)
+        # Add to layer tree at the top
+        root = QgsProject.instance().layerTreeRoot()
+        root.insertLayer(0, self.preview_layer)
+
+    def _update_preview_layer(self, geometries):
+        """Update the preview layer with new geometries."""
+        if self.preview_layer is None or not self.preview_layer.isValid():
+            return
+
+        # Clear existing features
+        self.preview_layer.startEditing()
+        self.preview_layer.deleteFeatures(
+            [f.id() for f in self.preview_layer.getFeatures()]
+        )
+
+        # Add new features
+        if geometries:
+            for geom in geometries:
+                feature = QgsFeature()
+                feature.setGeometry(geom)
+                self.preview_layer.addFeature(feature)
+
+        self.preview_layer.commitChanges()
+        self.preview_layer.triggerRepaint()
+
+    def _clear_preview_layer(self):
+        """Clear all features from the preview layer."""
+        if self.preview_layer is None or not self.preview_layer.isValid():
+            return
+
+        self.preview_layer.startEditing()
+        self.preview_layer.deleteFeatures(
+            [f.id() for f in self.preview_layer.getFeatures()]
+        )
+        self.preview_layer.commitChanges()
+        self.preview_layer.triggerRepaint()
+
     # ==================== Click Handling ====================
 
     def _on_positive_click(self, point):
@@ -524,7 +640,7 @@ class AISegmentationPlugin:
             self._clear_mask_visualization()
 
     def _update_mask_visualization(self):
-        """Update the rubber band to show the current segmentation mask."""
+        """Update the rubber band and preview layer to show the current segmentation mask."""
         if self.mask_rubber_band is None:
             return
 
@@ -545,6 +661,8 @@ class AISegmentationPlugin:
                 combined = QgsGeometry.unaryUnion(geometries)
                 if combined and not combined.isEmpty():
                     self.mask_rubber_band.setToGeometry(combined, None)
+                    # Also update the preview layer
+                    self._update_preview_layer(geometries)
                 else:
                     self._clear_mask_visualization()
             else:
@@ -559,9 +677,10 @@ class AISegmentationPlugin:
             self._clear_mask_visualization()
 
     def _clear_mask_visualization(self):
-        """Clear the mask rubber band."""
+        """Clear the mask rubber band and preview layer."""
         if self.mask_rubber_band:
             self.mask_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
+        self._clear_preview_layer()
 
     def _on_clear_points(self):
         """Clear all points, markers, and mask visualization."""
@@ -616,8 +735,7 @@ class AISegmentationPlugin:
         )
 
         if count > 0:
-            self.dock_widget.set_status(f"Saved {count} polygon(s)")
-            self._on_clear_points()
+            self.dock_widget.set_status(f"Saved {count} polygon(s) - click Clear to start new selection")
         else:
             self.dock_widget.set_status("Failed to save mask")
 

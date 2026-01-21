@@ -17,6 +17,7 @@ from qgis.PyQt.QtWidgets import (
     QFileDialog,
     QFrame,
     QTextEdit,
+    QMessageBox,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtGui import QFont
@@ -39,6 +40,8 @@ class AISegmentationDockWidget(QDockWidget):
     # Signals
     install_dependencies_requested = pyqtSignal()
     download_models_requested = pyqtSignal()
+    cancel_download_requested = pyqtSignal()
+    cancel_preparation_requested = pyqtSignal()
     start_segmentation_requested = pyqtSignal(object)  # QgsRasterLayer
     clear_points_requested = pyqtSignal()
     undo_requested = pyqtSignal()
@@ -161,6 +164,13 @@ class AISegmentationDockWidget(QDockWidget):
         self.download_button.setEnabled(False)
         layout.addWidget(self.download_button)
 
+        # Cancel download button (hidden by default)
+        self.cancel_download_button = QPushButton("Cancel Download")
+        self.cancel_download_button.clicked.connect(self._on_cancel_download_clicked)
+        self.cancel_download_button.setVisible(False)
+        self.cancel_download_button.setStyleSheet("background-color: #d32f2f; color: white;")
+        layout.addWidget(self.cancel_download_button)
+
         self.main_layout.addWidget(group)
 
     def _setup_segmentation_section(self):
@@ -176,15 +186,33 @@ class AISegmentationDockWidget(QDockWidget):
         self.layer_combo.setFilters(QgsMapLayerProxyModel.RasterLayer)
         self.layer_combo.setAllowEmptyLayer(True)
         self.layer_combo.setShowCrs(True)
+        self.layer_combo.layerChanged.connect(self._on_layer_changed)
         layout.addWidget(self.layer_combo)
 
-        # Instructions
-        instructions = QLabel(
-            "Left-click: Add point (include)\n"
-            "Right-click: Add point (exclude)"
+        # Instructions (shown when segmentation is not active)
+        self.instructions_label = QLabel(
+            "Select a raster layer and click 'Start Point Mode'.\n"
+            "Supports GeoTIFF, XYZ tiles, and other raster formats."
         )
-        instructions.setStyleSheet("color: gray; font-style: italic; font-size: 10px;")
-        layout.addWidget(instructions)
+        self.instructions_label.setStyleSheet("color: #666; font-size: 10px;")
+        self.instructions_label.setWordWrap(True)
+        layout.addWidget(self.instructions_label)
+
+        # Active mode instructions (shown when segmentation is active)
+        self.active_instructions_label = QLabel(
+            "🎯 POINT MODE ACTIVE\n"
+            "• Left-click: Add foreground point (include)\n"
+            "• Right-click: Add background point (exclude)\n"
+            "• Ctrl+Z: Undo last point\n"
+            "• Escape: Stop segmentation"
+        )
+        self.active_instructions_label.setStyleSheet(
+            "color: #1976d2; font-size: 10px; font-weight: bold; "
+            "background-color: #e3f2fd; padding: 8px; border-radius: 4px;"
+        )
+        self.active_instructions_label.setWordWrap(True)
+        self.active_instructions_label.setVisible(False)
+        layout.addWidget(self.active_instructions_label)
 
         # Preparation progress (hidden by default)
         self.prep_progress = QProgressBar()
@@ -197,14 +225,26 @@ class AISegmentationDockWidget(QDockWidget):
         self.prep_status_label.setVisible(False)
         layout.addWidget(self.prep_status_label)
 
+        # Cancel preparation button (hidden by default)
+        self.cancel_prep_button = QPushButton("Cancel Preparation")
+        self.cancel_prep_button.clicked.connect(self._on_cancel_prep_clicked)
+        self.cancel_prep_button.setVisible(False)
+        self.cancel_prep_button.setStyleSheet("background-color: #d32f2f; color: white;")
+        layout.addWidget(self.cancel_prep_button)
+
         # Point counter
         self.point_counter_label = QLabel("Points: 0 positive, 0 negative")
         layout.addWidget(self.point_counter_label)
 
-        # Start/Stop button
-        self.start_button = QPushButton("Start Segmentation")
+        # Start/Stop button - this activates the map tool for clicking
+        self.start_button = QPushButton("▶ Start Point Mode")
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._on_start_clicked)
+        self.start_button.setToolTip(
+            "Click to activate point placement mode.\n"
+            "Your cursor will change to a crosshair,\n"
+            "allowing you to click on the map to add points."
+        )
         layout.addWidget(self.start_button)
 
         # Button row
@@ -262,6 +302,29 @@ class AISegmentationDockWidget(QDockWidget):
         """Handle download button click."""
         self.download_button.setEnabled(False)
         self.download_models_requested.emit()
+
+    def _on_cancel_download_clicked(self):
+        """Handle cancel download button click."""
+        self.cancel_download_requested.emit()
+
+    def _on_cancel_prep_clicked(self):
+        """Handle cancel preparation button click."""
+        self.cancel_preparation_requested.emit()
+
+    def _on_layer_changed(self, layer):
+        """Handle layer selection change."""
+        # Always update UI state when layer changes (to enable/disable Start button)
+        self._update_ui_state()
+
+        # If segmentation was active, stop it and warn user
+        if self._segmentation_active:
+            self.stop_segmentation_requested.emit()
+            QMessageBox.warning(
+                self,
+                "Layer Changed",
+                "Segmentation stopped because the layer was changed.\n\n"
+                "Please click 'Start Segmentation' again to continue with the new layer."
+            )
 
     def _on_start_clicked(self):
         """Handle start/stop button click."""
@@ -356,9 +419,11 @@ class AISegmentationDockWidget(QDockWidget):
             self.models_progress.setVisible(True)
             self.models_progress_label.setVisible(True)
             self.download_button.setEnabled(False)
-        elif percent >= 100:
+            self.cancel_download_button.setVisible(True)
+        elif percent >= 100 or "cancel" in message.lower():
             self.models_progress.setVisible(False)
             self.models_progress_label.setVisible(False)
+            self.cancel_download_button.setVisible(False)
 
     def set_preparation_progress(self, percent: int, message: str):
         """Update layer preparation progress."""
@@ -369,9 +434,11 @@ class AISegmentationDockWidget(QDockWidget):
             self.prep_progress.setVisible(True)
             self.prep_status_label.setVisible(True)
             self.start_button.setEnabled(False)
-        elif percent >= 100:
+            self.cancel_prep_button.setVisible(True)
+        elif percent >= 100 or "cancel" in message.lower():
             self.prep_progress.setVisible(False)
             self.prep_status_label.setVisible(False)
+            self.cancel_prep_button.setVisible(False)
             self._update_ui_state()
 
     def set_segmentation_active(self, active: bool):
@@ -379,12 +446,18 @@ class AISegmentationDockWidget(QDockWidget):
         self._segmentation_active = active
 
         if active:
-            self.start_button.setText("Stop Segmentation")
+            self.start_button.setText("■ Stop Point Mode")
             self.start_button.setStyleSheet("background-color: #d32f2f; color: white;")
             self.start_button.setEnabled(True)
+            # Show active instructions, hide inactive
+            self.instructions_label.setVisible(False)
+            self.active_instructions_label.setVisible(True)
         else:
-            self.start_button.setText("Start Segmentation")
+            self.start_button.setText("▶ Start Point Mode")
             self.start_button.setStyleSheet("")
+            # Show inactive instructions, hide active
+            self.instructions_label.setVisible(True)
+            self.active_instructions_label.setVisible(False)
 
         self._update_ui_state()
 
