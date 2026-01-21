@@ -2,7 +2,7 @@
 Dock Widget for AI Segmentation
 
 Main user interface panel for the segmentation plugin.
-Simplified interface - no manual encoding required.
+Shows clear status for each step: Dependencies → Models → Ready
 """
 
 from qgis.PyQt.QtWidgets import (
@@ -16,6 +16,7 @@ from qgis.PyQt.QtWidgets import (
     QProgressBar,
     QFileDialog,
     QFrame,
+    QTextEdit,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtGui import QFont
@@ -28,14 +29,15 @@ class AISegmentationDockWidget(QDockWidget):
     """
     Main dock widget for the AI Segmentation plugin.
 
-    Simplified interface:
-    - Select layer
-    - Start Segmentation (auto-downloads models, auto-encodes)
-    - Click to segment
-    - Export results
+    Clear step-by-step interface:
+    1. Check/Install Dependencies
+    2. Download Models
+    3. Select Layer → Start Segmentation
+    4. Export Results
     """
 
     # Signals
+    install_dependencies_requested = pyqtSignal()
     download_models_requested = pyqtSignal()
     start_segmentation_requested = pyqtSignal(object)  # QgsRasterLayer
     clear_points_requested = pyqtSignal()
@@ -53,16 +55,16 @@ class AISegmentationDockWidget(QDockWidget):
         # Create main widget and layout
         self.main_widget = QWidget()
         self.main_layout = QVBoxLayout(self.main_widget)
-        self.main_layout.setSpacing(10)
+        self.main_layout.setSpacing(8)
 
         self._setup_ui()
 
         self.setWidget(self.main_widget)
 
         # State
-        self._models_ready = False
+        self._dependencies_ok = False
+        self._models_ok = False
         self._segmentation_active = False
-        self._layer_ready = False
 
     def _setup_ui(self):
         """Set up the user interface."""
@@ -75,22 +77,21 @@ class AISegmentationDockWidget(QDockWidget):
         title_label.setAlignment(Qt.AlignCenter)
         self.main_layout.addWidget(title_label)
 
-        # Separator
         self._add_separator()
 
-        # Model Status Section
-        self._setup_model_section()
+        # Step 1: Dependencies
+        self._setup_dependencies_section()
 
-        # Source Layer Section
-        self._setup_source_section()
+        # Step 2: Models
+        self._setup_models_section()
 
-        # Segmentation Section
+        # Step 3: Segmentation
         self._setup_segmentation_section()
 
-        # Export Section
+        # Step 4: Export
         self._setup_export_section()
 
-        # Add stretch at the bottom
+        # Stretch at bottom
         self.main_layout.addStretch()
 
         # Status bar
@@ -103,68 +104,96 @@ class AISegmentationDockWidget(QDockWidget):
         line.setFrameShadow(QFrame.Sunken)
         self.main_layout.addWidget(line)
 
-    def _setup_model_section(self):
-        """Set up the model status section."""
-        group = QGroupBox("Model")
+    def _setup_dependencies_section(self):
+        """Set up the dependencies section."""
+        group = QGroupBox("Step 1: Dependencies")
         layout = QVBoxLayout(group)
 
-        # Model status label
-        self.model_status_label = QLabel("Checking models...")
-        layout.addWidget(self.model_status_label)
+        # Status label
+        self.deps_status_label = QLabel("Checking...")
+        layout.addWidget(self.deps_status_label)
 
         # Progress bar (hidden by default)
-        self.model_progress = QProgressBar()
-        self.model_progress.setRange(0, 100)
-        self.model_progress.setValue(0)
-        self.model_progress.setVisible(False)
-        layout.addWidget(self.model_progress)
+        self.deps_progress = QProgressBar()
+        self.deps_progress.setRange(0, 100)
+        self.deps_progress.setVisible(False)
+        layout.addWidget(self.deps_progress)
 
-        # Download button (hidden when models are ready)
-        self.download_button = QPushButton("Download Models (~109 MB)")
-        self.download_button.clicked.connect(self._on_download_clicked)
-        self.download_button.setVisible(False)
-        layout.addWidget(self.download_button)
+        # Progress message
+        self.deps_progress_label = QLabel("")
+        self.deps_progress_label.setStyleSheet("color: gray; font-size: 10px;")
+        self.deps_progress_label.setVisible(False)
+        layout.addWidget(self.deps_progress_label)
+
+        # Install button
+        self.install_button = QPushButton("Install Dependencies")
+        self.install_button.clicked.connect(self._on_install_clicked)
+        self.install_button.setVisible(False)
+        layout.addWidget(self.install_button)
 
         self.main_layout.addWidget(group)
 
-    def _setup_source_section(self):
-        """Set up the source layer selection section."""
-        group = QGroupBox("Source Layer")
+    def _setup_models_section(self):
+        """Set up the models section."""
+        group = QGroupBox("Step 2: AI Models")
         layout = QVBoxLayout(group)
 
-        # Layer combo box
-        self.layer_combo = QgsMapLayerComboBox()
-        self.layer_combo.setFilters(QgsMapLayerProxyModel.RasterLayer)
-        self.layer_combo.setAllowEmptyLayer(True)
-        self.layer_combo.setShowCrs(True)
-        self.layer_combo.layerChanged.connect(self._on_layer_changed)
-        layout.addWidget(self.layer_combo)
+        # Status label
+        self.models_status_label = QLabel("Waiting for dependencies...")
+        layout.addWidget(self.models_status_label)
+
+        # Progress bar (hidden by default)
+        self.models_progress = QProgressBar()
+        self.models_progress.setRange(0, 100)
+        self.models_progress.setVisible(False)
+        layout.addWidget(self.models_progress)
+
+        # Progress message
+        self.models_progress_label = QLabel("")
+        self.models_progress_label.setStyleSheet("color: gray; font-size: 10px;")
+        self.models_progress_label.setVisible(False)
+        layout.addWidget(self.models_progress_label)
+
+        # Download button
+        self.download_button = QPushButton("Download Models (~109 MB)")
+        self.download_button.clicked.connect(self._on_download_clicked)
+        self.download_button.setVisible(False)
+        self.download_button.setEnabled(False)
+        layout.addWidget(self.download_button)
 
         self.main_layout.addWidget(group)
 
     def _setup_segmentation_section(self):
         """Set up the segmentation controls section."""
-        group = QGroupBox("Segmentation")
+        group = QGroupBox("Step 3: Segmentation")
         layout = QVBoxLayout(group)
+
+        # Layer selection
+        layer_label = QLabel("Select raster layer:")
+        layout.addWidget(layer_label)
+
+        self.layer_combo = QgsMapLayerComboBox()
+        self.layer_combo.setFilters(QgsMapLayerProxyModel.RasterLayer)
+        self.layer_combo.setAllowEmptyLayer(True)
+        self.layer_combo.setShowCrs(True)
+        layout.addWidget(self.layer_combo)
 
         # Instructions
         instructions = QLabel(
             "Left-click: Add point (include)\n"
             "Right-click: Add point (exclude)"
         )
-        instructions.setStyleSheet("color: gray; font-style: italic;")
+        instructions.setStyleSheet("color: gray; font-style: italic; font-size: 10px;")
         layout.addWidget(instructions)
 
         # Preparation progress (hidden by default)
         self.prep_progress = QProgressBar()
         self.prep_progress.setRange(0, 100)
-        self.prep_progress.setValue(0)
         self.prep_progress.setVisible(False)
         layout.addWidget(self.prep_progress)
 
-        # Preparation status label
         self.prep_status_label = QLabel("")
-        self.prep_status_label.setStyleSheet("color: gray;")
+        self.prep_status_label.setStyleSheet("color: gray; font-size: 10px;")
         self.prep_status_label.setVisible(False)
         layout.addWidget(self.prep_status_label)
 
@@ -197,7 +226,7 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _setup_export_section(self):
         """Set up the export section."""
-        group = QGroupBox("Export")
+        group = QGroupBox("Step 4: Export")
         layout = QVBoxLayout(group)
 
         # Save current mask button
@@ -217,20 +246,22 @@ class AISegmentationDockWidget(QDockWidget):
     def _setup_status_bar(self):
         """Set up the status bar at the bottom."""
         self._add_separator()
-        self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: gray;")
+        self.status_label = QLabel("Open panel to start...")
+        self.status_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.status_label.setWordWrap(True)
         self.main_layout.addWidget(self.status_label)
 
-    # Slots
+    # ==================== Slots ====================
+
+    def _on_install_clicked(self):
+        """Handle install button click."""
+        self.install_button.setEnabled(False)
+        self.install_dependencies_requested.emit()
 
     def _on_download_clicked(self):
         """Handle download button click."""
+        self.download_button.setEnabled(False)
         self.download_models_requested.emit()
-
-    def _on_layer_changed(self, layer):
-        """Handle layer selection change."""
-        self._layer_ready = False
-        self._update_ui_state()
 
     def _on_start_clicked(self):
         """Handle start/stop button click."""
@@ -264,40 +295,73 @@ class AISegmentationDockWidget(QDockWidget):
         if file_path:
             self.export_requested.emit(file_path)
 
-    # Public methods
+    # ==================== Public Methods ====================
 
-    def get_selected_layer(self):
-        """Get the currently selected raster layer."""
-        return self.layer_combo.currentLayer()
+    def set_dependency_status(self, ok: bool, message: str):
+        """Update dependency status display."""
+        self._dependencies_ok = ok
+        self.deps_status_label.setText(message)
 
-    def set_models_status(self, ready: bool, message: str):
-        """Update model status display."""
-        self._models_ready = ready
-        self.model_status_label.setText(message)
-
-        if ready:
-            self.model_status_label.setStyleSheet("color: green;")
-            self.download_button.setVisible(False)
+        if ok:
+            self.deps_status_label.setStyleSheet("color: green; font-weight: bold;")
+            self.install_button.setVisible(False)
+            self.deps_progress.setVisible(False)
+            self.deps_progress_label.setVisible(False)
+            # Enable models section
+            self.download_button.setEnabled(True)
         else:
-            self.model_status_label.setStyleSheet("color: orange;")
-            self.download_button.setVisible(True)
+            self.deps_status_label.setStyleSheet("color: orange;")
+            self.install_button.setVisible(True)
+            self.install_button.setEnabled(True)
+
+        self._update_ui_state()
+
+    def set_install_progress(self, percent: int, message: str):
+        """Update installation progress."""
+        self.deps_progress.setValue(percent)
+        self.deps_progress_label.setText(message)
+
+        if percent == 0:
+            self.deps_progress.setVisible(True)
+            self.deps_progress_label.setVisible(True)
+            self.install_button.setEnabled(False)
+        elif percent >= 100:
+            self.deps_progress.setVisible(False)
+            self.deps_progress_label.setVisible(False)
+
+    def set_models_status(self, ok: bool, message: str):
+        """Update model status display."""
+        self._models_ok = ok
+        self.models_status_label.setText(message)
+
+        if ok:
+            self.models_status_label.setStyleSheet("color: green; font-weight: bold;")
+            self.download_button.setVisible(False)
+            self.models_progress.setVisible(False)
+            self.models_progress_label.setVisible(False)
+        else:
+            self.models_status_label.setStyleSheet("color: orange;")
+            if self._dependencies_ok:
+                self.download_button.setVisible(True)
+                self.download_button.setEnabled(True)
 
         self._update_ui_state()
 
     def set_download_progress(self, percent: int, message: str):
         """Update download progress."""
-        self.model_progress.setValue(percent)
-        self.model_status_label.setText(message)
+        self.models_progress.setValue(percent)
+        self.models_progress_label.setText(message)
 
         if percent == 0:
-            self.model_progress.setVisible(True)
+            self.models_progress.setVisible(True)
+            self.models_progress_label.setVisible(True)
             self.download_button.setEnabled(False)
         elif percent >= 100:
-            self.model_progress.setVisible(False)
-            self.download_button.setVisible(False)
+            self.models_progress.setVisible(False)
+            self.models_progress_label.setVisible(False)
 
     def set_preparation_progress(self, percent: int, message: str):
-        """Update layer preparation (encoding) progress."""
+        """Update layer preparation progress."""
         self.prep_progress.setValue(percent)
         self.prep_status_label.setText(message)
 
@@ -308,7 +372,6 @@ class AISegmentationDockWidget(QDockWidget):
         elif percent >= 100:
             self.prep_progress.setVisible(False)
             self.prep_status_label.setVisible(False)
-            self._layer_ready = True
             self._update_ui_state()
 
     def set_segmentation_active(self, active: bool):
@@ -317,7 +380,8 @@ class AISegmentationDockWidget(QDockWidget):
 
         if active:
             self.start_button.setText("Stop Segmentation")
-            self.start_button.setStyleSheet("background-color: #f44336; color: white;")
+            self.start_button.setStyleSheet("background-color: #d32f2f; color: white;")
+            self.start_button.setEnabled(True)
         else:
             self.start_button.setText("Start Segmentation")
             self.start_button.setStyleSheet("")
@@ -343,11 +407,12 @@ class AISegmentationDockWidget(QDockWidget):
         has_layer = self.layer_combo.currentLayer() is not None
 
         # Start button enabled when:
-        # - Models are ready
-        # - Layer is selected
+        # - Dependencies OK
+        # - Models OK
+        # - Layer selected
         # OR segmentation is active (to allow stopping)
-        can_start = self._models_ready and has_layer
+        can_start = self._dependencies_ok and self._models_ok and has_layer
         self.start_button.setEnabled(can_start or self._segmentation_active)
 
-        # Export enabled when layer is ready
-        self.export_button.setEnabled(self._layer_ready)
+        # Export enabled when models are OK
+        self.export_button.setEnabled(self._models_ok)

@@ -18,8 +18,11 @@ from qgis.core import (
     QgsRasterLayer,
     QgsMessageLog,
     Qgis,
+    QgsWkbTypes,
+    QgsGeometry,
 )
-from qgis.gui import QgisInterface
+from qgis.gui import QgisInterface, QgsRubberBand
+from qgis.PyQt.QtGui import QColor
 
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
@@ -132,6 +135,9 @@ class AISegmentationPlugin:
         self.download_worker = None
         self.prep_worker = None
 
+        # Visual feedback
+        self.mask_rubber_band: Optional[QgsRubberBand] = None
+
     def initGui(self):
         """
         Initialize the plugin GUI.
@@ -182,6 +188,15 @@ class AISegmentationPlugin:
         self.map_tool.negative_click.connect(self._on_negative_click)
         self.map_tool.tool_deactivated.connect(self._on_tool_deactivated)
 
+        # Create rubber band for mask visualization
+        self.mask_rubber_band = QgsRubberBand(
+            self.iface.mapCanvas(),
+            QgsWkbTypes.PolygonGeometry
+        )
+        self.mask_rubber_band.setColor(QColor(0, 120, 255, 100))  # Semi-transparent blue fill
+        self.mask_rubber_band.setStrokeColor(QColor(0, 80, 200))   # Darker blue stroke
+        self.mask_rubber_band.setWidth(2)
+
         # Log that plugin loaded (but don't do any heavy work)
         QgsMessageLog.logMessage(
             "AI Segmentation plugin loaded (checks deferred until panel opens)",
@@ -206,6 +221,11 @@ class AISegmentationPlugin:
             if self.iface.mapCanvas().mapTool() == self.map_tool:
                 self.iface.mapCanvas().unsetMapTool(self.map_tool)
             self.map_tool = None
+
+        # Remove rubber band
+        if self.mask_rubber_band:
+            self.iface.mapCanvas().scene().removeItem(self.mask_rubber_band)
+            self.mask_rubber_band = None
 
         # Clean up workers
         for worker in [self.install_worker, self.download_worker, self.prep_worker]:
@@ -448,6 +468,9 @@ class AISegmentationPlugin:
 
     def _on_stop_segmentation(self):
         """Handle stop segmentation request."""
+        # Clear visual feedback
+        self._clear_mask_visualization()
+
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
         self.dock_widget.set_segmentation_active(False)
         self.dock_widget.set_status("Ready")
@@ -490,17 +513,67 @@ class AISegmentationPlugin:
         self._update_ui_after_click()
 
     def _update_ui_after_click(self):
-        """Update UI after click."""
+        """Update UI and visualizations after click."""
         pos_count, neg_count = self.sam_model.prompts.point_count
         self.dock_widget.set_point_count(pos_count, neg_count)
 
         if self.current_mask is not None:
             self.dock_widget.set_status(f"Mask score: {self.current_score:.3f}")
+            self._update_mask_visualization()
+        else:
+            self._clear_mask_visualization()
+
+    def _update_mask_visualization(self):
+        """Update the rubber band to show the current segmentation mask."""
+        if self.mask_rubber_band is None:
+            return
+
+        if self.current_mask is None or self.sam_model is None:
+            self._clear_mask_visualization()
+            return
+
+        try:
+            # Import here to avoid circular dependency
+            from .core.polygon_exporter import mask_to_polygons
+
+            # Convert mask to polygon geometries
+            transform_info = self.sam_model.get_transform_info()
+            geometries = mask_to_polygons(self.current_mask, transform_info)
+
+            if geometries:
+                # Combine all geometries into one for the rubber band
+                combined = QgsGeometry.unaryUnion(geometries)
+                if combined and not combined.isEmpty():
+                    self.mask_rubber_band.setToGeometry(combined, None)
+                else:
+                    self._clear_mask_visualization()
+            else:
+                self._clear_mask_visualization()
+
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                f"Failed to visualize mask: {str(e)}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            self._clear_mask_visualization()
+
+    def _clear_mask_visualization(self):
+        """Clear the mask rubber band."""
+        if self.mask_rubber_band:
+            self.mask_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
 
     def _on_clear_points(self):
-        """Clear all points."""
+        """Clear all points, markers, and mask visualization."""
         if self.sam_model:
             self.sam_model.clear_points()
+
+        # Clear visual markers
+        if self.map_tool:
+            self.map_tool.clear_markers()
+
+        # Clear mask visualization
+        self._clear_mask_visualization()
 
         self.current_mask = None
         self.current_score = 0.0
@@ -508,10 +581,15 @@ class AISegmentationPlugin:
         self.dock_widget.set_status("Points cleared")
 
     def _on_undo(self):
-        """Undo last point."""
+        """Undo last point and its visual marker."""
         if self.sam_model is None:
             return
 
+        # Remove the last visual marker
+        if self.map_tool:
+            self.map_tool.remove_last_marker()
+
+        # Undo in SAM model and update mask
         self.current_mask, self.current_score = self.sam_model.undo_point()
         self._update_ui_after_click()
 
