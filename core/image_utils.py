@@ -31,7 +31,7 @@ def _get_numpy_dtype(qgis_dtype):
         Qgis.DataType.Int32: np.int32,
         Qgis.DataType.Float32: np.float32,
         Qgis.DataType.Float64: np.float64,
-        Qgis.DataType.ARGB32: np.uint8,  # ARGB is 4 x uint8
+        Qgis.DataType.ARGB32: np.uint8,  
         Qgis.DataType.ARGB32_Premultiplied: np.uint8,
     }
     return dtype_map.get(qgis_dtype, np.float64)

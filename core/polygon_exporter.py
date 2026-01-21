@@ -79,7 +79,7 @@ def mask_to_polygons(
             if map_points[0] != map_points[-1]:
                 map_points.append(map_points[0])
 
-            if len(map_points) >= 4:  # Minimum 3 points + closing point
+            if len(map_points) >= 4:  
                 line = QgsLineString([p for p in map_points])
                 polygon = QgsPolygon()
                 polygon.setExteriorRing(line)
@@ -132,17 +132,17 @@ def create_bounding_box_polygon(
         min_row, max_row = rows.min(), rows.max()
         min_col, max_col = cols.min(), cols.max()
 
-        tl = pixel_to_map_coords(min_col, min_row, transform_info)  # top-left
-        tr = pixel_to_map_coords(max_col, min_row, transform_info)  # top-right
-        br = pixel_to_map_coords(max_col, max_row, transform_info)  # bottom-right
-        bl = pixel_to_map_coords(min_col, max_row, transform_info)  # bottom-left
+        tl = pixel_to_map_coords(min_col, min_row, transform_info)  
+        tr = pixel_to_map_coords(max_col, min_row, transform_info)  
+        br = pixel_to_map_coords(max_col, max_row, transform_info)  
+        bl = pixel_to_map_coords(min_col, max_row, transform_info)  
 
         points = [
             QgsPointXY(tl[0], tl[1]),
             QgsPointXY(tr[0], tr[1]),
             QgsPointXY(br[0], br[1]),
             QgsPointXY(bl[0], bl[1]),
-            QgsPointXY(tl[0], tl[1]),  # Close the polygon
+            QgsPointXY(tl[0], tl[1]),  
         ]
 
         line = QgsLineString([p for p in points])
@@ -235,9 +235,9 @@ def trace_contour(
     visited[start_y, start_x] = True
 
     x, y = start_x, start_y
-    prev_dir = 0  # Start searching from the right
+    prev_dir = 0  
 
-    max_iterations = mask.shape[0] * mask.shape[1]  # Safety limit
+    max_iterations = mask.shape[0] * mask.shape[1]  
     iteration = 0
 
     while iteration < max_iterations:

@@ -27,7 +27,7 @@ class SAMEncoder:
         self.model_path = model_path
         self.session = None
         self.input_name = None
-        self.output_names = []  # List of output names (SAM2 has multiple)
+        self.output_names = []  
 
     def load_model(self, model_path: str = None) -> bool:
         
@@ -78,7 +78,7 @@ class SAMEncoder:
         image: np.ndarray
     ) -> Tuple[np.ndarray, dict]:
         
-        original_size = image.shape[:2]  # (H, W)
+        original_size = image.shape[:2]  
 
         h, w = original_size
         scale = SAM_INPUT_SIZE / max(h, w)

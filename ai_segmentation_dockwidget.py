@@ -30,11 +30,11 @@ class AISegmentationDockWidget(QDockWidget):
     install_model_requested = pyqtSignal(str)  
     cancel_download_requested = pyqtSignal()
     cancel_preparation_requested = pyqtSignal()
-    start_segmentation_requested = pyqtSignal(object)  # QgsRasterLayer
+    start_segmentation_requested = pyqtSignal(object)  
     clear_points_requested = pyqtSignal()
     undo_requested = pyqtSignal()
     finish_segmentation_requested = pyqtSignal()  
-    model_changed = pyqtSignal(str)  # model_id
+    model_changed = pyqtSignal(str)  
 
     def __init__(self, parent=None):
         super().__init__("AI Segmentation by Terralab", parent)
@@ -53,10 +53,10 @@ class AISegmentationDockWidget(QDockWidget):
         self._dependencies_ok = False
         self._models_ok = False
         self._segmentation_active = False
-        self._has_mask = False  # Track if there's a current mask (points placed)
+        self._has_mask = False  
         self._installed_models: List[str] = []
         self._current_model_id: str = None
-        self._downloading_model_id: str = None  # Track which model is being downloaded
+        self._downloading_model_id: str = None  
 
     def _setup_ui(self):
         self._setup_dependencies_section()

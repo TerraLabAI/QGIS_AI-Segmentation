@@ -28,7 +28,7 @@ from .ai_segmentation_maptool import AISegmentationMapTool
 class InstallWorker(QThread):
 
     progress = pyqtSignal(int, str)
-    finished = pyqtSignal(bool, list)  # success, messages
+    finished = pyqtSignal(bool, list)  
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -67,7 +67,7 @@ class InstallWorker(QThread):
 class DownloadWorker(QThread):
 
     progress = pyqtSignal(int, str)
-    finished = pyqtSignal(bool, str, str)  # success, message, model_id
+    finished = pyqtSignal(bool, str, str)  
 
     def __init__(self, model_id: str, parent=None):
         super().__init__(parent)

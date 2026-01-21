@@ -79,9 +79,9 @@ class SAMDecoder:
         original_size = transform_info["original_size"]  # (H, W)
         scale = transform_info["scale"]
         if use_original_space:
-            max_y = original_size[0]  # Height in original pixel space
+            max_y = original_size[0]  
         else:
-            max_y = int(original_size[0] * scale)  # Height in 1024 space
+            max_y = int(original_size[0] * scale)  
 
         sam_points = []
         for x, y in points:
@@ -148,8 +148,8 @@ class SAMDecoder:
                 level=Qgis.Info
             )
 
-            masks = outputs[0]  # (1, num_masks, H, W)
-            scores = outputs[1] if len(outputs) > 1 else None  # (1, num_masks)
+            masks = outputs[0]  
+            scores = outputs[1] if len(outputs) > 1 else None  
 
             QgsMessageLog.logMessage(
                 f"Decoder raw output: masks shape={masks.shape}, original_size={original_size}",
@@ -429,7 +429,7 @@ class PromptManager:
         
         self.positive_points: List[Tuple[float, float]] = []
         self.negative_points: List[Tuple[float, float]] = []
-        self.prompt_history: List[str] = []  # "positive" or "negative"
+        self.prompt_history: List[str] = []  
 
     def add_positive(self, x: float, y: float):
         
