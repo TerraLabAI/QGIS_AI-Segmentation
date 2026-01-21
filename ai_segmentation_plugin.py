@@ -27,6 +27,12 @@ from qgis.core import (
 from qgis.gui import QgisInterface, QgsRubberBand
 from qgis.PyQt.QtGui import QColor
 
+# SIP is used to check if Qt/C++ objects have been deleted
+try:
+    from qgis.PyQt import sip
+except ImportError:
+    import sip
+
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
 
@@ -234,10 +240,8 @@ class AISegmentationPlugin:
             self.iface.mapCanvas().scene().removeItem(self.mask_rubber_band)
             self.mask_rubber_band = None
 
-        # Remove preview layer
-        if self.preview_layer is not None:
-            QgsProject.instance().removeMapLayer(self.preview_layer.id())
-            self.preview_layer = None
+        # Remove preview layer (safely)
+        self._remove_preview_layer_from_project()
 
         # Clean up workers
         for worker in [self.install_worker, self.download_worker, self.prep_worker]:
@@ -532,6 +536,47 @@ class AISegmentationPlugin:
         # Also create preview layer for current mask visualization
         self._create_preview_layer(source_layer.crs())
 
+    def _is_preview_layer_valid(self) -> bool:
+        """
+        Safely check if the preview layer exists and is valid.
+
+        This handles the case where the user manually deletes the layer
+        from QGIS, which would cause the underlying C++ object to be
+        deleted while the Python reference still exists.
+
+        Returns:
+            True if preview_layer exists and is valid, False otherwise
+        """
+        if self.preview_layer is None:
+            return False
+
+        # Check if underlying C++ object was deleted (e.g., user removed layer)
+        try:
+            if sip.isdeleted(self.preview_layer):
+                QgsMessageLog.logMessage(
+                    "Preview layer C++ object was deleted externally",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+                self.preview_layer = None
+                return False
+        except Exception:
+            self.preview_layer = None
+            return False
+
+        # Now safe to call methods on the layer
+        try:
+            return self.preview_layer.isValid()
+        except RuntimeError:
+            # In case sip.isdeleted() didn't catch it
+            QgsMessageLog.logMessage(
+                "Preview layer became invalid",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            self.preview_layer = None
+            return False
+
     def _create_preview_layer(self, crs):
         """
         Create a temporary memory layer for mask preview visualization.
@@ -539,10 +584,8 @@ class AISegmentationPlugin:
         This layer appears in the Layers panel and shows the current
         segmentation mask in real-time.
         """
-        # Remove existing preview layer if any
-        if self.preview_layer is not None:
-            QgsProject.instance().removeMapLayer(self.preview_layer.id())
-            self.preview_layer = None
+        # Remove existing preview layer if any (safely)
+        self._remove_preview_layer_from_project()
 
         # Create memory layer
         self.preview_layer = QgsVectorLayer(
@@ -557,6 +600,7 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Warning
             )
+            self.preview_layer = None
             return
 
         # Style with semi-transparent blue fill
@@ -573,38 +617,104 @@ class AISegmentationPlugin:
         root = QgsProject.instance().layerTreeRoot()
         root.insertLayer(0, self.preview_layer)
 
-    def _update_preview_layer(self, geometries):
-        """Update the preview layer with new geometries."""
-        if self.preview_layer is None or not self.preview_layer.isValid():
-            return
-
-        # Clear existing features
-        self.preview_layer.startEditing()
-        self.preview_layer.deleteFeatures(
-            [f.id() for f in self.preview_layer.getFeatures()]
+        QgsMessageLog.logMessage(
+            f"Created preview layer: {self.preview_layer.id()}",
+            "AI Segmentation",
+            level=Qgis.Info
         )
 
-        # Add new features
-        if geometries:
-            for geom in geometries:
-                feature = QgsFeature()
-                feature.setGeometry(geom)
-                self.preview_layer.addFeature(feature)
+    def _remove_preview_layer_from_project(self):
+        """
+        Safely remove the preview layer from the QGIS project.
 
-        self.preview_layer.commitChanges()
-        self.preview_layer.triggerRepaint()
+        Handles the case where the layer was already deleted externally.
+        """
+        if self.preview_layer is None:
+            return
+
+        try:
+            if not sip.isdeleted(self.preview_layer):
+                layer_id = self.preview_layer.id()
+                if QgsProject.instance().mapLayer(layer_id) is not None:
+                    QgsProject.instance().removeMapLayer(layer_id)
+                    QgsMessageLog.logMessage(
+                        f"Removed preview layer: {layer_id}",
+                        "AI Segmentation",
+                        level=Qgis.Info
+                    )
+        except (RuntimeError, AttributeError) as e:
+            QgsMessageLog.logMessage(
+                f"Preview layer already removed: {e}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+        finally:
+            self.preview_layer = None
+
+    def _update_preview_layer(self, geometries):
+        """Update the preview layer with new geometries."""
+        if not self._is_preview_layer_valid():
+            QgsMessageLog.logMessage(
+                "Cannot update preview layer - not valid",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            return
+
+        try:
+            # Clear existing features
+            self.preview_layer.startEditing()
+            self.preview_layer.deleteFeatures(
+                [f.id() for f in self.preview_layer.getFeatures()]
+            )
+
+            # Add new features
+            if geometries:
+                for geom in geometries:
+                    feature = QgsFeature()
+                    feature.setGeometry(geom)
+                    self.preview_layer.addFeature(feature)
+
+            self.preview_layer.commitChanges()
+            self.preview_layer.triggerRepaint()
+
+            QgsMessageLog.logMessage(
+                f"Updated preview layer with {len(geometries) if geometries else 0} geometries",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+        except RuntimeError as e:
+            QgsMessageLog.logMessage(
+                f"Error updating preview layer: {e}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            self.preview_layer = None
 
     def _clear_preview_layer(self):
         """Clear all features from the preview layer."""
-        if self.preview_layer is None or not self.preview_layer.isValid():
+        if not self._is_preview_layer_valid():
             return
 
-        self.preview_layer.startEditing()
-        self.preview_layer.deleteFeatures(
-            [f.id() for f in self.preview_layer.getFeatures()]
-        )
-        self.preview_layer.commitChanges()
-        self.preview_layer.triggerRepaint()
+        try:
+            self.preview_layer.startEditing()
+            self.preview_layer.deleteFeatures(
+                [f.id() for f in self.preview_layer.getFeatures()]
+            )
+            self.preview_layer.commitChanges()
+            self.preview_layer.triggerRepaint()
+            QgsMessageLog.logMessage(
+                "Cleared preview layer",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+        except RuntimeError as e:
+            QgsMessageLog.logMessage(
+                f"Error clearing preview layer: {e}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            self.preview_layer = None
 
     # ==================== Click Handling ====================
 
@@ -620,7 +730,12 @@ class AISegmentationPlugin:
             return
 
         QgsMessageLog.logMessage(
-            f"Positive click at ({point.x():.2f}, {point.y():.2f})",
+            "───────────────────────────────────────────────────────────",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"🟢 LEFT-CLICK (POSITIVE/INCLUDE) at map coords ({point.x():.2f}, {point.y():.2f})",
             "AI Segmentation",
             level=Qgis.Info
         )
@@ -631,13 +746,33 @@ class AISegmentationPlugin:
         self._update_ui_after_click()
 
     def _on_negative_click(self, point):
-        """Handle negative click - adds background point (exclude this area)."""
+        """
+        Handle negative click - adds background point (exclude this area).
+
+        NOTE: SAM negative points tell the model "this point is NOT part of
+        the object I want". They work best when placed:
+        - On regions that were incorrectly included in the mask
+        - Near the boundary of the desired object
+        - On nearby objects that should be excluded
+
+        They do NOT create "exclusion zones" - they're hints to refine the segmentation.
+        """
         if self.sam_model is None or not self.sam_model.is_ready:
             self.dock_widget.set_status("Model not ready - please wait")
             return
 
         QgsMessageLog.logMessage(
-            f"Negative click at ({point.x():.2f}, {point.y():.2f})",
+            "───────────────────────────────────────────────────────────",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"🔴 RIGHT-CLICK (NEGATIVE/EXCLUDE) at map coords ({point.x():.2f}, {point.y():.2f})",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            "   TIP: Negative points work best when placed ON incorrectly included areas",
             "AI Segmentation",
             level=Qgis.Info
         )

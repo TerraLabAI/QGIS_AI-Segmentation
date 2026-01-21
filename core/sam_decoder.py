@@ -349,11 +349,29 @@ class SAMDecoder:
             )
             return None, 0.0
 
+        # Count positive and negative points
+        pos_count = sum(1 for l in labels if l == 1)
+        neg_count = sum(1 for l in labels if l == 0)
+
         QgsMessageLog.logMessage(
-            f"predict_mask: {len(points)} points, labels={labels}",
+            "═══════════════════════════════════════════════════════════",
             "AI Segmentation",
             level=Qgis.Info
         )
+        QgsMessageLog.logMessage(
+            f"SEGMENTATION REQUEST: {len(points)} points ({pos_count} positive ✓, {neg_count} negative ✗)",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+        # Log each point with its type
+        for i, ((x, y), label) in enumerate(zip(points, labels)):
+            point_type = "POSITIVE (include)" if label == 1 else "NEGATIVE (exclude)"
+            QgsMessageLog.logMessage(
+                f"  Point {i+1}: ({x:.2f}, {y:.2f}) → {point_type}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
 
         # Prepare prompts
         point_coords, point_labels = self.prepare_prompts(
@@ -361,10 +379,17 @@ class SAMDecoder:
         )
 
         QgsMessageLog.logMessage(
-            f"SAM coords: {point_coords.tolist()}, labels: {point_labels.tolist()}",
+            f"Converted to SAM coords (0-1024 space):",
             "AI Segmentation",
             level=Qgis.Info
         )
+        for i, (coord, label) in enumerate(zip(point_coords[0], point_labels[0])):
+            point_type = "+" if label == 1 else "-"
+            QgsMessageLog.logMessage(
+                f"  [{point_type}] SAM({coord[0]:.1f}, {coord[1]:.1f})",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
 
         # Decode
         masks, scores = self.decode(
@@ -377,23 +402,37 @@ class SAMDecoder:
 
         if masks is None:
             QgsMessageLog.logMessage(
-                "predict_mask: decode returned None",
+                "predict_mask: decode returned None - FAILED",
                 "AI Segmentation",
                 level=Qgis.Warning
             )
             return None, 0.0
 
+        # Log all candidate masks and their scores
         QgsMessageLog.logMessage(
-            f"Decode result: masks shape={masks.shape}, scores={scores}",
+            f"SAM returned {masks.shape[1]} mask candidates:",
             "AI Segmentation",
             level=Qgis.Info
         )
+        for i in range(masks.shape[1]):
+            mask_pixels = (masks[0, i] > MASK_THRESHOLD).sum()
+            score_val = scores[0, i] if scores is not None else 0.0
+            QgsMessageLog.logMessage(
+                f"  Mask {i+1}: score={score_val:.3f}, pixels={mask_pixels}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
 
         if return_best and scores is not None:
             # Select best mask based on score
             best_idx = np.argmax(scores[0])
             mask = masks[0, best_idx]
             score = float(scores[0, best_idx])
+            QgsMessageLog.logMessage(
+                f"Selected BEST mask: index={best_idx+1}, score={score:.3f}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
         else:
             # Return first mask
             mask = masks[0, 0]
@@ -401,9 +440,16 @@ class SAMDecoder:
 
         # Apply threshold to get binary mask
         binary_mask = (mask > MASK_THRESHOLD).astype(np.uint8)
+        mask_pixels = int(binary_mask.sum())
 
         QgsMessageLog.logMessage(
-            f"Binary mask: shape={binary_mask.shape}, pixels={binary_mask.sum()}",
+            f"RESULT: Binary mask {binary_mask.shape[1]}x{binary_mask.shape[0]}, "
+            f"{mask_pixels} pixels, score={score:.3f}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            "═══════════════════════════════════════════════════════════",
             "AI Segmentation",
             level=Qgis.Info
         )
@@ -417,6 +463,13 @@ class PromptManager:
 
     Keeps track of positive and negative points, and provides
     methods for adding, removing, and clearing points.
+
+    Note on SAM point semantics:
+    - POSITIVE points (label=1): "This pixel IS part of the object I want"
+    - NEGATIVE points (label=0): "This pixel is NOT part of the object"
+
+    Negative points help refine boundaries by telling SAM what to exclude.
+    They work best when placed near the boundary of an incorrectly included region.
     """
 
     def __init__(self):
@@ -430,11 +483,23 @@ class PromptManager:
         """Add a positive (foreground) point."""
         self.positive_points.append((x, y))
         self.prompt_history.append("positive")
+        QgsMessageLog.logMessage(
+            f"[PromptManager] Added POSITIVE point #{len(self.positive_points)} at ({x:.2f}, {y:.2f})",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        self._log_state()
 
     def add_negative(self, x: float, y: float):
         """Add a negative (background) point."""
         self.negative_points.append((x, y))
         self.prompt_history.append("negative")
+        QgsMessageLog.logMessage(
+            f"[PromptManager] Added NEGATIVE point #{len(self.negative_points)} at ({x:.2f}, {y:.2f})",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        self._log_state()
 
     def undo(self) -> bool:
         """
@@ -447,22 +512,46 @@ class PromptManager:
             True if a point was removed
         """
         if not self.prompt_history:
+            QgsMessageLog.logMessage(
+                "[PromptManager] Undo: No points to undo",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
             return False
 
         last_type = self.prompt_history.pop()
         if last_type == "positive" and self.positive_points:
-            self.positive_points.pop()
+            removed = self.positive_points.pop()
+            QgsMessageLog.logMessage(
+                f"[PromptManager] Undo: Removed POSITIVE point at ({removed[0]:.2f}, {removed[1]:.2f})",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            self._log_state()
             return True
         elif last_type == "negative" and self.negative_points:
-            self.negative_points.pop()
+            removed = self.negative_points.pop()
+            QgsMessageLog.logMessage(
+                f"[PromptManager] Undo: Removed NEGATIVE point at ({removed[0]:.2f}, {removed[1]:.2f})",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            self._log_state()
             return True
         return False
 
     def clear(self):
         """Clear all points."""
+        pos_count = len(self.positive_points)
+        neg_count = len(self.negative_points)
         self.positive_points.clear()
         self.negative_points.clear()
         self.prompt_history.clear()
+        QgsMessageLog.logMessage(
+            f"[PromptManager] Cleared all points ({pos_count} positive, {neg_count} negative)",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
     def get_all_points(self) -> Tuple[List[Tuple[float, float]], List[int]]:
         """
@@ -470,6 +559,9 @@ class PromptManager:
 
         Returns:
             Tuple of (points, labels) where labels are 1 for positive, 0 for negative
+
+        Note: Points are returned with all positive points first, then all negative.
+        This is the expected format for SAM - the order within each group doesn't matter.
         """
         points = self.positive_points + self.negative_points
         labels = [1] * len(self.positive_points) + [0] * len(self.negative_points)
@@ -483,3 +575,12 @@ class PromptManager:
     def point_count(self) -> Tuple[int, int]:
         """Get count of (positive, negative) points."""
         return len(self.positive_points), len(self.negative_points)
+
+    def _log_state(self):
+        """Log current prompt state for debugging."""
+        QgsMessageLog.logMessage(
+            f"[PromptManager] Current state: {len(self.positive_points)} positive, "
+            f"{len(self.negative_points)} negative points",
+            "AI Segmentation",
+            level=Qgis.Info
+        )

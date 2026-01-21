@@ -214,6 +214,19 @@ class AISegmentationDockWidget(QDockWidget):
         self.active_instructions_label.setVisible(False)
         layout.addWidget(self.active_instructions_label)
 
+        # Tip about negative points (shown when segmentation is active)
+        self.negative_tip_label = QLabel(
+            "💡 TIP: Red points (right-click) work best when placed\n"
+            "ON areas incorrectly included in the blue mask."
+        )
+        self.negative_tip_label.setStyleSheet(
+            "color: #f57c00; font-size: 10px; font-style: italic; "
+            "background-color: #fff3e0; padding: 6px; border-radius: 4px;"
+        )
+        self.negative_tip_label.setWordWrap(True)
+        self.negative_tip_label.setVisible(False)
+        layout.addWidget(self.negative_tip_label)
+
         # Preparation progress (hidden by default)
         self.prep_progress = QProgressBar()
         self.prep_progress.setRange(0, 100)
@@ -449,15 +462,17 @@ class AISegmentationDockWidget(QDockWidget):
             self.start_button.setText("■ Stop Point Mode")
             self.start_button.setStyleSheet("background-color: #d32f2f; color: white;")
             self.start_button.setEnabled(True)
-            # Show active instructions, hide inactive
+            # Show active instructions and tips, hide inactive
             self.instructions_label.setVisible(False)
             self.active_instructions_label.setVisible(True)
+            self.negative_tip_label.setVisible(True)
         else:
             self.start_button.setText("▶ Start Point Mode")
             self.start_button.setStyleSheet("")
-            # Show inactive instructions, hide active
+            # Show inactive instructions, hide active and tips
             self.instructions_label.setVisible(True)
             self.active_instructions_label.setVisible(False)
+            self.negative_tip_label.setVisible(False)
 
         self._update_ui_state()
 
