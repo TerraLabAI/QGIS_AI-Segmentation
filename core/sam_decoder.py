@@ -161,6 +161,10 @@ class SAMDecoder:
                 multimask_output
             )
 
+            # Validate input shapes before inference
+            if not self._validate_input_shapes(inputs):
+                return None, None
+
             # Run inference
             outputs = self.session.run(self.output_names, inputs)
 
@@ -238,42 +242,82 @@ class SAMDecoder:
         multimask_output: bool
     ) -> dict:
         """
-        Prepare inputs for the decoder model.
+        Prepare inputs for the decoder model using exact name mapping.
 
-        Different ONNX exports may have different input requirements.
-        This method handles the common cases.
+        Uses a dictionary with exact input names to avoid substring matching
+        issues (e.g., "mask_input" matching "has_mask_input").
 
         Args:
-            features: Image embeddings
-            point_coords: Point coordinates
-            point_labels: Point labels
+            features: Image embeddings from encoder
+            point_coords: Point coordinates array (1, N, 2)
+            point_labels: Point labels array (1, N)
             original_size: Original image size (H, W)
             multimask_output: Whether to output multiple masks
 
         Returns:
             Dictionary of inputs for the ONNX session
         """
+        # Exact input name mapping for SAM ViT-B ONNX model
+        # Source: HuggingFace visheratin/segment-anything-vit-b
+        INPUT_VALUES = {
+            "image_embeddings": features,                                    # (1, 256, 64, 64)
+            "point_coords": point_coords,                                    # (1, N, 2)
+            "point_labels": point_labels,                                    # (1, N)
+            "mask_input": np.zeros((1, 1, 256, 256), dtype=np.float32),      # (1, 1, 256, 256)
+            "has_mask_input": np.array([0], dtype=np.float32),               # (1,) - rank 1!
+            "orig_im_size": np.array(original_size, dtype=np.float32),       # (2,)
+        }
+
         inputs = {}
-
-        # Map input names to values
         for name in self.input_names:
-            name_lower = name.lower()
-
-            if "image" in name_lower and "embed" in name_lower:
-                inputs[name] = features
-            elif "point_coord" in name_lower or "point_coords" in name_lower:
-                inputs[name] = point_coords
-            elif "point_label" in name_lower or "point_labels" in name_lower:
-                inputs[name] = point_labels
-            elif "orig" in name_lower and "size" in name_lower:
-                inputs[name] = np.array(original_size, dtype=np.float32)
-            elif "mask_input" in name_lower:
-                # No previous mask
-                inputs[name] = np.zeros((1, 1, 256, 256), dtype=np.float32)
-            elif "has_mask" in name_lower:
-                inputs[name] = np.array([0], dtype=np.float32)
+            if name in INPUT_VALUES:
+                inputs[name] = INPUT_VALUES[name]
+            else:
+                QgsMessageLog.logMessage(
+                    f"Unknown decoder input: {name}",
+                    "AI Segmentation",
+                    level=Qgis.Warning
+                )
 
         return inputs
+
+    def _validate_input_shapes(self, inputs: dict) -> bool:
+        """
+        Validate input tensor shapes before ONNX inference.
+
+        Catches shape mismatches early with clear error messages instead of
+        cryptic ONNX runtime errors.
+
+        Args:
+            inputs: Dictionary of input name to numpy array
+
+        Returns:
+            True if all shapes are valid, False otherwise
+        """
+        EXPECTED_RANKS = {
+            "image_embeddings": 4,   # (1, 256, 64, 64)
+            "point_coords": 3,       # (1, N, 2)
+            "point_labels": 2,       # (1, N)
+            "mask_input": 4,         # (1, 1, 256, 256)
+            "has_mask_input": 1,     # (1,)
+            "orig_im_size": 1,       # (2,)
+        }
+
+        for name, tensor in inputs.items():
+            actual_rank = len(tensor.shape)
+            expected_rank = EXPECTED_RANKS.get(name)
+
+            if expected_rank is not None and actual_rank != expected_rank:
+                QgsMessageLog.logMessage(
+                    f"Input shape mismatch for '{name}': "
+                    f"got rank {actual_rank} (shape {tensor.shape}), "
+                    f"expected rank {expected_rank}",
+                    "AI Segmentation",
+                    level=Qgis.Critical
+                )
+                return False
+
+        return True
 
     def predict_mask(
         self,
