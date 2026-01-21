@@ -368,34 +368,57 @@ def coord_to_pixel(
 def map_point_to_sam_coords(
     map_x: float,
     map_y: float,
-    transform_info: dict
+    transform_info: dict,
+    scale_to_sam_space: bool = True
 ) -> Tuple[float, float]:
     """
-    Convert map coordinates to SAM input coordinates (0-1024 range).
+    Convert map coordinates to SAM input coordinates.
 
     Args:
         map_x: X coordinate in map CRS
         map_y: Y coordinate in map CRS
         transform_info: Transform info from encoding
+        scale_to_sam_space: If True, scale to 1024x1024 SAM space.
+                           If False, return original pixel coordinates.
+                           SAM2 models with orig_im_size use original space.
 
     Returns:
-        Tuple of (sam_x, sam_y) in SAM coordinate space (0-1024)
+        Tuple of (x, y) coordinates for SAM decoder
     """
+    from qgis.core import QgsMessageLog, Qgis
+
     extent = transform_info["extent"]
     original_size = transform_info["original_size"]
     scale = transform_info["scale"]
 
     # Map coordinates to original image pixel coordinates
     x_min, y_min, x_max, y_max = extent
-    width = x_max - x_min
-    height = y_max - y_min
+    geo_width = x_max - x_min
+    geo_height = y_max - y_min
 
-    # Pixel in original image
-    pixel_x = (map_x - x_min) / width * original_size[1]
-    pixel_y = (y_max - map_y) / height * original_size[0]
+    # Pixel in original image (Y-axis inverted: geo Y increases up, pixel Y increases down)
+    pixel_x = (map_x - x_min) / geo_width * original_size[1]
+    pixel_y = (y_max - map_y) / geo_height * original_size[0]
 
-    # Scale to SAM input size
-    sam_x = pixel_x * scale
-    sam_y = pixel_y * scale
+    if scale_to_sam_space:
+        # Scale to SAM input size (1024x1024 space) - used by SAM ViT-B
+        out_x = pixel_x * scale
+        out_y = pixel_y * scale
+        coord_space = "1024"
+    else:
+        # Keep in original pixel space - used by SAM2 with orig_im_size
+        out_x = pixel_x
+        out_y = pixel_y
+        coord_space = "original"
 
-    return sam_x, sam_y
+    # Debug logging
+    QgsMessageLog.logMessage(
+        f"[COORD DEBUG] map=({map_x:.1f}, {map_y:.1f}) -> "
+        f"pixel=({pixel_x:.1f}, {pixel_y:.1f}) -> "
+        f"out=({out_x:.1f}, {out_y:.1f}) "
+        f"[space={coord_space}, scale={scale:.3f}, orig_size={original_size}]",
+        "AI Segmentation",
+        level=Qgis.Info
+    )
+
+    return out_x, out_y

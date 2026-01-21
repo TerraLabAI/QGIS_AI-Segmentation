@@ -1,10 +1,3 @@
-"""
-Dock Widget for AI Segmentation
-
-Main user interface panel for the segmentation plugin.
-Clean, minimal interface with session-based workflow.
-Supports multiple AI models with easy switching and installation.
-"""
 
 from qgis.PyQt.QtWidgets import (
     QDockWidget,
@@ -31,16 +24,6 @@ from typing import List
 
 
 class AISegmentationDockWidget(QDockWidget):
-    """
-    Main dock widget for the AI Segmentation plugin.
-
-    Clean session-based interface:
-    1. Select Model -> Select Layer -> Start AI Segmentation
-    2. Click to segment (left=include, right=exclude)
-    3. Finish Segmentation -> Creates layer automatically
-
-    Supports multiple AI models with dropdown selector and install section.
-    """
 
     # Signals
     install_dependencies_requested = pyqtSignal()
@@ -51,12 +34,10 @@ class AISegmentationDockWidget(QDockWidget):
     start_segmentation_requested = pyqtSignal(object)  # QgsRasterLayer
     clear_points_requested = pyqtSignal()
     undo_requested = pyqtSignal()
-    save_mask_requested = pyqtSignal()
     finish_segmentation_requested = pyqtSignal()  # Finish and auto-export to layer
     model_changed = pyqtSignal(str)  # model_id
 
     def __init__(self, parent=None):
-        """Initialize the dock widget."""
         super().__init__("AI Segmentation by Terralab", parent)
 
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
@@ -81,11 +62,8 @@ class AISegmentationDockWidget(QDockWidget):
         self._downloading_model_id: str = None  # Track which model is being downloaded
 
     def _setup_ui(self):
-        """Set up the user interface."""
-        # Setup section (Dependencies) - hidden when ready
         self._setup_dependencies_section()
 
-        # Model install section (collapsible)
         self._setup_model_install_section()
 
         # Segmentation section
@@ -98,7 +76,6 @@ class AISegmentationDockWidget(QDockWidget):
         self._setup_status_bar()
 
     def _setup_dependencies_section(self):
-        """Set up the dependencies section."""
         self.deps_group = QGroupBox("Dependencies")
         layout = QVBoxLayout(self.deps_group)
 
@@ -128,14 +105,11 @@ class AISegmentationDockWidget(QDockWidget):
         self.main_layout.addWidget(self.deps_group)
 
     def _setup_model_install_section(self):
-        """Set up the collapsible model installation section."""
-        # Container for the collapsible section
         self.model_install_container = QWidget()
         container_layout = QVBoxLayout(self.model_install_container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(4)
 
-        # Header with toggle button
         header_widget = QWidget()
         header_layout = QHBoxLayout(header_widget)
         header_layout.setContentsMargins(0, 0, 0, 0)
@@ -155,17 +129,13 @@ class AISegmentationDockWidget(QDockWidget):
 
         container_layout.addWidget(header_widget)
 
-        # Collapsible content
         self.model_install_content = QWidget()
         self.model_install_content.setVisible(False)
         content_layout = QVBoxLayout(self.model_install_content)
         content_layout.setContentsMargins(20, 4, 0, 4)
         content_layout.setSpacing(6)
 
-        # Model list will be populated dynamically
-        self.model_rows = {}  # model_id -> dict of widgets
-
-        # Create rows for each model (will be populated in update_model_list)
+        self.model_rows = {}
         self._create_model_rows(content_layout)
 
         container_layout.addWidget(self.model_install_content)

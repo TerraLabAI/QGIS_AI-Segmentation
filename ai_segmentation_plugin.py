@@ -28,12 +28,6 @@ from qgis.core import (
 from qgis.gui import QgisInterface, QgsRubberBand
 from qgis.PyQt.QtGui import QColor
 
-# SIP is used to check if Qt/C++ objects have been deleted
-try:
-    from qgis.PyQt import sip
-except ImportError:
-    import sip
-
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
 
@@ -166,7 +160,6 @@ class AISegmentationPlugin:
         # State
         self.current_mask = None
         self.current_score = 0.0
-        self.output_layer = None
         self._initialized = False  # Track if we've done first-time setup
         self._current_layer_name = ""  # Name of current raster layer for output naming
         self._segmentation_counter = 0  # Counter for naming exported layers
@@ -219,7 +212,6 @@ class AISegmentationPlugin:
         self.dock_widget.finish_segmentation_requested.connect(self._on_finish_segmentation)
         self.dock_widget.clear_points_requested.connect(self._on_clear_points)
         self.dock_widget.undo_requested.connect(self._on_undo)
-        self.dock_widget.save_mask_requested.connect(self._on_save_mask)
         self.dock_widget.model_changed.connect(self._on_model_changed)
 
         # Add dock widget to QGIS
@@ -524,6 +516,14 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
 
+        # Clear visual markers and mask visualization when switching models
+        if self.map_tool:
+            self.map_tool.clear_markers()
+        self._clear_mask_visualization()
+        self.current_mask = None
+        self.current_score = 0.0
+        self.dock_widget.set_point_count(0, 0)
+
         # Switch model
         if self.sam_model:
             success, message = self.sam_model.switch_model(model_id)
@@ -578,7 +578,6 @@ class AISegmentationPlugin:
         """Handle preparation completion."""
         if success:
             self.dock_widget.set_preparation_progress(100, "Ready!")
-            self._create_output_layer(layer)
             self._activate_segmentation_tool()
         else:
             self.dock_widget.set_preparation_progress(0, "")
@@ -596,16 +595,15 @@ class AISegmentationPlugin:
 
     def _on_finish_segmentation(self):
         """Handle finish segmentation - create layer and reset session."""
-        if self.current_mask is None:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                "No Segmentation",
-                "Click on the map to create a segmentation first."
-            )
-            return
-
-        # Deactivate map tool
+        # Deactivate map tool first
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
+
+        # If no mask (no points clicked), just reset silently
+        if self.current_mask is None:
+            self._reset_session()
+            self.dock_widget.reset_session()
+            self.dock_widget.set_status("Segmentation cancelled")
+            return
 
         # Generate layer name based on raster name and counter
         self._segmentation_counter += 1
@@ -682,58 +680,6 @@ class AISegmentationPlugin:
     def _on_tool_deactivated(self):
         """Handle map tool deactivation."""
         self.dock_widget.set_segmentation_active(False)
-
-    def _is_output_layer_valid(self) -> bool:
-        """
-        Safely check if the output layer exists and is valid.
-
-        This handles the case where the user manually deletes the layer
-        from QGIS, which would cause the underlying C++ object to be
-        deleted while the Python reference still exists.
-
-        Returns:
-            True if output_layer exists and is valid, False otherwise
-        """
-        if self.output_layer is None:
-            return False
-
-        # Check if underlying C++ object was deleted (e.g., user removed layer)
-        try:
-            if sip.isdeleted(self.output_layer):
-                QgsMessageLog.logMessage(
-                    "Output layer C++ object was deleted externally",
-                    "AI Segmentation",
-                    level=Qgis.Info
-                )
-                self.output_layer = None
-                return False
-        except Exception:
-            self.output_layer = None
-            return False
-
-        # Now safe to call methods on the layer
-        try:
-            return self.output_layer.isValid()
-        except RuntimeError:
-            # In case sip.isdeleted() didn't catch it
-            QgsMessageLog.logMessage(
-                "Output layer became invalid",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-            self.output_layer = None
-            return False
-
-    def _create_output_layer(self, source_layer: QgsRasterLayer):
-        """Create output vector layer (only used for save_mask, not for finish)."""
-        from .core.polygon_exporter import create_output_layer
-
-        if not self._is_output_layer_valid():
-            self.output_layer = create_output_layer(
-                source_layer.crs(),
-                "AI_Segmentation_Output"
-            )
-            QgsProject.instance().addMapLayer(self.output_layer)
 
     # ==================== Click Handling ====================
 
@@ -913,38 +859,6 @@ class AISegmentationPlugin:
         # Undo in SAM model and update mask
         self.current_mask, self.current_score = self.sam_model.undo_point()
         self._update_ui_after_click()
-
-    def _on_save_mask(self):
-        """Save current mask."""
-        if self.current_mask is None:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                "No Mask",
-                "Click on the map to create a segmentation first."
-            )
-            return
-
-        if not self._is_output_layer_valid():
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                "No Output Layer",
-                "Output layer is not available. Please restart segmentation."
-            )
-            return
-
-        from .core.polygon_exporter import add_mask_to_layer
-
-        count = add_mask_to_layer(
-            self.output_layer,
-            self.current_mask,
-            self.sam_model.get_transform_info(),
-            self.current_score
-        )
-
-        if count > 0:
-            self.dock_widget.set_status(f"Saved {count} polygon(s) - click Clear to start new selection")
-        else:
-            self.dock_widget.set_status("Failed to save mask")
 
     def _reset_session(self):
         """Reset the current segmentation session."""
