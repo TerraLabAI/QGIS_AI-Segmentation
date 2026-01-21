@@ -1,1 +1,0 @@
-# AI Segmentation UI modules

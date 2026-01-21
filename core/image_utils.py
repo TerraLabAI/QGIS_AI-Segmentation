@@ -1,11 +1,3 @@
-"""
-Image Utilities for AI Segmentation
-
-Handles conversion between QGIS raster layers and numpy arrays,
-as well as image preprocessing operations.
-
-Supports both file-based rasters (GeoTIFF, etc.) and web-based layers (XYZ, WMS).
-"""
 
 import os
 from typing import Tuple, Optional
@@ -21,7 +13,6 @@ from qgis.core import (
 
 
 def _is_web_layer(layer: QgsRasterLayer) -> bool:
-    """Check if layer is a web-based layer (XYZ, WMS, etc.)."""
     source = layer.source()
     web_indicators = ['http://', 'https://', 'type=xyz', 'type=wms', 'url=']
     for indicator in web_indicators:
@@ -31,8 +22,6 @@ def _is_web_layer(layer: QgsRasterLayer) -> bool:
 
 
 def _get_numpy_dtype(qgis_dtype):
-    """Map QGIS data type to numpy dtype."""
-    # Map common QGIS raster data types to numpy
     dtype_map = {
         Qgis.DataType.Byte: np.uint8,
         Qgis.DataType.Int8: np.int8,
@@ -53,36 +42,18 @@ def raster_to_numpy(
     extent: QgsRectangle = None,
     max_size: int = 2048
 ) -> Tuple[Optional[np.ndarray], dict]:
-    """
-    Convert a QGIS raster layer to a numpy array.
-
-    Supports both file-based rasters and web layers (XYZ, WMS).
-
-    Args:
-        layer: QgsRasterLayer to convert
-        extent: Optional extent to read (defaults to full layer)
-        max_size: Maximum dimension for the output (for memory management)
-
-    Returns:
-        Tuple of (image_array, geo_transform) or (None, {}) on error
-        image_array is in RGB format (H, W, 3)
-        geo_transform contains pixel-to-coordinate mapping info
-    """
     try:
         provider = layer.dataProvider()
 
         if extent is None:
             extent = layer.extent()
 
-        # Get raster dimensions
-        # For web layers (XYZ, WMS), xSize/ySize return 0, so we use max_size
         width = provider.xSize()
         height = provider.ySize()
 
         is_web = _is_web_layer(layer)
 
         if width == 0 or height == 0 or is_web:
-            # Web layer or unknown size: calculate size based on extent and max_size
             extent_width = extent.width()
             extent_height = extent.height()
 
@@ -94,7 +65,6 @@ def raster_to_numpy(
                 )
                 return None, {}
 
-            # Use max_size for the larger dimension
             aspect_ratio = extent_width / extent_height
             if aspect_ratio > 1:
                 width = max_size
@@ -110,16 +80,14 @@ def raster_to_numpy(
                 level=Qgis.Info
             )
         else:
-            # File-based raster with known dimensions
             scale = 1.0
             if max(width, height) > max_size:
                 scale = max_size / max(width, height)
                 width = int(width * scale)
                 height = int(height * scale)
 
-        # Get band count and data type
         band_count = provider.bandCount()
-        data_type = provider.dataType(1)  # Data type of first band
+        data_type = provider.dataType(1)
         numpy_dtype = _get_numpy_dtype(data_type)
 
         QgsMessageLog.logMessage(
@@ -128,7 +96,6 @@ def raster_to_numpy(
             level=Qgis.Info
         )
 
-        # Handle ARGB32 format (common for XYZ/WMS layers)
         if data_type in (Qgis.DataType.ARGB32, Qgis.DataType.ARGB32_Premultiplied):
             block = provider.block(1, extent, width, height)
             if block is None or not block.isValid():
@@ -139,7 +106,6 @@ def raster_to_numpy(
                 )
                 return None, {}
 
-            # ARGB32 is packed as 4 bytes per pixel (BGRA order in memory)
             raw_data = block.data()
             if len(raw_data) == 0:
                 QgsMessageLog.logMessage(
@@ -149,29 +115,24 @@ def raster_to_numpy(
                 )
                 return None, {}
 
-            # Parse ARGB32 data
             pixels = np.frombuffer(raw_data, dtype=np.uint8)
             expected_size = width * height * 4
             if len(pixels) != expected_size:
-                # Try to adjust dimensions
                 actual_pixels = len(pixels) // 4
                 QgsMessageLog.logMessage(
                     f"Adjusting dimensions: expected {width*height}, got {actual_pixels}",
                     "AI Segmentation",
                     level=Qgis.Info
                 )
-                # Recalculate assuming square-ish
                 height = int(np.sqrt(actual_pixels * height / width))
                 width = actual_pixels // height
                 if width * height * 4 > len(pixels):
                     return None, {}
 
             pixels = pixels.reshape(height, width, 4)
-            # BGRA -> RGB (skip alpha)
             image = pixels[:, :, [2, 1, 0]].astype(np.float32)
 
         elif band_count >= 3:
-            # Read RGB bands separately
             block_r = provider.block(1, extent, width, height)
             block_g = provider.block(2, extent, width, height)
             block_b = provider.block(3, extent, width, height)
@@ -191,7 +152,6 @@ def raster_to_numpy(
             image = np.stack([r, g, b], axis=-1).astype(np.float32)
 
         elif band_count == 1:
-            # Single band - convert to grayscale RGB
             block = provider.block(1, extent, width, height)
             if not block or not block.isValid():
                 QgsMessageLog.logMessage(
@@ -212,10 +172,8 @@ def raster_to_numpy(
             )
             return None, {}
 
-        # Normalize to 0-255 range
         image = normalize_image(image)
 
-        # Geo transform info for coordinate mapping
         geo_transform = {
             "x_min": extent.xMinimum(),
             "y_max": extent.yMaximum(),
@@ -250,30 +208,16 @@ def raster_to_numpy(
 
 
 def normalize_image(image: np.ndarray) -> np.ndarray:
-    """
-    Normalize image values to 0-255 range.
-
-    Handles various input ranges (0-1, 0-255, 0-65535, etc.)
-
-    Args:
-        image: Input image array
-
-    Returns:
-        Normalized image in 0-255 range
-    """
-    # Get min/max
+    
     img_min = np.nanmin(image)
     img_max = np.nanmax(image)
 
-    # Handle constant images
     if img_max - img_min < 1e-8:
         return np.full_like(image, 127.5)
 
-    # Check if already in 0-255 range
     if img_min >= 0 and img_max <= 255:
         return image
 
-    # Normalize to 0-255
     normalized = (image - img_min) / (img_max - img_min) * 255.0
     return np.clip(normalized, 0, 255)
 
@@ -282,39 +226,22 @@ def resize_image(
     image: np.ndarray,
     target_size: Tuple[int, int]
 ) -> np.ndarray:
-    """
-    Resize image using simple interpolation.
-
-    Uses a basic bilinear-like approach without external dependencies.
-    For production use, consider PIL or skimage for better quality.
-
-    Args:
-        image: Input image (H, W, C) or (H, W)
-        target_size: Target size as (height, width)
-
-    Returns:
-        Resized image
-    """
+    
     src_h, src_w = image.shape[:2]
     dst_h, dst_w = target_size
 
-    # Handle case where no resize needed
     if src_h == dst_h and src_w == dst_w:
         return image.copy()
 
-    # Create coordinate mappings
     x_ratio = src_w / dst_w
     y_ratio = src_h / dst_h
 
-    # Generate destination coordinates
     x_coords = (np.arange(dst_w) * x_ratio).astype(np.int32)
     y_coords = (np.arange(dst_h) * y_ratio).astype(np.int32)
 
-    # Clip to valid range
     x_coords = np.clip(x_coords, 0, src_w - 1)
     y_coords = np.clip(y_coords, 0, src_h - 1)
 
-    # Simple nearest neighbor resize
     if image.ndim == 3:
         resized = image[y_coords[:, np.newaxis], x_coords[np.newaxis, :], :]
     else:
@@ -328,17 +255,7 @@ def pixel_to_coord(
     pixel_y: int,
     geo_transform: dict
 ) -> Tuple[float, float]:
-    """
-    Convert pixel coordinates to geographic coordinates.
-
-    Args:
-        pixel_x: X pixel coordinate
-        pixel_y: Y pixel coordinate
-        geo_transform: Geo transform dictionary from raster_to_numpy
-
-    Returns:
-        Tuple of (x_coord, y_coord) in the layer's CRS
-    """
+    
     x = geo_transform["x_min"] + pixel_x * geo_transform["pixel_width"]
     y = geo_transform["y_max"] - pixel_y * geo_transform["pixel_height"]
     return x, y
@@ -349,17 +266,7 @@ def coord_to_pixel(
     y: float,
     geo_transform: dict
 ) -> Tuple[int, int]:
-    """
-    Convert geographic coordinates to pixel coordinates.
-
-    Args:
-        x: X coordinate in layer's CRS
-        y: Y coordinate in layer's CRS
-        geo_transform: Geo transform dictionary from raster_to_numpy
-
-    Returns:
-        Tuple of (pixel_x, pixel_y)
-    """
+    
     pixel_x = int((x - geo_transform["x_min"]) / geo_transform["pixel_width"])
     pixel_y = int((geo_transform["y_max"] - y) / geo_transform["pixel_height"])
     return pixel_x, pixel_y
@@ -371,47 +278,29 @@ def map_point_to_sam_coords(
     transform_info: dict,
     scale_to_sam_space: bool = True
 ) -> Tuple[float, float]:
-    """
-    Convert map coordinates to SAM input coordinates.
-
-    Args:
-        map_x: X coordinate in map CRS
-        map_y: Y coordinate in map CRS
-        transform_info: Transform info from encoding
-        scale_to_sam_space: If True, scale to 1024x1024 SAM space.
-                           If False, return original pixel coordinates.
-                           SAM2 models with orig_im_size use original space.
-
-    Returns:
-        Tuple of (x, y) coordinates for SAM decoder
-    """
+    
     from qgis.core import QgsMessageLog, Qgis
 
     extent = transform_info["extent"]
     original_size = transform_info["original_size"]
     scale = transform_info["scale"]
 
-    # Map coordinates to original image pixel coordinates
     x_min, y_min, x_max, y_max = extent
     geo_width = x_max - x_min
     geo_height = y_max - y_min
 
-    # Pixel in original image (Y-axis inverted: geo Y increases up, pixel Y increases down)
     pixel_x = (map_x - x_min) / geo_width * original_size[1]
     pixel_y = (y_max - map_y) / geo_height * original_size[0]
 
     if scale_to_sam_space:
-        # Scale to SAM input size (1024x1024 space) - used by SAM ViT-B
         out_x = pixel_x * scale
         out_y = pixel_y * scale
         coord_space = "1024"
     else:
-        # Keep in original pixel space - used by SAM2 with orig_im_size
         out_x = pixel_x
         out_y = pixel_y
         coord_space = "original"
 
-    # Debug logging
     QgsMessageLog.logMessage(
         f"[COORD DEBUG] map=({map_x:.1f}, {map_y:.1f}) -> "
         f"pixel=({pixel_x:.1f}, {pixel_y:.1f}) -> "

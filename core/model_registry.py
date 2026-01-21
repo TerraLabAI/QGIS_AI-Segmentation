@@ -1,14 +1,4 @@
-"""
-Model Registry for AI Segmentation
 
-Centralized configuration for all supported segmentation models.
-Each model has specific tensor names, shapes, and download sources.
-
-Supported Models:
-- SAM ViT-B (Fast): Original SAM, quantized for CPU
-- SAM2 Hiera Base+ (Balanced): SAM2 with better quality
-- SAM2 Hiera Large (Precise): SAM2 highest quality
-"""
 
 from dataclasses import dataclass
 from typing import Dict, Tuple, List
@@ -16,75 +6,55 @@ from typing import Dict, Tuple, List
 
 @dataclass
 class ModelConfig:
-    """Configuration for a single segmentation model."""
+    
 
-    # Identity
     model_id: str
     display_name: str
     description: str
 
-    # HuggingFace source
     huggingface_repo: str
     encoder_file: str
     decoder_file: str
 
-    # File sizes (for download progress)
     encoder_size_mb: int
     decoder_size_mb: int
 
-    # Model architecture parameters
     input_size: int  # SAM input size (typically 1024)
     feature_shape: Tuple[int, int, int, int]  # (batch, channels, height, width)
     mask_input_shape: Tuple[int, int, int, int]  # Shape for mask input tensor
 
-    # Tensor name mappings (different between SAM and SAM2)
-    # Maps logical name -> actual ONNX tensor name
     encoder_input_name: str
     encoder_output_names: Dict[str, str]  # Map logical name -> ONNX name
 
-    # Decoder tensor names - key is logical name, value is ONNX name
     decoder_input_names: Dict[str, str]
     decoder_output_names: Dict[str, str]
 
-    # Expected tensor ranks for validation
     decoder_input_ranks: Dict[str, int]
 
-    # Model architecture type (affects encoder/decoder behavior)
     is_sam2: bool = False
 
-    # Mask threshold for binarization
-    # Most models output logits (threshold 0.0), but some output 0-255 scaled values
     mask_threshold: float = 0.0
 
-    # Coordinate space for point_coords input
-    # True = coordinates in original pixel space (0 to width/height)
-    # False = coordinates in SAM 1024x1024 space (scaled)
-    # Models with orig_im_size input typically expect original pixel coords
     coords_in_original_space: bool = False
 
-    # Some SAM2 models may have inverted Y axis convention
-    # True = Y coordinate needs to be inverted (Y' = max_Y - Y)
     invert_y_coord: bool = False
 
     @property
     def total_size_mb(self) -> int:
-        """Total download size in MB."""
+        
         return self.encoder_size_mb + self.decoder_size_mb
 
     @property
     def local_encoder_name(self) -> str:
-        """Local filename for encoder (standardized)."""
+        
         return "encoder.onnx"
 
     @property
     def local_decoder_name(self) -> str:
-        """Local filename for decoder (standardized)."""
+        
         return "decoder.onnx"
 
 
-# ============================================================================
-# Model Configurations
-# ============================================================================
 
 SAM_VIT_B = ModelConfig(
     model_id="sam_vit_b",
@@ -102,7 +72,6 @@ SAM_VIT_B = ModelConfig(
     feature_shape=(1, 256, 64, 64),
     mask_input_shape=(1, 1, 256, 256),
 
-    # SAM encoder: input is "x", output is "image_embeddings"
     encoder_input_name="x",
     encoder_output_names={
         "image_embeddings": "image_embeddings",
@@ -149,7 +118,6 @@ SAM2_BASE_PLUS = ModelConfig(
     feature_shape=(1, 256, 64, 64),
     mask_input_shape=(1, 1, 256, 256),
 
-    # SAM2 encoder: input is "image", outputs are 3 tensors
     encoder_input_name="image",
     encoder_output_names={
         "image_embed": "image_embed",
@@ -157,7 +125,6 @@ SAM2_BASE_PLUS = ModelConfig(
         "high_res_feats_1": "high_res_feats_1",
     },
 
-    # SAM2 decoder requires high-resolution features from encoder
     decoder_input_names={
         "image_embed": "image_embed",
         "high_res_feats_0": "high_res_feats_0",
@@ -186,14 +153,10 @@ SAM2_BASE_PLUS = ModelConfig(
 
     is_sam2=True,
 
-    # This model outputs 0-255 scaled values, not logits
     mask_threshold=127.5,
 
-    # SAM2 Base+ expects coordinates in original pixel space
-    # (it uses orig_im_size to normalize internally)
     coords_in_original_space=True,
 
-    # SAM2 may have inverted Y-axis convention
     invert_y_coord=True,
 )
 
@@ -213,7 +176,6 @@ SAM2_LARGE = ModelConfig(
     feature_shape=(1, 256, 64, 64),
     mask_input_shape=(1, 1, 256, 256),
 
-    # SAM2 encoder: input is "image", outputs are 3 tensors
     encoder_input_name="image",
     encoder_output_names={
         "image_embed": "image_embed",
@@ -221,7 +183,6 @@ SAM2_LARGE = ModelConfig(
         "high_res_feats_1": "high_res_feats_1",
     },
 
-    # SAM2 Large decoder - NOTE: does NOT have orig_im_size input
     decoder_input_names={
         "image_embed": "image_embed",
         "high_res_feats_0": "high_res_feats_0",
@@ -230,7 +191,6 @@ SAM2_LARGE = ModelConfig(
         "point_labels": "point_labels",
         "mask_input": "mask_input",
         "has_mask_input": "has_mask_input",
-        # No orig_im_size for SAM2 Large!
     },
     decoder_output_names={
         "masks": "masks",
@@ -249,14 +209,10 @@ SAM2_LARGE = ModelConfig(
 
     is_sam2=True,
 
-    # SAM2 may have inverted Y-axis convention
     invert_y_coord=True,
 )
 
 
-# ============================================================================
-# Registry
-# ============================================================================
 
 MODEL_REGISTRY: Dict[str, ModelConfig] = {
     "sam_vit_b": SAM_VIT_B,
@@ -264,46 +220,23 @@ MODEL_REGISTRY: Dict[str, ModelConfig] = {
     "sam2_large": SAM2_LARGE,
 }
 
-# Order for display in UI (top to bottom)
 MODEL_ORDER: List[str] = ["sam_vit_b", "sam2_base_plus", "sam2_large"]
 
-# Default model for new users
 DEFAULT_MODEL_ID = "sam_vit_b"
 
 
 def get_model_config(model_id: str) -> ModelConfig:
-    """
-    Get configuration for a specific model.
-
-    Args:
-        model_id: Model identifier (e.g., "sam_vit_b")
-
-    Returns:
-        ModelConfig for the specified model
-
-    Raises:
-        KeyError: If model_id is not found in registry
-    """
+    
     if model_id not in MODEL_REGISTRY:
         raise KeyError(f"Unknown model: {model_id}. Available: {list(MODEL_REGISTRY.keys())}")
     return MODEL_REGISTRY[model_id]
 
 
 def get_all_models() -> List[ModelConfig]:
-    """
-    Get all available models in display order.
-
-    Returns:
-        List of ModelConfig objects
-    """
+    
     return [MODEL_REGISTRY[model_id] for model_id in MODEL_ORDER]
 
 
 def get_model_ids() -> List[str]:
-    """
-    Get all model IDs in display order.
-
-    Returns:
-        List of model ID strings
-    """
+    
     return MODEL_ORDER.copy()

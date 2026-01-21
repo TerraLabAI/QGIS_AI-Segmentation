@@ -1,8 +1,4 @@
-# AI Segmentation - Required Python packages
-# These will be installed automatically on first run
 
-# Core inference engine (CPU version for cross-platform compatibility)
 onnxruntime>=1.15.0
 
-# Numerical operations
 numpy>=1.20.0

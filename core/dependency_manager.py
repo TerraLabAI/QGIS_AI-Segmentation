@@ -1,15 +1,4 @@
-"""
-Dependency Manager for AI Segmentation
 
-Handles checking and installation of required Python packages (onnxruntime, numpy).
-Designed for stability - never crashes QGIS, provides clear feedback.
-
-IMPORTANT Windows note:
-- sys.executable returns QGIS.exe, NOT the Python interpreter!
-- We must use 'python' command or find the actual Python path within QGIS installation
-- Packages are installed to a local directory within the plugin folder
-- Uses CREATE_NO_WINDOW flag to avoid black console window appearing
-"""
 
 import subprocess
 import sys
@@ -20,9 +9,7 @@ import importlib.util
 
 from qgis.core import QgsMessageLog, Qgis, QgsSettings
 
-# Windows-specific flags to hide console window
 if sys.platform == "win32":
-    # These prevent the black console window from appearing
     CREATE_NO_WINDOW = 0x08000000
     STARTUPINFO = subprocess.STARTUPINFO()
     STARTUPINFO.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -31,41 +18,20 @@ else:
     CREATE_NO_WINDOW = 0
     STARTUPINFO = None
 
-# Required packages with minimum versions
 REQUIRED_PACKAGES = [
     ("numpy", "1.20.0"),
     ("onnxruntime", "1.15.0"),
 ]
 
-# Settings key for remembering user choice
 SETTINGS_KEY_DEPS_DISMISSED = "AI_Segmentation/dependencies_dismissed"
 
-# Directory where packages will be installed (local to plugin)
 PYTHON_VERSION = sys.version_info
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGES_INSTALL_DIR = os.path.join(PLUGIN_ROOT_DIR, f'python{PYTHON_VERSION.major}.{PYTHON_VERSION.minor}')
 
 
 def get_python_path() -> Optional[str]:
-    """
-    Get the correct Python executable path for QGIS.
-
-    IMPORTANT:
-    - On Windows: sys.executable returns QGIS.exe, NOT Python!
-      We use 'python' command which works in QGIS's Python environment.
-    - On macOS: sys.executable returns QGIS app path, not Python!
-      We need to find Python inside the bundle.
-    - On Linux: sys.executable usually works correctly.
-
-    Supports multiple QGIS versions:
-    - QGIS 3.44+: Python directly in MacOS/ folder (e.g., MacOS/python3.12)
-    - Older QGIS: Python in MacOS/bin/ folder (e.g., MacOS/bin/python3)
-
-    Returns:
-        Path to Python executable, or None if not found
-    """
-    # On Windows: sys.executable returns QGIS.exe, NOT Python!
-    # Use 'python' command which works in QGIS's Python environment
+    
     if sys.platform == "win32":
         QgsMessageLog.logMessage(
             "Windows detected: using 'python' command (sys.executable returns QGIS.exe)",
@@ -74,39 +40,28 @@ def get_python_path() -> Optional[str]:
         )
         return "python"
 
-    # On macOS with QGIS.app
     if sys.platform == "darwin":
         possible_paths = []
 
-        # First, try to find Python version from sys.version_info
         py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
 
-        # QGIS 3.44+ structure: Python directly in MacOS folder
-        # Try both QGIS.app and QGIS-LTR.app
         for app_name in ["QGIS.app", "QGIS-LTR.app"]:
             base = f"/Applications/{app_name}/Contents/MacOS"
-            # Version-specific Python (e.g., python3.12)
             possible_paths.append(f"{base}/{py_version}")
-            # Generic python3
             possible_paths.append(f"{base}/python3")
-            # Just python
             possible_paths.append(f"{base}/python")
-            # Old structure with bin/ subfolder
             possible_paths.append(f"{base}/bin/{py_version}")
             possible_paths.append(f"{base}/bin/python3")
             possible_paths.append(f"{base}/bin/python")
 
-        # Homebrew QGIS
         possible_paths.extend([
             "/opt/homebrew/opt/qgis/bin/python3",
             "/usr/local/opt/qgis/bin/python3",
         ])
 
-        # Also try to find it relative to sys.prefix
         if sys.prefix:
             prefix_python = Path(sys.prefix) / "bin" / "python3"
             possible_paths.insert(0, str(prefix_python))
-            # Also check directly in prefix for newer structures
             prefix_python_versioned = Path(sys.prefix) / py_version
             possible_paths.insert(0, str(prefix_python_versioned))
 
@@ -119,26 +74,16 @@ def get_python_path() -> Optional[str]:
                 )
                 return path
 
-        # Last resort: try to use sys.executable if it looks like Python
         if "python" in sys.executable.lower():
             return sys.executable
 
         return None
 
-    # On Linux, sys.executable usually works correctly
     return sys.executable
 
 
 def is_package_installed(package_name: str) -> bool:
-    """
-    Check if a package is installed and importable.
-
-    Args:
-        package_name: Name of the package to check
-
-    Returns:
-        True if package is installed and importable
-    """
+    
     try:
         spec = importlib.util.find_spec(package_name)
         return spec is not None
@@ -147,15 +92,7 @@ def is_package_installed(package_name: str) -> bool:
 
 
 def get_installed_version(package_name: str) -> Optional[str]:
-    """
-    Get the installed version of a package.
-
-    Args:
-        package_name: Name of the package
-
-    Returns:
-        Version string or None if not installed
-    """
+    
     try:
         if package_name == "onnxruntime":
             import onnxruntime
@@ -171,12 +108,7 @@ def get_installed_version(package_name: str) -> Optional[str]:
 
 
 def check_dependencies() -> List[Tuple[str, str, bool, Optional[str]]]:
-    """
-    Check which required dependencies are installed.
-
-    Returns:
-        List of tuples: (package_name, required_version, is_installed, installed_version)
-    """
+    
     results = []
     for package_name, min_version in REQUIRED_PACKAGES:
         installed = is_package_installed(package_name)
@@ -186,12 +118,7 @@ def check_dependencies() -> List[Tuple[str, str, bool, Optional[str]]]:
 
 
 def get_missing_dependencies() -> List[Tuple[str, str]]:
-    """
-    Get list of missing dependencies.
-
-    Returns:
-        List of tuples: (package_name, required_version)
-    """
+    
     missing = []
     for package_name, min_version, installed, _ in check_dependencies():
         if not installed:
@@ -200,97 +127,37 @@ def get_missing_dependencies() -> List[Tuple[str, str]]:
 
 
 def all_dependencies_installed() -> bool:
-    """Quick check if all dependencies are installed."""
+    
     return len(get_missing_dependencies()) == 0
 
 
 def get_manual_install_instructions() -> str:
-    """
-    Get manual installation instructions for the user.
-
-    Returns:
-        String with instructions to show the user
-    """
+    
     target_dir = PACKAGES_INSTALL_DIR
     
     if sys.platform == "darwin":
-        return f"""To install dependencies manually on macOS:
-
-RECOMMENDED METHOD (QGIS Python Console):
-
-1. In QGIS, go to: Plugins → Python Console
-2. In the console, type:
-
-import pip
-pip.main(['install', '-U', '--target={target_dir}', 'numpy', 'onnxruntime'])
-
-3. Restart QGIS
-
-ALTERNATIVE (if you have an older QGIS version):
-
-Open Terminal and run:
-/Applications/QGIS.app/Contents/MacOS/bin/pip3 install -U --target="{target_dir}" numpy onnxruntime
-
-Then restart QGIS."""
+        return f
 
     elif sys.platform == "win32":
-        return f"""To install dependencies manually on Windows:
-
-1. Open OSGeo4W Shell (installed with QGIS)
-2. Run: python -m pip install -U --target="{target_dir}" numpy onnxruntime
-3. Restart QGIS
-
-OR use QGIS Python Console:
-
-1. In QGIS, go to: Plugins → Python Console
-2. Type:
-
-import pip
-pip.main(['install', '-U', '--target', r'{target_dir}', 'numpy', 'onnxruntime'])
-
-3. Restart QGIS"""
+        return f
 
     else:  # Linux
-        return f"""To install dependencies manually, open terminal and run:
-
-pip3 install -U --target="{target_dir}" numpy onnxruntime
-
-Then restart QGIS."""
+        return f
 
 
 def install_package_via_pip_module(package_name: str, version: str = None) -> Tuple[bool, str]:
-    """
-    Install a package using pip module directly (works inside QGIS context).
-
-    This method imports pip and calls it programmatically, which works
-    even when the Python executable cannot be called from outside QGIS
-    (common issue with QGIS 3.44+ on macOS using vcpkg).
-
-    ADVANTAGE: Does NOT open a console window on Windows!
     
-    Installs to a local directory within the plugin folder.
-
-    Args:
-        package_name: Name of the package to install
-        version: Optional version specifier
-
-    Returns:
-        Tuple of (success, message)
-    """
     try:
         import pip
         from pip._internal.cli.main import main as pip_main
     except ImportError:
         try:
-            # Older pip versions
             from pip import main as pip_main
         except ImportError:
             return False, "pip module not available"
 
-    # Ensure packages directory exists
     ensure_packages_dir_in_path()
 
-    # Build the package specifier
     if version:
         package_spec = f"{package_name}>={version}"
     else:
@@ -308,9 +175,6 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
     )
 
     try:
-        # Install with --target to local directory
-        # Remove --quiet to see more progress in logs
-        # Use --progress-bar off for cleaner log output
         args = [
             "install", 
             "-U", 
@@ -325,8 +189,6 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
             level=Qgis.Info
         )
 
-        # Note: pip_main writes directly to stdout/stderr
-        # On Windows this stays within QGIS, no console window
         return_code = pip_main(args)
 
         if return_code == 0:
@@ -354,11 +216,7 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
 
 
 def ensure_packages_dir_in_path():
-    """
-    Ensure the packages install directory exists and is in sys.path.
     
-    This must be called before trying to import installed packages.
-    """
     os.makedirs(PACKAGES_INSTALL_DIR, exist_ok=True)
     if PACKAGES_INSTALL_DIR not in sys.path:
         sys.path.insert(0, PACKAGES_INSTALL_DIR)
@@ -374,34 +232,15 @@ def install_package_via_subprocess(
     version: str = None,
     progress_callback: Optional[Callable[[str], None]] = None
 ) -> Tuple[bool, str]:
-    """
-    Install a package using subprocess to a local directory.
-
-    This method installs packages to a local directory within the plugin
-    folder using --target flag. This avoids permission issues and keeps
-    packages isolated per Python version.
-
-    On Windows, uses CREATE_NO_WINDOW flag to prevent black console window.
-    Uses Popen with real-time output reading for better user feedback.
-
-    Args:
-        package_name: Name of the package to install
-        version: Optional version specifier
-        progress_callback: Optional callback for progress messages (line by line)
-
-    Returns:
-        Tuple of (success, message)
-    """
+    
     python_path = get_python_path()
 
     if python_path is None:
         return False, "Could not find Python executable."
 
-    # Ensure packages directory exists
     ensure_packages_dir_in_path()
 
     try:
-        # Build the package specifier
         if version:
             package_spec = f"{package_name}>={version}"
         else:
@@ -413,8 +252,6 @@ def install_package_via_subprocess(
             level=Qgis.Info
         )
 
-        # Build pip command - install to local directory with --target
-        # Use --progress-bar off for cleaner output in logs
         cmd = [
             python_path,
             "-m",
@@ -432,7 +269,6 @@ def install_package_via_subprocess(
             level=Qgis.Info
         )
 
-        # Prepare subprocess kwargs with Windows-specific flags to hide console
         popen_kwargs = {
             "stdout": subprocess.PIPE,
             "stderr": subprocess.STDOUT,  # Merge stderr into stdout
@@ -441,18 +277,15 @@ def install_package_via_subprocess(
             "env": {**os.environ, "PYTHONIOENCODING": "utf-8"}
         }
         
-        # On Windows: Hide the console window
         if sys.platform == "win32":
             popen_kwargs["creationflags"] = CREATE_NO_WINDOW
             popen_kwargs["startupinfo"] = STARTUPINFO
 
-        # Use Popen for real-time output reading
         process = subprocess.Popen(cmd, **popen_kwargs)
         
         output_lines = []
         last_status = ""
         
-        # Read output line by line for real-time feedback
         while True:
             line = process.stdout.readline()
             if line == "" and process.poll() is not None:
@@ -461,14 +294,12 @@ def install_package_via_subprocess(
                 line = line.strip()
                 output_lines.append(line)
                 
-                # Log each line
                 QgsMessageLog.logMessage(
                     f"  pip: {line}",
                     "AI Segmentation",
                     level=Qgis.Info
                 )
                 
-                # Parse interesting lines for progress callback
                 if progress_callback:
                     if "Downloading" in line:
                         last_status = f"Downloading {package_name}..."
@@ -519,22 +350,7 @@ def install_package(
     version: str = None,
     progress_callback: Optional[Callable[[str], None]] = None
 ) -> Tuple[bool, str]:
-    """
-    Install a Python package using the best available method.
-
-    On macOS with QGIS 3.44+ (vcpkg build), uses pip module directly.
-    On Windows, prefers pip module (no console window), with subprocess fallback.
-    On Linux, uses subprocess (usually works fine).
-
-    Args:
-        package_name: Name of the package to install
-        version: Optional version specifier
-        progress_callback: Optional callback for progress messages
-
-    Returns:
-        Tuple of (success, message)
-    """
-    # On macOS and Windows, prefer pip module method (no console window)
+    
     if sys.platform in ("darwin", "win32"):
         platform_name = "macOS" if sys.platform == "darwin" else "Windows"
         QgsMessageLog.logMessage(
@@ -549,7 +365,6 @@ def install_package(
         if success:
             return success, msg
             
-        # Fallback to subprocess if pip module fails
         QgsMessageLog.logMessage(
             "pip module method failed, trying subprocess (hidden console)...",
             "AI Segmentation",
@@ -560,28 +375,13 @@ def install_package(
             
         return install_package_via_subprocess(package_name, version, progress_callback)
 
-    # On Linux, use subprocess (usually works fine)
     return install_package_via_subprocess(package_name, version, progress_callback)
 
 
 def install_all_dependencies(
     progress_callback: Optional[Callable[[int, int, str], None]] = None
 ) -> Tuple[bool, List[str]]:
-    """
-    Install all missing dependencies to local plugin directory.
-
-    Provides detailed progress feedback suitable for UI display.
-
-    Args:
-        progress_callback: Optional callback function(current, total, message)
-            - current: current step (0-based)
-            - total: total number of steps
-            - message: human-readable status message
-
-    Returns:
-        Tuple of (all_success, list of messages)
-    """
-    # Ensure packages directory exists and is in path
+    
     ensure_packages_dir_in_path()
 
     missing = get_missing_dependencies()
@@ -589,7 +389,6 @@ def install_all_dependencies(
     if not missing:
         return True, ["All dependencies are already installed"]
 
-    # Check if we can find Python first (not critical if using pip module)
     python_path = get_python_path()
     QgsMessageLog.logMessage(
         f"Python path: {python_path}",
@@ -615,10 +414,8 @@ def install_all_dependencies(
         if progress_callback:
             progress_callback(i, total, f"Installing {package_name}... ({i+1}/{total})")
 
-        # Create a sub-callback for detailed pip progress
         def pip_progress(msg: str):
             if progress_callback:
-                # Keep the step number but update the message
                 progress_callback(i, total, msg)
         
         success, msg = install_package(package_name, version, pip_progress)
@@ -653,17 +450,11 @@ def install_all_dependencies(
 
 
 def verify_installation() -> Tuple[bool, str]:
-    """
-    Verify that all dependencies are properly installed and importable.
-
-    Returns:
-        Tuple of (success, message)
-    """
+    
     try:
         import numpy as np
         import onnxruntime as ort
 
-        # Quick sanity check
         _ = np.array([1, 2, 3])
         providers = ort.get_available_providers()
 
@@ -676,53 +467,36 @@ def verify_installation() -> Tuple[bool, str]:
 
 
 def was_install_dismissed() -> bool:
-    """Check if user previously dismissed the install prompt."""
+    
     settings = QgsSettings()
     return settings.value(SETTINGS_KEY_DEPS_DISMISSED, False, type=bool)
 
 
 def set_install_dismissed(dismissed: bool):
-    """Remember that user dismissed the install prompt."""
+    
     settings = QgsSettings()
     settings.setValue(SETTINGS_KEY_DEPS_DISMISSED, dismissed)
 
 
 def reset_install_dismissed():
-    """Reset the dismissed state (for retry)."""
+    
     set_install_dismissed(False)
 
 
 def init_packages_path():
-    """
-    Initialize the packages directory and add it to sys.path.
     
-    This should be called early during plugin loading to ensure
-    that locally installed packages can be found by import statements.
-    
-    This is the main entry point that should be called from __init__.py
-    """
     os.makedirs(PACKAGES_INSTALL_DIR, exist_ok=True)
     if PACKAGES_INSTALL_DIR not in sys.path:
         sys.path.insert(0, PACKAGES_INSTALL_DIR)
 
 
 def get_packages_install_dir() -> str:
-    """
-    Get the directory where packages are installed.
     
-    Returns:
-        Path to the packages installation directory
-    """
     return PACKAGES_INSTALL_DIR
 
 
 def get_dependency_status_summary() -> str:
-    """
-    Get a human-readable summary of dependency status.
     
-    Returns:
-        Status string for display in UI
-    """
     deps = check_dependencies()
     installed = [(name, ver) for name, _, is_installed, ver in deps if is_installed]
     missing = [(name, req_ver) for name, req_ver, is_installed, _ in deps if not is_installed]
