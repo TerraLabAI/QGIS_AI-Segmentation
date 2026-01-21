@@ -19,12 +19,12 @@ class ModelConfig:
     encoder_size_mb: int
     decoder_size_mb: int
 
-    input_size: int  # SAM input size (typically 1024)
-    feature_shape: Tuple[int, int, int, int]  # (batch, channels, height, width)
-    mask_input_shape: Tuple[int, int, int, int]  # Shape for mask input tensor
+    input_size: int  
+    feature_shape: Tuple[int, int, int, int]  
+    mask_input_shape: Tuple[int, int, int, int]  
 
     encoder_input_name: str
-    encoder_output_names: Dict[str, str]  # Map logical name -> ONNX name
+    encoder_output_names: Dict[str, str]  
 
     decoder_input_names: Dict[str, str]
     decoder_output_names: Dict[str, str]

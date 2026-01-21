@@ -153,7 +153,7 @@ def download_file(
         with urllib.request.urlopen(request, timeout=30) as response:
             total_size = int(response.headers.get("Content-Length", 0))
             downloaded = 0
-            chunk_size = 8192 * 4  # 32KB chunks
+            chunk_size = 8192 * 4  
 
             destination.parent.mkdir(parents=True, exist_ok=True)
 
@@ -360,7 +360,7 @@ def delete_model(model_id: str) -> bool:
         try:
             model_dir.rmdir()
         except OSError:
-            pass  # Directory not empty or other issue
+            pass  
 
         QgsMessageLog.logMessage(
             f"Model {model_id} deleted",

@@ -9,7 +9,9 @@ import importlib.util
 
 from qgis.core import QgsMessageLog, Qgis, QgsSettings
 
+
 if sys.platform == "win32":
+    
     CREATE_NO_WINDOW = 0x08000000
     STARTUPINFO = subprocess.STARTUPINFO()
     STARTUPINFO.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -18,12 +20,15 @@ else:
     CREATE_NO_WINDOW = 0
     STARTUPINFO = None
 
+
 REQUIRED_PACKAGES = [
     ("numpy", "1.20.0"),
     ("onnxruntime", "1.15.0"),
 ]
 
+
 SETTINGS_KEY_DEPS_DISMISSED = "AI_Segmentation/dependencies_dismissed"
+
 
 PYTHON_VERSION = sys.version_info
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,6 +36,8 @@ PACKAGES_INSTALL_DIR = os.path.join(PLUGIN_ROOT_DIR, f'python{PYTHON_VERSION.maj
 
 
 def get_python_path() -> Optional[str]:
+    
+    
     
     if sys.platform == "win32":
         QgsMessageLog.logMessage(
@@ -40,28 +47,39 @@ def get_python_path() -> Optional[str]:
         )
         return "python"
 
+    
     if sys.platform == "darwin":
         possible_paths = []
 
+        
         py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
 
+        
+        
         for app_name in ["QGIS.app", "QGIS-LTR.app"]:
             base = f"/Applications/{app_name}/Contents/MacOS"
+            
             possible_paths.append(f"{base}/{py_version}")
+            
             possible_paths.append(f"{base}/python3")
+            
             possible_paths.append(f"{base}/python")
+            
             possible_paths.append(f"{base}/bin/{py_version}")
             possible_paths.append(f"{base}/bin/python3")
             possible_paths.append(f"{base}/bin/python")
 
+        
         possible_paths.extend([
             "/opt/homebrew/opt/qgis/bin/python3",
             "/usr/local/opt/qgis/bin/python3",
         ])
 
+        
         if sys.prefix:
             prefix_python = Path(sys.prefix) / "bin" / "python3"
             possible_paths.insert(0, str(prefix_python))
+            
             prefix_python_versioned = Path(sys.prefix) / py_version
             possible_paths.insert(0, str(prefix_python_versioned))
 
@@ -74,11 +92,13 @@ def get_python_path() -> Optional[str]:
                 )
                 return path
 
+        
         if "python" in sys.executable.lower():
             return sys.executable
 
         return None
 
+    
     return sys.executable
 
 
@@ -141,7 +161,7 @@ def get_manual_install_instructions() -> str:
     elif sys.platform == "win32":
         return f
 
-    else:  # Linux
+    else:  
         return f
 
 
@@ -152,12 +172,15 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
         from pip._internal.cli.main import main as pip_main
     except ImportError:
         try:
+            
             from pip import main as pip_main
         except ImportError:
             return False, "pip module not available"
 
+    
     ensure_packages_dir_in_path()
 
+    
     if version:
         package_spec = f"{package_name}>={version}"
     else:
@@ -175,6 +198,9 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
     )
 
     try:
+        
+        
+        
         args = [
             "install", 
             "-U", 
@@ -189,6 +215,8 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
             level=Qgis.Info
         )
 
+        
+        
         return_code = pip_main(args)
 
         if return_code == 0:
@@ -238,9 +266,11 @@ def install_package_via_subprocess(
     if python_path is None:
         return False, "Could not find Python executable."
 
+    
     ensure_packages_dir_in_path()
 
     try:
+        
         if version:
             package_spec = f"{package_name}>={version}"
         else:
@@ -252,6 +282,8 @@ def install_package_via_subprocess(
             level=Qgis.Info
         )
 
+        
+        
         cmd = [
             python_path,
             "-m",
@@ -269,6 +301,7 @@ def install_package_via_subprocess(
             level=Qgis.Info
         )
 
+        
         popen_kwargs = {
             "stdout": subprocess.PIPE,
             "stderr": subprocess.STDOUT,  # Merge stderr into stdout
@@ -277,14 +310,17 @@ def install_package_via_subprocess(
             "env": {**os.environ, "PYTHONIOENCODING": "utf-8"}
         }
         
+        
         if sys.platform == "win32":
             popen_kwargs["creationflags"] = CREATE_NO_WINDOW
             popen_kwargs["startupinfo"] = STARTUPINFO
 
+        
         process = subprocess.Popen(cmd, **popen_kwargs)
         
         output_lines = []
         last_status = ""
+        
         
         while True:
             line = process.stdout.readline()
@@ -294,11 +330,13 @@ def install_package_via_subprocess(
                 line = line.strip()
                 output_lines.append(line)
                 
+                
                 QgsMessageLog.logMessage(
                     f"  pip: {line}",
                     "AI Segmentation",
                     level=Qgis.Info
                 )
+                
                 
                 if progress_callback:
                     if "Downloading" in line:
@@ -351,6 +389,7 @@ def install_package(
     progress_callback: Optional[Callable[[str], None]] = None
 ) -> Tuple[bool, str]:
     
+    
     if sys.platform in ("darwin", "win32"):
         platform_name = "macOS" if sys.platform == "darwin" else "Windows"
         QgsMessageLog.logMessage(
@@ -365,6 +404,7 @@ def install_package(
         if success:
             return success, msg
             
+        
         QgsMessageLog.logMessage(
             "pip module method failed, trying subprocess (hidden console)...",
             "AI Segmentation",
@@ -375,12 +415,14 @@ def install_package(
             
         return install_package_via_subprocess(package_name, version, progress_callback)
 
+    
     return install_package_via_subprocess(package_name, version, progress_callback)
 
 
 def install_all_dependencies(
     progress_callback: Optional[Callable[[int, int, str], None]] = None
 ) -> Tuple[bool, List[str]]:
+    
     
     ensure_packages_dir_in_path()
 
@@ -389,6 +431,7 @@ def install_all_dependencies(
     if not missing:
         return True, ["All dependencies are already installed"]
 
+    
     python_path = get_python_path()
     QgsMessageLog.logMessage(
         f"Python path: {python_path}",
@@ -414,8 +457,10 @@ def install_all_dependencies(
         if progress_callback:
             progress_callback(i, total, f"Installing {package_name}... ({i+1}/{total})")
 
+        
         def pip_progress(msg: str):
             if progress_callback:
+                
                 progress_callback(i, total, msg)
         
         success, msg = install_package(package_name, version, pip_progress)
@@ -438,7 +483,7 @@ def install_all_dependencies(
             all_success = False
             if progress_callback:
                 progress_callback(i + 1, total, f"✗ {package_name} failed")
-            break  # Stop on first failure
+            break  
 
     if progress_callback:
         if all_success:
@@ -455,6 +500,7 @@ def verify_installation() -> Tuple[bool, str]:
         import numpy as np
         import onnxruntime as ort
 
+        
         _ = np.array([1, 2, 3])
         providers = ort.get_available_providers()
 
