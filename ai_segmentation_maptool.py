@@ -28,6 +28,7 @@ class AISegmentationMapTool(QgsMapTool):
     positive_click = pyqtSignal(QgsPointXY)  # Left click - foreground
     negative_click = pyqtSignal(QgsPointXY)  # Right click - background
     tool_deactivated = pyqtSignal()
+    undo_requested = pyqtSignal()  # Ctrl+Z pressed
 
     # Visual styling constants
     POSITIVE_COLOR = QColor(0, 255, 0)    # Green for positive points
@@ -168,8 +169,8 @@ class AISegmentationMapTool(QgsMapTool):
             # Deactivate tool on Escape
             self.canvas.unsetMapTool(self)
         elif event.key() == Qt.Key_Z and event.modifiers() & Qt.ControlModifier:
-            # Ctrl+Z for undo - handled by the main plugin
-            pass
+            # Ctrl+Z for undo - emit signal to main plugin
+            self.undo_requested.emit()
 
     def isActive(self) -> bool:
         """Check if the tool is currently active."""

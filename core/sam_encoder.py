@@ -8,6 +8,8 @@ The encoding is done once per image and cached to disk for reuse.
 """
 
 import os
+import hashlib
+import tempfile
 from pathlib import Path
 from typing import Tuple, Optional, Callable
 import json
@@ -332,9 +334,34 @@ def load_features(features_path: str) -> Tuple[Optional[np.ndarray], dict]:
         return None, {}
 
 
+def _is_file_based_layer(layer: QgsRasterLayer) -> bool:
+    """
+    Check if a layer is file-based (as opposed to web-based like XYZ, WMS).
+
+    Args:
+        layer: QgsRasterLayer
+
+    Returns:
+        True if the layer source is a local file
+    """
+    source = layer.source()
+
+    # Web layers typically have these patterns
+    web_indicators = ['http://', 'https://', 'type=xyz', 'type=wms', 'url=']
+    for indicator in web_indicators:
+        if indicator in source.lower():
+            return False
+
+    # Check if it's an actual file path
+    return os.path.isfile(source)
+
+
 def get_features_path(layer: QgsRasterLayer) -> str:
     """
     Get the path where features should be cached for a layer.
+
+    For file-based layers: cache in .ai_segmentation_cache next to the file
+    For web-based layers: cache in a user temp directory with hashed name
 
     Args:
         layer: QgsRasterLayer
@@ -342,10 +369,29 @@ def get_features_path(layer: QgsRasterLayer) -> str:
     Returns:
         Path for features cache (without extension)
     """
-    source_path = Path(layer.source())
-    cache_dir = source_path.parent / ".ai_segmentation_cache"
-    cache_dir.mkdir(exist_ok=True)
-    return str(cache_dir / source_path.stem)
+    source = layer.source()
+
+    if _is_file_based_layer(layer):
+        # File-based layer: cache next to the source file
+        source_path = Path(source)
+        cache_dir = source_path.parent / ".ai_segmentation_cache"
+        cache_dir.mkdir(exist_ok=True)
+        return str(cache_dir / source_path.stem)
+    else:
+        # Web-based layer (XYZ, WMS, etc.): use a temp directory
+        # Create a unique cache name based on layer source + extent
+        extent = layer.extent()
+        cache_key = f"{source}_{extent.toString()}"
+        cache_hash = hashlib.md5(cache_key.encode()).hexdigest()[:16]
+
+        # Use a persistent cache directory in user's home
+        cache_base = Path.home() / ".qgis_ai_segmentation_cache"
+        cache_dir = cache_base / cache_hash
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Use layer name as the stem for readability
+        layer_name = layer.name().replace(" ", "_").replace("/", "_")
+        return str(cache_dir / layer_name)
 
 
 def has_cached_features(layer: QgsRasterLayer) -> bool:
