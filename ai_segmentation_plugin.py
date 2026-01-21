@@ -171,9 +171,8 @@ class AISegmentationPlugin:
         self.download_worker = None
         self.prep_worker = None
 
-        # Visual feedback
+        # Visual feedback (RubberBand only - no preview layer)
         self.mask_rubber_band: Optional[QgsRubberBand] = None
-        self.preview_layer: Optional['QgsVectorLayer'] = None
 
     def initGui(self):
         """
@@ -212,14 +211,10 @@ class AISegmentationPlugin:
         self.dock_widget.cancel_download_requested.connect(self._on_cancel_download)
         self.dock_widget.cancel_preparation_requested.connect(self._on_cancel_preparation)
         self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
-        self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
+        self.dock_widget.finish_segmentation_requested.connect(self._on_finish_segmentation)
         self.dock_widget.clear_points_requested.connect(self._on_clear_points)
         self.dock_widget.undo_requested.connect(self._on_undo)
         self.dock_widget.save_mask_requested.connect(self._on_save_mask)
-        self.dock_widget.export_requested.connect(self._on_export)
-        # New session-based signals
-        self.dock_widget.modify_requested.connect(self._on_modify_requested)
-        self.dock_widget.new_session_requested.connect(self._on_new_session)
 
         # Add dock widget to QGIS
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
@@ -269,9 +264,6 @@ class AISegmentationPlugin:
         if self.mask_rubber_band:
             self.iface.mapCanvas().scene().removeItem(self.mask_rubber_band)
             self.mask_rubber_band = None
-
-        # Remove preview layer (safely)
-        self._remove_preview_layer_from_project()
 
         # Clean up workers
         for worker in [self.install_worker, self.download_worker, self.prep_worker]:
@@ -542,14 +534,90 @@ class AISegmentationPlugin:
         self.dock_widget.set_segmentation_active(True)
         self.dock_widget.set_status("Click on the map to segment")
 
-    def _on_stop_segmentation(self):
-        """Handle stop segmentation request."""
-        # Clear visual feedback
-        self._clear_mask_visualization()
+    def _on_finish_segmentation(self):
+        """Handle finish segmentation - create layer and reset session."""
+        if self.current_mask is None:
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                "No Segmentation",
+                "Click on the map to create a segmentation first."
+            )
+            return
 
+        # Deactivate map tool
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
-        self.dock_widget.set_segmentation_active(False)
-        self.dock_widget.set_status("Ready")
+
+        # Generate layer name based on raster name and counter
+        self._segmentation_counter += 1
+        layer_name = f"{self._current_layer_name}_segmentation_{self._segmentation_counter}"
+
+        # Create memory vector layer with the segmentation result
+        from .core.polygon_exporter import mask_to_polygons
+
+        transform_info = self.sam_model.get_transform_info()
+        geometries = mask_to_polygons(self.current_mask, transform_info)
+
+        if not geometries:
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                "No Polygons",
+                "Could not generate polygons from the segmentation."
+            )
+            self.dock_widget.set_segmentation_active(False)
+            return
+
+        # Get CRS from transform info
+        crs = transform_info.get('crs')
+        if crs is None:
+            # Fallback to project CRS
+            crs = QgsProject.instance().crs()
+
+        # Create memory layer
+        result_layer = QgsVectorLayer(
+            f"Polygon?crs={crs.authid()}&field=id:integer&field=score:double&field=area:double",
+            layer_name,
+            "memory"
+        )
+
+        if not result_layer.isValid():
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                "Layer Creation Failed",
+                "Could not create the output layer."
+            )
+            self.dock_widget.set_segmentation_active(False)
+            return
+
+        # Add features to layer
+        result_layer.startEditing()
+        for i, geom in enumerate(geometries):
+            feature = QgsFeature()
+            feature.setGeometry(geom)
+            feature.setAttributes([i + 1, self.current_score, geom.area()])
+            result_layer.addFeature(feature)
+        result_layer.commitChanges()
+
+        # Style with semi-transparent fill
+        symbol = QgsFillSymbol.createSimple({
+            'color': '0,120,255,100',
+            'outline_color': '0,80,200,255',
+            'outline_width': '0.5'
+        })
+        result_layer.renderer().setSymbol(symbol)
+
+        # Add to project
+        QgsProject.instance().addMapLayer(result_layer)
+
+        QgsMessageLog.logMessage(
+            f"Created segmentation layer: {layer_name}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+        # Reset session
+        self._reset_session()
+        self.dock_widget.reset_session()
+        self.dock_widget.set_status(f"Saved: {layer_name}")
 
     def _on_tool_deactivated(self):
         """Handle map tool deactivation."""
@@ -597,7 +665,7 @@ class AISegmentationPlugin:
             return False
 
     def _create_output_layer(self, source_layer: QgsRasterLayer):
-        """Create output vector layer."""
+        """Create output vector layer (only used for save_mask, not for finish)."""
         from .core.polygon_exporter import create_output_layer
 
         if not self._is_output_layer_valid():
@@ -606,189 +674,6 @@ class AISegmentationPlugin:
                 "AI_Segmentation_Output"
             )
             QgsProject.instance().addMapLayer(self.output_layer)
-
-        # Also create preview layer for current mask visualization
-        self._create_preview_layer(source_layer.crs())
-
-    def _is_preview_layer_valid(self) -> bool:
-        """
-        Safely check if the preview layer exists and is valid.
-
-        This handles the case where the user manually deletes the layer
-        from QGIS, which would cause the underlying C++ object to be
-        deleted while the Python reference still exists.
-
-        Returns:
-            True if preview_layer exists and is valid, False otherwise
-        """
-        if self.preview_layer is None:
-            return False
-
-        # Check if underlying C++ object was deleted (e.g., user removed layer)
-        try:
-            if sip.isdeleted(self.preview_layer):
-                QgsMessageLog.logMessage(
-                    "Preview layer C++ object was deleted externally",
-                    "AI Segmentation",
-                    level=Qgis.Info
-                )
-                self.preview_layer = None
-                return False
-        except Exception:
-            self.preview_layer = None
-            return False
-
-        # Now safe to call methods on the layer
-        try:
-            return self.preview_layer.isValid()
-        except RuntimeError:
-            # In case sip.isdeleted() didn't catch it
-            QgsMessageLog.logMessage(
-                "Preview layer became invalid",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-            self.preview_layer = None
-            return False
-
-    def _create_preview_layer(self, crs):
-        """
-        Create a temporary memory layer for mask preview visualization.
-
-        This layer appears in the Layers panel and shows the current
-        segmentation mask in real-time.
-        """
-        # Remove existing preview layer if any (safely)
-        self._remove_preview_layer_from_project()
-
-        # Create memory layer
-        self.preview_layer = QgsVectorLayer(
-            f"Polygon?crs={crs.authid()}",
-            "AI_Segmentation_Preview",
-            "memory"
-        )
-
-        if not self.preview_layer.isValid():
-            QgsMessageLog.logMessage(
-                "Failed to create preview layer",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
-            self.preview_layer = None
-            return
-
-        # Style with semi-transparent blue fill
-        symbol = QgsFillSymbol.createSimple({
-            'color': '0,120,255,100',  # Semi-transparent blue
-            'outline_color': '0,80,200,255',  # Darker blue outline
-            'outline_width': '0.5'
-        })
-        self.preview_layer.renderer().setSymbol(symbol)
-
-        # Add to project but don't select it
-        QgsProject.instance().addMapLayer(self.preview_layer, False)
-        # Add to layer tree at the top
-        root = QgsProject.instance().layerTreeRoot()
-        root.insertLayer(0, self.preview_layer)
-
-        QgsMessageLog.logMessage(
-            f"Created preview layer: {self.preview_layer.id()}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-
-    def _remove_preview_layer_from_project(self):
-        """
-        Safely remove the preview layer from the QGIS project.
-
-        Handles the case where the layer was already deleted externally.
-        """
-        if self.preview_layer is None:
-            return
-
-        try:
-            if not sip.isdeleted(self.preview_layer):
-                layer_id = self.preview_layer.id()
-                if QgsProject.instance().mapLayer(layer_id) is not None:
-                    QgsProject.instance().removeMapLayer(layer_id)
-                    QgsMessageLog.logMessage(
-                        f"Removed preview layer: {layer_id}",
-                        "AI Segmentation",
-                        level=Qgis.Info
-                    )
-        except (RuntimeError, AttributeError) as e:
-            QgsMessageLog.logMessage(
-                f"Preview layer already removed: {e}",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-        finally:
-            self.preview_layer = None
-
-    def _update_preview_layer(self, geometries):
-        """Update the preview layer with new geometries."""
-        if not self._is_preview_layer_valid():
-            QgsMessageLog.logMessage(
-                "Cannot update preview layer - not valid",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-            return
-
-        try:
-            # Clear existing features
-            self.preview_layer.startEditing()
-            self.preview_layer.deleteFeatures(
-                [f.id() for f in self.preview_layer.getFeatures()]
-            )
-
-            # Add new features
-            if geometries:
-                for geom in geometries:
-                    feature = QgsFeature()
-                    feature.setGeometry(geom)
-                    self.preview_layer.addFeature(feature)
-
-            self.preview_layer.commitChanges()
-            self.preview_layer.triggerRepaint()
-
-            QgsMessageLog.logMessage(
-                f"Updated preview layer with {len(geometries) if geometries else 0} geometries",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-        except RuntimeError as e:
-            QgsMessageLog.logMessage(
-                f"Error updating preview layer: {e}",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
-            self.preview_layer = None
-
-    def _clear_preview_layer(self):
-        """Clear all features from the preview layer."""
-        if not self._is_preview_layer_valid():
-            return
-
-        try:
-            self.preview_layer.startEditing()
-            self.preview_layer.deleteFeatures(
-                [f.id() for f in self.preview_layer.getFeatures()]
-            )
-            self.preview_layer.commitChanges()
-            self.preview_layer.triggerRepaint()
-            QgsMessageLog.logMessage(
-                "Cleared preview layer",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-        except RuntimeError as e:
-            QgsMessageLog.logMessage(
-                f"Error clearing preview layer: {e}",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
-            self.preview_layer = None
 
     # ==================== Click Handling ====================
 
@@ -918,8 +803,6 @@ class AISegmentationPlugin:
                         level=Qgis.Info
                     )
                     self.mask_rubber_band.setToGeometry(combined, None)
-                    # Also update the preview layer
-                    self._update_preview_layer(geometries)
                 else:
                     QgsMessageLog.logMessage("Combined geometry is empty", "AI Segmentation", level=Qgis.Warning)
                     self._clear_mask_visualization()
@@ -937,10 +820,9 @@ class AISegmentationPlugin:
             self._clear_mask_visualization()
 
     def _clear_mask_visualization(self):
-        """Clear the mask rubber band and preview layer."""
+        """Clear the mask rubber band."""
         if self.mask_rubber_band:
             self.mask_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
-        self._clear_preview_layer()
 
     def _on_clear_points(self):
         """Clear all points, markers, and mask visualization."""
@@ -1003,58 +885,6 @@ class AISegmentationPlugin:
             self.dock_widget.set_status(f"Saved {count} polygon(s) - click Clear to start new selection")
         else:
             self.dock_widget.set_status("Failed to save mask")
-
-    def _on_export(self, output_path: str):
-        """Export current segmentation to GeoPackage and reset session."""
-        if self.current_mask is None:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                "Nothing to Export",
-                "No segmentation to export."
-            )
-            return
-
-        from .core.polygon_exporter import export_mask_to_geopackage
-
-        # Generate layer name based on raster name and counter
-        self._segmentation_counter += 1
-        layer_name = f"{self._current_layer_name}_segmentation_{self._segmentation_counter}"
-
-        success, message = export_mask_to_geopackage(
-            self.current_mask,
-            self.sam_model.get_transform_info(),
-            self.current_score,
-            output_path,
-            layer_name
-        )
-
-        if success:
-            # Reset session after successful export
-            self._reset_session()
-            self.dock_widget.reset_session()
-            self.dock_widget.set_status(f"Exported: {layer_name}")
-
-            QgsMessageLog.logMessage(
-                f"Exported segmentation to: {output_path}",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-        else:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                "Export Failed",
-                message
-            )
-
-    def _on_modify_requested(self):
-        """Handle modify request - resume segmentation with current points."""
-        self._activate_segmentation_tool()
-        self.dock_widget.set_status("Resumed segmentation - continue clicking")
-
-    def _on_new_session(self):
-        """Handle new session request - clear everything and start fresh."""
-        self._reset_session()
-        self.dock_widget.set_status("Ready for new segmentation")
 
     def _reset_session(self):
         """Reset the current segmentation session."""

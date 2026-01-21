@@ -138,23 +138,25 @@ See `ai_segmentation_dockwidget.py:_update_ui_state()` for the logic.
    → Progress bar shows download (~109MB)
    → "Models ready ✓"
 4. Select raster layer from dropdown
-5. Click "▶ Start Point Mode" button
+5. Click "Start AI Segmentation" button
    → If first time: "Preparing layer..." (auto-encode, 1-5 min)
    → If cached: instant start
    → Cursor changes to CROSSHAIR ← User can now click on map!
 6. Left-click on map → foreground point (green marker)
 7. Right-click on map → background point (red marker)
-8. Mask appears instantly after each click
-9. Click "Save Current Mask" to save
-10. Click "■ Stop Point Mode" or press Escape to exit
-11. Export to GeoPackage when done
+8. Mask preview (RubberBand) appears instantly after each click
+9. Use "Undo Last Point" button to remove points if needed
+10. Click "Finish Segmentation" to save as a new layer
+    → Layer created with name: {raster_name}_segmentation_{counter}
+    → Panel resets for new session
 ```
 
-### Keyboard Shortcuts (when Point Mode is active)
+### Controls (when Segmentation Mode is active)
 - **Left-click**: Add foreground point (include this area)
 - **Right-click**: Add background point (exclude this area)
 - **Ctrl+Z**: Undo last point
-- **Escape**: Stop point mode and return to normal pan tool
+- **Undo Last Point button**: Remove the last point
+- **Finish Segmentation button**: Save mask as layer and reset
 
 ## Development Commands
 
@@ -208,11 +210,13 @@ if not models_exist():
 
 ## TODO / Roadmap
 
-- [x] Add mask preview overlay on map canvas (RubberBand + Preview Layer)
+- [x] Add mask preview overlay on map canvas (RubberBand only, no preview layer)
 - [x] LIFO undo with prompt_history tracking
-- [x] Ctrl+Z keyboard shortcut for undo
+- [x] Ctrl+Z keyboard shortcut for undo (active during segmentation only)
 - [x] Cancel buttons for download/preparation
-- [x] Layer change detection (auto-stop segmentation)
+- [x] Layer change detection (auto-cancel segmentation)
+- [x] Simplified session flow: Start → Click → Finish (auto-creates layer)
+- [x] Clean layer naming: {raster_name}_segmentation_{counter}
 - [ ] Add bounding box prompt support
 - [ ] Add GPU support (optional)
 - [ ] Create Processing algorithm for batch mode
