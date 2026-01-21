@@ -3,7 +3,7 @@ name=AI Segmentation
 qgisMinimumVersion=3.28
 description=AI-powered image segmentation for geospatial data using SAM (Segment Anything Model)
 version=1.0.0
-author=QGIS AI-Segmentation Team
+author=TerraLab AI
 
 about=AI Segmentation brings the power of Meta's Segment Anything Model (SAM) to QGIS for interactive segmentation of satellite imagery, orthophotos, and other geospatial rasters.
 

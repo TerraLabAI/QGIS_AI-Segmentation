@@ -31,28 +31,56 @@ def get_python_path() -> Optional[str]:
     On macOS QGIS.app, sys.executable returns the QGIS app path, not Python!
     We need to find the actual Python inside the bundle.
 
+    Supports multiple QGIS versions:
+    - QGIS 3.44+: Python directly in MacOS/ folder (e.g., MacOS/python3.12)
+    - Older QGIS: Python in MacOS/bin/ folder (e.g., MacOS/bin/python3)
+
     Returns:
         Path to Python executable, or None if not found
     """
     # On macOS with QGIS.app
     if sys.platform == "darwin":
-        # Check common locations for Python in QGIS.app bundle
-        possible_paths = [
-            # QGIS LTR and recent versions
-            "/Applications/QGIS-LTR.app/Contents/MacOS/bin/python3",
-            "/Applications/QGIS.app/Contents/MacOS/bin/python3",
-            # Homebrew QGIS
+        possible_paths = []
+
+        # First, try to find Python version from sys.version_info
+        py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+
+        # QGIS 3.44+ structure: Python directly in MacOS folder
+        # Try both QGIS.app and QGIS-LTR.app
+        for app_name in ["QGIS.app", "QGIS-LTR.app"]:
+            base = f"/Applications/{app_name}/Contents/MacOS"
+            # Version-specific Python (e.g., python3.12)
+            possible_paths.append(f"{base}/{py_version}")
+            # Generic python3
+            possible_paths.append(f"{base}/python3")
+            # Just python
+            possible_paths.append(f"{base}/python")
+            # Old structure with bin/ subfolder
+            possible_paths.append(f"{base}/bin/{py_version}")
+            possible_paths.append(f"{base}/bin/python3")
+            possible_paths.append(f"{base}/bin/python")
+
+        # Homebrew QGIS
+        possible_paths.extend([
             "/opt/homebrew/opt/qgis/bin/python3",
             "/usr/local/opt/qgis/bin/python3",
-        ]
+        ])
 
         # Also try to find it relative to sys.prefix
         if sys.prefix:
             prefix_python = Path(sys.prefix) / "bin" / "python3"
             possible_paths.insert(0, str(prefix_python))
+            # Also check directly in prefix for newer structures
+            prefix_python_versioned = Path(sys.prefix) / py_version
+            possible_paths.insert(0, str(prefix_python_versioned))
 
         for path in possible_paths:
             if os.path.isfile(path) and os.access(path, os.X_OK):
+                QgsMessageLog.logMessage(
+                    f"Found Python at: {path}",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
                 return path
 
         # Last resort: try to use sys.executable if it looks like Python
@@ -148,12 +176,21 @@ def get_manual_install_instructions() -> str:
         String with instructions to show the user
     """
     if sys.platform == "darwin":
-        return """To install dependencies manually, open Terminal and run:
+        return """To install dependencies manually on macOS:
 
-/Applications/QGIS-LTR.app/Contents/MacOS/bin/pip3 install numpy onnxruntime
+RECOMMENDED METHOD (QGIS Python Console):
 
-Or if you have QGIS (not LTR):
+1. In QGIS, go to: Plugins → Python Console
+2. In the console, type:
 
+import pip
+pip.main(['install', '--user', 'numpy', 'onnxruntime'])
+
+3. Restart QGIS
+
+ALTERNATIVE (if you have an older QGIS version):
+
+Open Terminal and run:
 /Applications/QGIS.app/Contents/MacOS/bin/pip3 install numpy onnxruntime
 
 Then restart QGIS."""
@@ -173,9 +210,76 @@ pip3 install --user numpy onnxruntime
 Then restart QGIS."""
 
 
-def install_package(package_name: str, version: str = None) -> Tuple[bool, str]:
+def install_package_via_pip_module(package_name: str, version: str = None) -> Tuple[bool, str]:
     """
-    Install a Python package using pip.
+    Install a package using pip module directly (works inside QGIS context).
+
+    This method imports pip and calls it programmatically, which works
+    even when the Python executable cannot be called from outside QGIS
+    (common issue with QGIS 3.44+ on macOS using vcpkg).
+
+    Args:
+        package_name: Name of the package to install
+        version: Optional version specifier
+
+    Returns:
+        Tuple of (success, message)
+    """
+    try:
+        import pip
+        from pip._internal.cli.main import main as pip_main
+    except ImportError:
+        try:
+            # Older pip versions
+            from pip import main as pip_main
+        except ImportError:
+            return False, "pip module not available"
+
+    # Build the package specifier
+    if version:
+        package_spec = f"{package_name}>={version}"
+    else:
+        package_spec = package_name
+
+    QgsMessageLog.logMessage(
+        f"Installing {package_spec} via pip module...",
+        "AI Segmentation",
+        level=Qgis.Info
+    )
+
+    try:
+        # Install with --user flag to avoid permission issues
+        # Use --quiet to reduce output noise
+        args = ["install", "--user", "--quiet", package_spec]
+
+        # Capture return code
+        return_code = pip_main(args)
+
+        if return_code == 0:
+            QgsMessageLog.logMessage(
+                f"Successfully installed {package_spec}",
+                "AI Segmentation",
+                level=Qgis.Success
+            )
+            return True, f"Installed {package_spec}"
+        else:
+            return False, f"pip returned error code {return_code}"
+
+    except Exception as e:
+        QgsMessageLog.logMessage(
+            f"Error installing {package_name}: {str(e)}",
+            "AI Segmentation",
+            level=Qgis.Warning
+        )
+        return False, f"Error: {str(e)[:200]}"
+
+
+def install_package_via_subprocess(package_name: str, version: str = None) -> Tuple[bool, str]:
+    """
+    Install a package using subprocess (traditional method).
+
+    This works on Windows and Linux where the Python executable
+    can be called directly.
 
     Args:
         package_name: Name of the package to install
@@ -187,7 +291,7 @@ def install_package(package_name: str, version: str = None) -> Tuple[bool, str]:
     python_path = get_python_path()
 
     if python_path is None:
-        return False, "Could not find Python executable. Please install manually."
+        return False, "Could not find Python executable."
 
     try:
         # Build the package specifier
@@ -248,6 +352,42 @@ def install_package(package_name: str, version: str = None) -> Tuple[bool, str]:
             level=Qgis.Warning
         )
         return False, f"Error: {str(e)[:200]}"
+
+
+def install_package(package_name: str, version: str = None) -> Tuple[bool, str]:
+    """
+    Install a Python package using the best available method.
+
+    On macOS with QGIS 3.44+ (vcpkg build), uses pip module directly.
+    On other platforms, uses subprocess to call pip.
+
+    Args:
+        package_name: Name of the package to install
+        version: Optional version specifier
+
+    Returns:
+        Tuple of (success, message)
+    """
+    # On macOS, prefer pip module method (works with vcpkg Python)
+    if sys.platform == "darwin":
+        QgsMessageLog.logMessage(
+            "macOS detected: using pip module method for installation",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        success, msg = install_package_via_pip_module(package_name, version)
+        if success:
+            return success, msg
+        # Fallback to subprocess if pip module fails
+        QgsMessageLog.logMessage(
+            "pip module method failed, trying subprocess...",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        return install_package_via_subprocess(package_name, version)
+
+    # On Windows/Linux, use subprocess (usually works fine)
+    return install_package_via_subprocess(package_name, version)
 
 
 def install_all_dependencies(
