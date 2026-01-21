@@ -1,4 +1,22 @@
+# Downloaded SAM models (~109 MB)
 models/
-.claude/
+
+# Installed Python dependencies (numpy, onnxruntime)
+# These are auto-installed to a version-specific folder
+python3.*/
+
+# Python cache
 __pycache__/
-core/__pycache__/
+*/__pycache__/
+*.pyc
+*.pyo
+
+# IDE / editor
+.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cache directories (created next to processed rasters)
+.ai_segmentation_cache/

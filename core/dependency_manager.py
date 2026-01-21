@@ -3,6 +3,11 @@ Dependency Manager for AI Segmentation
 
 Handles checking and installation of required Python packages (onnxruntime, numpy).
 Designed for stability - never crashes QGIS, provides clear feedback.
+
+IMPORTANT Windows note:
+- sys.executable returns QGIS.exe, NOT the Python interpreter!
+- We must use 'python' command or find the actual Python path within QGIS installation
+- Packages are installed to a local directory within the plugin folder
 """
 
 import subprocess
@@ -23,13 +28,22 @@ REQUIRED_PACKAGES = [
 # Settings key for remembering user choice
 SETTINGS_KEY_DEPS_DISMISSED = "AI_Segmentation/dependencies_dismissed"
 
+# Directory where packages will be installed (local to plugin)
+PYTHON_VERSION = sys.version_info
+PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PACKAGES_INSTALL_DIR = os.path.join(PLUGIN_ROOT_DIR, f'python{PYTHON_VERSION.major}.{PYTHON_VERSION.minor}')
+
 
 def get_python_path() -> Optional[str]:
     """
     Get the correct Python executable path for QGIS.
 
-    On macOS QGIS.app, sys.executable returns the QGIS app path, not Python!
-    We need to find the actual Python inside the bundle.
+    IMPORTANT:
+    - On Windows: sys.executable returns QGIS.exe, NOT Python!
+      We use 'python' command which works in QGIS's Python environment.
+    - On macOS: sys.executable returns QGIS app path, not Python!
+      We need to find Python inside the bundle.
+    - On Linux: sys.executable usually works correctly.
 
     Supports multiple QGIS versions:
     - QGIS 3.44+: Python directly in MacOS/ folder (e.g., MacOS/python3.12)
@@ -38,6 +52,16 @@ def get_python_path() -> Optional[str]:
     Returns:
         Path to Python executable, or None if not found
     """
+    # On Windows: sys.executable returns QGIS.exe, NOT Python!
+    # Use 'python' command which works in QGIS's Python environment
+    if sys.platform == "win32":
+        QgsMessageLog.logMessage(
+            "Windows detected: using 'python' command (sys.executable returns QGIS.exe)",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        return "python"
+
     # On macOS with QGIS.app
     if sys.platform == "darwin":
         possible_paths = []
@@ -89,7 +113,7 @@ def get_python_path() -> Optional[str]:
 
         return None
 
-    # On Windows/Linux, sys.executable should work
+    # On Linux, sys.executable usually works correctly
     return sys.executable
 
 
@@ -175,8 +199,10 @@ def get_manual_install_instructions() -> str:
     Returns:
         String with instructions to show the user
     """
+    target_dir = PACKAGES_INSTALL_DIR
+    
     if sys.platform == "darwin":
-        return """To install dependencies manually on macOS:
+        return f"""To install dependencies manually on macOS:
 
 RECOMMENDED METHOD (QGIS Python Console):
 
@@ -184,28 +210,38 @@ RECOMMENDED METHOD (QGIS Python Console):
 2. In the console, type:
 
 import pip
-pip.main(['install', '--user', 'numpy', 'onnxruntime'])
+pip.main(['install', '-U', '--target={target_dir}', 'numpy', 'onnxruntime'])
 
 3. Restart QGIS
 
 ALTERNATIVE (if you have an older QGIS version):
 
 Open Terminal and run:
-/Applications/QGIS.app/Contents/MacOS/bin/pip3 install numpy onnxruntime
+/Applications/QGIS.app/Contents/MacOS/bin/pip3 install -U --target="{target_dir}" numpy onnxruntime
 
 Then restart QGIS."""
 
     elif sys.platform == "win32":
-        return """To install dependencies manually:
+        return f"""To install dependencies manually on Windows:
 
 1. Open OSGeo4W Shell (installed with QGIS)
-2. Run: pip install numpy onnxruntime
+2. Run: python -m pip install -U --target="{target_dir}" numpy onnxruntime
+3. Restart QGIS
+
+OR use QGIS Python Console:
+
+1. In QGIS, go to: Plugins → Python Console
+2. Type:
+
+import pip
+pip.main(['install', '-U', '--target', r'{target_dir}', 'numpy', 'onnxruntime'])
+
 3. Restart QGIS"""
 
     else:  # Linux
-        return """To install dependencies manually, open terminal and run:
+        return f"""To install dependencies manually, open terminal and run:
 
-pip3 install --user numpy onnxruntime
+pip3 install -U --target="{target_dir}" numpy onnxruntime
 
 Then restart QGIS."""
 
@@ -217,6 +253,8 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
     This method imports pip and calls it programmatically, which works
     even when the Python executable cannot be called from outside QGIS
     (common issue with QGIS 3.44+ on macOS using vcpkg).
+
+    Installs to a local directory within the plugin folder.
 
     Args:
         package_name: Name of the package to install
@@ -235,6 +273,9 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
         except ImportError:
             return False, "pip module not available"
 
+    # Ensure packages directory exists
+    ensure_packages_dir_in_path()
+
     # Build the package specifier
     if version:
         package_spec = f"{package_name}>={version}"
@@ -242,15 +283,21 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
         package_spec = package_name
 
     QgsMessageLog.logMessage(
-        f"Installing {package_spec} via pip module...",
+        f"Installing {package_spec} via pip module to {PACKAGES_INSTALL_DIR}...",
         "AI Segmentation",
         level=Qgis.Info
     )
 
     try:
-        # Install with --user flag to avoid permission issues
+        # Install with --target to local directory
         # Use --quiet to reduce output noise
-        args = ["install", "--user", "--quiet", package_spec]
+        args = ["install", "-U", f"--target={PACKAGES_INSTALL_DIR}", "--quiet", package_spec]
+
+        QgsMessageLog.logMessage(
+            f"pip args: {args}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         # Capture return code
         return_code = pip_main(args)
@@ -274,12 +321,29 @@ def install_package_via_pip_module(package_name: str, version: str = None) -> Tu
         return False, f"Error: {str(e)[:200]}"
 
 
+def ensure_packages_dir_in_path():
+    """
+    Ensure the packages install directory exists and is in sys.path.
+    
+    This must be called before trying to import installed packages.
+    """
+    os.makedirs(PACKAGES_INSTALL_DIR, exist_ok=True)
+    if PACKAGES_INSTALL_DIR not in sys.path:
+        sys.path.insert(0, PACKAGES_INSTALL_DIR)
+        QgsMessageLog.logMessage(
+            f"Added packages directory to sys.path: {PACKAGES_INSTALL_DIR}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+
 def install_package_via_subprocess(package_name: str, version: str = None) -> Tuple[bool, str]:
     """
-    Install a package using subprocess (traditional method).
+    Install a package using subprocess to a local directory.
 
-    This works on Windows and Linux where the Python executable
-    can be called directly.
+    This method installs packages to a local directory within the plugin
+    folder using --target flag. This avoids permission issues and keeps
+    packages isolated per Python version.
 
     Args:
         package_name: Name of the package to install
@@ -293,6 +357,9 @@ def install_package_via_subprocess(package_name: str, version: str = None) -> Tu
     if python_path is None:
         return False, "Could not find Python executable."
 
+    # Ensure packages directory exists
+    ensure_packages_dir_in_path()
+
     try:
         # Build the package specifier
         if version:
@@ -301,20 +368,27 @@ def install_package_via_subprocess(package_name: str, version: str = None) -> Tu
             package_spec = package_name
 
         QgsMessageLog.logMessage(
-            f"Installing {package_spec} using {python_path}...",
+            f"Installing {package_spec} using {python_path} to {PACKAGES_INSTALL_DIR}...",
             "AI Segmentation",
             level=Qgis.Info
         )
 
-        # Build pip command
+        # Build pip command - install to local directory with --target
         cmd = [
             python_path,
             "-m",
             "pip",
             "install",
-            "--user",
+            "-U",  # Upgrade if already exists
+            f"--target={PACKAGES_INSTALL_DIR}",
             package_spec
         ]
+
+        QgsMessageLog.logMessage(
+            f"Running command: {' '.join(cmd)}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         # Run pip install with proper error handling
         result = subprocess.run(
@@ -394,7 +468,7 @@ def install_all_dependencies(
     progress_callback=None
 ) -> Tuple[bool, List[str]]:
     """
-    Install all missing dependencies.
+    Install all missing dependencies to local plugin directory.
 
     Args:
         progress_callback: Optional callback function(current, total, message)
@@ -402,6 +476,9 @@ def install_all_dependencies(
     Returns:
         Tuple of (all_success, list of messages)
     """
+    # Ensure packages directory exists and is in path
+    ensure_packages_dir_in_path()
+
     missing = get_missing_dependencies()
 
     if not missing:
@@ -411,6 +488,12 @@ def install_all_dependencies(
     python_path = get_python_path()
     if python_path is None:
         return False, ["Cannot find Python executable. " + get_manual_install_instructions()]
+
+    QgsMessageLog.logMessage(
+        f"Installing {len(missing)} packages to: {PACKAGES_INSTALL_DIR}",
+        "AI Segmentation",
+        level=Qgis.Info
+    )
 
     messages = []
     all_success = True
@@ -474,3 +557,46 @@ def set_install_dismissed(dismissed: bool):
 def reset_install_dismissed():
     """Reset the dismissed state (for retry)."""
     set_install_dismissed(False)
+
+
+def init_packages_path():
+    """
+    Initialize the packages directory and add it to sys.path.
+    
+    This should be called early during plugin loading to ensure
+    that locally installed packages can be found by import statements.
+    
+    This is the main entry point that should be called from __init__.py
+    """
+    os.makedirs(PACKAGES_INSTALL_DIR, exist_ok=True)
+    if PACKAGES_INSTALL_DIR not in sys.path:
+        sys.path.insert(0, PACKAGES_INSTALL_DIR)
+
+
+def get_packages_install_dir() -> str:
+    """
+    Get the directory where packages are installed.
+    
+    Returns:
+        Path to the packages installation directory
+    """
+    return PACKAGES_INSTALL_DIR
+
+
+def get_dependency_status_summary() -> str:
+    """
+    Get a human-readable summary of dependency status.
+    
+    Returns:
+        Status string for display in UI
+    """
+    deps = check_dependencies()
+    installed = [(name, ver) for name, _, is_installed, ver in deps if is_installed]
+    missing = [(name, req_ver) for name, req_ver, is_installed, _ in deps if not is_installed]
+    
+    if not missing:
+        versions = ", ".join([f"{name} {ver}" for name, ver in installed])
+        return f"OK: {versions}"
+    else:
+        missing_str = ", ".join([name for name, _ in missing])
+        return f"Missing: {missing_str}"
