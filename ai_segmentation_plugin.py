@@ -3,6 +3,7 @@ AI Segmentation - AI-powered segmentation plugin for QGIS
 
 Main plugin class that coordinates all components.
 Designed for stability - silent startup, checks only when panel opens.
+Supports multiple AI models (SAM, SAM2).
 """
 
 import os
@@ -39,7 +40,7 @@ from .ai_segmentation_maptool import AISegmentationMapTool
 
 class InstallWorker(QThread):
     """Worker thread for dependency installation.
-    
+
     Runs pip installation in background thread to avoid blocking QGIS UI.
     Emits progress updates for real-time feedback in the dock widget.
     """
@@ -63,7 +64,7 @@ class InstallWorker(QThread):
                     percent = int((current / total) * 100)
                 else:
                     percent = 0
-                
+
                 # Only emit if message changed (avoid UI flicker)
                 if msg != self._last_message:
                     self._last_message = msg
@@ -71,19 +72,19 @@ class InstallWorker(QThread):
 
             # Emit initial progress
             self.progress.emit(0, "Starting installation...")
-            
+
             success, messages = install_all_dependencies(callback)
-            
+
             # Emit completion
             if success:
-                self.progress.emit(100, "✓ Installation complete!")
+                self.progress.emit(100, "Installation complete!")
             else:
-                self.progress.emit(100, "✗ Installation failed")
-                
+                self.progress.emit(100, "Installation failed")
+
             self.finished.emit(success, messages)
 
         except Exception as e:
-            self.progress.emit(100, f"✗ Error: {str(e)[:50]}")
+            self.progress.emit(100, f"Error: {str(e)[:50]}")
             self.finished.emit(False, [str(e)])
 
 
@@ -91,23 +92,25 @@ class DownloadWorker(QThread):
     """Worker thread for model downloading."""
 
     progress = pyqtSignal(int, str)
-    finished = pyqtSignal(bool, str)
+    finished = pyqtSignal(bool, str, str)  # success, message, model_id
 
-    def __init__(self, parent=None):
+    def __init__(self, model_id: str, parent=None):
         super().__init__(parent)
+        self.model_id = model_id
 
     def run(self):
         """Run the download process."""
         try:
-            from .core.model_manager import download_models
+            from .core.model_manager import download_model
 
-            success, message = download_models(
+            success, message = download_model(
+                self.model_id,
                 progress_callback=lambda p, m: self.progress.emit(p, m)
             )
-            self.finished.emit(success, message)
+            self.finished.emit(success, message, self.model_id)
 
         except Exception as e:
-            self.finished.emit(False, str(e))
+            self.finished.emit(False, str(e), self.model_id)
 
 
 class PreparationWorker(QThread):
@@ -143,6 +146,7 @@ class AISegmentationPlugin:
     - Lazy initialization: Only check dependencies when panel opens
     - Clear feedback: Show all status in the plugin panel
     - Stability first: Never crash QGIS
+    - Multi-model support: SAM and SAM2 variants
     """
 
     def __init__(self, iface: QgisInterface):
@@ -157,6 +161,7 @@ class AISegmentationPlugin:
 
         # SAM model (lazy loaded)
         self.sam_model = None
+        self._current_model_id = None
 
         # State
         self.current_mask = None
@@ -207,7 +212,7 @@ class AISegmentationPlugin:
 
         # Connect dock widget signals
         self.dock_widget.install_dependencies_requested.connect(self._on_install_requested)
-        self.dock_widget.download_models_requested.connect(self._on_download_requested)
+        self.dock_widget.install_model_requested.connect(self._on_install_model_requested)
         self.dock_widget.cancel_download_requested.connect(self._on_cancel_download)
         self.dock_widget.cancel_preparation_requested.connect(self._on_cancel_preparation)
         self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
@@ -215,6 +220,7 @@ class AISegmentationPlugin:
         self.dock_widget.clear_points_requested.connect(self._on_clear_points)
         self.dock_widget.undo_requested.connect(self._on_undo)
         self.dock_widget.save_mask_requested.connect(self._on_save_mask)
+        self.dock_widget.model_changed.connect(self._on_model_changed)
 
         # Add dock widget to QGIS
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
@@ -330,15 +336,22 @@ class AISegmentationPlugin:
             self.dock_widget.set_dependency_status(False, f"Error: {str(e)[:50]}")
 
     def _check_models(self):
-        """Check if models are downloaded and load them."""
+        """Check which models are installed and update UI."""
         try:
-            from .core.model_manager import models_exist
+            from .core.model_manager import get_installed_models, get_first_installed_model
 
-            if models_exist():
-                self._load_models()
+            installed = get_installed_models()
+
+            if installed:
+                # At least one model installed - load the first one
+                first_model = get_first_installed_model()
+                self._load_models(first_model)
+                self.dock_widget.set_models_status(installed, first_model)
+                self.dock_widget.set_status("Ready - select a layer and start!")
             else:
-                self.dock_widget.set_models_status(False, "Models not downloaded")
-                self.dock_widget.set_status("Click 'Download Models' to continue")
+                # No models installed
+                self.dock_widget.set_models_status([], None)
+                self.dock_widget.set_status("Install an AI model to get started")
 
         except Exception as e:
             QgsMessageLog.logMessage(
@@ -346,26 +359,29 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Warning
             )
-            self.dock_widget.set_models_status(False, f"Error: {str(e)[:50]}")
+            self.dock_widget.set_models_status([], None)
 
-    def _load_models(self):
-        """Load SAM models."""
+    def _load_models(self, model_id: str):
+        """Load SAM models for a specific model ID."""
         try:
             from .core.sam_model import SAMModel
 
-            self.sam_model = SAMModel()
+            self.sam_model = SAMModel(model_id=model_id)
             success, message = self.sam_model.load()
 
             if success:
-                self.dock_widget.set_models_status(True, "Models ready")
-                self.dock_widget.set_status("Ready - select a layer and start!")
+                self._current_model_id = model_id
                 QgsMessageLog.logMessage(
-                    "SAM models loaded successfully",
+                    f"SAM models loaded successfully: {model_id}",
                     "AI Segmentation",
                     level=Qgis.Info
                 )
             else:
-                self.dock_widget.set_models_status(False, f"Load failed")
+                QgsMessageLog.logMessage(
+                    f"Failed to load models: {message}",
+                    "AI Segmentation",
+                    level=Qgis.Warning
+                )
                 self.dock_widget.set_status(f"Error: {message[:50]}")
 
         except Exception as e:
@@ -374,7 +390,6 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Warning
             )
-            self.dock_widget.set_models_status(False, "Load failed")
 
     # ==================== Installation ====================
 
@@ -424,11 +439,14 @@ class AISegmentationPlugin:
 
     # ==================== Model Download ====================
 
-    def _on_download_requested(self):
-        """Handle model download request."""
-        self.dock_widget.set_download_progress(0, "Starting download...")
+    def _on_install_model_requested(self, model_id: str):
+        """Handle model installation request for a specific model."""
+        from .core.model_registry import get_model_config
+        config = get_model_config(model_id)
 
-        self.download_worker = DownloadWorker()
+        self.dock_widget.set_download_progress(0, f"Downloading {config.display_name}...")
+
+        self.download_worker = DownloadWorker(model_id)
         self.download_worker.progress.connect(self._on_download_progress)
         self.download_worker.finished.connect(self._on_download_finished)
         self.download_worker.start()
@@ -437,19 +455,33 @@ class AISegmentationPlugin:
         """Handle download progress."""
         self.dock_widget.set_download_progress(percent, message)
 
-    def _on_download_finished(self, success: bool, message: str):
+    def _on_download_finished(self, success: bool, message: str, model_id: str):
         """Handle download completion."""
+        from .core.model_manager import get_installed_models
+
         if success:
             self.dock_widget.set_download_progress(100, "Download complete!")
-            self._load_models()
+
+            # Refresh installed models list
+            installed = get_installed_models()
+
+            # If this is the first model, load it
+            if self.sam_model is None or not self.sam_model.is_loaded:
+                self._load_models(model_id)
+                self.dock_widget.set_models_status(installed, model_id)
+            else:
+                # Keep current model, just update UI
+                self.dock_widget.set_models_status(installed, self._current_model_id)
+
+            self.dock_widget.set_status(f"Model installed: {model_id}")
         else:
-            self.dock_widget.set_models_status(False, "Download failed")
+            self.dock_widget.set_download_progress(0, "")
             self.dock_widget.set_status(f"Error: {message[:50]}")
 
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 "Download Failed",
-                f"Failed to download models:\n{message}\n\n"
+                f"Failed to download model:\n{message}\n\n"
                 "Please check your internet connection and try again."
             )
 
@@ -459,7 +491,6 @@ class AISegmentationPlugin:
             self.download_worker.terminate()
             self.download_worker.wait()
             self.dock_widget.set_download_progress(0, "Cancelled")
-            self.dock_widget.set_models_status(False, "Download cancelled")
             self.dock_widget.set_status("Download cancelled by user")
             QgsMessageLog.logMessage(
                 "Model download cancelled by user",
@@ -480,6 +511,35 @@ class AISegmentationPlugin:
                 level=Qgis.Info
             )
 
+    # ==================== Model Selection ====================
+
+    def _on_model_changed(self, model_id: str):
+        """Handle model selection change from the UI."""
+        if model_id == self._current_model_id:
+            return
+
+        QgsMessageLog.logMessage(
+            f"Switching model from {self._current_model_id} to {model_id}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+        # Switch model
+        if self.sam_model:
+            success, message = self.sam_model.switch_model(model_id)
+            if success:
+                self._current_model_id = model_id
+                self.dock_widget.set_status(f"Switched to {message}")
+            else:
+                QMessageBox.warning(
+                    self.iface.mainWindow(),
+                    "Model Switch Failed",
+                    f"Failed to switch model:\n{message}"
+                )
+        else:
+            # No model loaded yet, load the new one
+            self._load_models(model_id)
+
     # ==================== Segmentation ====================
 
     def _on_start_segmentation(self, layer: QgsRasterLayer):
@@ -488,7 +548,7 @@ class AISegmentationPlugin:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 "Not Ready",
-                "Please download models first."
+                "Please install and select a model first."
             )
             return
 

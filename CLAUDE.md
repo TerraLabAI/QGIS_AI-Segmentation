@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**QGIS AI-Segmentation**: A QGIS plugin for AI-powered geospatial image segmentation using Meta's Segment Anything Model (SAM).
+**QGIS AI-Segmentation**: A QGIS plugin for AI-powered geospatial image segmentation using Meta's Segment Anything Model (SAM) and SAM2.
 
 - **GitHub name**: QGIS_AI-Segmentation (public name so users know it's for QGIS)
 - **Plugin name in QGIS**: AI Segmentation (displayed inside QGIS)
 
 ### Key Features
 - Interactive point-based segmentation (click to segment)
+- **Multiple AI models**: Fast (SAM ViT-B), Balanced (SAM2 Base+), Precise (SAM2 Large)
 - **Automatic model download** from HuggingFace (no manual setup!)
 - CPU-optimized (no GPU required)
 - Pre-encoding architecture for real-time performance
@@ -25,52 +26,87 @@ QGIS_AI-Segmentation/              # Plugin root folder (this IS the plugin)
 ├── metadata.txt                   # Plugin metadata (name, version, etc.)
 ├── requirements.txt               # Python dependencies
 ├── ai_segmentation_plugin.py      # Main plugin coordinator class
-├── ai_segmentation_dockwidget.py  # PyQt5 dock panel UI (simplified)
+├── ai_segmentation_dockwidget.py  # PyQt5 dock panel UI (multi-model selector)
 ├── ai_segmentation_maptool.py     # QgsMapTool for capturing clicks
 ├── core/
-│   ├── model_manager.py           # ★ Auto-downloads models from HuggingFace
-│   ├── sam_model.py               # ★ Unified SAM interface (hides encoder/decoder)
+│   ├── model_registry.py          # ★ Model configurations (SAM, SAM2 variants)
+│   ├── model_manager.py           # ★ Multi-model download/storage management
+│   ├── sam_model.py               # ★ Unified SAM interface (supports model switching)
 │   ├── dependency_manager.py      # Auto-installs onnxruntime/numpy
-│   ├── sam_encoder.py             # Image → features (internal, used by sam_model)
-│   ├── sam_decoder.py             # Features + clicks → mask (internal)
+│   ├── sam_encoder.py             # Image → features (model-specific caching)
+│   ├── sam_decoder.py             # Features + clicks → mask (config-driven)
 │   ├── image_utils.py             # Raster ↔ numpy conversion
 │   └── polygon_exporter.py        # Mask → GeoPackage polygons
-├── models/                        # ONNX models (auto-downloaded, ~109MB)
-│   ├── encoder-quant.onnx         # Quantized encoder (~100MB)
-│   └── decoder-quant.onnx         # Quantized decoder (~9MB)
+├── models/                        # ONNX models (per-model subdirectories)
+│   ├── sam_vit_b/                 # Fast model (~109MB)
+│   │   ├── encoder.onnx
+│   │   └── decoder.onnx
+│   ├── sam2_base_plus/            # Balanced model (~294MB)
+│   │   ├── encoder.onnx
+│   │   └── decoder.onnx
+│   └── sam2_large/                # Precise model (~910MB)
+│       ├── encoder.onnx
+│       └── decoder.onnx
 ├── resources/icons/               # Plugin icons
 ├── tests/                         # Test modules
 └── ui/                            # UI modules
 ```
 
-### Simplified Architecture (v2)
+### Multi-Model Architecture
 
-The plugin now uses a **unified SAMModel class** that hides encoder/decoder complexity:
+The plugin supports three AI model tiers:
+
+| Model ID | Display Name | Size | Source | Description |
+|----------|-------------|------|--------|-------------|
+| `sam_vit_b` | Fast (SAM ViT-B) | ~109MB | visheratin/segment-anything-vit-b | Original SAM, quantized |
+| `sam2_base_plus` | Balanced (SAM2 Base+) | ~294MB | shubham0204/sam2-onnx-models | Better quality |
+| `sam2_large` | Precise (SAM2 Large) | ~910MB | shubham0204/sam2-onnx-models | Highest quality |
+
+### Unified SAM Model Interface
 
 ```python
-from core.sam_model import SAMModel
+from .core.sam_model import SAMModel
 
-model = SAMModel()
-model.download_models()  # Auto-download from HuggingFace
-model.load()             # Load both encoder and decoder
-model.prepare_layer(layer)  # Auto-encode (uses cache if available)
-mask, score = model.segment(points, labels)  # Real-time segmentation
+# Create model with specific variant
+model = SAMModel(model_id="sam_vit_b")  # or "sam2_base_plus", "sam2_large"
+model.load()                            # Load encoder + decoder
+model.prepare_layer(layer)              # Auto-encode (uses model-specific cache)
+mask, score = model.segment(points, labels)
+
+# Switch models (clears features, requires re-encoding)
+model.switch_model("sam2_large")
 ```
 
-### Model Management
+### Model Registry (`core/model_registry.py`)
 
-Models are automatically downloaded from HuggingFace on first run:
-- **Source**: `visheratin/segment-anything-vit-b` repository
-- **Files**: `encoder-quant.onnx` (100MB) + `decoder-quant.onnx` (9MB)
-- **Location**: Stored in plugin's `models/` folder
-- **No manual setup required!**
+Central configuration for all model specifications:
+```python
+from .core.model_registry import MODEL_REGISTRY, get_model_config, get_all_models
+
+config = get_model_config("sam_vit_b")
+print(config.display_name)      # "Fast (SAM ViT-B)"
+print(config.total_size_mb)     # 109
+print(config.huggingface_repo)  # "visheratin/segment-anything-vit-b"
+```
+
+### Model Manager (`core/model_manager.py`)
+
+Handles multi-model download and storage:
+```python
+from .core.model_manager import (
+    model_exists,           # Check if specific model is installed
+    get_installed_models,   # List all installed model IDs
+    download_model,         # Download specific model
+    migrate_legacy_models,  # Move old files to new structure
+)
+```
 
 ### Two-Stage Architecture (Internal)
 
-1. **Encoding (Heavy)**: `sam_encoder.py` processes the raster once, saves features to `.ai_segmentation_cache/`
+1. **Encoding (Heavy)**: `sam_encoder.py` processes the raster once, saves features to model-specific cache
 2. **Decoding (Light)**: `sam_decoder.py` runs in ~50-200ms per click using cached features
 
-This is hidden from users - they just click "Start Point Mode" and it works.
+The decoder uses config-driven tensor name mapping to support different model architectures (SAM vs SAM2).
 
 ## Map Tool Mechanism (CRITICAL)
 
@@ -86,45 +122,49 @@ QGIS uses a **Map Tool** system to handle mouse interactions on the map canvas:
 ```
 ai_segmentation_maptool.py    → AISegmentationMapTool (inherits QgsMapTool)
 ai_segmentation_plugin.py     → Main coordinator
-ai_segmentation_dockwidget.py → UI with "Start Point Mode" button
+ai_segmentation_dockwidget.py → UI with model selector and "Start" button
 ```
 
 ### Activation Flow
 
 ```
-1. User clicks "▶ Start Point Mode" button
+1. User selects AI Model from dropdown (must be installed)
    ↓
-2. dock_widget emits start_segmentation_requested signal
+2. User clicks "Start AI Segmentation" button
    ↓
-3. plugin._on_start_segmentation() is called
+3. dock_widget emits start_segmentation_requested signal
    ↓
-4. If layer needs preparation → runs PreparationWorker (encoding)
+4. plugin._on_start_segmentation() is called
    ↓
-5. plugin._activate_segmentation_tool() is called:
+5. If layer needs preparation → runs PreparationWorker (encoding)
+   ↓
+6. plugin._activate_segmentation_tool() is called:
    self.iface.mapCanvas().setMapTool(self.map_tool)  ← THIS IS KEY
    ↓
-6. Cursor changes to crosshair, clicks are now captured
+7. Cursor changes to crosshair, clicks are now captured
    ↓
-7. AISegmentationMapTool.canvasPressEvent() handles clicks
+8. AISegmentationMapTool.canvasPressEvent() handles clicks
    ↓
-8. Emits positive_click or negative_click signal
+9. Emits positive_click or negative_click signal
    ↓
-9. Plugin calls SAM model to generate mask
+10. Plugin calls SAM model to generate mask
 ```
 
 ### Key Code Locations
 
-- **Tool creation**: `ai_segmentation_plugin.py:186` - `AISegmentationMapTool(self.iface.mapCanvas())`
-- **Tool activation**: `ai_segmentation_plugin.py:499` - `self.iface.mapCanvas().setMapTool(self.map_tool)`
-- **Click handling**: `ai_segmentation_maptool.py:120-139` - `canvasPressEvent()`
-- **Signal connection**: `ai_segmentation_plugin.py:187-188` - connects click signals to handlers
+- **Model registry**: `core/model_registry.py` - All model configurations
+- **Tool creation**: `ai_segmentation_plugin.py:229` - `AISegmentationMapTool(self.iface.mapCanvas())`
+- **Tool activation**: `ai_segmentation_plugin.py:593` - `self.iface.mapCanvas().setMapTool(self.map_tool)`
+- **Model switching**: `ai_segmentation_plugin.py:516` - `_on_model_changed()`
+- **Click handling**: `ai_segmentation_maptool.py` - `canvasPressEvent()`
 
 ### Important: Why Button Must Be Enabled
 
-The "Start Point Mode" button is only enabled when:
+The "Start AI Segmentation" button is only enabled when:
 1. Dependencies are installed (`_dependencies_ok = True`)
-2. Models are downloaded and loaded (`_models_ok = True`)
-3. A raster layer is selected (`layer_combo.currentLayer() is not None`)
+2. At least one model is installed (`_models_ok = True`)
+3. A model is selected in the dropdown (`_current_model_id is not None`)
+4. A raster layer is selected (`layer_combo.currentLayer() is not None`)
 
 See `ai_segmentation_dockwidget.py:_update_ui_state()` for the logic.
 
@@ -134,19 +174,21 @@ See `ai_segmentation_dockwidget.py:_update_ui_state()` for the logic.
 1. Install plugin
 2. Enable in QGIS
 3. Open plugin panel
-   → "Models not downloaded" → Click "Download Models"
-   → Progress bar shows download (~109MB)
-   → "Models ready ✓"
-4. Select raster layer from dropdown
-5. Click "Start AI Segmentation" button
-   → If first time: "Preparing layer..." (auto-encode, 1-5 min)
-   → If cached: instant start
+   → Collapsible "Install AI Models" section
+   → Click "Install" next to desired model (Fast recommended for first use)
+   → Progress bar shows download
+   → Section collapses when first model installed
+4. Select AI Model from dropdown (grayed out = not installed)
+5. Select raster layer from dropdown
+6. Click "Start AI Segmentation" button
+   → If first time with this model: "Preparing layer..." (encoding, 1-5 min)
+   → If cached for this model: instant start
    → Cursor changes to CROSSHAIR ← User can now click on map!
-6. Left-click on map → foreground point (green marker)
-7. Right-click on map → background point (red marker)
-8. Mask preview (RubberBand) appears instantly after each click
-9. Use "Undo Last Point" button to remove points if needed
-10. Click "Finish Segmentation" to save as a new layer
+7. Left-click on map → foreground point (green marker)
+8. Right-click on map → background point (red marker)
+9. Mask preview (RubberBand) appears instantly after each click
+10. Use "Undo Last Point" button to remove points if needed
+11. Click "Finish Segmentation" to save as a new layer
     → Layer created with name: {raster_name}_segmentation_{counter}
     → Panel resets for new session
 ```
@@ -157,6 +199,7 @@ See `ai_segmentation_dockwidget.py:_update_ui_state()` for the logic.
 - **Ctrl+Z**: Undo last point
 - **Undo Last Point button**: Remove the last point
 - **Finish Segmentation button**: Save mask as layer and reset
+- **Model dropdown**: Disabled during active segmentation (finish first)
 
 ## Development Commands
 
@@ -179,10 +222,14 @@ pip install onnxruntime>=1.15.0 numpy>=1.20.0
 ### Testing Model Download
 
 ```python
-from core.model_manager import download_models, models_exist
+from .core.model_manager import download_model, model_exists, get_installed_models
 
-if not models_exist():
-    success, msg = download_models(lambda p, m: print(f"{p}%: {m}"))
+# Check what's installed
+print(get_installed_models())  # ['sam_vit_b', 'sam2_base_plus']
+
+# Download a specific model
+if not model_exists("sam2_large"):
+    success, msg = download_model("sam2_large", lambda p, m: print(f"{p}%: {m}"))
 ```
 
 ## Key Considerations
@@ -196,10 +243,12 @@ if not models_exist():
 - **No GPU Required**: Use `onnxruntime` CPU provider, not `onnxruntime-gpu`
 - **Coordinate Systems**: Preserve source raster CRS throughout
 - **Memory**: Handle large rasters by limiting read size (see `max_size` in `image_utils.py`)
-- **Caching**: Features are cached per-image:
-  - **File-based rasters** (GeoTIFF, etc.): `.ai_segmentation_cache/` folder next to the file
-  - **Web-based layers** (XYZ, WMS, Google Satellite): `~/.qgis_ai_segmentation_cache/<hash>/` in user home
+- **Caching**: Features are cached per-image AND per-model:
+  - **File-based rasters**: `.ai_segmentation_cache/{model_id}/` folder next to the file
+  - **Web-based layers**: `~/.qgis_ai_segmentation_cache/<hash>/{model_id}/` in user home
+  - Switching models requires re-encoding (different feature spaces)
 - **Plug-and-play**: Users should never need to manually download or configure models
+- **Model migration**: Existing users' models are automatically migrated to the new per-model directory structure
 
 ## Code Style
 
@@ -207,6 +256,7 @@ if not models_exist():
 - Use type hints
 - Docstrings for all public functions
 - Log messages via `QgsMessageLog.logMessage(..., "AI Segmentation", level=Qgis.Info)`
+- **Relative imports**: Always use `.core.module` not `core.module` within the plugin package
 
 ## TODO / Roadmap
 
@@ -217,8 +267,12 @@ if not models_exist():
 - [x] Layer change detection (auto-cancel segmentation)
 - [x] Simplified session flow: Start → Click → Finish (auto-creates layer)
 - [x] Clean layer naming: {raster_name}_segmentation_{counter}
+- [x] Multi-model support (SAM ViT-B, SAM2 Base+, SAM2 Large)
+- [x] Model selector dropdown with install status
+- [x] Collapsible model install section
+- [x] Per-model caching (separate feature cache per model)
+- [x] Legacy model migration
 - [ ] Add bounding box prompt support
 - [ ] Add GPU support (optional)
 - [ ] Create Processing algorithm for batch mode
-- [ ] Add SAM2 model support
 - [ ] Add MobileSAM option (smaller/faster)
