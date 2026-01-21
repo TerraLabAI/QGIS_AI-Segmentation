@@ -16,11 +16,9 @@ from qgis.PyQt.QtWidgets import (
     QProgressBar,
     QFileDialog,
     QFrame,
-    QTextEdit,
     QMessageBox,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal
-from qgis.PyQt.QtGui import QFont
 
 from qgis.core import QgsRasterLayer, QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
@@ -71,27 +69,16 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _setup_ui(self):
         """Set up the user interface."""
-        # Title
-        title_label = QLabel("AI Segmentation")
-        title_font = QFont()
-        title_font.setBold(True)
-        title_font.setPointSize(12)
-        title_label.setFont(title_font)
-        title_label.setAlignment(Qt.AlignCenter)
-        self.main_layout.addWidget(title_label)
-
-        self._add_separator()
-
-        # Step 1: Dependencies
+        # Dependencies section
         self._setup_dependencies_section()
 
-        # Step 2: Models
+        # Models section
         self._setup_models_section()
 
-        # Step 3: Segmentation
+        # Segmentation section
         self._setup_segmentation_section()
 
-        # Step 4: Export
+        # Export section
         self._setup_export_section()
 
         # Stretch at bottom
@@ -109,7 +96,7 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _setup_dependencies_section(self):
         """Set up the dependencies section."""
-        group = QGroupBox("Step 1: Dependencies")
+        group = QGroupBox("Dependencies")
         layout = QVBoxLayout(group)
 
         # Status label
@@ -138,7 +125,7 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _setup_models_section(self):
         """Set up the models section."""
-        group = QGroupBox("Step 2: AI Models")
+        group = QGroupBox("AI Models")
         layout = QVBoxLayout(group)
 
         # Status label
@@ -175,7 +162,7 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _setup_segmentation_section(self):
         """Set up the segmentation controls section."""
-        group = QGroupBox("Step 3: Segmentation")
+        group = QGroupBox("Segmentation")
         layout = QVBoxLayout(group)
 
         # Layer selection
@@ -279,7 +266,7 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _setup_export_section(self):
         """Set up the export section."""
-        group = QGroupBox("Step 4: Export")
+        group = QGroupBox("Export")
         layout = QVBoxLayout(group)
 
         # Save current mask button
