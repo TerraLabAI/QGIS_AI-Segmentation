@@ -9,20 +9,17 @@ from qgis.PyQt.QtWidgets import (
     QDockWidget,
     QWidget,
     QVBoxLayout,
-    QHBoxLayout,
     QGroupBox,
     QLabel,
     QPushButton,
     QProgressBar,
-    QFileDialog,
     QFrame,
     QMessageBox,
-    QSlider,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 
 from qgis.core import QgsMapLayerProxyModel
-from qgis.gui import QgsMapLayerComboBox, QgsCollapsibleGroupBox
+from qgis.gui import QgsMapLayerComboBox
 
 
 class AISegmentationDockWidget(QDockWidget):
@@ -30,9 +27,9 @@ class AISegmentationDockWidget(QDockWidget):
     Main dock widget for the AI Segmentation plugin.
 
     Clean session-based interface:
-    1. Select Layer -> Start Segmentation
-    2. Click to segment -> Stop
-    3. Modify or Export
+    1. Select Layer -> Start AI Segmentation
+    2. Click to segment (left=include, right=exclude)
+    3. Finish Segmentation -> Creates layer automatically
     """
 
     # Signals
@@ -44,12 +41,7 @@ class AISegmentationDockWidget(QDockWidget):
     clear_points_requested = pyqtSignal()
     undo_requested = pyqtSignal()
     save_mask_requested = pyqtSignal()
-    export_requested = pyqtSignal(str)  # output path
-    stop_segmentation_requested = pyqtSignal()
-    # New signals for session flow
-    modify_requested = pyqtSignal()  # Resume segmentation with same points
-    new_session_requested = pyqtSignal()  # Start fresh session
-    threshold_changed = pyqtSignal(float)  # Threshold value changed
+    finish_segmentation_requested = pyqtSignal()  # Finish and auto-export to layer
 
     def __init__(self, parent=None):
         """Initialize the dock widget."""
@@ -71,8 +63,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._dependencies_ok = False
         self._models_ok = False
         self._segmentation_active = False
-        self._has_mask = False  # Track if there's a current mask
-        self._session_stopped = False  # Track if session was stopped (show Modify/Export)
+        self._has_mask = False  # Track if there's a current mask (points placed)
 
     def _setup_ui(self):
         """Set up the user interface."""
@@ -81,12 +72,6 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Segmentation section
         self._setup_segmentation_section()
-
-        # Post-session section (Modify/Export) - hidden by default
-        self._setup_post_session_section()
-
-        # Advanced options (collapsible)
-        self._setup_advanced_section()
 
         # Stretch at bottom
         self.main_layout.addStretch()
@@ -162,8 +147,16 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _setup_segmentation_section(self):
         """Set up the segmentation controls section."""
-        group = QGroupBox("Segmentation")
-        layout = QVBoxLayout(group)
+        # Separator line instead of group box title
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Sunken)
+        self.main_layout.addWidget(sep)
+
+        # Container widget for segmentation controls
+        seg_widget = QWidget()
+        layout = QVBoxLayout(seg_widget)
+        layout.setContentsMargins(0, 8, 0, 0)
 
         # Layer selection
         layer_label = QLabel("Raster layer:")
@@ -181,8 +174,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.active_instructions_label = QLabel(
             "CLICK ON THE MAP\n\n"
             "Left-click = INCLUDE\n"
-            "Right-click = EXCLUDE\n\n"
-            "Ctrl+Z to undo, Escape to stop"
+            "Right-click = EXCLUDE"
         )
         self.active_instructions_label.setStyleSheet(
             "color: #1976d2; font-size: 11px; font-weight: bold; "
@@ -210,13 +202,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.cancel_prep_button.setStyleSheet("background-color: #d32f2f; color: white;")
         layout.addWidget(self.cancel_prep_button)
 
-        # Point counter (only shown when active)
-        self.point_counter_label = QLabel("")
-        self.point_counter_label.setStyleSheet("color: #666; font-size: 10px;")
-        self.point_counter_label.setVisible(False)
-        layout.addWidget(self.point_counter_label)
-
-        # Start/Stop button
+        # Start button (shown when NOT active)
         self.start_button = QPushButton("Start AI Segmentation")
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._on_start_clicked)
@@ -226,7 +212,7 @@ class AISegmentationDockWidget(QDockWidget):
         )
         layout.addWidget(self.start_button)
 
-        # Undo button (only shown when active)
+        # Undo button (shown when active, above Finish)
         self.undo_button = QPushButton("Undo Last Point")
         self.undo_button.setEnabled(False)
         self.undo_button.clicked.connect(self._on_undo_clicked)
@@ -234,68 +220,15 @@ class AISegmentationDockWidget(QDockWidget):
         self.undo_button.setToolTip("Remove the last point (Ctrl+Z)")
         layout.addWidget(self.undo_button)
 
-        self.main_layout.addWidget(group)
+        # Finish button (shown when active, replaces Start)
+        self.finish_button = QPushButton("Finish Segmentation")
+        self.finish_button.clicked.connect(self._on_finish_clicked)
+        self.finish_button.setVisible(False)
+        self.finish_button.setStyleSheet("background-color: #388e3c; color: white;")
+        self.finish_button.setToolTip("Save the segmentation as a new layer and start fresh")
+        layout.addWidget(self.finish_button)
 
-    def _setup_post_session_section(self):
-        """Set up the post-session section (Modify/Export buttons)."""
-        self.post_session_group = QGroupBox("Session Complete")
-        layout = QVBoxLayout(self.post_session_group)
-
-        # Info label
-        self.session_info_label = QLabel("Segmentation stopped")
-        self.session_info_label.setStyleSheet("color: #666; font-size: 10px;")
-        layout.addWidget(self.session_info_label)
-
-        # Button row
-        button_layout = QHBoxLayout()
-
-        self.modify_button = QPushButton("Modify")
-        self.modify_button.clicked.connect(self._on_modify_clicked)
-        self.modify_button.setToolTip("Resume segmentation with current points")
-        button_layout.addWidget(self.modify_button)
-
-        self.export_session_button = QPushButton("Export")
-        self.export_session_button.clicked.connect(self._on_export_session_clicked)
-        self.export_session_button.setToolTip("Save the current segmentation to a file")
-        button_layout.addWidget(self.export_session_button)
-
-        layout.addLayout(button_layout)
-
-        # New session button
-        self.new_session_button = QPushButton("New Segmentation")
-        self.new_session_button.clicked.connect(self._on_new_session_clicked)
-        self.new_session_button.setToolTip("Clear current mask and start fresh")
-        layout.addWidget(self.new_session_button)
-
-        self.post_session_group.setVisible(False)
-        self.main_layout.addWidget(self.post_session_group)
-
-    def _setup_advanced_section(self):
-        """Set up the advanced options section (collapsible)."""
-        self.advanced_group = QgsCollapsibleGroupBox("Advanced Options")
-        self.advanced_group.setCollapsed(True)
-        layout = QVBoxLayout(self.advanced_group)
-
-        # Threshold slider
-        threshold_layout = QHBoxLayout()
-        threshold_label = QLabel("Threshold:")
-        threshold_label.setToolTip("Confidence threshold for mask generation (0.0 - 1.0)")
-        threshold_layout.addWidget(threshold_label)
-
-        self.threshold_slider = QSlider(Qt.Horizontal)
-        self.threshold_slider.setRange(0, 100)
-        self.threshold_slider.setValue(50)  # Default 0.5
-        self.threshold_slider.setToolTip("Adjust the confidence threshold for segmentation")
-        self.threshold_slider.valueChanged.connect(self._on_threshold_changed)
-        threshold_layout.addWidget(self.threshold_slider)
-
-        self.threshold_value_label = QLabel("0.50")
-        self.threshold_value_label.setMinimumWidth(35)
-        threshold_layout.addWidget(self.threshold_value_label)
-
-        layout.addLayout(threshold_layout)
-
-        self.main_layout.addWidget(self.advanced_group)
+        self.main_layout.addWidget(seg_widget)
 
     def _setup_status_bar(self):
         """Set up the status bar at the bottom."""
@@ -333,60 +266,29 @@ class AISegmentationDockWidget(QDockWidget):
         """Handle layer selection change."""
         self._update_ui_state()
 
-        # If segmentation was active, stop it
+        # If segmentation was active, cancel it (layer changed)
         if self._segmentation_active:
-            self.stop_segmentation_requested.emit()
+            self._segmentation_active = False
+            self._update_button_visibility()
             QMessageBox.warning(
                 self,
                 "Layer Changed",
-                "Segmentation stopped because the layer was changed."
+                "Segmentation cancelled because the layer was changed."
             )
 
     def _on_start_clicked(self):
-        """Handle start/stop button click."""
-        if self._segmentation_active:
-            self._session_stopped = True
-            self.stop_segmentation_requested.emit()
-        else:
-            layer = self.layer_combo.currentLayer()
-            if layer:
-                self._session_stopped = False
-                self.start_segmentation_requested.emit(layer)
+        """Handle start button click."""
+        layer = self.layer_combo.currentLayer()
+        if layer:
+            self.start_segmentation_requested.emit(layer)
 
     def _on_undo_clicked(self):
         """Handle undo button click."""
         self.undo_requested.emit()
 
-    def _on_modify_clicked(self):
-        """Handle modify button click - resume segmentation."""
-        self._session_stopped = False
-        self.post_session_group.setVisible(False)
-        self.modify_requested.emit()
-
-    def _on_export_session_clicked(self):
-        """Handle export session button click."""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Segmentation",
-            "",
-            "GeoPackage (*.gpkg)"
-        )
-        if file_path:
-            self.export_requested.emit(file_path)
-
-    def _on_new_session_clicked(self):
-        """Handle new session button click."""
-        self._session_stopped = False
-        self._has_mask = False
-        self.post_session_group.setVisible(False)
-        self.new_session_requested.emit()
-        self._update_ui_state()
-
-    def _on_threshold_changed(self, value):
-        """Handle threshold slider change."""
-        threshold = value / 100.0
-        self.threshold_value_label.setText(f"{threshold:.2f}")
-        self.threshold_changed.emit(threshold)
+    def _on_finish_clicked(self):
+        """Handle finish button click - export to layer and reset."""
+        self.finish_segmentation_requested.emit()
 
     # ==================== Public Methods ====================
 
@@ -478,51 +380,50 @@ class AISegmentationDockWidget(QDockWidget):
     def set_segmentation_active(self, active: bool):
         """Set segmentation active state."""
         self._segmentation_active = active
-
-        if active:
-            self.start_button.setText("Stop")
-            self.start_button.setStyleSheet("background-color: #d32f2f; color: white;")
-            self.start_button.setEnabled(True)
-            self.active_instructions_label.setVisible(True)
-            self.point_counter_label.setVisible(True)
-            self.undo_button.setVisible(True)
-            self.post_session_group.setVisible(False)
-        else:
-            self.start_button.setText("Start AI Segmentation")
-            self.start_button.setStyleSheet("")
-            self.active_instructions_label.setVisible(False)
-            self.point_counter_label.setVisible(False)
-            self.undo_button.setVisible(False)
-
-            # Show post-session options if we have a mask
-            if self._session_stopped and self._has_mask:
-                self.post_session_group.setVisible(True)
-
+        self._update_button_visibility()
         self._update_ui_state()
 
-    def set_point_count(self, positive: int, negative: int):
-        """Update the point counter display."""
-        total = positive + negative
-        self.point_counter_label.setText(f"Points: {positive} + / {negative} -")
+    def _update_button_visibility(self):
+        """Update button visibility based on segmentation state."""
+        if self._segmentation_active:
+            # Active: show instructions, undo, finish; hide start
+            self.start_button.setVisible(False)
+            self.active_instructions_label.setVisible(True)
+            self.undo_button.setVisible(True)
+            self.finish_button.setVisible(True)
+            # Enable finish only if we have points
+            self.finish_button.setEnabled(self._has_mask)
+        else:
+            # Inactive: show start; hide undo, finish, instructions
+            self.start_button.setVisible(True)
+            self.active_instructions_label.setVisible(False)
+            self.undo_button.setVisible(False)
+            self.finish_button.setVisible(False)
 
+    def set_point_count(self, positive: int, negative: int):
+        """Update the point counter display in the status bar."""
+        total = positive + negative
         has_points = total > 0
-        self.undo_button.setEnabled(has_points and self._segmentation_active)
         self._has_mask = has_points
+
+        # Update undo button state
+        self.undo_button.setEnabled(has_points and self._segmentation_active)
+        # Update finish button state (enabled only if we have points)
+        self.finish_button.setEnabled(has_points)
+
+        # Show point count in status bar
+        if has_points:
+            self.status_label.setText(f"Points: {positive} + / {negative} -")
 
     def set_status(self, message: str):
         """Set the status bar message."""
         self.status_label.setText(message)
 
-    def get_threshold(self) -> float:
-        """Get the current threshold value."""
-        return self.threshold_slider.value() / 100.0
-
     def reset_session(self):
-        """Reset the session state (called after export)."""
+        """Reset the session state (called after finish/export)."""
         self._has_mask = False
-        self._session_stopped = False
-        self.post_session_group.setVisible(False)
-        self.point_counter_label.setText("")
+        self._segmentation_active = False
+        self._update_button_visibility()
         self._update_ui_state()
 
     def _update_setup_visibility(self):

@@ -165,10 +165,7 @@ class AISegmentationMapTool(QgsMapTool):
         Args:
             event: QKeyEvent
         """
-        if event.key() == Qt.Key_Escape:
-            # Deactivate tool on Escape
-            self.canvas.unsetMapTool(self)
-        elif event.key() == Qt.Key_Z and event.modifiers() & Qt.ControlModifier:
+        if event.key() == Qt.Key_Z and event.modifiers() & Qt.ControlModifier:
             # Ctrl+Z for undo - emit signal to main plugin
             self.undo_requested.emit()
 
