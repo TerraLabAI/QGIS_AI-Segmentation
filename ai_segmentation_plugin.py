@@ -163,6 +163,8 @@ class AISegmentationPlugin:
         self.current_score = 0.0
         self.output_layer = None
         self._initialized = False  # Track if we've done first-time setup
+        self._current_layer_name = ""  # Name of current raster layer for output naming
+        self._segmentation_counter = 0  # Counter for naming exported layers
 
         # Worker threads
         self.install_worker = None
@@ -215,6 +217,9 @@ class AISegmentationPlugin:
         self.dock_widget.undo_requested.connect(self._on_undo)
         self.dock_widget.save_mask_requested.connect(self._on_save_mask)
         self.dock_widget.export_requested.connect(self._on_export)
+        # New session-based signals
+        self.dock_widget.modify_requested.connect(self._on_modify_requested)
+        self.dock_widget.new_session_requested.connect(self._on_new_session)
 
         # Add dock widget to QGIS
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
@@ -312,7 +317,7 @@ class AISegmentationPlugin:
 
             if all_dependencies_installed():
                 # Dependencies OK, check models
-                self.dock_widget.set_dependency_status(True, "Dependencies OK ✓")
+                self.dock_widget.set_dependency_status(True, "Dependencies OK")
                 self._check_models()
             else:
                 # Show what's missing
@@ -360,7 +365,7 @@ class AISegmentationPlugin:
             success, message = self.sam_model.load()
 
             if success:
-                self.dock_widget.set_models_status(True, "Models ready ✓")
+                self.dock_widget.set_models_status(True, "Models ready")
                 self.dock_widget.set_status("Ready - select a layer and start!")
                 QgsMessageLog.logMessage(
                     "SAM models loaded successfully",
@@ -494,6 +499,9 @@ class AISegmentationPlugin:
                 "Please download models first."
             )
             return
+
+        # Store layer name for export naming
+        self._current_layer_name = layer.name().replace(" ", "_")
 
         # Check if layer is already prepared
         if self.sam_model.is_ready and self.sam_model.get_current_layer() == layer:
@@ -801,7 +809,7 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
         QgsMessageLog.logMessage(
-            f"🟢 LEFT-CLICK (POSITIVE/INCLUDE) at map coords ({point.x():.2f}, {point.y():.2f})",
+            f"LEFT-CLICK (POSITIVE/INCLUDE) at map coords ({point.x():.2f}, {point.y():.2f})",
             "AI Segmentation",
             level=Qgis.Info
         )
@@ -833,7 +841,7 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
         QgsMessageLog.logMessage(
-            f"🔴 RIGHT-CLICK (NEGATIVE/EXCLUDE) at map coords ({point.x():.2f}, {point.y():.2f})",
+            f"RIGHT-CLICK (NEGATIVE/EXCLUDE) at map coords ({point.x():.2f}, {point.y():.2f})",
             "AI Segmentation",
             level=Qgis.Info
         )
@@ -860,7 +868,7 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Info
             )
-            self.dock_widget.set_status(f"✓ Segmented! Score: {self.current_score:.2f} ({mask_pixels} pixels)")
+            self.dock_widget.set_status(f"Segmented - Score: {self.current_score:.2f}")
             self._update_mask_visualization()
         else:
             QgsMessageLog.logMessage(
@@ -868,7 +876,7 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Warning
             )
-            self.dock_widget.set_status("⚠ No mask generated - try clicking elsewhere")
+            self.dock_widget.set_status("No mask generated - try clicking elsewhere")
             self._clear_mask_visualization()
 
     def _update_mask_visualization(self):
@@ -997,24 +1005,39 @@ class AISegmentationPlugin:
             self.dock_widget.set_status("Failed to save mask")
 
     def _on_export(self, output_path: str):
-        """Export to GeoPackage."""
-        if not self._is_output_layer_valid() or self.output_layer.featureCount() == 0:
+        """Export current segmentation to GeoPackage and reset session."""
+        if self.current_mask is None:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 "Nothing to Export",
-                "Save some masks first."
+                "No segmentation to export."
             )
             return
 
-        from .core.polygon_exporter import export_to_geopackage
+        from .core.polygon_exporter import export_mask_to_geopackage
 
-        success, message = export_to_geopackage(self.output_layer, output_path)
+        # Generate layer name based on raster name and counter
+        self._segmentation_counter += 1
+        layer_name = f"{self._current_layer_name}_segmentation_{self._segmentation_counter}"
+
+        success, message = export_mask_to_geopackage(
+            self.current_mask,
+            self.sam_model.get_transform_info(),
+            self.current_score,
+            output_path,
+            layer_name
+        )
 
         if success:
-            QMessageBox.information(
-                self.iface.mainWindow(),
-                "Export Complete",
-                message
+            # Reset session after successful export
+            self._reset_session()
+            self.dock_widget.reset_session()
+            self.dock_widget.set_status(f"Exported: {layer_name}")
+
+            QgsMessageLog.logMessage(
+                f"Exported segmentation to: {output_path}",
+                "AI Segmentation",
+                level=Qgis.Info
             )
         else:
             QMessageBox.warning(
@@ -1022,3 +1045,31 @@ class AISegmentationPlugin:
                 "Export Failed",
                 message
             )
+
+    def _on_modify_requested(self):
+        """Handle modify request - resume segmentation with current points."""
+        self._activate_segmentation_tool()
+        self.dock_widget.set_status("Resumed segmentation - continue clicking")
+
+    def _on_new_session(self):
+        """Handle new session request - clear everything and start fresh."""
+        self._reset_session()
+        self.dock_widget.set_status("Ready for new segmentation")
+
+    def _reset_session(self):
+        """Reset the current segmentation session."""
+        # Clear points in model
+        if self.sam_model:
+            self.sam_model.clear_points()
+
+        # Clear visual markers
+        if self.map_tool:
+            self.map_tool.clear_markers()
+
+        # Clear mask visualization
+        self._clear_mask_visualization()
+
+        # Reset state
+        self.current_mask = None
+        self.current_score = 0.0
+        self.dock_widget.set_point_count(0, 0)

@@ -510,3 +510,99 @@ def export_to_geopackage(
 
     except Exception as e:
         return False, f"Export failed: {str(e)}"
+
+
+def export_mask_to_geopackage(
+    mask: np.ndarray,
+    transform_info: dict,
+    score: float,
+    output_path: str,
+    layer_name: str = "segmentation"
+) -> Tuple[bool, str]:
+    """
+    Export a single mask directly to a GeoPackage file.
+
+    Creates a new GeoPackage with the segmentation as a vector layer.
+
+    Args:
+        mask: Binary mask array
+        transform_info: Transform info from encoding
+        score: Confidence score for the mask
+        output_path: Path for the output GeoPackage file
+        layer_name: Name for the layer in the GeoPackage
+
+    Returns:
+        Tuple of (success, message)
+    """
+    try:
+        # Convert mask to polygons
+        geometries = mask_to_polygons(mask, transform_info)
+
+        if not geometries:
+            return False, "No valid geometries could be created from the mask"
+
+        # Ensure .gpkg extension
+        if not output_path.lower().endswith('.gpkg'):
+            output_path += '.gpkg'
+
+        # Get CRS from transform_info
+        crs_authid = transform_info.get("layer_crs", "EPSG:4326")
+        crs = QgsCoordinateReferenceSystem(crs_authid)
+
+        # Create memory layer
+        uri = f"Polygon?crs={crs.authid()}"
+        temp_layer = QgsVectorLayer(uri, layer_name, "memory")
+
+        # Add fields
+        provider = temp_layer.dataProvider()
+        fields = QgsFields()
+        fields.append(QgsField("id", QVariant.Int))
+        fields.append(QgsField("score", QVariant.Double))
+        fields.append(QgsField("area", QVariant.Double))
+        provider.addAttributes(fields)
+        temp_layer.updateFields()
+
+        # Add features
+        features = []
+        for i, geom in enumerate(geometries, start=1):
+            feature = QgsFeature(temp_layer.fields())
+            feature.setGeometry(geom)
+            feature.setAttribute("id", i)
+            feature.setAttribute("score", score)
+            feature.setAttribute("area", geom.area())
+            features.append(feature)
+
+        provider.addFeatures(features)
+        temp_layer.updateExtents()
+
+        # Export to GeoPackage
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.driverName = "GPKG"
+        options.fileEncoding = "UTF-8"
+        options.layerName = layer_name
+
+        error = QgsVectorFileWriter.writeAsVectorFormatV3(
+            temp_layer,
+            output_path,
+            QgsProject.instance().transformContext(),
+            options
+        )
+
+        if error[0] == QgsVectorFileWriter.NoError:
+            QgsMessageLog.logMessage(
+                f"Exported mask to: {output_path} (layer: {layer_name})",
+                "AI Segmentation",
+                level=Qgis.Success
+            )
+            return True, f"Exported to {output_path}"
+        else:
+            return False, f"Export error: {error[1]}"
+
+    except Exception as e:
+        import traceback
+        QgsMessageLog.logMessage(
+            f"Export failed: {str(e)}\n{traceback.format_exc()}",
+            "AI Segmentation",
+            level=Qgis.Warning
+        )
+        return False, f"Export failed: {str(e)}"

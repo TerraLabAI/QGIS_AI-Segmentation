@@ -30,10 +30,10 @@ class AISegmentationMapTool(QgsMapTool):
     tool_deactivated = pyqtSignal()
     undo_requested = pyqtSignal()  # Ctrl+Z pressed
 
-    # Visual styling constants
-    POSITIVE_COLOR = QColor(0, 255, 0)    # Green for positive points
-    NEGATIVE_COLOR = QColor(255, 0, 0)    # Red for negative points
-    MARKER_SIZE = 12
+    # Visual styling constants - smaller markers with outline only
+    POSITIVE_COLOR = QColor(0, 200, 0)    # Green for positive points
+    NEGATIVE_COLOR = QColor(220, 0, 0)    # Red for negative points
+    MARKER_SIZE = 8  # Smaller size
     MARKER_PEN_WIDTH = 2
 
     def __init__(self, canvas: QgsMapCanvas):
@@ -85,10 +85,10 @@ class AISegmentationMapTool(QgsMapTool):
 
         if is_positive:
             marker.setColor(self.POSITIVE_COLOR)
-            marker.setFillColor(QColor(0, 255, 0, 100))  # Semi-transparent fill
+            marker.setFillColor(QColor(0, 200, 0, 0))  # Transparent fill (outline only)
         else:
             marker.setColor(self.NEGATIVE_COLOR)
-            marker.setFillColor(QColor(255, 0, 0, 100))  # Semi-transparent fill
+            marker.setFillColor(QColor(220, 0, 0, 0))  # Transparent fill (outline only)
 
         self._markers.append(marker)
         return marker
