@@ -11,10 +11,11 @@ from qgis.core import QgsPointXY
 class AISegmentationMapTool(QgsMapTool):
     
 
-    positive_click = pyqtSignal(QgsPointXY)  
-    negative_click = pyqtSignal(QgsPointXY)  
+    positive_click = pyqtSignal(QgsPointXY)
+    negative_click = pyqtSignal(QgsPointXY)
     tool_deactivated = pyqtSignal()
-    undo_requested = pyqtSignal()  
+    undo_requested = pyqtSignal()
+    save_polygon_requested = pyqtSignal()  
 
     POSITIVE_COLOR = QColor(0, 200, 0)    
     NEGATIVE_COLOR = QColor(220, 0, 0)    
@@ -104,9 +105,10 @@ class AISegmentationMapTool(QgsMapTool):
         pass
 
     def keyPressEvent(self, event):
-        
         if event.key() == Qt.Key_Z and event.modifiers() & Qt.ControlModifier:
             self.undo_requested.emit()
+        elif event.key() == Qt.Key_S and not event.modifiers():
+            self.save_polygon_requested.emit()
 
     def isActive(self) -> bool:
         
