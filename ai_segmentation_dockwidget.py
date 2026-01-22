@@ -20,6 +20,7 @@ from qgis.gui import QgsMapLayerComboBox
 class AISegmentationDockWidget(QDockWidget):
 
     install_dependencies_requested = pyqtSignal()
+    cancel_deps_install_requested = pyqtSignal()
     download_checkpoint_requested = pyqtSignal()
     cancel_download_requested = pyqtSignal()
     cancel_preparation_requested = pyqtSignal()
@@ -63,11 +64,27 @@ class AISegmentationDockWidget(QDockWidget):
         self.deps_status_label = QLabel("Checking dependencies...")
         layout.addWidget(self.deps_status_label)
 
-        self.install_button = QPushButton("Show Install Instructions")
+        self.deps_progress = QProgressBar()
+        self.deps_progress.setRange(0, 100)
+        self.deps_progress.setVisible(False)
+        layout.addWidget(self.deps_progress)
+
+        self.deps_progress_label = QLabel("")
+        self.deps_progress_label.setStyleSheet("color: #666; font-size: 10px;")
+        self.deps_progress_label.setVisible(False)
+        layout.addWidget(self.deps_progress_label)
+
+        self.install_button = QPushButton("Install Dependencies")
         self.install_button.clicked.connect(self._on_install_clicked)
         self.install_button.setVisible(False)
-        self.install_button.setToolTip("Show how to install required Python packages")
+        self.install_button.setToolTip("Automatically install required Python packages (onnxruntime)")
         layout.addWidget(self.install_button)
+
+        self.cancel_deps_button = QPushButton("Cancel")
+        self.cancel_deps_button.clicked.connect(self._on_cancel_deps_clicked)
+        self.cancel_deps_button.setVisible(False)
+        self.cancel_deps_button.setStyleSheet("background-color: #d32f2f; color: white;")
+        layout.addWidget(self.cancel_deps_button)
 
         self.main_layout.addWidget(self.deps_group)
 
@@ -207,6 +224,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_button.setEnabled(False)
         self.install_dependencies_requested.emit()
 
+    def _on_cancel_deps_clicked(self):
+        self.cancel_deps_install_requested.emit()
+
     def _on_download_clicked(self):
         self.download_button.setEnabled(False)
         self.download_checkpoint_requested.emit()
@@ -250,6 +270,9 @@ class AISegmentationDockWidget(QDockWidget):
         if ok:
             self.deps_status_label.setStyleSheet("color: #388e3c; font-weight: bold;")
             self.install_button.setVisible(False)
+            self.cancel_deps_button.setVisible(False)
+            self.deps_progress.setVisible(False)
+            self.deps_progress_label.setVisible(False)
             self.deps_group.setVisible(False)
         else:
             self.deps_status_label.setStyleSheet("color: #f57c00;")
@@ -258,6 +281,28 @@ class AISegmentationDockWidget(QDockWidget):
             self.deps_group.setVisible(True)
 
         self._update_ui_state()
+
+    def set_deps_install_progress(self, current: int, total: int, message: str):
+        if total > 0:
+            percent = int((current / total) * 100)
+        else:
+            percent = 0
+
+        self.deps_progress.setValue(percent)
+        self.deps_progress_label.setText(message)
+
+        if current == 0:
+            self.deps_progress.setVisible(True)
+            self.deps_progress_label.setVisible(True)
+            self.cancel_deps_button.setVisible(True)
+            self.install_button.setEnabled(False)
+            self.install_button.setText("Installing...")
+        elif current >= total or "cancel" in message.lower() or "failed" in message.lower():
+            self.deps_progress.setVisible(False)
+            self.deps_progress_label.setVisible(False)
+            self.cancel_deps_button.setVisible(False)
+            self.install_button.setEnabled(True)
+            self.install_button.setText("Install Dependencies")
 
 
     def set_checkpoint_status(self, ok: bool, message: str):

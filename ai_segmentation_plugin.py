@@ -31,6 +31,29 @@ from .ai_segmentation_maptool import AISegmentationMapTool
 
 
 
+class DepsInstallWorker(QThread):
+    progress = pyqtSignal(int, int, str)
+    finished = pyqtSignal(bool, list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        try:
+            from .core.dependency_manager import install_all_dependencies
+            success, messages = install_all_dependencies(
+                progress_callback=lambda cur, tot, msg: self.progress.emit(cur, tot, msg),
+                cancel_check=lambda: self._cancelled
+            )
+            self.finished.emit(success, messages)
+        except Exception as e:
+            self.finished.emit(False, [str(e)])
+
+
 class DownloadWorker(QThread):
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(bool, str)
@@ -171,6 +194,7 @@ class AISegmentationPlugin:
         self._current_layer_name = ""
         self._segmentation_counter = 0
 
+        self.deps_install_worker = None
         self.download_worker = None
         self.encoding_worker = None
 
@@ -200,6 +224,7 @@ class AISegmentationPlugin:
         self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
 
         self.dock_widget.install_dependencies_requested.connect(self._on_install_requested)
+        self.dock_widget.cancel_deps_install_requested.connect(self._on_cancel_deps_install)
         self.dock_widget.download_checkpoint_requested.connect(self._on_download_checkpoint_requested)
         self.dock_widget.cancel_download_requested.connect(self._on_cancel_download)
         self.dock_widget.cancel_preparation_requested.connect(self._on_cancel_preparation)
@@ -254,7 +279,7 @@ class AISegmentationPlugin:
             self.iface.mapCanvas().scene().removeItem(rb)
         self.saved_rubber_bands = []
 
-        for worker in [self.download_worker, self.encoding_worker]:
+        for worker in [self.deps_install_worker, self.download_worker, self.encoding_worker]:
             if worker and worker.isRunning():
                 worker.terminate()
                 worker.wait()
@@ -286,7 +311,7 @@ class AISegmentationPlugin:
                 self._check_checkpoint()
             else:
                 missing = get_missing_dependencies()
-                missing_str = ", ".join([f"{name}" for name, _ in missing])
+                missing_str = ", ".join([pip_name for _, pip_name, _ in missing])
                 self.dock_widget.set_dependency_status(
                     False,
                     f"Missing: {missing_str}"
@@ -348,22 +373,100 @@ class AISegmentationPlugin:
             )
 
     def _on_install_requested(self):
-        from .core.dependency_manager import get_manual_install_instructions, get_missing_dependencies
+        from .core.dependency_manager import get_missing_dependencies, get_system_info, get_install_size_warning
 
         missing = get_missing_dependencies()
+        if not missing:
+            self.dock_widget.set_dependency_status(True, "Dependencies OK")
+            self._check_checkpoint()
+            return
+
         missing_str = ", ".join([pip_name for _, pip_name, _ in missing])
 
-        instructions = get_manual_install_instructions()
+        size_warning = get_install_size_warning()
+        if size_warning:
+            reply = QMessageBox.question(
+                self.iface.mainWindow(),
+                "Install Dependencies",
+                f"The following packages will be installed:\n{missing_str}\n\n"
+                f"{size_warning}\n\n"
+                "Do you want to continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            if reply != QMessageBox.Yes:
+                self.dock_widget.install_button.setEnabled(True)
+                return
 
-        QMessageBox.information(
-            self.iface.mainWindow(),
-            "Install Dependencies",
-            f"Missing packages: {missing_str}\n\n"
-            f"Please install manually:\n\n{instructions}\n\n"
-            "After installation, restart QGIS."
+        QgsMessageLog.logMessage(
+            f"Starting auto-install for: {missing_str}",
+            "AI Segmentation",
+            level=Qgis.Info
         )
+        QgsMessageLog.logMessage(get_system_info(), "AI Segmentation", level=Qgis.Info)
 
-        self.dock_widget.set_status("Install dependencies manually, then restart QGIS")
+        self.dock_widget.set_deps_install_progress(0, len(missing), "Starting installation...")
+        self.dock_widget.set_status("Installing dependencies...")
+
+        self.deps_install_worker = DepsInstallWorker()
+        self.deps_install_worker.progress.connect(self._on_deps_install_progress)
+        self.deps_install_worker.finished.connect(self._on_deps_install_finished)
+        self.deps_install_worker.start()
+
+    def _on_deps_install_progress(self, current: int, total: int, message: str):
+        self.dock_widget.set_deps_install_progress(current, total, message)
+        self.dock_widget.set_status(message)
+
+    def _on_deps_install_finished(self, success: bool, messages: list):
+        self.dock_widget.set_deps_install_progress(1, 1, "Done")
+
+        if success:
+            from .core.dependency_manager import verify_installation
+            ok, info = verify_installation()
+
+            if ok:
+                self.dock_widget.set_dependency_status(True, f"Dependencies OK ({info})")
+                self.dock_widget.set_status("Dependencies installed! Checking model...")
+                self._check_checkpoint()
+
+                QMessageBox.information(
+                    self.iface.mainWindow(),
+                    "Installation Complete",
+                    "Dependencies installed successfully!\n\n"
+                    "If you encounter any issues, please restart QGIS."
+                )
+            else:
+                self.dock_widget.set_dependency_status(True, "Restart QGIS to complete")
+                self.dock_widget.set_status("Please restart QGIS to load the new packages")
+
+                QMessageBox.information(
+                    self.iface.mainWindow(),
+                    "Installation Complete",
+                    "Dependencies installed successfully!\n\n"
+                    "Please restart QGIS to complete the setup."
+                )
+        else:
+            error_msg = "\n".join(messages[-3:]) if messages else "Unknown error"
+            self.dock_widget.set_dependency_status(False, "Installation failed")
+            self.dock_widget.set_status("Installation failed - check logs")
+
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                "Installation Failed",
+                f"Failed to install dependencies:\n\n{error_msg}\n\n"
+                "Check the QGIS log panel (View → Panels → Log Messages) "
+                "for detailed error information."
+            )
+
+    def _on_cancel_deps_install(self):
+        if self.deps_install_worker and self.deps_install_worker.isRunning():
+            self.deps_install_worker.cancel()
+            self.dock_widget.set_status("Cancelling installation...")
+            QgsMessageLog.logMessage(
+                "Dependency installation cancelled by user",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
 
     def _on_download_checkpoint_requested(self):
         self.dock_widget.set_download_progress(0, "Downloading SAM checkpoint...")

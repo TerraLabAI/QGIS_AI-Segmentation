@@ -3,6 +3,7 @@ import sys
 import os
 from pathlib import Path
 from typing import List, Tuple, Optional, Callable
+import importlib
 import importlib.util
 
 from qgis.core import QgsMessageLog, Qgis, QgsSettings
@@ -10,16 +11,13 @@ from qgis.core import QgsMessageLog, Qgis, QgsSettings
 
 REQUIRED_PACKAGES = [
     ("torch", "torch", "2.0.0"),
-    ("torchvision", "torchvision", "0.15.0"),
-    ("rtree", "rtree", "1.0.0"),
-    ("pandas", "pandas", "1.3.0"),
     ("segment_anything", "segment-anything", "1.0"),
-    ("torchgeo", "torchgeo", "0.5.0"),
+    ("pandas", "pandas", "1.3.0"),
 ]
 
 QGIS_PROVIDED_PACKAGES = [
-    ("numpy", "numpy"),
-    ("rasterio", "rasterio"),
+    ("numpy", "numpy", "1.20.0"),
+    ("rasterio", "rasterio", "1.3.0"),
 ]
 
 SETTINGS_KEY_DEPS_DISMISSED = "AI_Segmentation/dependencies_dismissed"
@@ -29,10 +27,21 @@ PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGES_INSTALL_DIR = os.path.join(PLUGIN_ROOT_DIR, f'python{PYTHON_VERSION.major}.{PYTHON_VERSION.minor}')
 
 CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
-CHECKPOINTS_DIR = os.path.join(CACHE_DIR, "checkpoints")
 
-SAM_CHECKPOINT_URL = "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth"
-SAM_CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
+
+def _log(message: str, level=Qgis.Info):
+    QgsMessageLog.logMessage(message, "AI Segmentation", level=level)
+
+
+def _get_python_executable() -> str:
+    if sys.platform == "win32":
+        python_path = os.path.join(os.path.dirname(sys.executable), "python.exe")
+        if os.path.exists(python_path):
+            return python_path
+        python3_path = os.path.join(os.path.dirname(sys.executable), "python3.exe")
+        if os.path.exists(python3_path):
+            return python3_path
+    return sys.executable
 
 
 def is_package_installed(import_name: str) -> bool:
@@ -45,30 +54,20 @@ def is_package_installed(import_name: str) -> bool:
 
 def get_installed_version(import_name: str) -> Optional[str]:
     try:
-        if import_name == "torch":
-            import torch
-            return torch.__version__
-        elif import_name == "torchvision":
-            import torchvision
-            return torchvision.__version__
-        elif import_name == "numpy":
+        if import_name == "numpy":
             import numpy
             return numpy.__version__
+        elif import_name == "torch":
+            import torch
+            return torch.__version__
         elif import_name == "rasterio":
             import rasterio
             return rasterio.__version__
-        elif import_name == "segment_anything":
-            import segment_anything
-            return "installed"
-        elif import_name == "torchgeo":
-            import torchgeo
-            return torchgeo.__version__
-        elif import_name == "rtree":
-            import rtree
-            return rtree.__version__
         elif import_name == "pandas":
             import pandas
             return pandas.__version__
+        elif import_name == "segment_anything":
+            return "installed"
         else:
             from importlib.metadata import version
             return version(import_name)
@@ -87,131 +86,159 @@ def check_dependencies() -> List[Tuple[str, str, str, bool, Optional[str]]]:
 
 def get_missing_dependencies() -> List[Tuple[str, str, str]]:
     missing = []
-    for import_name, pip_name, min_version, installed, _ in check_dependencies():
-        if not installed:
+    for import_name, pip_name, min_version in REQUIRED_PACKAGES:
+        if not is_package_installed(import_name):
             missing.append((import_name, pip_name, min_version))
+
+    for import_name, pip_name, min_version in QGIS_PROVIDED_PACKAGES:
+        if not is_package_installed(import_name):
+            missing.append((import_name, pip_name, min_version))
+
     return missing
 
 
 def all_dependencies_installed() -> bool:
-    if len(get_missing_dependencies()) > 0:
-        return False
-    for import_name, _ in QGIS_PROVIDED_PACKAGES:
+    for import_name, _, _ in REQUIRED_PACKAGES:
         if not is_package_installed(import_name):
+            _log(f"Missing required package: {import_name}", Qgis.Info)
             return False
+
+    for import_name, _, _ in QGIS_PROVIDED_PACKAGES:
+        if not is_package_installed(import_name):
+            _log(f"Missing QGIS-provided package: {import_name}", Qgis.Warning)
+            return False
+
     return True
 
 
-def get_manual_install_instructions() -> str:
-    target_dir = PACKAGES_INSTALL_DIR
+def get_install_size_warning() -> str:
+    missing = get_missing_dependencies()
+    has_torch = any(pip_name == "torch" for _, pip_name, _ in missing)
 
-    if sys.platform == "darwin":
-        return f"""Open Terminal and run:
-pip3 install --target="{target_dir}" torch torchvision rtree pandas segment-anything torchgeo"""
-
-    elif sys.platform == "win32":
-        return f"""Open Command Prompt and run:
-pip install --target="{target_dir}" torch torchvision rtree pandas segment-anything torchgeo"""
-
-    else:
-        return f"""Open terminal and run:
-pip3 install --target="{target_dir}" torch torchvision rtree pandas segment-anything torchgeo"""
+    if has_torch:
+        return (
+            "⚠️ PyTorch (~2GB) will be downloaded.\n"
+            "This may take several minutes depending on your connection."
+        )
+    return ""
 
 
 def ensure_packages_dir_in_path():
     os.makedirs(PACKAGES_INSTALL_DIR, exist_ok=True)
     if PACKAGES_INSTALL_DIR not in sys.path:
         sys.path.insert(0, PACKAGES_INSTALL_DIR)
-        QgsMessageLog.logMessage(
-            f"Added packages directory to sys.path: {PACKAGES_INSTALL_DIR}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
+        _log(f"Added packages directory to sys.path: {PACKAGES_INSTALL_DIR}")
 
 
-def install_package_via_pip_module(pip_name: str, version: str = None) -> Tuple[bool, str]:
-    try:
-        from pip._internal.cli.main import main as pip_main
-    except ImportError:
-        try:
-            from pip import main as pip_main
-        except ImportError:
-            return False, "pip module not available"
-
-    ensure_packages_dir_in_path()
+def _run_pip_install(pip_name: str, version: str = None, target_dir: str = None) -> Tuple[bool, str]:
+    python_exe = _get_python_executable()
 
     if version:
         package_spec = f"{pip_name}>={version}"
     else:
         package_spec = pip_name
 
-    QgsMessageLog.logMessage(
-        f"Installing {package_spec} via pip module to {PACKAGES_INSTALL_DIR}...",
-        "AI Segmentation",
-        level=Qgis.Info
-    )
+    cmd = [
+        python_exe, "-m", "pip", "install",
+        "--upgrade",
+        "--no-warn-script-location",
+        "--disable-pip-version-check",
+    ]
+
+    if target_dir:
+        cmd.extend([f"--target={target_dir}"])
+
+    cmd.append(package_spec)
+
+    _log(f"Running: {' '.join(cmd)}")
 
     try:
-        old_argv = sys.argv
-        sys.argv = ['pip']
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
 
-        args = [
-            "install",
-            "--upgrade",
-            f"--target={PACKAGES_INSTALL_DIR}",
-            "--no-warn-script-location",
-            "--disable-pip-version-check",
-            "--no-python-version-warning",
-            package_spec
-        ]
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
 
-        return_code = pip_main(args)
-
-        sys.argv = old_argv
-
-        if return_code == 0:
-            QgsMessageLog.logMessage(
-                f"✓ Successfully installed {package_spec}",
-                "AI Segmentation",
-                level=Qgis.Success
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=600,
+                env=env,
+                startupinfo=startupinfo,
             )
+        else:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=600,
+                env=env,
+            )
+
+        if result.returncode == 0:
+            _log(f"✓ Successfully installed {package_spec}", Qgis.Success)
+            if result.stdout:
+                _log(f"pip stdout: {result.stdout[:500]}")
             return True, f"Installed {package_spec}"
         else:
-            QgsMessageLog.logMessage(
-                f"✗ pip returned error code {return_code} for {package_spec}",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
-            return False, f"pip returned error code {return_code}"
+            error_msg = result.stderr or result.stdout or "Unknown error"
+            _log(f"✗ pip install failed for {package_spec}: {error_msg}", Qgis.Warning)
+            return False, f"pip error: {error_msg[:300]}"
 
-    except SystemExit as e:
-        if e.code == 0:
-            return True, f"Installed {package_spec}"
-        return False, f"pip exited with code {e.code}"
+    except subprocess.TimeoutExpired:
+        _log(f"✗ Installation timed out for {package_spec}", Qgis.Warning)
+        return False, "Installation timed out (10 minutes)"
+    except FileNotFoundError:
+        _log(f"✗ Python executable not found: {python_exe}", Qgis.Warning)
+        return False, f"Python not found: {python_exe}"
     except Exception as e:
-        QgsMessageLog.logMessage(
-            f"Error installing {pip_name}: {str(e)}",
-            "AI Segmentation",
-            level=Qgis.Warning
-        )
+        _log(f"✗ Exception during install of {package_spec}: {str(e)}", Qgis.Warning)
         return False, f"Error: {str(e)[:200]}"
 
 
+def install_package(pip_name: str, version: str = None) -> Tuple[bool, str]:
+    ensure_packages_dir_in_path()
+
+    _log(f"Installing {pip_name} to plugin directory: {PACKAGES_INSTALL_DIR}")
+    success, msg = _run_pip_install(pip_name, version, PACKAGES_INSTALL_DIR)
+
+    if success:
+        try:
+            import_name = pip_name.replace("-", "_")
+            if import_name in sys.modules:
+                del sys.modules[import_name]
+            importlib.invalidate_caches()
+
+            if is_package_installed(import_name):
+                _log(f"✓ Verified {import_name} is now importable", Qgis.Success)
+            else:
+                _log(f"Package installed but import check failed - may need restart", Qgis.Warning)
+        except Exception as e:
+            _log(f"Post-install verification error (non-fatal): {str(e)}")
+
+    return success, msg
+
+
 def install_all_dependencies(
-    progress_callback: Optional[Callable[[int, int, str], None]] = None
+    progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None
 ) -> Tuple[bool, List[str]]:
     ensure_packages_dir_in_path()
 
     missing = get_missing_dependencies()
 
     if not missing:
+        _log("All dependencies are already installed", Qgis.Success)
         return True, ["All dependencies are already installed"]
 
-    QgsMessageLog.logMessage(
-        f"Installing {len(missing)} packages to: {PACKAGES_INSTALL_DIR}",
-        "AI Segmentation",
-        level=Qgis.Info
-    )
+    _log("=" * 50)
+    _log(f"Installing {len(missing)} packages to: {PACKAGES_INSTALL_DIR}")
+    _log(f"Python executable: {_get_python_executable()}")
+    _log(f"Platform: {sys.platform}")
+    _log("=" * 50)
 
     if progress_callback:
         packages_str = ", ".join([pip_name for _, pip_name, _ in missing])
@@ -222,36 +249,42 @@ def install_all_dependencies(
     total = len(missing)
 
     for i, (import_name, pip_name, version) in enumerate(missing):
-        if progress_callback:
-            progress_callback(i, total, f"Installing {pip_name}... ({i+1}/{total})")
+        if cancel_check and cancel_check():
+            _log("Installation cancelled by user", Qgis.Warning)
+            return False, messages + ["Installation cancelled"]
 
-        success, msg = install_package_via_pip_module(pip_name, version)
+        if progress_callback:
+            if pip_name == "torch":
+                progress_callback(i, total, f"Installing {pip_name} (~2GB)... ({i+1}/{total})")
+            else:
+                progress_callback(i, total, f"Installing {pip_name}... ({i+1}/{total})")
+
+        _log(f"[{i+1}/{total}] Installing {pip_name}>={version}...")
+
+        success, msg = install_package(pip_name, version)
         messages.append(f"{pip_name}: {msg}")
 
         if success:
-            QgsMessageLog.logMessage(
-                f"✓ {pip_name} installed successfully",
-                "AI Segmentation",
-                level=Qgis.Success
-            )
             if progress_callback:
                 progress_callback(i + 1, total, f"✓ {pip_name} installed")
         else:
-            QgsMessageLog.logMessage(
-                f"✗ {pip_name} installation failed: {msg}",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
             all_success = False
             if progress_callback:
-                progress_callback(i + 1, total, f"✗ {pip_name} failed")
+                progress_callback(i + 1, total, f"✗ {pip_name} failed: {msg[:50]}")
             break
 
     if progress_callback:
         if all_success:
-            progress_callback(total, total, "✓ Installation complete! Please restart QGIS.")
+            progress_callback(total, total, "✓ Installation complete!")
         else:
-            progress_callback(total, total, "✗ Installation failed. See details below.")
+            progress_callback(total, total, "✗ Installation failed - see logs")
+
+    if all_success:
+        _log("=" * 50)
+        _log("All dependencies installed successfully!", Qgis.Success)
+        _log(f"Install location: {PACKAGES_INSTALL_DIR}")
+        _log("Restart QGIS to ensure all packages are properly loaded.")
+        _log("=" * 50)
 
     return all_success, messages
 
@@ -259,18 +292,27 @@ def install_all_dependencies(
 def verify_installation() -> Tuple[bool, str]:
     try:
         import numpy as np
+        numpy_ver = np.__version__
+
         import torch
+        torch_ver = torch.__version__
+
         import rasterio
+        rasterio_ver = rasterio.__version__
+
+        from segment_anything import sam_model_registry
 
         _ = np.array([1, 2, 3])
-        _ = torch.tensor([1, 2, 3])
 
-        return True, f"numpy {np.__version__}, torch {torch.__version__}, rasterio {rasterio.__version__}"
+        _log(f"Verification OK: numpy {numpy_ver}, torch {torch_ver}, rasterio {rasterio_ver}", Qgis.Success)
+        return True, f"numpy {numpy_ver}, torch {torch_ver}"
 
     except ImportError as e:
+        _log(f"Verification failed - import error: {str(e)}", Qgis.Warning)
         return False, f"Import error: {str(e)}"
     except Exception as e:
-        return False, f"Verification error: {str(e)}"
+        _log(f"Verification failed: {str(e)}", Qgis.Warning)
+        return False, f"Error: {str(e)}"
 
 
 def was_install_dismissed() -> bool:
@@ -302,11 +344,6 @@ def get_cache_dir() -> str:
     return CACHE_DIR
 
 
-def get_checkpoints_dir() -> str:
-    os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
-    return CHECKPOINTS_DIR
-
-
 def get_dependency_status_summary() -> str:
     deps = check_dependencies()
     installed = [(pip_name, ver) for _, pip_name, _, is_installed, ver in deps if is_installed]
@@ -318,3 +355,13 @@ def get_dependency_status_summary() -> str:
     else:
         missing_str = ", ".join([name for name, _ in missing])
         return f"Missing: {missing_str}"
+
+
+def get_system_info() -> str:
+    info = []
+    info.append(f"Platform: {sys.platform}")
+    info.append(f"Python: {sys.version}")
+    info.append(f"Python executable: {_get_python_executable()}")
+    info.append(f"Package install dir: {PACKAGES_INSTALL_DIR}")
+    info.append(f"sys.path includes install dir: {PACKAGES_INSTALL_DIR in sys.path}")
+    return "\n".join(info)
