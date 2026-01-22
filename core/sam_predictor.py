@@ -5,6 +5,8 @@ import torch.nn as nn
 
 from qgis.core import QgsMessageLog, Qgis
 
+from .device_manager import get_optimal_device, get_device_info
+
 
 class FakeImageEncoderViT(nn.Module):
     def __init__(self, img_size: int = 1024) -> None:
@@ -68,9 +70,15 @@ def build_sam_vit_b_no_encoder(checkpoint: Optional[str] = None):
 
 
 class SamPredictorNoImgEncoder:
-    def __init__(self, sam_model) -> None:
+    def __init__(self, sam_model, device: Optional[torch.device] = None) -> None:
         self.model = sam_model
-        self.device = torch.device('cpu')
+        self.device = device if device is not None else get_optimal_device()
+        self.model.to(self.device)
+        QgsMessageLog.logMessage(
+            f"SAM Predictor initialized on device: {get_device_info()}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
         self.reset_image()
 
     def reset_image(self) -> None:
@@ -90,13 +98,13 @@ class SamPredictorNoImgEncoder:
         img_size: Tuple[int, int],
         input_size: Optional[Tuple[int, int]] = None
     ) -> None:
-        self.features = torch.as_tensor(img_features, device=self.device)
+        self.features = torch.as_tensor(img_features, dtype=torch.float32, device=self.device)
         self.original_size = img_size
         self.input_size = input_size if input_size else img_size
         self.is_image_set = True
 
         QgsMessageLog.logMessage(
-            f"Set image features: shape={self.features.shape}, "
+            f"Set image features: shape={self.features.shape}, device={self.device}, "
             f"original_size={self.original_size}, input_size={self.input_size}",
             "AI Segmentation",
             level=Qgis.Info
