@@ -8,7 +8,6 @@ from qgis.core import (
     QgsRectangle,
     QgsMessageLog,
     Qgis,
-    Qgis as QgisDataType,
 )
 
 
@@ -40,9 +39,15 @@ def _get_numpy_dtype(qgis_dtype):
 def raster_to_numpy(
     layer: QgsRasterLayer,
     extent: QgsRectangle = None,
-    max_size: int = 2048
+    max_size: int = None
 ) -> Tuple[Optional[np.ndarray], dict]:
     try:
+        from .debug_settings import get_settings
+        settings = get_settings()
+
+        if max_size is None:
+            max_size = settings.max_image_size
+
         provider = layer.dataProvider()
 
         if extent is None:
@@ -278,34 +283,40 @@ def map_point_to_sam_coords(
     transform_info: dict,
     scale_to_sam_space: bool = True
 ) -> Tuple[float, float]:
-    
-    from qgis.core import QgsMessageLog, Qgis
-
     extent = transform_info["extent"]
     original_size = transform_info["original_size"]
-    scale = transform_info["scale"]
+    scale = transform_info.get("scale", 1.0)
 
     x_min, y_min, x_max, y_max = extent
     geo_width = x_max - x_min
     geo_height = y_max - y_min
 
+    if geo_width <= 0 or geo_height <= 0:
+        QgsMessageLog.logMessage(
+            f"Invalid extent: width={geo_width}, height={geo_height}",
+            "AI Segmentation",
+            level=Qgis.Warning
+        )
+        return 0.0, 0.0
+
     pixel_x = (map_x - x_min) / geo_width * original_size[1]
     pixel_y = (y_max - map_y) / geo_height * original_size[0]
+
+    pixel_x = max(0, min(pixel_x, original_size[1] - 1))
+    pixel_y = max(0, min(pixel_y, original_size[0] - 1))
 
     if scale_to_sam_space:
         out_x = pixel_x * scale
         out_y = pixel_y * scale
-        coord_space = "1024"
+        input_size = transform_info.get("input_size", 1024)
+        out_x = max(0, min(out_x, input_size - 1))
+        out_y = max(0, min(out_y, input_size - 1))
     else:
         out_x = pixel_x
         out_y = pixel_y
-        coord_space = "original"
 
     QgsMessageLog.logMessage(
-        f"[COORD DEBUG] map=({map_x:.1f}, {map_y:.1f}) -> "
-        f"pixel=({pixel_x:.1f}, {pixel_y:.1f}) -> "
-        f"out=({out_x:.1f}, {out_y:.1f}) "
-        f"[space={coord_space}, scale={scale:.3f}, orig_size={original_size}]",
+        f"[COORD] map({map_x:.2f}, {map_y:.2f}) -> pixel({pixel_x:.2f}, {pixel_y:.2f}) -> sam({out_x:.2f}, {out_y:.2f})",
         "AI Segmentation",
         level=Qgis.Info
     )

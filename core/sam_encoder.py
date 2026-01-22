@@ -34,7 +34,6 @@ class SAMEncoder:
         self._model_config = model_config  
 
     def load_model(self, model_path: str = None) -> bool:
-        
         try:
             import onnxruntime as ort
 
@@ -49,9 +48,19 @@ class SAMEncoder:
                 )
                 return False
 
+            from .execution_provider import get_optimal_providers, get_active_provider_name
+
+            providers = get_optimal_providers()
             self.session = ort.InferenceSession(
                 self.model_path,
-                providers=['CPUExecutionProvider']
+                providers=providers
+            )
+
+            active_provider = get_active_provider_name(self.session)
+            QgsMessageLog.logMessage(
+                f"Encoder loaded with provider: {active_provider}",
+                "AI Segmentation",
+                level=Qgis.Info
             )
 
             self.input_name = self.session.get_inputs()[0].name
@@ -99,7 +108,9 @@ class SAMEncoder:
             transform_info = {
                 "original_size": original_size,
                 "resized_size": (SAM_INPUT_SIZE, SAM_INPUT_SIZE),
-                "scale": 1.0,
+                "scale": SAM_INPUT_SIZE / max(h, w),
+                "scale_x": SAM_INPUT_SIZE / w,
+                "scale_y": SAM_INPUT_SIZE / h,
                 "input_size": SAM_INPUT_SIZE,
                 "is_sam2": True,
             }
@@ -134,7 +145,10 @@ class SAMEncoder:
         image: np.ndarray,
         progress_callback: Callable[[int, str], None] = None
     ) -> Tuple[Optional[dict], dict]:
-        
+        import time
+        from .debug_settings import get_settings
+        settings = get_settings()
+
         if self.session is None:
             QgsMessageLog.logMessage(
                 "Encoder model not loaded",
@@ -147,12 +161,30 @@ class SAMEncoder:
             if progress_callback:
                 progress_callback(10, "Preprocessing image...")
 
+            preprocess_start = time.time()
             preprocessed, transform_info = self.preprocess_image(image)
+            preprocess_time = time.time() - preprocess_start
+
+            if settings.show_timing_info:
+                QgsMessageLog.logMessage(
+                    f"[TIMING] Preprocessing: {preprocess_time:.2f}s",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
 
             if progress_callback:
                 progress_callback(30, "Running encoder (this may take a while)...")
 
+            encode_start = time.time()
             outputs = self.session.run(self.output_names, {self.input_name: preprocessed})
+            encode_time = time.time() - encode_start
+
+            if settings.show_timing_info:
+                QgsMessageLog.logMessage(
+                    f"[TIMING] Encoding: {encode_time:.2f}s",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
 
             features_dict = {}
             for i, name in enumerate(self.output_names):
@@ -271,11 +303,13 @@ def load_features(features_path: str) -> Tuple[Optional[dict], dict]:
         if os.path.exists(npz_path):
             loaded = np.load(npz_path)
             features = {key: loaded[key] for key in loaded.files}
-            QgsMessageLog.logMessage(
-                f"Loaded features from npz (keys: {list(features.keys())})",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
+            for key, arr in features.items():
+                QgsMessageLog.logMessage(
+                    f"[CACHE] Loaded {key}: shape={arr.shape}, dtype={arr.dtype}, "
+                    f"min={arr.min():.4f}, max={arr.max():.4f}",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
         elif os.path.exists(npy_path):
             single_features = np.load(npy_path)
             features = {"image_embeddings": single_features}

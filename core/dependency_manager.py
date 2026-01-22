@@ -26,6 +26,12 @@ REQUIRED_PACKAGES = [
     ("onnxruntime", "1.15.0"),
 ]
 
+SAM2_PACKAGES = [
+    ("torch", "2.0.0"),
+    ("torchvision", "0.15.0"),
+    ("ultralytics", "8.0.0"),
+]
+
 
 SETTINGS_KEY_DEPS_DISMISSED = "AI_Segmentation/dependencies_dismissed"
 
@@ -112,7 +118,6 @@ def is_package_installed(package_name: str) -> bool:
 
 
 def get_installed_version(package_name: str) -> Optional[str]:
-    
     try:
         if package_name == "onnxruntime":
             import onnxruntime
@@ -120,6 +125,15 @@ def get_installed_version(package_name: str) -> Optional[str]:
         elif package_name == "numpy":
             import numpy
             return numpy.__version__
+        elif package_name == "torch":
+            import torch
+            return torch.__version__
+        elif package_name == "torchvision":
+            import torchvision
+            return torchvision.__version__
+        elif package_name == "ultralytics":
+            import ultralytics
+            return ultralytics.__version__
         else:
             from importlib.metadata import version
             return version(package_name)
@@ -147,8 +161,91 @@ def get_missing_dependencies() -> List[Tuple[str, str]]:
 
 
 def all_dependencies_installed() -> bool:
-    
     return len(get_missing_dependencies()) == 0
+
+
+def check_sam2_dependencies() -> List[Tuple[str, str, bool, Optional[str]]]:
+    results = []
+    for package_name, min_version in SAM2_PACKAGES:
+        installed = is_package_installed(package_name)
+        version = get_installed_version(package_name) if installed else None
+        results.append((package_name, min_version, installed, version))
+    return results
+
+
+def get_missing_sam2_dependencies() -> List[Tuple[str, str]]:
+    missing = []
+    for package_name, min_version, installed, _ in check_sam2_dependencies():
+        if not installed:
+            missing.append((package_name, min_version))
+    return missing
+
+
+def sam2_dependencies_installed() -> bool:
+    return len(get_missing_sam2_dependencies()) == 0
+
+
+def install_sam2_dependencies(
+    progress_callback: Optional[Callable[[int, int, str], None]] = None
+) -> Tuple[bool, List[str]]:
+    ensure_packages_dir_in_path()
+
+    missing = get_missing_sam2_dependencies()
+
+    if not missing:
+        return True, ["All SAM2 dependencies are already installed"]
+
+    QgsMessageLog.logMessage(
+        f"Installing {len(missing)} SAM2 packages to: {PACKAGES_INSTALL_DIR}",
+        "AI Segmentation",
+        level=Qgis.Info
+    )
+
+    if progress_callback:
+        packages_str = ", ".join([name for name, _ in missing])
+        progress_callback(0, len(missing), f"Preparing to install: {packages_str}")
+
+    messages = []
+    all_success = True
+    total = len(missing)
+
+    for i, (package_name, version) in enumerate(missing):
+        if progress_callback:
+            progress_callback(i, total, f"Installing {package_name}... ({i+1}/{total})")
+
+        def pip_progress(msg: str):
+            if progress_callback:
+                progress_callback(i, total, msg)
+
+        success, msg = install_package(package_name, version, pip_progress)
+        messages.append(f"{package_name}: {msg}")
+
+        if success:
+            QgsMessageLog.logMessage(
+                f"✓ {package_name} installed successfully",
+                "AI Segmentation",
+                level=Qgis.Success
+            )
+            if progress_callback:
+                progress_callback(i + 1, total, f"✓ {package_name} installed")
+        else:
+            QgsMessageLog.logMessage(
+                f"✗ {package_name} installation failed: {msg}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            all_success = False
+            if progress_callback:
+                progress_callback(i + 1, total, f"✗ {package_name} failed")
+            break
+
+    if progress_callback:
+        if all_success:
+            progress_callback(total, total, "✓ SAM2 installation complete! Please restart QGIS.")
+        else:
+            progress_callback(total, total, "✗ SAM2 installation failed. See details below.")
+
+    return all_success, messages
 
 
 def get_manual_install_instructions() -> str:
@@ -542,14 +639,24 @@ def get_packages_install_dir() -> str:
 
 
 def get_dependency_status_summary() -> str:
-    
+
     deps = check_dependencies()
     installed = [(name, ver) for name, _, is_installed, ver in deps if is_installed]
     missing = [(name, req_ver) for name, req_ver, is_installed, _ in deps if not is_installed]
-    
+
     if not missing:
         versions = ", ".join([f"{name} {ver}" for name, ver in installed])
         return f"OK: {versions}"
     else:
         missing_str = ", ".join([name for name, _ in missing])
         return f"Missing: {missing_str}"
+
+
+def check_gpu_optimization() -> Tuple[bool, Optional[str]]:
+    from .execution_provider import is_gpu_available, get_gpu_install_suggestion
+
+    if is_gpu_available():
+        return True, None
+
+    suggestion = get_gpu_install_suggestion()
+    return suggestion is None, suggestion

@@ -63,12 +63,28 @@ def models_exist(model_id: str = None) -> bool:
 
 
 def get_installed_models() -> List[str]:
-    
     installed = []
     for model_id in MODEL_REGISTRY.keys():
         if model_exists(model_id):
             installed.append(model_id)
     return installed
+
+
+def get_all_usable_models(sam2_deps_ok: bool = False) -> List[str]:
+    from .model_registry import is_ultralytics_model_downloaded
+    
+    usable = []
+    for model_id in MODEL_ORDER:
+        config = MODEL_REGISTRY[model_id]
+        
+        if config.is_onnx:
+            if model_exists(model_id):
+                usable.append(model_id)
+        elif config.is_ultralytics:
+            if sam2_deps_ok and is_ultralytics_model_downloaded(model_id):
+                usable.append(model_id)
+    
+    return usable
 
 
 def get_first_installed_model() -> Optional[str]:

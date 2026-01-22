@@ -13,6 +13,10 @@ from qgis.PyQt.QtWidgets import (
     QComboBox,
     QToolButton,
     QSizePolicy,
+    QDoubleSpinBox,
+    QSpinBox,
+    QCheckBox,
+    QSlider,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtGui import QStandardItem, QStandardItemModel, QFont
@@ -26,14 +30,15 @@ from typing import List
 class AISegmentationDockWidget(QDockWidget):
 
     install_dependencies_requested = pyqtSignal()
+    install_sam2_dependencies_requested = pyqtSignal()
     download_models_requested = pyqtSignal()
-    install_model_requested = pyqtSignal(str)  
+    install_model_requested = pyqtSignal(str)
     cancel_download_requested = pyqtSignal()
     cancel_preparation_requested = pyqtSignal()
-    start_segmentation_requested = pyqtSignal(object)  
+    start_segmentation_requested = pyqtSignal(object)
     clear_points_requested = pyqtSignal()
     undo_requested = pyqtSignal()
-    finish_segmentation_requested = pyqtSignal()  
+    finish_segmentation_requested = pyqtSignal()
     model_changed = pyqtSignal(str)  
 
     def __init__(self, parent=None):
@@ -51,9 +56,10 @@ class AISegmentationDockWidget(QDockWidget):
         self.setWidget(self.main_widget)
 
         self._dependencies_ok = False
+        self._sam2_dependencies_ok = False
         self._models_ok = False
         self._segmentation_active = False
-        self._has_mask = False  
+        self._has_mask = False
         self._installed_models: List[str] = []
         self._current_model_id: str = None
         self._downloading_model_id: str = None  
@@ -64,6 +70,8 @@ class AISegmentationDockWidget(QDockWidget):
         self._setup_model_install_section()
 
         self._setup_segmentation_section()
+
+        self._setup_advanced_settings_section()
 
         self.main_layout.addStretch()
 
@@ -157,7 +165,12 @@ class AISegmentationDockWidget(QDockWidget):
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(0, 2, 0, 2)
 
-            info_label = QLabel(f"{config.display_name} - {config.total_size_mb}MB")
+            if config.is_ultralytics:
+                info_text = f"{config.display_name} (PyTorch)"
+            else:
+                info_text = f"{config.display_name} - {config.total_size_mb}MB"
+
+            info_label = QLabel(info_text)
             info_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             row_layout.addWidget(info_label)
 
@@ -175,6 +188,7 @@ class AISegmentationDockWidget(QDockWidget):
                 "info_label": info_label,
                 "status_label": status_label,
                 "install_btn": install_btn,
+                "is_ultralytics": config.is_ultralytics,
             }
 
             layout.addWidget(row)
@@ -286,6 +300,139 @@ class AISegmentationDockWidget(QDockWidget):
         self.model_combo.setModel(model)
         self.model_combo.blockSignals(False)
 
+    def _setup_advanced_settings_section(self):
+        from .core.debug_settings import get_settings
+
+        self._debug_settings = get_settings()
+
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 8, 0, 0)
+        container_layout.setSpacing(4)
+
+        header_widget = QWidget()
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.advanced_toggle = QToolButton()
+        self.advanced_toggle.setArrowType(Qt.RightArrow)
+        self.advanced_toggle.setCheckable(True)
+        self.advanced_toggle.setChecked(False)
+        self.advanced_toggle.clicked.connect(self._on_advanced_toggle)
+        self.advanced_toggle.setStyleSheet("QToolButton { border: none; }")
+        header_layout.addWidget(self.advanced_toggle)
+
+        header_label = QLabel("Advanced Settings")
+        header_label.setStyleSheet("font-weight: bold;")
+        header_layout.addWidget(header_label)
+        header_layout.addStretch()
+
+        container_layout.addWidget(header_widget)
+
+        self.advanced_content = QWidget()
+        self.advanced_content.setVisible(False)
+        content_layout = QVBoxLayout(self.advanced_content)
+        content_layout.setContentsMargins(10, 4, 0, 4)
+        content_layout.setSpacing(8)
+
+        threshold_widget = QWidget()
+        threshold_layout = QHBoxLayout(threshold_widget)
+        threshold_layout.setContentsMargins(0, 0, 0, 0)
+        threshold_label = QLabel("Mask Threshold:")
+        threshold_label.setToolTip(
+            "Threshold for converting soft mask to binary.\n"
+            "Lower = more inclusive, Higher = more selective.\n"
+            "Default: 0.0"
+        )
+        threshold_layout.addWidget(threshold_label)
+        self.threshold_spin = QDoubleSpinBox()
+        self.threshold_spin.setRange(-5.0, 5.0)
+        self.threshold_spin.setSingleStep(0.1)
+        self.threshold_spin.setValue(self._debug_settings.mask_threshold)
+        self.threshold_spin.valueChanged.connect(self._on_threshold_changed)
+        threshold_layout.addWidget(self.threshold_spin)
+        content_layout.addWidget(threshold_widget)
+
+        max_size_widget = QWidget()
+        max_size_layout = QHBoxLayout(max_size_widget)
+        max_size_layout.setContentsMargins(0, 0, 0, 0)
+        max_size_label = QLabel("Max Image Size:")
+        max_size_label.setToolTip(
+            "Maximum dimension for image encoding.\n"
+            "Larger = better quality but slower.\n"
+            "Default: 2048"
+        )
+        max_size_layout.addWidget(max_size_label)
+        self.max_size_spin = QSpinBox()
+        self.max_size_spin.setRange(512, 4096)
+        self.max_size_spin.setSingleStep(256)
+        self.max_size_spin.setValue(self._debug_settings.max_image_size)
+        self.max_size_spin.valueChanged.connect(self._on_max_size_changed)
+        max_size_layout.addWidget(self.max_size_spin)
+        content_layout.addWidget(max_size_widget)
+
+        self.force_cpu_check = QCheckBox("Force CPU (disable GPU/CoreML)")
+        self.force_cpu_check.setToolTip(
+            "Force CPU execution provider.\n"
+            "Enable if you experience crashes with GPU/CoreML.\n"
+            "Default: enabled for ONNX models"
+        )
+        self.force_cpu_check.setChecked(self._debug_settings.force_cpu)
+        self.force_cpu_check.stateChanged.connect(self._on_force_cpu_changed)
+        content_layout.addWidget(self.force_cpu_check)
+
+        self.show_scores_check = QCheckBox("Show confidence scores")
+        self.show_scores_check.setToolTip("Display mask confidence scores in status bar")
+        self.show_scores_check.setChecked(self._debug_settings.show_confidence_scores)
+        self.show_scores_check.stateChanged.connect(self._on_show_scores_changed)
+        content_layout.addWidget(self.show_scores_check)
+
+        self.show_timing_check = QCheckBox("Show timing info")
+        self.show_timing_check.setToolTip("Display encoding/decoding times in logs")
+        self.show_timing_check.setChecked(self._debug_settings.show_timing_info)
+        self.show_timing_check.stateChanged.connect(self._on_show_timing_changed)
+        content_layout.addWidget(self.show_timing_check)
+
+        self.verbose_check = QCheckBox("Verbose logging")
+        self.verbose_check.setToolTip("Enable detailed debug logging to QGIS log panel")
+        self.verbose_check.setChecked(self._debug_settings.verbose_logging)
+        self.verbose_check.stateChanged.connect(self._on_verbose_changed)
+        content_layout.addWidget(self.verbose_check)
+
+        self.debug_info_label = QLabel("")
+        self.debug_info_label.setStyleSheet("color: #666; font-size: 10px;")
+        self.debug_info_label.setWordWrap(True)
+        content_layout.addWidget(self.debug_info_label)
+
+        container_layout.addWidget(self.advanced_content)
+        self.main_layout.addWidget(container)
+
+    def _on_advanced_toggle(self, checked):
+        self.advanced_toggle.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+        self.advanced_content.setVisible(checked)
+
+    def _on_threshold_changed(self, value):
+        self._debug_settings.set_mask_threshold(value)
+
+    def _on_max_size_changed(self, value):
+        self._debug_settings.set_max_image_size(value)
+
+    def _on_force_cpu_changed(self, state):
+        self._debug_settings.set_force_cpu(state == Qt.Checked)
+
+    def _on_show_scores_changed(self, state):
+        self._debug_settings.set_show_confidence_scores(state == Qt.Checked)
+
+    def _on_show_timing_changed(self, state):
+        self._debug_settings.set_show_timing_info(state == Qt.Checked)
+
+    def _on_verbose_changed(self, state):
+        self._debug_settings.set_verbose_logging(state == Qt.Checked)
+
+    def update_debug_info(self, info: str):
+        if hasattr(self, 'debug_info_label'):
+            self.debug_info_label.setText(info)
+
     def _setup_status_bar(self):
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
@@ -306,10 +453,24 @@ class AISegmentationDockWidget(QDockWidget):
         self.model_install_content.setVisible(checked)
 
     def _on_model_install_clicked(self, model_id: str):
-        self._downloading_model_id = model_id
-        for mid, widgets in self.model_rows.items():
-            widgets["install_btn"].setEnabled(False)
-        self.install_model_requested.emit(model_id)
+        widgets = self.model_rows.get(model_id, {})
+        is_ultralytics = widgets.get("is_ultralytics", False)
+
+        if is_ultralytics:
+            if not self._sam2_dependencies_ok:
+                for mid, w in self.model_rows.items():
+                    w["install_btn"].setEnabled(False)
+                self.install_sam2_dependencies_requested.emit()
+            else:
+                for mid, w in self.model_rows.items():
+                    w["install_btn"].setEnabled(False)
+                self._downloading_model_id = model_id
+                self.install_model_requested.emit(model_id)
+        else:
+            self._downloading_model_id = model_id
+            for mid, w in self.model_rows.items():
+                w["install_btn"].setEnabled(False)
+            self.install_model_requested.emit(model_id)
 
     def _on_cancel_download_clicked(self):
         self.cancel_download_requested.emit()
@@ -389,6 +550,51 @@ class AISegmentationDockWidget(QDockWidget):
 
         self._update_ui_state()
 
+    def set_sam2_dependency_status(self, ok: bool):
+        self._sam2_dependencies_ok = ok
+        self._update_model_rows_status()
+        self._update_ui_state()
+
+    def _update_model_rows_status(self):
+        from .core.model_registry import is_ultralytics_model_downloaded
+
+        for model_id, widgets in self.model_rows.items():
+            is_ultralytics = widgets.get("is_ultralytics", False)
+            is_onnx_installed = model_id in self._installed_models
+
+            if is_ultralytics:
+                model_downloaded = is_ultralytics_model_downloaded(model_id)
+                is_usable = self._sam2_dependencies_ok and model_downloaded
+
+                if not self._sam2_dependencies_ok:
+                    widgets["status_label"].setText("Needs PyTorch")
+                    widgets["status_label"].setStyleSheet("color: #f57c00;")
+                    widgets["status_label"].setVisible(True)
+                    widgets["install_btn"].setVisible(True)
+                    widgets["install_btn"].setEnabled(True)
+                    widgets["install_btn"].setText("Setup")
+                elif model_downloaded:
+                    widgets["status_label"].setText("Installed")
+                    widgets["status_label"].setStyleSheet("color: #388e3c; font-weight: bold;")
+                    widgets["status_label"].setVisible(True)
+                    widgets["install_btn"].setVisible(False)
+                else:
+                    widgets["status_label"].setVisible(False)
+                    widgets["install_btn"].setVisible(True)
+                    widgets["install_btn"].setEnabled(True)
+                    widgets["install_btn"].setText("Install")
+            else:
+                if is_onnx_installed:
+                    widgets["status_label"].setText("Installed")
+                    widgets["status_label"].setStyleSheet("color: #388e3c; font-weight: bold;")
+                    widgets["status_label"].setVisible(True)
+                    widgets["install_btn"].setVisible(False)
+                else:
+                    widgets["status_label"].setVisible(False)
+                    widgets["install_btn"].setVisible(True)
+                    widgets["install_btn"].setEnabled(True)
+                    widgets["install_btn"].setText("Install")
+
     def set_install_progress(self, percent: int, message: str):
         self.deps_progress.setValue(percent)
         self.deps_progress_label.setText(message)
@@ -405,28 +611,22 @@ class AISegmentationDockWidget(QDockWidget):
                 self.install_button.setText("Retry")
 
     def set_models_status(self, installed_models: List[str], current_model_id: str = None):
-        self._installed_models = installed_models
-        self._models_ok = len(installed_models) > 0
+        self._installed_models = list(installed_models)
+        
+        self._update_model_rows_status()
+        self._update_model_combo_state()
+        
+        has_any_usable = self._count_usable_models() > 0
+        self._models_ok = has_any_usable
 
         if current_model_id:
             self._current_model_id = current_model_id
-
-        for model_id, widgets in self.model_rows.items():
-            is_installed = model_id in installed_models
-            if is_installed:
-                widgets["status_label"].setText("Installed")
-                widgets["status_label"].setStyleSheet("color: #388e3c; font-weight: bold;")
-                widgets["status_label"].setVisible(True)
-                widgets["install_btn"].setVisible(False)
-            else:
-                widgets["status_label"].setVisible(False)
-                widgets["install_btn"].setVisible(True)
-                widgets["install_btn"].setEnabled(True)
-
-        self._update_model_combo_state()
-
-        if current_model_id:
             self._select_model_in_combo(current_model_id)
+        elif has_any_usable:
+            first_usable = self._get_first_usable_model()
+            if first_usable:
+                self._current_model_id = first_usable
+                self._select_model_in_combo(first_usable)
 
         if self._models_ok:
             self.model_install_toggle.setChecked(False)
@@ -439,21 +639,58 @@ class AISegmentationDockWidget(QDockWidget):
 
         self._update_ui_state()
 
-    def _update_model_combo_state(self):
+    def _count_usable_models(self) -> int:
+        from .core.model_registry import get_all_models, is_ultralytics_model_downloaded
         
+        count = 0
+        for config in get_all_models():
+            if config.is_onnx and config.model_id in self._installed_models:
+                count += 1
+            elif config.is_ultralytics and self._sam2_dependencies_ok and is_ultralytics_model_downloaded(config.model_id):
+                count += 1
+        return count
+
+    def _get_first_usable_model(self) -> str:
+        from .core.model_registry import get_all_models, is_ultralytics_model_downloaded
+        
+        for config in get_all_models():
+            if config.is_onnx and config.model_id in self._installed_models:
+                return config.model_id
+            elif config.is_ultralytics and self._sam2_dependencies_ok and is_ultralytics_model_downloaded(config.model_id):
+                return config.model_id
+        return None
+
+    def _update_model_combo_state(self):
+        from .core.model_registry import get_model_config, is_ultralytics_model_downloaded
+
         model = self.model_combo.model()
         for i in range(model.rowCount()):
             item = model.item(i)
             model_id = item.data(Qt.UserRole)
-            is_installed = model_id in self._installed_models
-            item.setEnabled(is_installed)
 
-            from .core.model_registry import get_model_config
             config = get_model_config(model_id)
-            if is_installed:
-                item.setText(config.display_name)
+
+            if config.is_ultralytics:
+                model_downloaded = is_ultralytics_model_downloaded(model_id)
+                is_usable = self._sam2_dependencies_ok and model_downloaded
+                
+                if not self._sam2_dependencies_ok:
+                    item.setText(f"{config.display_name} (needs PyTorch)")
+                    item.setEnabled(False)
+                elif not model_downloaded:
+                    item.setText(f"{config.display_name} (not installed)")
+                    item.setEnabled(False)
+                else:
+                    item.setText(config.display_name)
+                    item.setEnabled(True)
             else:
-                item.setText(f"{config.display_name} (not installed)")
+                is_installed = model_id in self._installed_models
+                if is_installed:
+                    item.setText(config.display_name)
+                    item.setEnabled(True)
+                else:
+                    item.setText(f"{config.display_name} (not installed)")
+                    item.setEnabled(False)
 
     def _select_model_in_combo(self, model_id: str):
         if not model_id:

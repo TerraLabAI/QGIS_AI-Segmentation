@@ -1,57 +1,62 @@
-
-
-from dataclasses import dataclass
-from typing import Dict, Tuple, List
+from dataclasses import dataclass, field
+from typing import Dict, Tuple, List, Optional
 
 
 @dataclass
 class ModelConfig:
-
     model_id: str
     display_name: str
     description: str
 
-    huggingface_repo: str
-    encoder_file: str
-    decoder_file: str
+    backend: str = "onnx"
 
-    encoder_size_mb: int
-    decoder_size_mb: int
+    huggingface_repo: str = ""
+    encoder_file: str = ""
+    decoder_file: str = ""
 
-    input_size: int
-    feature_shape: Tuple[int, int, int, int]
-    mask_input_shape: Tuple[int, int, int, int]
+    ultralytics_model: str = ""
 
-    encoder_input_name: str
-    encoder_output_names: Dict[str, str]
+    encoder_size_mb: int = 0
+    decoder_size_mb: int = 0
+    total_size_mb_override: int = 0
 
-    decoder_input_names: Dict[str, str]
-    decoder_output_names: Dict[str, str]
+    input_size: int = 1024
+    feature_shape: Tuple[int, int, int, int] = (1, 256, 64, 64)
+    mask_input_shape: Tuple[int, int, int, int] = (1, 1, 256, 256)
 
-    decoder_input_ranks: Dict[str, int]
+    encoder_input_name: str = ""
+    encoder_output_names: Dict[str, str] = field(default_factory=dict)
+    decoder_input_names: Dict[str, str] = field(default_factory=dict)
+    decoder_output_names: Dict[str, str] = field(default_factory=dict)
+    decoder_input_ranks: Dict[str, int] = field(default_factory=dict)
 
     is_sam2: bool = False
-
     mask_threshold: float = 0.0
-
     use_sam2_preprocessing: bool = False
-
     use_sam2_coord_transform: bool = False
+    recommended_tier: str = "low"
 
     @property
     def total_size_mb(self) -> int:
-        
+        if self.total_size_mb_override > 0:
+            return self.total_size_mb_override
         return self.encoder_size_mb + self.decoder_size_mb
 
     @property
     def local_encoder_name(self) -> str:
-        
         return "encoder.onnx"
 
     @property
     def local_decoder_name(self) -> str:
-        
         return "decoder.onnx"
+
+    @property
+    def is_ultralytics(self) -> bool:
+        return self.backend == "ultralytics"
+
+    @property
+    def is_onnx(self) -> bool:
+        return self.backend == "onnx"
 
 
 
@@ -59,6 +64,7 @@ SAM_VIT_B = ModelConfig(
     model_id="sam_vit_b",
     display_name="Fast (SAM ViT-B)",
     description="Original SAM model, quantized. Good balance of speed and quality.",
+    backend="onnx",
 
     huggingface_repo="visheratin/segment-anything-vit-b",
     encoder_file="encoder-quant.onnx",
@@ -90,12 +96,12 @@ SAM_VIT_B = ModelConfig(
     },
 
     decoder_input_ranks={
-        "image_embeddings": 4,  # (1, 256, 64, 64)
-        "point_coords": 3,      # (1, N, 2)
-        "point_labels": 2,      # (1, N)
-        "mask_input": 4,        # (1, 1, 256, 256)
-        "has_mask_input": 1,    # (1,)
-        "orig_im_size": 1,      # (2,)
+        "image_embeddings": 4,
+        "point_coords": 3,
+        "point_labels": 2,
+        "mask_input": 4,
+        "has_mask_input": 1,
+        "orig_im_size": 1,
     },
 
     is_sam2=False,
@@ -103,108 +109,36 @@ SAM_VIT_B = ModelConfig(
 
 SAM2_BASE_PLUS = ModelConfig(
     model_id="sam2_base_plus",
-    display_name="Balanced (SAM2 Base+)",
-    description="SAM2 Hiera Base+. Better quality than SAM ViT-B.",
+    display_name="Balanced (SAM2 Base)",
+    description="SAM2 Base model via Ultralytics. Better quality, requires PyTorch.",
+    backend="ultralytics",
 
-    huggingface_repo="vietanhdev/segment-anything-2-onnx-models",
-    encoder_file="sam2_hiera_base_plus.encoder.onnx",
-    decoder_file="sam2_hiera_base_plus.decoder.onnx",
-
-    encoder_size_mb=340,
-    decoder_size_mb=21,
+    ultralytics_model="sam2_b.pt",
+    total_size_mb_override=155,
 
     input_size=1024,
-    feature_shape=(1, 256, 64, 64),
-    mask_input_shape=(1, 1, 256, 256),
-
-    encoder_input_name="image",
-    encoder_output_names={
-        "high_res_feats_0": "high_res_feats_0",
-        "high_res_feats_1": "high_res_feats_1",
-        "image_embed": "image_embed",
-    },
-
-    decoder_input_names={
-        "image_embed": "image_embed",
-        "high_res_feats_0": "high_res_feats_0",
-        "high_res_feats_1": "high_res_feats_1",
-        "point_coords": "point_coords",
-        "point_labels": "point_labels",
-        "mask_input": "mask_input",
-        "has_mask_input": "has_mask_input",
-    },
-    decoder_output_names={
-        "masks": "masks",
-        "iou_predictions": "scores",
-    },
-
-    decoder_input_ranks={
-        "image_embed": 4,
-        "high_res_feats_0": 4,
-        "high_res_feats_1": 4,
-        "point_coords": 3,
-        "point_labels": 2,
-        "mask_input": 4,
-        "has_mask_input": 1,
-    },
-
     is_sam2=True,
     mask_threshold=0.0,
     use_sam2_preprocessing=True,
     use_sam2_coord_transform=True,
+    recommended_tier="medium",
 )
 
 SAM2_LARGE = ModelConfig(
     model_id="sam2_large",
     display_name="Precise (SAM2 Large)",
-    description="SAM2 Hiera Large. Highest quality, slower.",
+    description="SAM2 Large model via Ultralytics. Highest quality, requires PyTorch.",
+    backend="ultralytics",
 
-    huggingface_repo="vietanhdev/segment-anything-2-onnx-models",
-    encoder_file="sam2_hiera_large.encoder.onnx",
-    decoder_file="sam2_hiera_large.decoder.onnx",
-
-    encoder_size_mb=889,
-    decoder_size_mb=21,
+    ultralytics_model="sam2_l.pt",
+    total_size_mb_override=390,
 
     input_size=1024,
-    feature_shape=(1, 256, 64, 64),
-    mask_input_shape=(1, 1, 256, 256),
-
-    encoder_input_name="image",
-    encoder_output_names={
-        "high_res_feats_0": "high_res_feats_0",
-        "high_res_feats_1": "high_res_feats_1",
-        "image_embed": "image_embed",
-    },
-
-    decoder_input_names={
-        "image_embed": "image_embed",
-        "high_res_feats_0": "high_res_feats_0",
-        "high_res_feats_1": "high_res_feats_1",
-        "point_coords": "point_coords",
-        "point_labels": "point_labels",
-        "mask_input": "mask_input",
-        "has_mask_input": "has_mask_input",
-    },
-    decoder_output_names={
-        "masks": "masks",
-        "iou_predictions": "scores",
-    },
-
-    decoder_input_ranks={
-        "image_embed": 4,
-        "high_res_feats_0": 4,
-        "high_res_feats_1": 4,
-        "point_coords": 3,
-        "point_labels": 2,
-        "mask_input": 4,
-        "has_mask_input": 1,
-    },
-
     is_sam2=True,
     mask_threshold=0.0,
     use_sam2_preprocessing=True,
     use_sam2_coord_transform=True,
+    recommended_tier="high",
 )
 
 
@@ -233,5 +167,100 @@ def get_all_models() -> List[ModelConfig]:
 
 
 def get_model_ids() -> List[str]:
-    
+
     return MODEL_ORDER.copy()
+
+
+def get_recommended_model(hardware_tier: str) -> str:
+    tier_map = {"high": "sam2_large", "medium": "sam2_base_plus", "low": "sam_vit_b"}
+    return tier_map.get(hardware_tier, "sam_vit_b")
+
+
+def model_requires_sam2_deps(model_id: str) -> bool:
+    config = get_model_config(model_id)
+    return config.is_ultralytics
+
+
+def get_ultralytics_models() -> List[ModelConfig]:
+    return [config for config in get_all_models() if config.is_ultralytics]
+
+
+def get_onnx_models() -> List[ModelConfig]:
+    return [config for config in get_all_models() if config.is_onnx]
+
+
+def is_ultralytics_model_downloaded(model_id: str, verbose: bool = False) -> bool:
+    from pathlib import Path
+    from qgis.core import QgsMessageLog, Qgis
+
+    config = get_model_config(model_id)
+    if not config.is_ultralytics:
+        return False
+
+    model_name = config.ultralytics_model
+    expected_size = config.total_size_mb * 1024 * 1024 * 0.8
+
+    plugin_dir = Path(__file__).parent.parent
+    possible_paths = [
+        plugin_dir / model_name,
+        plugin_dir / "models" / model_name,
+        Path.home() / ".cache" / "ultralytics" / model_name,
+    ]
+
+    for path in possible_paths:
+        if path.exists() and path.stat().st_size > expected_size:
+            if verbose:
+                QgsMessageLog.logMessage(
+                    f"[MODEL_CHECK] {model_id}: found at {path}",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+            return True
+
+    if verbose:
+        QgsMessageLog.logMessage(
+            f"[MODEL_CHECK] {model_id}: NOT found",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+    return False
+
+
+def can_use_ultralytics_model(model_id: str) -> bool:
+    config = get_model_config(model_id)
+    if not config.is_ultralytics:
+        return False
+
+    if not is_ultralytics_model_downloaded(model_id):
+        return False
+
+    try:
+        import torch
+        from ultralytics import SAM
+        return True
+    except ImportError:
+        return False
+
+
+def get_ultralytics_model_path(model_id: str) -> Optional[str]:
+    from pathlib import Path
+
+    config = get_model_config(model_id)
+    if not config.is_ultralytics:
+        return None
+
+    model_name = config.ultralytics_model
+    expected_size = config.total_size_mb * 1024 * 1024 * 0.8
+
+    plugin_dir = Path(__file__).parent.parent
+    possible_paths = [
+        plugin_dir / model_name,
+        plugin_dir / "models" / model_name,
+        Path.home() / ".cache" / "ultralytics" / model_name,
+    ]
+
+    for path in possible_paths:
+        if path.exists() and path.stat().st_size > expected_size:
+            return str(path)
+
+    return None

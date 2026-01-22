@@ -43,6 +43,7 @@ class SAMModel:
 
         self._encoder: Optional[SAMEncoder] = None
         self._decoder: Optional[SAMDecoder] = None
+        self._sam2_predictor = None
         self._loaded = False
 
         self._current_layer: Optional[QgsRasterLayer] = None
@@ -65,19 +66,56 @@ class SAMModel:
 
     @property
     def is_ready(self) -> bool:
+        if self._model_config.is_ultralytics:
+            return self._loaded and self._sam2_predictor is not None and self._sam2_predictor._current_image is not None
         return self._loaded and self._features is not None
 
     @property
     def models_available(self) -> bool:
+        if self._model_config.is_ultralytics:
+            return True
         return model_exists(self._model_id)
 
     def download_models(
         self,
         progress_callback: Optional[Callable[[int, str], None]] = None
     ) -> Tuple[bool, str]:
+        if self._model_config.is_ultralytics:
+            return True, "Ultralytics models are downloaded automatically on first use"
         return download_model(self._model_id, progress_callback)
 
     def load(self) -> Tuple[bool, str]:
+        if self._model_config.is_ultralytics:
+            return self._load_ultralytics()
+        return self._load_onnx()
+
+    def _load_ultralytics(self) -> Tuple[bool, str]:
+        try:
+            from .sam2_predictor import SAM2Predictor, is_sam2_available
+
+            if not is_sam2_available():
+                return False, "SAM2 dependencies not installed. Please install PyTorch and Ultralytics first."
+
+            self._sam2_predictor = SAM2Predictor(self._model_config)
+            if not self._sam2_predictor.load_model():
+                return False, f"Failed to load SAM2 model: {self._model_config.display_name}"
+
+            self._loaded = True
+            QgsMessageLog.logMessage(
+                f"SAM2 model loaded successfully: {self._model_config.display_name}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            return True, f"{self._model_config.display_name} loaded successfully"
+
+        except ImportError as e:
+            self._loaded = False
+            return False, f"SAM2 dependencies missing: {str(e)}"
+        except Exception as e:
+            self._loaded = False
+            return False, f"Failed to load SAM2 model: {str(e)}"
+
+    def _load_onnx(self) -> Tuple[bool, str]:
         if not model_exists(self._model_id):
             return False, f"Models not downloaded for {self._model_config.display_name}. Call download_models() first."
 
@@ -94,7 +132,7 @@ class SAMModel:
 
             self._loaded = True
             QgsMessageLog.logMessage(
-                f"SAM models loaded successfully: {self._model_config.display_name}",
+                f"SAM ONNX models loaded successfully: {self._model_config.display_name}",
                 "AI Segmentation",
                 level=Qgis.Info
             )
@@ -108,13 +146,15 @@ class SAMModel:
         if model_id == self._model_id and not force_reload:
             return True, f"Already using {self._model_config.display_name}"
 
-        if not model_exists(model_id):
+        new_config = get_model_config(model_id)
+
+        if new_config.is_onnx and not model_exists(model_id):
             return False, f"Model {model_id} is not downloaded"
 
         self._unload_model()
 
         self._model_id = model_id
-        self._model_config = get_model_config(model_id)
+        self._model_config = new_config
 
         self._features = None
         self._transform_info = {}
@@ -126,6 +166,9 @@ class SAMModel:
     def _unload_model(self):
         self._encoder = None
         self._decoder = None
+        if self._sam2_predictor:
+            self._sam2_predictor.unload()
+        self._sam2_predictor = None
         self._loaded = False
 
     def prepare_layer(
@@ -137,6 +180,48 @@ class SAMModel:
         if not self._loaded:
             return False, "Models not loaded. Call load() first."
 
+        if self._model_config.is_ultralytics:
+            return self._prepare_layer_ultralytics(layer, progress_callback)
+        return self._prepare_layer_onnx(layer, progress_callback, force_encode)
+
+    def _prepare_layer_ultralytics(
+        self,
+        layer: QgsRasterLayer,
+        progress_callback: Optional[Callable[[int, str], None]] = None
+    ) -> Tuple[bool, str]:
+        try:
+            self.prompts.clear()
+
+            if progress_callback:
+                progress_callback(10, "Reading raster data...")
+
+            success = self._sam2_predictor.set_image_from_layer(layer, progress_callback=progress_callback)
+
+            if not success:
+                return False, "Failed to prepare layer for SAM2"
+
+            self._current_layer = layer
+            self._transform_info = self._sam2_predictor.get_transform_info()
+
+            if progress_callback:
+                progress_callback(100, "Layer ready")
+
+            QgsMessageLog.logMessage(
+                f"Layer prepared for SAM2: {layer.name()}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            return True, "Layer ready for segmentation"
+
+        except Exception as e:
+            return False, f"Failed to prepare layer: {str(e)}"
+
+    def _prepare_layer_onnx(
+        self,
+        layer: QgsRasterLayer,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+        force_encode: bool = False
+    ) -> Tuple[bool, str]:
         try:
             self.prompts.clear()
 
@@ -198,6 +283,9 @@ class SAMModel:
             )
             return None, 0.0
 
+        if self._model_config.is_ultralytics:
+            return self._sam2_predictor.predict_mask(points, labels)
+
         return self._decoder.predict_mask(
             self._features,
             points,
@@ -233,8 +321,12 @@ class SAMModel:
         self._features = None
         self._transform_info = {}
         self._current_layer = None
+        if self._sam2_predictor:
+            self._sam2_predictor.clear()
 
     def get_transform_info(self) -> dict:
+        if self._model_config.is_ultralytics and self._sam2_predictor:
+            return self._sam2_predictor.get_transform_info()
         return self._transform_info.copy()
 
     def get_current_layer(self) -> Optional[QgsRasterLayer]:
@@ -243,6 +335,9 @@ class SAMModel:
     def unload(self):
         self._encoder = None
         self._decoder = None
+        if self._sam2_predictor:
+            self._sam2_predictor.unload()
+        self._sam2_predictor = None
         self._loaded = False
         self._features = None
         self._transform_info = {}

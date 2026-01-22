@@ -26,7 +26,6 @@ class SAMDecoder:
         self._model_config = model_config
 
     def load_model(self, model_path: str = None) -> bool:
-        
         try:
             import onnxruntime as ort
 
@@ -41,9 +40,19 @@ class SAMDecoder:
                 )
                 return False
 
+            from .execution_provider import get_optimal_providers, get_active_provider_name
+
+            providers = get_optimal_providers()
             self.session = ort.InferenceSession(
                 self.model_path,
-                providers=['CPUExecutionProvider']
+                providers=providers
+            )
+
+            active_provider = get_active_provider_name(self.session)
+            QgsMessageLog.logMessage(
+                f"Decoder loaded with provider: {active_provider}",
+                "AI Segmentation",
+                level=Qgis.Info
             )
 
             self.input_names = [inp.name for inp in self.session.get_inputs()]
@@ -72,47 +81,24 @@ class SAMDecoder:
     ) -> Tuple[np.ndarray, np.ndarray]:
         from .image_utils import map_point_to_sam_coords
 
-        original_size = transform_info["original_size"]
-        input_size = transform_info.get("input_size", SAM_INPUT_SIZE)
-        use_sam2_transform = self._model_config.use_sam2_coord_transform
-        extent = transform_info.get("extent", [0, 0, 1, 1])
-
-        QgsMessageLog.logMessage(
-            f"[COORD] Model: {self._model_config.model_id}, SAM2 transform: {use_sam2_transform}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-        QgsMessageLog.logMessage(
-            f"[COORD] original_size (H,W): {original_size}, input_size: {input_size}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-        QgsMessageLog.logMessage(
-            f"[COORD] extent [xmin,ymin,xmax,ymax]: {extent}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
+        is_sam2 = self._model_config.is_sam2
 
         sam_points = []
         for i, (x, y) in enumerate(points):
-            pixel_x, pixel_y = map_point_to_sam_coords(
-                x, y, transform_info,
-                scale_to_sam_space=False
-            )
-
-            if use_sam2_transform:
-                sam_x = pixel_x / original_size[1] * input_size
-                sam_y = pixel_y / original_size[0] * input_size
+            if is_sam2:
+                pixel_x, pixel_y = map_point_to_sam_coords(
+                    x, y, transform_info,
+                    scale_to_sam_space=False
+                )
+                scale_x = transform_info.get("scale_x", transform_info.get("scale", 1.0))
+                scale_y = transform_info.get("scale_y", transform_info.get("scale", 1.0))
+                sam_x = pixel_x * scale_x
+                sam_y = pixel_y * scale_y
             else:
-                scale = transform_info["scale"]
-                sam_x = pixel_x * scale
-                sam_y = pixel_y * scale
-
-            QgsMessageLog.logMessage(
-                f"[COORD] Point {i}: geo({x:.2f},{y:.2f}) -> pixel({pixel_x:.2f},{pixel_y:.2f}) -> sam({sam_x:.2f},{sam_y:.2f})",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
+                sam_x, sam_y = map_point_to_sam_coords(
+                    x, y, transform_info,
+                    scale_to_sam_space=True
+                )
 
             sam_points.append([sam_x, sam_y])
 
@@ -129,7 +115,10 @@ class SAMDecoder:
         transform_info: dict,
         multimask_output: bool = False
     ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        
+        import time
+        from .debug_settings import get_settings
+        settings = get_settings()
+
         if self.session is None:
             QgsMessageLog.logMessage(
                 "Decoder model not loaded",
@@ -158,17 +147,30 @@ class SAMDecoder:
                 )
                 return None, None
 
-            QgsMessageLog.logMessage(
-                f"[DECODER DEBUG] Running ONNX inference with outputs: {self.output_names}",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
+            if settings.verbose_logging:
+                QgsMessageLog.logMessage(
+                    f"[DECODER DEBUG] Running ONNX inference with outputs: {self.output_names}",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+
+            decode_start = time.time()
             outputs = self.session.run(self.output_names, inputs)
-            QgsMessageLog.logMessage(
-                f"[DECODER DEBUG] ONNX inference completed! Got {len(outputs)} outputs",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
+            decode_time = time.time() - decode_start
+
+            if settings.show_timing_info:
+                QgsMessageLog.logMessage(
+                    f"[TIMING] Decoding: {decode_time*1000:.1f}ms",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+
+            if settings.verbose_logging:
+                QgsMessageLog.logMessage(
+                    f"[DECODER DEBUG] ONNX inference completed! Got {len(outputs)} outputs",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
 
             masks = outputs[0]  
             scores = outputs[1] if len(outputs) > 1 else None  
@@ -475,7 +477,10 @@ class SAMDecoder:
             )
             return None, 0.0
 
-        mask_threshold = self._model_config.mask_threshold
+        from .debug_settings import get_settings
+        settings = get_settings()
+
+        mask_threshold = settings.mask_threshold
 
         QgsMessageLog.logMessage(
             f"SAM returned {masks.shape[1]} mask candidates (threshold={mask_threshold}):",
@@ -503,6 +508,12 @@ class SAMDecoder:
         else:
             mask = masks[0, 0]
             score = float(scores[0, 0]) if scores is not None else 1.0
+
+        QgsMessageLog.logMessage(
+            f"[DEBUG] Mask stats: min={mask.min():.4f}, max={mask.max():.4f}, mean={mask.mean():.4f}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         binary_mask = (mask > mask_threshold).astype(np.uint8)
         mask_pixels = int(binary_mask.sum())

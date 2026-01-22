@@ -109,6 +109,93 @@ class PreparationWorker(QThread):
             self.finished.emit(False, str(e))
 
 
+class SAM2InstallWorker(QThread):
+
+    progress = pyqtSignal(int, str)
+    finished = pyqtSignal(bool, list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._last_message = ""
+
+    def run(self):
+        try:
+            from .core.dependency_manager import install_sam2_dependencies
+
+            def callback(current, total, msg):
+                if total > 0:
+                    percent = int((current / total) * 100)
+                else:
+                    percent = 0
+
+                if msg != self._last_message:
+                    self._last_message = msg
+                    self.progress.emit(percent, msg)
+
+            self.progress.emit(0, "Installing SAM2 dependencies (PyTorch, Ultralytics)...")
+
+            success, messages = install_sam2_dependencies(callback)
+
+            if success:
+                self.progress.emit(100, "SAM2 installation complete!")
+            else:
+                self.progress.emit(100, "SAM2 installation failed")
+
+            self.finished.emit(success, messages)
+
+        except Exception as e:
+            self.progress.emit(100, f"Error: {str(e)[:50]}")
+            self.finished.emit(False, [str(e)])
+
+
+class UltralyticsDownloadWorker(QThread):
+
+    progress = pyqtSignal(int, str)
+    finished = pyqtSignal(bool, str, str)
+
+    def __init__(self, model_id: str, parent=None):
+        super().__init__(parent)
+        self.model_id = model_id
+
+    def run(self):
+        try:
+            from .core.model_registry import get_model_config
+            import os
+
+            config = get_model_config(self.model_id)
+            model_name = config.ultralytics_model
+
+            self.progress.emit(10, f"Loading {model_name}...")
+
+            plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            original_dir = os.getcwd()
+
+            try:
+                os.chdir(plugin_dir)
+
+                from ultralytics import SAM
+
+                self.progress.emit(30, f"Downloading {model_name} (this may take a few minutes)...")
+
+                model = SAM(model_name)
+
+                self.progress.emit(100, f"{config.display_name} downloaded!")
+                self.finished.emit(True, f"{config.display_name} installed successfully", self.model_id)
+
+            finally:
+                os.chdir(original_dir)
+
+        except Exception as e:
+            import traceback
+            error_msg = str(e)
+            QgsMessageLog.logMessage(
+                f"Ultralytics download failed: {error_msg}\n{traceback.format_exc()}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            self.finished.emit(False, error_msg, self.model_id)
+
+
 class AISegmentationPlugin:
 
     def __init__(self, iface: QgisInterface):
@@ -129,6 +216,7 @@ class AISegmentationPlugin:
         self._segmentation_counter = 0
 
         self.install_worker = None
+        self.sam2_install_worker = None
         self.download_worker = None
         self.prep_worker = None
 
@@ -157,6 +245,7 @@ class AISegmentationPlugin:
         self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
 
         self.dock_widget.install_dependencies_requested.connect(self._on_install_requested)
+        self.dock_widget.install_sam2_dependencies_requested.connect(self._on_install_sam2_requested)
         self.dock_widget.install_model_requested.connect(self._on_install_model_requested)
         self.dock_widget.cancel_download_requested.connect(self._on_cancel_download)
         self.dock_widget.cancel_preparation_requested.connect(self._on_cancel_preparation)
@@ -206,7 +295,7 @@ class AISegmentationPlugin:
             self.iface.mapCanvas().scene().removeItem(self.mask_rubber_band)
             self.mask_rubber_band = None
 
-        for worker in [self.install_worker, self.download_worker, self.prep_worker]:
+        for worker in [self.install_worker, self.sam2_install_worker, self.download_worker, self.prep_worker]:
             if worker and worker.isRunning():
                 worker.terminate()
                 worker.wait()
@@ -239,6 +328,16 @@ class AISegmentationPlugin:
 
             if all_dependencies_installed():
                 self.dock_widget.set_dependency_status(True, "Dependencies OK")
+
+                from .core.dependency_manager import check_gpu_optimization
+                is_optimized, gpu_suggestion = check_gpu_optimization()
+                if not is_optimized and gpu_suggestion:
+                    QgsMessageLog.logMessage(
+                        f"GPU detected! For faster processing, install onnxruntime-gpu: {gpu_suggestion}",
+                        "AI Segmentation",
+                        level=Qgis.Info
+                    )
+
                 self._check_models()
             else:
                 missing = get_missing_dependencies()
@@ -260,21 +359,42 @@ class AISegmentationPlugin:
     def _check_models(self):
         try:
             from .core.model_manager import get_installed_models, get_first_installed_model
+            from .core.dependency_manager import sam2_dependencies_installed
+            from .core.sam2_predictor import is_sam2_available
+
+            sam2_ok = sam2_dependencies_installed() or is_sam2_available()
+            self.dock_widget.set_sam2_dependency_status(sam2_ok)
+
+            if sam2_ok:
+                QgsMessageLog.logMessage(
+                    "SAM2 dependencies available - Ultralytics models ready",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
 
             installed = get_installed_models()
 
-            if installed:
+            if installed or sam2_ok:
                 first_model = get_first_installed_model()
-                self._load_models(first_model)
-                self.dock_widget.set_models_status(installed, first_model)
-                self.dock_widget.set_status("Ready - select a layer and start!")
+
+                if first_model is None and sam2_ok:
+                    first_model = "sam2_base_plus"
+
+                if first_model:
+                    self._load_models(first_model)
+                    self.dock_widget.set_models_status(installed, first_model)
+                    self.dock_widget.set_status("Ready - select a layer and start!")
+                else:
+                    self.dock_widget.set_models_status(installed, None)
+                    self.dock_widget.set_status("Install an AI model to get started")
             else:
                 self.dock_widget.set_models_status([], None)
                 self.dock_widget.set_status("Install an AI model to get started")
 
         except Exception as e:
+            import traceback
             QgsMessageLog.logMessage(
-                f"Model check error: {str(e)}",
+                f"Model check error: {str(e)}\n{traceback.format_exc()}",
                 "AI Segmentation",
                 level=Qgis.Warning
             )
@@ -349,13 +469,52 @@ class AISegmentationPlugin:
                 f"Please install manually:\n\n{manual_instructions}"
             )
 
+    def _on_install_sam2_requested(self):
+        self.dock_widget.set_download_progress(0, "Installing SAM2 dependencies...")
+
+        self.sam2_install_worker = SAM2InstallWorker()
+        self.sam2_install_worker.progress.connect(self._on_sam2_install_progress)
+        self.sam2_install_worker.finished.connect(self._on_sam2_install_finished)
+        self.sam2_install_worker.start()
+
+    def _on_sam2_install_progress(self, percent: int, message: str):
+        self.dock_widget.set_download_progress(percent, message)
+
+    def _on_sam2_install_finished(self, success: bool, messages: list):
+        if success:
+            self.dock_widget.set_download_progress(100, "SAM2 ready! Restart QGIS.")
+            self.dock_widget.set_sam2_dependency_status(True)
+            self.dock_widget.set_status("SAM2 installed - restart QGIS to use")
+
+            QMessageBox.information(
+                self.iface.mainWindow(),
+                "SAM2 Installation Complete",
+                "SAM2 dependencies (PyTorch, Ultralytics) installed!\n\n"
+                "Please restart QGIS to use the SAM2 models."
+            )
+        else:
+            self.dock_widget.set_download_progress(0, "")
+            error_text = "\n".join(messages[:3])
+
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                "SAM2 Installation Failed",
+                f"Failed to install SAM2 dependencies:\n{error_text}\n\n"
+                "SAM2 models require PyTorch and Ultralytics.\n"
+                "You can still use the Fast (SAM ViT-B) model with ONNX."
+            )
+
     def _on_install_model_requested(self, model_id: str):
         from .core.model_registry import get_model_config
         config = get_model_config(model_id)
 
         self.dock_widget.set_download_progress(0, f"Downloading {config.display_name}...")
 
-        self.download_worker = DownloadWorker(model_id)
+        if config.is_ultralytics:
+            self.download_worker = UltralyticsDownloadWorker(model_id)
+        else:
+            self.download_worker = DownloadWorker(model_id)
+
         self.download_worker.progress.connect(self._on_download_progress)
         self.download_worker.finished.connect(self._on_download_finished)
         self.download_worker.start()
