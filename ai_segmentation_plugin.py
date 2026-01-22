@@ -17,6 +17,7 @@ from qgis.core import (
     QgsGeometry,
     QgsFeature,
     QgsFillSymbol,
+    QgsSingleSymbolRenderer,
     QgsRectangle,
     QgsCoordinateReferenceSystem,
 )
@@ -503,6 +504,7 @@ class AISegmentationPlugin:
             self.saved_polygons.append({
                 'geometry': combined,
                 'score': self.current_score,
+                'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
             })
 
             saved_rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
@@ -542,6 +544,7 @@ class AISegmentationPlugin:
                     polygons_to_export.append({
                         'geometry': combined,
                         'score': self.current_score,
+                        'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
                     })
 
         if not polygons_to_export:
@@ -554,8 +557,15 @@ class AISegmentationPlugin:
         layer_name = f"{self._current_layer_name}_segmentation_{self._segmentation_counter}"
 
         crs_str = None
-        if self.current_transform_info:
-            crs_str = self.current_transform_info.get('crs', None)
+        for pg in polygons_to_export:
+            ti = pg.get('transform_info')
+            if ti:
+                crs_str = ti.get('crs', None)
+                if crs_str and not (isinstance(crs_str, float) and str(crs_str) == 'nan'):
+                    break
+        if crs_str is None or (isinstance(crs_str, float) and str(crs_str) == 'nan'):
+            if self.current_transform_info:
+                crs_str = self.current_transform_info.get('crs', None)
         if crs_str is None or (isinstance(crs_str, float) and str(crs_str) == 'nan'):
             crs_str = self._current_layer.crs().authid() if self._current_layer and self._current_layer.crs().isValid() else 'EPSG:4326'
         if isinstance(crs_str, str) and crs_str.strip():
@@ -583,23 +593,40 @@ class AISegmentationPlugin:
 
         result_layer.startEditing()
         for i, polygon_data in enumerate(polygons_to_export):
-            feature = QgsFeature()
-            feature.setGeometry(polygon_data['geometry'])
-            feature.setAttributes([i + 1, polygon_data['score'], polygon_data['geometry'].area()])
+            feature = QgsFeature(result_layer.fields())
+            geom = polygon_data['geometry']
+            feature.setGeometry(geom)
+            area = geom.area() if geom and not geom.isEmpty() else 0.0
+            feature.setAttributes([i + 1, polygon_data['score'], area])
             result_layer.addFeature(feature)
+            QgsMessageLog.logMessage(
+                f"Added polygon {i+1}: area={area}, valid={geom.isGeosValid() if geom else False}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
         result_layer.commitChanges()
+        result_layer.updateExtents()
 
         symbol = QgsFillSymbol.createSimple({
-            'color': '0,120,255,100',
-            'outline_color': '0,80,200,255',
-            'outline_width': '0.5'
+            'color': '50,150,255,100',
+            'outline_color': '0,100,200,255',
+            'outline_width': '1.5'
         })
-        result_layer.renderer().setSymbol(symbol)
+        renderer = QgsSingleSymbolRenderer(symbol)
+        result_layer.setRenderer(renderer)
 
         QgsProject.instance().addMapLayer(result_layer)
+        result_layer.triggerRepaint()
+        self.iface.mapCanvas().refresh()
 
         QgsMessageLog.logMessage(
-            f"Created segmentation layer: {layer_name} with {len(polygons_to_export)} polygons",
+            f"Layer extent: {result_layer.extent().toString()}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+        QgsMessageLog.logMessage(
+            f"Created segmentation layer: {layer_name} with {len(polygons_to_export)} polygons (featureCount={result_layer.featureCount()})",
             "AI Segmentation",
             level=Qgis.Info
         )
