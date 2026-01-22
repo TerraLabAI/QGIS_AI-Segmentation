@@ -909,8 +909,13 @@ class AISegmentationPlugin:
             input_height = sample["input_shape"][0]
             input_width = sample["input_shape"][1]
 
+        if hasattr(features, 'cpu'):
+            features_np = features.cpu().numpy()
+        else:
+            features_np = features.numpy() if hasattr(features, 'numpy') else features
+
         self.predictor.set_image_feature(
-            img_features=features.numpy(),
+            img_features=features_np,
             img_size=(img_height, img_width),
             input_size=(input_height, input_width),
         )
