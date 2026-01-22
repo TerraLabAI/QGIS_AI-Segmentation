@@ -53,12 +53,13 @@ class EncodingWorker(QThread):
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, raster_path: str, output_dir: str, checkpoint_path: str, layer_crs_wkt: str = None, parent=None):
+    def __init__(self, raster_path: str, output_dir: str, checkpoint_path: str, layer_crs_wkt: str = None, layer_extent: tuple = None, parent=None):
         super().__init__(parent)
         self.raster_path = raster_path
         self.output_dir = output_dir
         self.checkpoint_path = checkpoint_path
         self.layer_crs_wkt = layer_crs_wkt
+        self.layer_extent = layer_extent  # (xmin, ymin, xmax, ymax)
         self._cancelled = False
 
     def cancel(self):
@@ -72,6 +73,7 @@ class EncodingWorker(QThread):
                 self.output_dir,
                 self.checkpoint_path,
                 layer_crs_wkt=self.layer_crs_wkt,
+                layer_extent=self.layer_extent,
                 progress_callback=lambda p, m: self.progress.emit(p, m),
                 cancel_check=lambda: self._cancelled,
             )
@@ -323,16 +325,19 @@ class AISegmentationPlugin:
         try:
             from .core.checkpoint_manager import get_checkpoint_path
             from .core.sam_predictor import build_sam_vit_b_no_encoder, SamPredictorNoImgEncoder
+            from .core.device_manager import get_device_info
 
             checkpoint_path = get_checkpoint_path()
             sam = build_sam_vit_b_no_encoder(checkpoint=checkpoint_path)
             self.predictor = SamPredictorNoImgEncoder(sam)
 
+            device_info = get_device_info()
             QgsMessageLog.logMessage(
-                "SAM predictor loaded successfully",
+                f"SAM predictor loaded successfully on {device_info}",
                 "AI Segmentation",
                 level=Qgis.Info
             )
+            self.dock_widget.set_checkpoint_status(True, f"SAM ready ({device_info})")
 
         except Exception as e:
             import traceback
@@ -398,8 +403,8 @@ class AISegmentationPlugin:
     def _on_cancel_preparation(self):
         if self.encoding_worker and self.encoding_worker.isRunning():
             self.encoding_worker.cancel()
-            self.dock_widget.set_preparation_progress(0, "Cancelled")
-            self.dock_widget.set_status("Encoding cancelled by user")
+            # The worker will emit finished signal with cancelled message
+            # Clean up will happen in _on_encoding_finished
 
     def _on_start_segmentation(self, layer: QgsRasterLayer):
         if self.predictor is None:
@@ -428,10 +433,22 @@ class AISegmentationPlugin:
             if layer.crs().isValid():
                 layer_crs_wkt = layer.crs().toWkt()
 
+            # Get layer extent for rasters without embedded georeferencing (e.g., PNG)
+            layer_extent = None
+            ext = layer.extent()
+            if ext and not ext.isEmpty():
+                layer_extent = (ext.xMinimum(), ext.yMinimum(), ext.xMaximum(), ext.yMaximum())
+            
+            QgsMessageLog.logMessage(
+                f"Starting encoding - Layer extent: {layer_extent}, Layer CRS valid: {layer.crs().isValid()}, CRS: {layer.crs().authid() if layer.crs().isValid() else 'None'}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+
             self.dock_widget.set_preparation_progress(0, "Encoding raster (first time)...")
             self.dock_widget.set_status("This may take a few minutes...")
 
-            self.encoding_worker = EncodingWorker(raster_path, output_dir, checkpoint_path, layer_crs_wkt)
+            self.encoding_worker = EncodingWorker(raster_path, output_dir, checkpoint_path, layer_crs_wkt, layer_extent)
             self.encoding_worker.progress.connect(self._on_encoding_progress)
             self.encoding_worker.finished.connect(
                 lambda s, m: self._on_encoding_finished(s, m, raster_path)
@@ -446,12 +463,40 @@ class AISegmentationPlugin:
             self.dock_widget.set_preparation_progress(100, "Ready!")
             self._load_features_and_activate(raster_path)
         else:
-            self.dock_widget.set_preparation_progress(0, "")
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                "Encoding Failed",
-                f"Failed to encode raster:\n{message}"
-            )
+            # Check if this was a user cancellation
+            is_cancelled = "cancelled" in message.lower() or "canceled" in message.lower()
+            
+            # Clean up partial cache files
+            from .core.checkpoint_manager import clear_features_for_raster
+            try:
+                clear_features_for_raster(raster_path)
+                QgsMessageLog.logMessage(
+                    f"Cleaned up partial cache for: {raster_path}",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+            except Exception as e:
+                QgsMessageLog.logMessage(
+                    f"Failed to clean up partial cache: {str(e)}",
+                    "AI Segmentation",
+                    level=Qgis.Warning
+                )
+            
+            # Reset UI to default state
+            self.dock_widget.set_preparation_progress(100, "Cancelled")
+            self.dock_widget.reset_session()
+            
+            if is_cancelled:
+                # User cancelled - just show a friendly message, no error popup
+                self.dock_widget.set_status("Ready - select a raster layer and start!")
+            else:
+                # Actual error - show warning dialog
+                self.dock_widget.set_status(f"Error: {message[:50]}")
+                QMessageBox.warning(
+                    self.iface.mainWindow(),
+                    "Encoding Failed",
+                    f"Failed to encode raster:\n{message}"
+                )
 
     def _load_features_and_activate(self, raster_path: str):
         try:
@@ -461,8 +506,15 @@ class AISegmentationPlugin:
             features_dir = get_raster_features_dir(raster_path)
             self.feature_dataset = FeatureDataset(features_dir, cache=True)
 
+            bounds = self.feature_dataset.bounds
             QgsMessageLog.logMessage(
                 f"Loaded {len(self.feature_dataset)} feature tiles",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            QgsMessageLog.logMessage(
+                f"Feature dataset bounds: minx={bounds[0]:.2f}, maxx={bounds[1]:.2f}, "
+                f"miny={bounds[2]:.2f}, maxy={bounds[3]:.2f}, CRS={self.feature_dataset.crs}",
                 "AI Segmentation",
                 level=Qgis.Info
             )
@@ -640,6 +692,20 @@ class AISegmentationPlugin:
 
         result_layer.commitChanges()
         result_layer.updateExtents()
+        
+        # Log the layer extent for debugging
+        layer_extent = result_layer.extent()
+        QgsMessageLog.logMessage(
+            f"Exported layer extent: xmin={layer_extent.xMinimum():.2f}, ymin={layer_extent.yMinimum():.2f}, "
+            f"xmax={layer_extent.xMaximum():.2f}, ymax={layer_extent.yMaximum():.2f}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"Layer CRS: {result_layer.crs().authid()}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         # Set renderer
         symbol = QgsFillSymbol.createSimple({
@@ -663,7 +729,8 @@ class AISegmentationPlugin:
         self.dock_widget.set_status(f"Exported: {layer_name}")
 
     def _on_tool_deactivated(self):
-        self.dock_widget.set_segmentation_active(False)
+        if self.dock_widget:
+            self.dock_widget.set_segmentation_active(False)
 
     def _on_positive_click(self, point):
         if self.predictor is None or self.feature_dataset is None:
@@ -761,10 +828,22 @@ class AISegmentationPlugin:
 
         self.current_mask = masks[0]
         self.current_score = float(scores[0])
+        
+        # Use layer CRS as fallback if feature_dataset.crs is None or empty
+        crs_value = self.feature_dataset.crs
+        if not crs_value or (isinstance(crs_value, str) and not crs_value.strip()):
+            if self._current_layer and self._current_layer.crs().isValid():
+                crs_value = self._current_layer.crs().authid()
+                QgsMessageLog.logMessage(
+                    f"Using layer CRS as fallback: {crs_value}",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+        
         self.current_transform_info = {
             "bbox": bbox,
             "img_shape": (img_height, img_width),
-            "crs": self.feature_dataset.crs,
+            "crs": crs_value,
         }
 
         self._update_ui_after_prediction()

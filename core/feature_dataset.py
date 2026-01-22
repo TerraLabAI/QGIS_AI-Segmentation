@@ -8,6 +8,8 @@ import pandas as pd
 
 from qgis.core import QgsMessageLog, Qgis
 
+from .device_manager import get_optimal_device
+
 
 class FeatureDataset:
     def __init__(self, root: str, cache: bool = True):
@@ -127,7 +129,8 @@ class FeatureDataset:
             elif data.dtype == np.uint32:
                 data = data.astype(np.int64)
 
-            tensor = torch.tensor(data).float()
+            device = get_optimal_device()
+            tensor = torch.tensor(data, dtype=torch.float32, device=device)
 
             sample = {
                 "crs": self.crs,

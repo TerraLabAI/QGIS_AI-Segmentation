@@ -4,6 +4,8 @@ import numpy as np
 
 from qgis.core import QgsMessageLog, Qgis, QgsRasterLayer
 
+from .device_manager import get_optimal_device, get_device_info, synchronize_device
+
 
 TILE_SIZE = 1024
 STRIDE = 512
@@ -36,6 +38,7 @@ def encode_raster_to_features(
     output_dir: str,
     checkpoint_path: str,
     layer_crs_wkt: Optional[str] = None,
+    layer_extent: Optional[Tuple[float, float, float, float]] = None,
     progress_callback: Optional[Callable[[int, str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
 ) -> Tuple[bool, str]:
@@ -49,13 +52,22 @@ def encode_raster_to_features(
         if progress_callback:
             progress_callback(0, "Loading SAM encoder...")
 
+        device = get_optimal_device()
+        device_info = get_device_info()
+
         QgsMessageLog.logMessage(
             f"Loading SAM model from: {checkpoint_path}",
             "AI Segmentation",
             level=Qgis.Info
         )
+        QgsMessageLog.logMessage(
+            f"Using device: {device_info} ({device})",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         sam = sam_model_registry["vit_b"](checkpoint=checkpoint_path)
+        sam.to(device)
         sam.eval()
 
         if progress_callback:
@@ -65,8 +77,58 @@ def encode_raster_to_features(
             raster_width = src.width
             raster_height = src.height
             raster_transform = src.transform
-            pixel_size_x = abs(raster_transform.a)
-            pixel_size_y = abs(raster_transform.e)
+            
+            # Determine if we should use the layer extent from QGIS
+            # This handles cases where the raster file has no/invalid georeferencing
+            use_layer_extent = False
+            
+            if layer_extent:
+                xmin, ymin, xmax, ymax = layer_extent
+                
+                # Check if raster has valid CRS - if not, we need layer extent
+                if src.crs is None:
+                    use_layer_extent = True
+                    QgsMessageLog.logMessage(
+                        f"Raster has no CRS, using QGIS layer extent",
+                        "AI Segmentation",
+                        level=Qgis.Info
+                    )
+                else:
+                    # Even with a CRS, check if bounds look like pixel coordinates
+                    # (i.e., bounds start near 0 and match image dimensions)
+                    raster_bounds = src.bounds
+                    bounds_look_like_pixels = (
+                        abs(raster_bounds.left) < 10 and 
+                        abs(raster_bounds.bottom) < 10 and
+                        abs(raster_bounds.right - raster_width) < 10 and
+                        abs(raster_bounds.top - raster_height) < 10
+                    )
+                    
+                    if bounds_look_like_pixels:
+                        use_layer_extent = True
+                        QgsMessageLog.logMessage(
+                            f"Raster bounds look like pixel coordinates ({raster_bounds}), using QGIS layer extent",
+                            "AI Segmentation",
+                            level=Qgis.Info
+                        )
+            
+            # Apply the appropriate georeferencing
+            if use_layer_extent and layer_extent:
+                xmin, ymin, xmax, ymax = layer_extent
+                pixel_size_x = (xmax - xmin) / raster_width
+                pixel_size_y = (ymax - ymin) / raster_height
+                raster_bounds_left = xmin
+                raster_bounds_top = ymax
+                QgsMessageLog.logMessage(
+                    f"Using QGIS layer extent for georeferencing: {layer_extent}",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+            else:
+                pixel_size_x = abs(raster_transform.a)
+                pixel_size_y = abs(raster_transform.e)
+                raster_bounds_left = src.bounds.left
+                raster_bounds_top = src.bounds.top
 
             raster_crs = None
             if src.crs is not None:
@@ -143,7 +205,7 @@ def encode_raster_to_features(
                         TILE_SIZE
                     )
 
-                    tile_tensor = torch.as_tensor(tile_padded, dtype=torch.float32)
+                    tile_tensor = torch.as_tensor(tile_padded, dtype=torch.float32, device=device)
                     tile_tensor = tile_tensor.unsqueeze(0)
 
                     tile_tensor = sam.preprocess(tile_tensor)
@@ -151,11 +213,12 @@ def encode_raster_to_features(
                     with torch.no_grad():
                         features = sam.image_encoder(tile_tensor)
 
+                    synchronize_device(device)
                     features_np = features.squeeze(0).cpu().numpy()
 
-                    tile_minx = src.bounds.left + col_off * pixel_size_x
+                    tile_minx = raster_bounds_left + col_off * pixel_size_x
                     tile_maxx = tile_minx + actual_width * pixel_size_x
-                    tile_maxy = src.bounds.top - row_off * pixel_size_y
+                    tile_maxy = raster_bounds_top - row_off * pixel_size_y
                     tile_miny = tile_maxy - actual_height * pixel_size_y
 
                     feature_filename = f"tile_{tx}_{ty}_vit_b.tif"
