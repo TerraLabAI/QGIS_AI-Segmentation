@@ -5,7 +5,7 @@ import sys
 
 from qgis.PyQt.QtWidgets import QAction, QMessageBox
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal
+from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QVariant
 
 from qgis.core import (
     QgsProject,
@@ -16,6 +16,7 @@ from qgis.core import (
     QgsWkbTypes,
     QgsGeometry,
     QgsFeature,
+    QgsField,
     QgsFillSymbol,
     QgsSingleSymbolRenderer,
     QgsRectangle,
@@ -501,8 +502,9 @@ class AISegmentationPlugin:
 
         combined = QgsGeometry.unaryUnion(geometries)
         if combined and not combined.isEmpty():
+            # Store as WKT string to prevent geometry invalidation
             self.saved_polygons.append({
-                'geometry': combined,
+                'geometry_wkt': combined.asWkt(),
                 'score': self.current_score,
                 'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
             })
@@ -511,7 +513,7 @@ class AISegmentationPlugin:
             saved_rb.setColor(QColor(0, 200, 100, 120))
             saved_rb.setFillColor(QColor(0, 200, 100, 80))
             saved_rb.setWidth(2)
-            saved_rb.setToGeometry(combined, None)
+            saved_rb.setToGeometry(QgsGeometry(combined), None)
             self.saved_rubber_bands.append(saved_rb)
 
             QgsMessageLog.logMessage(
@@ -541,8 +543,9 @@ class AISegmentationPlugin:
             if geometries:
                 combined = QgsGeometry.unaryUnion(geometries)
                 if combined and not combined.isEmpty():
+                    # Store as WKT for unsaved current polygon
                     polygons_to_export.append({
-                        'geometry': combined,
+                        'geometry_wkt': combined.asWkt(),
                         'score': self.current_score,
                         'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
                     })
@@ -556,6 +559,7 @@ class AISegmentationPlugin:
         self._segmentation_counter += 1
         layer_name = f"{self._current_layer_name}_segmentation_{self._segmentation_counter}"
 
+        # Determine CRS (same logic as before)
         crs_str = None
         for pg in polygons_to_export:
             ti = pg.get('transform_info')
@@ -573,16 +577,8 @@ class AISegmentationPlugin:
         else:
             crs = self._current_layer.crs() if self._current_layer else QgsCoordinateReferenceSystem('EPSG:4326')
 
-        crs_authid = crs.authid() if crs.isValid() else 'EPSG:4326'
-        if not crs_authid:
-            crs_authid = 'EPSG:4326'
-
-        result_layer = QgsVectorLayer(
-            f"Polygon?crs={crs_authid}&field=id:integer&field=score:double&field=area:double",
-            layer_name,
-            "memory"
-        )
-
+        # NEW LOGIC: Create layer, add to project, then edit
+        result_layer = QgsVectorLayer("MultiPolygon", layer_name, "memory")
         if not result_layer.isValid():
             QMessageBox.warning(
                 self.iface.mainWindow(),
@@ -591,22 +587,61 @@ class AISegmentationPlugin:
             )
             return
 
+        result_layer.setCrs(crs)
+        
+        # Add attributes
+        pr = result_layer.dataProvider()
+        pr.addAttributes([
+            QgsField("id", QVariant.Int),
+            QgsField("score", QVariant.Double),
+            QgsField("area", QVariant.Double)
+        ])
+        result_layer.updateFields()
+
+        # Add to project BEFORE adding features
+        QgsProject.instance().addMapLayer(result_layer)
+
+        # Start editing
         result_layer.startEditing()
+        
+        success_count = 0
         for i, polygon_data in enumerate(polygons_to_export):
             feature = QgsFeature(result_layer.fields())
-            geom = polygon_data['geometry']
-            feature.setGeometry(geom)
-            area = geom.area() if geom and not geom.isEmpty() else 0.0
-            feature.setAttributes([i + 1, polygon_data['score'], area])
-            result_layer.addFeature(feature)
-            QgsMessageLog.logMessage(
-                f"Added polygon {i+1}: area={area}, valid={geom.isGeosValid() if geom else False}",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
+            
+            # Reconstruct geometry from WKT
+            geom_wkt = polygon_data.get('geometry_wkt')
+            if not geom_wkt:
+                QgsMessageLog.logMessage(
+                    f"Polygon {i+1} has no WKT data",
+                    "AI Segmentation",
+                    level=Qgis.Warning
+                )
+                continue
+                
+            geom = QgsGeometry.fromWkt(geom_wkt)
+            
+            if geom and not geom.isEmpty():
+                # Ensure geometry is MultiPolygon
+                if not geom.isMultipart():
+                    geom.convertToMultiType()
+                
+                feature.setGeometry(geom)
+                area = geom.area()
+                feature.setAttributes([i + 1, polygon_data['score'], area])
+                
+                if result_layer.addFeature(feature):
+                    success_count += 1
+                else:
+                     QgsMessageLog.logMessage(
+                        f"Failed to add feature {i+1}",
+                        "AI Segmentation",
+                        level=Qgis.Warning
+                    )
+
         result_layer.commitChanges()
         result_layer.updateExtents()
 
+        # Set renderer
         symbol = QgsFillSymbol.createSimple({
             'color': '50,150,255,100',
             'outline_color': '0,100,200,255',
@@ -614,19 +649,11 @@ class AISegmentationPlugin:
         })
         renderer = QgsSingleSymbolRenderer(symbol)
         result_layer.setRenderer(renderer)
-
-        QgsProject.instance().addMapLayer(result_layer)
         result_layer.triggerRepaint()
         self.iface.mapCanvas().refresh()
 
         QgsMessageLog.logMessage(
-            f"Layer extent: {result_layer.extent().toString()}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-
-        QgsMessageLog.logMessage(
-            f"Created segmentation layer: {layer_name} with {len(polygons_to_export)} polygons (featureCount={result_layer.featureCount()})",
+            f"Created segmentation layer: {layer_name} with {success_count} polygons",
             "AI Segmentation",
             level=Qgis.Info
         )
