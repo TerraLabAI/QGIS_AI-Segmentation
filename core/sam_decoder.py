@@ -70,28 +70,49 @@ class SAMDecoder:
         labels: List[int],
         transform_info: dict
     ) -> Tuple[np.ndarray, np.ndarray]:
-        
         from .image_utils import map_point_to_sam_coords
 
-        use_original_space = self._model_config.coords_in_original_space
-        invert_y = self._model_config.invert_y_coord
+        original_size = transform_info["original_size"]
+        input_size = transform_info.get("input_size", SAM_INPUT_SIZE)
+        use_sam2_transform = self._model_config.use_sam2_coord_transform
+        extent = transform_info.get("extent", [0, 0, 1, 1])
 
-        original_size = transform_info["original_size"]  # (H, W)
-        scale = transform_info["scale"]
-        if use_original_space:
-            max_y = original_size[0]  
-        else:
-            max_y = int(original_size[0] * scale)  
+        QgsMessageLog.logMessage(
+            f"[COORD] Model: {self._model_config.model_id}, SAM2 transform: {use_sam2_transform}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"[COORD] original_size (H,W): {original_size}, input_size: {input_size}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"[COORD] extent [xmin,ymin,xmax,ymax]: {extent}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         sam_points = []
-        for x, y in points:
-            sam_x, sam_y = map_point_to_sam_coords(
+        for i, (x, y) in enumerate(points):
+            pixel_x, pixel_y = map_point_to_sam_coords(
                 x, y, transform_info,
-                scale_to_sam_space=not use_original_space
+                scale_to_sam_space=False
             )
 
-            if invert_y:
-                sam_y = max_y - sam_y
+            if use_sam2_transform:
+                sam_x = pixel_x / original_size[1] * input_size
+                sam_y = pixel_y / original_size[0] * input_size
+            else:
+                scale = transform_info["scale"]
+                sam_x = pixel_x * scale
+                sam_y = pixel_y * scale
+
+            QgsMessageLog.logMessage(
+                f"[COORD] Point {i}: geo({x:.2f},{y:.2f}) -> pixel({pixel_x:.2f},{pixel_y:.2f}) -> sam({sam_x:.2f},{sam_y:.2f})",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
 
             sam_points.append([sam_x, sam_y])
 
@@ -125,7 +146,8 @@ class SAMDecoder:
                 point_coords,
                 point_labels,
                 original_size,
-                multimask_output
+                multimask_output,
+                transform_info
             )
 
             if not self._validate_input_shapes(inputs):
@@ -205,28 +227,32 @@ class SAMDecoder:
         point_coords: np.ndarray,
         point_labels: np.ndarray,
         original_size: Tuple[int, int],
-        multimask_output: bool
+        multimask_output: bool,
+        transform_info: dict = None
     ) -> dict:
-        
-        tensor_names = self._model_config.decoder_input_names
         mask_shape = self._model_config.mask_input_shape
         is_sam2 = self._model_config.is_sam2
 
-        LOGICAL_VALUES = {}
+        if is_sam2 and self._model_config.use_sam2_coord_transform:
+            return self._prepare_sam2_inputs_by_order(
+                features, point_coords, point_labels, original_size, transform_info
+            )
 
+        tensor_names = self._model_config.decoder_input_names
+
+        LOGICAL_VALUES = {}
         for key, value in features.items():
             LOGICAL_VALUES[key] = value
 
         LOGICAL_VALUES.update({
-            "point_coords": point_coords,                                    # (1, N, 2)
-            "point_labels": point_labels,                                    # (1, N)
-            "mask_input": np.zeros(mask_shape, dtype=np.float32),            # From config
-            "has_mask_input": np.array([0], dtype=np.float32),               # (1,) - rank 1!
+            "point_coords": point_coords,
+            "point_labels": point_labels,
+            "mask_input": np.zeros(mask_shape, dtype=np.float32),
+            "has_mask_input": np.array([0], dtype=np.float32),
         })
 
         if "orig_im_size" in tensor_names:
-            dtype = np.int32 if is_sam2 else np.float32
-            LOGICAL_VALUES["orig_im_size"] = np.array(original_size, dtype=dtype)
+            LOGICAL_VALUES["orig_im_size"] = np.array(original_size, dtype=np.float32)
 
         inputs = {}
         for name in self.input_names:
@@ -244,34 +270,108 @@ class SAMDecoder:
 
             if not matched:
                 QgsMessageLog.logMessage(
-                    f"Unknown/missing decoder input: {name} (model: {self._model_config.model_id})",
+                    f"Unknown/missing decoder input: {name}",
+                    "AI Segmentation",
+                    level=Qgis.Warning
+                )
+
+        return inputs
+
+    def _prepare_sam2_inputs_by_order(
+        self,
+        features: dict,
+        point_coords: np.ndarray,
+        point_labels: np.ndarray,
+        original_size: Tuple[int, int],
+        transform_info: dict = None
+    ) -> dict:
+        input_size = self._model_config.input_size
+        scale_factor = 4
+        mask_h = input_size // scale_factor
+        mask_w = input_size // scale_factor
+        num_labels = point_labels.shape[0]
+        mask_input = np.zeros((num_labels, 1, mask_h, mask_w), dtype=np.float32)
+        has_mask_input = np.array([0], dtype=np.float32)
+
+        output_order = []
+        if transform_info:
+            output_order = transform_info.get("_output_order", [])
+
+        if len(output_order) >= 3:
+            high_res_feats_0 = features.get(output_order[0])
+            high_res_feats_1 = features.get(output_order[1])
+            image_embed = features.get(output_order[2])
+            QgsMessageLog.logMessage(
+                f"[SAM2] Using output order: {output_order}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+        else:
+            image_embed = None
+            high_res_feats_0 = None
+            high_res_feats_1 = None
+            for key, value in features.items():
+                if key == "_output_order":
+                    continue
+                if "image" in key.lower() or "embed" in key.lower():
+                    image_embed = value
+                elif "high_res" in key.lower() or "feat" in key.lower():
+                    if high_res_feats_0 is None:
+                        high_res_feats_0 = value
+                    else:
+                        high_res_feats_1 = value
+
+            if image_embed is None:
+                feature_keys = [k for k in features.keys() if k != "_output_order"]
+                if len(feature_keys) >= 3:
+                    high_res_feats_0 = features.get(feature_keys[0])
+                    high_res_feats_1 = features.get(feature_keys[1])
+                    image_embed = features.get(feature_keys[2])
+
+        QgsMessageLog.logMessage(
+            f"[SAM2] image_embed shape: {image_embed.shape if image_embed is not None else 'None'}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"[SAM2] high_res_feats_0 shape: {high_res_feats_0.shape if high_res_feats_0 is not None else 'None'}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"[SAM2] high_res_feats_1 shape: {high_res_feats_1.shape if high_res_feats_1 is not None else 'None'}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+        ordered_values = [
+            image_embed,
+            high_res_feats_0,
+            high_res_feats_1,
+            point_coords,
+            point_labels,
+            mask_input,
+            has_mask_input,
+        ]
+
+        inputs = {}
+        for i, name in enumerate(self.input_names):
+            if i < len(ordered_values) and ordered_values[i] is not None:
+                inputs[name] = ordered_values[i]
+                QgsMessageLog.logMessage(
+                    f"[SAM2] Decoder input[{i}] '{name}': shape={ordered_values[i].shape}",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+            else:
+                QgsMessageLog.logMessage(
+                    f"[SAM2] Decoder missing input {i} ({name})",
                     "AI Segmentation",
                     level=Qgis.Warning
                 )
 
         QgsMessageLog.logMessage(
-            f"[DECODER DEBUG] Model: {self._model_config.model_id}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-        QgsMessageLog.logMessage(
-            f"[DECODER DEBUG] Features keys: {list(features.keys())}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-        for name, tensor in inputs.items():
-            QgsMessageLog.logMessage(
-                f"[DECODER DEBUG] Input '{name}': shape={tensor.shape}, dtype={tensor.dtype}",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-        QgsMessageLog.logMessage(
-            f"[DECODER DEBUG] point_coords values: {point_coords}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-        QgsMessageLog.logMessage(
-            f"[DECODER DEBUG] original_size: {original_size}",
+            f"[SAM2 DECODER] point_coords: {point_coords}",
             "AI Segmentation",
             level=Qgis.Info
         )

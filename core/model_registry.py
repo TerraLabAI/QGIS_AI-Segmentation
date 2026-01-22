@@ -6,7 +6,6 @@ from typing import Dict, Tuple, List
 
 @dataclass
 class ModelConfig:
-    
 
     model_id: str
     display_name: str
@@ -19,12 +18,12 @@ class ModelConfig:
     encoder_size_mb: int
     decoder_size_mb: int
 
-    input_size: int  
-    feature_shape: Tuple[int, int, int, int]  
-    mask_input_shape: Tuple[int, int, int, int]  
+    input_size: int
+    feature_shape: Tuple[int, int, int, int]
+    mask_input_shape: Tuple[int, int, int, int]
 
     encoder_input_name: str
-    encoder_output_names: Dict[str, str]  
+    encoder_output_names: Dict[str, str]
 
     decoder_input_names: Dict[str, str]
     decoder_output_names: Dict[str, str]
@@ -35,9 +34,9 @@ class ModelConfig:
 
     mask_threshold: float = 0.0
 
-    coords_in_original_space: bool = False
+    use_sam2_preprocessing: bool = False
 
-    invert_y_coord: bool = False
+    use_sam2_coord_transform: bool = False
 
     @property
     def total_size_mb(self) -> int:
@@ -107,12 +106,12 @@ SAM2_BASE_PLUS = ModelConfig(
     display_name="Balanced (SAM2 Base+)",
     description="SAM2 Hiera Base+. Better quality than SAM ViT-B.",
 
-    huggingface_repo="shubham0204/sam2-onnx-models",
-    encoder_file="sam2_hiera_base_plus_encoder.onnx",
-    decoder_file="sam2_hiera_base_plus_decoder.onnx",
+    huggingface_repo="vietanhdev/segment-anything-2-onnx-models",
+    encoder_file="sam2_hiera_base_plus.encoder.onnx",
+    decoder_file="sam2_hiera_base_plus.decoder.onnx",
 
-    encoder_size_mb=277,
-    decoder_size_mb=17,
+    encoder_size_mb=340,
+    decoder_size_mb=21,
 
     input_size=1024,
     feature_shape=(1, 256, 64, 64),
@@ -120,9 +119,9 @@ SAM2_BASE_PLUS = ModelConfig(
 
     encoder_input_name="image",
     encoder_output_names={
-        "image_embed": "image_embed",
         "high_res_feats_0": "high_res_feats_0",
         "high_res_feats_1": "high_res_feats_1",
+        "image_embed": "image_embed",
     },
 
     decoder_input_names={
@@ -133,31 +132,26 @@ SAM2_BASE_PLUS = ModelConfig(
         "point_labels": "point_labels",
         "mask_input": "mask_input",
         "has_mask_input": "has_mask_input",
-        "orig_im_size": "orig_im_size",
     },
     decoder_output_names={
         "masks": "masks",
-        "iou_predictions": "iou_predictions",
+        "iou_predictions": "scores",
     },
 
     decoder_input_ranks={
-        "image_embed": 4,         # (1, 256, 64, 64)
-        "high_res_feats_0": 4,    # (1, 32, 256, 256)
-        "high_res_feats_1": 4,    # (1, 64, 128, 128)
-        "point_coords": 3,        # (1, N, 2)
-        "point_labels": 2,        # (1, N)
-        "mask_input": 4,          # (1, 1, 256, 256)
-        "has_mask_input": 1,      # (1,)
-        "orig_im_size": 1,        # (2,)
+        "image_embed": 4,
+        "high_res_feats_0": 4,
+        "high_res_feats_1": 4,
+        "point_coords": 3,
+        "point_labels": 2,
+        "mask_input": 4,
+        "has_mask_input": 1,
     },
 
     is_sam2=True,
-
-    mask_threshold=127.5,
-
-    coords_in_original_space=True,
-
-    invert_y_coord=True,
+    mask_threshold=0.0,
+    use_sam2_preprocessing=True,
+    use_sam2_coord_transform=True,
 )
 
 SAM2_LARGE = ModelConfig(
@@ -165,12 +159,12 @@ SAM2_LARGE = ModelConfig(
     display_name="Precise (SAM2 Large)",
     description="SAM2 Hiera Large. Highest quality, slower.",
 
-    huggingface_repo="SharpAI/sam2-hiera-large-onnx",
-    encoder_file="encoder.onnx",
-    decoder_file="decoder.onnx",
+    huggingface_repo="vietanhdev/segment-anything-2-onnx-models",
+    encoder_file="sam2_hiera_large.encoder.onnx",
+    decoder_file="sam2_hiera_large.decoder.onnx",
 
     encoder_size_mb=889,
-    decoder_size_mb=17,
+    decoder_size_mb=21,
 
     input_size=1024,
     feature_shape=(1, 256, 64, 64),
@@ -178,9 +172,9 @@ SAM2_LARGE = ModelConfig(
 
     encoder_input_name="image",
     encoder_output_names={
-        "image_embed": "image_embed",
         "high_res_feats_0": "high_res_feats_0",
         "high_res_feats_1": "high_res_feats_1",
+        "image_embed": "image_embed",
     },
 
     decoder_input_names={
@@ -194,22 +188,23 @@ SAM2_LARGE = ModelConfig(
     },
     decoder_output_names={
         "masks": "masks",
-        "iou_predictions": "iou_predictions",
+        "iou_predictions": "scores",
     },
 
     decoder_input_ranks={
-        "image_embed": 4,         # (1, 256, 64, 64)
-        "high_res_feats_0": 4,    # (1, 32, 256, 256)
-        "high_res_feats_1": 4,    # (1, 64, 128, 128)
-        "point_coords": 3,        # (1, N, 2)
-        "point_labels": 2,        # (1, N)
-        "mask_input": 4,          # (1, 1, 256, 256)
-        "has_mask_input": 1,      # (1,)
+        "image_embed": 4,
+        "high_res_feats_0": 4,
+        "high_res_feats_1": 4,
+        "point_coords": 3,
+        "point_labels": 2,
+        "mask_input": 4,
+        "has_mask_input": 1,
     },
 
     is_sam2=True,
-
-    invert_y_coord=True,
+    mask_threshold=0.0,
+    use_sam2_preprocessing=True,
+    use_sam2_coord_transform=True,
 )
 
 

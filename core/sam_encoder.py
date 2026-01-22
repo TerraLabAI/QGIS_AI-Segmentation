@@ -16,18 +16,22 @@ from qgis.core import (
     QgsRectangle,
 )
 
+from .model_registry import ModelConfig, get_model_config, DEFAULT_MODEL_ID
+
 SAM_INPUT_SIZE = 1024
 
 
 class SAMEncoder:
-    
 
-    def __init__(self, model_path: str = None):
-        
+    def __init__(self, model_path: str = None, model_config: ModelConfig = None):
         self.model_path = model_path
         self.session = None
         self.input_name = None
-        self.output_names = []  
+        self.output_names = []
+
+        if model_config is None:
+            model_config = get_model_config(DEFAULT_MODEL_ID)
+        self._model_config = model_config  
 
     def load_model(self, model_path: str = None) -> bool:
         
@@ -77,32 +81,51 @@ class SAMEncoder:
         self,
         image: np.ndarray
     ) -> Tuple[np.ndarray, dict]:
-        
-        original_size = image.shape[:2]  
-
-        h, w = original_size
-        scale = SAM_INPUT_SIZE / max(h, w)
-        new_h = int(h * scale)
-        new_w = int(w * scale)
-
         from .image_utils import resize_image
-        resized = resize_image(image, (new_h, new_w))
 
-        padded = np.zeros((SAM_INPUT_SIZE, SAM_INPUT_SIZE, 3), dtype=np.float32)
-        padded[:new_h, :new_w, :] = resized
+        original_size = image.shape[:2]
+        h, w = original_size
 
-        mean = np.array([123.675, 116.28, 103.53], dtype=np.float32)
-        std = np.array([58.395, 57.12, 57.375], dtype=np.float32)
-        normalized = (padded - mean) / std
+        if self._model_config.use_sam2_preprocessing:
+            resized = resize_image(image, (SAM_INPUT_SIZE, SAM_INPUT_SIZE))
 
-        preprocessed = normalized.transpose(2, 0, 1)[np.newaxis, ...]
+            normalized = resized / 255.0
+            mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+            std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+            normalized = (normalized - mean) / std
 
-        transform_info = {
-            "original_size": original_size,
-            "resized_size": (new_h, new_w),
-            "scale": scale,
-            "input_size": SAM_INPUT_SIZE
-        }
+            preprocessed = normalized.transpose(2, 0, 1)[np.newaxis, ...]
+
+            transform_info = {
+                "original_size": original_size,
+                "resized_size": (SAM_INPUT_SIZE, SAM_INPUT_SIZE),
+                "scale": 1.0,
+                "input_size": SAM_INPUT_SIZE,
+                "is_sam2": True,
+            }
+        else:
+            scale = SAM_INPUT_SIZE / max(h, w)
+            new_h = int(h * scale)
+            new_w = int(w * scale)
+
+            resized = resize_image(image, (new_h, new_w))
+
+            padded = np.zeros((SAM_INPUT_SIZE, SAM_INPUT_SIZE, 3), dtype=np.float32)
+            padded[:new_h, :new_w, :] = resized
+
+            mean = np.array([123.675, 116.28, 103.53], dtype=np.float32)
+            std = np.array([58.395, 57.12, 57.375], dtype=np.float32)
+            normalized = (padded - mean) / std
+
+            preprocessed = normalized.transpose(2, 0, 1)[np.newaxis, ...]
+
+            transform_info = {
+                "original_size": original_size,
+                "resized_size": (new_h, new_w),
+                "scale": scale,
+                "input_size": SAM_INPUT_SIZE,
+                "is_sam2": False,
+            }
 
         return preprocessed.astype(np.float32), transform_info
 
@@ -135,7 +158,15 @@ class SAMEncoder:
             for i, name in enumerate(self.output_names):
                 features_dict[name] = outputs[i]
                 QgsMessageLog.logMessage(
-                    f"Encoder output '{name}': shape={outputs[i].shape}",
+                    f"Encoder output[{i}] '{name}': shape={outputs[i].shape}",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+
+            if self._model_config.use_sam2_preprocessing and len(outputs) >= 3:
+                transform_info["_output_order"] = self.output_names.copy()
+                QgsMessageLog.logMessage(
+                    f"SAM2 encoder output order: {self.output_names}",
                     "AI Segmentation",
                     level=Qgis.Info
                 )

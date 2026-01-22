@@ -82,7 +82,7 @@ class SAMModel:
             return False, f"Models not downloaded for {self._model_config.display_name}. Call download_models() first."
 
         try:
-            self._encoder = SAMEncoder()
+            self._encoder = SAMEncoder(model_config=self._model_config)
             encoder_path = get_encoder_path(self._model_id)
             if not self._encoder.load_model(str(encoder_path)):
                 return False, f"Failed to load encoder model for {self._model_config.display_name}"
