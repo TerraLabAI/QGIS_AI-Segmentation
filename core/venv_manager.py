@@ -38,16 +38,33 @@ def get_venv_site_packages(venv_dir: str = None) -> str:
     if sys.platform == "win32":
         return os.path.join(venv_dir, "Lib", "site-packages")
     else:
+        # Detect actual Python version in venv (may differ from QGIS Python)
+        lib_dir = os.path.join(venv_dir, "lib")
+        if os.path.exists(lib_dir):
+            for entry in os.listdir(lib_dir):
+                if entry.startswith("python") and os.path.isdir(os.path.join(lib_dir, entry)):
+                    site_packages = os.path.join(lib_dir, entry, "site-packages")
+                    if os.path.exists(site_packages):
+                        return site_packages
+
+        # Fallback to QGIS Python version (for new venv creation)
         py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
         return os.path.join(venv_dir, "lib", py_version, "site-packages")
 
 
 def ensure_venv_packages_available():
     if not venv_exists():
+        _log("Venv does not exist, cannot load packages", Qgis.Warning)
         return False
 
     site_packages = get_venv_site_packages()
     if not os.path.exists(site_packages):
+        # Log detailed info for debugging
+        venv_dir = get_venv_dir()
+        lib_dir = os.path.join(venv_dir, "lib")
+        if os.path.exists(lib_dir):
+            contents = os.listdir(lib_dir)
+            _log(f"Venv lib/ contents: {contents}", Qgis.Warning)
         _log(f"Venv site-packages not found: {site_packages}", Qgis.Warning)
         return False
 
