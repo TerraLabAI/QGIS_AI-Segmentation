@@ -1,11 +1,35 @@
 from typing import Tuple, Optional
 import numpy as np
 import os
+import sys
 import json
 import subprocess
 import base64
 
 from qgis.core import QgsMessageLog, Qgis
+
+
+def _get_clean_env_for_venv() -> dict:
+    env = os.environ.copy()
+    vars_to_remove = [
+        'PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV',
+        'QGIS_PREFIX_PATH', 'QGIS_PLUGINPATH',
+    ]
+    for var in vars_to_remove:
+        env.pop(var, None)
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
+def _get_subprocess_kwargs() -> dict:
+    kwargs = {}
+    if sys.platform == "win32":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+        kwargs['startupinfo'] = startupinfo
+        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+    return kwargs
 
 
 def build_sam_vit_b_no_encoder(checkpoint: Optional[str] = None):
@@ -64,13 +88,18 @@ class SamPredictorNoImgEncoder:
 
             cmd = [self.venv_python, self.worker_script]
 
+            env = _get_clean_env_for_venv()
+            subprocess_kwargs = _get_subprocess_kwargs()
+
             self.process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                bufsize=1
+                bufsize=1,
+                env=env,
+                **subprocess_kwargs
             )
 
             init_request = {

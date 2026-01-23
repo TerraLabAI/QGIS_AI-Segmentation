@@ -293,6 +293,31 @@ def install_dependencies(
     return True, "All dependencies installed successfully"
 
 
+def _get_clean_env_for_venv() -> dict:
+    env = os.environ.copy()
+
+    vars_to_remove = [
+        'PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV',
+        'QGIS_PREFIX_PATH', 'QGIS_PLUGINPATH',
+    ]
+    for var in vars_to_remove:
+        env.pop(var, None)
+
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
+def _get_subprocess_kwargs() -> dict:
+    kwargs = {}
+    if sys.platform == "win32":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+        kwargs['startupinfo'] = startupinfo
+        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+    return kwargs
+
+
 def verify_venv(venv_dir: str = None) -> Tuple[bool, str]:
     if venv_dir is None:
         venv_dir = VENV_DIR
@@ -301,6 +326,8 @@ def verify_venv(venv_dir: str = None) -> Tuple[bool, str]:
         return False, "Virtual environment not found"
 
     python_path = get_venv_python_path(venv_dir)
+    env = _get_clean_env_for_venv()
+    subprocess_kwargs = _get_subprocess_kwargs()
 
     for package_name, _ in REQUIRED_PACKAGES:
         import_name = package_name.replace("-", "_")
@@ -312,11 +339,13 @@ def verify_venv(venv_dir: str = None) -> Tuple[bool, str]:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=30,
+                env=env,
+                **subprocess_kwargs
             )
 
             if result.returncode != 0:
-                _log(f"Package {package_name} not importable in venv", Qgis.Warning)
+                _log(f"Package {package_name} not importable in venv: {result.stderr[:200] if result.stderr else ''}", Qgis.Warning)
                 return False, f"Missing package: {package_name}"
 
         except Exception as e:
