@@ -157,13 +157,29 @@ class PromptManager:
         point_coords = []
         point_labels = []
 
+        QgsMessageLog.logMessage(
+            f"DEBUG get_points_for_predictor - Transform: {transform}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
         for x, y in self.positive_points:
             col, row = rio_transform.rowcol(transform, x, y)
+            QgsMessageLog.logMessage(
+                f"DEBUG - Positive point geo ({x:.2f}, {y:.2f}) -> pixel (row={row}, col={col})",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
             point_coords.append([row, col])
             point_labels.append(1)
 
         for x, y in self.negative_points:
             col, row = rio_transform.rowcol(transform, x, y)
+            QgsMessageLog.logMessage(
+                f"DEBUG - Negative point geo ({x:.2f}, {y:.2f}) -> pixel (row={row}, col={col})",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
             point_coords.append([row, col])
             point_labels.append(0)
 
@@ -610,6 +626,10 @@ class AISegmentationPlugin:
             self.feature_dataset = FeatureDataset(features_dir, cache=True)
 
             bounds = self.feature_dataset.bounds
+            canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+            raster_crs = self._current_layer.crs() if self._current_layer else None
+            raster_extent = self._current_layer.extent() if self._current_layer else None
+
             QgsMessageLog.logMessage(
                 f"Loaded {len(self.feature_dataset)} feature tiles",
                 "AI Segmentation",
@@ -621,6 +641,19 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Info
             )
+            QgsMessageLog.logMessage(
+                f"DEBUG - Canvas CRS: {canvas_crs.authid() if canvas_crs else 'None'}, "
+                f"Raster CRS: {raster_crs.authid() if raster_crs else 'None'}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            if raster_extent:
+                QgsMessageLog.logMessage(
+                    f"DEBUG - Raster layer extent (in layer CRS): xmin={raster_extent.xMinimum():.2f}, "
+                    f"xmax={raster_extent.xMaximum():.2f}, ymin={raster_extent.yMinimum():.2f}, ymax={raster_extent.yMaximum():.2f}",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
 
             self._activate_segmentation_tool()
 
@@ -840,8 +873,24 @@ class AISegmentationPlugin:
             self.dock_widget.set_status("Model not ready - please wait")
             return
 
+        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        raster_crs = self._current_layer.crs() if self._current_layer else None
+        feature_crs = self.feature_dataset.crs if self.feature_dataset else None
+
         QgsMessageLog.logMessage(
-            f"LEFT-CLICK (POSITIVE) at ({point.x():.2f}, {point.y():.2f})",
+            f"LEFT-CLICK (POSITIVE) at ({point.x():.6f}, {point.y():.6f})",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"DEBUG CRS - Canvas: {canvas_crs.authid() if canvas_crs else 'None'}, "
+            f"Raster: {raster_crs.authid() if raster_crs else 'None'}, "
+            f"FeatureDataset: {feature_crs}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"DEBUG Bounds - FeatureDataset: {self.feature_dataset.bounds if self.feature_dataset else 'None'}",
             "AI Segmentation",
             level=Qgis.Info
         )
@@ -876,10 +925,28 @@ class AISegmentationPlugin:
         ys = [p[1] for p in all_points]
 
         bounds = self.feature_dataset.bounds
+
+        QgsMessageLog.logMessage(
+            f"DEBUG _run_prediction - Click points (canvas CRS): xs={xs}, ys={ys}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"DEBUG _run_prediction - FeatureDataset bounds: minx={bounds[0]:.2f}, maxx={bounds[1]:.2f}, miny={bounds[2]:.2f}, maxy={bounds[3]:.2f}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
         roi = (
             min(xs), max(xs),
             min(ys), max(ys),
             bounds[4], bounds[5]
+        )
+
+        QgsMessageLog.logMessage(
+            f"DEBUG _run_prediction - ROI for sampling: minx={roi[0]:.2f}, maxx={roi[1]:.2f}, miny={roi[2]:.2f}, maxy={roi[3]:.2f}",
+            "AI Segmentation",
+            level=Qgis.Info
         )
 
         sampler = FeatureSampler(self.feature_dataset, roi)
@@ -899,6 +966,12 @@ class AISegmentationPlugin:
         bbox = sample["bbox"]
         features = sample["image"]
 
+        QgsMessageLog.logMessage(
+            f"DEBUG - Selected tile bbox: minx={bbox[0]:.2f}, maxx={bbox[1]:.2f}, miny={bbox[2]:.2f}, maxy={bbox[3]:.2f}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
         img_size = self.predictor.model.image_encoder.img_size
         img_height = img_width = img_size
         input_height = input_width = img_size
@@ -908,6 +981,12 @@ class AISegmentationPlugin:
             img_width = sample["img_shape"][1]
             input_height = sample["input_shape"][0]
             input_width = sample["input_shape"][1]
+
+        QgsMessageLog.logMessage(
+            f"DEBUG - Image dimensions: img_shape=({img_height}, {img_width}), input_shape=({input_height}, {input_width})",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
         if hasattr(features, 'cpu'):
             features_np = features.cpu().numpy()
