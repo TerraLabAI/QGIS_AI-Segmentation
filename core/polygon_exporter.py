@@ -19,16 +19,15 @@ from qgis.core import (
 from qgis.PyQt.QtCore import QVariant
 
 
-from .import_guard import assert_package_isolated
-assert_package_isolated('numpy', np)
-
-
 def mask_to_polygons_rasterio(
     mask: np.ndarray,
     transform: 'rasterio.Affine',
     crs: str,
     simplify_tolerance: float = 0.0
 ) -> List[QgsGeometry]:
+    from .import_guard import assert_package_isolated
+    assert_package_isolated('numpy', np)
+
     if mask is None or mask.sum() == 0:
         QgsMessageLog.logMessage(
             "mask_to_polygons: Empty or None mask",
@@ -40,7 +39,6 @@ def mask_to_polygons_rasterio(
     try:
         import rasterio
         from rasterio.features import shapes as get_shapes
-        from .import_guard import assert_package_isolated
         assert_package_isolated('rasterio', rasterio)
 
         mask_uint8 = mask.astype(np.uint8)

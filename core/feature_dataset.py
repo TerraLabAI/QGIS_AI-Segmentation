@@ -9,14 +9,14 @@ import pandas as pd
 from qgis.core import QgsMessageLog, Qgis
 
 from .device_manager import get_optimal_device
-from .import_guard import assert_package_isolated
-
-assert_package_isolated('numpy', np)
-assert_package_isolated('pandas', pd)
 
 
 class FeatureDataset:
     def __init__(self, root: str, cache: bool = True):
+        from .import_guard import assert_package_isolated
+        assert_package_isolated('numpy', np)
+        assert_package_isolated('pandas', pd)
+
         self.root = root
         self.cache = cache
         self._cache = {}
