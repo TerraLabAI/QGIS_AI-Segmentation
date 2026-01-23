@@ -25,9 +25,6 @@ def mask_to_polygons_rasterio(
     crs: str,
     simplify_tolerance: float = 0.0
 ) -> List[QgsGeometry]:
-    from .import_guard import assert_package_isolated
-    assert_package_isolated('numpy', np)
-
     if mask is None or mask.sum() == 0:
         QgsMessageLog.logMessage(
             "mask_to_polygons: Empty or None mask",
@@ -39,7 +36,6 @@ def mask_to_polygons_rasterio(
     try:
         import rasterio
         from rasterio.features import shapes as get_shapes
-        assert_package_isolated('rasterio', rasterio)
 
         mask_uint8 = mask.astype(np.uint8)
 
@@ -119,8 +115,6 @@ def mask_to_polygons(
     try:
         import rasterio
         from rasterio.transform import from_bounds as transform_from_bounds
-        from .import_guard import assert_package_isolated
-        assert_package_isolated('rasterio', rasterio)
 
         bbox = transform_info.get("bbox")
         img_shape = transform_info.get("img_shape")
