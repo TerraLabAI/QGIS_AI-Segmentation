@@ -465,8 +465,8 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
 
-        self.dock_widget.set_deps_install_progress(0, "Creating virtual environment...")
-        self.dock_widget.set_status("Creating virtual environment...")
+        self.dock_widget.set_deps_install_progress(0, "Preparing installation...")
+        self.dock_widget.set_status("Preparing installation...")
 
         self.deps_install_worker = DepsInstallWorker()
         self.deps_install_worker.progress.connect(self._on_deps_install_progress)
