@@ -96,54 +96,24 @@ def get_venv_pip_path(venv_dir: str = None) -> str:
 
 
 def _get_system_python() -> str:
-    py_major = sys.version_info.major
-    py_minor = sys.version_info.minor
+    """
+    Get the path to the Python executable for creating venvs.
 
-    if sys.platform == "darwin":
-        candidates = [
-            f"/opt/homebrew/bin/python{py_major}.{py_minor}",
-            f"/usr/local/bin/python{py_major}.{py_minor}",
-            f"/opt/homebrew/bin/python{py_major}",
-            f"/usr/local/bin/python{py_major}",
-        ]
+    Uses the standalone Python downloaded by python_manager.
+    No fallback to system Python - fails clearly if standalone not installed.
+    """
+    from .python_manager import standalone_python_exists, get_standalone_python_path
 
-        for candidate in candidates:
-            if os.path.exists(candidate):
-                _log(f"Found Python at: {candidate}", Qgis.Info)
-                return candidate
+    if standalone_python_exists():
+        python_path = get_standalone_python_path()
+        _log(f"Using standalone Python: {python_path}", Qgis.Info)
+        return python_path
 
-        _log(f"No compatible Python {py_major}.{py_minor} found via Homebrew", Qgis.Warning)
-        return "python3"
-
-    elif sys.platform == "win32":
-        candidates = []
-
-        osgeo4w_root = os.environ.get("OSGEO4W_ROOT", r"C:\OSGeo4W")
-        candidates.append(os.path.join(osgeo4w_root, "apps", f"Python{py_major}{py_minor}", "python.exe"))
-        candidates.append(os.path.join(osgeo4w_root, "bin", "python.exe"))
-
-        qgis_dir = os.path.dirname(sys.executable)
-        candidates.append(os.path.join(qgis_dir, "python.exe"))
-        candidates.append(os.path.join(qgis_dir, "python3.exe"))
-
-        local_app_data = os.environ.get("LOCALAPPDATA", "")
-        if local_app_data:
-            candidates.append(os.path.join(local_app_data, "Programs", "Python", f"Python{py_major}{py_minor}", "python.exe"))
-
-        program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
-        candidates.append(os.path.join(program_files, f"Python{py_major}{py_minor}", "python.exe"))
-        candidates.append(os.path.join(program_files, "Python", f"Python{py_major}{py_minor}", "python.exe"))
-
-        for candidate in candidates:
-            if os.path.exists(candidate):
-                _log(f"Found Python at: {candidate}", Qgis.Info)
-                return candidate
-
-        _log(f"No Python {py_major}.{py_minor} found, trying system PATH", Qgis.Warning)
-        return "python"
-
-    else:
-        return sys.executable
+    # No fallback - require standalone Python
+    raise RuntimeError(
+        "Python standalone not installed. "
+        "Please click 'Install Dependencies' to download Python automatically."
+    )
 
 
 def venv_exists(venv_dir: str = None) -> bool:
@@ -392,42 +362,116 @@ def create_venv_and_install(
     progress_callback: Optional[Callable[[int, str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None
 ) -> Tuple[bool, str]:
+    """
+    Complete installation: download Python standalone + create venv + install packages.
+
+    Progress breakdown:
+    - 0-10%: Download Python standalone (~50MB)
+    - 10-15%: Create virtual environment
+    - 15-95%: Install packages (~2.5GB)
+    - 95-100%: Verify installation
+    """
+    from .python_manager import (
+        standalone_python_exists,
+        download_python_standalone,
+        get_python_full_version
+    )
+
     cleanup_old_libs()
 
+    # Step 1: Download Python standalone if needed
+    if not standalone_python_exists():
+        python_version = get_python_full_version()
+        _log(f"Downloading Python {python_version} standalone...", Qgis.Info)
+
+        def python_progress(percent, msg):
+            # Map 0-100 to 0-10
+            if progress_callback:
+                progress_callback(int(percent * 0.10), msg)
+
+        success, msg = download_python_standalone(
+            progress_callback=python_progress,
+            cancel_check=cancel_check
+        )
+
+        if not success:
+            return False, f"Failed to download Python: {msg}"
+
+        if cancel_check and cancel_check():
+            return False, "Installation cancelled"
+    else:
+        _log("Python standalone already installed", Qgis.Info)
+        if progress_callback:
+            progress_callback(10, "Python standalone ready")
+
+    # Step 2: Create virtual environment if needed
     if venv_exists():
         _log("Virtual environment already exists", Qgis.Info)
+        if progress_callback:
+            progress_callback(15, "Virtual environment ready")
     else:
-        success, msg = create_venv(progress_callback=progress_callback)
+        def venv_progress(percent, msg):
+            # Map 10-20 to 10-15
+            if progress_callback:
+                progress_callback(10 + int(percent * 0.05), msg)
+
+        success, msg = create_venv(progress_callback=venv_progress)
         if not success:
             return False, msg
 
         if cancel_check and cancel_check():
             return False, "Installation cancelled"
 
+    # Step 3: Install dependencies
+    def deps_progress(percent, msg):
+        # Map 20-100 to 15-95
+        if progress_callback:
+            mapped = 15 + int((percent - 20) * 0.80 / 0.80)
+            progress_callback(min(mapped, 95), msg)
+
     success, msg = install_dependencies(
-        progress_callback=progress_callback,
+        progress_callback=deps_progress,
         cancel_check=cancel_check
     )
 
     if not success:
         return False, msg
 
+    # Step 4: Verify installation
+    if progress_callback:
+        progress_callback(95, "Verifying installation...")
+
     is_valid, verify_msg = verify_venv()
     if not is_valid:
         return False, f"Verification failed: {verify_msg}"
+
+    if progress_callback:
+        progress_callback(100, "✓ All dependencies installed")
 
     return True, "Virtual environment ready"
 
 
 def get_venv_status() -> Tuple[bool, str]:
+    """Get the status of the complete installation (Python standalone + venv)."""
+    from .python_manager import standalone_python_exists, get_python_full_version
+
+    # Check for old libs/ installation
+    if os.path.exists(LIBS_DIR):
+        return False, "Old installation detected. Migration required."
+
+    # Check Python standalone
+    if not standalone_python_exists():
+        return False, "Dependencies not installed"
+
+    # Check venv
     if not venv_exists():
-        if os.path.exists(LIBS_DIR):
-            return False, "Old installation detected. Migration required."
         return False, "Virtual environment not configured"
 
+    # Verify packages
     is_valid, msg = verify_venv()
     if is_valid:
-        return True, "Virtual environment ready"
+        python_version = get_python_full_version()
+        return True, f"Ready (Python {python_version})"
     else:
         return False, f"Virtual environment incomplete: {msg}"
 
