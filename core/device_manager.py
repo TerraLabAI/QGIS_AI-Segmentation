@@ -3,6 +3,9 @@ import os
 from typing import Optional
 from qgis.core import QgsMessageLog, Qgis
 
+from .venv_manager import ensure_venv_packages_available
+ensure_venv_packages_available()
+
 
 _cached_device = None
 _device_info = None
