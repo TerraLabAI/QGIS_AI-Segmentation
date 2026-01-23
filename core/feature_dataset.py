@@ -3,10 +3,13 @@ import glob
 import sys
 from typing import Optional, Dict, Any, Iterator, Tuple, List
 
+from qgis.core import QgsMessageLog, Qgis
+
+from .venv_manager import ensure_venv_packages_available
+ensure_venv_packages_available()
+
 import numpy as np
 import pandas as pd
-
-from qgis.core import QgsMessageLog, Qgis
 
 from .device_manager import get_optimal_device
 

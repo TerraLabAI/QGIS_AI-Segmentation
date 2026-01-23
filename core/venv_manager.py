@@ -31,6 +31,33 @@ def get_venv_dir() -> str:
     return VENV_DIR
 
 
+def get_venv_site_packages(venv_dir: str = None) -> str:
+    if venv_dir is None:
+        venv_dir = VENV_DIR
+
+    if sys.platform == "win32":
+        return os.path.join(venv_dir, "Lib", "site-packages")
+    else:
+        py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        return os.path.join(venv_dir, "lib", py_version, "site-packages")
+
+
+def ensure_venv_packages_available():
+    if not venv_exists():
+        return False
+
+    site_packages = get_venv_site_packages()
+    if not os.path.exists(site_packages):
+        _log(f"Venv site-packages not found: {site_packages}", Qgis.Warning)
+        return False
+
+    if site_packages not in sys.path:
+        sys.path.insert(0, site_packages)
+        _log(f"Added venv site-packages to sys.path: {site_packages}", Qgis.Info)
+
+    return True
+
+
 def get_venv_python_path(venv_dir: str = None) -> str:
     if venv_dir is None:
         venv_dir = VENV_DIR
@@ -52,20 +79,52 @@ def get_venv_pip_path(venv_dir: str = None) -> str:
 
 
 def _get_system_python() -> str:
+    py_major = sys.version_info.major
+    py_minor = sys.version_info.minor
+
     if sys.platform == "darwin":
-        python_path = Path(sys.prefix) / 'bin' / 'python3'
-        if python_path.exists():
-            return str(python_path)
-        _log(f"Warning: Python not found at {python_path}", Qgis.Warning)
-        return sys.executable
+        candidates = [
+            f"/opt/homebrew/bin/python{py_major}.{py_minor}",
+            f"/usr/local/bin/python{py_major}.{py_minor}",
+            f"/opt/homebrew/bin/python{py_major}",
+            f"/usr/local/bin/python{py_major}",
+        ]
+
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                _log(f"Found Python at: {candidate}", Qgis.Info)
+                return candidate
+
+        _log(f"No compatible Python {py_major}.{py_minor} found via Homebrew", Qgis.Warning)
+        return "python3"
+
     elif sys.platform == "win32":
-        python_path = os.path.join(os.path.dirname(sys.executable), "python.exe")
-        if os.path.exists(python_path):
-            return python_path
-        python3_path = os.path.join(os.path.dirname(sys.executable), "python3.exe")
-        if os.path.exists(python3_path):
-            return python3_path
-        return 'python'
+        candidates = []
+
+        osgeo4w_root = os.environ.get("OSGEO4W_ROOT", r"C:\OSGeo4W")
+        candidates.append(os.path.join(osgeo4w_root, "apps", f"Python{py_major}{py_minor}", "python.exe"))
+        candidates.append(os.path.join(osgeo4w_root, "bin", "python.exe"))
+
+        qgis_dir = os.path.dirname(sys.executable)
+        candidates.append(os.path.join(qgis_dir, "python.exe"))
+        candidates.append(os.path.join(qgis_dir, "python3.exe"))
+
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if local_app_data:
+            candidates.append(os.path.join(local_app_data, "Programs", "Python", f"Python{py_major}{py_minor}", "python.exe"))
+
+        program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+        candidates.append(os.path.join(program_files, f"Python{py_major}{py_minor}", "python.exe"))
+        candidates.append(os.path.join(program_files, "Python", f"Python{py_major}{py_minor}", "python.exe"))
+
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                _log(f"Found Python at: {candidate}", Qgis.Info)
+                return candidate
+
+        _log(f"No Python {py_major}.{py_minor} found, trying system PATH", Qgis.Warning)
+        return "python"
+
     else:
         return sys.executable
 

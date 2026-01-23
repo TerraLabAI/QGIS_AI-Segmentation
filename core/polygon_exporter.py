@@ -1,4 +1,8 @@
 from typing import List, Optional, Tuple
+
+from .venv_manager import ensure_venv_packages_available
+ensure_venv_packages_available()
+
 import numpy as np
 
 from qgis.core import (
