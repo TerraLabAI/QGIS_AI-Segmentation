@@ -164,7 +164,7 @@ class PromptManager:
         )
 
         for x, y in self.positive_points:
-            col, row = rio_transform.rowcol(transform, x, y)
+            row, col = rio_transform.rowcol(transform, x, y)
             QgsMessageLog.logMessage(
                 f"DEBUG - Positive point geo ({x:.2f}, {y:.2f}) -> pixel (row={row}, col={col})",
                 "AI Segmentation",
@@ -174,9 +174,9 @@ class PromptManager:
             point_labels.append(1)
 
         for x, y in self.negative_points:
-            col, row = rio_transform.rowcol(transform, x, y)
+            row, col = rio_transform.rowcol(transform, x, y)
             QgsMessageLog.logMessage(
-                f"DEBUG - Negative point geo ({x:.2f}, {y:.2f}) -> pixel (row={row}, col={col})",
+                f"DEBUG - Positive point geo ({x:.2f}, {y:.2f}) -> pixel (row={row}, col={col})",
                 "AI Segmentation",
                 level=Qgis.Info
             )
@@ -324,6 +324,7 @@ class AISegmentationPlugin:
 
             if all_dependencies_installed():
                 self.dock_widget.set_dependency_status(True, "Dependencies OK")
+                self._verify_isolation()
                 self._check_checkpoint()
             else:
                 missing = get_missing_dependencies()
@@ -388,6 +389,44 @@ class AISegmentationPlugin:
                 level=Qgis.Warning
             )
 
+    def _verify_isolation(self):
+        """Log isolation status for all packages."""
+        try:
+            from .core.import_guard import get_isolation_report
+            report = get_isolation_report()
+
+            all_isolated = all(
+                info.get('isolated', False)
+                for info in report.values()
+                if info.get('source') != 'Not imported'
+            )
+
+            if all_isolated:
+                QgsMessageLog.logMessage(
+                    "✓ All dependencies properly isolated",
+                    "AI Segmentation",
+                    level=Qgis.Success
+                )
+            else:
+                QgsMessageLog.logMessage(
+                    "⚠ Some dependencies NOT isolated (see log for details)",
+                    "AI Segmentation",
+                    level=Qgis.Warning
+                )
+                for pkg, info in report.items():
+                    if not info.get('isolated') and info['source'] != 'Not imported':
+                        QgsMessageLog.logMessage(
+                            f"  {pkg}: {info['source']}",
+                            "AI Segmentation",
+                            level=Qgis.Warning
+                        )
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                f"Isolation verification error: {e}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+
     def _on_install_requested(self):
         from .core.dependency_manager import get_missing_dependencies, get_system_info, get_install_size_warning
 
@@ -443,6 +482,7 @@ class AISegmentationPlugin:
             if ok:
                 self.dock_widget.set_dependency_status(True, f"Dependencies OK ({info})")
                 self.dock_widget.set_status("Dependencies installed! Checking model...")
+                self._verify_isolation()
                 self._check_checkpoint()
 
                 QMessageBox.information(

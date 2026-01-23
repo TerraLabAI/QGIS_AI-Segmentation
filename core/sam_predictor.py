@@ -6,6 +6,10 @@ import torch.nn as nn
 from qgis.core import QgsMessageLog, Qgis
 
 from .device_manager import get_optimal_device, get_device_info
+from .import_guard import assert_package_isolated
+
+assert_package_isolated('numpy', np)
+assert_package_isolated('torch', torch)
 
 
 class FakeImageEncoderViT(nn.Module):

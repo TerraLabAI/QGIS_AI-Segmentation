@@ -48,6 +48,11 @@ def encode_raster_to_features(
         import pandas as pd
         from rasterio.windows import Window
         from segment_anything import sam_model_registry
+        from .import_guard import assert_package_isolated
+
+        assert_package_isolated('torch', torch)
+        assert_package_isolated('rasterio', rasterio)
+        assert_package_isolated('pandas', pd)
 
         if progress_callback:
             progress_callback(0, "Loading SAM encoder...")
