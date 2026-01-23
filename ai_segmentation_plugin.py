@@ -32,8 +32,8 @@ from .ai_segmentation_maptool import AISegmentationMapTool
 
 
 class DepsInstallWorker(QThread):
-    progress = pyqtSignal(int, int, str)
-    finished = pyqtSignal(bool, list)
+    progress = pyqtSignal(int, str)
+    finished = pyqtSignal(bool, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -44,14 +44,16 @@ class DepsInstallWorker(QThread):
 
     def run(self):
         try:
-            from .core.dependency_manager import install_all_dependencies
-            success, messages = install_all_dependencies(
-                progress_callback=lambda cur, tot, msg: self.progress.emit(cur, tot, msg),
+            from .core.venv_manager import create_venv_and_install
+            success, message = create_venv_and_install(
+                progress_callback=lambda percent, msg: self.progress.emit(percent, msg),
                 cancel_check=lambda: self._cancelled
             )
-            self.finished.emit(success, messages)
+            self.finished.emit(success, message)
         except Exception as e:
-            self.finished.emit(False, [str(e)])
+            import traceback
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            self.finished.emit(False, error_msg)
 
 
 class DownloadWorker(QThread):
@@ -170,17 +172,17 @@ class PromptManager:
                 "AI Segmentation",
                 level=Qgis.Info
             )
-            point_coords.append([row, col])
+            point_coords.append([col, row])
             point_labels.append(1)
 
         for x, y in self.negative_points:
             row, col = rio_transform.rowcol(transform, x, y)
             QgsMessageLog.logMessage(
-                f"DEBUG - Positive point geo ({x:.2f}, {y:.2f}) -> pixel (row={row}, col={col})",
+                f"DEBUG - Negative point geo ({x:.2f}, {y:.2f}) -> pixel (row={row}, col={col})",
                 "AI Segmentation",
                 level=Qgis.Info
             )
-            point_coords.append([row, col])
+            point_coords.append([col, row])
             point_labels.append(0)
 
         return np.array(point_coords), np.array(point_labels)
@@ -274,6 +276,13 @@ class AISegmentationPlugin:
         )
 
     def unload(self):
+        if self.predictor:
+            try:
+                self.predictor.cleanup()
+            except Exception:
+                pass
+            self.predictor = None
+
         self.iface.removePluginMenu("&AI Segmentation", self.action)
         self.iface.removeToolBarIcon(self.action)
 
@@ -320,27 +329,33 @@ class AISegmentationPlugin:
         )
 
         try:
-            from .core.dependency_manager import all_dependencies_installed, get_missing_dependencies
+            from .core.venv_manager import get_venv_status, cleanup_old_libs
 
-            if all_dependencies_installed():
-                self.dock_widget.set_dependency_status(True, "Dependencies OK")
-                self._verify_isolation()
+            cleanup_old_libs()
+
+            is_ready, message = get_venv_status()
+
+            if is_ready:
+                self.dock_widget.set_dependency_status(True, "✓ Virtual environment ready")
+                QgsMessageLog.logMessage(
+                    "✓ Virtual environment verified successfully",
+                    "AI Segmentation",
+                    level=Qgis.Success
+                )
                 self._check_checkpoint()
             else:
-                missing = get_missing_dependencies()
-                missing_str = ", ".join([pip_name for _, pip_name, _ in missing])
-                self.dock_widget.set_dependency_status(
-                    False,
-                    f"Missing: {missing_str}"
+                self.dock_widget.set_dependency_status(False, message)
+                self.dock_widget.set_status("Click 'Install Dependencies' to set up virtual environment")
+                QgsMessageLog.logMessage(
+                    f"Virtual environment status: {message}",
+                    "AI Segmentation",
+                    level=Qgis.Info
                 )
-                self.dock_widget.set_status("Click 'Install Dependencies' to continue")
 
         except Exception as e:
-            QgsMessageLog.logMessage(
-                f"Dependency check error: {str(e)}",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
+            import traceback
+            error_msg = f"Dependency check error: {str(e)}\n{traceback.format_exc()}"
+            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Warning)
             self.dock_widget.set_dependency_status(False, f"Error: {str(e)[:50]}")
 
     def _check_checkpoint(self):
@@ -367,59 +382,44 @@ class AISegmentationPlugin:
         try:
             from .core.checkpoint_manager import get_checkpoint_path
             from .core.sam_predictor import build_sam_vit_b_no_encoder, SamPredictorNoImgEncoder
-            from .core.device_manager import get_device_info
 
             checkpoint_path = get_checkpoint_path()
-            sam = build_sam_vit_b_no_encoder(checkpoint=checkpoint_path)
-            self.predictor = SamPredictorNoImgEncoder(sam)
+            sam_config = build_sam_vit_b_no_encoder(checkpoint=checkpoint_path)
+            self.predictor = SamPredictorNoImgEncoder(sam_config)
 
-            device_info = get_device_info()
             QgsMessageLog.logMessage(
-                f"SAM predictor loaded successfully on {device_info}",
+                f"SAM predictor initialized (subprocess mode)",
                 "AI Segmentation",
                 level=Qgis.Info
             )
-            self.dock_widget.set_checkpoint_status(True, f"SAM ready ({device_info})")
+            self.dock_widget.set_checkpoint_status(True, "SAM ready (subprocess)")
 
         except Exception as e:
             import traceback
             QgsMessageLog.logMessage(
-                f"Failed to load predictor: {str(e)}\n{traceback.format_exc()}",
+                f"Failed to initialize predictor: {str(e)}\n{traceback.format_exc()}",
                 "AI Segmentation",
                 level=Qgis.Warning
             )
 
-    def _verify_isolation(self):
-        """Log isolation status for all packages."""
+    def _verify_venv(self):
+        """Verify virtual environment status."""
         try:
-            from .core.import_guard import get_isolation_report
-            report = get_isolation_report()
+            from .core.venv_manager import verify_venv
+            is_valid, message = verify_venv()
 
-            all_isolated = all(
-                info.get('isolated', False)
-                for info in report.values()
-                if info.get('source') != 'Not imported'
-            )
-
-            if all_isolated:
+            if is_valid:
                 QgsMessageLog.logMessage(
-                    "✓ All dependencies properly isolated",
+                    "✓ Virtual environment verified successfully",
                     "AI Segmentation",
                     level=Qgis.Success
                 )
             else:
                 QgsMessageLog.logMessage(
-                    "⚠ Some dependencies NOT isolated (see log for details)",
+                    f"⚠ Virtual environment verification failed: {message}",
                     "AI Segmentation",
                     level=Qgis.Warning
                 )
-                for pkg, info in report.items():
-                    if not info.get('isolated') and info['source'] != 'Not imported':
-                        QgsMessageLog.logMessage(
-                            f"  {pkg}: {info['source']}",
-                            "AI Segmentation",
-                            level=Qgis.Warning
-                        )
         except Exception as e:
             QgsMessageLog.logMessage(
                 f"Isolation verification error: {e}",
@@ -428,81 +428,86 @@ class AISegmentationPlugin:
             )
 
     def _on_install_requested(self):
-        from .core.dependency_manager import get_missing_dependencies, get_system_info, get_install_size_warning
+        from .core.venv_manager import get_venv_status
 
-        missing = get_missing_dependencies()
-        if not missing:
-            self.dock_widget.set_dependency_status(True, "Dependencies OK")
+        is_ready, message = get_venv_status()
+        if is_ready:
+            self.dock_widget.set_dependency_status(True, "✓ Virtual environment ready")
             self._check_checkpoint()
             return
 
-        missing_str = ", ".join([pip_name for _, pip_name, _ in missing])
-
-        size_warning = get_install_size_warning()
-        if size_warning:
-            reply = QMessageBox.question(
-                self.iface.mainWindow(),
-                "Install Dependencies",
-                f"The following packages will be installed:\n{missing_str}\n\n"
-                f"{size_warning}\n\n"
-                "Do you want to continue?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
-            )
-            if reply != QMessageBox.Yes:
-                self.dock_widget.install_button.setEnabled(True)
-                return
+        reply = QMessageBox.question(
+            self.iface.mainWindow(),
+            "Install Dependencies",
+            "The AI Segmentation plugin will create a virtual environment\n"
+            "and install the following packages:\n\n"
+            "• PyTorch (~2GB) - Deep learning framework\n"
+            "• Segment Anything Model - AI segmentation\n"
+            "• pandas, rasterio - Supporting libraries\n\n"
+            "Download size: ~2.5GB\n"
+            "This may take 5-10 minutes depending on your internet speed.\n\n"
+            "Do you want to continue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        )
+        if reply != QMessageBox.Yes:
+            self.dock_widget.install_button.setEnabled(True)
+            return
 
         QgsMessageLog.logMessage(
-            f"Starting auto-install for: {missing_str}",
+            "Starting virtual environment creation and dependency installation...",
             "AI Segmentation",
             level=Qgis.Info
         )
-        QgsMessageLog.logMessage(get_system_info(), "AI Segmentation", level=Qgis.Info)
+        QgsMessageLog.logMessage(
+            f"Platform: {sys.platform}, Python: {sys.version}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
-        self.dock_widget.set_deps_install_progress(0, len(missing), "Starting installation...")
-        self.dock_widget.set_status("Installing dependencies...")
+        self.dock_widget.set_deps_install_progress(0, "Creating virtual environment...")
+        self.dock_widget.set_status("Creating virtual environment...")
 
         self.deps_install_worker = DepsInstallWorker()
         self.deps_install_worker.progress.connect(self._on_deps_install_progress)
         self.deps_install_worker.finished.connect(self._on_deps_install_finished)
         self.deps_install_worker.start()
 
-    def _on_deps_install_progress(self, current: int, total: int, message: str):
-        self.dock_widget.set_deps_install_progress(current, total, message)
+    def _on_deps_install_progress(self, percent: int, message: str):
+        self.dock_widget.set_deps_install_progress(percent, message)
         self.dock_widget.set_status(message)
 
-    def _on_deps_install_finished(self, success: bool, messages: list):
-        self.dock_widget.set_deps_install_progress(1, 1, "Done")
+    def _on_deps_install_finished(self, success: bool, message: str):
+        self.dock_widget.set_deps_install_progress(100, "Done")
 
         if success:
-            from .core.dependency_manager import verify_installation
-            ok, info = verify_installation()
+            from .core.venv_manager import verify_venv
+            is_valid, verify_msg = verify_venv()
 
-            if ok:
-                self.dock_widget.set_dependency_status(True, f"Dependencies OK ({info})")
+            if is_valid:
+                self.dock_widget.set_dependency_status(True, "✓ Virtual environment ready")
                 self.dock_widget.set_status("Dependencies installed! Checking model...")
-                self._verify_isolation()
+                self._verify_venv()
                 self._check_checkpoint()
 
                 QMessageBox.information(
                     self.iface.mainWindow(),
                     "Installation Complete",
-                    "Dependencies installed successfully!\n\n"
-                    "If you encounter any issues, please restart QGIS."
+                    "Virtual environment created and dependencies installed successfully!\n\n"
+                    "You can now start using AI Segmentation."
                 )
             else:
-                self.dock_widget.set_dependency_status(True, "Restart QGIS to complete")
-                self.dock_widget.set_status("Please restart QGIS to load the new packages")
+                self.dock_widget.set_dependency_status(False, f"Verification failed: {verify_msg}")
+                self.dock_widget.set_status("Installation verification failed - see logs")
 
-                QMessageBox.information(
+                QMessageBox.warning(
                     self.iface.mainWindow(),
-                    "Installation Complete",
-                    "Dependencies installed successfully!\n\n"
-                    "Please restart QGIS to complete the setup."
+                    "Verification Failed",
+                    f"Virtual environment was created but verification failed:\n\n{verify_msg}\n\n"
+                    "Please check the logs or try reinstalling."
                 )
         else:
-            error_msg = "\n".join(messages[-3:]) if messages else "Unknown error"
+            error_msg = message[:300] if message else "Unknown error"
             self.dock_widget.set_dependency_status(False, "Installation failed")
             self.dock_widget.set_status("Installation failed - check logs")
 

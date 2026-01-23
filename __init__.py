@@ -1,27 +1,18 @@
-
-import sys
 import os
 
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
-LIBS_DIR = os.path.join(PLUGIN_DIR, 'libs')
 
 
-def _isolate_dependencies():
-    """Ensure plugin dependencies are loaded first."""
-
-    packages_to_isolate = ['numpy', 'rasterio', 'pandas', 'torch', 'segment_anything']
-    for pkg in packages_to_isolate:
-        if pkg in sys.modules:
-            del sys.modules[pkg]
-
-    if os.path.exists(LIBS_DIR) and LIBS_DIR not in sys.path:
-        sys.path.insert(0, LIBS_DIR)
+def _cleanup_old_installation():
+    """Clean up old libs/ installation if it exists."""
+    from .core.venv_manager import cleanup_old_libs
+    try:
+        cleanup_old_libs()
+    except Exception:
+        pass
 
 
-_isolate_dependencies()
-
-from .core.dependency_manager import init_packages_path
-init_packages_path()
+_cleanup_old_installation()
 
 
 def classFactory(iface):

@@ -77,7 +77,11 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_button = QPushButton("Install Dependencies")
         self.install_button.clicked.connect(self._on_install_clicked)
         self.install_button.setVisible(False)
-        self.install_button.setToolTip("Automatically install required Python packages (onnxruntime)")
+        self.install_button.setToolTip(
+            "Create isolated virtual environment and install required packages\n"
+            "(PyTorch, Segment Anything, pandas, rasterio)\n"
+            "Download size: ~2.5GB"
+        )
         layout.addWidget(self.install_button)
 
         self.cancel_deps_button = QPushButton("Cancel")
@@ -282,22 +286,17 @@ class AISegmentationDockWidget(QDockWidget):
 
         self._update_ui_state()
 
-    def set_deps_install_progress(self, current: int, total: int, message: str):
-        if total > 0:
-            percent = int((current / total) * 100)
-        else:
-            percent = 0
-
+    def set_deps_install_progress(self, percent: int, message: str):
         self.deps_progress.setValue(percent)
         self.deps_progress_label.setText(message)
 
-        if current == 0:
+        if percent == 0:
             self.deps_progress.setVisible(True)
             self.deps_progress_label.setVisible(True)
             self.cancel_deps_button.setVisible(True)
             self.install_button.setEnabled(False)
             self.install_button.setText("Installing...")
-        elif current >= total or "cancel" in message.lower() or "failed" in message.lower():
+        elif percent >= 100 or "cancel" in message.lower() or "failed" in message.lower():
             self.deps_progress.setVisible(False)
             self.deps_progress_label.setVisible(False)
             self.cancel_deps_button.setVisible(False)
