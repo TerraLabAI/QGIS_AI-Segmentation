@@ -16,3 +16,5 @@ __pycache__/
 
 .DS_Store
 libs/
+pyqgis_developer_cookbook/
+venv_py3.9/
