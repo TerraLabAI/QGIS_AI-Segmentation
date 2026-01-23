@@ -1,39 +1,24 @@
 [general]
 name=AI Segmentation
 qgisMinimumVersion=3.28
-description=AI-powered image segmentation for geospatial data using SAM (Segment Anything Model)
+description=Advanced AI-powered segmentation for QGIS using Meta's Segment Anything Model (SAM).
 version=1.0.0
-author=TerraLab AI
+author=TerraLab
 
-about=AI Segmentation brings the power of Meta's Segment Anything Model (SAM) to QGIS for interactive segmentation of satellite imagery, orthophotos, and other geospatial rasters.
+about=This plugin brings state-of-the-art AI segmentation to QGIS using Meta's Segment Anything Model (SAM). It allows you to segment objects in satellite imagery and rasters with just a click.
 
-    Features:
-    - Interactive point-based segmentation (click to segment)
-    - Pre-encoding for real-time performance on CPU
-    - Export results as GeoPackage polygons
-    - Works on Windows, macOS, and Linux
-
-    EXTERNAL DEPENDENCIES:
-    This plugin requires external Python packages (numpy, onnxruntime) that are not bundled with QGIS.
-    After first startup, an installation dialog will assist you. Alternatively, install manually:
+    Key Features:
     
-    Windows (OSGeo4W Shell):
-        python -m pip install numpy onnxruntime
+    - Package Management: Automatically sets up a dedicated Python environment with all required deep learning libraries (approx. 2 GB).
+    - AI Model Management: Installs SAM models and ONNX runtimes optimized for both CPU and GPU.
+    - Image Encoding: Efficiently processes raster images into .tiff format for real-time model interaction.
+    - Interactive Editor: Point-and-click tool to segment objects instantly on your map.
+    - Export Options: Save calculations and export segmentations directly to your layers.
     
-    macOS/Linux (Terminal):
-        pip3 install numpy onnxruntime
+    The plugin is actively maintained and will receive updates with new models and features.
     
-    Then restart QGIS.
-
-    UNINSTALLATION:
-    When you uninstall the plugin via QGIS Plugin Manager, dependencies and models
-    are automatically removed (they are stored inside the plugin folder).
-    
-    Cache files for encoded images may remain in:
-    - ~/.qgis_ai_segmentation_cache/ (web layers cache)
-    - .ai_segmentation_cache/ folders next to your GeoTIFF files
-    
-    You can safely delete these folders manually if needed.
+    Support:
+    We invite you to click the link to stay updated. If you encounter bugs or have questions, please open a GitHub Issue or contact us.
 
 tracker=https://github.com/QGIS_AI-Segmentation/issues
 repository=https://github.com/QGIS_AI-Segmentation
