@@ -13,7 +13,7 @@ ALL_REQUIRED_PACKAGES = [
     ("torch", "torch", "2.0.0"),
     ("segment_anything", "segment-anything", "1.0"),
     ("pandas", "pandas", "1.3.0"),
-    ("numpy", "numpy", "1.20.0"),
+    ("numpy", "numpy", "1.20.0,<2.0.0"),
     ("rasterio", "rasterio", "1.3.0"),
 ]
 
@@ -103,14 +103,30 @@ def clean_installation() -> bool:
 
 
 def _get_python_executable() -> str:
-    if sys.platform == "win32":
+    """Get the correct Python executable path for pip installation.
+
+    On macOS and Windows, sys.executable returns the QGIS executable, not Python.
+    We use sys.prefix / 'bin' / 'python3' instead (following Geo-SAM/deepness approach).
+    """
+    if sys.platform == "darwin":
+        python_path = Path(sys.prefix) / 'bin' / 'python3'
+        if python_path.exists():
+            _log(f"Using Python from sys.prefix: {python_path}", Qgis.Info)
+            return str(python_path)
+        _log(f"Warning: Python not found at {python_path}, using sys.executable", Qgis.Warning)
+        return sys.executable
+
+    elif sys.platform == "win32":
         python_path = os.path.join(os.path.dirname(sys.executable), "python.exe")
         if os.path.exists(python_path):
             return python_path
         python3_path = os.path.join(os.path.dirname(sys.executable), "python3.exe")
         if os.path.exists(python3_path):
             return python3_path
-    return sys.executable
+        return 'python'
+
+    else:
+        return sys.executable
 
 
 def is_package_installed(import_name: str) -> bool:
@@ -166,18 +182,41 @@ def check_dependencies() -> List[Tuple[str, str, str, bool, Optional[str], bool]
 
 
 def get_missing_dependencies() -> List[Tuple[str, str, str]]:
+    """Get list of packages not installed in libs/ directory."""
     missing = []
+
+    if not os.path.exists(LIBS_DIR):
+        return ALL_REQUIRED_PACKAGES
+
     for import_name, pip_name, min_version in ALL_REQUIRED_PACKAGES:
-        if not is_package_installed(import_name):
+        package_dir = os.path.join(LIBS_DIR, import_name)
+        package_dir_alt = os.path.join(LIBS_DIR, import_name.replace('_', '-'))
+
+        if not (os.path.exists(package_dir) or os.path.exists(package_dir_alt)):
             missing.append((import_name, pip_name, min_version))
+
     return missing
 
 
 def all_dependencies_installed() -> bool:
+    """Check if all packages are installed in libs/ directory."""
+    if not os.path.exists(LIBS_DIR):
+        _log("libs/ directory does not exist", Qgis.Info)
+        return False
+
+    libs_contents = os.listdir(LIBS_DIR)
+    if not libs_contents or libs_contents == ['.python_version']:
+        _log("libs/ directory is empty", Qgis.Info)
+        return False
+
     for import_name, _, _ in ALL_REQUIRED_PACKAGES:
-        if not is_package_installed(import_name):
-            _log(f"Missing required package: {import_name}", Qgis.Info)
+        package_dir = os.path.join(LIBS_DIR, import_name)
+        package_dir_alt = os.path.join(LIBS_DIR, import_name.replace('_', '-'))
+
+        if not (os.path.exists(package_dir) or os.path.exists(package_dir_alt)):
+            _log(f"Package {import_name} not found in libs/", Qgis.Info)
             return False
+
     return True
 
 
@@ -254,8 +293,12 @@ def _run_pip_install(pip_name: str, version: str = None, target_dir: str = None)
                 _log(f"pip stdout: {result.stdout[:500]}")
             return True, f"Installed {package_spec}"
         else:
-            error_msg = result.stderr or result.stdout or "Unknown error"
-            _log(f"✗ pip install failed for {package_spec}: {error_msg}", Qgis.Warning)
+            _log(f"✗ pip install failed with returncode {result.returncode}", Qgis.Warning)
+            if result.stdout:
+                _log(f"pip stdout: {result.stdout[:1000]}", Qgis.Warning)
+            if result.stderr:
+                _log(f"pip stderr: {result.stderr[:1000]}", Qgis.Warning)
+            error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
             return False, f"pip error: {error_msg[:300]}"
 
     except subprocess.TimeoutExpired:

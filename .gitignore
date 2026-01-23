@@ -15,3 +15,4 @@ __pycache__/
 .ai_segmentation_cache/
 
 .DS_Store
+libs/
