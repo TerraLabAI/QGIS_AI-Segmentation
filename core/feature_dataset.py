@@ -9,10 +9,6 @@ import pandas as pd
 from qgis.core import QgsMessageLog, Qgis
 
 from .device_manager import get_optimal_device
-from .import_guard import assert_package_isolated
-
-assert_package_isolated('numpy', np)
-assert_package_isolated('pandas', pd)
 
 
 class FeatureDataset:
@@ -79,8 +75,6 @@ class FeatureDataset:
 
     def _build_index_from_files(self, tif_files: List[str]):
         import rasterio
-        from .import_guard import assert_package_isolated
-        assert_package_isolated('rasterio', rasterio)
 
         QgsMessageLog.logMessage(
             f"Building index from {len(tif_files)} files...",
@@ -113,9 +107,6 @@ class FeatureDataset:
     def __getitem__(self, query: Dict[str, Any]) -> Dict[str, Any]:
         import rasterio
         import torch
-        from .import_guard import assert_package_isolated
-        assert_package_isolated('rasterio', rasterio)
-        assert_package_isolated('torch', torch)
 
         bbox = query["bbox"]
         filepath = query["path"]
