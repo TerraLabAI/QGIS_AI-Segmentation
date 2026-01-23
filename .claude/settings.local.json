@@ -1,8 +1,10 @@
 {
-  "outputStyle": "Explanatory",
   "permissions": {
     "allow": [
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(brew list:*)",
+      "Bash(sips:*)"
     ]
-  }
+  },
+  "outputStyle": "Explanatory"
 }
