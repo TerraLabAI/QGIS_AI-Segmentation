@@ -19,6 +19,10 @@ from qgis.core import (
 from qgis.PyQt.QtCore import QVariant
 
 
+from .import_guard import assert_package_isolated
+assert_package_isolated('numpy', np)
+
+
 def mask_to_polygons_rasterio(
     mask: np.ndarray,
     transform: 'rasterio.Affine',
@@ -34,7 +38,10 @@ def mask_to_polygons_rasterio(
         return []
 
     try:
+        import rasterio
         from rasterio.features import shapes as get_shapes
+        from .import_guard import assert_package_isolated
+        assert_package_isolated('rasterio', rasterio)
 
         mask_uint8 = mask.astype(np.uint8)
 
@@ -112,7 +119,10 @@ def mask_to_polygons(
         return []
 
     try:
+        import rasterio
         from rasterio.transform import from_bounds as transform_from_bounds
+        from .import_guard import assert_package_isolated
+        assert_package_isolated('rasterio', rasterio)
 
         bbox = transform_info.get("bbox")
         img_shape = transform_info.get("img_shape")

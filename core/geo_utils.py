@@ -60,7 +60,10 @@ def geo_to_pixel(
     geo_y: float,
     transform: 'rasterio.Affine'
 ) -> Tuple[int, int]:
+    import rasterio
     from rasterio import transform as rio_transform
+    from .import_guard import assert_package_isolated
+    assert_package_isolated('rasterio', rasterio)
     col, row = rio_transform.rowcol(transform, geo_x, geo_y)
     return int(row), int(col)
 

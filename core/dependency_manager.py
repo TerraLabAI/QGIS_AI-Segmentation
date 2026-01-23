@@ -9,13 +9,10 @@ import importlib.util
 from qgis.core import QgsMessageLog, Qgis, QgsSettings
 
 
-REQUIRED_PACKAGES = [
+ALL_REQUIRED_PACKAGES = [
     ("torch", "torch", "2.0.0"),
     ("segment_anything", "segment-anything", "1.0"),
     ("pandas", "pandas", "1.3.0"),
-]
-
-QGIS_PROVIDED_PACKAGES = [
     ("numpy", "numpy", "1.20.0"),
     ("rasterio", "rasterio", "1.3.0"),
 ]
@@ -24,13 +21,85 @@ SETTINGS_KEY_DEPS_DISMISSED = "AI_Segmentation/dependencies_dismissed"
 
 PYTHON_VERSION = sys.version_info
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PACKAGES_INSTALL_DIR = os.path.join(PLUGIN_ROOT_DIR, f'python{PYTHON_VERSION.major}.{PYTHON_VERSION.minor}')
+LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, 'libs')
+PACKAGES_INSTALL_DIR = LIBS_DIR
+PYTHON_VERSION_FILE = os.path.join(LIBS_DIR, '.python_version')
 
 CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
 
 
 def _log(message: str, level=Qgis.Info):
     QgsMessageLog.logMessage(message, "AI Segmentation", level=level)
+
+
+def migrate_from_old_directories() -> bool:
+    """Remove old python3.X directories, return True if migration occurred."""
+    old_dirs = []
+    for version in ['python3.9', 'python3.10', 'python3.11', 'python3.12', 'python3.13']:
+        old_dir = os.path.join(PLUGIN_ROOT_DIR, version)
+        if os.path.exists(old_dir):
+            old_dirs.append(old_dir)
+
+    if not old_dirs:
+        return False
+
+    for old_dir in old_dirs:
+        try:
+            import shutil
+            shutil.rmtree(old_dir)
+            _log(f"Removed old directory: {old_dir}", Qgis.Info)
+        except Exception as e:
+            _log(f"Failed to remove {old_dir}: {e}", Qgis.Warning)
+
+    return True
+
+
+def check_python_version_match() -> bool:
+    """Check if libs/ was built for current Python version."""
+    if not os.path.exists(PYTHON_VERSION_FILE):
+        return True
+
+    try:
+        with open(PYTHON_VERSION_FILE, 'r') as f:
+            installed_version = f.read().strip()
+
+        current_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+
+        if installed_version != current_version:
+            _log(
+                f"Python version mismatch: libs/ built for {installed_version}, "
+                f"running {current_version}. Reinstall required.",
+                Qgis.Warning
+            )
+            return False
+
+        return True
+    except Exception:
+        return True
+
+
+def write_python_version():
+    """Write current Python version marker file."""
+    try:
+        current_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        with open(PYTHON_VERSION_FILE, 'w') as f:
+            f.write(current_version)
+    except Exception as e:
+        _log(f"Failed to write version file: {e}", Qgis.Warning)
+
+
+def clean_installation() -> bool:
+    """Remove libs/ directory completely. User must reinstall."""
+    try:
+        if os.path.exists(LIBS_DIR):
+            import shutil
+            shutil.rmtree(LIBS_DIR)
+            _log(f"Cleaned: {LIBS_DIR}", Qgis.Info)
+            return True
+    except Exception as e:
+        _log(f"Cleanup failed: {e}", Qgis.Critical)
+        return False
+    return False
 
 
 def _get_python_executable() -> str:
@@ -75,39 +144,40 @@ def get_installed_version(import_name: str) -> Optional[str]:
         return None
 
 
-def check_dependencies() -> List[Tuple[str, str, str, bool, Optional[str]]]:
+def check_dependencies() -> List[Tuple[str, str, str, bool, Optional[str], bool]]:
+    """Check if packages are installed AND isolated."""
     results = []
-    for import_name, pip_name, min_version in REQUIRED_PACKAGES:
+
+    for import_name, pip_name, min_version in ALL_REQUIRED_PACKAGES:
         installed = is_package_installed(import_name)
         version = get_installed_version(import_name) if installed else None
-        results.append((import_name, pip_name, min_version, installed, version))
+
+        isolated = False
+        if installed:
+            try:
+                from .import_guard import verify_package_source
+                isolated, _ = verify_package_source(import_name)
+            except:
+                pass
+
+        results.append((import_name, pip_name, min_version, installed, version, isolated))
+
     return results
 
 
 def get_missing_dependencies() -> List[Tuple[str, str, str]]:
     missing = []
-    for import_name, pip_name, min_version in REQUIRED_PACKAGES:
+    for import_name, pip_name, min_version in ALL_REQUIRED_PACKAGES:
         if not is_package_installed(import_name):
             missing.append((import_name, pip_name, min_version))
-
-    for import_name, pip_name, min_version in QGIS_PROVIDED_PACKAGES:
-        if not is_package_installed(import_name):
-            missing.append((import_name, pip_name, min_version))
-
     return missing
 
 
 def all_dependencies_installed() -> bool:
-    for import_name, _, _ in REQUIRED_PACKAGES:
+    for import_name, _, _ in ALL_REQUIRED_PACKAGES:
         if not is_package_installed(import_name):
             _log(f"Missing required package: {import_name}", Qgis.Info)
             return False
-
-    for import_name, _, _ in QGIS_PROVIDED_PACKAGES:
-        if not is_package_installed(import_name):
-            _log(f"Missing QGIS-provided package: {import_name}", Qgis.Warning)
-            return False
-
     return True
 
 
@@ -124,10 +194,10 @@ def get_install_size_warning() -> str:
 
 
 def ensure_packages_dir_in_path():
-    os.makedirs(PACKAGES_INSTALL_DIR, exist_ok=True)
-    if PACKAGES_INSTALL_DIR not in sys.path:
-        sys.path.insert(0, PACKAGES_INSTALL_DIR)
-        _log(f"Added packages directory to sys.path: {PACKAGES_INSTALL_DIR}")
+    os.makedirs(LIBS_DIR, exist_ok=True)
+    if LIBS_DIR not in sys.path:
+        sys.path.insert(0, LIBS_DIR)
+        _log(f"Added packages directory to sys.path: {LIBS_DIR}")
 
 
 def _run_pip_install(pip_name: str, version: str = None, target_dir: str = None) -> Tuple[bool, str]:
@@ -213,7 +283,13 @@ def install_package(pip_name: str, version: str = None) -> Tuple[bool, str]:
             importlib.invalidate_caches()
 
             if is_package_installed(import_name):
-                _log(f"✓ Verified {import_name} is now importable", Qgis.Success)
+                from .import_guard import verify_package_source
+                is_isolated, source = verify_package_source(import_name)
+
+                if is_isolated:
+                    _log(f"✓ {import_name} isolated: {source}", Qgis.Success)
+                else:
+                    _log(f"⚠ {import_name} NOT isolated: {source}", Qgis.Warning)
             else:
                 _log(f"Package installed but import check failed - may need restart", Qgis.Warning)
         except Exception as e:
@@ -280,6 +356,7 @@ def install_all_dependencies(
             progress_callback(total, total, "✗ Installation failed - see logs")
 
     if all_success:
+        write_python_version()
         _log("=" * 50)
         _log("All dependencies installed successfully!", Qgis.Success)
         _log(f"Install location: {PACKAGES_INSTALL_DIR}")
@@ -330,9 +407,14 @@ def reset_install_dismissed():
 
 
 def init_packages_path():
-    os.makedirs(PACKAGES_INSTALL_DIR, exist_ok=True)
-    if PACKAGES_INSTALL_DIR not in sys.path:
-        sys.path.insert(0, PACKAGES_INSTALL_DIR)
+    """Initialize package paths and handle migration."""
+    if migrate_from_old_directories():
+        _log("Migrated from old directory structure. Please reinstall dependencies.", Qgis.Warning)
+
+    os.makedirs(LIBS_DIR, exist_ok=True)
+
+    if LIBS_DIR not in sys.path:
+        sys.path.insert(0, LIBS_DIR)
 
 
 def get_packages_install_dir() -> str:
@@ -346,8 +428,8 @@ def get_cache_dir() -> str:
 
 def get_dependency_status_summary() -> str:
     deps = check_dependencies()
-    installed = [(pip_name, ver) for _, pip_name, _, is_installed, ver in deps if is_installed]
-    missing = [(pip_name, req_ver) for _, pip_name, req_ver, is_installed, _ in deps if not is_installed]
+    installed = [(pip_name, ver) for _, pip_name, _, is_installed, ver, _ in deps if is_installed]
+    missing = [(pip_name, req_ver) for _, pip_name, req_ver, is_installed, _, _ in deps if not is_installed]
 
     if not missing:
         versions = ", ".join([f"{name} {ver}" for name, ver in installed])
@@ -362,6 +444,6 @@ def get_system_info() -> str:
     info.append(f"Platform: {sys.platform}")
     info.append(f"Python: {sys.version}")
     info.append(f"Python executable: {_get_python_executable()}")
-    info.append(f"Package install dir: {PACKAGES_INSTALL_DIR}")
-    info.append(f"sys.path includes install dir: {PACKAGES_INSTALL_DIR in sys.path}")
+    info.append(f"Package install dir: {LIBS_DIR}")
+    info.append(f"sys.path includes install dir: {LIBS_DIR in sys.path}")
     return "\n".join(info)
