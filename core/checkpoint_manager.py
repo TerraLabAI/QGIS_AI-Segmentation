@@ -26,8 +26,25 @@ def get_features_dir() -> str:
 
 
 def get_raster_features_dir(raster_path: str) -> str:
-    raster_hash = hashlib.md5(raster_path.encode()).hexdigest()[:16]
-    features_path = os.path.join(FEATURES_DIR, raster_hash)
+    import re
+
+    # Get the raster filename without extension
+    raster_filename = os.path.splitext(os.path.basename(raster_path))[0]
+
+    # Sanitize: keep only alphanumeric, underscore, hyphen (replace others with underscore)
+    sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', raster_filename)
+    # Limit length to avoid too long folder names
+    sanitized_name = sanitized_name[:40]
+    # Remove trailing underscores
+    sanitized_name = sanitized_name.rstrip('_')
+
+    # Add short hash suffix for uniqueness (based on full path)
+    raster_hash = hashlib.md5(raster_path.encode()).hexdigest()[:8]
+
+    # Combine: rastername_abc12345
+    folder_name = f"{sanitized_name}_{raster_hash}"
+
+    features_path = os.path.join(FEATURES_DIR, folder_name)
     os.makedirs(features_path, exist_ok=True)
     return features_path
 

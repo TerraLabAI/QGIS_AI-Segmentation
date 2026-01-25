@@ -633,10 +633,8 @@ class AISegmentationPlugin:
         if success:
             from .core.checkpoint_manager import get_raster_features_dir
             cache_dir = get_raster_features_dir(raster_path)
-            cache_display = str(cache_dir)
-            if len(cache_display) > 50:
-                cache_display = cache_display[:50] + "..."
-            self.dock_widget.set_preparation_progress(100, f"Cached at: {cache_display}")
+            self.dock_widget.set_preparation_progress(100, "Done!")
+            self.dock_widget.set_encoding_cache_path(str(cache_dir))
             self._load_features_and_activate(raster_path)
         else:
             # Check if this was a user cancellation

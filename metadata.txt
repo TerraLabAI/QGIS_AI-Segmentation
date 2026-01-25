@@ -1,5 +1,5 @@
 [general]
-name=AI Segmentation
+name=AI Segmentation by TerraLab
 qgisMinimumVersion=3.28
 description=Segment anything in your raster using Meta's SAM AI.
 version=1.0.0
