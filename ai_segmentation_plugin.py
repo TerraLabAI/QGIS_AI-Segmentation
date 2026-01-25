@@ -263,6 +263,7 @@ class AISegmentationPlugin:
         self.map_tool.tool_deactivated.connect(self._on_tool_deactivated)
         self.map_tool.undo_requested.connect(self._on_undo)
         self.map_tool.save_polygon_requested.connect(self._on_save_polygon)
+        self.map_tool.clear_requested.connect(self._on_clear_points)
 
         self.mask_rubber_band = QgsRubberBand(
             self.iface.mapCanvas(),
@@ -726,6 +727,7 @@ class AISegmentationPlugin:
         self.dock_widget.set_status("Click on the map to segment")
 
     def _on_save_polygon(self):
+        """Save current polygon from mask."""
         if self.current_mask is None:
             self.dock_widget.set_status("No polygon to save")
             return
@@ -763,6 +765,7 @@ class AISegmentationPlugin:
             self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
             self.dock_widget.set_status(f"Polygon saved ({len(self.saved_polygons)} total) - click for next object")
 
+        # Clear current state for next polygon
         self.prompts.clear()
         if self.map_tool:
             self.map_tool.clear_markers()
@@ -776,12 +779,12 @@ class AISegmentationPlugin:
 
         polygons_to_export = list(self.saved_polygons)
 
+        # Include current unsaved polygon if exists
         if self.current_mask is not None:
             geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
             if geometries:
                 combined = QgsGeometry.unaryUnion(geometries)
                 if combined and not combined.isEmpty():
-                    # Store as WKT for unsaved current polygon
                     polygons_to_export.append({
                         'geometry_wkt': combined.asWkt(),
                         'score': self.current_score,
@@ -919,28 +922,13 @@ class AISegmentationPlugin:
             self.dock_widget.set_segmentation_active(False)
 
     def _on_positive_click(self, point):
+        """Handle left-click: add positive point (include this area)."""
         if self.predictor is None or self.feature_dataset is None:
             self.dock_widget.set_status("Model not ready - please wait")
             return
 
-        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
-        raster_crs = self._current_layer.crs() if self._current_layer else None
-        feature_crs = self.feature_dataset.crs if self.feature_dataset else None
-
         QgsMessageLog.logMessage(
-            f"LEFT-CLICK (POSITIVE) at ({point.x():.6f}, {point.y():.6f})",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-        QgsMessageLog.logMessage(
-            f"DEBUG CRS - Canvas: {canvas_crs.authid() if canvas_crs else 'None'}, "
-            f"Raster: {raster_crs.authid() if raster_crs else 'None'}, "
-            f"FeatureDataset: {feature_crs}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-        QgsMessageLog.logMessage(
-            f"DEBUG Bounds - FeatureDataset: {self.feature_dataset.bounds if self.feature_dataset else 'None'}",
+            f"POSITIVE POINT at ({point.x():.6f}, {point.y():.6f})",
             "AI Segmentation",
             level=Qgis.Info
         )
@@ -949,12 +937,13 @@ class AISegmentationPlugin:
         self._run_prediction()
 
     def _on_negative_click(self, point):
+        """Handle right-click: add negative point (exclude this area)."""
         if self.predictor is None or self.feature_dataset is None:
             self.dock_widget.set_status("Model not ready - please wait")
             return
 
         QgsMessageLog.logMessage(
-            f"RIGHT-CLICK (NEGATIVE) at ({point.x():.2f}, {point.y():.2f})",
+            f"NEGATIVE POINT at ({point.x():.6f}, {point.y():.6f})",
             "AI Segmentation",
             level=Qgis.Info
         )
@@ -963,6 +952,7 @@ class AISegmentationPlugin:
         self._run_prediction()
 
     def _run_prediction(self):
+        """Run SAM prediction using all positive and negative points."""
         import numpy as np
         from rasterio.transform import from_bounds as transform_from_bounds
         from .core.feature_dataset import FeatureSampler
@@ -976,27 +966,10 @@ class AISegmentationPlugin:
 
         bounds = self.feature_dataset.bounds
 
-        QgsMessageLog.logMessage(
-            f"DEBUG _run_prediction - Click points (canvas CRS): xs={xs}, ys={ys}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-        QgsMessageLog.logMessage(
-            f"DEBUG _run_prediction - FeatureDataset bounds: minx={bounds[0]:.2f}, maxx={bounds[1]:.2f}, miny={bounds[2]:.2f}, maxy={bounds[3]:.2f}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-
         roi = (
             min(xs), max(xs),
             min(ys), max(ys),
             bounds[4], bounds[5]
-        )
-
-        QgsMessageLog.logMessage(
-            f"DEBUG _run_prediction - ROI for sampling: minx={roi[0]:.2f}, maxx={roi[1]:.2f}, miny={roi[2]:.2f}, maxy={roi[3]:.2f}",
-            "AI Segmentation",
-            level=Qgis.Info
         )
 
         sampler = FeatureSampler(self.feature_dataset, roi)
@@ -1016,12 +989,6 @@ class AISegmentationPlugin:
         bbox = sample["bbox"]
         features = sample["image"]
 
-        QgsMessageLog.logMessage(
-            f"DEBUG - Selected tile bbox: minx={bbox[0]:.2f}, maxx={bbox[1]:.2f}, miny={bbox[2]:.2f}, maxy={bbox[3]:.2f}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-
         img_size = self.predictor.model.image_encoder.img_size
         img_height = img_width = img_size
         input_height = input_width = img_size
@@ -1031,12 +998,6 @@ class AISegmentationPlugin:
             img_width = sample["img_shape"][1]
             input_height = sample["input_shape"][0]
             input_width = sample["input_shape"][1]
-
-        QgsMessageLog.logMessage(
-            f"DEBUG - Image dimensions: img_shape=({img_height}, {img_width}), input_shape=({input_height}, {input_width})",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
 
         if hasattr(features, 'cpu'):
             features_np = features.cpu().numpy()
@@ -1151,13 +1112,16 @@ class AISegmentationPlugin:
         self.dock_widget.set_status("Points cleared")
 
     def _on_undo(self):
+        """Undo last point added."""
         result = self.prompts.undo()
         if result is None:
+            self.dock_widget.set_status("Nothing to undo")
             return
 
         if self.map_tool:
             self.map_tool.remove_last_marker()
 
+        # Re-run prediction with remaining points
         if self.prompts.point_count[0] + self.prompts.point_count[1] > 0:
             self._run_prediction()
         else:
@@ -1165,7 +1129,7 @@ class AISegmentationPlugin:
             self.current_score = 0.0
             self._clear_mask_visualization()
             self.dock_widget.set_point_count(0, 0)
-            self.dock_widget.set_status("All points removed")
+            self.dock_widget.set_status("All points removed - click to start again")
 
     def _reset_session(self):
         self.prompts.clear()
