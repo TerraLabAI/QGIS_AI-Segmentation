@@ -3,7 +3,10 @@
     "allow": [
       "Bash(curl:*)",
       "Bash(brew list:*)",
-      "Bash(sips:*)"
+      "Bash(sips:*)",
+      "WebFetch(domain:qgis.org)",
+      "WebFetch(domain:blog.cychen.me)",
+      "WebFetch(domain:doc.qt.io)"
     ]
   },
   "outputStyle": "Explanatory"

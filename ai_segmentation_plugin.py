@@ -219,6 +219,9 @@ class AISegmentationPlugin:
         self.mask_rubber_band: Optional[QgsRubberBand] = None
         self.saved_rubber_bands: List[QgsRubberBand] = []
 
+        self._previous_map_tool = None  # Store the tool active before segmentation
+        self._stopping_segmentation = False  # Flag to track if we're stopping programmatically
+
     def initGui(self):
         icon_path = str(self.plugin_dir / "resources" / "icons" / "icon.png")
         if not os.path.exists(icon_path):
@@ -726,6 +729,11 @@ class AISegmentationPlugin:
             )
 
     def _activate_segmentation_tool(self):
+        # Save the current map tool to restore it later
+        current_tool = self.iface.mapCanvas().mapTool()
+        if current_tool and current_tool != self.map_tool:
+            self._previous_map_tool = current_tool
+
         self.iface.mapCanvas().setMapTool(self.map_tool)
         self.dock_widget.set_segmentation_active(True)
         self.dock_widget.set_status("Click on image to select objects")
@@ -799,7 +807,10 @@ class AISegmentationPlugin:
             self.dock_widget.set_status("No polygons to export")
             return
 
+        self._stopping_segmentation = True
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
+        self._restore_previous_map_tool()
+        self._stopping_segmentation = False
 
         self._segmentation_counter += 1
         layer_name = f"{self._current_layer_name}_segmentation_{self._segmentation_counter}"
@@ -924,10 +935,27 @@ class AISegmentationPlugin:
     def _on_tool_deactivated(self):
         if self.dock_widget:
             self.dock_widget.set_segmentation_active(False)
+        # Only clear the previous tool if the user manually switched tools
+        # (not when we're stopping programmatically via Stop/Export)
+        if not self._stopping_segmentation:
+            self._previous_map_tool = None
+
+    def _restore_previous_map_tool(self):
+        """Restore the map tool that was active before segmentation started."""
+        if self._previous_map_tool:
+            try:
+                self.iface.mapCanvas().setMapTool(self._previous_map_tool)
+            except RuntimeError:
+                # The previous tool may have been deleted
+                pass
+        self._previous_map_tool = None
 
     def _on_stop_segmentation(self):
         """Exit segmentation mode without saving."""
+        self._stopping_segmentation = True
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
+        self._restore_previous_map_tool()
+        self._stopping_segmentation = False
         self._reset_session()
         self.dock_widget.reset_session()
         self.dock_widget.set_status("Segmentation stopped")
