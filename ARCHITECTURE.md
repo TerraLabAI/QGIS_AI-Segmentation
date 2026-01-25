@@ -4,6 +4,8 @@
 
 This document explains the technical architecture of the QGIS AI-Segmentation plugin, including design decisions, cross-platform compatibility strategies, and the subprocess isolation system.
 
+> **📋 See Also**: [ARCHITECTURE_RECOMMENDATIONS.md](./ARCHITECTURE_RECOMMENDATIONS.md) for recommendations on refactoring to achieve better separation of business logic from QGIS-specific code, enabling multi-platform support (QGIS, ArcGIS, TerraLab3D).
+
 ## Table of Contents
 
 1. [High-Level Architecture](#high-level-architecture)
@@ -516,3 +518,9 @@ Key design decisions:
 - Virtual environment for dependency isolation
 - sys.path injection for lightweight in-process operations
 - JSON over stdin/stdout for IPC
+
+---
+
+## Future Improvements
+
+For recommendations on refactoring this architecture to achieve better separation of business logic from QGIS-specific code (enabling multi-platform support), see [ARCHITECTURE_RECOMMENDATIONS.md](./ARCHITECTURE_RECOMMENDATIONS.md).
