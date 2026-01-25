@@ -220,7 +220,7 @@ class AISegmentationPlugin:
         self.saved_rubber_bands: List[QgsRubberBand] = []
 
     def initGui(self):
-        icon_path = str(self.plugin_dir / "resources" / "icons" / "ai_segmentation_icon.svg")
+        icon_path = str(self.plugin_dir / "resources" / "icons" / "icon.png")
         if not os.path.exists(icon_path):
             icon = QIcon()
         else:
@@ -235,7 +235,10 @@ class AISegmentationPlugin:
         self.action.triggered.connect(self.toggle_dock_widget)
 
         self.iface.addToolBarIcon(self.action)
-        self.iface.addPluginToMenu("&AI Segmentation", self.action)
+
+        # Add directly to Plugins menu (no submenu)
+        plugins_menu = self.iface.pluginMenu()
+        plugins_menu.addAction(self.action)
 
         self.dock_widget = AISegmentationDockWidget(self.iface.mainWindow())
         self.dock_widget.setVisible(False)
@@ -284,7 +287,9 @@ class AISegmentationPlugin:
                 pass
             self.predictor = None
 
-        self.iface.removePluginMenu("&AI Segmentation", self.action)
+        # Remove from Plugins menu
+        plugins_menu = self.iface.pluginMenu()
+        plugins_menu.removeAction(self.action)
         self.iface.removeToolBarIcon(self.action)
 
         if self.dock_widget:
@@ -466,8 +471,8 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
 
-        self.dock_widget.set_deps_install_progress(0, "Creating virtual environment...")
-        self.dock_widget.set_status("Creating virtual environment...")
+        self.dock_widget.set_deps_install_progress(0, "Preparing installation...")
+        self.dock_widget.set_status("Preparing installation...")
 
         self.deps_install_worker = DepsInstallWorker()
         self.deps_install_worker.progress.connect(self._on_deps_install_progress)
