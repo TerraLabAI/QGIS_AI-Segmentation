@@ -29,6 +29,7 @@ class AISegmentationDockWidget(QDockWidget):
     undo_requested = pyqtSignal()
     save_polygon_requested = pyqtSignal()
     export_layer_requested = pyqtSignal()
+    reset_session_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__("AI Segmentation by Terralab", parent)
@@ -211,6 +212,14 @@ class AISegmentationDockWidget(QDockWidget):
         self.export_button.setToolTip("Export all saved polygons as a new layer")
         layout.addWidget(self.export_button)
 
+        self.reset_button = QPushButton("Reset Session")
+        self.reset_button.clicked.connect(self._on_reset_clicked)
+        self.reset_button.setVisible(False)
+        self.reset_button.setEnabled(False)
+        self.reset_button.setStyleSheet("background-color: #d32f2f; color: white;")
+        self.reset_button.setToolTip("Clear all points and saved polygons to start fresh")
+        layout.addWidget(self.reset_button)
+
         self.main_layout.addWidget(seg_widget)
 
     def _setup_status_bar(self):
@@ -266,6 +275,9 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _on_export_clicked(self):
         self.export_layer_requested.emit()
+
+    def _on_reset_clicked(self):
+        self.reset_session_requested.emit()
 
     def set_dependency_status(self, ok: bool, message: str):
         self._dependencies_ok = ok
@@ -368,12 +380,15 @@ class AISegmentationDockWidget(QDockWidget):
             self.save_polygon_button.setEnabled(self._has_mask)
             self.export_button.setVisible(True)
             self.export_button.setEnabled(self._saved_polygon_count > 0 or self._has_mask)
+            self.reset_button.setVisible(True)
+            self.reset_button.setEnabled(True)
         else:
             self.start_button.setVisible(True)
             self.active_instructions_label.setVisible(False)
             self.undo_button.setVisible(False)
             self.save_polygon_button.setVisible(False)
             self.export_button.setVisible(False)
+            self.reset_button.setVisible(False)
 
     def set_point_count(self, positive: int, negative: int):
         total = positive + negative

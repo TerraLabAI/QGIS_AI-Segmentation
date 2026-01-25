@@ -251,6 +251,7 @@ class AISegmentationPlugin:
         self.dock_widget.export_layer_requested.connect(self._on_export_layer)
         self.dock_widget.clear_points_requested.connect(self._on_clear_points)
         self.dock_widget.undo_requested.connect(self._on_undo)
+        self.dock_widget.reset_session_requested.connect(self._on_reset_session_requested)
 
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
 
@@ -1161,6 +1162,45 @@ class AISegmentationPlugin:
             self._clear_mask_visualization()
             self.dock_widget.set_point_count(0, 0)
             self.dock_widget.set_status("All points removed")
+
+    def _on_reset_session_requested(self):
+        """Handle reset session request with confirmation dialog."""
+        # Count current points and saved polygons
+        pos_count, neg_count = self.prompts.point_count
+        total_points = pos_count + neg_count
+        saved_count = len(self.saved_polygons)
+        
+        # Build confirmation message
+        message_parts = []
+        if total_points > 0:
+            message_parts.append(f"{total_points} point(s)")
+        if saved_count > 0:
+            message_parts.append(f"{saved_count} saved polygon(s)")
+        if self.current_mask is not None:
+            message_parts.append("current polygon")
+        
+        if not message_parts:
+            # Nothing to reset
+            self.dock_widget.set_status("Nothing to reset")
+            return
+        
+        message = "Are you sure you want to reset the session?\n\n"
+        message += "This will clear:\n"
+        for part in message_parts:
+            message += f"  • {part}\n"
+        message += "\nThis action cannot be undone."
+        
+        reply = QMessageBox.question(
+            self.iface.mainWindow(),
+            "Reset Session",
+            message,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self._reset_session()
+            self.dock_widget.set_status("Session reset - ready for new segmentation")
 
     def _reset_session(self):
         self.prompts.clear()
