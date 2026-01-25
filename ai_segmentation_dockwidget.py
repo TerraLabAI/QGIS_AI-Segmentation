@@ -13,7 +13,7 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 
-from qgis.core import QgsMapLayerProxyModel
+from qgis.core import QgsMapLayerProxyModel, QgsProject
 from qgis.gui import QgsMapLayerComboBox
 
 
@@ -50,6 +50,11 @@ class AISegmentationDockWidget(QDockWidget):
         self._segmentation_active = False
         self._has_mask = False
         self._saved_polygon_count = 0
+        self._encoding_start_time = None
+
+        # Connect to project layer signals for dynamic updates
+        QgsProject.instance().layersAdded.connect(self._on_layers_added)
+        QgsProject.instance().layersRemoved.connect(self._on_layers_removed)
 
     def _setup_ui(self):
         self._setup_dependencies_section()
@@ -134,19 +139,20 @@ class AISegmentationDockWidget(QDockWidget):
         layout = QVBoxLayout(seg_widget)
         layout.setContentsMargins(0, 8, 0, 0)
 
-        layer_label = QLabel("Raster layer to segment:")
+        layer_label = QLabel("Select a Raster Layer to Segment")
+        layer_label.setStyleSheet("font-size: 11px; font-weight: bold; color: #333;")
         layout.addWidget(layer_label)
 
         self.layer_combo = QgsMapLayerComboBox()
         self.layer_combo.setFilters(QgsMapLayerProxyModel.RasterLayer)
         self.layer_combo.setExcludedProviders(['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs'])
-        self.layer_combo.setAllowEmptyLayer(True)
-        self.layer_combo.setShowCrs(True)
+        self.layer_combo.setAllowEmptyLayer(False)
+        self.layer_combo.setShowCrs(False)
         self.layer_combo.layerChanged.connect(self._on_layer_changed)
         self.layer_combo.setToolTip("Select a file-based raster layer (GeoTIFF, etc.)")
         layout.addWidget(self.layer_combo)
 
-        self.no_rasters_label = QLabel("No file-based raster layers found. Add a GeoTIFF or local raster to your project.")
+        self.no_rasters_label = QLabel("No compatible raster found. Add a GeoTIFF or local image to your project.")
         self.no_rasters_label.setStyleSheet(
             "background-color: #fff3cd; color: #856404; padding: 8px; "
             "border-radius: 4px; font-size: 11px;"
@@ -171,27 +177,45 @@ class AISegmentationDockWidget(QDockWidget):
         self.active_instructions_label.setVisible(False)
         layout.addWidget(self.active_instructions_label)
 
+        # Encoding progress section
+        self.encoding_info_label = QLabel("")
+        self.encoding_info_label.setStyleSheet(
+            "background-color: #e8f5e9; color: #2e7d32; padding: 8px; "
+            "border-radius: 4px; font-size: 11px;"
+        )
+        self.encoding_info_label.setWordWrap(True)
+        self.encoding_info_label.setVisible(False)
+        layout.addWidget(self.encoding_info_label)
+
         self.prep_progress = QProgressBar()
         self.prep_progress.setRange(0, 100)
         self.prep_progress.setVisible(False)
         layout.addWidget(self.prep_progress)
 
         self.prep_status_label = QLabel("")
-        self.prep_status_label.setStyleSheet("color: #666; font-size: 10px;")
+        self.prep_status_label.setStyleSheet("color: #555; font-size: 11px;")
         self.prep_status_label.setVisible(False)
         layout.addWidget(self.prep_status_label)
 
         self.cancel_prep_button = QPushButton("Cancel")
         self.cancel_prep_button.clicked.connect(self._on_cancel_prep_clicked)
         self.cancel_prep_button.setVisible(False)
-        self.cancel_prep_button.setStyleSheet("background-color: #d32f2f; color: white;")
+        self.cancel_prep_button.setMaximumHeight(26)
+        self.cancel_prep_button.setStyleSheet(
+            "QPushButton { background-color: #d32f2f; color: white; font-size: 10px; }"
+        )
         layout.addWidget(self.cancel_prep_button)
 
         self.start_button = QPushButton("Start AI Segmentation")
         self.start_button.setEnabled(False)
+        self.start_button.setMinimumHeight(36)
         self.start_button.clicked.connect(self._on_start_clicked)
+        self.start_button.setStyleSheet(
+            "QPushButton { background-color: #2e7d32; color: white; font-weight: bold; font-size: 12px; }"
+            "QPushButton:disabled { background-color: #a5d6a7; color: #ccc; }"
+        )
         self.start_button.setToolTip(
-            "Click to segment objects on the map.\n"
+            "Click to segment objects on the image.\n"
             "Left-click = Include area (add positive points)\n"
             "Right-click = Exclude area (add negative points)\n"
             "Multiple points refine the segmentation"
@@ -258,7 +282,10 @@ class AISegmentationDockWidget(QDockWidget):
         self.main_layout.addWidget(sep)
 
         self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: #666; font-size: 10px;")
+        self.status_label.setStyleSheet(
+            "background-color: #424242; color: white; font-size: 12px; "
+            "padding: 8px; border-radius: 4px;"
+        )
         self.status_label.setWordWrap(True)
         self.main_layout.addWidget(self.status_label)
 
@@ -277,7 +304,17 @@ class AISegmentationDockWidget(QDockWidget):
         self.cancel_download_requested.emit()
 
     def _on_cancel_prep_clicked(self):
-        self.cancel_preparation_requested.emit()
+        reply = QMessageBox.question(
+            self,
+            "Cancel Encoding?",
+            "Are you sure you want to cancel?\n\n"
+            "Once encoding is complete, it's cached permanently.\n"
+            "You'll never need to wait for this image again.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self.cancel_preparation_requested.emit()
 
     def _on_layer_changed(self, _layer):
         self._update_ui_state()
@@ -290,6 +327,27 @@ class AISegmentationDockWidget(QDockWidget):
                 "Layer Changed",
                 "Segmentation cancelled because the layer was changed."
             )
+
+    def _on_layers_added(self, layers):
+        """Handle new layers added to project - auto-select if none selected."""
+        # Only auto-select if no layer is currently selected
+        if self.layer_combo.currentLayer() is not None:
+            return
+
+        # Check if any of the new layers are compatible rasters
+        for layer in layers:
+            if layer.type() == layer.RasterLayer:
+                provider = layer.dataProvider()
+                if provider and provider.name() not in ['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs']:
+                    # Found a compatible raster, select it
+                    self.layer_combo.setLayer(layer)
+                    break
+
+        self._update_ui_state()
+
+    def _on_layers_removed(self, layer_ids):
+        """Handle layers removed from project."""
+        self._update_ui_state()
 
     def _on_start_clicked(self):
         layer = self.layer_combo.currentLayer()
@@ -380,20 +438,58 @@ class AISegmentationDockWidget(QDockWidget):
             self.download_button.setEnabled(True)
             self.download_button.setText("Download SAM Model (~375MB)")
 
-    def set_preparation_progress(self, percent: int, message: str):
+    def set_preparation_progress(self, percent: int, message: str, cache_path: str = None):
+        import time
+
         self.prep_progress.setValue(percent)
-        self.prep_status_label.setText(message)
+
+        # Calculate time estimate
+        time_info = ""
+        if percent > 5 and percent < 100 and self._encoding_start_time:
+            elapsed = time.time() - self._encoding_start_time
+            if elapsed > 2:  # Only show after 2 seconds
+                estimated_total = elapsed / (percent / 100)
+                remaining = estimated_total - elapsed
+                if remaining > 60:
+                    time_info = f" (~{int(remaining / 60)} min left)"
+                elif remaining > 10:
+                    time_info = f" (~{int(remaining)} sec left)"
+
+        self.prep_status_label.setText(f"{message}{time_info}")
 
         if percent == 0:
+            import time
+            self._encoding_start_time = time.time()
             self.prep_progress.setVisible(True)
             self.prep_status_label.setVisible(True)
-            self.start_button.setEnabled(False)
+            self.start_button.setVisible(False)
             self.cancel_prep_button.setVisible(True)
+            self.encoding_info_label.setText(
+                "⏳ Preparing image for instant segmentation...\n"
+                "This only happens once per image - results are cached."
+            )
+            self.encoding_info_label.setVisible(True)
         elif percent >= 100 or "cancel" in message.lower():
             self.prep_progress.setVisible(False)
             self.prep_status_label.setVisible(False)
             self.cancel_prep_button.setVisible(False)
+            self.encoding_info_label.setVisible(False)
+            self.start_button.setVisible(True)
+            self._encoding_start_time = None
             self._update_ui_state()
+
+    def set_encoding_cache_path(self, cache_path: str):
+        """Show the cache path after encoding completes."""
+        if cache_path:
+            display_path = cache_path
+            if len(display_path) > 45:
+                display_path = "..." + display_path[-42:]
+            self.encoding_info_label.setText(f"✓ Cached at:\n{display_path}")
+            self.encoding_info_label.setStyleSheet(
+                "background-color: #e8f5e9; color: #2e7d32; padding: 8px; "
+                "border-radius: 4px; font-size: 10px;"
+            )
+            self.encoding_info_label.setVisible(True)
 
     def set_segmentation_active(self, active: bool):
         self._segmentation_active = active
@@ -403,6 +499,7 @@ class AISegmentationDockWidget(QDockWidget):
     def _update_button_visibility(self):
         if self._segmentation_active:
             self.start_button.setVisible(False)
+            self.encoding_info_label.setVisible(False)
             self.active_instructions_label.setVisible(True)
             self.save_polygon_button.setVisible(True)
             self.save_polygon_button.setEnabled(self._has_mask)
@@ -464,13 +561,16 @@ class AISegmentationDockWidget(QDockWidget):
         layer = self.layer_combo.currentLayer()
         has_layer = layer is not None
 
-        # Check if there are any rasters available (count > 1 accounts for empty layer option)
-        has_rasters_available = self.layer_combo.count() > 1
+        # Check if there are any rasters available
+        has_rasters_available = self.layer_combo.count() > 0
         self.no_rasters_label.setVisible(not has_rasters_available and not self._segmentation_active)
+
+        # Hide layer combo if no rasters available
+        self.layer_combo.setVisible(has_rasters_available)
 
         can_start = (
             self._dependencies_ok and
             self._checkpoint_ok and
             has_layer
         )
-        self.start_button.setEnabled(can_start or self._segmentation_active)
+        self.start_button.setEnabled(can_start and not self._segmentation_active)
