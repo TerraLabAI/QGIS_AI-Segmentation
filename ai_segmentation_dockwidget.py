@@ -150,12 +150,12 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(note_label)
 
         self.active_instructions_label = QLabel(
-            "SEGMENTATION CONTROLS\n\n"
-            "Left-click = New polygon\n"
-            "Ctrl + Left-click = Add to polygon\n"
-            "Shift + Left-click = Subtract from polygon\n"
-            "Right-click = Undo/Clear\n"
-            "S = Save polygon"
+            "CLICK TO SEGMENT\n\n"
+            "Left-click = Include this area (green)\n"
+            "Right-click = Exclude this area (red)\n"
+            "Ctrl+Z = Undo last point\n"
+            "Escape = Clear all points\n"
+            "S or Enter = Save polygon"
         )
         self.active_instructions_label.setStyleSheet(
             "color: #1976d2; font-size: 11px; font-weight: bold; "
@@ -186,17 +186,17 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_button.clicked.connect(self._on_start_clicked)
         self.start_button.setToolTip(
             "Click to segment objects on the map.\n"
-            "Left-click = New polygon\n"
-            "Ctrl+click = Add to polygon\n"
-            "Shift+click = Subtract from polygon"
+            "Left-click = Include area (add positive points)\n"
+            "Right-click = Exclude area (add negative points)\n"
+            "Multiple points refine the segmentation"
         )
         layout.addWidget(self.start_button)
 
-        self.undo_button = QPushButton("Clear Current Polygon")
+        self.undo_button = QPushButton("Undo Last Point")
         self.undo_button.setEnabled(False)
         self.undo_button.clicked.connect(self._on_undo_clicked)
         self.undo_button.setVisible(False)
-        self.undo_button.setToolTip("Clear current polygon and start fresh (Ctrl+Z or Right-click)")
+        self.undo_button.setToolTip("Remove the last point added (Ctrl+Z)")
         layout.addWidget(self.undo_button)
 
         self.save_polygon_button = QPushButton("Save Polygon (S)")

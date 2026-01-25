@@ -1,7 +1,6 @@
 
 
 from typing import List
-from enum import Enum
 
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtGui import QCursor, QColor
@@ -9,78 +8,67 @@ from qgis.gui import QgsMapTool, QgsMapCanvas, QgsVertexMarker
 from qgis.core import QgsPointXY
 
 
-class ClickMode(Enum):
-    """Click modes for segmentation workflow."""
-    NEW = "new"           # Left click: create new standalone polygon
-    ADD = "add"           # Ctrl+Left click: union/add to existing polygon  
-    SUBTRACT = "subtract" # Shift+Left click: subtract from existing polygon
-
-
 class AISegmentationMapTool(QgsMapTool):
+    """Map tool for AI segmentation with positive/negative point prompts.
     
-    # Signal emitted with point and click mode (new, add, subtract)
-    segmentation_click = pyqtSignal(QgsPointXY, str)
-    
-    # Legacy signals for compatibility
+    Workflow:
+    - Left click: Add positive point (include this area)
+    - Right click: Add negative point (exclude this area)
+    - Ctrl+Z: Undo last point
+    - S or Enter: Save polygon
+    - Escape: Clear current polygon
+    """
+
     positive_click = pyqtSignal(QgsPointXY)
     negative_click = pyqtSignal(QgsPointXY)
-    
     tool_deactivated = pyqtSignal()
     undo_requested = pyqtSignal()
-    save_polygon_requested = pyqtSignal()  
+    save_polygon_requested = pyqtSignal()
+    clear_requested = pyqtSignal()
 
-    # Marker colors
-    NEW_COLOR = QColor(0, 120, 255)       # Blue for new polygon
-    ADD_COLOR = QColor(0, 200, 0)         # Green for add/union
-    SUBTRACT_COLOR = QColor(220, 0, 0)    # Red for subtract
-    
-    MARKER_SIZE = 8  
+    POSITIVE_COLOR = QColor(0, 200, 0)    # Green for include
+    NEGATIVE_COLOR = QColor(220, 0, 0)    # Red for exclude
+    MARKER_SIZE = 10
     MARKER_PEN_WIDTH = 2
 
     def __init__(self, canvas: QgsMapCanvas):
-        
         super().__init__(canvas)
         self.canvas = canvas
         self._active = False
-
         self._markers: List[QgsVertexMarker] = []
 
     def activate(self):
-        
         super().activate()
         self._active = True
         self.canvas.setCursor(QCursor(Qt.CrossCursor))
 
     def deactivate(self):
-        
         super().deactivate()
         self._active = False
-        self.clear_markers()  
+        self.clear_markers()
         self.tool_deactivated.emit()
 
-    def add_marker(self, point: QgsPointXY, mode: ClickMode) -> QgsVertexMarker:
-        """Add a marker with color based on click mode."""
+    def add_marker(self, point: QgsPointXY, is_positive: bool) -> QgsVertexMarker:
+        """Add a visual marker at the click location."""
         marker = QgsVertexMarker(self.canvas)
         marker.setCenter(point)
-        marker.setIconType(QgsVertexMarker.IconType.ICON_CIRCLE)
         marker.setIconSize(self.MARKER_SIZE)
         marker.setPenWidth(self.MARKER_PEN_WIDTH)
 
-        if mode == ClickMode.NEW:
-            marker.setColor(self.NEW_COLOR)
-            marker.setFillColor(QColor(0, 120, 255, 80))
-        elif mode == ClickMode.ADD:
-            marker.setColor(self.ADD_COLOR)
-            marker.setFillColor(QColor(0, 200, 0, 80))
-        else:  # SUBTRACT
-            marker.setColor(self.SUBTRACT_COLOR)
-            marker.setFillColor(QColor(220, 0, 0, 80))
+        if is_positive:
+            marker.setIconType(QgsVertexMarker.IconType.ICON_CIRCLE)
+            marker.setColor(self.POSITIVE_COLOR)
+            marker.setFillColor(QColor(0, 200, 0, 100))
+        else:
+            marker.setIconType(QgsVertexMarker.IconType.ICON_X)
+            marker.setColor(self.NEGATIVE_COLOR)
+            marker.setFillColor(QColor(220, 0, 0, 100))
 
         self._markers.append(marker)
         return marker
 
     def remove_last_marker(self) -> bool:
-        
+        """Remove the last marker added."""
         if self._markers:
             marker = self._markers.pop()
             self.canvas.scene().removeItem(marker)
@@ -89,63 +77,49 @@ class AISegmentationMapTool(QgsMapTool):
         return False
 
     def clear_markers(self):
-        
+        """Remove all markers from the canvas."""
         for marker in self._markers:
             self.canvas.scene().removeItem(marker)
         self._markers.clear()
         self.canvas.refresh()
 
     def get_marker_count(self) -> int:
-        
         return len(self._markers)
 
     def canvasPressEvent(self, event):
-        
         if not self._active:
             return
 
         point = self.toMapCoordinates(event.pos())
-        modifiers = event.modifiers()
 
         if event.button() == Qt.LeftButton:
-            # Determine click mode based on modifiers
-            if modifiers & Qt.ControlModifier:
-                mode = ClickMode.ADD
-            elif modifiers & Qt.ShiftModifier:
-                mode = ClickMode.SUBTRACT
-            else:
-                mode = ClickMode.NEW
-            
-            self.add_marker(point, mode)
-            self.segmentation_click.emit(point, mode.value)
-            
-            # Also emit legacy signals for compatibility
-            if mode in (ClickMode.NEW, ClickMode.ADD):
-                self.positive_click.emit(point)
-            else:
-                self.negative_click.emit(point)
-                
+            # Positive point - include this area
+            self.add_marker(point, is_positive=True)
+            self.positive_click.emit(point)
         elif event.button() == Qt.RightButton:
-            # Right click = undo last action
-            self.undo_requested.emit()
+            # Negative point - exclude this area
+            self.add_marker(point, is_positive=False)
+            self.negative_click.emit(point)
 
     def canvasMoveEvent(self, event):
-        
         pass
 
     def canvasReleaseEvent(self, event):
-        
         pass
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Z and event.modifiers() & Qt.ControlModifier:
+        key = event.key()
+        modifiers = event.modifiers()
+
+        if key == Qt.Key_Z and modifiers & Qt.ControlModifier:
+            # Ctrl+Z: Undo last point
             self.undo_requested.emit()
-        elif event.key() == Qt.Key_S and not event.modifiers():
+        elif key == Qt.Key_S or key == Qt.Key_Return or key == Qt.Key_Enter:
+            # S or Enter: Save polygon
             self.save_polygon_requested.emit()
-        elif event.key() == Qt.Key_Escape:
-            # Escape to deactivate tool
-            self.canvas.unsetMapTool(self)
+        elif key == Qt.Key_Escape:
+            # Escape: Clear current polygon
+            self.clear_requested.emit()
 
     def isActive(self) -> bool:
-        
         return self._active
