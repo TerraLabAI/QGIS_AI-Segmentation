@@ -83,14 +83,14 @@ def encode_raster(config):
         layer_crs_wkt = config.get('layer_crs_wkt')
         layer_extent = config.get('layer_extent')
 
-        send_progress(0, "Loading SAM encoder...")
+        send_progress(0, "Preparing AI model...")
 
         device = get_optimal_device()
         sam = sam_model_registry["vit_b"](checkpoint=checkpoint_path)
         sam.to(device)
         sam.eval()
 
-        send_progress(5, "Opening raster...")
+        send_progress(5, "Reading image...")
 
         with rasterio.open(raster_path) as src:
             raster_width = src.width
@@ -247,7 +247,7 @@ def encode_raster(config):
             df = pd.DataFrame(index_data)
             df.to_csv(csv_path, index=False)
 
-            send_progress(100, "Encoding complete!")
+            send_progress(100, "Done! Cached for instant access")
             send_success(processed)
 
     except Exception as e:

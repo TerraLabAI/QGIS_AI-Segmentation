@@ -11,7 +11,7 @@ __pycache__/
 .idea/
 *.swp
 *.swo
-
+python_standalone/
 .ai_segmentation_cache/
 
 .DS_Store
