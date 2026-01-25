@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+"""
+Install AI Segmentation plugin to QGIS plugins directory.
+
+Usage:
+    python install_plugin.py          # Copy plugin
+    python install_plugin.py --dev     # Create symlink (development mode)
+    python install_plugin.py --remove  # Remove installed plugin
+"""
+
+import argparse
+import os
+import platform
+import shutil
+import sys
+import time
+from pathlib import Path
+
+
+def get_qgis_plugins_dir() -> Path:
+    """Get QGIS plugins directory for current platform."""
+    system = platform.system()
+    
+    if system == "Windows":
+        appdata = os.environ.get("APPDATA", "")
+        return Path(appdata) / "QGIS" / "QGIS3" / "profiles" / "default" / "python" / "plugins"
+    
+    elif system == "Darwin":  # macOS
+        return Path.home() / "Library" / "Application Support" / "QGIS" / "QGIS3" / "profiles" / "default" / "python" / "plugins"
+    
+    else:  # Linux
+        return Path.home() / ".local" / "share" / "QGIS" / "QGIS3" / "profiles" / "default" / "python" / "plugins"
+
+
+def get_plugin_source_dir() -> Path:
+    """Get plugin source directory."""
+    return Path(__file__).parent.parent
+
+
+def safe_rmtree(path: Path, max_retries: int = 3, delay: float = 0.5):
+    """Safely remove directory tree with retry logic for Windows file locking."""
+    for attempt in range(max_retries):
+        try:
+            if path.is_symlink():
+                path.unlink()
+            else:
+                # On Windows, remove read-only attributes first
+                if platform.system() == "Windows":
+                    def handle_remove_readonly(func, path, exc):
+                        """Handle read-only files on Windows."""
+                        os.chmod(path, 0o777)
+                        func(path)
+                    shutil.rmtree(path, onerror=handle_remove_readonly)
+                else:
+                    shutil.rmtree(path)
+            return
+        except (OSError, PermissionError) as e:
+            if attempt < max_retries - 1:
+                print(f"  Retry {attempt + 1}/{max_retries} after {delay}s...")
+                time.sleep(delay)
+            else:
+                print(f"\nError: Cannot remove {path}")
+                print("This usually happens when QGIS is running and has locked the files.")
+                print("\nPlease try one of the following:")
+                print("  1. Close QGIS completely and try again")
+                print("  2. Restart your computer if QGIS processes are still running")
+                print("  3. Manually delete the directory: " + str(path))
+                raise
+
+
+def get_preserved_directories(dest: Path) -> list:
+    """Get list of directories to preserve (dependencies, cache, etc.)."""
+    preserved = []
+    if not dest.exists():
+        return preserved
+    
+    # Preserve virtual environment directories (venv_py3.10, venv_py3.11, etc.)
+    for item in dest.iterdir():
+        if item.is_dir() and item.name.startswith("venv_py"):
+            preserved.append(item)
+        # Preserve old libs/ directory if it exists
+        elif item.is_dir() and item.name == "libs":
+            preserved.append(item)
+    
+    return preserved
+
+
+def remove_plugin_files_only(dest: Path, preserved_dirs: list):
+    """Remove plugin files but preserve dependency directories."""
+    preserved_names = {d.name for d in preserved_dirs}
+    
+    # On Windows, remove read-only attributes first
+    def handle_remove_readonly(func, path, exc):
+        """Handle read-only files on Windows."""
+        os.chmod(path, 0o777)
+        func(path)
+    
+    for item in dest.iterdir():
+        if item.name not in preserved_names:
+            try:
+                if item.is_symlink():
+                    item.unlink()
+                elif item.is_dir():
+                    if platform.system() == "Windows":
+                        shutil.rmtree(item, onerror=handle_remove_readonly)
+                    else:
+                        shutil.rmtree(item)
+                else:
+                    item.unlink()
+            except (OSError, PermissionError) as e:
+                print(f"  Warning: Could not remove {item.name}: {e}")
+                print("  This file may be locked by QGIS. Close QGIS and try again.")
+
+
+def install_copy(source: Path, dest: Path):
+    """Install by copying files, preserving dependencies."""
+    preserved_dirs = []
+    
+    if dest.exists():
+        print(f"Updating existing installation: {dest}")
+        # Get directories to preserve (venv, libs, etc.)
+        preserved_dirs = get_preserved_directories(dest)
+        
+        if preserved_dirs:
+            print(f"Preserving dependencies: {', '.join(d.name for d in preserved_dirs)}")
+            # Remove only plugin files, not dependencies
+            remove_plugin_files_only(dest, preserved_dirs)
+        else:
+            # No dependencies to preserve, remove everything
+            print(f"Removing existing installation: {dest}")
+            safe_rmtree(dest)
+    
+    # Copy plugin files
+    print(f"Copying plugin files to: {dest}")
+    
+    # Create dest if it doesn't exist
+    dest.mkdir(parents=True, exist_ok=True)
+    
+    # Copy files from source, excluding preserved directories
+    preserved_names = {d.name for d in preserved_dirs}
+    
+    for item in source.iterdir():
+        # Skip preserved directories (they already exist in dest)
+        if item.name in preserved_names:
+            print(f"  Skipping preserved directory: {item.name}")
+            continue
+        
+        dest_item = dest / item.name
+        
+        if item.is_dir():
+            if dest_item.exists():
+                # Remove existing directory before copying
+                if platform.system() == "Windows":
+                    def handle_remove_readonly(func, path, exc):
+                        os.chmod(path, 0o777)
+                        func(path)
+                    shutil.rmtree(dest_item, onerror=handle_remove_readonly)
+                else:
+                    shutil.rmtree(dest_item)
+            shutil.copytree(item, dest_item)
+        else:
+            shutil.copy2(item, dest_item)
+    
+    print("Done! Restart QGIS and enable the plugin.")
+
+
+def install_symlink(source: Path, dest: Path):
+    """Install by creating symlink (development mode).
+    
+    Note: Symlinks replace the entire directory, so dependencies cannot be preserved.
+    You'll need to reinstall dependencies after switching to symlink mode.
+    """
+    if dest.exists():
+        if dest.is_symlink():
+            print(f"Removing existing symlink: {dest}")
+            dest.unlink()
+        else:
+            # Check for dependencies and warn
+            preserved_dirs = get_preserved_directories(dest)
+            if preserved_dirs:
+                print(f"Warning: Found dependencies: {', '.join(d.name for d in preserved_dirs)}")
+                print("Symlink mode cannot preserve dependencies (symlinks replace the entire directory).")
+                print("Dependencies will need to be reinstalled after creating the symlink.")
+                response = input("Continue anyway? (y/N): ").strip().lower()
+                if response != 'y':
+                    print("Cancelled.")
+                    sys.exit(0)
+            
+            print(f"Removing existing installation: {dest}")
+            safe_rmtree(dest)
+    
+    print(f"Creating symlink: {dest} -> {source}")
+    
+    # On Windows, need admin or developer mode for symlinks
+    if platform.system() == "Windows":
+        try:
+            dest.symlink_to(source, target_is_directory=True)
+        except OSError:
+            print("Error: Cannot create symlink. Try one of:")
+            print("  1. Run as Administrator")
+            print("  2. Enable Developer Mode in Windows Settings")
+            print("  3. Use --copy instead of --dev")
+            sys.exit(1)
+    else:
+        dest.symlink_to(source)
+    
+    print("Done! Restart QGIS and enable the plugin.")
+    print("Changes to plugin code will be reflected immediately (restart QGIS to reload).")
+    print("Note: You may need to reinstall dependencies in QGIS.")
+
+
+def remove_plugin(dest: Path):
+    """Remove installed plugin."""
+    if not dest.exists():
+        print(f"Plugin not installed at: {dest}")
+        return
+    
+    if dest.is_symlink():
+        print(f"Removing symlink: {dest}")
+        dest.unlink()
+    else:
+        print(f"Removing plugin: {dest}")
+        safe_rmtree(dest)
+    
+    print("Done!")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Install AI Segmentation QGIS plugin")
+    parser.add_argument("--dev", action="store_true", help="Development mode (symlink)")
+    parser.add_argument("--copy", action="store_true", help="Copy files (default)")
+    parser.add_argument("--remove", action="store_true", help="Remove installed plugin")
+    parser.add_argument("--plugins-dir", type=str, help="Custom QGIS plugins directory")
+    
+    args = parser.parse_args()
+    
+    # Determine directories
+    source = get_plugin_source_dir()
+    
+    if args.plugins_dir:
+        plugins_dir = Path(args.plugins_dir)
+    else:
+        plugins_dir = get_qgis_plugins_dir()
+    
+    # Plugin directory name in QGIS (typically lowercase with underscores)
+    dest = plugins_dir / "ai_segmentation"
+    
+    # Ensure plugins directory exists
+    plugins_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(f"Plugin source: {source}")
+    print(f"QGIS plugins dir: {plugins_dir}")
+    print()
+    
+    if not source.exists():
+        print(f"Error: Plugin source not found: {source}")
+        sys.exit(1)
+    
+    if args.remove:
+        remove_plugin(dest)
+    elif args.dev:
+        install_symlink(source, dest)
+    else:
+        install_copy(source, dest)
+
+
+if __name__ == "__main__":
+    main()

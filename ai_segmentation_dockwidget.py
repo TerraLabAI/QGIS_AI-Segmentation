@@ -150,10 +150,12 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(note_label)
 
         self.active_instructions_label = QLabel(
-            "CLICK ON THE MAP\n\n"
-            "Left-click = INCLUDE\n"
-            "Right-click = EXCLUDE\n"
-            "S = Save polygon"
+            "CLICK TO SEGMENT\n\n"
+            "Left-click = Include this area (green)\n"
+            "Right-click = Exclude this area (red)\n"
+            "Ctrl+Z = Undo last point\n"
+            "Escape = Clear all points\n"
+            "S or Enter = Save polygon"
         )
         self.active_instructions_label.setStyleSheet(
             "color: #1976d2; font-size: 11px; font-weight: bold; "
@@ -183,8 +185,10 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._on_start_clicked)
         self.start_button.setToolTip(
-            "Activate point mode to click on the map.\n"
-            "Left-click to include, right-click to exclude."
+            "Click to segment objects on the map.\n"
+            "Left-click = Include area (add positive points)\n"
+            "Right-click = Exclude area (add negative points)\n"
+            "Multiple points refine the segmentation"
         )
         layout.addWidget(self.start_button)
 
@@ -192,7 +196,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.undo_button.setEnabled(False)
         self.undo_button.clicked.connect(self._on_undo_clicked)
         self.undo_button.setVisible(False)
-        self.undo_button.setToolTip("Remove the last point (Ctrl+Z)")
+        self.undo_button.setToolTip("Remove the last point added (Ctrl+Z)")
         layout.addWidget(self.undo_button)
 
         self.save_polygon_button = QPushButton("Save Polygon (S)")
