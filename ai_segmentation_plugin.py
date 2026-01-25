@@ -254,6 +254,7 @@ class AISegmentationPlugin:
         self.dock_widget.export_layer_requested.connect(self._on_export_layer)
         self.dock_widget.clear_points_requested.connect(self._on_clear_points)
         self.dock_widget.undo_requested.connect(self._on_undo)
+        self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
 
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
 
@@ -630,7 +631,12 @@ class AISegmentationPlugin:
 
     def _on_encoding_finished(self, success: bool, message: str, raster_path: str):
         if success:
-            self.dock_widget.set_preparation_progress(100, "Ready!")
+            from .core.checkpoint_manager import get_raster_features_dir
+            cache_dir = get_raster_features_dir(raster_path)
+            cache_display = str(cache_dir)
+            if len(cache_display) > 50:
+                cache_display = cache_display[:50] + "..."
+            self.dock_widget.set_preparation_progress(100, f"Cached at: {cache_display}")
             self._load_features_and_activate(raster_path)
         else:
             # Check if this was a user cancellation
@@ -724,7 +730,7 @@ class AISegmentationPlugin:
     def _activate_segmentation_tool(self):
         self.iface.mapCanvas().setMapTool(self.map_tool)
         self.dock_widget.set_segmentation_active(True)
-        self.dock_widget.set_status("Click on the map to segment")
+        self.dock_widget.set_status("Click on image to select objects")
 
     def _on_save_polygon(self):
         """Save current polygon from mask."""
@@ -763,7 +769,7 @@ class AISegmentationPlugin:
             )
 
             self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
-            self.dock_widget.set_status(f"Polygon saved ({len(self.saved_polygons)} total) - click for next object")
+            self.dock_widget.set_status("Polygon added - click for next object")
 
         # Clear current state for next polygon
         self.prompts.clear()
@@ -896,11 +902,11 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
 
-        # Set renderer
+        # Set renderer - red thin outline, transparent fill
         symbol = QgsFillSymbol.createSimple({
-            'color': '50,150,255,100',
-            'outline_color': '0,100,200,255',
-            'outline_width': '1.5'
+            'color': '0,0,0,0',
+            'outline_color': '220,0,0,255',
+            'outline_width': '0.5'
         })
         renderer = QgsSingleSymbolRenderer(symbol)
         result_layer.setRenderer(renderer)
@@ -920,6 +926,13 @@ class AISegmentationPlugin:
     def _on_tool_deactivated(self):
         if self.dock_widget:
             self.dock_widget.set_segmentation_active(False)
+
+    def _on_stop_segmentation(self):
+        """Exit segmentation mode without saving."""
+        self.iface.mapCanvas().unsetMapTool(self.map_tool)
+        self._reset_session()
+        self.dock_widget.reset_session()
+        self.dock_widget.set_status("Segmentation stopped")
 
     def _on_positive_click(self, point):
         """Handle left-click: add positive point (include this area)."""
@@ -1057,7 +1070,7 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Info
             )
-            self.dock_widget.set_status(f"Segmented - Score: {self.current_score:.2f}")
+            self.dock_widget.set_status("Segmented - click to refine or S to save")
             self._update_mask_visualization()
         else:
             self.dock_widget.set_status("No mask generated - try clicking elsewhere")

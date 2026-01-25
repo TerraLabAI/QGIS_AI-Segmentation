@@ -29,6 +29,7 @@ class AISegmentationDockWidget(QDockWidget):
     undo_requested = pyqtSignal()
     save_polygon_requested = pyqtSignal()
     export_layer_requested = pyqtSignal()
+    stop_segmentation_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__("AI Segmentation by TerraLab", parent)
@@ -138,16 +139,21 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.layer_combo = QgsMapLayerComboBox()
         self.layer_combo.setFilters(QgsMapLayerProxyModel.RasterLayer)
+        self.layer_combo.setExcludedProviders(['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs'])
         self.layer_combo.setAllowEmptyLayer(True)
         self.layer_combo.setShowCrs(True)
         self.layer_combo.layerChanged.connect(self._on_layer_changed)
         self.layer_combo.setToolTip("Select a file-based raster layer (GeoTIFF, etc.)")
         layout.addWidget(self.layer_combo)
 
-        note_label = QLabel("Note: Only file-based rasters supported (no web layers)")
-        note_label.setStyleSheet("color: #666; font-size: 10px; font-style: italic;")
-        note_label.setWordWrap(True)
-        layout.addWidget(note_label)
+        self.no_rasters_label = QLabel("No file-based raster layers found. Add a GeoTIFF or local raster to your project.")
+        self.no_rasters_label.setStyleSheet(
+            "background-color: #fff3cd; color: #856404; padding: 8px; "
+            "border-radius: 4px; font-size: 11px;"
+        )
+        self.no_rasters_label.setWordWrap(True)
+        self.no_rasters_label.setVisible(False)
+        layout.addWidget(self.no_rasters_label)
 
         self.active_instructions_label = QLabel(
             "CLICK TO SEGMENT\n\n"
@@ -192,28 +198,56 @@ class AISegmentationDockWidget(QDockWidget):
         )
         layout.addWidget(self.start_button)
 
-        self.undo_button = QPushButton("Undo Last Point")
-        self.undo_button.setEnabled(False)
-        self.undo_button.clicked.connect(self._on_undo_clicked)
-        self.undo_button.setVisible(False)
-        self.undo_button.setToolTip("Remove the last point added (Ctrl+Z)")
-        layout.addWidget(self.undo_button)
-
-        self.save_polygon_button = QPushButton("Save Polygon (S)")
+        # Primary action buttons (large)
+        self.save_polygon_button = QPushButton("Add Polygon")
         self.save_polygon_button.clicked.connect(self._on_save_polygon_clicked)
         self.save_polygon_button.setVisible(False)
         self.save_polygon_button.setEnabled(False)
-        self.save_polygon_button.setStyleSheet("background-color: #1976d2; color: white;")
-        self.save_polygon_button.setToolTip("Save current polygon and start a new one (S)")
+        self.save_polygon_button.setMinimumHeight(36)
+        self.save_polygon_button.setStyleSheet(
+            "QPushButton { background-color: #1976d2; color: white; font-weight: bold; }"
+            "QPushButton:disabled { background-color: #90caf9; color: #ccc; }"
+        )
+        self.save_polygon_button.setToolTip("Add current polygon to collection (S or Enter)")
         layout.addWidget(self.save_polygon_button)
 
-        self.export_button = QPushButton("Export to Layer")
+        self.export_button = QPushButton("Save as Layer")
         self.export_button.clicked.connect(self._on_export_clicked)
         self.export_button.setVisible(False)
         self.export_button.setEnabled(False)
-        self.export_button.setStyleSheet("background-color: #388e3c; color: white;")
-        self.export_button.setToolTip("Export all saved polygons as a new layer")
+        self.export_button.setMinimumHeight(36)
+        self.export_button.setStyleSheet(
+            "QPushButton { background-color: #9e9e9e; color: #666; }"
+        )
+        self.export_button.setToolTip("Add polygons first, then save as layer")
         layout.addWidget(self.export_button)
+
+        # Secondary action buttons (small, horizontal)
+        secondary_layout = QHBoxLayout()
+        secondary_layout.setSpacing(8)
+
+        self.undo_button = QPushButton("Undo")
+        self.undo_button.setEnabled(False)
+        self.undo_button.clicked.connect(self._on_undo_clicked)
+        self.undo_button.setVisible(False)
+        self.undo_button.setMaximumHeight(28)
+        self.undo_button.setToolTip("Remove last point (Ctrl+Z)")
+        secondary_layout.addWidget(self.undo_button)
+
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.clicked.connect(self._on_stop_clicked)
+        self.stop_button.setVisible(False)
+        self.stop_button.setMaximumHeight(28)
+        self.stop_button.setStyleSheet(
+            "QPushButton { background-color: #757575; color: white; }"
+        )
+        self.stop_button.setToolTip("Exit segmentation without saving (Escape)")
+        secondary_layout.addWidget(self.stop_button)
+
+        self.secondary_buttons_widget = QWidget()
+        self.secondary_buttons_widget.setLayout(secondary_layout)
+        self.secondary_buttons_widget.setVisible(False)
+        layout.addWidget(self.secondary_buttons_widget)
 
         self.main_layout.addWidget(seg_widget)
 
@@ -270,6 +304,9 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _on_export_clicked(self):
         self.export_layer_requested.emit()
+
+    def _on_stop_clicked(self):
+        self.stop_segmentation_requested.emit()
 
     def set_dependency_status(self, ok: bool, message: str):
         self._dependencies_ok = ok
@@ -367,17 +404,35 @@ class AISegmentationDockWidget(QDockWidget):
         if self._segmentation_active:
             self.start_button.setVisible(False)
             self.active_instructions_label.setVisible(True)
-            self.undo_button.setVisible(True)
             self.save_polygon_button.setVisible(True)
             self.save_polygon_button.setEnabled(self._has_mask)
             self.export_button.setVisible(True)
-            self.export_button.setEnabled(self._saved_polygon_count > 0 or self._has_mask)
+            self._update_export_button_style()
+            self.undo_button.setVisible(True)
+            self.stop_button.setVisible(True)
+            self.secondary_buttons_widget.setVisible(True)
         else:
             self.start_button.setVisible(True)
             self.active_instructions_label.setVisible(False)
-            self.undo_button.setVisible(False)
             self.save_polygon_button.setVisible(False)
             self.export_button.setVisible(False)
+            self.undo_button.setVisible(False)
+            self.stop_button.setVisible(False)
+            self.secondary_buttons_widget.setVisible(False)
+
+    def _update_export_button_style(self):
+        if self._saved_polygon_count > 0:
+            self.export_button.setEnabled(True)
+            self.export_button.setStyleSheet(
+                "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; }"
+            )
+            self.export_button.setToolTip(f"Save {self._saved_polygon_count} polygon(s) as a new layer")
+        else:
+            self.export_button.setEnabled(False)
+            self.export_button.setStyleSheet(
+                "QPushButton { background-color: #9e9e9e; color: #666; }"
+            )
+            self.export_button.setToolTip("Add polygons first, then save as layer")
 
     def set_point_count(self, positive: int, negative: int):
         total = positive + negative
@@ -388,7 +443,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.save_polygon_button.setEnabled(has_points)
 
         if has_points:
-            self.status_label.setText(f"Points: {positive} + / {negative} -")
+            self.status_label.setText(f"{positive} include, {negative} exclude")
 
     def set_status(self, message: str):
         self.status_label.setText(message)
@@ -403,27 +458,19 @@ class AISegmentationDockWidget(QDockWidget):
     def set_saved_polygon_count(self, count: int):
         self._saved_polygon_count = count
         self._update_button_visibility()
-        if count > 0:
-            self.export_button.setText(f"Export to Layer ({count})")
-        else:
-            self.export_button.setText("Export to Layer")
+        self._update_export_button_style()
 
     def _update_ui_state(self):
         layer = self.layer_combo.currentLayer()
         has_layer = layer is not None
 
-        is_file_based = False
-        if has_layer:
-            source = layer.source()
-            is_file_based = not any(x in source.lower() for x in ['http://', 'https://', 'wms', 'xyz', 'url='])
+        # Check if there are any rasters available (count > 1 accounts for empty layer option)
+        has_rasters_available = self.layer_combo.count() > 1
+        self.no_rasters_label.setVisible(not has_rasters_available and not self._segmentation_active)
 
         can_start = (
             self._dependencies_ok and
             self._checkpoint_ok and
-            has_layer and
-            is_file_based
+            has_layer
         )
         self.start_button.setEnabled(can_start or self._segmentation_active)
-
-        if has_layer and not is_file_based and not self._segmentation_active:
-            self.set_status("Web layers not supported - select a file-based raster")
