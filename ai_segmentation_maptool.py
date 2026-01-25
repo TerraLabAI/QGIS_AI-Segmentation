@@ -107,6 +107,16 @@ class AISegmentationMapTool(QgsMapTool):
     def canvasReleaseEvent(self, event):
         pass
 
+    def wheelEvent(self, event):
+        # Let the canvas handle wheel events for zoom
+        # By not accepting the event, it propagates to the canvas
+        event.ignore()
+
+    def gestureEvent(self, event):
+        # Let the canvas handle pinch-to-zoom and other gestures
+        # This is essential for trackpad gestures on macOS
+        event.ignore()
+
     def keyPressEvent(self, event):
         key = event.key()
         modifiers = event.modifiers()

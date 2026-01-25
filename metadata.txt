@@ -4,7 +4,7 @@ qgisMinimumVersion=3.28
 description=Segment anything in your raster using Meta's SAM AI.
 version=1.0.0
 author=TerraLab
-email=barbot.yvann@terralab.com
+email=barbot.yvann@terra-lab.ai
 
 about=Segment any object in satellite imagery or rasters with simple clicks.
 
@@ -30,11 +30,3 @@ icon=resources/icons/icon.png
 
 experimental=True
 deprecated=False
-
-changelog=
-    1.0.0 - Initial release
-        - Interactive point-based segmentation
-        - SAM ViT-B model support
-        - Automatic virtual environment setup
-        - CPU, CUDA, and MPS support
-        - Vector layer export
