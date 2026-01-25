@@ -68,24 +68,124 @@ def safe_rmtree(path: Path, max_retries: int = 3, delay: float = 0.5):
                 raise
 
 
-def install_copy(source: Path, dest: Path):
-    """Install by copying files."""
-    if dest.exists():
-        print(f"Removing existing installation: {dest}")
-        safe_rmtree(dest)
+def get_preserved_directories(dest: Path) -> list:
+    """Get list of directories to preserve (dependencies, cache, etc.)."""
+    preserved = []
+    if not dest.exists():
+        return preserved
     
-    print(f"Copying plugin to: {dest}")
-    shutil.copytree(source, dest)
+    # Preserve virtual environment directories (venv_py3.10, venv_py3.11, etc.)
+    for item in dest.iterdir():
+        if item.is_dir() and item.name.startswith("venv_py"):
+            preserved.append(item)
+        # Preserve old libs/ directory if it exists
+        elif item.is_dir() and item.name == "libs":
+            preserved.append(item)
+    
+    return preserved
+
+
+def remove_plugin_files_only(dest: Path, preserved_dirs: list):
+    """Remove plugin files but preserve dependency directories."""
+    preserved_names = {d.name for d in preserved_dirs}
+    
+    # On Windows, remove read-only attributes first
+    def handle_remove_readonly(func, path, exc):
+        """Handle read-only files on Windows."""
+        os.chmod(path, 0o777)
+        func(path)
+    
+    for item in dest.iterdir():
+        if item.name not in preserved_names:
+            try:
+                if item.is_symlink():
+                    item.unlink()
+                elif item.is_dir():
+                    if platform.system() == "Windows":
+                        shutil.rmtree(item, onerror=handle_remove_readonly)
+                    else:
+                        shutil.rmtree(item)
+                else:
+                    item.unlink()
+            except (OSError, PermissionError) as e:
+                print(f"  Warning: Could not remove {item.name}: {e}")
+                print("  This file may be locked by QGIS. Close QGIS and try again.")
+
+
+def install_copy(source: Path, dest: Path):
+    """Install by copying files, preserving dependencies."""
+    preserved_dirs = []
+    
+    if dest.exists():
+        print(f"Updating existing installation: {dest}")
+        # Get directories to preserve (venv, libs, etc.)
+        preserved_dirs = get_preserved_directories(dest)
+        
+        if preserved_dirs:
+            print(f"Preserving dependencies: {', '.join(d.name for d in preserved_dirs)}")
+            # Remove only plugin files, not dependencies
+            remove_plugin_files_only(dest, preserved_dirs)
+        else:
+            # No dependencies to preserve, remove everything
+            print(f"Removing existing installation: {dest}")
+            safe_rmtree(dest)
+    
+    # Copy plugin files
+    print(f"Copying plugin files to: {dest}")
+    
+    # Create dest if it doesn't exist
+    dest.mkdir(parents=True, exist_ok=True)
+    
+    # Copy files from source, excluding preserved directories
+    preserved_names = {d.name for d in preserved_dirs}
+    
+    for item in source.iterdir():
+        # Skip preserved directories (they already exist in dest)
+        if item.name in preserved_names:
+            print(f"  Skipping preserved directory: {item.name}")
+            continue
+        
+        dest_item = dest / item.name
+        
+        if item.is_dir():
+            if dest_item.exists():
+                # Remove existing directory before copying
+                if platform.system() == "Windows":
+                    def handle_remove_readonly(func, path, exc):
+                        os.chmod(path, 0o777)
+                        func(path)
+                    shutil.rmtree(dest_item, onerror=handle_remove_readonly)
+                else:
+                    shutil.rmtree(dest_item)
+            shutil.copytree(item, dest_item)
+        else:
+            shutil.copy2(item, dest_item)
+    
     print("Done! Restart QGIS and enable the plugin.")
 
 
 def install_symlink(source: Path, dest: Path):
-    """Install by creating symlink (development mode)."""
+    """Install by creating symlink (development mode).
+    
+    Note: Symlinks replace the entire directory, so dependencies cannot be preserved.
+    You'll need to reinstall dependencies after switching to symlink mode.
+    """
     if dest.exists():
         if dest.is_symlink():
             print(f"Removing existing symlink: {dest}")
             dest.unlink()
         else:
+            # Check for dependencies and warn
+            preserved_dirs = get_preserved_directories(dest)
+            if preserved_dirs:
+                print(f"Warning: Found dependencies: {', '.join(d.name for d in preserved_dirs)}")
+                print("Symlink mode cannot preserve dependencies (symlinks replace the entire directory).")
+                print("Dependencies will need to be reinstalled after creating the symlink.")
+                response = input("Continue anyway? (y/N): ").strip().lower()
+                if response != 'y':
+                    print("Cancelled.")
+                    sys.exit(0)
+            
             print(f"Removing existing installation: {dest}")
             safe_rmtree(dest)
     
@@ -106,6 +206,7 @@ def install_symlink(source: Path, dest: Path):
     
     print("Done! Restart QGIS and enable the plugin.")
     print("Changes to plugin code will be reflected immediately (restart QGIS to reload).")
+    print("Note: You may need to reinstall dependencies in QGIS.")
 
 
 def remove_plugin(dest: Path):
