@@ -833,9 +833,31 @@ class AISegmentationPlugin:
         else:
             crs = self._current_layer.crs() if self._current_layer else QgsCoordinateReferenceSystem('EPSG:4326')
 
-        # NEW LOGIC: Create layer, add to project, then edit
-        result_layer = QgsVectorLayer("MultiPolygon", layer_name, "memory")
-        if not result_layer.isValid():
+        # Determine output directory for GeoPackage file
+        # Priority: 1) Project directory (if project is saved), 2) Raster source directory
+        output_dir = None
+        project_path = QgsProject.instance().absolutePath()
+        if project_path:
+            output_dir = project_path
+        elif self._current_layer:
+            raster_source = self._current_layer.source()
+            if raster_source and os.path.exists(raster_source):
+                output_dir = os.path.dirname(raster_source)
+
+        if not output_dir:
+            # Fallback to user's home directory
+            output_dir = str(Path.home())
+
+        # Create unique GeoPackage filename
+        gpkg_path = os.path.join(output_dir, f"{layer_name}.gpkg")
+        counter = 1
+        while os.path.exists(gpkg_path):
+            gpkg_path = os.path.join(output_dir, f"{layer_name}_{counter}.gpkg")
+            counter += 1
+
+        # Create a temporary memory layer to build features
+        temp_layer = QgsVectorLayer("MultiPolygon", layer_name, "memory")
+        if not temp_layer.isValid():
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 "Layer Creation Failed",
@@ -843,27 +865,22 @@ class AISegmentationPlugin:
             )
             return
 
-        result_layer.setCrs(crs)
-        
+        temp_layer.setCrs(crs)
+
         # Add attributes
-        pr = result_layer.dataProvider()
+        pr = temp_layer.dataProvider()
         pr.addAttributes([
             QgsField("id", QVariant.Int),
             QgsField("score", QVariant.Double),
             QgsField("area", QVariant.Double)
         ])
-        result_layer.updateFields()
+        temp_layer.updateFields()
 
-        # Add to project BEFORE adding features
-        QgsProject.instance().addMapLayer(result_layer)
-
-        # Start editing
-        result_layer.startEditing()
-        
-        success_count = 0
+        # Add features to temp layer
+        features_to_add = []
         for i, polygon_data in enumerate(polygons_to_export):
-            feature = QgsFeature(result_layer.fields())
-            
+            feature = QgsFeature(temp_layer.fields())
+
             # Reconstruct geometry from WKT
             geom_wkt = polygon_data.get('geometry_wkt')
             if not geom_wkt:
@@ -873,30 +890,71 @@ class AISegmentationPlugin:
                     level=Qgis.Warning
                 )
                 continue
-                
+
             geom = QgsGeometry.fromWkt(geom_wkt)
-            
+
             if geom and not geom.isEmpty():
                 # Ensure geometry is MultiPolygon
                 if not geom.isMultipart():
                     geom.convertToMultiType()
-                
+
                 feature.setGeometry(geom)
                 area = geom.area()
                 feature.setAttributes([i + 1, polygon_data['score'], area])
-                
-                if result_layer.addFeature(feature):
-                    success_count += 1
-                else:
-                     QgsMessageLog.logMessage(
-                        f"Failed to add feature {i+1}",
-                        "AI Segmentation",
-                        level=Qgis.Warning
-                    )
+                features_to_add.append(feature)
 
-        result_layer.commitChanges()
-        result_layer.updateExtents()
-        
+        if not features_to_add:
+            self.dock_widget.set_status("No valid polygons to export")
+            return
+
+        pr.addFeatures(features_to_add)
+        temp_layer.updateExtents()
+
+        # Save to GeoPackage file
+        from qgis.core import QgsVectorFileWriter
+
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.driverName = "GPKG"
+        options.fileEncoding = "UTF-8"
+
+        error = QgsVectorFileWriter.writeAsVectorFormatV3(
+            temp_layer,
+            gpkg_path,
+            QgsProject.instance().transformContext(),
+            options
+        )
+
+        if error[0] != QgsVectorFileWriter.NoError:
+            QgsMessageLog.logMessage(
+                f"Failed to save GeoPackage: {error[1]}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                "Export Failed",
+                f"Could not save layer to file:\n{error[1]}"
+            )
+            return
+
+        # Load the saved GeoPackage as a permanent layer
+        result_layer = QgsVectorLayer(gpkg_path, layer_name, "ogr")
+        if not result_layer.isValid():
+            QgsMessageLog.logMessage(
+                f"Failed to load saved GeoPackage: {gpkg_path}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                "Load Failed",
+                f"Layer was saved but could not be loaded:\n{gpkg_path}"
+            )
+            return
+
+        # Add to project
+        QgsProject.instance().addMapLayer(result_layer)
+
         # Log the layer extent for debugging
         layer_extent = result_layer.extent()
         QgsMessageLog.logMessage(
@@ -907,6 +965,11 @@ class AISegmentationPlugin:
         )
         QgsMessageLog.logMessage(
             f"Layer CRS: {result_layer.crs().authid()}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        QgsMessageLog.logMessage(
+            f"Saved to: {gpkg_path}",
             "AI Segmentation",
             level=Qgis.Info
         )
@@ -923,7 +986,7 @@ class AISegmentationPlugin:
         self.iface.mapCanvas().refresh()
 
         QgsMessageLog.logMessage(
-            f"Created segmentation layer: {layer_name} with {success_count} polygons",
+            f"Created segmentation layer: {layer_name} with {len(features_to_add)} polygons",
             "AI Segmentation",
             level=Qgis.Info
         )
