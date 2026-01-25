@@ -1,7 +1,7 @@
 # AI Segmentation for QGIS
 
 <div align="center">
-  <img src="resources/icons/ai_segmentation_icon.png" alt="AI Segmentation Logo" width="150"/>
+  <img src="resources/icons/logo.png" alt="AI Segmentation Logo" width="150"/>
   <br>
 </div>
 
