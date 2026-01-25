@@ -140,7 +140,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout.setContentsMargins(0, 8, 0, 0)
 
         layer_label = QLabel("Select a Raster Layer to Segment")
-        layer_label.setStyleSheet("font-size: 11px; font-weight: bold; color: #333;")
+        layer_label.setStyleSheet("font-weight: bold;")
         layout.addWidget(layer_label)
 
         self.layer_combo = QgsMapLayerComboBox()
