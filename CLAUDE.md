@@ -28,6 +28,7 @@ QGIS_AI-Segmentation/
 ├── ai_segmentation_dockwidget.py  # UI panel
 ├── ai_segmentation_maptool.py     # Map click handler
 ├── core/
+│   ├── python_manager.py          # Python standalone download/management
 │   ├── venv_manager.py            # Virtual environment management
 │   ├── checkpoint_manager.py      # SAM model download
 │   ├── sam_predictor.py           # Prediction subprocess interface
@@ -39,6 +40,7 @@ QGIS_AI-Segmentation/
 ├── workers/
 │   ├── encoding_worker.py         # Subprocess: raster encoding
 │   └── prediction_worker.py       # Subprocess: SAM prediction
+├── python_standalone/             # Auto-downloaded Python interpreter
 ├── venv_py3.XX/                   # Auto-created virtual environment
 └── resources/icons/
 ```
@@ -74,16 +76,24 @@ The plugin uses a **hybrid architecture** to ensure stability across all QGIS ve
 - QGIS's embedded Python has limited/broken subprocess capabilities on some platforms
 - Subprocess architecture isolates heavy ML workloads completely
 
-### Platform-Specific Python Discovery
+### Python Standalone (Automatic Download)
 
-| Platform | Python Source | Notes |
-|----------|---------------|-------|
-| **macOS** | Homebrew Python 3.12 | `/opt/homebrew/bin/python3.12` or `/usr/local/bin/python3.12` |
-| **Windows** | OSGeo4W or System Python | Searches OSGeo4W, Program Files, user installs |
-| **Linux** | System Python | Uses `sys.executable` |
+The plugin automatically downloads a standalone Python interpreter that matches the QGIS Python version. This ensures 100% compatibility across all platforms.
 
-**Why external Python on macOS?**
-QGIS 3.40+ on macOS (vcpkg build) has a broken embedded Python that cannot be executed via subprocess. Homebrew Python is required.
+| Component | Source | Size |
+|-----------|--------|------|
+| **Python Standalone** | [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone) | ~50 MB |
+
+**How it works:**
+1. Plugin detects QGIS Python version (e.g., 3.12)
+2. Downloads matching Python standalone for the platform
+3. Creates venv using the standalone Python
+4. All packages are guaranteed compatible with QGIS
+
+**Why not use system Python?**
+- QGIS's embedded Python cannot be used for subprocesses on macOS (vcpkg build limitation)
+- System Python versions vary and may not match QGIS
+- Standalone approach ensures consistent behavior across all machines
 
 ## Dependency Management
 
@@ -133,8 +143,9 @@ import torch         # Now accessible
 ```
 1. Install plugin → Enable in QGIS
 2. Open panel → "Install Dependencies" button shown
-   → Creates venv with Homebrew/System Python
-   → Installs packages (~2.5GB total)
+   → Downloads Python standalone (~50MB, ~30 sec)
+   → Creates virtual environment (~5 sec)
+   → Installs packages (~2.5GB, ~5-10 min)
    → Progress bar shows status
 3. "Download SAM Model" button shown
    → Downloads checkpoint (~375MB)
@@ -168,7 +179,8 @@ import torch         # Now accessible
 
 | File | Purpose |
 |------|---------|
-| `venv_manager.py` | Venv creation, Python discovery, package installation |
+| `python_manager.py` | Downloads/manages Python standalone interpreter |
+| `venv_manager.py` | Venv creation, package installation |
 | `feature_encoder.py` | Spawns encoding subprocess, handles progress |
 | `sam_predictor.py` | Spawns prediction subprocess, JSON communication |
 | `feature_dataset.py` | Loads cached features, spatial indexing |
@@ -177,15 +189,16 @@ import torch         # Now accessible
 ### Debugging
 
 ```python
+# Check Python standalone status
+from .core.python_manager import standalone_python_exists, get_standalone_python_path
+print(f"Standalone exists: {standalone_python_exists()}")
+print(f"Standalone path: {get_standalone_python_path()}")
+
 # Check venv status
 from .core.venv_manager import venv_exists, get_venv_dir, verify_venv
 print(f"Venv exists: {venv_exists()}")
 print(f"Venv path: {get_venv_dir()}")
 print(verify_venv())
-
-# Check Python discovery
-from .core.venv_manager import _get_system_python
-print(f"System Python: {_get_system_python()}")
 ```
 
 ## Code Style
@@ -201,7 +214,7 @@ print(f"System Python: {_get_system_python()}")
 
 - [x] Subprocess isolation for PyTorch
 - [x] Virtual environment management
-- [x] Cross-platform Python discovery (macOS Homebrew, Windows OSGeo4W)
+- [x] Python standalone auto-download (no system Python required)
 - [x] Mask preview with RubberBand
 - [x] Ctrl+Z undo support
 - [x] Hardware detection (CPU/CUDA/MPS)

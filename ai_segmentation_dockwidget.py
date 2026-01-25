@@ -31,7 +31,7 @@ class AISegmentationDockWidget(QDockWidget):
     export_layer_requested = pyqtSignal()
 
     def __init__(self, parent=None):
-        super().__init__("AI Segmentation by Terralab", parent)
+        super().__init__("AI Segmentation by TerraLab", parent)
 
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
