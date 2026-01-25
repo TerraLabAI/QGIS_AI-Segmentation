@@ -1,50 +1,30 @@
 [general]
 name=AI Segmentation
 qgisMinimumVersion=3.28
-description=Click-to-segment any object in your raster using Meta's SAM AI model. Free & open source.
-version=0.1.0-beta.1
+description=Segment anything in your raster using Meta's SAM AI.
+version=1.0.0
 author=TerraLab
+email=barbot.yvann@terralab.com
 
-about=AI Segmentation brings state-of-the-art AI to QGIS. Powered by Meta's Segment Anything Model (SAM), it lets you segment any object in satellite imagery, orthophotos, or raster datasets with a simple click.
+about=Segment any object in satellite imagery or rasters with simple clicks.
 
-    FEATURES
+    FEATURES:
+    - Automatic Python dependencies setup
+    - AI models management (SAM)
+    - Interactive segmentation interface
+    - Vector layer export
 
-    - One-Click Segmentation: Left-click to include, right-click to exclude
-    - Auto Setup: Creates isolated Python environment with all dependencies
-    - Hardware Optimized: Runs on CPU, NVIDIA GPU (CUDA), or Apple Silicon (MPS)
-    - Vector Export: Save segmentations as polygon layers
-    - Cached Encoding: Fast subsequent sessions on same raster
+    Issues? Click "Bug Tracker" or contact the author.
+    Stay updated: https://www.terra-lab.ai/
 
-    HOW TO USE
-
-    1. Install Dependencies (first time only, ~2.5 GB)
-    2. Download SAM Model (~375 MB)
-    3. Select a raster layer
-    4. Click "Start AI Segmentation"
-    5. Click on objects to segment them
-    6. Press S to save, then Export to Layer
-
-    ABOUT TERRALAB
-
-    We deploy AI to GIS workflows.
-    Website: https://terra-lab.ai
-
-    CREATED BY
-
-    Yvann Barbot - https://linkedin.com/in/yvann-barbot
-    Lilien Auger - https://linkedin.com/in/lilien-auger
-    Stephane Barbot - https://linkedin.com/in/stephane-barbot
-
-    This plugin is free and open source. Star us on GitHub!
-
-tracker=https://github.com/yvmusic/QGIS_AI-Segmentation/issues
-repository=https://github.com/yvmusic/QGIS_AI-Segmentation
+tracker=https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues
+repository=https://github.com/TerraLabAI/QGIS_AI-Segmentation
 
 hasProcessingProvider=no
 
 tags=segmentation, AI, machine learning, SAM, deep learning, remote sensing, satellite, raster, segment anything, TerraLab
 
-homepage=https://terra-lab.ai
+homepage=https://www.terra-lab.ai/
 category=Raster
 icon=resources/icons/icon.png
 
@@ -52,7 +32,7 @@ experimental=True
 deprecated=False
 
 changelog=
-    0.1.0-beta.1 - First beta release
+    1.0.0 - Initial release
         - Interactive point-based segmentation
         - SAM ViT-B model support
         - Automatic virtual environment setup
