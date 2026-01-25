@@ -93,14 +93,19 @@ Generally works with sys.executable, but may have permission issues
 or missing packages in system Python.
 ```
 
-### Our Solution: External Python + Virtual Environment
+### Our Solution: Python Standalone + Virtual Environment
 
 Instead of fighting QGIS's Python limitations, we:
 
-1. **Detect a working Python** on the user's system
-2. **Create an isolated virtual environment** in the plugin directory
+1. **Download a standalone Python** matching the QGIS version (~50MB)
+   - Source: [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+   - Automatically downloaded on first "Install Dependencies" click
+   - No system Python required
+2. **Create an isolated virtual environment** using the standalone Python
 3. **Run heavy workloads in subprocesses** using the venv Python
 4. **Inject venv packages into QGIS's sys.path** for lightweight operations
+
+This approach ensures 100% compatibility across all platforms and QGIS versions.
 
 ---
 

@@ -1,35 +1,52 @@
 [general]
 name=AI Segmentation
 qgisMinimumVersion=3.28
-description=Advanced AI-powered segmentation for QGIS using Meta's Segment Anything Model (SAM).
+description=Click-to-segment any object in your raster using Meta's SAM AI model. Free & open source.
 version=1.0.0
 author=TerraLab
 
-about=This plugin brings state-of-the-art AI segmentation to QGIS using Meta's Segment Anything Model (SAM). It allows you to segment objects in satellite imagery and rasters with just a click.
+about=AI Segmentation brings state-of-the-art AI to QGIS. Powered by Meta's Segment Anything Model (SAM), it lets you segment any object in satellite imagery, orthophotos, or raster datasets with a simple click.
 
-    Key Features:
-    
-    - Package Management: Automatically sets up a dedicated Python environment with all required deep learning libraries (approx. 2 GB).
-    - AI Model Management: Installs SAM models and ONNX runtimes optimized for both CPU and GPU.
-    - Image Encoding: Efficiently processes raster images into .tiff format for real-time model interaction.
-    - Interactive Editor: Point-and-click tool to segment objects instantly on your map.
-    - Export Options: Save calculations and export segmentations directly to your layers.
-    
-    The plugin is actively maintained and will receive updates with new models and features.
-    
-    Support:
-    We invite you to click the link to stay updated. If you encounter bugs or have questions, please open a GitHub Issue or contact us.
+    FEATURES
 
-tracker=https://github.com/QGIS_AI-Segmentation/issues
-repository=https://github.com/QGIS_AI-Segmentation
+    - One-Click Segmentation: Left-click to include, right-click to exclude
+    - Auto Setup: Creates isolated Python environment with all dependencies
+    - Hardware Optimized: Runs on CPU, NVIDIA GPU (CUDA), or Apple Silicon (MPS)
+    - Vector Export: Save segmentations as polygon layers
+    - Cached Encoding: Fast subsequent sessions on same raster
+
+    HOW TO USE
+
+    1. Install Dependencies (first time only, ~2.5 GB)
+    2. Download SAM Model (~375 MB)
+    3. Select a raster layer
+    4. Click "Start AI Segmentation"
+    5. Click on objects to segment them
+    6. Press S to save, then Export to Layer
+
+    ABOUT TERRALAB
+
+    We deploy AI to GIS workflows.
+    Website: https://terra-lab.ai
+
+    CREATED BY
+
+    Yvann Barbot - https://linkedin.com/in/yvann-barbot
+    Lilien Auger - https://linkedin.com/in/lilien-auger
+    Stephane Barbot - https://linkedin.com/in/stephane-barbot
+
+    This plugin is free and open source. Star us on GitHub!
+
+tracker=https://github.com/yvmusic/QGIS_AI-Segmentation/issues
+repository=https://github.com/yvmusic/QGIS_AI-Segmentation
 
 hasProcessingProvider=no
 
-tags=segmentation, AI, machine learning, SAM, deep learning, remote sensing, satellite, raster
+tags=segmentation, AI, machine learning, SAM, deep learning, remote sensing, satellite, raster, segment anything, TerraLab
 
-homepage=https://github.com/QGIS_AI-Segmentation
+homepage=https://terra-lab.ai
 category=Raster
-icon=resources/icons/ai_segmentation_icon.png
+icon=resources/icons/icon.png
 
 experimental=True
 deprecated=False
@@ -38,5 +55,6 @@ changelog=
     1.0.0 - Initial release
         - Interactive point-based segmentation
         - SAM ViT-B model support
-        - GeoPackage export
-        - Cross-platform CPU inference
+        - Automatic virtual environment setup
+        - CPU, CUDA, and MPS support
+        - Vector layer export
