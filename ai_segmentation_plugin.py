@@ -206,6 +206,10 @@ class AISegmentationPlugin:
         self.current_score = 0.0
         self.current_transform_info = None
         self.saved_polygons = []
+        
+        # Accumulated geometry for union/subtract operations
+        self.accumulated_geometry: Optional[QgsGeometry] = None
+        self._current_click_mode = "new"  # Track current mode for undo
 
         self._initialized = False
         self._current_layer = None
@@ -255,8 +259,7 @@ class AISegmentationPlugin:
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
 
         self.map_tool = AISegmentationMapTool(self.iface.mapCanvas())
-        self.map_tool.positive_click.connect(self._on_positive_click)
-        self.map_tool.negative_click.connect(self._on_negative_click)
+        self.map_tool.segmentation_click.connect(self._on_segmentation_click)
         self.map_tool.tool_deactivated.connect(self._on_tool_deactivated)
         self.map_tool.undo_requested.connect(self._on_undo)
         self.map_tool.save_polygon_requested.connect(self._on_save_polygon)
@@ -721,44 +724,48 @@ class AISegmentationPlugin:
         self.dock_widget.set_status("Click on the map to segment")
 
     def _on_save_polygon(self):
-        if self.current_mask is None:
+        """Save current polygon (either from accumulated_geometry or current_mask)."""
+        # Try accumulated geometry first (new workflow), then fall back to mask
+        geometry_to_save = None
+        
+        if self.accumulated_geometry is not None and not self.accumulated_geometry.isEmpty():
+            geometry_to_save = QgsGeometry(self.accumulated_geometry)
+        elif self.current_mask is not None:
+            from .core.polygon_exporter import mask_to_polygons
+            geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
+            if geometries:
+                geometry_to_save = QgsGeometry.unaryUnion(geometries)
+        
+        if geometry_to_save is None or geometry_to_save.isEmpty():
             self.dock_widget.set_status("No polygon to save")
             return
 
-        from .core.polygon_exporter import mask_to_polygons
+        # Store as WKT string to prevent geometry invalidation
+        self.saved_polygons.append({
+            'geometry_wkt': geometry_to_save.asWkt(),
+            'score': self.current_score,
+            'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
+        })
 
-        geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
+        saved_rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
+        saved_rb.setColor(QColor(0, 200, 100, 120))
+        saved_rb.setFillColor(QColor(0, 200, 100, 80))
+        saved_rb.setWidth(2)
+        saved_rb.setToGeometry(geometry_to_save, None)
+        self.saved_rubber_bands.append(saved_rb)
 
-        if not geometries:
-            self.dock_widget.set_status("Could not generate polygon")
-            return
+        QgsMessageLog.logMessage(
+            f"Saved polygon #{len(self.saved_polygons)}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
-        combined = QgsGeometry.unaryUnion(geometries)
-        if combined and not combined.isEmpty():
-            # Store as WKT string to prevent geometry invalidation
-            self.saved_polygons.append({
-                'geometry_wkt': combined.asWkt(),
-                'score': self.current_score,
-                'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
-            })
+        self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
+        self.dock_widget.set_status(f"Polygon saved ({len(self.saved_polygons)} total) - click for next object")
 
-            saved_rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
-            saved_rb.setColor(QColor(0, 200, 100, 120))
-            saved_rb.setFillColor(QColor(0, 200, 100, 80))
-            saved_rb.setWidth(2)
-            saved_rb.setToGeometry(QgsGeometry(combined), None)
-            self.saved_rubber_bands.append(saved_rb)
-
-            QgsMessageLog.logMessage(
-                f"Saved polygon #{len(self.saved_polygons)}",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-
-            self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
-            self.dock_widget.set_status(f"Polygon saved ({len(self.saved_polygons)} total) - click for next object")
-
+        # Clear current state for next polygon
         self.prompts.clear()
+        self.accumulated_geometry = None
         if self.map_tool:
             self.map_tool.clear_markers()
         self._clear_mask_visualization()
@@ -771,17 +778,21 @@ class AISegmentationPlugin:
 
         polygons_to_export = list(self.saved_polygons)
 
-        if self.current_mask is not None:
+        # Include current unsaved polygon (accumulated_geometry or current_mask)
+        current_geom = None
+        if self.accumulated_geometry is not None and not self.accumulated_geometry.isEmpty():
+            current_geom = QgsGeometry(self.accumulated_geometry)
+        elif self.current_mask is not None:
             geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
             if geometries:
-                combined = QgsGeometry.unaryUnion(geometries)
-                if combined and not combined.isEmpty():
-                    # Store as WKT for unsaved current polygon
-                    polygons_to_export.append({
-                        'geometry_wkt': combined.asWkt(),
-                        'score': self.current_score,
-                        'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
-                    })
+                current_geom = QgsGeometry.unaryUnion(geometries)
+        
+        if current_geom is not None and not current_geom.isEmpty():
+            polygons_to_export.append({
+                'geometry_wkt': current_geom.asWkt(),
+                'score': self.current_score,
+                'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
+            })
 
         if not polygons_to_export:
             self.dock_widget.set_status("No polygons to export")
@@ -913,51 +924,264 @@ class AISegmentationPlugin:
         if self.dock_widget:
             self.dock_widget.set_segmentation_active(False)
 
-    def _on_positive_click(self, point):
+    def _on_segmentation_click(self, point, mode: str):
+        """Handle segmentation click with different modes.
+        
+        Args:
+            point: QgsPointXY click location
+            mode: 'new' (replace), 'add' (union), or 'subtract' (difference)
+        """
         if self.predictor is None or self.feature_dataset is None:
             self.dock_widget.set_status("Model not ready - please wait")
             return
 
-        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
-        raster_crs = self._current_layer.crs() if self._current_layer else None
-        feature_crs = self.feature_dataset.crs if self.feature_dataset else None
-
+        self._current_click_mode = mode
+        
         QgsMessageLog.logMessage(
-            f"LEFT-CLICK (POSITIVE) at ({point.x():.6f}, {point.y():.6f})",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-        QgsMessageLog.logMessage(
-            f"DEBUG CRS - Canvas: {canvas_crs.authid() if canvas_crs else 'None'}, "
-            f"Raster: {raster_crs.authid() if raster_crs else 'None'}, "
-            f"FeatureDataset: {feature_crs}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-        QgsMessageLog.logMessage(
-            f"DEBUG Bounds - FeatureDataset: {self.feature_dataset.bounds if self.feature_dataset else 'None'}",
+            f"CLICK ({mode.upper()}) at ({point.x():.6f}, {point.y():.6f})",
             "AI Segmentation",
             level=Qgis.Info
         )
 
-        self.prompts.add_positive_point(point.x(), point.y())
-        self._run_prediction()
+        if mode == "new":
+            # Clear previous state and start fresh
+            self.prompts.clear()
+            self.accumulated_geometry = None
+            if self.map_tool:
+                # Keep only the current marker
+                while self.map_tool.get_marker_count() > 1:
+                    self.map_tool.remove_last_marker()
+            self.prompts.add_positive_point(point.x(), point.y())
+            self._run_prediction_single_point(point.x(), point.y(), is_positive=True)
+        elif mode == "add":
+            # Union mode: add new area to existing
+            self.prompts.add_positive_point(point.x(), point.y())
+            self._run_prediction_and_combine(point.x(), point.y(), combine_mode="union")
+        elif mode == "subtract":
+            # Subtract mode: remove area from existing  
+            self.prompts.add_positive_point(point.x(), point.y())
+            self._run_prediction_and_combine(point.x(), point.y(), combine_mode="difference")
+        
+        self._update_status_for_mode(mode)
 
-    def _on_negative_click(self, point):
-        if self.predictor is None or self.feature_dataset is None:
-            self.dock_widget.set_status("Model not ready - please wait")
+    def _update_status_for_mode(self, mode: str):
+        """Update status bar based on click mode."""
+        if mode == "new":
+            self.dock_widget.set_status("New polygon - Ctrl+click to add, Shift+click to subtract")
+        elif mode == "add":
+            self.dock_widget.set_status("Added to polygon - continue or Right-click to undo")
+        elif mode == "subtract":
+            self.dock_widget.set_status("Subtracted from polygon - continue or Right-click to undo")
+
+    def _run_prediction_single_point(self, x: float, y: float, is_positive: bool = True):
+        """Run prediction for a single point (NEW mode)."""
+        import numpy as np
+        from rasterio.transform import from_bounds as transform_from_bounds
+        from .core.feature_dataset import FeatureSampler
+        from .core.polygon_exporter import mask_to_polygons
+
+        bounds = self.feature_dataset.bounds
+        roi = (x, x, y, y, bounds[4], bounds[5])
+
+        sampler = FeatureSampler(self.feature_dataset, roi)
+        if len(sampler) == 0:
+            self.dock_widget.set_status("Click outside feature area - try elsewhere")
             return
 
-        QgsMessageLog.logMessage(
-            f"RIGHT-CLICK (NEGATIVE) at ({point.x():.2f}, {point.y():.2f})",
-            "AI Segmentation",
-            level=Qgis.Info
+        for query in sampler:
+            sample = self.feature_dataset[query]
+            break
+
+        bbox = sample["bbox"]
+        features = sample["image"]
+
+        img_size = self.predictor.model.image_encoder.img_size
+        img_height = img_width = img_size
+        input_height = input_width = img_size
+
+        if "img_shape" in sample:
+            img_height = sample["img_shape"][0]
+            img_width = sample["img_shape"][1]
+            input_height = sample["input_shape"][0]
+            input_width = sample["input_shape"][1]
+
+        if hasattr(features, 'cpu'):
+            features_np = features.cpu().numpy()
+        else:
+            features_np = features.numpy() if hasattr(features, 'numpy') else features
+
+        self.predictor.set_image_feature(
+            img_features=features_np,
+            img_size=(img_height, img_width),
+            input_size=(input_height, input_width),
         )
 
-        self.prompts.add_negative_point(point.x(), point.y())
-        self._run_prediction()
+        minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
+        img_clip_transform = transform_from_bounds(minx, miny, maxx, maxy, img_width, img_height)
+
+        from rasterio import transform as rio_transform
+        row, col = rio_transform.rowcol(img_clip_transform, x, y)
+        point_coords = np.array([[col, row]])
+        point_labels = np.array([1 if is_positive else 0])
+
+        masks, scores, _ = self.predictor.predict(
+            point_coords=point_coords,
+            point_labels=point_labels,
+            multimask_output=False,
+        )
+
+        self.current_mask = masks[0]
+        self.current_score = float(scores[0])
+        
+        crs_value = self.feature_dataset.crs
+        if not crs_value or (isinstance(crs_value, str) and not crs_value.strip()):
+            if self._current_layer and self._current_layer.crs().isValid():
+                crs_value = self._current_layer.crs().authid()
+        
+        self.current_transform_info = {
+            "bbox": bbox,
+            "img_shape": (img_height, img_width),
+            "crs": crs_value,
+        }
+
+        # Convert mask to geometry and store as accumulated
+        geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
+        if geometries:
+            self.accumulated_geometry = QgsGeometry.unaryUnion(geometries)
+        else:
+            self.accumulated_geometry = None
+
+        self._update_ui_after_prediction()
+
+    def _run_prediction_and_combine(self, x: float, y: float, combine_mode: str = "union"):
+        """Run prediction and combine with accumulated geometry.
+        
+        Args:
+            x, y: Click coordinates
+            combine_mode: 'union' or 'difference'
+        """
+        import numpy as np
+        from rasterio.transform import from_bounds as transform_from_bounds
+        from .core.feature_dataset import FeatureSampler
+        from .core.polygon_exporter import mask_to_polygons
+
+        bounds = self.feature_dataset.bounds
+        roi = (x, x, y, y, bounds[4], bounds[5])
+
+        sampler = FeatureSampler(self.feature_dataset, roi)
+        if len(sampler) == 0:
+            self.dock_widget.set_status("Click outside feature area - try elsewhere")
+            return
+
+        for query in sampler:
+            sample = self.feature_dataset[query]
+            break
+
+        bbox = sample["bbox"]
+        features = sample["image"]
+
+        img_size = self.predictor.model.image_encoder.img_size
+        img_height = img_width = img_size
+        input_height = input_width = img_size
+
+        if "img_shape" in sample:
+            img_height = sample["img_shape"][0]
+            img_width = sample["img_shape"][1]
+            input_height = sample["input_shape"][0]
+            input_width = sample["input_shape"][1]
+
+        if hasattr(features, 'cpu'):
+            features_np = features.cpu().numpy()
+        else:
+            features_np = features.numpy() if hasattr(features, 'numpy') else features
+
+        self.predictor.set_image_feature(
+            img_features=features_np,
+            img_size=(img_height, img_width),
+            input_size=(input_height, input_width),
+        )
+
+        minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
+        img_clip_transform = transform_from_bounds(minx, miny, maxx, maxy, img_width, img_height)
+
+        from rasterio import transform as rio_transform
+        row, col = rio_transform.rowcol(img_clip_transform, x, y)
+        point_coords = np.array([[col, row]])
+        point_labels = np.array([1])  # Always positive for the new segment
+
+        masks, scores, _ = self.predictor.predict(
+            point_coords=point_coords,
+            point_labels=point_labels,
+            multimask_output=False,
+        )
+
+        new_mask = masks[0]
+        new_score = float(scores[0])
+        
+        crs_value = self.feature_dataset.crs
+        if not crs_value or (isinstance(crs_value, str) and not crs_value.strip()):
+            if self._current_layer and self._current_layer.crs().isValid():
+                crs_value = self._current_layer.crs().authid()
+        
+        transform_info = {
+            "bbox": bbox,
+            "img_shape": (img_height, img_width),
+            "crs": crs_value,
+        }
+
+        # Convert new mask to geometry
+        new_geometries = mask_to_polygons(new_mask, transform_info)
+        if not new_geometries:
+            self.dock_widget.set_status("No segment detected at click location")
+            return
+            
+        new_geometry = QgsGeometry.unaryUnion(new_geometries)
+
+        # Combine with accumulated geometry
+        if self.accumulated_geometry is not None and not self.accumulated_geometry.isEmpty():
+            if combine_mode == "union":
+                self.accumulated_geometry = self.accumulated_geometry.combine(new_geometry)
+                QgsMessageLog.logMessage(
+                    f"Union operation - added new area",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+            elif combine_mode == "difference":
+                self.accumulated_geometry = self.accumulated_geometry.difference(new_geometry)
+                QgsMessageLog.logMessage(
+                    f"Difference operation - subtracted area",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+        else:
+            # No existing geometry, just use the new one
+            self.accumulated_geometry = new_geometry
+
+        self.current_transform_info = transform_info
+        self.current_score = new_score
+        
+        # Update visualization with accumulated geometry
+        self._update_accumulated_visualization()
+        self._update_ui_counts()
+
+    def _update_accumulated_visualization(self):
+        """Update rubber band with accumulated geometry."""
+        if self.mask_rubber_band is None:
+            return
+
+        if self.accumulated_geometry is None or self.accumulated_geometry.isEmpty():
+            self._clear_mask_visualization()
+            return
+
+        self.mask_rubber_band.setToGeometry(self.accumulated_geometry, None)
+
+    def _update_ui_counts(self):
+        """Update UI with current point counts."""
+        pos_count, neg_count = self.prompts.point_count
+        self.dock_widget.set_point_count(pos_count, neg_count)
 
     def _run_prediction(self):
+        """Legacy prediction method - kept for compatibility."""
         import numpy as np
         from rasterio.transform import from_bounds as transform_from_bounds
         from .core.feature_dataset import FeatureSampler
@@ -971,27 +1195,10 @@ class AISegmentationPlugin:
 
         bounds = self.feature_dataset.bounds
 
-        QgsMessageLog.logMessage(
-            f"DEBUG _run_prediction - Click points (canvas CRS): xs={xs}, ys={ys}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-        QgsMessageLog.logMessage(
-            f"DEBUG _run_prediction - FeatureDataset bounds: minx={bounds[0]:.2f}, maxx={bounds[1]:.2f}, miny={bounds[2]:.2f}, maxy={bounds[3]:.2f}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-
         roi = (
             min(xs), max(xs),
             min(ys), max(ys),
             bounds[4], bounds[5]
-        )
-
-        QgsMessageLog.logMessage(
-            f"DEBUG _run_prediction - ROI for sampling: minx={roi[0]:.2f}, maxx={roi[1]:.2f}, miny={roi[2]:.2f}, maxy={roi[3]:.2f}",
-            "AI Segmentation",
-            level=Qgis.Info
         )
 
         sampler = FeatureSampler(self.feature_dataset, roi)
@@ -1011,12 +1218,6 @@ class AISegmentationPlugin:
         bbox = sample["bbox"]
         features = sample["image"]
 
-        QgsMessageLog.logMessage(
-            f"DEBUG - Selected tile bbox: minx={bbox[0]:.2f}, maxx={bbox[1]:.2f}, miny={bbox[2]:.2f}, maxy={bbox[3]:.2f}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-
         img_size = self.predictor.model.image_encoder.img_size
         img_height = img_width = img_size
         input_height = input_width = img_size
@@ -1026,12 +1227,6 @@ class AISegmentationPlugin:
             img_width = sample["img_shape"][1]
             input_height = sample["input_shape"][0]
             input_width = sample["input_shape"][1]
-
-        QgsMessageLog.logMessage(
-            f"DEBUG - Image dimensions: img_shape=({img_height}, {img_width}), input_shape=({input_height}, {input_width})",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
 
         if hasattr(features, 'cpu'):
             features_np = features.cpu().numpy()
@@ -1146,25 +1341,24 @@ class AISegmentationPlugin:
         self.dock_widget.set_status("Points cleared")
 
     def _on_undo(self):
-        result = self.prompts.undo()
-        if result is None:
-            return
-
+        """Undo last action - clears current polygon and starts fresh."""
+        # Clear all current work
+        self.prompts.clear()
+        self.accumulated_geometry = None
+        self.current_mask = None
+        self.current_score = 0.0
+        
         if self.map_tool:
-            self.map_tool.remove_last_marker()
-
-        if self.prompts.point_count[0] + self.prompts.point_count[1] > 0:
-            self._run_prediction()
-        else:
-            self.current_mask = None
-            self.current_score = 0.0
-            self._clear_mask_visualization()
-            self.dock_widget.set_point_count(0, 0)
-            self.dock_widget.set_status("All points removed")
+            self.map_tool.clear_markers()
+        
+        self._clear_mask_visualization()
+        self.dock_widget.set_point_count(0, 0)
+        self.dock_widget.set_status("Cleared - click to start new polygon")
 
     def _reset_session(self):
         self.prompts.clear()
         self.saved_polygons = []
+        self.accumulated_geometry = None
 
         for rb in self.saved_rubber_bands:
             self.iface.mapCanvas().scene().removeItem(rb)
