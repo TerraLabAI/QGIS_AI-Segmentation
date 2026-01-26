@@ -279,6 +279,15 @@ class AISegmentationDockWidget(QDockWidget):
         sep.setFrameShadow(QFrame.Sunken)
         self.main_layout.addWidget(sep)
 
+        # GPU Status
+        self.gpu_status_label = QLabel("💻 Checking GPU...")
+        self.gpu_status_label.setStyleSheet(
+            "color: #666; font-size: 10px; padding: 4px;"
+        )
+        self.gpu_status_label.setWordWrap(True)
+        self.main_layout.addWidget(self.gpu_status_label)
+
+        # Main Status
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet(
             "background-color: #424242; color: white; font-size: 12px; "
@@ -546,6 +555,28 @@ class AISegmentationDockWidget(QDockWidget):
 
     def set_status(self, message: str):
         self.status_label.setText(message)
+    
+    def set_gpu_status(self, message: str):
+        """Set GPU acceleration status."""
+        self.gpu_status_label.setText(message)
+        # Color coding based on status
+        if "🚀" in message or ("GPU" in message and "⚠️" not in message):
+            self.gpu_status_label.setStyleSheet("color: #388e3c; font-size: 10px; padding: 4px; font-weight: bold;")
+        elif "⚠️" in message:
+            self.gpu_status_label.setStyleSheet("color: #f57c00; font-size: 10px; padding: 4px;")
+        else:
+            self.gpu_status_label.setStyleSheet("color: #666; font-size: 10px; padding: 4px;")
+    
+    def set_gpu_status(self, message: str):
+        """Set GPU acceleration status."""
+        self.gpu_status_label.setText(message)
+        # Color coding
+        if "🚀" in message or "GPU" in message:
+            self.gpu_status_label.setStyleSheet("color: #388e3c; font-size: 10px; padding: 4px; font-weight: bold;")
+        elif "⚠️" in message:
+            self.gpu_status_label.setStyleSheet("color: #f57c00; font-size: 10px; padding: 4px;")
+        else:
+            self.gpu_status_label.setStyleSheet("color: #666; font-size: 10px; padding: 4px;")
 
     def _update_instructions(self):
         """Update instruction text based on current segmentation state."""

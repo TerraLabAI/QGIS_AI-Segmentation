@@ -149,6 +149,7 @@ class PromptManager:
         return len(self.positive_points), len(self.negative_points)
 
     def get_points_for_predictor(self, transform) -> Tuple[Optional['np.ndarray'], Optional['np.ndarray']]:
+        """Convert stored points to pixel coordinates for the predictor."""
         import numpy as np
         from rasterio import transform as rio_transform
 
@@ -159,29 +160,13 @@ class PromptManager:
         point_coords = []
         point_labels = []
 
-        QgsMessageLog.logMessage(
-            f"DEBUG get_points_for_predictor - Transform: {transform}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-
         for x, y in self.positive_points:
             row, col = rio_transform.rowcol(transform, x, y)
-            QgsMessageLog.logMessage(
-                f"DEBUG - Positive point geo ({x:.2f}, {y:.2f}) -> pixel (row={row}, col={col})",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
             point_coords.append([col, row])
             point_labels.append(1)
 
         for x, y in self.negative_points:
             row, col = rio_transform.rowcol(transform, x, y)
-            QgsMessageLog.logMessage(
-                f"DEBUG - Negative point geo ({x:.2f}, {y:.2f}) -> pixel (row={row}, col={col})",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
             point_coords.append([col, row])
             point_labels.append(0)
 
@@ -339,19 +324,49 @@ class AISegmentationPlugin:
         )
 
         try:
-            from .core.venv_manager import get_venv_status, cleanup_old_libs
+            from .core.venv_manager import get_venv_status, cleanup_old_libs, check_pytorch_cuda_mismatch, reinstall_pytorch_cuda
 
             cleanup_old_libs()
 
             is_ready, message = get_venv_status()
 
             if is_ready:
-                self.dock_widget.set_dependency_status(True, "✓ Virtual environment ready")
-                QgsMessageLog.logMessage(
-                    "✓ Virtual environment verified successfully",
-                    "AI Segmentation",
-                    level=Qgis.Success
-                )
+                # Check for CUDA mismatch and fix automatically
+                has_mismatch, mismatch_msg = check_pytorch_cuda_mismatch()
+                if has_mismatch:
+                    self.dock_widget.set_dependency_status(True, "⚠️ Fixing GPU support...")
+                    self.dock_widget.set_status("CUDA available but PyTorch is CPU-only. Fixing...")
+                    QgsMessageLog.logMessage(
+                        "CUDA mismatch detected - reinstalling PyTorch with CUDA...",
+                        "AI Segmentation",
+                        level=Qgis.Warning
+                    )
+                    
+                    # Reinstall PyTorch with CUDA
+                    success, cuda_msg = reinstall_pytorch_cuda()
+                    if success:
+                        self.dock_widget.set_dependency_status(True, "✓ GPU acceleration enabled!")
+                        self.dock_widget.set_status("PyTorch CUDA installed - GPU ready!")
+                        QgsMessageLog.logMessage(
+                            "✓ PyTorch CUDA installed successfully - GPU acceleration enabled!",
+                            "AI Segmentation",
+                            level=Qgis.Success
+                        )
+                    else:
+                        self.dock_widget.set_dependency_status(True, "✓ Ready (CPU mode)")
+                        QgsMessageLog.logMessage(
+                            f"CUDA install failed: {cuda_msg}. Using CPU.",
+                            "AI Segmentation",
+                            level=Qgis.Warning
+                        )
+                else:
+                    self.dock_widget.set_dependency_status(True, "✓ Virtual environment ready")
+                    QgsMessageLog.logMessage(
+                        "✓ Virtual environment verified successfully",
+                        "AI Segmentation",
+                        level=Qgis.Success
+                    )
+                
                 self._check_checkpoint()
             else:
                 self.dock_widget.set_dependency_status(False, message)
@@ -675,6 +690,54 @@ class AISegmentationPlugin:
                     f"Failed to encode raster:\n{message}"
                 )
 
+    def _check_crs_mixture(self, canvas_crs, raster_crs, dataset_crs_str) -> Tuple[bool, str]:
+        """
+        Check for CRS mixture and return (has_mismatch, warning_message).
+        
+        Returns:
+            Tuple[bool, str]: (True if mismatch detected, warning message)
+        """
+        if not dataset_crs_str:
+            return False, ""
+        
+        try:
+            from qgis.core import QgsCoordinateReferenceSystem
+            
+            dataset_crs = QgsCoordinateReferenceSystem(dataset_crs_str)
+            if not dataset_crs.isValid():
+                return False, ""
+            
+            canvas_authid = canvas_crs.authid() if canvas_crs and canvas_crs.isValid() else None
+            raster_authid = raster_crs.authid() if raster_crs and raster_crs.isValid() else None
+            dataset_authid = dataset_crs.authid()
+            
+            mismatches = []
+            if canvas_authid and canvas_authid != dataset_authid:
+                mismatches.append(f"Canvas ({canvas_authid})")
+            if raster_authid and raster_authid != dataset_authid:
+                mismatches.append(f"Raster Layer ({raster_authid})")
+            
+            if mismatches:
+                msg = (
+                    f"⚠️ Coordinate System Mismatch Detected\n\n"
+                    f"Feature dataset uses: {dataset_authid}\n"
+                    f"But your project uses: {', '.join(mismatches)}\n\n"
+                    f"The plugin will automatically transform coordinates, but this may cause:\n"
+                    f"• Slight precision loss\n"
+                    f"• Performance impact\n\n"
+                    f"Recommendation: Set your project CRS to {dataset_authid} for best results."
+                )
+                return True, msg
+            
+            return False, ""
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                f"Error checking CRS mixture: {str(e)}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            return False, ""
+
     def _load_features_and_activate(self, raster_path: str):
         try:
             from .core.checkpoint_manager import get_raster_features_dir
@@ -700,18 +763,41 @@ class AISegmentationPlugin:
                 level=Qgis.Info
             )
             QgsMessageLog.logMessage(
-                f"DEBUG - Canvas CRS: {canvas_crs.authid() if canvas_crs else 'None'}, "
-                f"Raster CRS: {raster_crs.authid() if raster_crs else 'None'}",
+                f"Canvas CRS: {canvas_crs.authid() if canvas_crs else 'None'}, "
+                f"Raster CRS: {raster_crs.authid() if raster_crs else 'None'}, "
+                f"Dataset CRS: {self.feature_dataset.crs}",
                 "AI Segmentation",
                 level=Qgis.Info
             )
+            
+            # Check for CRS mixture and warn user
+            has_mismatch, warning_msg = self._check_crs_mixture(canvas_crs, raster_crs, self.feature_dataset.crs)
+            if has_mismatch:
+                QgsMessageLog.logMessage(
+                    f"CRS mismatch detected: {warning_msg}",
+                    "AI Segmentation",
+                    level=Qgis.Warning
+                )
+                reply = QMessageBox.warning(
+                    self.iface.mainWindow(),
+                    "Coordinate System Mismatch",
+                    warning_msg,
+                    QMessageBox.Ok | QMessageBox.Cancel
+                )
+                if reply == QMessageBox.Cancel:
+                    self.dock_widget.set_status("Cancelled - CRS mismatch detected")
+                    return
+            
             if raster_extent:
                 QgsMessageLog.logMessage(
-                    f"DEBUG - Raster layer extent (in layer CRS): xmin={raster_extent.xMinimum():.2f}, "
+                    f"Raster layer extent (in layer CRS): xmin={raster_extent.xMinimum():.2f}, "
                     f"xmax={raster_extent.xMaximum():.2f}, ymin={raster_extent.yMinimum():.2f}, ymax={raster_extent.yMaximum():.2f}",
                     "AI Segmentation",
                     level=Qgis.Info
                 )
+
+            # Update GPU status
+            self._update_gpu_status()
 
             self._activate_segmentation_tool()
 
@@ -727,6 +813,67 @@ class AISegmentationPlugin:
                 "Load Failed",
                 f"Failed to load feature data:\n{str(e)}"
             )
+
+    def _update_gpu_status(self):
+        """Update GPU acceleration status in the dock widget."""
+        try:
+            from .core.device_manager import get_device_info, get_device_capabilities
+            
+            device_info = get_device_info()
+            capabilities = get_device_capabilities()
+            
+            # Determine PyTorch build type
+            pytorch_build = "Unknown"
+            try:
+                from .core.venv_manager import get_venv_dir
+                import subprocess
+                import os
+                
+                venv_dir = get_venv_dir()
+                if os.path.exists(venv_dir):
+                    from .core.venv_manager import get_venv_python_path
+                    python_path = get_venv_python_path(venv_dir)
+                    
+                    # Check if CUDA is available in PyTorch
+                    result = subprocess.run(
+                        [python_path, "-c", "import torch; print('CUDA' if torch.cuda.is_available() else 'CPU')"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if result.returncode == 0:
+                        pytorch_build = result.stdout.strip()
+            except Exception:
+                pass
+            
+            # Format status message
+            if "CUDA" in device_info or "GPU" in device_info:
+                status = f"🚀 GPU: {device_info}"
+                if pytorch_build == "CUDA":
+                    status += " (CUDA enabled)"
+                elif pytorch_build == "CPU":
+                    status += " (⚠️ CPU-only PyTorch installed)"
+            elif "MPS" in device_info:
+                status = f"🚀 GPU: {device_info} (Apple Silicon)"
+            else:
+                status = f"💻 CPU: {device_info}"
+                if pytorch_build == "CPU":
+                    status += " (CPU-only)"
+            
+            self.dock_widget.set_gpu_status(status)
+            
+            QgsMessageLog.logMessage(
+                f"GPU Status: {status}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                f"Failed to update GPU status: {str(e)}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            self.dock_widget.set_gpu_status("⚠️ Status unknown")
 
     def _activate_segmentation_tool(self):
         # Save the current map tool to restore it later
@@ -1058,26 +1205,110 @@ class AISegmentationPlugin:
         import numpy as np
         from rasterio.transform import from_bounds as transform_from_bounds
         from .core.feature_dataset import FeatureSampler
+        from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsPointXY, QgsProject
 
         all_points = self.prompts.positive_points + self.prompts.negative_points
         if not all_points:
             return
 
-        xs = [p[0] for p in all_points]
-        ys = [p[1] for p in all_points]
+        # Transform points from canvas CRS to dataset CRS
+        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        dataset_crs_str = self.feature_dataset.crs
+        if not dataset_crs_str:
+            QgsMessageLog.logMessage(
+                "Feature dataset has no CRS defined",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            return
+
+        dataset_crs = QgsCoordinateReferenceSystem(dataset_crs_str)
+        
+        QgsMessageLog.logMessage(
+            f"Transforming points: Canvas CRS={canvas_crs.authid()}, Dataset CRS={dataset_crs_str}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        
+        # Transform points if CRS differ
+        transformed_points = []
+        if canvas_crs != dataset_crs:
+            transform = QgsCoordinateTransform(
+                canvas_crs, dataset_crs, QgsProject.instance()
+            )
+            for x, y in all_points:
+                point = QgsPointXY(x, y)
+                try:
+                    transformed_point = transform.transform(point)
+                    transformed_points.append((transformed_point.x(), transformed_point.y()))
+                    QgsMessageLog.logMessage(
+                        f"Transformed point: ({x:.6f}, {y:.6f}) -> ({transformed_point.x():.6f}, {transformed_point.y():.6f})",
+                        "AI Segmentation",
+                        level=Qgis.Info
+                    )
+                except Exception as e:
+                    QgsMessageLog.logMessage(
+                        f"Failed to transform point ({x:.6f}, {y:.6f}): {str(e)}",
+                        "AI Segmentation",
+                        level=Qgis.Warning
+                    )
+                    # Fallback: use original point (might work if CRS are compatible)
+                    transformed_points.append((x, y))
+        else:
+            transformed_points = all_points
+            QgsMessageLog.logMessage(
+                "Canvas and dataset CRS match, no transformation needed",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+
+        if not transformed_points:
+            return
+
+        xs = [p[0] for p in transformed_points]
+        ys = [p[1] for p in transformed_points]
 
         bounds = self.feature_dataset.bounds
 
+        # Calculate ROI with minimum size to ensure intersection works
+        minx, maxx = min(xs), max(xs)
+        miny, maxy = min(ys), max(ys)
+        
+        # If ROI has zero area (single point or collinear points), expand it
+        # Use a buffer based on feature resolution or a default size
+        if minx == maxx or miny == maxy:
+            # Get feature resolution if available, otherwise use a reasonable default
+            resolution = getattr(self.feature_dataset, 'res', None)
+            if resolution is None:
+                # Default buffer: ~100 meters in projected CRS, or 0.001 degrees in geographic
+                # Check if dataset CRS is geographic (degrees) or projected (meters)
+                if dataset_crs.isGeographic():
+                    buffer = 0.001  # degrees
+                else:
+                    buffer = 100.0  # meters
+            else:
+                # Use 10x the feature resolution as buffer
+                buffer = resolution * 10
+            
+            # Expand ROI to ensure it has area
+            if minx == maxx:
+                minx -= buffer / 2
+                maxx += buffer / 2
+            if miny == maxy:
+                miny -= buffer / 2
+                maxy += buffer / 2
+
         roi = (
-            min(xs), max(xs),
-            min(ys), max(ys),
+            minx, maxx,
+            miny, maxy,
             bounds[4], bounds[5]
         )
 
         sampler = FeatureSampler(self.feature_dataset, roi)
         if len(sampler) == 0:
             QgsMessageLog.logMessage(
-                "No feature found for click location",
+                f"No feature found for click location. ROI: ({minx:.6f}, {maxx:.6f}, {miny:.6f}, {maxy:.6f}), "
+                f"Dataset bounds: ({bounds[0]:.6f}, {bounds[1]:.6f}, {bounds[2]:.6f}, {bounds[3]:.6f})",
                 "AI Segmentation",
                 level=Qgis.Warning
             )
@@ -1115,7 +1346,24 @@ class AISegmentationPlugin:
         minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
         img_clip_transform = transform_from_bounds(minx, miny, maxx, maxy, img_width, img_height)
 
-        point_coords, point_labels = self.prompts.get_points_for_predictor(img_clip_transform)
+        # Use transformed_points (already in dataset CRS) to create pixel coordinates
+        from rasterio import transform as rio_transform
+        
+        point_coords = []
+        point_labels = []
+        
+        num_positive = len(self.prompts.positive_points)
+        for i, (x, y) in enumerate(transformed_points):
+            row, col = rio_transform.rowcol(img_clip_transform, x, y)
+            point_coords.append([col, row])
+            point_labels.append(1 if i < num_positive else 0)
+        
+        if not point_coords:
+            self.dock_widget.set_status("No valid points")
+            return
+        
+        point_coords = np.array(point_coords)
+        point_labels = np.array(point_labels)
 
         if point_coords is None:
             return

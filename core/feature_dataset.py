@@ -222,7 +222,46 @@ class FeatureSampler:
         center_x_roi = (roi[0] + roi[1]) / 2
         center_y_roi = (roi[2] + roi[3]) / 2
 
-        hits = dataset.index.intersection(roi, objects=True)
+        hits = list(dataset.index.intersection(roi, objects=True))
+        
+        QgsMessageLog.logMessage(
+            f"Sampler query: ROI=({roi[0]:.6f}, {roi[1]:.6f}, {roi[2]:.6f}, {roi[3]:.6f}), "
+            f"center=({center_x_roi:.6f}, {center_y_roi:.6f}), "
+            f"found {len(hits)} intersecting features",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+        if len(hits) == 0:
+            # If no hits, try to find nearest feature by expanding search
+            # This handles edge cases where ROI is just outside feature bounds
+            dataset_bounds = dataset.bounds
+            QgsMessageLog.logMessage(
+                f"Dataset bounds: ({dataset_bounds[0]:.6f}, {dataset_bounds[1]:.6f}, "
+                f"{dataset_bounds[2]:.6f}, {dataset_bounds[3]:.6f})",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            
+            # Check if ROI center is within dataset bounds
+            if (dataset_bounds[0] <= center_x_roi <= dataset_bounds[1] and
+                dataset_bounds[2] <= center_y_roi <= dataset_bounds[3]):
+                # Center is within bounds but no intersection - might be a precision issue
+                # Try a slightly expanded ROI
+                expansion_factor = 1.1
+                expanded_roi = (
+                    center_x_roi - (roi[1] - roi[0]) * expansion_factor / 2,
+                    center_x_roi + (roi[1] - roi[0]) * expansion_factor / 2,
+                    center_y_roi - (roi[3] - roi[2]) * expansion_factor / 2,
+                    center_y_roi + (roi[3] - roi[2]) * expansion_factor / 2,
+                    roi[4], roi[5]
+                )
+                hits = list(dataset.index.intersection(expanded_roi, objects=True))
+                QgsMessageLog.logMessage(
+                    f"Expanded ROI search found {len(hits)} features",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
 
         for hit in hits:
             bbox = hit.bounds
@@ -238,11 +277,13 @@ class FeatureSampler:
 
         self.length = 1 if self.q_bbox is not None else 0
 
-        QgsMessageLog.logMessage(
-            f"Sampler found {len(list(hits))} intersecting features, selected nearest",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
+        if self.length > 0:
+            QgsMessageLog.logMessage(
+                f"Selected nearest feature: bbox=({self.q_bbox[0]:.6f}, {self.q_bbox[1]:.6f}, "
+                f"{self.q_bbox[2]:.6f}, {self.q_bbox[3]:.6f}), path={os.path.basename(self.q_path)}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
 
     def __iter__(self) -> Iterator[Dict[str, Any]]:
         if self.q_bbox is not None:

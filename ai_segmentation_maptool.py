@@ -116,6 +116,7 @@ class AISegmentationMapTool(QgsMapTool):
         # Let the canvas handle pinch-to-zoom and other gestures
         # This is essential for trackpad gestures on macOS
         event.ignore()
+        return False  # Return False to indicate event not handled, so it propagates
 
     def keyPressEvent(self, event):
         key = event.key()
