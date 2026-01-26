@@ -757,7 +757,7 @@ class AISegmentationPlugin:
     def _on_save_polygon(self):
         """Save current polygon from mask."""
         if self.current_mask is None:
-            self.dock_widget.set_status("No polygon to save")
+            self.dock_widget.set_status("No shape to save")
             return
 
         from .core.polygon_exporter import mask_to_polygons
@@ -765,7 +765,7 @@ class AISegmentationPlugin:
         geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
 
         if not geometries:
-            self.dock_widget.set_status("Could not generate polygon")
+            self.dock_widget.set_status("Could not generate shape")
             return
 
         combined = QgsGeometry.unaryUnion(geometries)
@@ -791,7 +791,7 @@ class AISegmentationPlugin:
             )
 
             self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
-            self.dock_widget.set_status(f"✓ Polygon saved ({len(self.saved_polygons)} total)")
+            self.dock_widget.set_status(f"✓ Shape saved ({len(self.saved_polygons)} total)")
 
         # Clear current state for next polygon
         self.prompts.clear()
@@ -921,7 +921,7 @@ class AISegmentationPlugin:
                 features_to_add.append(feature)
 
         if not features_to_add:
-            self.dock_widget.set_status("No valid polygons to export")
+            self.dock_widget.set_status("No valid shapes to export")
             return
 
         pr.addFeatures(features_to_add)
@@ -1042,7 +1042,7 @@ class AISegmentationPlugin:
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
                 "Stop Segmentation?",
-                f"This will discard {polygon_count} polygon(s).\n\n"
+                f"This will discard {polygon_count} shape(s).\n\n"
                 "Use 'Save as Layer' to keep them.",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
