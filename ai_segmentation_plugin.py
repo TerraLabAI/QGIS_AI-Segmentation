@@ -775,7 +775,7 @@ class AISegmentationPlugin:
             )
 
             self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
-            self.dock_widget.set_status("Polygon added - click for next object")
+            self.dock_widget.set_status(f"✓ Polygon saved ({len(self.saved_polygons)} total)")
 
         # Clear current state for next polygon
         self.prompts.clear()
@@ -1159,7 +1159,6 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Info
             )
-            self.dock_widget.set_status("Segmented - click to refine or S to save")
             self._update_mask_visualization()
         else:
             self.dock_widget.set_status("No mask generated - try clicking elsewhere")
@@ -1211,7 +1210,6 @@ class AISegmentationPlugin:
         self.current_mask = None
         self.current_score = 0.0
         self.dock_widget.set_point_count(0, 0)
-        self.dock_widget.set_status("Points cleared")
 
     def _on_undo(self):
         """Undo last point added."""
@@ -1231,7 +1229,6 @@ class AISegmentationPlugin:
             self.current_score = 0.0
             self._clear_mask_visualization()
             self.dock_widget.set_point_count(0, 0)
-            self.dock_widget.set_status("All points removed - click to start again")
 
     def _reset_session(self):
         self.prompts.clear()

@@ -6,7 +6,8 @@
       "Bash(sips:*)",
       "WebFetch(domain:qgis.org)",
       "WebFetch(domain:blog.cychen.me)",
-      "WebFetch(domain:doc.qt.io)"
+      "WebFetch(domain:doc.qt.io)",
+      "Bash(python3:*)"
     ]
   },
   "outputStyle": "Explanatory"
