@@ -10,12 +10,13 @@ from qgis.core import QgsPointXY
 
 class AISegmentationMapTool(QgsMapTool):
     """Map tool for AI segmentation with positive/negative point prompts.
-    
+
     Workflow:
     - Left click: Add positive point (include this area)
     - Right click: Add negative point (exclude this area)
     - Ctrl+Z: Undo last point
-    - S or Enter: Save polygon
+    - S: Save polygon (add to collection)
+    - Enter: Export to layer
     - Escape: Clear current polygon
     """
 
@@ -24,6 +25,7 @@ class AISegmentationMapTool(QgsMapTool):
     tool_deactivated = pyqtSignal()
     undo_requested = pyqtSignal()
     save_polygon_requested = pyqtSignal()
+    export_layer_requested = pyqtSignal()
     clear_requested = pyqtSignal()
 
     POSITIVE_COLOR = QColor(0, 200, 0)    # Green for include
@@ -124,9 +126,12 @@ class AISegmentationMapTool(QgsMapTool):
         if key == Qt.Key_Z and modifiers & Qt.ControlModifier:
             # Ctrl+Z: Undo last point
             self.undo_requested.emit()
-        elif key == Qt.Key_S or key == Qt.Key_Return or key == Qt.Key_Enter:
-            # S or Enter: Save polygon
+        elif key == Qt.Key_S:
+            # S: Save polygon (add to collection)
             self.save_polygon_requested.emit()
+        elif key == Qt.Key_Return or key == Qt.Key_Enter:
+            # Enter: Export to layer
+            self.export_layer_requested.emit()
         elif key == Qt.Key_Escape:
             # Escape: Clear current polygon
             self.clear_requested.emit()

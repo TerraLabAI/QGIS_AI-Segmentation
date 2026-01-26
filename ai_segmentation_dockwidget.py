@@ -11,7 +11,7 @@ from qgis.PyQt.QtWidgets import (
     QMessageBox,
     QSizePolicy,
 )
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer
 
 from qgis.core import QgsMapLayerProxyModel, QgsProject
 from qgis.gui import QgsMapLayerComboBox
@@ -54,6 +54,13 @@ class AISegmentationDockWidget(QDockWidget):
         self._positive_count = 0
         self._negative_count = 0
 
+        # Smooth progress animation timer for long-running installs
+        self._progress_timer = QTimer(self)
+        self._progress_timer.timeout.connect(self._on_progress_tick)
+        self._current_progress = 0
+        self._target_progress = 0
+        self._install_start_time = None
+
         # Connect to project layer signals for dynamic updates
         QgsProject.instance().layersAdded.connect(self._on_layers_added)
         QgsProject.instance().layersRemoved.connect(self._on_layers_removed)
@@ -95,13 +102,13 @@ class AISegmentationDockWidget(QDockWidget):
         self.cancel_deps_button = QPushButton("Cancel")
         self.cancel_deps_button.clicked.connect(self._on_cancel_deps_clicked)
         self.cancel_deps_button.setVisible(False)
-        self.cancel_deps_button.setStyleSheet("background-color: #d32f2f; color: white;")
+        self.cancel_deps_button.setStyleSheet("background-color: #d32f2f;")
         layout.addWidget(self.cancel_deps_button)
 
         self.main_layout.addWidget(self.deps_group)
 
     def _setup_checkpoint_section(self):
-        self.checkpoint_group = QGroupBox("AI Model")
+        self.checkpoint_group = QGroupBox("AI Segmentation Model")
         layout = QVBoxLayout(self.checkpoint_group)
 
         self.checkpoint_status_label = QLabel("Checking model...")
@@ -126,7 +133,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.cancel_download_button = QPushButton("Cancel")
         self.cancel_download_button.clicked.connect(self._on_cancel_download_clicked)
         self.cancel_download_button.setVisible(False)
-        self.cancel_download_button.setStyleSheet("background-color: #d32f2f; color: white;")
+        self.cancel_download_button.setStyleSheet("background-color: #d32f2f;")
         layout.addWidget(self.cancel_download_button)
 
         self.main_layout.addWidget(self.checkpoint_group)
@@ -156,7 +163,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.no_rasters_label = QLabel("No compatible raster found. Add a GeoTIFF or local image to your project.")
         self.no_rasters_label.setStyleSheet(
-            "background-color: #fff3cd; color: #856404; padding: 8px; "
+            "background-color: #fff3cd; padding: 8px; "
             "border-radius: 4px; font-size: 11px;"
         )
         self.no_rasters_label.setWordWrap(True)
@@ -170,7 +177,7 @@ class AISegmentationDockWidget(QDockWidget):
             "font-size: 12px; padding: 8px 0px;"
         )
         self.instructions_label.setToolTip(
-            "Shortcuts: Ctrl+Z (undo) · S (save) · Escape (clear)"
+            "Shortcuts: S (save polygon) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)"
         )
         self.instructions_label.setVisible(False)
         layout.addWidget(self.instructions_label)
@@ -178,7 +185,7 @@ class AISegmentationDockWidget(QDockWidget):
         # Encoding progress section
         self.encoding_info_label = QLabel("")
         self.encoding_info_label.setStyleSheet(
-            "background-color: #e8f5e9; color: #2e7d32; padding: 8px; "
+            "background-color: #e8f5e9; padding: 8px; "
             "border-radius: 4px; font-size: 11px;"
         )
         self.encoding_info_label.setWordWrap(True)
@@ -200,7 +207,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.cancel_prep_button.setVisible(False)
         self.cancel_prep_button.setMaximumHeight(26)
         self.cancel_prep_button.setStyleSheet(
-            "QPushButton { background-color: #d32f2f; color: white; font-size: 10px; }"
+            "QPushButton { background-color: #d32f2f; font-size: 10px; }"
         )
         layout.addWidget(self.cancel_prep_button)
 
@@ -209,8 +216,8 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_button.setMinimumHeight(36)
         self.start_button.clicked.connect(self._on_start_clicked)
         self.start_button.setStyleSheet(
-            "QPushButton { background-color: #2e7d32; color: white; font-weight: bold; font-size: 12px; }"
-            "QPushButton:disabled { background-color: #a5d6a7; color: #ccc; }"
+            "QPushButton { background-color: #2e7d32; font-weight: bold; font-size: 12px; }"
+            "QPushButton:disabled { background-color: #c8e6c9; }"
         )
         self.start_button.setToolTip(
             "Click to segment objects on the image.\n"
@@ -227,10 +234,10 @@ class AISegmentationDockWidget(QDockWidget):
         self.save_polygon_button.setEnabled(False)
         self.save_polygon_button.setMinimumHeight(36)
         self.save_polygon_button.setStyleSheet(
-            "QPushButton { background-color: #1976d2; color: white; font-weight: bold; }"
-            "QPushButton:disabled { background-color: #90caf9; color: #ccc; }"
+            "QPushButton { background-color: #1976d2; font-weight: bold; }"
+            "QPushButton:disabled { background-color: #b0bec5; }"
         )
-        self.save_polygon_button.setToolTip("Add current polygon to collection (S or Enter)")
+        self.save_polygon_button.setToolTip("Add current polygon to collection (S)")
         layout.addWidget(self.save_polygon_button)
 
         self.export_button = QPushButton("Save as Layer")
@@ -239,9 +246,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.export_button.setEnabled(False)
         self.export_button.setMinimumHeight(36)
         self.export_button.setStyleSheet(
-            "QPushButton { background-color: #9e9e9e; color: #666; }"
+            "QPushButton { background-color: #b0bec5; }"
         )
-        self.export_button.setToolTip("Add polygons first, then save as layer")
+        self.export_button.setToolTip("Add polygons first, then save as layer (Enter)")
         layout.addWidget(self.export_button)
 
         # Secondary action buttons (small, horizontal)
@@ -261,7 +268,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.stop_button.setVisible(False)
         self.stop_button.setMaximumHeight(28)
         self.stop_button.setStyleSheet(
-            "QPushButton { background-color: #757575; color: white; }"
+            "QPushButton { background-color: #757575; }"
         )
         self.stop_button.setToolTip("Exit segmentation without saving (Escape)")
         secondary_layout.addWidget(self.stop_button)
@@ -281,7 +288,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet(
-            "background-color: #424242; color: white; font-size: 12px; "
+            "background-color: #424242; font-size: 12px; "
             "padding: 8px; border-radius: 4px;"
         )
         self.status_label.setWordWrap(True)
@@ -369,14 +376,14 @@ class AISegmentationDockWidget(QDockWidget):
         self.deps_status_label.setText(message)
 
         if ok:
-            self.deps_status_label.setStyleSheet("color: #388e3c; font-weight: bold;")
+            self.deps_status_label.setStyleSheet("font-weight: bold;")
             self.install_button.setVisible(False)
             self.cancel_deps_button.setVisible(False)
             self.deps_progress.setVisible(False)
             self.deps_progress_label.setVisible(False)
             self.deps_group.setVisible(False)
         else:
-            self.deps_status_label.setStyleSheet("color: #f57c00;")
+            self.deps_status_label.setStyleSheet("")
             self.install_button.setVisible(True)
             self.install_button.setEnabled(True)
             self.deps_group.setVisible(True)
@@ -384,21 +391,70 @@ class AISegmentationDockWidget(QDockWidget):
         self._update_ui_state()
 
     def set_deps_install_progress(self, percent: int, message: str):
-        self.deps_progress.setValue(percent)
-        self.deps_progress_label.setText(message)
+        import time
+
+        # Store target progress for smooth animation
+        self._target_progress = percent
+
+        # Calculate time estimate
+        time_info = ""
+        if percent > 5 and percent < 100 and self._install_start_time:
+            elapsed = time.time() - self._install_start_time
+            if elapsed > 5:  # Only show after 5 seconds
+                estimated_total = elapsed / (percent / 100)
+                remaining = estimated_total - elapsed
+                if remaining > 60:
+                    time_info = f" (~{int(remaining / 60)} min left)"
+                elif remaining > 10:
+                    time_info = f" (~{int(remaining)} sec left)"
+
+        self.deps_progress_label.setText(f"{message}{time_info}")
 
         if percent == 0:
+            self._install_start_time = time.time()
+            self._current_progress = 0
+            self.deps_progress.setValue(0)
             self.deps_progress.setVisible(True)
             self.deps_progress_label.setVisible(True)
             self.cancel_deps_button.setVisible(True)
             self.install_button.setEnabled(False)
             self.install_button.setText("Installing...")
+            self.deps_status_label.setText("Installing dependencies...")
+            # Start smooth progress animation
+            self._progress_timer.start(500)  # Tick every 500ms
         elif percent >= 100 or "cancel" in message.lower() or "failed" in message.lower():
+            self._progress_timer.stop()
+            self._install_start_time = None
+            self.deps_progress.setValue(percent)
             self.deps_progress.setVisible(False)
             self.deps_progress_label.setVisible(False)
             self.cancel_deps_button.setVisible(False)
             self.install_button.setEnabled(True)
             self.install_button.setText("Install Dependencies")
+            if "cancel" in message.lower():
+                self.deps_status_label.setText("Installation cancelled")
+            elif "failed" in message.lower():
+                self.deps_status_label.setText("Installation failed")
+        else:
+            # Update progress smoothly - jump to actual progress if we're behind
+            if self._current_progress < percent:
+                self._current_progress = percent
+                self.deps_progress.setValue(percent)
+
+    def _on_progress_tick(self):
+        """Animate progress bar smoothly between updates."""
+        # Only animate if we haven't reached the target yet
+        if self._current_progress < self._target_progress:
+            # Catch up to target
+            step = max(1, (self._target_progress - self._current_progress) // 3)
+            self._current_progress = min(self._current_progress + step, self._target_progress)
+        elif self._current_progress < 99 and self._target_progress > 0:
+            # Slowly advance toward target to show activity (max 1% per tick)
+            # But don't exceed target by more than a small buffer
+            if self._current_progress < self._target_progress + 3:
+                self._current_progress += 1
+
+        self.deps_progress.setValue(self._current_progress)
 
 
     def set_checkpoint_status(self, ok: bool, message: str):
@@ -406,13 +462,13 @@ class AISegmentationDockWidget(QDockWidget):
         self.checkpoint_status_label.setText(message)
 
         if ok:
-            self.checkpoint_status_label.setStyleSheet("color: #388e3c; font-weight: bold;")
+            self.checkpoint_status_label.setStyleSheet("font-weight: bold;")
             self.download_button.setVisible(False)
             self.checkpoint_progress.setVisible(False)
             self.checkpoint_progress_label.setVisible(False)
             self.checkpoint_group.setVisible(False)
         else:
-            self.checkpoint_status_label.setStyleSheet("color: #f57c00;")
+            self.checkpoint_status_label.setStyleSheet("")
             self.download_button.setVisible(True)
             self.download_button.setEnabled(True)
             self.checkpoint_group.setVisible(True)
@@ -429,12 +485,15 @@ class AISegmentationDockWidget(QDockWidget):
             self.cancel_download_button.setVisible(True)
             self.download_button.setEnabled(False)
             self.download_button.setText("Downloading...")
+            self.checkpoint_status_label.setText("Model downloading...")
         elif percent >= 100 or "cancel" in message.lower():
             self.checkpoint_progress.setVisible(False)
             self.checkpoint_progress_label.setVisible(False)
             self.cancel_download_button.setVisible(False)
             self.download_button.setEnabled(True)
             self.download_button.setText("Download SAM Model (~375MB)")
+            if "cancel" in message.lower():
+                self.checkpoint_status_label.setText("Download cancelled")
 
     def set_preparation_progress(self, percent: int, message: str, cache_path: str = None):
         import time
@@ -463,8 +522,8 @@ class AISegmentationDockWidget(QDockWidget):
             self.start_button.setVisible(False)
             self.cancel_prep_button.setVisible(True)
             self.encoding_info_label.setText(
-                "⏳ Preparing image for instant segmentation...\n"
-                "This only happens once per image - results are cached."
+                "⏳ Preparing image for segmentation...\n"
+                "One-time only - results are cached."
             )
             self.encoding_info_label.setVisible(True)
         elif percent >= 100 or "cancel" in message.lower():
@@ -484,7 +543,7 @@ class AISegmentationDockWidget(QDockWidget):
                 display_path = "..." + display_path[-42:]
             self.encoding_info_label.setText(f"✓ Cached at:\n{display_path}")
             self.encoding_info_label.setStyleSheet(
-                "background-color: #e8f5e9; color: #2e7d32; padding: 8px; "
+                "background-color: #e8f5e9; padding: 8px; "
                 "border-radius: 4px; font-size: 10px;"
             )
             self.encoding_info_label.setVisible(True)
@@ -520,15 +579,15 @@ class AISegmentationDockWidget(QDockWidget):
         if self._saved_polygon_count > 0:
             self.export_button.setEnabled(True)
             self.export_button.setStyleSheet(
-                "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; }"
+                "QPushButton { background-color: #4CAF50; font-weight: bold; }"
             )
-            self.export_button.setToolTip(f"Save {self._saved_polygon_count} polygon(s) as a new layer")
+            self.export_button.setToolTip(f"Save {self._saved_polygon_count} polygon(s) as a new layer (Enter)")
         else:
             self.export_button.setEnabled(False)
             self.export_button.setStyleSheet(
-                "QPushButton { background-color: #9e9e9e; color: #666; }"
+                "QPushButton { background-color: #b0bec5; }"
             )
-            self.export_button.setToolTip("Add polygons first, then save as layer")
+            self.export_button.setToolTip("Add polygons first, then save as layer (Enter)")
 
     def set_point_count(self, positive: int, negative: int):
         self._positive_count = positive
@@ -543,6 +602,7 @@ class AISegmentationDockWidget(QDockWidget):
         # Update dynamic instructions
         if self._segmentation_active:
             self._update_instructions()
+            self._update_status_hint()
 
     def set_status(self, message: str):
         self.status_label.setText(message)
@@ -554,18 +614,31 @@ class AISegmentationDockWidget(QDockWidget):
         if total == 0:
             # No points yet - invite user to click
             text = "Click on the element you want to segment"
-            self.status_label.setText("Click on image to start")
-        elif total == 1:
-            # One point - encourage refinement
-            text = "Good! Add more clicks to refine the selection"
-            self.status_label.setText(f"{self._positive_count} include · {self._negative_count} exclude")
         else:
-            # Multiple points
-            text = "Continue refining or press S to save"
-            saved_info = f" · {self._saved_polygon_count} saved" if self._saved_polygon_count > 0 else ""
-            self.status_label.setText(f"{self._positive_count} include · {self._negative_count} exclude{saved_info}")
+            # Show click counts with simple indicators
+            # ● = include (green marker on map), ✕ = exclude (red marker on map)
+            text = f"● {self._positive_count} include · ✕ {self._negative_count} exclude"
 
         self.instructions_label.setText(text)
+
+    def _update_status_hint(self):
+        """Show contextual hints in status bar (shortcuts, tips)."""
+        total = self._positive_count + self._negative_count
+
+        if total == 0:
+            # No points - hint about clicking
+            hint = "Left-click: include · Right-click: exclude"
+        elif total == 1 and self._saved_polygon_count == 0:
+            # First point - hint about saving
+            hint = "S: save polygon · Ctrl+Z: undo"
+        elif self._saved_polygon_count > 0:
+            # Has saved polygons - hint about exporting
+            hint = f"{self._saved_polygon_count} polygon(s) ready · Enter: export to layer"
+        else:
+            # Multiple points - hint about actions
+            hint = "S: save · Enter: export · Ctrl+Z: undo"
+
+        self.status_label.setText(hint)
 
     def reset_session(self):
         self._has_mask = False

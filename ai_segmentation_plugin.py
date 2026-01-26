@@ -267,6 +267,7 @@ class AISegmentationPlugin:
         self.map_tool.tool_deactivated.connect(self._on_tool_deactivated)
         self.map_tool.undo_requested.connect(self._on_undo)
         self.map_tool.save_polygon_requested.connect(self._on_save_polygon)
+        self.map_tool.export_layer_requested.connect(self._on_export_layer)
         self.map_tool.clear_requested.connect(self._on_clear_points)
 
         self.mask_rubber_band = QgsRubberBand(
@@ -491,7 +492,7 @@ class AISegmentationPlugin:
         self.dock_widget.set_deps_install_progress(100, "Done")
 
         if success:
-            from .core.venv_manager import verify_venv
+            from .core.venv_manager import verify_venv, get_venv_dir
             is_valid, verify_msg = verify_venv()
 
             if is_valid:
@@ -500,12 +501,26 @@ class AISegmentationPlugin:
                 self._verify_venv()
                 self._check_checkpoint()
 
-                QMessageBox.information(
-                    self.iface.mainWindow(),
-                    "Installation Complete",
-                    "Virtual environment created and dependencies installed successfully!\n\n"
-                    "You can now start using AI Segmentation."
+                # Show installation complete dialog with path and copy button
+                venv_path = get_venv_dir()
+                display_path = venv_path
+                if len(display_path) > 60:
+                    display_path = "..." + display_path[-57:]
+
+                msg_box = QMessageBox(self.iface.mainWindow())
+                msg_box.setIcon(QMessageBox.Information)
+                msg_box.setWindowTitle("Installation Complete")
+                msg_box.setText(
+                    f"Dependencies installed at:\n{display_path}\n\n"
+                    "Download the AI Segmentation Model to continue."
                 )
+                msg_box.addButton(QMessageBox.Ok)
+                copy_btn = msg_box.addButton("Copy Path", QMessageBox.ActionRole)
+                msg_box.exec_()
+
+                if msg_box.clickedButton() == copy_btn:
+                    from qgis.PyQt.QtWidgets import QApplication
+                    QApplication.clipboard().setText(venv_path)
             else:
                 self.dock_widget.set_dependency_status(False, f"Verification failed: {verify_msg}")
                 self.dock_widget.set_status("Installation verification failed - see logs")
