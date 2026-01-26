@@ -450,14 +450,8 @@ class AISegmentationPlugin:
         reply = QMessageBox.question(
             self.iface.mainWindow(),
             "Install Dependencies",
-            "The AI Segmentation plugin will create a virtual environment\n"
-            "and install the following packages:\n\n"
-            "• PyTorch (~2GB) - Deep learning framework\n"
-            "• Segment Anything Model - AI segmentation\n"
-            "• pandas, rasterio - Supporting libraries\n\n"
-            "Download size: ~2.5GB\n"
-            "This may take 5-10 minutes depending on your internet speed.\n\n"
-            "Do you want to continue?",
+            "Download ~2.5GB of AI dependencies?\n\n"
+            "This may take 5-10 minutes.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
         )
@@ -504,23 +498,30 @@ class AISegmentationPlugin:
                 # Show installation complete dialog with path and copy button
                 venv_path = get_venv_dir()
                 display_path = venv_path
-                if len(display_path) > 60:
-                    display_path = "..." + display_path[-57:]
+                if len(display_path) > 50:
+                    display_path = "..." + display_path[-47:]
+
+                from qgis.PyQt.QtWidgets import QApplication
 
                 msg_box = QMessageBox(self.iface.mainWindow())
                 msg_box.setIcon(QMessageBox.Information)
                 msg_box.setWindowTitle("Installation Complete")
                 msg_box.setText(
-                    f"Dependencies installed at:\n{display_path}\n\n"
-                    "Download the AI Segmentation Model to continue."
+                    f"Installed at: {display_path}\n\n"
+                    "Now download the AI model to start."
                 )
-                msg_box.addButton(QMessageBox.Ok)
+                ok_btn = msg_box.addButton(QMessageBox.Ok)
                 copy_btn = msg_box.addButton("Copy Path", QMessageBox.ActionRole)
-                msg_box.exec_()
 
-                if msg_box.clickedButton() == copy_btn:
-                    from qgis.PyQt.QtWidgets import QApplication
-                    QApplication.clipboard().setText(venv_path)
+                # Loop to allow copying without closing
+                while True:
+                    msg_box.exec_()
+                    if msg_box.clickedButton() == copy_btn:
+                        QApplication.clipboard().setText(venv_path)
+                        copy_btn.setText("✓ Copied!")
+                        copy_btn.setEnabled(False)
+                    else:
+                        break
             else:
                 self.dock_widget.set_dependency_status(False, f"Verification failed: {verify_msg}")
                 self.dock_widget.set_status("Installation verification failed - see logs")
@@ -751,7 +752,7 @@ class AISegmentationPlugin:
 
         self.iface.mapCanvas().setMapTool(self.map_tool)
         self.dock_widget.set_segmentation_active(True)
-        self.dock_widget.set_status("Click on image to select objects")
+        # Status bar hint will be set by _update_status_hint via set_point_count
 
     def _on_save_polygon(self):
         """Save current polygon from mask."""
@@ -802,6 +803,11 @@ class AISegmentationPlugin:
         self.dock_widget.set_point_count(0, 0)
 
     def _on_export_layer(self):
+        # Only allow export if at least one polygon is saved
+        if not self.saved_polygons:
+            # Silently ignore - Enter should only work when polygons are saved
+            return
+
         from .core.polygon_exporter import mask_to_polygons
 
         polygons_to_export = list(self.saved_polygons)
@@ -817,10 +823,6 @@ class AISegmentationPlugin:
                         'score': self.current_score,
                         'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
                     })
-
-        if not polygons_to_export:
-            self.dock_widget.set_status("No polygons to export")
-            return
 
         self._stopping_segmentation = True
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
@@ -1030,13 +1032,31 @@ class AISegmentationPlugin:
 
     def _on_stop_segmentation(self):
         """Exit segmentation mode without saving."""
+        # Count polygons that will be lost
+        polygon_count = len(self.saved_polygons)
+        if self.current_mask is not None:
+            polygon_count += 1  # Include current unsaved polygon
+
+        # Show warning if there are polygons
+        if polygon_count > 0:
+            reply = QMessageBox.warning(
+                self.iface.mainWindow(),
+                "Stop Segmentation?",
+                f"This will discard {polygon_count} polygon(s).\n\n"
+                "Use 'Save as Layer' to keep them.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+
         self._stopping_segmentation = True
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
         self._restore_previous_map_tool()
         self._stopping_segmentation = False
         self._reset_session()
         self.dock_widget.reset_session()
-        self.dock_widget.set_status("Segmentation stopped")
+        self.dock_widget.set_status("Ready")
 
     def _on_positive_click(self, point):
         """Handle left-click: add positive point (include this area)."""
