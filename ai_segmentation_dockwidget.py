@@ -51,6 +51,8 @@ class AISegmentationDockWidget(QDockWidget):
         self._has_mask = False
         self._saved_polygon_count = 0
         self._encoding_start_time = None
+        self._positive_count = 0
+        self._negative_count = 0
 
         # Connect to project layer signals for dynamic updates
         QgsProject.instance().layersAdded.connect(self._on_layers_added)
@@ -161,21 +163,17 @@ class AISegmentationDockWidget(QDockWidget):
         self.no_rasters_label.setVisible(False)
         layout.addWidget(self.no_rasters_label)
 
-        self.active_instructions_label = QLabel(
-            "CLICK TO SEGMENT\n\n"
-            "Left-click = Include this area (green)\n"
-            "Right-click = Exclude this area (red)\n"
-            "Ctrl+Z = Undo last point\n"
-            "Escape = Clear all points\n"
-            "S or Enter = Save polygon"
+        # Dynamic instruction label - changes based on user state
+        self.instructions_label = QLabel("")
+        self.instructions_label.setWordWrap(True)
+        self.instructions_label.setStyleSheet(
+            "font-size: 12px; padding: 8px 0px;"
         )
-        self.active_instructions_label.setStyleSheet(
-            "color: #1976d2; font-size: 11px; font-weight: bold; "
-            "background-color: #e3f2fd; padding: 10px; border-radius: 4px;"
+        self.instructions_label.setToolTip(
+            "Shortcuts: Ctrl+Z (undo) · S (save) · Escape (clear)"
         )
-        self.active_instructions_label.setWordWrap(True)
-        self.active_instructions_label.setVisible(False)
-        layout.addWidget(self.active_instructions_label)
+        self.instructions_label.setVisible(False)
+        layout.addWidget(self.instructions_label)
 
         # Encoding progress section
         self.encoding_info_label = QLabel("")
@@ -500,7 +498,8 @@ class AISegmentationDockWidget(QDockWidget):
         if self._segmentation_active:
             self.start_button.setVisible(False)
             self.encoding_info_label.setVisible(False)
-            self.active_instructions_label.setVisible(True)
+            self.instructions_label.setVisible(True)
+            self._update_instructions()
             self.save_polygon_button.setVisible(True)
             self.save_polygon_button.setEnabled(self._has_mask)
             self.export_button.setVisible(True)
@@ -510,7 +509,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.secondary_buttons_widget.setVisible(True)
         else:
             self.start_button.setVisible(True)
-            self.active_instructions_label.setVisible(False)
+            self.instructions_label.setVisible(False)
             self.save_polygon_button.setVisible(False)
             self.export_button.setVisible(False)
             self.undo_button.setVisible(False)
@@ -532,6 +531,8 @@ class AISegmentationDockWidget(QDockWidget):
             self.export_button.setToolTip("Add polygons first, then save as layer")
 
     def set_point_count(self, positive: int, negative: int):
+        self._positive_count = positive
+        self._negative_count = negative
         total = positive + negative
         has_points = total > 0
         self._has_mask = has_points
@@ -539,16 +540,39 @@ class AISegmentationDockWidget(QDockWidget):
         self.undo_button.setEnabled(has_points and self._segmentation_active)
         self.save_polygon_button.setEnabled(has_points)
 
-        if has_points:
-            self.status_label.setText(f"{positive} include, {negative} exclude")
+        # Update dynamic instructions
+        if self._segmentation_active:
+            self._update_instructions()
 
     def set_status(self, message: str):
         self.status_label.setText(message)
+
+    def _update_instructions(self):
+        """Update instruction text based on current segmentation state."""
+        total = self._positive_count + self._negative_count
+
+        if total == 0:
+            # No points yet - invite user to click
+            text = "Click on the element you want to segment"
+            self.status_label.setText("Click on image to start")
+        elif total == 1:
+            # One point - encourage refinement
+            text = "Good! Add more clicks to refine the selection"
+            self.status_label.setText(f"{self._positive_count} include · {self._negative_count} exclude")
+        else:
+            # Multiple points
+            text = "Continue refining or press S to save"
+            saved_info = f" · {self._saved_polygon_count} saved" if self._saved_polygon_count > 0 else ""
+            self.status_label.setText(f"{self._positive_count} include · {self._negative_count} exclude{saved_info}")
+
+        self.instructions_label.setText(text)
 
     def reset_session(self):
         self._has_mask = False
         self._segmentation_active = False
         self._saved_polygon_count = 0
+        self._positive_count = 0
+        self._negative_count = 0
         self._update_button_visibility()
         self._update_ui_state()
 
