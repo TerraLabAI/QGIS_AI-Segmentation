@@ -163,7 +163,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.no_rasters_label = QLabel("No compatible raster found. Add a GeoTIFF or local image to your project.")
         self.no_rasters_label.setStyleSheet(
-            "background-color: #fff3cd; padding: 8px; "
+            "padding: 8px; border: 1px solid palette(mid); "
             "border-radius: 4px; font-size: 11px;"
         )
         self.no_rasters_label.setWordWrap(True)
@@ -228,7 +228,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.start_button)
 
         # Primary action buttons (large)
-        self.save_polygon_button = QPushButton("Save Shape")
+        self.save_polygon_button = QPushButton("Add Polygon")
         self.save_polygon_button.clicked.connect(self._on_save_polygon_clicked)
         self.save_polygon_button.setVisible(False)
         self.save_polygon_button.setEnabled(False)
@@ -238,9 +238,9 @@ class AISegmentationDockWidget(QDockWidget):
             "QPushButton:disabled { background-color: #b0bec5; }"
         )
         self.save_polygon_button.setToolTip(
-            "Save current shape to your session (S)\n\n"
-            "You can save multiple shapes before exporting.\n"
-            "The shape stays in memory until you export or stop."
+            "Save current polygon to your session (S)\n\n"
+            "You can save multiple polygons before exporting.\n"
+            "The polygon stays in memory until you export or stop."
         )
         layout.addWidget(self.save_polygon_button)
 
@@ -253,7 +253,7 @@ class AISegmentationDockWidget(QDockWidget):
             "QPushButton { background-color: #b0bec5; }"
         )
         self.export_button.setToolTip(
-            "Export all saved shapes as a new vector layer (Enter)\n\n"
+            "Export all saved polygons as a new vector layer (Enter)\n\n"
             "This will create a permanent layer in your project\n"
             "and end the current segmentation session."
         )
@@ -300,6 +300,13 @@ class AISegmentationDockWidget(QDockWidget):
             "padding: 8px; border-radius: 4px;"
         )
         self.status_label.setWordWrap(True)
+        self.status_label.setToolTip(
+            "Keyboard shortcuts:\n"
+            "S = Save polygon to session\n"
+            "Enter = Export all polygons as layer\n"
+            "Ctrl+Z = Undo last point\n"
+            "Escape = Clear current points"
+        )
         self.main_layout.addWidget(self.status_label)
 
     def _on_install_clicked(self):
@@ -593,7 +600,7 @@ class AISegmentationDockWidget(QDockWidget):
                 "QPushButton { background-color: #4CAF50; font-weight: bold; }"
             )
             self.export_button.setToolTip(
-                f"Export {self._saved_polygon_count} shape(s) as a new layer (Enter)\n\n"
+                f"Export {self._saved_polygon_count} polygon(s) as a new layer (Enter)\n\n"
                 "Creates a permanent vector layer and ends the session."
             )
         else:
@@ -602,8 +609,8 @@ class AISegmentationDockWidget(QDockWidget):
                 "QPushButton { background-color: #b0bec5; }"
             )
             self.export_button.setToolTip(
-                "Save at least one shape first (S)\n\n"
-                "Then you can export all shapes as a layer."
+                "Save at least one polygon first (S)\n\n"
+                "Then you can export all polygons as a layer."
             )
 
     def set_point_count(self, positive: int, negative: int):
@@ -639,26 +646,23 @@ class AISegmentationDockWidget(QDockWidget):
             # Show click counts + state message
             counts = f"🟢 {self._positive_count} included · ❌ {self._negative_count} excluded"
             if self._saved_polygon_count > 0:
-                state = f"{self._saved_polygon_count} shape(s) saved"
+                state = f"{self._saved_polygon_count} polygon(s) saved"
             else:
-                state = "Refine or press S to save"
+                state = "Refine selection or save polygon"
             text = f"{counts}\n{state}"
 
         self.instructions_label.setText(text)
 
     def _update_status_hint(self):
-        """Show contextual hints in status bar (shortcuts, tips). Don't duplicate panel info."""
+        """Show contextual status in status bar. No shortcuts here - they're in tooltips only."""
         total = self._positive_count + self._negative_count
 
         if total == 0:
-            # Starting - no duplication, just shortcuts
-            hint = "S: save to session · Enter: export & exit"
+            hint = "Click on the map to start segmenting"
         elif self._saved_polygon_count > 0:
-            # Has saved polygons - explain session flow
-            hint = "S: add more · Enter: export all & exit"
+            hint = f"{self._saved_polygon_count} polygon(s) ready to export"
         else:
-            # Has points but no saved polygons
-            hint = "S: save to session · Ctrl+Z: undo"
+            hint = "Preview active · Add points to refine"
 
         self.status_label.setText(hint)
 
