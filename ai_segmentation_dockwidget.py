@@ -177,7 +177,7 @@ class AISegmentationDockWidget(QDockWidget):
             "font-size: 12px; padding: 8px 0px;"
         )
         self.instructions_label.setToolTip(
-            "Shortcuts: S (save polygon) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)"
+            "Shortcuts: S (save polygon) · Enter (save as layer) · Ctrl+Z (undo) · Escape (clear)"
         )
         self.instructions_label.setVisible(False)
         layout.addWidget(self.instructions_label)
@@ -592,13 +592,19 @@ class AISegmentationDockWidget(QDockWidget):
             self.export_button.setStyleSheet(
                 "QPushButton { background-color: #4CAF50; font-weight: bold; }"
             )
-            self.export_button.setToolTip(f"Save {self._saved_polygon_count} polygon(s) as a new layer (Enter)")
+            self.export_button.setToolTip(
+                f"Export {self._saved_polygon_count} shape(s) as a new layer (Enter)\n\n"
+                "Creates a permanent vector layer and ends the session."
+            )
         else:
             self.export_button.setEnabled(False)
             self.export_button.setStyleSheet(
                 "QPushButton { background-color: #b0bec5; }"
             )
-            self.export_button.setToolTip("Add polygons first, then save as layer (Enter)")
+            self.export_button.setToolTip(
+                "Save at least one shape first (S)\n\n"
+                "Then you can export all shapes as a layer."
+            )
 
     def set_point_count(self, positive: int, negative: int):
         self._positive_count = positive
