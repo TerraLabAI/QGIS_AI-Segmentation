@@ -64,6 +64,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._positive_count = 0
         self._negative_count = 0
         self._plugin_activated = is_plugin_activated()
+        self._activation_popup_shown = False  # Track if popup was shown
 
         # Smooth progress animation timer for long-running installs
         self._progress_timer = QTimer(self)
@@ -76,8 +77,8 @@ class AISegmentationDockWidget(QDockWidget):
         QgsProject.instance().layersAdded.connect(self._on_layers_added)
         QgsProject.instance().layersRemoved.connect(self._on_layers_removed)
 
-        # Update activation UI state
-        self._update_activation_ui()
+        # Update UI state
+        self._update_full_ui()
 
     def _setup_ui(self):
         self._setup_dependencies_section()
@@ -155,44 +156,28 @@ class AISegmentationDockWidget(QDockWidget):
         self.main_layout.addWidget(self.checkpoint_group)
 
     def _setup_activation_section(self):
-        """Setup the activation section shown when plugin is not activated."""
-        self.activation_group = QGroupBox("Activate Plugin")
+        """Setup the minimal activation section - only shown if popup was closed without activating."""
+        self.activation_group = QGroupBox("Unlock Plugin")
         layout = QVBoxLayout(self.activation_group)
 
-        # Description
-        desc_label = QLabel(
-            "This plugin is in beta. Sign up to receive updates\n"
-            "on new features and upcoming AI plugins for QGIS."
-        )
-        desc_label.setWordWrap(True)
-        desc_label.setAlignment(Qt.AlignCenter)
+        # Minimal description
+        desc_label = QLabel("Enter your code to unlock:")
+        desc_label.setStyleSheet("font-size: 11px;")
         layout.addWidget(desc_label)
 
-        # Get code button
-        self.get_code_button = QPushButton("Get Your Free Activation Code")
-        self.get_code_button.setMinimumHeight(36)
-        self.get_code_button.setCursor(Qt.PointingHandCursor)
-        self.get_code_button.setStyleSheet(
-            "QPushButton { background-color: #2e7d32; color: white; "
-            "font-weight: bold; border-radius: 4px; }"
-            "QPushButton:hover { background-color: #1b5e20; }"
-        )
-        self.get_code_button.clicked.connect(self._on_get_code_clicked)
-        layout.addWidget(self.get_code_button)
-
-        # Code input section
+        # Code input section - compact
         code_layout = QHBoxLayout()
-        code_layout.setSpacing(8)
+        code_layout.setSpacing(6)
 
         self.activation_code_input = QLineEdit()
-        self.activation_code_input.setPlaceholderText("Enter activation code")
-        self.activation_code_input.setMinimumHeight(32)
+        self.activation_code_input.setPlaceholderText("Code")
+        self.activation_code_input.setMinimumHeight(28)
         self.activation_code_input.returnPressed.connect(self._on_activate_clicked)
         code_layout.addWidget(self.activation_code_input)
 
-        self.activate_button = QPushButton("Activate")
-        self.activate_button.setMinimumHeight(32)
-        self.activate_button.setMinimumWidth(70)
+        self.activate_button = QPushButton("Unlock")
+        self.activate_button.setMinimumHeight(28)
+        self.activate_button.setMinimumWidth(60)
         self.activate_button.setStyleSheet(
             "QPushButton { background-color: #1976d2; color: white; "
             "font-weight: bold; border-radius: 4px; }"
@@ -203,21 +188,37 @@ class AISegmentationDockWidget(QDockWidget):
 
         layout.addLayout(code_layout)
 
+        # Link to get code
+        link_layout = QHBoxLayout()
+        get_code_link = QPushButton("Get code →")
+        get_code_link.setCursor(Qt.PointingHandCursor)
+        get_code_link.setStyleSheet(
+            "QPushButton { background-color: transparent; color: #1976d2; "
+            "border: none; font-size: 11px; padding: 0; }"
+            "QPushButton:hover { color: #1565c0; text-decoration: underline; }"
+        )
+        get_code_link.clicked.connect(self._on_get_code_clicked)
+        link_layout.addStretch()
+        link_layout.addWidget(get_code_link)
+        layout.addLayout(link_layout)
+
         # Error message label
         self.activation_message_label = QLabel("")
         self.activation_message_label.setAlignment(Qt.AlignCenter)
         self.activation_message_label.setWordWrap(True)
         self.activation_message_label.setVisible(False)
+        self.activation_message_label.setStyleSheet("font-size: 11px;")
         layout.addWidget(self.activation_message_label)
 
+        # Hidden by default - only shown if popup closed without activation
+        self.activation_group.setVisible(False)
         self.main_layout.addWidget(self.activation_group)
 
     def _setup_segmentation_section(self):
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setFrameShadow(QFrame.Sunken)
-        self.main_layout.addWidget(sep)
-        self.seg_separator = sep
+        self.seg_separator = QFrame()
+        self.seg_separator.setFrameShape(QFrame.HLine)
+        self.seg_separator.setFrameShadow(QFrame.Sunken)
+        self.main_layout.addWidget(self.seg_separator)
 
         self.seg_widget = QWidget()
         layout = QVBoxLayout(self.seg_widget)
@@ -245,20 +246,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.no_rasters_label.setWordWrap(True)
         self.no_rasters_label.setVisible(False)
         layout.addWidget(self.no_rasters_label)
-
-        # Activation required overlay message
-        self.activation_required_label = QLabel(
-            "Activate the plugin to use AI Segmentation.\n"
-            "Get your free code above."
-        )
-        self.activation_required_label.setStyleSheet(
-            "padding: 16px; border: 1px solid palette(mid); "
-            "border-radius: 4px; font-size: 11px; color: palette(mid);"
-        )
-        self.activation_required_label.setWordWrap(True)
-        self.activation_required_label.setAlignment(Qt.AlignCenter)
-        self.activation_required_label.setVisible(False)
-        layout.addWidget(self.activation_required_label)
 
         # Dynamic instruction label - changes based on user state
         self.instructions_label = QLabel("")
@@ -379,26 +366,18 @@ class AISegmentationDockWidget(QDockWidget):
         self.main_layout.addWidget(self.seg_widget)
 
     def _setup_about_section(self):
-        """Setup the About/Help section with TerraLab links."""
-        self.about_group = QGroupBox("Help & Support")
+        """Setup the Help section with TerraLab link."""
+        self.about_group = QGroupBox("🐛 Bugs & Feedback")
         layout = QVBoxLayout(self.about_group)
+        layout.setSpacing(4)
 
-        # Info text
-        info_label = QLabel(
-            "Found a bug? Have a suggestion?\n"
-            "Check our documentation / contact us :"
-        )
-        info_label.setWordWrap(True)
-        info_label.setStyleSheet("font-size: 11px;")
-        layout.addWidget(info_label)
-
-        # Website link button
-        website_button = QPushButton("Visit terra-lab.ai")
+        # Website link button - simple and direct
+        website_button = QPushButton("terra-lab.ai")
         website_button.setCursor(Qt.PointingHandCursor)
         website_button.setStyleSheet(
             "QPushButton { background-color: transparent; color: #1976d2; "
-            "text-decoration: underline; border: none; text-align: left; }"
-            "QPushButton:hover { color: #1565c0; }"
+            "border: none; font-size: 12px; text-align: left; }"
+            "QPushButton:hover { color: #1565c0; text-decoration: underline; }"
         )
         website_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(get_website_url())))
         layout.addWidget(website_button)
@@ -410,11 +389,6 @@ class AISegmentationDockWidget(QDockWidget):
         sep.setFrameShape(QFrame.HLine)
         sep.setFrameShadow(QFrame.Sunken)
         self.main_layout.addWidget(sep)
-
-        # Status bar with website link
-        status_layout = QHBoxLayout()
-        status_layout.setContentsMargins(0, 0, 0, 0)
-        status_layout.setSpacing(8)
 
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet(
@@ -429,27 +403,7 @@ class AISegmentationDockWidget(QDockWidget):
             "Ctrl+Z = Undo last point\n"
             "Escape = Clear current points"
         )
-        status_layout.addWidget(self.status_label, 1)
-
-        status_widget = QWidget()
-        status_widget.setLayout(status_layout)
-        self.main_layout.addWidget(status_widget)
-
-        # Footer link to TerraLab
-        footer_layout = QHBoxLayout()
-        footer_layout.setContentsMargins(0, 4, 0, 0)
-
-        footer_link = QLabel(
-            f'<a href="{get_website_url()}" style="color: #1976d2; font-size: 10px;">terra-lab.ai</a>'
-        )
-        footer_link.setOpenExternalLinks(True)
-        footer_link.setAlignment(Qt.AlignRight)
-        footer_layout.addStretch()
-        footer_layout.addWidget(footer_link)
-
-        footer_widget = QWidget()
-        footer_widget.setLayout(footer_layout)
-        self.main_layout.addWidget(footer_widget)
+        self.main_layout.addWidget(self.status_label)
 
     def _on_get_code_clicked(self):
         """Open the newsletter signup page in the default browser."""
@@ -460,18 +414,18 @@ class AISegmentationDockWidget(QDockWidget):
         code = self.activation_code_input.text().strip()
 
         if not code:
-            self._show_activation_message("Please enter your activation code.", is_error=True)
+            self._show_activation_message("Enter your code", is_error=True)
             return
 
         success, message = activate_plugin(code)
 
         if success:
             self._plugin_activated = True
-            self._show_activation_message("Plugin activated!", is_error=False)
-            self._update_activation_ui()
-            self.set_status("Plugin activated! Ready to use.")
+            self._show_activation_message("Unlocked!", is_error=False)
+            self._update_full_ui()
+            self.set_status("Plugin unlocked!")
         else:
-            self._show_activation_message(message, is_error=True)
+            self._show_activation_message("Invalid code", is_error=True)
             self.activation_code_input.selectAll()
             self.activation_code_input.setFocus()
 
@@ -479,41 +433,27 @@ class AISegmentationDockWidget(QDockWidget):
         """Display a message in the activation section."""
         self.activation_message_label.setText(text)
         if is_error:
-            self.activation_message_label.setStyleSheet("color: #d32f2f; font-weight: bold;")
+            self.activation_message_label.setStyleSheet("color: #d32f2f; font-size: 11px;")
         else:
-            self.activation_message_label.setStyleSheet("color: #2e7d32; font-weight: bold;")
+            self.activation_message_label.setStyleSheet("color: #2e7d32; font-size: 11px;")
         self.activation_message_label.setVisible(True)
 
-    def _update_activation_ui(self):
-        """Update UI based on activation state."""
-        if self._plugin_activated:
-            # Hide activation section
-            self.activation_group.setVisible(False)
-            # Show segmentation controls
-            self.activation_required_label.setVisible(False)
-            self._set_segmentation_enabled(True)
-        else:
-            # Show activation section
-            self.activation_group.setVisible(True)
-            # Disable segmentation controls
-            self.activation_required_label.setVisible(True)
-            self._set_segmentation_enabled(False)
+    def _update_full_ui(self):
+        """Update the full UI based on current state."""
+        # Segmentation section visibility: only show if deps + model + activated
+        show_segmentation = self._dependencies_ok and self._checkpoint_ok and self._plugin_activated
+        self.seg_widget.setVisible(show_segmentation)
+        self.seg_separator.setVisible(show_segmentation)
 
-    def _set_segmentation_enabled(self, enabled: bool):
-        """Enable or disable the segmentation section."""
-        self.layer_combo.setEnabled(enabled)
-        self.layer_label.setEnabled(enabled)
-        self.start_button.setVisible(enabled)
-        self.layer_combo.setVisible(enabled)
+        # Activation section: only show if deps OK but not activated AND popup was shown
+        show_activation = (
+            self._dependencies_ok and
+            not self._plugin_activated and
+            self._activation_popup_shown
+        )
+        self.activation_group.setVisible(show_activation)
 
-        if not enabled:
-            self.no_rasters_label.setVisible(False)
-
-        # Update styling for disabled state
-        if enabled:
-            self.layer_label.setStyleSheet("font-weight: bold;")
-        else:
-            self.layer_label.setStyleSheet("font-weight: bold; color: palette(mid);")
+        self._update_ui_state()
 
     def _on_install_clicked(self):
         self.install_button.setEnabled(False)
@@ -556,16 +496,13 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _on_layers_added(self, layers):
         """Handle new layers added to project - auto-select if none selected."""
-        # Only auto-select if no layer is currently selected
         if self.layer_combo.currentLayer() is not None:
             return
 
-        # Check if any of the new layers are compatible rasters
         for layer in layers:
             if layer.type() == layer.RasterLayer:
                 provider = layer.dataProvider()
                 if provider and provider.name() not in ['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs']:
-                    # Found a compatible raster, select it
                     self.layer_combo.setLayer(layer)
                     break
 
@@ -609,19 +546,17 @@ class AISegmentationDockWidget(QDockWidget):
             self.install_button.setEnabled(True)
             self.deps_group.setVisible(True)
 
-        self._update_ui_state()
+        self._update_full_ui()
 
     def set_deps_install_progress(self, percent: int, message: str):
         import time
 
-        # Store target progress for smooth animation
         self._target_progress = percent
 
-        # Calculate time estimate
         time_info = ""
         if percent > 5 and percent < 100 and self._install_start_time:
             elapsed = time.time() - self._install_start_time
-            if elapsed > 5:  # Only show after 5 seconds
+            if elapsed > 5:
                 estimated_total = elapsed / (percent / 100)
                 remaining = estimated_total - elapsed
                 if remaining > 60:
@@ -641,8 +576,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.install_button.setEnabled(False)
             self.install_button.setText("Installing...")
             self.deps_status_label.setText("Installing dependencies...")
-            # Start smooth progress animation
-            self._progress_timer.start(500)  # Tick every 500ms
+            self._progress_timer.start(500)
         elif percent >= 100 or "cancel" in message.lower() or "failed" in message.lower():
             self._progress_timer.stop()
             self._install_start_time = None
@@ -657,26 +591,20 @@ class AISegmentationDockWidget(QDockWidget):
             elif "failed" in message.lower():
                 self.deps_status_label.setText("Installation failed")
         else:
-            # Update progress smoothly - jump to actual progress if we're behind
             if self._current_progress < percent:
                 self._current_progress = percent
                 self.deps_progress.setValue(percent)
 
     def _on_progress_tick(self):
         """Animate progress bar smoothly between updates."""
-        # Only animate if we haven't reached the target yet
         if self._current_progress < self._target_progress:
-            # Catch up to target
             step = max(1, (self._target_progress - self._current_progress) // 3)
             self._current_progress = min(self._current_progress + step, self._target_progress)
         elif self._current_progress < 99 and self._target_progress > 0:
-            # Slowly advance toward target to show activity (max 1% per tick)
-            # But don't exceed target by more than a small buffer
             if self._current_progress < self._target_progress + 3:
                 self._current_progress += 1
 
         self.deps_progress.setValue(self._current_progress)
-
 
     def set_checkpoint_status(self, ok: bool, message: str):
         self._checkpoint_ok = ok
@@ -694,7 +622,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.download_button.setEnabled(True)
             self.checkpoint_group.setVisible(True)
 
-        self._update_ui_state()
+        self._update_full_ui()
 
     def set_download_progress(self, percent: int, message: str):
         self.checkpoint_progress.setValue(percent)
@@ -721,11 +649,10 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.prep_progress.setValue(percent)
 
-        # Calculate time estimate
         time_info = ""
         if percent > 5 and percent < 100 and self._encoding_start_time:
             elapsed = time.time() - self._encoding_start_time
-            if elapsed > 2:  # Only show after 2 seconds
+            if elapsed > 2:
                 estimated_total = elapsed / (percent / 100)
                 remaining = estimated_total - elapsed
                 if remaining > 60:
@@ -736,7 +663,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.prep_status_label.setText(f"{message}{time_info}")
 
         if percent == 0:
-            import time
             self._encoding_start_time = time.time()
             self.prep_progress.setVisible(True)
             self.prep_status_label.setVisible(True)
@@ -829,7 +755,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.undo_button.setEnabled(has_points and self._segmentation_active)
         self.save_polygon_button.setEnabled(has_points)
 
-        # Update dynamic instructions
         if self._segmentation_active:
             self._update_instructions()
             self._update_status_hint()
@@ -842,14 +767,12 @@ class AISegmentationDockWidget(QDockWidget):
         total = self._positive_count + self._negative_count
 
         if total == 0:
-            # No points yet - show click instructions
             text = (
                 "Click on the element you want to segment on the map:\n\n"
                 "🟢 Left-click: Include this area\n"
                 "❌ Right-click: Exclude this area"
             )
         else:
-            # Show click counts + state message
             counts = f"🟢 {self._positive_count} included · ❌ {self._negative_count} excluded"
             if self._saved_polygon_count > 0:
                 state = f"{self._saved_polygon_count} polygon(s) saved"
@@ -860,7 +783,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.instructions_label.setText(text)
 
     def _update_status_hint(self):
-        """Show contextual status in status bar. No shortcuts here - they're in tooltips only."""
+        """Show contextual status in status bar."""
         total = self._positive_count + self._negative_count
 
         if total == 0:
@@ -890,18 +813,9 @@ class AISegmentationDockWidget(QDockWidget):
         layer = self.layer_combo.currentLayer()
         has_layer = layer is not None
 
-        # Check if there are any rasters available
         has_rasters_available = self.layer_combo.count() > 0
-
-        # Handle visibility based on activation state
-        if self._plugin_activated:
-            self.no_rasters_label.setVisible(not has_rasters_available and not self._segmentation_active)
-            self.layer_combo.setVisible(has_rasters_available)
-            self.activation_required_label.setVisible(False)
-        else:
-            self.no_rasters_label.setVisible(False)
-            self.layer_combo.setVisible(False)
-            self.activation_required_label.setVisible(True)
+        self.no_rasters_label.setVisible(not has_rasters_available and not self._segmentation_active)
+        self.layer_combo.setVisible(has_rasters_available)
 
         can_start = (
             self._dependencies_ok and
@@ -912,18 +826,23 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_button.setEnabled(can_start and not self._segmentation_active)
 
     def show_activation_dialog(self):
-        """Show the activation dialog (called from plugin after deps install)."""
+        """Show the activation dialog (called from plugin during install)."""
         from .activation_dialog import ActivationDialog
 
+        self._activation_popup_shown = True
         dialog = ActivationDialog(self)
         dialog.activated.connect(self._on_dialog_activated)
-        dialog.exec_()
+        result = dialog.exec_()
+
+        # If dialog was closed without activation, show the panel section
+        if not self._plugin_activated:
+            self._update_full_ui()
 
     def _on_dialog_activated(self):
         """Handle activation from dialog."""
         self._plugin_activated = True
-        self._update_activation_ui()
-        self.set_status("Plugin activated! Ready to use.")
+        self._update_full_ui()
+        self.set_status("Plugin unlocked!")
 
     def is_activated(self) -> bool:
         """Check if the plugin is activated."""

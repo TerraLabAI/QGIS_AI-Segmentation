@@ -478,6 +478,18 @@ class AISegmentationPlugin:
         self.deps_install_worker.finished.connect(self._on_deps_install_finished)
         self.deps_install_worker.start()
 
+        # Show activation popup 2 seconds after install starts (if not already activated)
+        from .core.activation_manager import is_plugin_activated
+        if not is_plugin_activated():
+            from qgis.PyQt.QtCore import QTimer
+            QTimer.singleShot(2000, self._show_activation_popup_if_needed)
+
+    def _show_activation_popup_if_needed(self):
+        """Show activation popup during installation if not already activated."""
+        from .core.activation_manager import is_plugin_activated
+        if not is_plugin_activated() and not self.dock_widget.is_activated():
+            self.dock_widget.show_activation_dialog()
+
     def _on_deps_install_progress(self, percent: int, message: str):
         self.dock_widget.set_deps_install_progress(percent, message)
         self.dock_widget.set_status(message)
@@ -486,8 +498,7 @@ class AISegmentationPlugin:
         self.dock_widget.set_deps_install_progress(100, "Done")
 
         if success:
-            from .core.venv_manager import verify_venv, get_venv_dir
-            from .core.activation_manager import is_plugin_activated
+            from .core.venv_manager import verify_venv
             is_valid, verify_msg = verify_venv()
 
             if is_valid:
@@ -495,38 +506,6 @@ class AISegmentationPlugin:
                 self.dock_widget.set_status("Dependencies installed! Checking model...")
                 self._verify_venv()
                 self._check_checkpoint()
-
-                # Show activation dialog if not already activated
-                if not is_plugin_activated():
-                    self.dock_widget.show_activation_dialog()
-                else:
-                    # Show installation complete dialog with path and copy button
-                    venv_path = get_venv_dir()
-                    display_path = venv_path
-                    if len(display_path) > 50:
-                        display_path = "..." + display_path[-47:]
-
-                    from qgis.PyQt.QtWidgets import QApplication
-
-                    msg_box = QMessageBox(self.iface.mainWindow())
-                    msg_box.setIcon(QMessageBox.Information)
-                    msg_box.setWindowTitle("Installation Complete")
-                    msg_box.setText(
-                        f"Installed at: {display_path}\n\n"
-                        "Now download the AI model to start."
-                    )
-                    ok_btn = msg_box.addButton(QMessageBox.Ok)
-                    copy_btn = msg_box.addButton("Copy Path", QMessageBox.ActionRole)
-
-                    # Loop to allow copying without closing
-                    while True:
-                        msg_box.exec_()
-                        if msg_box.clickedButton() == copy_btn:
-                            QApplication.clipboard().setText(venv_path)
-                            copy_btn.setText("✓ Copied!")
-                            copy_btn.setEnabled(False)
-                        else:
-                            break
             else:
                 self.dock_widget.set_dependency_status(False, f"Verification failed: {verify_msg}")
                 self.dock_widget.set_status("Installation verification failed - see logs")
