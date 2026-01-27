@@ -84,21 +84,21 @@ class ActivationDialog(QDialog):
         desc_label.setStyleSheet("color: palette(text);")
         layout.addWidget(desc_label)
 
-        # Clear instruction about the flow (slightly smaller to appear secondary)
+        # Clear instruction about the flow
         flow_label = QLabel(
-            "Enter your email and you'll get\n"
-            "a verification code to paste below."
+            "Enter your email and you'll get a<br>"
+            "<b>Verification Code</b> to paste below."
         )
         flow_label.setWordWrap(True)
         flow_label.setAlignment(Qt.AlignCenter)
         flow_font = QFont()
-        flow_font.setPointSize(10)
+        flow_font.setPointSize(12)
         flow_label.setFont(flow_font)
         flow_label.setStyleSheet("color: palette(text);")
         layout.addWidget(flow_label)
 
         # Get code button - clearer label
-        get_code_button = QPushButton("Get my code")
+        get_code_button = QPushButton("Get my verification code")
         get_code_button.setMinimumHeight(40)
         get_code_button.setCursor(Qt.PointingHandCursor)
         get_code_button.setStyleSheet(

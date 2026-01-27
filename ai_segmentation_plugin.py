@@ -235,6 +235,10 @@ class AISegmentationPlugin:
             self.iface.mainWindow()
         )
         self.action.setCheckable(True)
+        self.action.setToolTip(
+            "AI Segmentation by TerraLab\n"
+            "Segment objects on raster images using AI"
+        )
         self.action.triggered.connect(self.toggle_dock_widget)
 
         self.iface.addToolBarIcon(self.action)
@@ -356,7 +360,6 @@ class AISegmentationPlugin:
                 self._check_checkpoint()
             else:
                 self.dock_widget.set_dependency_status(False, message)
-                self.dock_widget.set_status("Click 'Install Dependencies' to set up virtual environment")
                 QgsMessageLog.logMessage(
                     f"Virtual environment status: {message}",
                     "AI Segmentation",
@@ -376,10 +379,8 @@ class AISegmentationPlugin:
             if checkpoint_exists():
                 self.dock_widget.set_checkpoint_status(True, "SAM model ready")
                 self._load_predictor()
-                self.dock_widget.set_status("Ready - select a raster layer and start!")
             else:
                 self.dock_widget.set_checkpoint_status(False, "Model not downloaded")
-                self.dock_widget.set_status("Download the AI model to get started")
 
         except Exception as e:
             QgsMessageLog.logMessage(
@@ -451,7 +452,7 @@ class AISegmentationPlugin:
             self.iface.mainWindow(),
             "Install Dependencies",
             "Download ~2.5GB of AI dependencies?\n\n"
-            "This may take 5-10 minutes.",
+            "This may take 3-5 minutes.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
         )
@@ -471,7 +472,6 @@ class AISegmentationPlugin:
         )
 
         self.dock_widget.set_deps_install_progress(0, "Preparing installation...")
-        self.dock_widget.set_status("Preparing installation...")
 
         self.deps_install_worker = DepsInstallWorker()
         self.deps_install_worker.progress.connect(self._on_deps_install_progress)
@@ -492,7 +492,6 @@ class AISegmentationPlugin:
 
     def _on_deps_install_progress(self, percent: int, message: str):
         self.dock_widget.set_deps_install_progress(percent, message)
-        self.dock_widget.set_status(message)
 
     def _on_deps_install_finished(self, success: bool, message: str):
         self.dock_widget.set_deps_install_progress(100, "Done")
@@ -503,12 +502,10 @@ class AISegmentationPlugin:
 
             if is_valid:
                 self.dock_widget.set_dependency_status(True, "✓ Virtual environment ready")
-                self.dock_widget.set_status("Dependencies installed! Checking model...")
                 self._verify_venv()
                 self._check_checkpoint()
             else:
                 self.dock_widget.set_dependency_status(False, f"Verification failed: {verify_msg}")
-                self.dock_widget.set_status("Installation verification failed - see logs")
 
                 QMessageBox.warning(
                     self.iface.mainWindow(),
@@ -519,7 +516,6 @@ class AISegmentationPlugin:
         else:
             error_msg = message[:300] if message else "Unknown error"
             self.dock_widget.set_dependency_status(False, "Installation failed")
-            self.dock_widget.set_status("Installation failed - check logs")
 
             QMessageBox.warning(
                 self.iface.mainWindow(),
@@ -532,7 +528,6 @@ class AISegmentationPlugin:
     def _on_cancel_deps_install(self):
         if self.deps_install_worker and self.deps_install_worker.isRunning():
             self.deps_install_worker.cancel()
-            self.dock_widget.set_status("Cancelling installation...")
             QgsMessageLog.logMessage(
                 "Dependency installation cancelled by user",
                 "AI Segmentation",
@@ -555,10 +550,8 @@ class AISegmentationPlugin:
             self.dock_widget.set_download_progress(100, "Download complete!")
             self.dock_widget.set_checkpoint_status(True, "SAM model ready")
             self._load_predictor()
-            self.dock_widget.set_status("Ready - select a raster layer and start!")
         else:
             self.dock_widget.set_download_progress(0, "")
-            self.dock_widget.set_status(f"Error: {message[:50]}")
 
             QMessageBox.warning(
                 self.iface.mainWindow(),
@@ -572,7 +565,6 @@ class AISegmentationPlugin:
             self.download_worker.terminate()
             self.download_worker.wait()
             self.dock_widget.set_download_progress(0, "Cancelled")
-            self.dock_widget.set_status("Download cancelled by user")
 
     def _on_cancel_preparation(self):
         if self.encoding_worker and self.encoding_worker.isRunning():
@@ -620,7 +612,6 @@ class AISegmentationPlugin:
             )
 
             self.dock_widget.set_preparation_progress(0, "Encoding raster (first time)...")
-            self.dock_widget.set_status("This may take a few minutes...")
 
             self.encoding_worker = EncodingWorker(raster_path, output_dir, checkpoint_path, layer_crs_wkt, layer_extent)
             self.encoding_worker.progress.connect(self._on_encoding_progress)
@@ -663,12 +654,8 @@ class AISegmentationPlugin:
             self.dock_widget.set_preparation_progress(100, "Cancelled")
             self.dock_widget.reset_session()
             
-            if is_cancelled:
-                # User cancelled - just show a friendly message, no error popup
-                self.dock_widget.set_status("Ready - select a raster layer and start!")
-            else:
+            if not is_cancelled:
                 # Actual error - show warning dialog
-                self.dock_widget.set_status(f"Error: {message[:50]}")
                 QMessageBox.warning(
                     self.iface.mainWindow(),
                     "Encoding Failed",
@@ -741,7 +728,6 @@ class AISegmentationPlugin:
     def _on_save_polygon(self):
         """Save current polygon from mask."""
         if self.current_mask is None:
-            self.dock_widget.set_status("No polygon to save")
             return
 
         from .core.polygon_exporter import mask_to_polygons
@@ -749,7 +735,6 @@ class AISegmentationPlugin:
         geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
 
         if not geometries:
-            self.dock_widget.set_status("Could not generate polygon")
             return
 
         combined = QgsGeometry.unaryUnion(geometries)
@@ -775,7 +760,6 @@ class AISegmentationPlugin:
             )
 
             self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
-            self.dock_widget.set_status(f"✓ Polygon saved ({len(self.saved_polygons)} total)")
 
         # Clear current state for next polygon
         self.prompts.clear()
@@ -905,7 +889,6 @@ class AISegmentationPlugin:
                 features_to_add.append(feature)
 
         if not features_to_add:
-            self.dock_widget.set_status("No valid polygons to export")
             return
 
         pr.addFeatures(features_to_add)
@@ -994,7 +977,6 @@ class AISegmentationPlugin:
 
         self._reset_session()
         self.dock_widget.reset_session()
-        self.dock_widget.set_status(f"Exported: {layer_name}")
 
     def _on_tool_deactivated(self):
         if self.dock_widget:
@@ -1040,12 +1022,10 @@ class AISegmentationPlugin:
         self._stopping_segmentation = False
         self._reset_session()
         self.dock_widget.reset_session()
-        self.dock_widget.set_status("Ready")
 
     def _on_positive_click(self, point):
         """Handle left-click: add positive point (include this area)."""
         if self.predictor is None or self.feature_dataset is None:
-            self.dock_widget.set_status("Model not ready - please wait")
             return
 
         QgsMessageLog.logMessage(
@@ -1060,7 +1040,6 @@ class AISegmentationPlugin:
     def _on_negative_click(self, point):
         """Handle right-click: add negative point (exclude this area)."""
         if self.predictor is None or self.feature_dataset is None:
-            self.dock_widget.set_status("Model not ready - please wait")
             return
 
         QgsMessageLog.logMessage(
@@ -1100,7 +1079,6 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Warning
             )
-            self.dock_widget.set_status("Click outside feature area - try elsewhere")
             return
 
         for query in sampler:
@@ -1180,7 +1158,6 @@ class AISegmentationPlugin:
             )
             self._update_mask_visualization()
         else:
-            self.dock_widget.set_status("No mask generated - try clicking elsewhere")
             self._clear_mask_visualization()
 
     def _update_mask_visualization(self):
@@ -1234,7 +1211,6 @@ class AISegmentationPlugin:
         """Undo last point added."""
         result = self.prompts.undo()
         if result is None:
-            self.dock_widget.set_status("Nothing to undo")
             return
 
         if self.map_tool:
