@@ -10,11 +10,21 @@ from qgis.PyQt.QtWidgets import (
     QFrame,
     QMessageBox,
     QSizePolicy,
+    QLineEdit,
 )
-from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer
+from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
+from qgis.PyQt.QtGui import QDesktopServices
 
 from qgis.core import QgsMapLayerProxyModel, QgsProject
+
 from qgis.gui import QgsMapLayerComboBox
+
+from .core.activation_manager import (
+    is_plugin_activated,
+    activate_plugin,
+    get_newsletter_url,
+    get_website_url,
+)
 
 
 class AISegmentationDockWidget(QDockWidget):
@@ -53,6 +63,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._encoding_start_time = None
         self._positive_count = 0
         self._negative_count = 0
+        self._plugin_activated = is_plugin_activated()
 
         # Smooth progress animation timer for long-running installs
         self._progress_timer = QTimer(self)
@@ -65,11 +76,16 @@ class AISegmentationDockWidget(QDockWidget):
         QgsProject.instance().layersAdded.connect(self._on_layers_added)
         QgsProject.instance().layersRemoved.connect(self._on_layers_removed)
 
+        # Update activation UI state
+        self._update_activation_ui()
+
     def _setup_ui(self):
         self._setup_dependencies_section()
         self._setup_checkpoint_section()
+        self._setup_activation_section()
         self._setup_segmentation_section()
         self.main_layout.addStretch()
+        self._setup_about_section()
         self._setup_status_bar()
 
     def _setup_dependencies_section(self):
@@ -85,7 +101,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.deps_progress)
 
         self.deps_progress_label = QLabel("")
-        self.deps_progress_label.setStyleSheet("color: #666; font-size: 10px;")
+        self.deps_progress_label.setStyleSheet("color: palette(mid); font-size: 10px;")
         self.deps_progress_label.setVisible(False)
         layout.addWidget(self.deps_progress_label)
 
@@ -120,7 +136,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.checkpoint_progress)
 
         self.checkpoint_progress_label = QLabel("")
-        self.checkpoint_progress_label.setStyleSheet("color: #666; font-size: 10px;")
+        self.checkpoint_progress_label.setStyleSheet("color: palette(mid); font-size: 10px;")
         self.checkpoint_progress_label.setVisible(False)
         layout.addWidget(self.checkpoint_progress_label)
 
@@ -138,19 +154,79 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.main_layout.addWidget(self.checkpoint_group)
 
+    def _setup_activation_section(self):
+        """Setup the activation section shown when plugin is not activated."""
+        self.activation_group = QGroupBox("Activate Plugin")
+        layout = QVBoxLayout(self.activation_group)
+
+        # Description
+        desc_label = QLabel(
+            "This plugin is in beta. Sign up to receive updates\n"
+            "on new features and upcoming AI plugins for QGIS."
+        )
+        desc_label.setWordWrap(True)
+        desc_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(desc_label)
+
+        # Get code button
+        self.get_code_button = QPushButton("Get Your Free Activation Code")
+        self.get_code_button.setMinimumHeight(36)
+        self.get_code_button.setCursor(Qt.PointingHandCursor)
+        self.get_code_button.setStyleSheet(
+            "QPushButton { background-color: #2e7d32; color: white; "
+            "font-weight: bold; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #1b5e20; }"
+        )
+        self.get_code_button.clicked.connect(self._on_get_code_clicked)
+        layout.addWidget(self.get_code_button)
+
+        # Code input section
+        code_layout = QHBoxLayout()
+        code_layout.setSpacing(8)
+
+        self.activation_code_input = QLineEdit()
+        self.activation_code_input.setPlaceholderText("Enter activation code")
+        self.activation_code_input.setMinimumHeight(32)
+        self.activation_code_input.returnPressed.connect(self._on_activate_clicked)
+        code_layout.addWidget(self.activation_code_input)
+
+        self.activate_button = QPushButton("Activate")
+        self.activate_button.setMinimumHeight(32)
+        self.activate_button.setMinimumWidth(70)
+        self.activate_button.setStyleSheet(
+            "QPushButton { background-color: #1976d2; color: white; "
+            "font-weight: bold; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #1565c0; }"
+        )
+        self.activate_button.clicked.connect(self._on_activate_clicked)
+        code_layout.addWidget(self.activate_button)
+
+        layout.addLayout(code_layout)
+
+        # Error message label
+        self.activation_message_label = QLabel("")
+        self.activation_message_label.setAlignment(Qt.AlignCenter)
+        self.activation_message_label.setWordWrap(True)
+        self.activation_message_label.setVisible(False)
+        layout.addWidget(self.activation_message_label)
+
+        self.main_layout.addWidget(self.activation_group)
+
     def _setup_segmentation_section(self):
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
         sep.setFrameShadow(QFrame.Sunken)
         self.main_layout.addWidget(sep)
+        self.seg_separator = sep
 
-        seg_widget = QWidget()
-        layout = QVBoxLayout(seg_widget)
+        self.seg_widget = QWidget()
+        layout = QVBoxLayout(self.seg_widget)
         layout.setContentsMargins(0, 8, 0, 0)
 
         layer_label = QLabel("Select a Raster Layer to Segment")
         layer_label.setStyleSheet("font-weight: bold;")
         layout.addWidget(layer_label)
+        self.layer_label = layer_label
 
         self.layer_combo = QgsMapLayerComboBox()
         self.layer_combo.setFilters(QgsMapLayerProxyModel.RasterLayer)
@@ -170,6 +246,20 @@ class AISegmentationDockWidget(QDockWidget):
         self.no_rasters_label.setVisible(False)
         layout.addWidget(self.no_rasters_label)
 
+        # Activation required overlay message
+        self.activation_required_label = QLabel(
+            "Activate the plugin to use AI Segmentation.\n"
+            "Get your free code above."
+        )
+        self.activation_required_label.setStyleSheet(
+            "padding: 16px; border: 1px solid palette(mid); "
+            "border-radius: 4px; font-size: 11px; color: palette(mid);"
+        )
+        self.activation_required_label.setWordWrap(True)
+        self.activation_required_label.setAlignment(Qt.AlignCenter)
+        self.activation_required_label.setVisible(False)
+        layout.addWidget(self.activation_required_label)
+
         # Dynamic instruction label - changes based on user state
         self.instructions_label = QLabel("")
         self.instructions_label.setWordWrap(True)
@@ -185,8 +275,8 @@ class AISegmentationDockWidget(QDockWidget):
         # Encoding progress section
         self.encoding_info_label = QLabel("")
         self.encoding_info_label.setStyleSheet(
-            "background-color: #e8f5e9; padding: 8px; "
-            "border-radius: 4px; font-size: 11px;"
+            "background-color: rgba(46, 125, 50, 0.15); padding: 8px; "
+            "border-radius: 4px; font-size: 11px; border: 1px solid rgba(46, 125, 50, 0.3);"
         )
         self.encoding_info_label.setWordWrap(True)
         self.encoding_info_label.setVisible(False)
@@ -198,7 +288,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.prep_progress)
 
         self.prep_status_label = QLabel("")
-        self.prep_status_label.setStyleSheet("color: #555; font-size: 11px;")
+        self.prep_status_label.setStyleSheet("color: palette(mid); font-size: 11px;")
         self.prep_status_label.setVisible(False)
         layout.addWidget(self.prep_status_label)
 
@@ -286,7 +376,34 @@ class AISegmentationDockWidget(QDockWidget):
         self.secondary_buttons_widget.setVisible(False)
         layout.addWidget(self.secondary_buttons_widget)
 
-        self.main_layout.addWidget(seg_widget)
+        self.main_layout.addWidget(self.seg_widget)
+
+    def _setup_about_section(self):
+        """Setup the About/Help section with TerraLab links."""
+        self.about_group = QGroupBox("Help & Support")
+        layout = QVBoxLayout(self.about_group)
+
+        # Info text
+        info_label = QLabel(
+            "Found a bug? Have a suggestion?\n"
+            "Check our documentation / contact us :"
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("font-size: 11px;")
+        layout.addWidget(info_label)
+
+        # Website link button
+        website_button = QPushButton("Visit terra-lab.ai")
+        website_button.setCursor(Qt.PointingHandCursor)
+        website_button.setStyleSheet(
+            "QPushButton { background-color: transparent; color: #1976d2; "
+            "text-decoration: underline; border: none; text-align: left; }"
+            "QPushButton:hover { color: #1565c0; }"
+        )
+        website_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(get_website_url())))
+        layout.addWidget(website_button)
+
+        self.main_layout.addWidget(self.about_group)
 
     def _setup_status_bar(self):
         sep = QFrame()
@@ -294,10 +411,15 @@ class AISegmentationDockWidget(QDockWidget):
         sep.setFrameShadow(QFrame.Sunken)
         self.main_layout.addWidget(sep)
 
+        # Status bar with website link
+        status_layout = QHBoxLayout()
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(8)
+
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet(
-            "background-color: #424242; font-size: 12px; "
-            "padding: 8px; border-radius: 4px;"
+            "background-color: palette(mid); color: palette(bright-text); "
+            "font-size: 12px; padding: 8px; border-radius: 4px;"
         )
         self.status_label.setWordWrap(True)
         self.status_label.setToolTip(
@@ -307,7 +429,91 @@ class AISegmentationDockWidget(QDockWidget):
             "Ctrl+Z = Undo last point\n"
             "Escape = Clear current points"
         )
-        self.main_layout.addWidget(self.status_label)
+        status_layout.addWidget(self.status_label, 1)
+
+        status_widget = QWidget()
+        status_widget.setLayout(status_layout)
+        self.main_layout.addWidget(status_widget)
+
+        # Footer link to TerraLab
+        footer_layout = QHBoxLayout()
+        footer_layout.setContentsMargins(0, 4, 0, 0)
+
+        footer_link = QLabel(
+            f'<a href="{get_website_url()}" style="color: #1976d2; font-size: 10px;">terra-lab.ai</a>'
+        )
+        footer_link.setOpenExternalLinks(True)
+        footer_link.setAlignment(Qt.AlignRight)
+        footer_layout.addStretch()
+        footer_layout.addWidget(footer_link)
+
+        footer_widget = QWidget()
+        footer_widget.setLayout(footer_layout)
+        self.main_layout.addWidget(footer_widget)
+
+    def _on_get_code_clicked(self):
+        """Open the newsletter signup page in the default browser."""
+        QDesktopServices.openUrl(QUrl(get_newsletter_url()))
+
+    def _on_activate_clicked(self):
+        """Attempt to activate the plugin with the entered code."""
+        code = self.activation_code_input.text().strip()
+
+        if not code:
+            self._show_activation_message("Please enter your activation code.", is_error=True)
+            return
+
+        success, message = activate_plugin(code)
+
+        if success:
+            self._plugin_activated = True
+            self._show_activation_message("Plugin activated!", is_error=False)
+            self._update_activation_ui()
+            self.set_status("Plugin activated! Ready to use.")
+        else:
+            self._show_activation_message(message, is_error=True)
+            self.activation_code_input.selectAll()
+            self.activation_code_input.setFocus()
+
+    def _show_activation_message(self, text: str, is_error: bool = False):
+        """Display a message in the activation section."""
+        self.activation_message_label.setText(text)
+        if is_error:
+            self.activation_message_label.setStyleSheet("color: #d32f2f; font-weight: bold;")
+        else:
+            self.activation_message_label.setStyleSheet("color: #2e7d32; font-weight: bold;")
+        self.activation_message_label.setVisible(True)
+
+    def _update_activation_ui(self):
+        """Update UI based on activation state."""
+        if self._plugin_activated:
+            # Hide activation section
+            self.activation_group.setVisible(False)
+            # Show segmentation controls
+            self.activation_required_label.setVisible(False)
+            self._set_segmentation_enabled(True)
+        else:
+            # Show activation section
+            self.activation_group.setVisible(True)
+            # Disable segmentation controls
+            self.activation_required_label.setVisible(True)
+            self._set_segmentation_enabled(False)
+
+    def _set_segmentation_enabled(self, enabled: bool):
+        """Enable or disable the segmentation section."""
+        self.layer_combo.setEnabled(enabled)
+        self.layer_label.setEnabled(enabled)
+        self.start_button.setVisible(enabled)
+        self.layer_combo.setVisible(enabled)
+
+        if not enabled:
+            self.no_rasters_label.setVisible(False)
+
+        # Update styling for disabled state
+        if enabled:
+            self.layer_label.setStyleSheet("font-weight: bold;")
+        else:
+            self.layer_label.setStyleSheet("font-weight: bold; color: palette(mid);")
 
     def _on_install_clicked(self):
         self.install_button.setEnabled(False)
@@ -558,8 +764,8 @@ class AISegmentationDockWidget(QDockWidget):
                 display_path = "..." + display_path[-42:]
             self.encoding_info_label.setText(f"✓ Cached at:\n{display_path}")
             self.encoding_info_label.setStyleSheet(
-                "background-color: #e8f5e9; padding: 8px; "
-                "border-radius: 4px; font-size: 10px;"
+                "background-color: rgba(46, 125, 50, 0.15); padding: 8px; "
+                "border-radius: 4px; font-size: 10px; border: 1px solid rgba(46, 125, 50, 0.3);"
             )
             self.encoding_info_label.setVisible(True)
 
@@ -686,14 +892,39 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Check if there are any rasters available
         has_rasters_available = self.layer_combo.count() > 0
-        self.no_rasters_label.setVisible(not has_rasters_available and not self._segmentation_active)
 
-        # Hide layer combo if no rasters available
-        self.layer_combo.setVisible(has_rasters_available)
+        # Handle visibility based on activation state
+        if self._plugin_activated:
+            self.no_rasters_label.setVisible(not has_rasters_available and not self._segmentation_active)
+            self.layer_combo.setVisible(has_rasters_available)
+            self.activation_required_label.setVisible(False)
+        else:
+            self.no_rasters_label.setVisible(False)
+            self.layer_combo.setVisible(False)
+            self.activation_required_label.setVisible(True)
 
         can_start = (
             self._dependencies_ok and
             self._checkpoint_ok and
-            has_layer
+            has_layer and
+            self._plugin_activated
         )
         self.start_button.setEnabled(can_start and not self._segmentation_active)
+
+    def show_activation_dialog(self):
+        """Show the activation dialog (called from plugin after deps install)."""
+        from .activation_dialog import ActivationDialog
+
+        dialog = ActivationDialog(self)
+        dialog.activated.connect(self._on_dialog_activated)
+        dialog.exec_()
+
+    def _on_dialog_activated(self):
+        """Handle activation from dialog."""
+        self._plugin_activated = True
+        self._update_activation_ui()
+        self.set_status("Plugin activated! Ready to use.")
+
+    def is_activated(self) -> bool:
+        """Check if the plugin is activated."""
+        return self._plugin_activated
