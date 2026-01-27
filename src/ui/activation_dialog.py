@@ -47,7 +47,7 @@ class ActivationDialog(QDialog):
 
         # Banner section - using the TerraLab banner
         banner_label = QLabel()
-        banner_path = Path(__file__).parent.parent / "resources" / "icons" / "spacebanner2.png"
+        banner_path = Path(__file__).parent.parent.parent / "resources" / "icons" / "terralab-banner.png"
         if banner_path.exists():
             pixmap = QPixmap(str(banner_path))
             scaled_pixmap = pixmap.scaledToWidth(380, Qt.SmoothTransformation)
