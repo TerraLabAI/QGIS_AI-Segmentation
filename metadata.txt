@@ -1,10 +1,10 @@
 [general]
 name=AI Segmentation by TerraLab
-qgisMinimumVersion=3.28
 description=Segment anything in your raster using Meta's SAM AI.
-version=1.0.0
+qgisMinimumVersion=3.0
+version=0.1.0-beta
 author=TerraLab
-email=barbot.yvann@terra-lab.ai
+email=barbot.yvann@gmail.com
 
 about=Segment any object in satellite imagery or rasters with simple clicks.
 
