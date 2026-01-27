@@ -398,7 +398,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Documentation link
         docs_link = QLabel(
-            '<a href="https://terra-lab.ai/docs" style="color: #1976d2;">Documentation</a>'
+            '<a href="https://terra-lab.ai/docs/ai-segmentation" style="color: #1976d2;">Documentation</a>'
         )
         docs_link.setOpenExternalLinks(True)
         docs_link.setCursor(Qt.PointingHandCursor)

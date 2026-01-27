@@ -14,7 +14,7 @@ ACTIVATION_KEY = f"{SETTINGS_PREFIX}/activated"
 
 # TerraLab URLs
 TERRALAB_WEBSITE = "https://terra-lab.ai"
-TERRALAB_NEWSLETTER = "https://terra-lab.ai/newsletter"
+TERRALAB_NEWSLETTER = "https://terra-lab.ai/mail-verification"
 
 
 def is_plugin_activated() -> bool:
