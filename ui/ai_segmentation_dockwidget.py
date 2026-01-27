@@ -19,7 +19,7 @@ from qgis.core import QgsMapLayerProxyModel, QgsProject
 
 from qgis.gui import QgsMapLayerComboBox
 
-from .core.activation_manager import (
+from ..core.activation_manager import (
     is_plugin_activated,
     activate_plugin,
     get_newsletter_url,

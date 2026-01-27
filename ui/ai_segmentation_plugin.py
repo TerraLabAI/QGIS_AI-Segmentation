@@ -44,7 +44,7 @@ class DepsInstallWorker(QThread):
 
     def run(self):
         try:
-            from .core.venv_manager import create_venv_and_install
+            from ..core.venv_manager import create_venv_and_install
             success, message = create_venv_and_install(
                 progress_callback=lambda percent, msg: self.progress.emit(percent, msg),
                 cancel_check=lambda: self._cancelled
@@ -65,7 +65,7 @@ class DownloadWorker(QThread):
 
     def run(self):
         try:
-            from .core.checkpoint_manager import download_checkpoint
+            from ..core.checkpoint_manager import download_checkpoint
             success, message = download_checkpoint(
                 progress_callback=lambda p, m: self.progress.emit(p, m)
             )
@@ -92,7 +92,7 @@ class EncodingWorker(QThread):
 
     def run(self):
         try:
-            from .core.feature_encoder import encode_raster_to_features
+            from ..core.feature_encoder import encode_raster_to_features
             success, message = encode_raster_to_features(
                 self.raster_path,
                 self.output_dir,
@@ -192,7 +192,7 @@ class AISegmentationPlugin:
 
     def __init__(self, iface: QgisInterface):
         self.iface = iface
-        self.plugin_dir = Path(__file__).parent
+        self.plugin_dir = Path(__file__).parent.parent
 
         self.dock_widget: Optional[AISegmentationDockWidget] = None
         self.map_tool: Optional[AISegmentationMapTool] = None
@@ -344,7 +344,7 @@ class AISegmentationPlugin:
         )
 
         try:
-            from .core.venv_manager import get_venv_status, cleanup_old_libs
+            from ..core.venv_manager import get_venv_status, cleanup_old_libs
 
             cleanup_old_libs()
 
@@ -374,7 +374,7 @@ class AISegmentationPlugin:
 
     def _check_checkpoint(self):
         try:
-            from .core.checkpoint_manager import checkpoint_exists
+            from ..core.checkpoint_manager import checkpoint_exists
 
             if checkpoint_exists():
                 self.dock_widget.set_checkpoint_status(True, "SAM model ready")
@@ -392,8 +392,8 @@ class AISegmentationPlugin:
 
     def _load_predictor(self):
         try:
-            from .core.checkpoint_manager import get_checkpoint_path
-            from .core.sam_predictor import build_sam_vit_b_no_encoder, SamPredictorNoImgEncoder
+            from ..core.checkpoint_manager import get_checkpoint_path
+            from ..core.sam_predictor import build_sam_vit_b_no_encoder, SamPredictorNoImgEncoder
 
             checkpoint_path = get_checkpoint_path()
             sam_config = build_sam_vit_b_no_encoder(checkpoint=checkpoint_path)
@@ -417,7 +417,7 @@ class AISegmentationPlugin:
     def _verify_venv(self):
         """Verify virtual environment status."""
         try:
-            from .core.venv_manager import verify_venv
+            from ..core.venv_manager import verify_venv
             is_valid, message = verify_venv()
 
             if is_valid:
@@ -440,7 +440,7 @@ class AISegmentationPlugin:
             )
 
     def _on_install_requested(self):
-        from .core.venv_manager import get_venv_status
+        from ..core.venv_manager import get_venv_status
 
         is_ready, message = get_venv_status()
         if is_ready:
@@ -479,14 +479,14 @@ class AISegmentationPlugin:
         self.deps_install_worker.start()
 
         # Show activation popup 2 seconds after install starts (if not already activated)
-        from .core.activation_manager import is_plugin_activated
+        from ..core.activation_manager import is_plugin_activated
         if not is_plugin_activated():
             from qgis.PyQt.QtCore import QTimer
             QTimer.singleShot(2000, self._show_activation_popup_if_needed)
 
     def _show_activation_popup_if_needed(self):
         """Show activation popup during installation if not already activated."""
-        from .core.activation_manager import is_plugin_activated
+        from ..core.activation_manager import is_plugin_activated
         if not is_plugin_activated() and not self.dock_widget.is_activated():
             self.dock_widget.show_activation_dialog()
 
@@ -497,7 +497,7 @@ class AISegmentationPlugin:
         self.dock_widget.set_deps_install_progress(100, "Done")
 
         if success:
-            from .core.venv_manager import verify_venv
+            from ..core.venv_manager import verify_venv
             is_valid, verify_msg = verify_venv()
 
             if is_valid:
@@ -587,7 +587,7 @@ class AISegmentationPlugin:
         self._current_layer_name = layer.name().replace(" ", "_")
         raster_path = layer.source()
 
-        from .core.checkpoint_manager import has_features_for_raster, get_raster_features_dir, get_checkpoint_path
+        from ..core.checkpoint_manager import has_features_for_raster, get_raster_features_dir, get_checkpoint_path
 
         if has_features_for_raster(raster_path):
             self._load_features_and_activate(raster_path)
@@ -604,7 +604,7 @@ class AISegmentationPlugin:
             ext = layer.extent()
             if ext and not ext.isEmpty():
                 layer_extent = (ext.xMinimum(), ext.yMinimum(), ext.xMaximum(), ext.yMaximum())
-            
+
             QgsMessageLog.logMessage(
                 f"Starting encoding - Layer extent: {layer_extent}, Layer CRS valid: {layer.crs().isValid()}, CRS: {layer.crs().authid() if layer.crs().isValid() else 'None'}",
                 "AI Segmentation",
@@ -625,7 +625,7 @@ class AISegmentationPlugin:
 
     def _on_encoding_finished(self, success: bool, message: str, raster_path: str):
         if success:
-            from .core.checkpoint_manager import get_raster_features_dir
+            from ..core.checkpoint_manager import get_raster_features_dir
             cache_dir = get_raster_features_dir(raster_path)
             self.dock_widget.set_preparation_progress(100, "Done!")
             self.dock_widget.set_encoding_cache_path(str(cache_dir))
@@ -633,9 +633,9 @@ class AISegmentationPlugin:
         else:
             # Check if this was a user cancellation
             is_cancelled = "cancelled" in message.lower() or "canceled" in message.lower()
-            
+
             # Clean up partial cache files
-            from .core.checkpoint_manager import clear_features_for_raster
+            from ..core.checkpoint_manager import clear_features_for_raster
             try:
                 clear_features_for_raster(raster_path)
                 QgsMessageLog.logMessage(
@@ -649,11 +649,11 @@ class AISegmentationPlugin:
                     "AI Segmentation",
                     level=Qgis.Warning
                 )
-            
+
             # Reset UI to default state
             self.dock_widget.set_preparation_progress(100, "Cancelled")
             self.dock_widget.reset_session()
-            
+
             if not is_cancelled:
                 # Actual error - show warning dialog
                 QMessageBox.warning(
@@ -664,8 +664,8 @@ class AISegmentationPlugin:
 
     def _load_features_and_activate(self, raster_path: str):
         try:
-            from .core.checkpoint_manager import get_raster_features_dir
-            from .core.feature_dataset import FeatureDataset
+            from ..core.checkpoint_manager import get_raster_features_dir
+            from ..core.feature_dataset import FeatureDataset
 
             features_dir = get_raster_features_dir(raster_path)
             self.feature_dataset = FeatureDataset(features_dir, cache=True)
@@ -730,7 +730,7 @@ class AISegmentationPlugin:
         if self.current_mask is None:
             return
 
-        from .core.polygon_exporter import mask_to_polygons
+        from ..core.polygon_exporter import mask_to_polygons
 
         geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
 
@@ -776,7 +776,7 @@ class AISegmentationPlugin:
             # Silently ignore - Enter should only work when polygons are saved
             return
 
-        from .core.polygon_exporter import mask_to_polygons
+        from ..core.polygon_exporter import mask_to_polygons
 
         polygons_to_export = list(self.saved_polygons)
 
@@ -1055,7 +1055,7 @@ class AISegmentationPlugin:
         """Run SAM prediction using all positive and negative points."""
         import numpy as np
         from rasterio.transform import from_bounds as transform_from_bounds
-        from .core.feature_dataset import FeatureSampler
+        from ..core.feature_dataset import FeatureSampler
 
         all_points = self.prompts.positive_points + self.prompts.negative_points
         if not all_points:
@@ -1125,7 +1125,7 @@ class AISegmentationPlugin:
 
         self.current_mask = masks[0]
         self.current_score = float(scores[0])
-        
+
         # Use layer CRS as fallback if feature_dataset.crs is None or empty
         crs_value = self.feature_dataset.crs
         if not crs_value or (isinstance(crs_value, str) and not crs_value.strip()):
@@ -1136,7 +1136,7 @@ class AISegmentationPlugin:
                     "AI Segmentation",
                     level=Qgis.Info
                 )
-        
+
         self.current_transform_info = {
             "bbox": bbox,
             "img_shape": (img_height, img_width),
@@ -1169,7 +1169,7 @@ class AISegmentationPlugin:
             return
 
         try:
-            from .core.polygon_exporter import mask_to_polygons
+            from ..core.polygon_exporter import mask_to_polygons
 
             geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
 

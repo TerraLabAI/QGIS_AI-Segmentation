@@ -2,20 +2,25 @@
 name=AI Segmentation by TerraLab
 description=Segment anything in your raster using Meta's SAM AI.
 qgisMinimumVersion=3.0
-version=0.1.0-beta
+version=0.1.0
 author=TerraLab
 email=barbot.yvann@gmail.com
+license=GPLv2
 
 about=Segment any object in satellite imagery or rasters with simple clicks.
 
     FEATURES:
-    - Automatic Python dependencies setup
+    - Automatic setup of AI dependencies
     - AI models management (SAM)
     - Interactive segmentation interface
     - Vector layer export
 
+    NOTE: First-time setup downloads required AI dependencies automatically.
+
     Issues? Click "Bug Tracker" or contact the author.
     Stay updated: https://www.terra-lab.ai/
+
+changelog=0.1.0 - Initial release: Interactive AI segmentation with SAM model
 
 tracker=https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues
 repository=https://github.com/TerraLabAI/QGIS_AI-Segmentation

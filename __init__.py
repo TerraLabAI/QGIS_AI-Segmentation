@@ -16,5 +16,5 @@ _cleanup_old_installation()
 
 
 def classFactory(iface):
-    from .ai_segmentation_plugin import AISegmentationPlugin
+    from .ui.ai_segmentation_plugin import AISegmentationPlugin
     return AISegmentationPlugin(iface)

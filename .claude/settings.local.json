@@ -11,7 +11,8 @@
       "Bash(wc:*)",
       "Bash(find:*)",
       "WebFetch(domain:plugins.qgis.org)",
-      "WebFetch(domain:docs.qgis.org)"
+      "WebFetch(domain:docs.qgis.org)",
+      "WebFetch(domain:wheregroup.com)"
     ]
   },
   "outputStyle": "Explanatory"
