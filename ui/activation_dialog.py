@@ -17,7 +17,7 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QUrl
 from qgis.PyQt.QtGui import QPixmap, QDesktopServices, QFont
 
-from .core.activation_manager import (
+from ..core.activation_manager import (
     activate_plugin,
     get_newsletter_url,
 )
@@ -47,7 +47,7 @@ class ActivationDialog(QDialog):
 
         # Banner section - using the TerraLab banner
         banner_label = QLabel()
-        banner_path = Path(__file__).parent / "resources" / "icons" / "spacebanner2.png"
+        banner_path = Path(__file__).parent.parent / "resources" / "icons" / "spacebanner2.png"
         if banner_path.exists():
             pixmap = QPixmap(str(banner_path))
             scaled_pixmap = pixmap.scaledToWidth(380, Qt.SmoothTransformation)

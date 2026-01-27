@@ -1,9 +1,10 @@
 import os
 import hashlib
-import urllib.request
 from typing import Tuple, Optional, Callable
 
-from qgis.core import QgsMessageLog, Qgis
+from qgis.core import QgsMessageLog, Qgis, QgsBlockingNetworkRequest
+from qgis.PyQt.QtCore import QUrl
+from qgis.PyQt.QtNetwork import QNetworkRequest
 
 
 CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
@@ -68,7 +69,13 @@ def verify_checkpoint_hash(filepath: str) -> bool:
 def download_checkpoint(
     progress_callback: Optional[Callable[[int, str], None]] = None
 ) -> Tuple[bool, str]:
+    """
+    Download SAM checkpoint using QGIS network manager.
+
+    Uses QgsBlockingNetworkRequest to respect QGIS proxy settings.
+    """
     checkpoint_path = get_checkpoint_path()
+    temp_path = checkpoint_path + ".tmp"
 
     if checkpoint_exists():
         QgsMessageLog.logMessage(
@@ -90,25 +97,38 @@ def download_checkpoint(
         progress_callback(0, f"Downloading SAM checkpoint (~375MB)...")
 
     try:
-        temp_path = checkpoint_path + ".tmp"
-
-        def _report_progress(count, block_size, total_size):
-            if total_size > 0:
-                percent = int(count * block_size * 100 / total_size)
-                percent = min(percent, 99)
-                if progress_callback:
-                    mb_downloaded = (count * block_size) / (1024 * 1024)
-                    mb_total = total_size / (1024 * 1024)
-                    progress_callback(percent, f"Downloading: {mb_downloaded:.1f}/{mb_total:.1f} MB")
-
-        urllib.request.urlretrieve(
-            SAM_CHECKPOINT_URL,
-            temp_path,
-            reporthook=_report_progress
-        )
+        # Use QGIS network manager for proxy-aware downloads
+        request = QgsBlockingNetworkRequest()
+        qurl = QUrl(SAM_CHECKPOINT_URL)
 
         if progress_callback:
-            progress_callback(99, "Verifying download...")
+            progress_callback(5, "Connecting to download server...")
+
+        # Perform the download (blocking)
+        err = request.get(QNetworkRequest(qurl))
+
+        if err != QgsBlockingNetworkRequest.NoError:
+            error_msg = request.errorMessage()
+            QgsMessageLog.logMessage(
+                f"Checkpoint download failed: {error_msg}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            return False, f"Download failed: {error_msg}"
+
+        reply = request.reply()
+        content = reply.content()
+
+        if progress_callback:
+            mb_total = len(content) / (1024 * 1024)
+            progress_callback(90, f"Downloaded {mb_total:.1f} MB, saving...")
+
+        # Write content to temp file
+        with open(temp_path, 'wb') as f:
+            f.write(content.data())
+
+        if progress_callback:
+            progress_callback(95, "Verifying download...")
 
         if not verify_checkpoint_hash(temp_path):
             os.remove(temp_path)
@@ -128,7 +148,10 @@ def download_checkpoint(
 
     except Exception as e:
         if os.path.exists(temp_path):
-            os.remove(temp_path)
+            try:
+                os.remove(temp_path)
+            except:
+                pass
         QgsMessageLog.logMessage(
             f"Checkpoint download failed: {str(e)}",
             "AI Segmentation",

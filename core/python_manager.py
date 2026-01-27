@@ -14,11 +14,12 @@ import subprocess
 import tarfile
 import zipfile
 import tempfile
-import urllib.request
 import shutil
 from typing import Tuple, Optional, Callable
 
-from qgis.core import QgsMessageLog, Qgis
+from qgis.core import QgsMessageLog, Qgis, QgsBlockingNetworkRequest
+from qgis.PyQt.QtCore import QUrl
+from qgis.PyQt.QtNetwork import QNetworkRequest
 
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -113,7 +114,9 @@ def download_python_standalone(
     cancel_check: Optional[Callable[[], bool]] = None
 ) -> Tuple[bool, str]:
     """
-    Download and install Python standalone.
+    Download and install Python standalone using QGIS network manager.
+
+    Uses QgsBlockingNetworkRequest to respect QGIS proxy settings.
 
     Args:
         progress_callback: Function called with (percent, message) for progress updates
@@ -139,25 +142,43 @@ def download_python_standalone(
     os.close(fd)
 
     try:
-        # Download with progress reporting
-        def report_progress(block_count, block_size, total_size):
-            if cancel_check and cancel_check():
-                raise InterruptedError("Download cancelled")
+        if cancel_check and cancel_check():
+            return False, "Download cancelled"
 
-            if total_size > 0:
-                downloaded = block_count * block_size
-                percent = min(int((downloaded / total_size) * 100), 100)  # 0-100% for download
-                size_mb = total_size / (1024 * 1024)
-                downloaded_mb = min(downloaded, total_size) / (1024 * 1024)
-                if progress_callback:
-                    progress_callback(percent, f"Downloading Python {python_version}... ({downloaded_mb:.1f}/{size_mb:.1f} MB)")
+        # Use QGIS network manager for proxy-aware downloads
+        request = QgsBlockingNetworkRequest()
+        qurl = QUrl(url)
 
-        urllib.request.urlretrieve(url, temp_path, reporthook=report_progress)
+        if progress_callback:
+            progress_callback(5, f"Connecting to download server...")
+
+        # Perform the download (blocking)
+        err = request.get(QNetworkRequest(qurl))
+
+        if err != QgsBlockingNetworkRequest.NoError:
+            error_msg = request.errorMessage()
+            if "404" in error_msg or "Not Found" in error_msg:
+                error_msg = f"Python {python_version} not available for this platform. URL: {url}"
+            else:
+                error_msg = f"Download failed: {error_msg}"
+            _log(error_msg, Qgis.Critical)
+            return False, error_msg
 
         if cancel_check and cancel_check():
             return False, "Download cancelled"
 
-        _log(f"Download complete, extracting...", Qgis.Info)
+        reply = request.reply()
+        content = reply.content()
+
+        if progress_callback:
+            total_mb = len(content) / (1024 * 1024)
+            progress_callback(50, f"Downloaded {total_mb:.1f} MB, saving...")
+
+        # Write content to temp file
+        with open(temp_path, 'wb') as f:
+            f.write(content.data())
+
+        _log(f"Download complete ({len(content)} bytes), extracting...", Qgis.Info)
 
         if progress_callback:
             progress_callback(55, "Extracting Python...")
@@ -190,17 +211,6 @@ def download_python_standalone(
         else:
             return False, f"Verification failed: {verify_msg}"
 
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            error_msg = f"Python {python_version} not available for this platform. URL: {url}"
-        else:
-            error_msg = f"Download failed (HTTP {e.code}): {str(e)}"
-        _log(error_msg, Qgis.Critical)
-        return False, error_msg
-    except urllib.error.URLError as e:
-        error_msg = f"Network error: {str(e)}. Check your internet connection."
-        _log(error_msg, Qgis.Critical)
-        return False, error_msg
     except InterruptedError:
         return False, "Download cancelled"
     except Exception as e:
