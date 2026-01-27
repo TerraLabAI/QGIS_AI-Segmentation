@@ -1,7 +1,7 @@
 # AI Segmentation for QGIS
 
 <div align="center">
-  <img src="resources/icons/logo.png" alt="AI Segmentation" width="120"/>
+  <img src="resources/icons/icon.png" alt="AI Segmentation" width="120"/>
 </div>
 
 AI-powered object segmentation for QGIS using Meta's Segment Anything Model (SAM).

@@ -192,7 +192,7 @@ class AISegmentationPlugin:
 
     def __init__(self, iface: QgisInterface):
         self.iface = iface
-        self.plugin_dir = Path(__file__).parent.parent
+        self.plugin_dir = Path(__file__).parent.parent.parent
 
         self.dock_widget: Optional[AISegmentationDockWidget] = None
         self.map_tool: Optional[AISegmentationMapTool] = None
