@@ -87,7 +87,6 @@ class AISegmentationDockWidget(QDockWidget):
         self._setup_segmentation_section()
         self.main_layout.addStretch()
         self._setup_about_section()
-        self._setup_status_bar()
 
     def _setup_dependencies_section(self):
         self.deps_group = QGroupBox("Dependencies")
@@ -169,7 +168,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(desc_label)
 
         # Get code button
-        get_code_button = QPushButton("Get my code")
+        get_code_button = QPushButton("Get my verification code")
         get_code_button.setMinimumHeight(30)
         get_code_button.setCursor(Qt.PointingHandCursor)
         get_code_button.setStyleSheet(
@@ -244,12 +243,12 @@ class AISegmentationDockWidget(QDockWidget):
         self.layer_combo.setToolTip("Select a file-based raster layer (GeoTIFF, etc.)")
         layout.addWidget(self.layer_combo)
 
-        # Warning container with icon and text - yellow background with dark text
+        # Warning container with icon and text - yellow background with white text
         self.no_rasters_widget = QWidget()
         self.no_rasters_widget.setStyleSheet(
-            "QWidget { background-color: rgba(255, 193, 7, 0.3); "
+            "QWidget { background-color: rgba(255, 193, 7, 0.4); "
             "border: 1px solid rgba(255, 152, 0, 0.6); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; color: #5d4037; }"
+            "QLabel { background: transparent; border: none; color: white; }"
         )
         no_rasters_layout = QHBoxLayout(self.no_rasters_widget)
         no_rasters_layout.setContentsMargins(8, 8, 8, 8)
@@ -417,26 +416,6 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.main_layout.addWidget(links_widget)
 
-    def _setup_status_bar(self):
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setFrameShadow(QFrame.Sunken)
-        self.main_layout.addWidget(sep)
-
-        self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet(
-            "background-color: palette(mid); color: palette(text); "
-            "font-size: 12px; padding: 8px; border-radius: 4px;"
-        )
-        self.status_label.setWordWrap(True)
-        self.status_label.setToolTip(
-            "Keyboard shortcuts:\n"
-            "S = Save polygon to session\n"
-            "Enter = Export all polygons as layer\n"
-            "Ctrl+Z = Undo last point\n"
-            "Escape = Clear current points"
-        )
-        self.main_layout.addWidget(self.status_label)
 
     def _on_get_code_clicked(self):
         """Open the newsletter signup page in the default browser."""
@@ -456,7 +435,6 @@ class AISegmentationDockWidget(QDockWidget):
             self._plugin_activated = True
             self._show_activation_message("Unlocked!", is_error=False)
             self._update_full_ui()
-            self.set_status("Plugin unlocked!")
         else:
             self._show_activation_message("Invalid code", is_error=True)
             self.activation_code_input.selectAll()
@@ -735,7 +713,6 @@ class AISegmentationDockWidget(QDockWidget):
         self._update_ui_state()
         if active:
             self._update_instructions()
-            self._update_status_hint()
 
     def _update_button_visibility(self):
         if self._segmentation_active:
@@ -791,10 +768,6 @@ class AISegmentationDockWidget(QDockWidget):
 
         if self._segmentation_active:
             self._update_instructions()
-            self._update_status_hint()
-
-    def set_status(self, message: str):
-        self.status_label.setText(message)
 
     def _update_instructions(self):
         """Update instruction text based on current segmentation state."""
@@ -815,19 +788,6 @@ class AISegmentationDockWidget(QDockWidget):
             text = f"{counts}\n{state}"
 
         self.instructions_label.setText(text)
-
-    def _update_status_hint(self):
-        """Show contextual status in status bar."""
-        total = self._positive_count + self._negative_count
-
-        if total == 0:
-            hint = "Click on the map to start segmenting"
-        elif self._saved_polygon_count > 0:
-            hint = f"{self._saved_polygon_count} polygon(s) ready to export"
-        else:
-            hint = "Preview active · Add points to refine"
-
-        self.status_label.setText(hint)
 
     def reset_session(self):
         self._has_mask = False
@@ -876,7 +836,6 @@ class AISegmentationDockWidget(QDockWidget):
         """Handle activation from dialog."""
         self._plugin_activated = True
         self._update_full_ui()
-        self.set_status("Plugin unlocked!")
 
     def is_activated(self) -> bool:
         """Check if the plugin is activated."""
