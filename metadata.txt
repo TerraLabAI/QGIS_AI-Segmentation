@@ -24,9 +24,9 @@ hasProcessingProvider=no
 
 tags=segmentation, AI, machine learning, SAM, deep learning, remote sensing, satellite, raster, segment anything, TerraLab
 
-homepage=https://www.terra-lab.ai/
+homepage=https://terra-lab.ai
 category=Raster
 icon=resources/icons/icon.png
 
-experimental=True
+experimental=False
 deprecated=False
