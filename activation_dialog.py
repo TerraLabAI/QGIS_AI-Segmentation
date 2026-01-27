@@ -20,7 +20,6 @@ from qgis.PyQt.QtGui import QPixmap, QDesktopServices, QFont
 from .core.activation_manager import (
     activate_plugin,
     get_newsletter_url,
-    get_website_url,
 )
 
 
@@ -34,98 +33,113 @@ class ActivationDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Quick Setup")
+        self.setWindowTitle("Setup AI Segmentation by TerraLab")
         self.setModal(True)
-        self.setMinimumWidth(380)
-        self.setMaximumWidth(450)
+        self.setMinimumWidth(420)
+        self.setMaximumWidth(500)
 
         self._setup_ui()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+        layout.setContentsMargins(24, 24, 24, 24)
 
-        # Logo section
-        logo_label = QLabel()
-        logo_path = Path(__file__).parent / "resources" / "icons" / "logo.png"
-        if logo_path.exists():
-            pixmap = QPixmap(str(logo_path))
-            scaled_pixmap = pixmap.scaledToWidth(160, Qt.SmoothTransformation)
-            logo_label.setPixmap(scaled_pixmap)
+        # Banner section - using the TerraLab banner
+        banner_label = QLabel()
+        banner_path = Path(__file__).parent / "resources" / "icons" / "spacebanner2.png"
+        if banner_path.exists():
+            pixmap = QPixmap(str(banner_path))
+            scaled_pixmap = pixmap.scaledToWidth(380, Qt.SmoothTransformation)
+            banner_label.setPixmap(scaled_pixmap)
         else:
-            logo_label.setText("TerraLab")
-            font = logo_label.font()
-            font.setPointSize(16)
+            banner_label.setText("TerraLab")
+            font = banner_label.font()
+            font.setPointSize(18)
             font.setBold(True)
-            logo_label.setFont(font)
-        logo_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(logo_label)
+            banner_label.setFont(font)
+        banner_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(banner_label)
 
-        # Title - friendly and direct
+        # Title - friendly (uses palette for theme compatibility)
         title_label = QLabel("Thanks for trying our plugin!")
         title_font = QFont()
-        title_font.setPointSize(13)
+        title_font.setPointSize(14)
         title_font.setBold(True)
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("color: palette(text);")
         layout.addWidget(title_label)
 
-        # Description - authentic and minimal
+        # Description - clear about the email/code relationship
         desc_label = QLabel(
-            "We're a small team building open-source AI tools for QGIS.\n\n"
-            "This is a beta version. Drop your email to get notified\n"
-            "when we release updates and new plugins."
+            "This plugin is in beta. We'd love to keep you updated\n"
+            "when we release new versions and features."
         )
         desc_label.setWordWrap(True)
         desc_label.setAlignment(Qt.AlignCenter)
-        desc_label.setStyleSheet("color: palette(text); font-size: 11px;")
+        desc_font = QFont()
+        desc_font.setPointSize(12)
+        desc_label.setFont(desc_font)
+        desc_label.setStyleSheet("color: palette(text);")
         layout.addWidget(desc_label)
 
-        # Get code button
+        # Clear instruction about the flow (slightly smaller to appear secondary)
+        flow_label = QLabel(
+            "Enter your email and you'll get\n"
+            "a verification code to paste below."
+        )
+        flow_label.setWordWrap(True)
+        flow_label.setAlignment(Qt.AlignCenter)
+        flow_font = QFont()
+        flow_font.setPointSize(10)
+        flow_label.setFont(flow_font)
+        flow_label.setStyleSheet("color: palette(text);")
+        layout.addWidget(flow_label)
+
+        # Get code button - clearer label
         get_code_button = QPushButton("Get my code")
-        get_code_button.setMinimumHeight(36)
+        get_code_button.setMinimumHeight(40)
         get_code_button.setCursor(Qt.PointingHandCursor)
         get_code_button.setStyleSheet(
             "QPushButton { background-color: #2e7d32; color: white; "
-            "font-weight: bold; font-size: 12px; border-radius: 4px; }"
+            "font-weight: bold; font-size: 13px; border-radius: 4px; }"
             "QPushButton:hover { background-color: #1b5e20; }"
         )
         get_code_button.clicked.connect(self._on_get_code_clicked)
         layout.addWidget(get_code_button)
 
-        # Separator with text
-        sep_layout = QHBoxLayout()
-        sep_layout.setSpacing(8)
-        left_line = QFrame()
-        left_line.setFrameShape(QFrame.HLine)
-        left_line.setFrameShadow(QFrame.Sunken)
-        right_line = QFrame()
-        right_line.setFrameShape(QFrame.HLine)
-        right_line.setFrameShadow(QFrame.Sunken)
-        then_label = QLabel("then")
-        then_label.setStyleSheet("color: palette(mid); font-size: 10px;")
-        sep_layout.addWidget(left_line, 1)
-        sep_layout.addWidget(then_label)
-        sep_layout.addWidget(right_line, 1)
-        layout.addLayout(sep_layout)
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(sep)
+
+        # Code input label (uses palette for theme compatibility)
+        code_label = QLabel("Paste your verification code:")
+        code_label.setAlignment(Qt.AlignLeft)
+        code_font = QFont()
+        code_font.setPointSize(11)
+        code_label.setFont(code_font)
+        code_label.setStyleSheet("color: palette(text);")
+        layout.addWidget(code_label)
 
         # Code input section
         code_layout = QHBoxLayout()
         code_layout.setSpacing(8)
 
         self.code_input = QLineEdit()
-        self.code_input.setPlaceholderText("Paste your code here")
-        self.code_input.setMinimumHeight(34)
+        self.code_input.setPlaceholderText("Code")
+        self.code_input.setMinimumHeight(36)
         self.code_input.returnPressed.connect(self._on_activate_clicked)
         code_layout.addWidget(self.code_input)
 
         self.activate_button = QPushButton("Unlock")
-        self.activate_button.setMinimumHeight(34)
-        self.activate_button.setMinimumWidth(70)
+        self.activate_button.setMinimumHeight(36)
+        self.activate_button.setMinimumWidth(80)
         self.activate_button.setStyleSheet(
             "QPushButton { background-color: #1976d2; color: white; "
-            "font-weight: bold; border-radius: 4px; }"
+            "font-weight: bold; font-size: 12px; border-radius: 4px; }"
             "QPushButton:hover { background-color: #1565c0; }"
             "QPushButton:disabled { background-color: #b0bec5; }"
         )
@@ -139,15 +153,7 @@ class ActivationDialog(QDialog):
         self.message_label.setAlignment(Qt.AlignCenter)
         self.message_label.setWordWrap(True)
         self.message_label.setVisible(False)
-        self.message_label.setStyleSheet("font-size: 11px;")
         layout.addWidget(self.message_label)
-
-        # Footer note
-        footer_label = QLabel("No spam, just updates. You can close this and enter the code later.")
-        footer_label.setAlignment(Qt.AlignCenter)
-        footer_label.setWordWrap(True)
-        footer_label.setStyleSheet("color: palette(mid); font-size: 10px;")
-        layout.addWidget(footer_label)
 
     def _on_get_code_clicked(self):
         """Open the newsletter signup page in the default browser."""
@@ -158,7 +164,7 @@ class ActivationDialog(QDialog):
         code = self.code_input.text().strip()
 
         if not code:
-            self._show_message("Enter your code", is_error=True)
+            self._show_message("Enter your verification code", is_error=True)
             return
 
         success, message = activate_plugin(code)
@@ -177,7 +183,7 @@ class ActivationDialog(QDialog):
         """Display a message to the user."""
         self.message_label.setText(text)
         if is_error:
-            self.message_label.setStyleSheet("color: #d32f2f; font-size: 11px;")
+            self.message_label.setStyleSheet("color: #d32f2f; font-size: 12px;")
         else:
-            self.message_label.setStyleSheet("color: #2e7d32; font-size: 11px;")
+            self.message_label.setStyleSheet("color: #2e7d32; font-size: 12px;")
         self.message_label.setVisible(True)

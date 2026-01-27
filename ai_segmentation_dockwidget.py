@@ -94,6 +94,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout = QVBoxLayout(self.deps_group)
 
         self.deps_status_label = QLabel("Checking dependencies...")
+        self.deps_status_label.setStyleSheet("color: palette(text);")
         layout.addWidget(self.deps_status_label)
 
         self.deps_progress = QProgressBar()
@@ -102,7 +103,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.deps_progress)
 
         self.deps_progress_label = QLabel("")
-        self.deps_progress_label.setStyleSheet("color: palette(mid); font-size: 10px;")
+        self.deps_progress_label.setStyleSheet("color: palette(text); font-size: 10px;")
         self.deps_progress_label.setVisible(False)
         layout.addWidget(self.deps_progress_label)
 
@@ -129,6 +130,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout = QVBoxLayout(self.checkpoint_group)
 
         self.checkpoint_status_label = QLabel("Checking model...")
+        self.checkpoint_status_label.setStyleSheet("color: palette(text);")
         layout.addWidget(self.checkpoint_status_label)
 
         self.checkpoint_progress = QProgressBar()
@@ -137,7 +139,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.checkpoint_progress)
 
         self.checkpoint_progress_label = QLabel("")
-        self.checkpoint_progress_label.setStyleSheet("color: palette(mid); font-size: 10px;")
+        self.checkpoint_progress_label.setStyleSheet("color: palette(text); font-size: 10px;")
         self.checkpoint_progress_label.setVisible(False)
         layout.addWidget(self.checkpoint_progress_label)
 
@@ -160,10 +162,28 @@ class AISegmentationDockWidget(QDockWidget):
         self.activation_group = QGroupBox("Unlock Plugin")
         layout = QVBoxLayout(self.activation_group)
 
-        # Minimal description
-        desc_label = QLabel("Enter your code to unlock:")
-        desc_label.setStyleSheet("font-size: 11px;")
+        # Explanation about why we need the email
+        desc_label = QLabel("Enter your email to receive updates and get a verification code.")
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet("font-size: 11px; color: palette(text);")
         layout.addWidget(desc_label)
+
+        # Get code button
+        get_code_button = QPushButton("Get my code")
+        get_code_button.setMinimumHeight(30)
+        get_code_button.setCursor(Qt.PointingHandCursor)
+        get_code_button.setStyleSheet(
+            "QPushButton { background-color: #2e7d32; color: white; "
+            "font-weight: bold; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #1b5e20; }"
+        )
+        get_code_button.clicked.connect(self._on_get_code_clicked)
+        layout.addWidget(get_code_button)
+
+        # Code input label
+        code_label = QLabel("Then paste your code:")
+        code_label.setStyleSheet("font-size: 11px; margin-top: 6px; color: palette(text);")
+        layout.addWidget(code_label)
 
         # Code input section - compact
         code_layout = QHBoxLayout()
@@ -188,20 +208,6 @@ class AISegmentationDockWidget(QDockWidget):
 
         layout.addLayout(code_layout)
 
-        # Link to get code
-        link_layout = QHBoxLayout()
-        get_code_link = QPushButton("Get code →")
-        get_code_link.setCursor(Qt.PointingHandCursor)
-        get_code_link.setStyleSheet(
-            "QPushButton { background-color: transparent; color: #1976d2; "
-            "border: none; font-size: 11px; padding: 0; }"
-            "QPushButton:hover { color: #1565c0; text-decoration: underline; }"
-        )
-        get_code_link.clicked.connect(self._on_get_code_clicked)
-        link_layout.addStretch()
-        link_layout.addWidget(get_code_link)
-        layout.addLayout(link_layout)
-
         # Error message label
         self.activation_message_label = QLabel("")
         self.activation_message_label.setAlignment(Qt.AlignCenter)
@@ -224,8 +230,8 @@ class AISegmentationDockWidget(QDockWidget):
         layout = QVBoxLayout(self.seg_widget)
         layout.setContentsMargins(0, 8, 0, 0)
 
-        layer_label = QLabel("Select a Raster Layer to Segment")
-        layer_label.setStyleSheet("font-weight: bold;")
+        layer_label = QLabel("Select a Raster Layer to Segment :")
+        layer_label.setStyleSheet("font-weight: bold; color: palette(text);")
         layout.addWidget(layer_label)
         self.layer_label = layer_label
 
@@ -238,20 +244,37 @@ class AISegmentationDockWidget(QDockWidget):
         self.layer_combo.setToolTip("Select a file-based raster layer (GeoTIFF, etc.)")
         layout.addWidget(self.layer_combo)
 
-        self.no_rasters_label = QLabel("No compatible raster found. Add a GeoTIFF or local image to your project.")
-        self.no_rasters_label.setStyleSheet(
-            "padding: 8px; border: 1px solid palette(mid); "
-            "border-radius: 4px; font-size: 11px;"
+        # Warning container with icon and text - yellow background with dark text
+        self.no_rasters_widget = QWidget()
+        self.no_rasters_widget.setStyleSheet(
+            "QWidget { background-color: rgba(255, 193, 7, 0.3); "
+            "border: 1px solid rgba(255, 152, 0, 0.6); border-radius: 4px; }"
+            "QLabel { background: transparent; border: none; color: #5d4037; }"
         )
+        no_rasters_layout = QHBoxLayout(self.no_rasters_widget)
+        no_rasters_layout.setContentsMargins(8, 8, 8, 8)
+        no_rasters_layout.setSpacing(8)
+
+        # Warning icon from Qt standard icons
+        warning_icon_label = QLabel()
+        style = self.no_rasters_widget.style()
+        warning_icon = style.standardIcon(style.SP_MessageBoxWarning)
+        warning_icon_label.setPixmap(warning_icon.pixmap(16, 16))
+        warning_icon_label.setFixedSize(16, 16)
+        no_rasters_layout.addWidget(warning_icon_label, 0, Qt.AlignTop)
+
+        self.no_rasters_label = QLabel("No compatible raster found. Add a GeoTIFF or local image to your project.")
         self.no_rasters_label.setWordWrap(True)
-        self.no_rasters_label.setVisible(False)
-        layout.addWidget(self.no_rasters_label)
+        no_rasters_layout.addWidget(self.no_rasters_label, 1)
+
+        self.no_rasters_widget.setVisible(False)
+        layout.addWidget(self.no_rasters_widget)
 
         # Dynamic instruction label - changes based on user state
         self.instructions_label = QLabel("")
         self.instructions_label.setWordWrap(True)
         self.instructions_label.setStyleSheet(
-            "font-size: 12px; padding: 8px 0px;"
+            "font-size: 12px; padding: 8px 0px; color: palette(text);"
         )
         self.instructions_label.setToolTip(
             "Shortcuts: S (save polygon) · Enter (save as layer) · Ctrl+Z (undo) · Escape (clear)"
@@ -259,11 +282,12 @@ class AISegmentationDockWidget(QDockWidget):
         self.instructions_label.setVisible(False)
         layout.addWidget(self.instructions_label)
 
-        # Encoding progress section
+        # Encoding progress section - green background with theme-compatible text
         self.encoding_info_label = QLabel("")
         self.encoding_info_label.setStyleSheet(
             "background-color: rgba(46, 125, 50, 0.15); padding: 8px; "
-            "border-radius: 4px; font-size: 11px; border: 1px solid rgba(46, 125, 50, 0.3);"
+            "border-radius: 4px; font-size: 11px; border: 1px solid rgba(46, 125, 50, 0.3); "
+            "color: palette(text);"
         )
         self.encoding_info_label.setWordWrap(True)
         self.encoding_info_label.setVisible(False)
@@ -275,7 +299,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.prep_progress)
 
         self.prep_status_label = QLabel("")
-        self.prep_status_label.setStyleSheet("color: palette(mid); font-size: 11px;")
+        self.prep_status_label.setStyleSheet("color: palette(text); font-size: 11px;")
         self.prep_status_label.setVisible(False)
         layout.addWidget(self.prep_status_label)
 
@@ -366,23 +390,32 @@ class AISegmentationDockWidget(QDockWidget):
         self.main_layout.addWidget(self.seg_widget)
 
     def _setup_about_section(self):
-        """Setup the Help section with TerraLab link."""
-        self.about_group = QGroupBox("🐛 Bugs & Feedback")
-        layout = QVBoxLayout(self.about_group)
-        layout.setSpacing(4)
+        """Setup the links section - minimal, just links."""
+        # Simple horizontal layout for links, no group box
+        links_widget = QWidget()
+        links_layout = QHBoxLayout(links_widget)
+        links_layout.setContentsMargins(0, 4, 0, 4)
+        links_layout.setSpacing(16)
 
-        # Website link button - simple and direct
-        website_button = QPushButton("terra-lab.ai")
-        website_button.setCursor(Qt.PointingHandCursor)
-        website_button.setStyleSheet(
-            "QPushButton { background-color: transparent; color: #1976d2; "
-            "border: none; font-size: 12px; text-align: left; }"
-            "QPushButton:hover { color: #1565c0; text-decoration: underline; }"
+        # Documentation link
+        docs_link = QLabel(
+            '<a href="https://terra-lab.ai/docs" style="color: #1976d2;">Documentation</a>'
         )
-        website_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(get_website_url())))
-        layout.addWidget(website_button)
+        docs_link.setOpenExternalLinks(True)
+        docs_link.setCursor(Qt.PointingHandCursor)
+        links_layout.addWidget(docs_link)
 
-        self.main_layout.addWidget(self.about_group)
+        # Contact link
+        contact_link = QLabel(
+            '<a href="https://terra-lab.ai/contact" style="color: #1976d2;">Contact Us</a>'
+        )
+        contact_link.setOpenExternalLinks(True)
+        contact_link.setCursor(Qt.PointingHandCursor)
+        links_layout.addWidget(contact_link)
+
+        links_layout.addStretch()
+
+        self.main_layout.addWidget(links_widget)
 
     def _setup_status_bar(self):
         sep = QFrame()
@@ -392,7 +425,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet(
-            "background-color: palette(mid); color: palette(bright-text); "
+            "background-color: palette(mid); color: palette(text); "
             "font-size: 12px; padding: 8px; border-radius: 4px;"
         )
         self.status_label.setWordWrap(True)
@@ -445,7 +478,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.seg_widget.setVisible(show_segmentation)
         self.seg_separator.setVisible(show_segmentation)
 
-        # Activation section: only show if deps OK but not activated AND popup was shown
+        # Activation section: show if deps OK but not activated AND popup was shown/closed
         show_activation = (
             self._dependencies_ok and
             not self._plugin_activated and
@@ -534,14 +567,14 @@ class AISegmentationDockWidget(QDockWidget):
         self.deps_status_label.setText(message)
 
         if ok:
-            self.deps_status_label.setStyleSheet("font-weight: bold;")
+            self.deps_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
             self.install_button.setVisible(False)
             self.cancel_deps_button.setVisible(False)
             self.deps_progress.setVisible(False)
             self.deps_progress_label.setVisible(False)
             self.deps_group.setVisible(False)
         else:
-            self.deps_status_label.setStyleSheet("")
+            self.deps_status_label.setStyleSheet("color: palette(text);")
             self.install_button.setVisible(True)
             self.install_button.setEnabled(True)
             self.deps_group.setVisible(True)
@@ -611,13 +644,13 @@ class AISegmentationDockWidget(QDockWidget):
         self.checkpoint_status_label.setText(message)
 
         if ok:
-            self.checkpoint_status_label.setStyleSheet("font-weight: bold;")
+            self.checkpoint_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
             self.download_button.setVisible(False)
             self.checkpoint_progress.setVisible(False)
             self.checkpoint_progress_label.setVisible(False)
             self.checkpoint_group.setVisible(False)
         else:
-            self.checkpoint_status_label.setStyleSheet("")
+            self.checkpoint_status_label.setStyleSheet("color: palette(text);")
             self.download_button.setVisible(True)
             self.download_button.setEnabled(True)
             self.checkpoint_group.setVisible(True)
@@ -691,7 +724,8 @@ class AISegmentationDockWidget(QDockWidget):
             self.encoding_info_label.setText(f"✓ Cached at:\n{display_path}")
             self.encoding_info_label.setStyleSheet(
                 "background-color: rgba(46, 125, 50, 0.15); padding: 8px; "
-                "border-radius: 4px; font-size: 10px; border: 1px solid rgba(46, 125, 50, 0.3);"
+                "border-radius: 4px; font-size: 10px; border: 1px solid rgba(46, 125, 50, 0.3); "
+                "color: palette(text);"
             )
             self.encoding_info_label.setVisible(True)
 
@@ -814,7 +848,7 @@ class AISegmentationDockWidget(QDockWidget):
         has_layer = layer is not None
 
         has_rasters_available = self.layer_combo.count() > 0
-        self.no_rasters_label.setVisible(not has_rasters_available and not self._segmentation_active)
+        self.no_rasters_widget.setVisible(not has_rasters_available and not self._segmentation_active)
         self.layer_combo.setVisible(has_rasters_available)
 
         can_start = (
