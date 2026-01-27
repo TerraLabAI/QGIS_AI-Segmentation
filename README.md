@@ -1,34 +1,28 @@
 # AI Segmentation for QGIS
 
 <div align="center">
-  <img src="resources/icons/logo.png" alt="AI Segmentation Logo" width="150"/>
-  <br>
+  <img src="resources/icons/logo.png" alt="AI Segmentation" width="120"/>
 </div>
 
-**AI Segmentation** brings state-of-the-art AI segmentation to QGIS using Meta's Segment Anything Model (SAM). This plugin empowers GIS professionals to segment objects in satellite imagery, orthophotos, and other raster datasets with unprecedented ease and precision.
+AI-powered object segmentation for QGIS using Meta's Segment Anything Model (SAM).
 
-## Key Features
+## Features
 
-*   **Easy Installation**: Automatically handles the setup of a dedicated Python environment with all required deep learning libraries (approx. 2 GB), ensuring a conflict-free experience.
-*   **Optimized Performance**: Deploys SAM models and ONNX runtimes optimized for both CPU and GPU execution, giving you the best performance available on your hardware.
-*   **Image Encoding**: Efficiently processes and encodes raster images into an optimized format for real-time model interaction.
-*   **Interactive Editor**: A user-friendly point-and-click interface allowing for instant object segmentation directly on your map canvas.
-*   **Export Options**: Seamlessly save your segmentation results and export them directly to your vector layers.
+- **One-click setup** — automatic Python environment & model installation
+- **Interactive segmentation** — point-and-click on your map canvas
+- **CPU & GPU support** — optimized ONNX runtime
+- **Vector export** — save results directly to layers
 
-## Getting Started
+## Quick Start
 
-1.  **Install the Plugin**: Install via the QGIS Plugin Manager.
-2.  **First Run**: Upon first launch, the plugin will guide you through the installation of necessary dependencies and models.
-3.  **Select a Raster**: Choose the raster layer you wish to segment.
-4.  **Start Segmenting**: Use the interactive tool to click on objects and watch them be segmented instantly!
+1. Install via QGIS Plugin Manager
+2. Open the plugin panel — dependencies install automatically on first run
+3. Select a raster layer and start segmenting
 
-## Support & Community
+## License
 
-We are actively maintaining this project and have exciting updates planned, including support for new foundation models and enhanced segmentation features.
-
-If you enjoy using AI Segmentation, please consider starring the repository to stay updated!
-
-For bugs, questions, or feature requests, please [open a GitHub Issue](https://github.com/QGIS_AI-Segmentation/issues).
+GPL-2.0 — see [LICENSE](LICENSE)
 
 ---
-*Authored by TerraLab*
+
+*By [TerraLab](https://github.com/TerraLabAI)*
