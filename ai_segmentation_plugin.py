@@ -231,7 +231,7 @@ class AISegmentationPlugin:
 
         self.action = QAction(
             icon,
-            "AI Segmentation",
+            "AI Segmentation by TerraLab",
             self.iface.mainWindow()
         )
         self.action.setCheckable(True)
