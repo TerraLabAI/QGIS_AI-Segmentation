@@ -18,7 +18,7 @@ AI Segmentation brings Meta's **Segment Anything Model (SAM)** to QGIS. Point-an
 
 <br/>
 
-## Features
+### Features
 
 | | |
 |---|---|
@@ -30,7 +30,7 @@ AI Segmentation brings Meta's **Segment Anything Model (SAM)** to QGIS. Point-an
 
 <br/>
 
-## Architecture
+### Architecture
 
 The plugin uses **subprocess isolation** to keep QGIS stable, PyTorch runs in a separate process.
 
@@ -77,7 +77,7 @@ Select raster layer → Start segmentation → Click on map → Export polygons
 
 <br/>
 
-## Requirements
+### Requirements
 
 | Component | Specification |
 |-----------|---------------|
@@ -86,7 +86,7 @@ Select raster layer → Start segmentation → Click on map → Export polygons
 | RAM | 8 GB minimum |
 <br/>
 
-## Controls
+### Controls
 
 | Input | Action |
 |-------|--------|
