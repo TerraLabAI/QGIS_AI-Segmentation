@@ -11,6 +11,9 @@ from qgis.PyQt.QtWidgets import (
     QMessageBox,
     QSizePolicy,
     QLineEdit,
+    QSlider,
+    QSpinBox,
+    QCheckBox,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
 from qgis.PyQt.QtGui import QDesktopServices
@@ -40,6 +43,7 @@ class AISegmentationDockWidget(QDockWidget):
     save_polygon_requested = pyqtSignal()
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
+    refine_settings_changed = pyqtSignal(int, int)  # expand, simplify
 
     def __init__(self, parent=None):
         super().__init__("AI Segmentation by TerraLab", parent)
@@ -72,6 +76,11 @@ class AISegmentationDockWidget(QDockWidget):
         self._current_progress = 0
         self._target_progress = 0
         self._install_start_time = None
+
+        # Debounce timer for refinement sliders
+        self._refine_debounce_timer = QTimer(self)
+        self._refine_debounce_timer.setSingleShot(True)
+        self._refine_debounce_timer.timeout.connect(self._emit_refine_changed)
 
         # Connect to project layer signals for dynamic updates
         QgsProject.instance().layersAdded.connect(self._on_layers_added)
@@ -276,7 +285,7 @@ class AISegmentationDockWidget(QDockWidget):
             "font-size: 12px; padding: 8px 0px; color: palette(text);"
         )
         self.instructions_label.setToolTip(
-            "Shortcuts: S (save polygon) · Enter (save as layer) · Ctrl+Z (undo) · Escape (clear)"
+            "Shortcuts: S (save mask) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)"
         )
         self.instructions_label.setVisible(False)
         layout.addWidget(self.instructions_label)
@@ -321,41 +330,40 @@ class AISegmentationDockWidget(QDockWidget):
         )
         self.start_button.setToolTip(
             "Click to segment objects on the image.\n"
-            "Left-click = Include area (add positive points)\n"
-            "Right-click = Exclude area (add negative points)\n"
+            "Left-click = Select this element\n"
+            "Right-click = Refine selection\n"
             "Multiple points refine the segmentation"
         )
         layout.addWidget(self.start_button)
 
-        # Primary action buttons (large)
-        self.save_polygon_button = QPushButton("Add Polygon")
-        self.save_polygon_button.clicked.connect(self._on_save_polygon_clicked)
-        self.save_polygon_button.setVisible(False)
-        self.save_polygon_button.setEnabled(False)
-        self.save_polygon_button.setMinimumHeight(36)
-        self.save_polygon_button.setStyleSheet(
+        # Collapsible Refine mask panel
+        self._setup_refine_panel(layout)
+
+        # Primary action buttons (reduced height)
+        self.save_mask_button = QPushButton("Save mask")
+        self.save_mask_button.clicked.connect(self._on_save_polygon_clicked)
+        self.save_mask_button.setVisible(False)
+        self.save_mask_button.setEnabled(False)
+        self.save_mask_button.setMinimumHeight(32)
+        self.save_mask_button.setStyleSheet(
             "QPushButton { background-color: #1976d2; font-weight: bold; }"
             "QPushButton:disabled { background-color: #b0bec5; }"
         )
-        self.save_polygon_button.setToolTip(
-            "Save current polygon to your session (S)\n\n"
-            "You can save multiple polygons before exporting.\n"
-            "The polygon stays in memory until you export or stop."
+        self.save_mask_button.setToolTip(
+            "Save current mask to your session (S)"
         )
-        layout.addWidget(self.save_polygon_button)
+        layout.addWidget(self.save_mask_button)
 
-        self.export_button = QPushButton("Save as Layer")
+        self.export_button = QPushButton("Export to layer")
         self.export_button.clicked.connect(self._on_export_clicked)
         self.export_button.setVisible(False)
         self.export_button.setEnabled(False)
-        self.export_button.setMinimumHeight(36)
+        self.export_button.setMinimumHeight(32)
         self.export_button.setStyleSheet(
             "QPushButton { background-color: #b0bec5; }"
         )
         self.export_button.setToolTip(
-            "Export all saved polygons as a new vector layer (Enter)\n\n"
-            "This will create a permanent layer in your project\n"
-            "and end the current segmentation session."
+            "Export all saved masks as a new vector layer (Enter)"
         )
         layout.addWidget(self.export_button)
 
@@ -387,6 +395,65 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.secondary_buttons_widget)
 
         self.main_layout.addWidget(self.seg_widget)
+
+    def _setup_refine_panel(self, parent_layout):
+        """Setup the collapsible Refine mask panel."""
+        self.refine_group = QGroupBox("Refine mask")
+        self.refine_group.setCheckable(True)
+        self.refine_group.setChecked(False)  # Collapsed by default
+        self.refine_group.setVisible(False)  # Hidden until segmentation active
+        refine_layout = QVBoxLayout(self.refine_group)
+        refine_layout.setSpacing(8)
+        refine_layout.setContentsMargins(8, 8, 8, 8)
+
+        # 1. Expand/Contract: SpinBox with +/- buttons (-20 to +20)
+        expand_layout = QHBoxLayout()
+        expand_label = QLabel("Expand/Contract:")
+        expand_label.setToolTip("Positive = expand outward, Negative = shrink inward")
+        self.expand_spinbox = QSpinBox()
+        self.expand_spinbox.setRange(-20, 20)
+        self.expand_spinbox.setValue(0)
+        self.expand_spinbox.setSuffix(" px")
+        self.expand_spinbox.setMinimumWidth(80)
+        expand_layout.addWidget(expand_label)
+        expand_layout.addStretch()
+        expand_layout.addWidget(self.expand_spinbox)
+        refine_layout.addLayout(expand_layout)
+
+        # 2. Simplify outline: SpinBox (0 to 10) - reduces small variations in the outline
+        simplify_layout = QHBoxLayout()
+        simplify_label = QLabel("Simplify outline:")
+        simplify_label.setToolTip("Reduce small variations in the outline (0 = no change)")
+        self.simplify_spinbox = QSpinBox()
+        self.simplify_spinbox.setRange(0, 10)
+        self.simplify_spinbox.setValue(0)
+        self.simplify_spinbox.setMinimumWidth(80)
+        simplify_layout.addWidget(simplify_label)
+        simplify_layout.addStretch()
+        simplify_layout.addWidget(self.simplify_spinbox)
+        refine_layout.addLayout(simplify_layout)
+
+        # Connect signals
+        self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
+        self.simplify_spinbox.valueChanged.connect(self._on_refine_changed)
+
+        parent_layout.addWidget(self.refine_group)
+
+    def _on_refine_changed(self, value=None):
+        """Handle refine control changes with debounce."""
+        self._refine_debounce_timer.start(150)
+
+    def _emit_refine_changed(self):
+        """Emit the refine settings changed signal after debounce."""
+        self.refine_settings_changed.emit(
+            self.expand_spinbox.value(),
+            self.simplify_spinbox.value()
+        )
+
+    def reset_refine_sliders(self):
+        """Reset refinement controls to default values."""
+        self.expand_spinbox.setValue(0)
+        self.simplify_spinbox.setValue(0)
 
     def _setup_about_section(self):
         """Setup the links section - minimal, just links."""
@@ -680,8 +747,8 @@ class AISegmentationDockWidget(QDockWidget):
             self.start_button.setVisible(False)
             self.cancel_prep_button.setVisible(True)
             self.encoding_info_label.setText(
-                "⏳ Preparing image for segmentation...\n"
-                "One-time only - results are cached."
+                "⏳ Encoding this image for AI segmentation...\n"
+                "This is stored permanently, no waiting next time (:"
             )
             self.encoding_info_label.setVisible(True)
         elif percent >= 100 or "cancel" in message.lower():
@@ -720,8 +787,10 @@ class AISegmentationDockWidget(QDockWidget):
             self.encoding_info_label.setVisible(False)
             self.instructions_label.setVisible(True)
             self._update_instructions()
-            self.save_polygon_button.setVisible(True)
-            self.save_polygon_button.setEnabled(self._has_mask)
+            # Refine panel only visible after at least one mask is saved
+            self.refine_group.setVisible(self._saved_polygon_count > 0)
+            self.save_mask_button.setVisible(True)
+            self.save_mask_button.setEnabled(self._has_mask)
             self.export_button.setVisible(True)
             self._update_export_button_style()
             self.undo_button.setVisible(True)
@@ -730,7 +799,8 @@ class AISegmentationDockWidget(QDockWidget):
         else:
             self.start_button.setVisible(True)
             self.instructions_label.setVisible(False)
-            self.save_polygon_button.setVisible(False)
+            self.refine_group.setVisible(False)
+            self.save_mask_button.setVisible(False)
             self.export_button.setVisible(False)
             self.undo_button.setVisible(False)
             self.stop_button.setVisible(False)
@@ -743,8 +813,7 @@ class AISegmentationDockWidget(QDockWidget):
                 "QPushButton { background-color: #4CAF50; font-weight: bold; }"
             )
             self.export_button.setToolTip(
-                f"Export {self._saved_polygon_count} polygon(s) as a new layer (Enter)\n\n"
-                "Creates a permanent vector layer and ends the session."
+                f"Export {self._saved_polygon_count} mask(s) as a new layer (Enter)"
             )
         else:
             self.export_button.setEnabled(False)
@@ -752,8 +821,7 @@ class AISegmentationDockWidget(QDockWidget):
                 "QPushButton { background-color: #b0bec5; }"
             )
             self.export_button.setToolTip(
-                "Save at least one polygon first (S)\n\n"
-                "Then you can export all polygons as a layer."
+                "Save at least one mask first (S)"
             )
 
     def set_point_count(self, positive: int, negative: int):
@@ -764,7 +832,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._has_mask = has_points
 
         self.undo_button.setEnabled(has_points and self._segmentation_active)
-        self.save_polygon_button.setEnabled(has_points)
+        self.save_mask_button.setEnabled(has_points)
 
         if self._segmentation_active:
             self._update_instructions()
@@ -774,17 +842,26 @@ class AISegmentationDockWidget(QDockWidget):
         total = self._positive_count + self._negative_count
 
         if total == 0:
+            # No points yet - only show green option
             text = (
-                "Click on the element you want to segment on the map:\n\n"
-                "🟢 Left-click: Include this area\n"
-                "❌ Right-click: Exclude this area"
+                "Click on the element you want to segment:\n\n"
+                "🟢 Left-click to select"
+            )
+        elif self._positive_count > 0 and self._negative_count == 0:
+            # Has green points but no red yet - show both options
+            counts = f"🟢 {self._positive_count} point(s)"
+            text = (
+                f"{counts}\n\n"
+                "🟢 Left-click to add more\n"
+                "❌ Right-click to exclude from selection"
             )
         else:
-            counts = f"🟢 {self._positive_count} included · ❌ {self._negative_count} excluded"
+            # Has both types of points
+            counts = f"🟢 {self._positive_count} point(s) · ❌ {self._negative_count} adjustment(s)"
             if self._saved_polygon_count > 0:
-                state = f"{self._saved_polygon_count} polygon(s) saved"
+                state = f"{self._saved_polygon_count} mask(s) saved"
             else:
-                state = "Refine selection or save polygon"
+                state = "Refine selection or save mask"
             text = f"{counts}\n{state}"
 
         self.instructions_label.setText(text)
@@ -795,6 +872,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._saved_polygon_count = 0
         self._positive_count = 0
         self._negative_count = 0
+        self.reset_refine_sliders()
         self._update_button_visibility()
         self._update_ui_state()
 
