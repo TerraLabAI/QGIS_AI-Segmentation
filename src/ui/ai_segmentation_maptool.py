@@ -13,12 +13,12 @@ class AISegmentationMapTool(QgsMapTool):
     """Map tool for AI segmentation with positive/negative point prompts.
 
     Workflow:
-    - Left click: Add positive point (include this area)
-    - Right click: Add negative point (exclude this area)
+    - Left click: Select this element (add positive point)
+    - Right click: Refine selection (add negative point)
     - Ctrl+Z: Undo last point
-    - S: Save polygon (add to collection)
+    - S: Save mask (add to collection)
     - Enter: Export to layer
-    - Escape: Clear current polygon
+    - Escape: Clear current mask
     """
 
     positive_click = pyqtSignal(QgsPointXY)
