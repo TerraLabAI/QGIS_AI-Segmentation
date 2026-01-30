@@ -2,7 +2,6 @@ import subprocess
 import sys
 import os
 import shutil
-from pathlib import Path
 from typing import Tuple, Optional, Callable
 
 from qgis.core import QgsMessageLog, Qgis
@@ -165,7 +164,7 @@ def create_venv(venv_dir: str = None, progress_callback: Optional[Callable[[int,
             )
 
         if result.returncode == 0:
-            _log(f"Virtual environment created successfully", Qgis.Success)
+            _log("Virtual environment created successfully", Qgis.Success)
             if progress_callback:
                 progress_callback(20, "Virtual environment created")
             return True, "Virtual environment created"

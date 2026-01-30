@@ -14,7 +14,7 @@ FEATURES_DIR = os.path.join(CACHE_DIR, "features")
 SAM_CHECKPOINT_URL = "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth"
 SAM_CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
 # SHA256 hash for checkpoint verification (not a secret - this is a public checksum)
-SAM_CHECKPOINT_SHA256 = "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"  # noqa: S105
+SAM_CHECKPOINT_SHA256 = "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"  # noqa: S105  # pragma: allowlist secret
 
 
 def get_checkpoints_dir() -> str:
