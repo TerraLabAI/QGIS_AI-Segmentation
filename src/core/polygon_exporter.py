@@ -364,11 +364,12 @@ def _numpy_dilate(mask: np.ndarray, iterations: int) -> np.ndarray:
     for _ in range(iterations):
         # Shift in all 4 directions and combine (4-connectivity)
         padded = np.pad(result, 1, mode='constant', constant_values=0)
-        dilated = (padded[1:-1, 1:-1] |  # center
-                   padded[:-2, 1:-1] |   # up
-                   padded[2:, 1:-1] |    # down
-                   padded[1:-1, :-2] |   # left
-                   padded[1:-1, 2:])     # right
+        center = padded[1:-1, 1:-1]
+        up = padded[:-2, 1:-1]
+        down = padded[2:, 1:-1]
+        left = padded[1:-1, :-2]
+        right = padded[1:-1, 2:]
+        dilated = center | up | down | left | right
         result = dilated.astype(np.uint8)
     return result
 
@@ -379,11 +380,12 @@ def _numpy_erode(mask: np.ndarray, iterations: int) -> np.ndarray:
     for _ in range(iterations):
         # Shift in all 4 directions and combine (4-connectivity)
         padded = np.pad(result, 1, mode='constant', constant_values=0)
-        eroded = (padded[1:-1, 1:-1] &  # center
-                  padded[:-2, 1:-1] &   # up
-                  padded[2:, 1:-1] &    # down
-                  padded[1:-1, :-2] &   # left
-                  padded[1:-1, 2:])     # right
+        center = padded[1:-1, 1:-1]
+        up = padded[:-2, 1:-1]
+        down = padded[2:, 1:-1]
+        left = padded[1:-1, :-2]
+        right = padded[1:-1, 2:]
+        eroded = center & up & down & left & right
         result = eroded.astype(np.uint8)
     return result
 
