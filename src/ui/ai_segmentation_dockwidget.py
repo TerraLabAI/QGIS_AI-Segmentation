@@ -9,11 +9,8 @@ from qgis.PyQt.QtWidgets import (
     QProgressBar,
     QFrame,
     QMessageBox,
-    QSizePolicy,
     QLineEdit,
-    QSlider,
     QSpinBox,
-    QCheckBox,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
 from qgis.PyQt.QtGui import QDesktopServices
@@ -26,7 +23,6 @@ from ..core.activation_manager import (
     is_plugin_activated,
     activate_plugin,
     get_newsletter_url,
-    get_website_url,
 )
 
 
@@ -482,7 +478,6 @@ class AISegmentationDockWidget(QDockWidget):
         links_layout.addStretch()
 
         self.main_layout.addWidget(links_widget)
-
 
     def _on_get_code_clicked(self):
         """Open the newsletter signup page in the default browser."""

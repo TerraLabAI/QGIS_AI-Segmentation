@@ -45,6 +45,7 @@ def _safe_extract_zip(zip_file: zipfile.ZipFile, dest_dir: str) -> None:
             raise ValueError(f"Attempted path traversal in zip archive: {member}")
         zip_file.extract(member, dest_dir)
 
+
 # Release tag from python-build-standalone
 # Update this periodically to get newer Python builds
 RELEASE_TAG = "20241219"
@@ -84,7 +85,6 @@ def get_standalone_dir() -> str:
 
 def get_standalone_python_path() -> str:
     """Get the path to the standalone Python executable."""
-    python_version = get_python_full_version()
     python_dir = os.path.join(STANDALONE_DIR, "python")
 
     if sys.platform == "win32":
@@ -170,7 +170,7 @@ def download_python_standalone(
         qurl = QUrl(url)
 
         if progress_callback:
-            progress_callback(5, f"Connecting to download server...")
+            progress_callback(5, "Connecting to download server...")
 
         # Perform the download (blocking)
         err = request.get(QNetworkRequest(qurl))
@@ -226,7 +226,7 @@ def download_python_standalone(
         if success:
             if progress_callback:
                 progress_callback(100, f"✓ Python {python_version} installed")
-            _log(f"Python standalone installed successfully", Qgis.Success)
+            _log("Python standalone installed successfully", Qgis.Success)
             return True, f"Python {python_version} installed successfully"
         else:
             return False, f"Verification failed: {verify_msg}"
