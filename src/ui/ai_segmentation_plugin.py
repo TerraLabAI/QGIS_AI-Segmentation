@@ -19,7 +19,6 @@ from qgis.core import (
     QgsField,
     QgsFillSymbol,
     QgsSingleSymbolRenderer,
-    QgsRectangle,
     QgsCoordinateReferenceSystem,
 )
 from qgis.gui import QgisInterface, QgsRubberBand
@@ -27,8 +26,6 @@ from qgis.PyQt.QtGui import QColor
 
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
-
-
 
 
 class DepsInstallWorker(QThread):
@@ -148,7 +145,7 @@ class PromptManager:
     def point_count(self) -> Tuple[int, int]:
         return len(self.positive_points), len(self.negative_points)
 
-    def get_points_for_predictor(self, transform) -> Tuple[Optional['np.ndarray'], Optional['np.ndarray']]:
+    def get_points_for_predictor(self, transform) -> Tuple[Optional['numpy.ndarray'], Optional['numpy.ndarray']]:
         import numpy as np
         from rasterio import transform as rio_transform
 
@@ -405,7 +402,7 @@ class AISegmentationPlugin:
             self.predictor = SamPredictorNoImgEncoder(sam_config)
 
             QgsMessageLog.logMessage(
-                f"SAM predictor initialized (subprocess mode)",
+                "SAM predictor initialized (subprocess mode)",
                 "AI Segmentation",
                 level=Qgis.Info
             )

@@ -519,11 +519,10 @@ class AISegmentationDockWidget(QDockWidget):
         self.seg_separator.setVisible(show_segmentation)
 
         # Activation section: show if deps OK but not activated AND popup was shown/closed
-        show_activation = (
-            self._dependencies_ok and
-            not self._plugin_activated and
-            self._activation_popup_shown
-        )
+        deps_ok = self._dependencies_ok
+        not_activated = not self._plugin_activated
+        popup_shown = self._activation_popup_shown
+        show_activation = deps_ok and not_activated and popup_shown
         self.activation_group.setVisible(show_activation)
 
         self._update_ui_state()
@@ -884,12 +883,10 @@ class AISegmentationDockWidget(QDockWidget):
         self.no_rasters_widget.setVisible(not has_rasters_available and not self._segmentation_active)
         self.layer_combo.setVisible(has_rasters_available)
 
-        can_start = (
-            self._dependencies_ok and
-            self._checkpoint_ok and
-            has_layer and
-            self._plugin_activated
-        )
+        deps_ok = self._dependencies_ok
+        checkpoint_ok = self._checkpoint_ok
+        activated = self._plugin_activated
+        can_start = deps_ok and checkpoint_ok and has_layer and activated
         self.start_button.setEnabled(can_start and not self._segmentation_active)
 
     def show_activation_dialog(self):
@@ -899,7 +896,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._activation_popup_shown = True
         dialog = ActivationDialog(self)
         dialog.activated.connect(self._on_dialog_activated)
-        result = dialog.exec_()
+        dialog.exec_()
 
         # If dialog was closed without activation, show the panel section
         if not self._plugin_activated:
