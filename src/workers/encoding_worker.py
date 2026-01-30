@@ -106,11 +106,13 @@ def encode_raster(config):
                     use_layer_extent = True
                 else:
                     raster_bounds = src.bounds
+                    left_near_zero = abs(raster_bounds.left) < 10
+                    bottom_near_zero = abs(raster_bounds.bottom) < 10
+                    right_near_width = abs(raster_bounds.right - raster_width) < 10
+                    top_near_height = abs(raster_bounds.top - raster_height) < 10
                     bounds_look_like_pixels = (
-                        abs(raster_bounds.left) < 10 and
-                        abs(raster_bounds.bottom) < 10 and
-                        abs(raster_bounds.right - raster_width) < 10 and
-                        abs(raster_bounds.top - raster_height) < 10
+                        left_near_zero and bottom_near_zero and
+                        right_near_width and top_near_height
                     )
 
                     if bounds_look_like_pixels:

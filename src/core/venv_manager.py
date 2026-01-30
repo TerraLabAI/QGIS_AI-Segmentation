@@ -367,7 +367,7 @@ def create_venv_and_install(
     Progress breakdown:
     - 0-10%: Download Python standalone (~50MB)
     - 10-15%: Create virtual environment
-    - 15-95%: Install packages (~2.5GB)
+    - 15-95%: Install packages (~800MB)
     - 95-100%: Verify installation
     """
     from .python_manager import (

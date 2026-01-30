@@ -117,7 +117,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_button.setToolTip(
             "Create isolated virtual environment and install required packages\n"
             "(PyTorch, Segment Anything, pandas, rasterio)\n"
-            "Download size: ~2.5GB"
+            "Download size: ~800MB"
         )
         layout.addWidget(self.install_button)
 

@@ -1,6 +1,9 @@
 import os
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy
 import sys
 
 from qgis.PyQt.QtWidgets import QAction, QMessageBox
@@ -453,8 +456,8 @@ class AISegmentationPlugin:
         reply = QMessageBox.question(
             self.iface.mainWindow(),
             "Install Dependencies",
-            "Download ~2.5GB of AI dependencies?\n\n"
-            "This may take 3-5 minutes.",
+            "Download ~800MB of AI dependencies?\n\n"
+            "This takes about 2-3 minutes.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
         )
@@ -1175,7 +1178,6 @@ class AISegmentationPlugin:
 
     def _run_prediction(self):
         """Run SAM prediction using all positive and negative points."""
-        import numpy as np
         from rasterio.transform import from_bounds as transform_from_bounds
         from ..core.feature_dataset import FeatureSampler
 
