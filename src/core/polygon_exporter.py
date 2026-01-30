@@ -1,26 +1,24 @@
-from typing import List, Optional, Tuple
+from typing import List, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import rasterio
 
 from .venv_manager import ensure_venv_packages_available
 ensure_venv_packages_available()
 
-import numpy as np
+import numpy as np  # noqa: E402
 
-from qgis.core import (
+from qgis.core import (  # noqa: E402
     QgsVectorLayer,
-    QgsFeature,
     QgsGeometry,
     QgsPointXY,
     QgsPolygon,
     QgsLineString,
-    QgsField,
-    QgsFields,
     QgsProject,
     QgsVectorFileWriter,
-    QgsCoordinateReferenceSystem,
     QgsMessageLog,
     Qgis,
 )
-from qgis.PyQt.QtCore import QVariant
 
 
 def mask_to_polygons_rasterio(
@@ -38,7 +36,6 @@ def mask_to_polygons_rasterio(
         return []
 
     try:
-        import rasterio
         from rasterio.features import shapes as get_shapes
 
         mask_uint8 = mask.astype(np.uint8)
@@ -117,7 +114,6 @@ def mask_to_polygons(
         return []
 
     try:
-        import rasterio
         from rasterio.transform import from_bounds as transform_from_bounds
 
         bbox = transform_info.get("bbox")
@@ -369,11 +365,11 @@ def _numpy_dilate(mask: np.ndarray, iterations: int) -> np.ndarray:
         # Shift in all 4 directions and combine (4-connectivity)
         padded = np.pad(result, 1, mode='constant', constant_values=0)
         dilated = (
-            padded[1:-1, 1:-1] |  # center
-            padded[:-2, 1:-1] |   # up
-            padded[2:, 1:-1] |    # down
-            padded[1:-1, :-2] |   # left
-            padded[1:-1, 2:]      # right
+            padded[1:-1, 1:-1]  # center
+            | padded[:-2, 1:-1]  # up
+            | padded[2:, 1:-1]  # down
+            | padded[1:-1, :-2]  # left
+            | padded[1:-1, 2:]  # right
         )
         result = dilated.astype(np.uint8)
     return result
@@ -386,16 +382,14 @@ def _numpy_erode(mask: np.ndarray, iterations: int) -> np.ndarray:
         # Shift in all 4 directions and combine (4-connectivity)
         padded = np.pad(result, 1, mode='constant', constant_values=0)
         eroded = (
-            padded[1:-1, 1:-1] &  # center
-            padded[:-2, 1:-1] &   # up
-            padded[2:, 1:-1] &    # down
-            padded[1:-1, :-2] &   # left
-            padded[1:-1, 2:]      # right
+            padded[1:-1, 1:-1]  # center
+            & padded[:-2, 1:-1]  # up
+            & padded[2:, 1:-1]  # down
+            & padded[1:-1, :-2]  # left
+            & padded[1:-1, 2:]  # right
         )
         result = eroded.astype(np.uint8)
     return result
-
-
 
 
 

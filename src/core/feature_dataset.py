@@ -9,10 +9,10 @@ from qgis.core import QgsMessageLog, Qgis
 from .venv_manager import ensure_venv_packages_available
 ensure_venv_packages_available()
 
-import numpy as np
-import pandas as pd
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
 
-from .device_manager import get_optimal_device
+from .device_manager import get_optimal_device  # noqa: E402
 
 
 class FeatureDataset:
