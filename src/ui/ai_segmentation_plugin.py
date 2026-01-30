@@ -212,6 +212,10 @@ class AISegmentationPlugin:
         self._current_layer_name = ""
         self._segmentation_counter = 0
 
+        # Refinement settings
+        self._refine_expand = 0
+        self._refine_simplify = 0
+
         self.deps_install_worker = None
         self.download_worker = None
         self.encoding_worker = None
@@ -262,6 +266,7 @@ class AISegmentationPlugin:
         self.dock_widget.clear_points_requested.connect(self._on_clear_points)
         self.dock_widget.undo_requested.connect(self._on_undo)
         self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
+        self.dock_widget.refine_settings_changed.connect(self._on_refine_settings_changed)
 
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
 
@@ -726,7 +731,7 @@ class AISegmentationPlugin:
         # Status bar hint will be set by _update_status_hint via set_point_count
 
     def _on_save_polygon(self):
-        """Save current polygon from mask."""
+        """Save current mask as polygon."""
         if self.current_mask is None:
             return
 
@@ -739,11 +744,12 @@ class AISegmentationPlugin:
 
         combined = QgsGeometry.unaryUnion(geometries)
         if combined and not combined.isEmpty():
-            # Store as WKT string to prevent geometry invalidation
+            # Store WKT, score, transform info, AND raw mask for later refinement
             self.saved_polygons.append({
                 'geometry_wkt': combined.asWkt(),
                 'score': self.current_score,
                 'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
+                'raw_mask': self.current_mask.copy(),  # Store raw mask for refinement
             })
 
             saved_rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
@@ -754,12 +760,19 @@ class AISegmentationPlugin:
             self.saved_rubber_bands.append(saved_rb)
 
             QgsMessageLog.logMessage(
-                f"Saved polygon #{len(self.saved_polygons)}",
+                f"Saved mask #{len(self.saved_polygons)}",
                 "AI Segmentation",
                 level=Qgis.Info
             )
 
             self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
+
+            # Reset refinement sliders when a new mask is saved
+            self._refine_expand = 0
+            self._refine_fill = 0
+            self._refine_smooth = 0
+            if self.dock_widget:
+                self.dock_widget.reset_refine_sliders()
 
         # Clear current state for next polygon
         self.prompts.clear()
@@ -778,9 +791,11 @@ class AISegmentationPlugin:
 
         from ..core.polygon_exporter import mask_to_polygons
 
+        # Copy saved_polygons - note that the last one's geometry_wkt may have been
+        # updated by refinement sliders via _update_last_saved_mask_visualization
         polygons_to_export = list(self.saved_polygons)
 
-        # Include current unsaved polygon if exists
+        # Include current unsaved mask if exists (no refinement - refinement is for saved masks only)
         if self.current_mask is not None:
             geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
             if geometries:
@@ -1008,8 +1023,8 @@ class AISegmentationPlugin:
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
                 "Stop Segmentation?",
-                f"This will discard {polygon_count} polygon(s).\n\n"
-                "Use 'Save as Layer' to keep them.",
+                f"This will discard {polygon_count} mask(s).\n\n"
+                "Use 'Export to layer' to keep them.",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
@@ -1023,9 +1038,104 @@ class AISegmentationPlugin:
         self._reset_session()
         self.dock_widget.reset_session()
 
+    def _on_refine_settings_changed(self, expand: int, simplify: int):
+        """Handle refinement control changes - affects last saved mask only."""
+        QgsMessageLog.logMessage(
+            f"Refine settings changed: expand={expand}, simplify={simplify}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        self._refine_expand = expand
+        self._refine_simplify = simplify
+
+        # Update the last saved mask's rubber band
+        self._update_last_saved_mask_visualization()
+
+    def _update_last_saved_mask_visualization(self):
+        """Update the last saved mask's rubber band with current refinement settings."""
+        QgsMessageLog.logMessage(
+            f"_update_last_saved_mask_visualization called. saved_polygons={len(self.saved_polygons)}, saved_rubber_bands={len(self.saved_rubber_bands)}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+        if not self.saved_polygons or not self.saved_rubber_bands:
+            QgsMessageLog.logMessage("No saved polygons or rubber bands", "AI Segmentation", level=Qgis.Warning)
+            return
+
+        last_polygon = self.saved_polygons[-1]
+        last_rubber_band = self.saved_rubber_bands[-1]
+
+        raw_mask = last_polygon.get('raw_mask')
+        transform_info = last_polygon.get('transform_info')
+
+        QgsMessageLog.logMessage(
+            f"raw_mask is None: {raw_mask is None}, transform_info is None: {transform_info is None}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+        if raw_mask is None or transform_info is None:
+            QgsMessageLog.logMessage("raw_mask or transform_info is None, returning", "AI Segmentation", level=Qgis.Warning)
+            return
+
+        try:
+            from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
+
+            QgsMessageLog.logMessage(
+                f"Applying refinement: expand={self._refine_expand}, simplify={self._refine_simplify}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+
+            # Apply mask refinement (expand/contract only)
+            mask_to_display = raw_mask
+            if self._refine_expand != 0:
+                QgsMessageLog.logMessage("Calling apply_mask_refinement...", "AI Segmentation", level=Qgis.Info)
+                mask_to_display = apply_mask_refinement(raw_mask, self._refine_expand)
+                QgsMessageLog.logMessage(f"Refinement done, mask shape: {mask_to_display.shape}", "AI Segmentation", level=Qgis.Info)
+
+            geometries = mask_to_polygons(mask_to_display, transform_info)
+            QgsMessageLog.logMessage(f"Generated {len(geometries)} geometries", "AI Segmentation", level=Qgis.Info)
+
+            if geometries:
+                combined = QgsGeometry.unaryUnion(geometries)
+                if combined and not combined.isEmpty():
+                    # Apply simplification if enabled
+                    if self._refine_simplify > 0:
+                        # Calculate tolerance based on image resolution
+                        bbox = transform_info.get("bbox", [0, 1, 0, 1])
+                        img_shape = transform_info.get("img_shape", (1024, 1024))
+                        pixel_size = (bbox[1] - bbox[0]) / img_shape[1]  # map units per pixel
+                        tolerance = pixel_size * self._refine_simplify * 0.5  # 0.5-5 pixels worth
+                        QgsMessageLog.logMessage(f"Simplifying with tolerance={tolerance:.4f}", "AI Segmentation", level=Qgis.Info)
+                        combined = combined.simplify(tolerance)
+
+                    last_rubber_band.setToGeometry(combined, None)
+                    # Also update the stored WKT for export
+                    last_polygon['geometry_wkt'] = combined.asWkt()
+                    QgsMessageLog.logMessage("Updated rubber band geometry", "AI Segmentation", level=Qgis.Info)
+                else:
+                    last_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
+                    QgsMessageLog.logMessage("Combined geometry was empty", "AI Segmentation", level=Qgis.Warning)
+            else:
+                last_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
+                QgsMessageLog.logMessage("No geometries generated", "AI Segmentation", level=Qgis.Warning)
+
+        except Exception as e:
+            import traceback
+            QgsMessageLog.logMessage(
+                f"Failed to update last saved mask: {str(e)}\n{traceback.format_exc()}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+
     def _on_positive_click(self, point):
-        """Handle left-click: add positive point (include this area)."""
+        """Handle left-click: add positive point (select this element)."""
         if self.predictor is None or self.feature_dataset is None:
+            # Remove the marker that was added by the maptool
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
             return
 
         QgsMessageLog.logMessage(
@@ -1040,6 +1150,21 @@ class AISegmentationPlugin:
     def _on_negative_click(self, point):
         """Handle right-click: add negative point (exclude this area)."""
         if self.predictor is None or self.feature_dataset is None:
+            # Remove the marker that was added by the maptool
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            return
+
+        # Block negative points until at least one positive point exists
+        if len(self.prompts.positive_points) == 0:
+            # Remove the marker that was added by the maptool
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            QgsMessageLog.logMessage(
+                "Negative point ignored - need at least one positive point first",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
             return
 
         QgsMessageLog.logMessage(
@@ -1171,6 +1296,7 @@ class AISegmentationPlugin:
         try:
             from ..core.polygon_exporter import mask_to_polygons
 
+            # No refinement on current preview - refinement only applies to saved masks
             geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
 
             if geometries:
@@ -1241,5 +1367,10 @@ class AISegmentationPlugin:
         self.current_mask = None
         self.current_score = 0.0
         self.current_transform_info = None
+
+        # Reset refinement settings
+        self._refine_expand = 0
+        self._refine_simplify = 0
+
         self.dock_widget.set_point_count(0, 0)
         self.dock_widget.set_saved_polygon_count(0)

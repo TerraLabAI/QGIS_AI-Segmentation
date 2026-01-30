@@ -158,6 +158,8 @@ class ActivationDialog(QDialog):
     def _on_get_code_clicked(self):
         """Open the newsletter signup page in the default browser."""
         QDesktopServices.openUrl(QUrl(get_newsletter_url()))
+        # Move focus to code input so Enter triggers Unlock, not this button
+        self.code_input.setFocus()
 
     def _on_activate_clicked(self):
         """Attempt to activate the plugin with the entered code."""

@@ -336,6 +336,70 @@ def pixel_to_map_coords(
     return pixel_x, pixel_y
 
 
+def apply_mask_refinement(
+    mask: np.ndarray,
+    expand_value: int        # -20 to +20 (pixels)
+) -> np.ndarray:
+    """
+    Apply morphological operations to refine the mask.
+    Pure numpy implementation - no scipy needed.
+    Note: Simplification is done at the polygon level using QGIS simplify().
+
+    Args:
+        mask: Binary mask array
+        expand_value: Pixels to expand (positive) or contract (negative)
+    """
+    result = mask.copy().astype(np.uint8)
+
+    # Expand/Contract (dilation/erosion) using numpy
+    if expand_value != 0:
+        iterations = abs(expand_value)
+        if expand_value > 0:
+            result = _numpy_dilate(result, iterations)
+        else:
+            result = _numpy_erode(result, iterations)
+
+    return result
+
+
+def _numpy_dilate(mask: np.ndarray, iterations: int) -> np.ndarray:
+    """Dilate mask using numpy (expand the mask)."""
+    result = mask.copy()
+    for _ in range(iterations):
+        # Shift in all 4 directions and combine (4-connectivity)
+        padded = np.pad(result, 1, mode='constant', constant_values=0)
+        dilated = (
+            padded[1:-1, 1:-1] |  # center
+            padded[:-2, 1:-1] |   # up
+            padded[2:, 1:-1] |    # down
+            padded[1:-1, :-2] |   # left
+            padded[1:-1, 2:]      # right
+        )
+        result = dilated.astype(np.uint8)
+    return result
+
+
+def _numpy_erode(mask: np.ndarray, iterations: int) -> np.ndarray:
+    """Erode mask using numpy (shrink the mask)."""
+    result = mask.copy()
+    for _ in range(iterations):
+        # Shift in all 4 directions and combine (4-connectivity)
+        padded = np.pad(result, 1, mode='constant', constant_values=0)
+        eroded = (
+            padded[1:-1, 1:-1] &  # center
+            padded[:-2, 1:-1] &   # up
+            padded[2:, 1:-1] &    # down
+            padded[1:-1, :-2] &   # left
+            padded[1:-1, 2:]      # right
+        )
+        result = eroded.astype(np.uint8)
+    return result
+
+
+
+
+
+
 def export_to_geopackage(
     layer: QgsVectorLayer,
     output_path: str
