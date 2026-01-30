@@ -33,7 +33,7 @@ def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: str) -> None:
         member_path = os.path.realpath(os.path.join(dest_dir, member.name))
         if not member_path.startswith(dest_dir + os.sep) and member_path != dest_dir:
             raise ValueError(f"Attempted path traversal in tar archive: {member.name}")
-    tar.extractall(dest_dir)
+        tar.extract(member, dest_dir)
 
 
 def _safe_extract_zip(zip_file: zipfile.ZipFile, dest_dir: str) -> None:
@@ -43,7 +43,7 @@ def _safe_extract_zip(zip_file: zipfile.ZipFile, dest_dir: str) -> None:
         member_path = os.path.realpath(os.path.join(dest_dir, member))
         if not member_path.startswith(dest_dir + os.sep) and member_path != dest_dir:
             raise ValueError(f"Attempted path traversal in zip archive: {member}")
-    zip_file.extractall(dest_dir)
+        zip_file.extract(member, dest_dir)
 
 # Release tag from python-build-standalone
 # Update this periodically to get newer Python builds
@@ -256,7 +256,9 @@ def verify_standalone_python() -> Tuple[bool, str]:
     # On Unix, make sure it's executable
     if sys.platform != "win32":
         try:
-            os.chmod(python_path, 0o755)  # Required for Unix executable
+            import stat
+            # Set executable permission (owner rwx, group rx, others rx)
+            os.chmod(python_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
         except OSError:
             pass
 

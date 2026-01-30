@@ -1,5 +1,7 @@
-from typing import Tuple
-import numpy as np
+from typing import Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import rasterio
 
 from qgis.core import (
     QgsCoordinateReferenceSystem,
@@ -76,8 +78,6 @@ def pixel_to_geo(
 
 
 def get_raster_info(layer: QgsRasterLayer) -> dict:
-    provider = layer.dataProvider()
-
     extent = layer.extent()
     width = layer.width()
     height = layer.height()
