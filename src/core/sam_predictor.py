@@ -70,7 +70,7 @@ class SamPredictorNoImgEncoder:
         self.model = FakeModel()
 
         QgsMessageLog.logMessage(
-            f"SAM Predictor initialized (subprocess mode)",
+            "SAM Predictor initialized (subprocess mode)",
             "AI Segmentation",
             level=Qgis.Info
         )

@@ -1,11 +1,13 @@
 import sys
 import os
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from qgis.core import QgsMessageLog, Qgis
 
 from .venv_manager import ensure_venv_packages_available
 ensure_venv_packages_available()
 
+if TYPE_CHECKING:
+    import torch
 
 _cached_device = None
 _device_info = None
@@ -39,7 +41,7 @@ def get_optimal_device() -> "torch.device":
                 _device_info = "Apple Silicon GPU (MPS)"
                 _configure_mps_optimizations()
                 QgsMessageLog.logMessage(
-                    f"Using MPS acceleration (Apple Silicon GPU)",
+                    "Using MPS acceleration (Apple Silicon GPU)",
                     "AI Segmentation",
                     level=Qgis.Info
                 )
@@ -55,7 +57,7 @@ def get_optimal_device() -> "torch.device":
     _device_info = f"CPU ({os.cpu_count()} cores)"
     _configure_cpu_optimizations()
     QgsMessageLog.logMessage(
-        f"Using CPU (no GPU acceleration available)",
+        "Using CPU (no GPU acceleration available)",
         "AI Segmentation",
         level=Qgis.Info
     )
@@ -74,7 +76,7 @@ def _configure_cuda_optimizations():
         torch.set_float32_matmul_precision('high')
 
     QgsMessageLog.logMessage(
-        f"CUDA optimizations enabled: cudnn.benchmark=True",
+        "CUDA optimizations enabled: cudnn.benchmark=True",
         "AI Segmentation",
         level=Qgis.Info
     )
@@ -107,7 +109,6 @@ def _configure_cpu_optimizations():
 
 
 def get_device_info() -> str:
-    global _device_info
     if _device_info is None:
         get_optimal_device()
     return _device_info or "Unknown"
