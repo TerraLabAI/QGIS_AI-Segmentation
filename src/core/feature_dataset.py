@@ -1,7 +1,8 @@
 import os
 import glob
 import sys
-from typing import Optional, Dict, Any, Iterator, Tuple, List
+import ast
+from typing import Dict, Any, Iterator, Tuple, List
 
 from qgis.core import QgsMessageLog, Qgis
 
@@ -124,8 +125,8 @@ class FeatureDataset:
             img_shape = None
             input_shape = None
             if "img_shape" in tags:
-                img_shape = eval(tags["img_shape"])
-                input_shape = eval(tags["input_shape"])
+                img_shape = ast.literal_eval(tags["img_shape"])
+                input_shape = ast.literal_eval(tags["input_shape"])
 
             if data.dtype == np.uint16:
                 data = data.astype(np.int32)

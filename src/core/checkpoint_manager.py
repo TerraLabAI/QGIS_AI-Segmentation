@@ -13,6 +13,7 @@ FEATURES_DIR = os.path.join(CACHE_DIR, "features")
 
 SAM_CHECKPOINT_URL = "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth"
 SAM_CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
+# SHA256 hash for checkpoint verification (not a secret - this is a public checksum)
 SAM_CHECKPOINT_SHA256 = "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"
 
 
@@ -40,7 +41,8 @@ def get_raster_features_dir(raster_path: str) -> str:
     sanitized_name = sanitized_name.rstrip('_')
 
     # Add short hash suffix for uniqueness (based on full path)
-    raster_hash = hashlib.md5(raster_path.encode()).hexdigest()[:8]
+    # MD5 is used here only for generating a short identifier, not for security
+    raster_hash = hashlib.md5(raster_path.encode(), usedforsecurity=False).hexdigest()[:8]
 
     # Combine: rastername_abc12345
     folder_name = f"{sanitized_name}_{raster_hash}"
@@ -94,7 +96,7 @@ def download_checkpoint(
             os.remove(checkpoint_path)
 
     if progress_callback:
-        progress_callback(0, f"Downloading SAM checkpoint (~375MB)...")
+        progress_callback(0, "Downloading SAM checkpoint (~375MB)...")
 
     try:
         # Use QGIS network manager for proxy-aware downloads
@@ -150,7 +152,7 @@ def download_checkpoint(
         if os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
-            except:
+            except OSError:
                 pass
         QgsMessageLog.logMessage(
             f"Checkpoint download failed: {str(e)}",

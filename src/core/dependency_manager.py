@@ -173,7 +173,7 @@ def check_dependencies() -> List[Tuple[str, str, str, bool, Optional[str], bool]
             try:
                 from .import_guard import verify_package_source
                 isolated, _ = verify_package_source(import_name)
-            except:
+            except Exception:
                 pass
 
         results.append((import_name, pip_name, min_version, installed, version, isolated))
@@ -334,7 +334,7 @@ def install_package(pip_name: str, version: str = None) -> Tuple[bool, str]:
                 else:
                     _log(f"⚠ {import_name} NOT isolated: {source}", Qgis.Warning)
             else:
-                _log(f"Package installed but import check failed - may need restart", Qgis.Warning)
+                _log("Package installed but import check failed - may need restart", Qgis.Warning)
         except Exception as e:
             _log(f"Post-install verification error (non-fatal): {str(e)}")
 
@@ -374,11 +374,11 @@ def install_all_dependencies(
 
         if progress_callback:
             if pip_name == "torch":
-                progress_callback(i, total, f"Installing {pip_name} (~2GB)... ({i+1}/{total})")
+                progress_callback(i, total, f"Installing {pip_name} (~2GB)... ({i + 1}/{total})")
             else:
-                progress_callback(i, total, f"Installing {pip_name}... ({i+1}/{total})")
+                progress_callback(i, total, f"Installing {pip_name}... ({i + 1}/{total})")
 
-        _log(f"[{i+1}/{total}] Installing {pip_name}>={version}...")
+        _log(f"[{i + 1}/{total}] Installing {pip_name}>={version}...")
 
         success, msg = install_package(pip_name, version)
         messages.append(f"{pip_name}: {msg}")
@@ -420,7 +420,7 @@ def verify_installation() -> Tuple[bool, str]:
         import rasterio
         rasterio_ver = rasterio.__version__
 
-        from segment_anything import sam_model_registry
+        import segment_anything  # noqa: F401 - verify import works
 
         _ = np.array([1, 2, 3])
 

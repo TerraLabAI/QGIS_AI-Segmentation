@@ -25,6 +25,26 @@ from qgis.PyQt.QtNetwork import QNetworkRequest
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STANDALONE_DIR = os.path.join(PLUGIN_ROOT_DIR, "python_standalone")
 
+
+def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: str) -> None:
+    """Safely extract tar archive with path traversal protection."""
+    dest_dir = os.path.realpath(dest_dir)
+    for member in tar.getmembers():
+        member_path = os.path.realpath(os.path.join(dest_dir, member.name))
+        if not member_path.startswith(dest_dir + os.sep) and member_path != dest_dir:
+            raise ValueError(f"Attempted path traversal in tar archive: {member.name}")
+    tar.extractall(dest_dir)
+
+
+def _safe_extract_zip(zip_file: zipfile.ZipFile, dest_dir: str) -> None:
+    """Safely extract zip archive with path traversal protection."""
+    dest_dir = os.path.realpath(dest_dir)
+    for member in zip_file.namelist():
+        member_path = os.path.realpath(os.path.join(dest_dir, member))
+        if not member_path.startswith(dest_dir + os.sep) and member_path != dest_dir:
+            raise ValueError(f"Attempted path traversal in zip archive: {member}")
+    zip_file.extractall(dest_dir)
+
 # Release tag from python-build-standalone
 # Update this periodically to get newer Python builds
 RELEASE_TAG = "20241219"
@@ -189,13 +209,13 @@ def download_python_standalone(
 
         os.makedirs(STANDALONE_DIR, exist_ok=True)
 
-        # Extract archive
+        # Extract archive with path traversal protection
         if temp_path.endswith(".tar.gz") or temp_path.endswith(".tgz"):
             with tarfile.open(temp_path, "r:gz") as tar:
-                tar.extractall(STANDALONE_DIR)
+                _safe_extract_tar(tar, STANDALONE_DIR)
         else:
             with zipfile.ZipFile(temp_path, "r") as z:
-                z.extractall(STANDALONE_DIR)
+                _safe_extract_zip(z, STANDALONE_DIR)
 
         if progress_callback:
             progress_callback(80, "Verifying Python installation...")
@@ -222,7 +242,7 @@ def download_python_standalone(
         if os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
-            except:
+            except OSError:
                 pass
 
 
@@ -236,8 +256,8 @@ def verify_standalone_python() -> Tuple[bool, str]:
     # On Unix, make sure it's executable
     if sys.platform != "win32":
         try:
-            os.chmod(python_path, 0o755)
-        except:
+            os.chmod(python_path, 0o755)  # Required for Unix executable
+        except OSError:
             pass
 
     try:

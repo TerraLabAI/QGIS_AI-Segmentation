@@ -885,7 +885,7 @@ class AISegmentationPlugin:
             geom_wkt = polygon_data.get('geometry_wkt')
             if not geom_wkt:
                 QgsMessageLog.logMessage(
-                    f"Polygon {i+1} has no WKT data",
+                    f"Polygon {i + 1} has no WKT data",
                     "AI Segmentation",
                     level=Qgis.Warning
                 )
