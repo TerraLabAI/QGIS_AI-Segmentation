@@ -12,8 +12,10 @@ from qgis.PyQt.QtWidgets import (
     QLineEdit,
     QSpinBox,
 )
-from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
+from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl, QSettings
 from qgis.PyQt.QtGui import QDesktopServices
+
+from qgis.core import Qgis
 
 from qgis.core import QgsMapLayerProxyModel, QgsProject
 
@@ -40,11 +42,15 @@ class AISegmentationDockWidget(QDockWidget):
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
     refine_settings_changed = pyqtSignal(int, int)  # expand, simplify
+    batch_mode_changed = pyqtSignal(bool)  # True = batch mode, False = simple mode
 
     def __init__(self, parent=None):
         super().__init__("AI Segmentation by TerraLab", parent)
 
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+
+        # Initialize state variables that are needed during UI setup
+        self._refine_expanded = False  # Refine panel collapsed state persisted in session
 
         self.main_widget = QWidget()
         self.main_layout = QVBoxLayout(self.main_widget)
@@ -65,6 +71,8 @@ class AISegmentationDockWidget(QDockWidget):
         self._negative_count = 0
         self._plugin_activated = is_plugin_activated()
         self._activation_popup_shown = False  # Track if popup was shown
+        self._batch_mode = False  # Simple mode by default
+        # Note: _refine_expanded is initialized before _setup_ui() call
 
         # Smooth progress animation timer for long-running installs
         self._progress_timer = QTimer(self)
@@ -274,12 +282,19 @@ class AISegmentationDockWidget(QDockWidget):
         self.no_rasters_widget.setVisible(False)
         layout.addWidget(self.no_rasters_widget)
 
-        # Dynamic instruction label - changes based on user state
+        # Dynamic instruction label - styled as a card
         self.instructions_label = QLabel("")
         self.instructions_label.setWordWrap(True)
-        self.instructions_label.setStyleSheet(
-            "font-size: 12px; padding: 8px 0px; color: palette(text);"
-        )
+        self.instructions_label.setStyleSheet("""
+            QLabel {
+                background-color: rgba(25, 118, 210, 0.08);
+                border: 1px solid rgba(25, 118, 210, 0.2);
+                border-radius: 4px;
+                padding: 8px;
+                font-size: 12px;
+                color: palette(text);
+            }
+        """)
         self.instructions_label.setToolTip(
             "Shortcuts: S (save mask) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)"
         )
@@ -367,17 +382,17 @@ class AISegmentationDockWidget(QDockWidget):
         secondary_layout = QHBoxLayout()
         secondary_layout.setSpacing(8)
 
-        self.undo_button = QPushButton("Undo")
+        self.undo_button = QPushButton("Undo last point")
         self.undo_button.setEnabled(False)
         self.undo_button.clicked.connect(self._on_undo_clicked)
-        self.undo_button.setVisible(False)
+        self.undo_button.setVisible(False)  # Hidden until segmentation starts
         self.undo_button.setMaximumHeight(28)
         self.undo_button.setToolTip("Remove last point (Ctrl+Z)")
         secondary_layout.addWidget(self.undo_button)
 
-        self.stop_button = QPushButton("Stop")
+        self.stop_button = QPushButton("Stop segmentation")
         self.stop_button.clicked.connect(self._on_stop_clicked)
-        self.stop_button.setVisible(False)
+        self.stop_button.setVisible(False)  # Hidden until segmentation starts
         self.stop_button.setMaximumHeight(28)
         self.stop_button.setStyleSheet(
             "QPushButton { background-color: #757575; }"
@@ -390,17 +405,55 @@ class AISegmentationDockWidget(QDockWidget):
         self.secondary_buttons_widget.setVisible(False)
         layout.addWidget(self.secondary_buttons_widget)
 
+        # Info box explaining one element per segmentation
+        self.one_element_info_widget = QWidget()
+        self.one_element_info_widget.setStyleSheet(
+            "QWidget { background-color: rgba(255, 193, 7, 0.25); "
+            "border: 1px solid rgba(255, 152, 0, 0.5); border-radius: 4px; }"
+            "QLabel { background: transparent; border: none; }"
+        )
+        info_layout = QHBoxLayout(self.one_element_info_widget)
+        info_layout.setContentsMargins(8, 6, 8, 6)
+        info_layout.setSpacing(8)
+
+        # Info icon
+        info_icon_label = QLabel()
+        style = self.one_element_info_widget.style()
+        info_icon = style.standardIcon(style.SP_MessageBoxInformation)
+        info_icon_label.setPixmap(info_icon.pixmap(14, 14))
+        info_icon_label.setFixedSize(14, 14)
+        info_layout.addWidget(info_icon_label, 0, Qt.AlignTop)
+
+        # Info text
+        info_text = QLabel(
+            "One element per segmentation (e.g., one building, one car).\n"
+            "For multiple elements in one layer, use Batch Mode."
+        )
+        info_text.setWordWrap(True)
+        info_text.setStyleSheet("font-size: 10px; color: palette(text);")
+        info_layout.addWidget(info_text, 1)
+
+        self.one_element_info_widget.setVisible(False)
+        layout.addWidget(self.one_element_info_widget)
+
         self.main_layout.addWidget(self.seg_widget)
 
     def _setup_refine_panel(self, parent_layout):
-        """Setup the collapsible Refine mask panel."""
-        self.refine_group = QGroupBox("Refine mask")
-        self.refine_group.setCheckable(True)
-        self.refine_group.setChecked(False)  # Collapsed by default
+        """Setup the collapsible Refine mask panel (collapsible via click on title)."""
+        self.refine_group = QGroupBox("▶ Refine mask")
+        self.refine_group.setCheckable(False)  # No checkbox, just clickable title
         self.refine_group.setVisible(False)  # Hidden until segmentation active
+        self.refine_group.setCursor(Qt.PointingHandCursor)
+        self.refine_group.mousePressEvent = self._on_refine_group_clicked
         refine_layout = QVBoxLayout(self.refine_group)
         refine_layout.setSpacing(8)
         refine_layout.setContentsMargins(8, 8, 8, 8)
+
+        # Content widget to show/hide
+        self.refine_content_widget = QWidget()
+        refine_content_layout = QVBoxLayout(self.refine_content_widget)
+        refine_content_layout.setContentsMargins(0, 0, 0, 0)
+        refine_content_layout.setSpacing(8)
 
         # 1. Expand/Contract: SpinBox with +/- buttons (-20 to +20)
         expand_layout = QHBoxLayout()
@@ -414,7 +467,7 @@ class AISegmentationDockWidget(QDockWidget):
         expand_layout.addWidget(expand_label)
         expand_layout.addStretch()
         expand_layout.addWidget(self.expand_spinbox)
-        refine_layout.addLayout(expand_layout)
+        refine_content_layout.addLayout(expand_layout)
 
         # 2. Simplify outline: SpinBox (0 to 10) - reduces small variations in the outline
         simplify_layout = QHBoxLayout()
@@ -427,13 +480,23 @@ class AISegmentationDockWidget(QDockWidget):
         simplify_layout.addWidget(simplify_label)
         simplify_layout.addStretch()
         simplify_layout.addWidget(self.simplify_spinbox)
-        refine_layout.addLayout(simplify_layout)
+        refine_content_layout.addLayout(simplify_layout)
+
+        refine_layout.addWidget(self.refine_content_widget)
+        self.refine_content_widget.setVisible(self._refine_expanded)
 
         # Connect signals
         self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
         self.simplify_spinbox.valueChanged.connect(self._on_refine_changed)
 
         parent_layout.addWidget(self.refine_group)
+
+    def _on_refine_group_clicked(self, event):
+        """Toggle the refine panel expanded/collapsed state."""
+        self._refine_expanded = not self._refine_expanded
+        self.refine_content_widget.setVisible(self._refine_expanded)
+        arrow = "▼" if self._refine_expanded else "▶"
+        self.refine_group.setTitle(f"{arrow} Refine mask")
 
     def _on_refine_changed(self, value=None):
         """Handle refine control changes with debounce."""
@@ -452,17 +515,45 @@ class AISegmentationDockWidget(QDockWidget):
         self.simplify_spinbox.setValue(0)
 
     def _setup_about_section(self):
-        """Setup the links section - minimal, just links."""
-        # Simple horizontal layout for links, no group box
+        """Setup the batch mode button and links section."""
+        # Batch mode button
+        self.batch_mode_button = QPushButton("Batch Mode (inactive)")
+        self.batch_mode_button.setStyleSheet("""
+            QPushButton {
+                background-color: #e0e0e0;
+                color: #616161;
+                border: 1px solid #bdbdbd;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #d5d5d5;
+            }
+            QPushButton:checked {
+                background-color: #1976d2;
+                color: white;
+                border-color: #1565c0;
+            }
+        """)
+        self.batch_mode_button.setCheckable(True)
+        self.batch_mode_button.clicked.connect(self._on_batch_mode_toggled)
+        self.batch_mode_button.setVisible(False)  # Only shown when segmentation UI is available
+        self.main_layout.addWidget(self.batch_mode_button)
+
+        # Simple horizontal layout for links, aligned right with larger font
         links_widget = QWidget()
         links_layout = QHBoxLayout(links_widget)
         links_layout.setContentsMargins(0, 4, 0, 4)
         links_layout.setSpacing(16)
 
+        links_layout.addStretch()  # Push links to the right
+
         # Documentation link
         docs_link = QLabel(
             '<a href="https://terra-lab.ai/docs/ai-segmentation" style="color: #1976d2;">Documentation</a>'
         )
+        docs_link.setStyleSheet("font-size: 13px;")
         docs_link.setOpenExternalLinks(True)
         docs_link.setCursor(Qt.PointingHandCursor)
         links_layout.addWidget(docs_link)
@@ -471,13 +562,41 @@ class AISegmentationDockWidget(QDockWidget):
         contact_link = QLabel(
             '<a href="https://terra-lab.ai/contact" style="color: #1976d2;">Contact Us</a>'
         )
+        contact_link.setStyleSheet("font-size: 13px;")
         contact_link.setOpenExternalLinks(True)
         contact_link.setCursor(Qt.PointingHandCursor)
         links_layout.addWidget(contact_link)
 
-        links_layout.addStretch()
-
         self.main_layout.addWidget(links_widget)
+
+    def _on_batch_mode_toggled(self, checked: bool):
+        """Handle batch mode button toggle."""
+        self._batch_mode = checked
+        self._update_ui_for_mode()
+        self.batch_mode_changed.emit(checked)
+
+    def _update_ui_for_mode(self):
+        """Update UI elements based on current mode (simple vs batch)."""
+        if self._batch_mode:
+            # Batch mode: show Save mask button
+            self.save_mask_button.setVisible(self._segmentation_active)
+            self.batch_mode_button.setText("Batch Mode (active)")
+        else:
+            # Simple mode: hide Save mask button
+            self.save_mask_button.setVisible(False)
+            self.batch_mode_button.setText("Batch Mode (inactive)")
+
+        self._update_button_visibility()
+
+    def is_batch_mode(self) -> bool:
+        """Return whether batch mode is active."""
+        return self._batch_mode
+
+    def set_batch_mode(self, batch: bool):
+        """Set batch mode programmatically."""
+        self._batch_mode = batch
+        self.batch_mode_button.setChecked(batch)
+        self._update_ui_for_mode()
 
     def _on_get_code_clicked(self):
         """Open the newsletter signup page in the default browser."""
@@ -517,6 +636,7 @@ class AISegmentationDockWidget(QDockWidget):
         show_segmentation = self._dependencies_ok and self._checkpoint_ok and self._plugin_activated
         self.seg_widget.setVisible(show_segmentation)
         self.seg_separator.setVisible(show_segmentation)
+        self.batch_mode_button.setVisible(show_segmentation)
 
         # Activation section: show if deps OK but not activated AND popup was shown/closed
         deps_ok = self._dependencies_ok
@@ -755,18 +875,9 @@ class AISegmentationDockWidget(QDockWidget):
             self._update_ui_state()
 
     def set_encoding_cache_path(self, cache_path: str):
-        """Show the cache path after encoding completes."""
-        if cache_path:
-            display_path = cache_path
-            if len(display_path) > 45:
-                display_path = "..." + display_path[-42:]
-            self.encoding_info_label.setText(f"✓ Cached at:\n{display_path}")
-            self.encoding_info_label.setStyleSheet(
-                "background-color: rgba(46, 125, 50, 0.15); padding: 8px; "
-                "border-radius: 4px; font-size: 10px; border: 1px solid rgba(46, 125, 50, 0.3); "
-                "color: palette(text);"
-            )
-            self.encoding_info_label.setVisible(True)
+        """Hide the encoding info label when encoding completes (no longer show cache path)."""
+        # Simply hide the label when ready - no need to show cache path to user
+        self.encoding_info_label.setVisible(False)
 
     def set_segmentation_active(self, active: bool):
         self._segmentation_active = active
@@ -781,16 +892,38 @@ class AISegmentationDockWidget(QDockWidget):
             self.encoding_info_label.setVisible(False)
             self.instructions_label.setVisible(True)
             self._update_instructions()
-            # Refine panel only visible after at least one mask is saved
-            self.refine_group.setVisible(self._saved_polygon_count > 0)
-            self.save_mask_button.setVisible(True)
-            self.save_mask_button.setEnabled(self._has_mask)
+
+            # Refine panel visible when there's a mask to refine
+            # - Simple mode: when current mask exists (points placed)
+            # - Batch mode: when at least one mask is saved
+            if self._batch_mode:
+                show_refine = self._saved_polygon_count > 0
+            else:
+                show_refine = self._has_mask
+            self.refine_group.setVisible(show_refine)
+
+            # Save mask button: only in batch mode
+            if self._batch_mode:
+                self.save_mask_button.setVisible(True)
+                self.save_mask_button.setEnabled(self._has_mask)
+            else:
+                self.save_mask_button.setVisible(False)
+
+            # Export button: visible during segmentation
             self.export_button.setVisible(True)
             self._update_export_button_style()
-            self.undo_button.setVisible(True)
-            self.stop_button.setVisible(True)
+
+            # Secondary buttons: visible during segmentation
             self.secondary_buttons_widget.setVisible(True)
+            self.undo_button.setVisible(True)
+            self.undo_button.setEnabled(self._positive_count > 0 or self._negative_count > 0)
+            self.stop_button.setVisible(True)
+            self.stop_button.setEnabled(True)
+
+            # Info box: only visible in Simple mode
+            self.one_element_info_widget.setVisible(not self._batch_mode)
         else:
+            # Not segmenting - hide all segmentation buttons
             self.start_button.setVisible(True)
             self.instructions_label.setVisible(False)
             self.refine_group.setVisible(False)
@@ -799,24 +932,45 @@ class AISegmentationDockWidget(QDockWidget):
             self.undo_button.setVisible(False)
             self.stop_button.setVisible(False)
             self.secondary_buttons_widget.setVisible(False)
+            self.one_element_info_widget.setVisible(False)
 
     def _update_export_button_style(self):
-        if self._saved_polygon_count > 0:
-            self.export_button.setEnabled(True)
-            self.export_button.setStyleSheet(
-                "QPushButton { background-color: #4CAF50; font-weight: bold; }"
-            )
-            self.export_button.setToolTip(
-                f"Export {self._saved_polygon_count} mask(s) as a new layer (Enter)"
-            )
+        if self._batch_mode:
+            # Batch mode: need saved polygons to export
+            if self._saved_polygon_count > 0:
+                self.export_button.setEnabled(True)
+                self.export_button.setStyleSheet(
+                    "QPushButton { background-color: #4CAF50; font-weight: bold; }"
+                )
+                self.export_button.setToolTip(
+                    f"Export {self._saved_polygon_count} mask(s) as a new layer (Enter)"
+                )
+            else:
+                self.export_button.setEnabled(False)
+                self.export_button.setStyleSheet(
+                    "QPushButton { background-color: #b0bec5; }"
+                )
+                self.export_button.setToolTip(
+                    "Save at least one mask first (S)"
+                )
         else:
-            self.export_button.setEnabled(False)
-            self.export_button.setStyleSheet(
-                "QPushButton { background-color: #b0bec5; }"
-            )
-            self.export_button.setToolTip(
-                "Save at least one mask first (S)"
-            )
+            # Simple mode: export current mask directly
+            if self._has_mask:
+                self.export_button.setEnabled(True)
+                self.export_button.setStyleSheet(
+                    "QPushButton { background-color: #4CAF50; font-weight: bold; }"
+                )
+                self.export_button.setToolTip(
+                    "Export current mask as a new layer (Enter)"
+                )
+            else:
+                self.export_button.setEnabled(False)
+                self.export_button.setStyleSheet(
+                    "QPushButton { background-color: #b0bec5; }"
+                )
+                self.export_button.setToolTip(
+                    "Place points to create a mask first"
+                )
 
     def set_point_count(self, positive: int, negative: int):
         self._positive_count = positive
@@ -830,6 +984,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         if self._segmentation_active:
             self._update_instructions()
+            self._update_export_button_style()  # Update export button for simple mode
 
     def _update_instructions(self):
         """Update instruction text based on current segmentation state."""
