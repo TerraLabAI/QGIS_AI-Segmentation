@@ -12,11 +12,8 @@ from qgis.PyQt.QtWidgets import (
     QLineEdit,
     QSpinBox,
 )
-from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl, QSettings
+from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
 from qgis.PyQt.QtGui import QDesktopServices
-
-from qgis.core import Qgis
-
 from qgis.core import QgsMapLayerProxyModel, QgsProject
 
 from qgis.gui import QgsMapLayerComboBox

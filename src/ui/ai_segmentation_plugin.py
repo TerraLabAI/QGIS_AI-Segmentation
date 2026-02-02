@@ -1,19 +1,14 @@
 import os
+import sys
 from pathlib import Path
-from typing import Optional, List, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 if TYPE_CHECKING:
     import numpy
-import sys
 
 from qgis.PyQt.QtWidgets import QAction, QMessageBox
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QVariant, QSettings
-
-# QSettings keys for tutorial flags
-SETTINGS_KEY_TUTORIAL_SIMPLE = "AI_Segmentation/tutorial_simple_shown"
-SETTINGS_KEY_TUTORIAL_BATCH = "AI_Segmentation/tutorial_batch_shown"
-
 from qgis.core import (
     QgsProject,
     QgsRasterLayer,
@@ -33,6 +28,10 @@ from qgis.PyQt.QtGui import QColor
 
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
+
+# QSettings keys for tutorial flags
+SETTINGS_KEY_TUTORIAL_SIMPLE = "AI_Segmentation/tutorial_simple_shown"
+SETTINGS_KEY_TUTORIAL_BATCH = "AI_Segmentation/tutorial_batch_shown"
 
 
 class DepsInstallWorker(QThread):
