@@ -31,7 +31,6 @@ from .ai_segmentation_maptool import AISegmentationMapTool
 
 # QSettings keys for tutorial flags
 SETTINGS_KEY_TUTORIAL_SIMPLE = "AI_Segmentation/tutorial_simple_shown"
-SETTINGS_KEY_TUTORIAL_BATCH = "AI_Segmentation/tutorial_batch_shown"
 
 
 class DepsInstallWorker(QThread):
@@ -224,6 +223,7 @@ class AISegmentationPlugin:
 
         # Mode flag (simple mode by default)
         self._batch_mode = False
+        self._batch_tutorial_shown_this_session = False  # Reset each QGIS launch
 
         self.deps_install_worker = None
         self.download_worker = None
@@ -753,19 +753,23 @@ class AISegmentationPlugin:
         return self._mask_counters[name]
 
     def _show_tutorial_notification(self, mode: str):
-        """Show YouTube tutorial notification if first time using this mode."""
-        settings = QSettings()
-        key = SETTINGS_KEY_TUTORIAL_SIMPLE if mode == "simple" else SETTINGS_KEY_TUTORIAL_BATCH
+        """Show YouTube tutorial notification."""
+        # TODO: Replace with actual tutorial URLs when available
+        tutorial_url = "https://www.youtube.com"
 
-        if settings.value(key, False, type=bool):
-            return  # Already shown
-
-        # Mark as shown
-        settings.setValue(key, True)
-
-        # Show QGIS notification with tutorial link
-        tutorial_url = "https://www.youtube.com/watch?v=XXXXX"  # TODO: Replace with actual URL
-        message = f'New to AI Segmentation? <a href="{tutorial_url}">Watch our tutorial</a>'
+        if mode == "batch":
+            # Batch mode: show once per QGIS session (first activation)
+            if self._batch_tutorial_shown_this_session:
+                return
+            self._batch_tutorial_shown_this_session = True
+            message = f'Batch mode activated. <a href="{tutorial_url}">Watch the tutorial</a> to learn how to use it.'
+        else:
+            # Simple mode: show only once ever (persisted in QSettings)
+            settings = QSettings()
+            if settings.value(SETTINGS_KEY_TUTORIAL_SIMPLE, False, type=bool):
+                return
+            settings.setValue(SETTINGS_KEY_TUTORIAL_SIMPLE, True)
+            message = f'New to AI Segmentation? <a href="{tutorial_url}">Watch our tutorial</a>'
 
         self.iface.messageBar().pushMessage(
             "AI Segmentation",

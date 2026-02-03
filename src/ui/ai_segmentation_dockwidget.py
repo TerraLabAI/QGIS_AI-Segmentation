@@ -567,6 +567,15 @@ class AISegmentationDockWidget(QDockWidget):
 
         links_layout.addStretch()  # Push links to the right
 
+        # Tutorial link
+        tutorial_link = QLabel(
+            '<a href="https://www.youtube.com" style="color: #1976d2;">Tutorials</a>'
+        )
+        tutorial_link.setStyleSheet("font-size: 13px;")
+        tutorial_link.setOpenExternalLinks(True)
+        tutorial_link.setCursor(Qt.PointingHandCursor)
+        links_layout.addWidget(tutorial_link)
+
         # Documentation link
         docs_link = QLabel(
             '<a href="https://terra-lab.ai/docs/ai-segmentation" style="color: #1976d2;">Documentation</a>'
