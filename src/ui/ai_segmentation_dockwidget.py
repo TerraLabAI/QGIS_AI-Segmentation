@@ -685,6 +685,9 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _on_layers_added(self, layers):
         """Handle new layers added to project - auto-select if none selected."""
+        # Update UI state first (includes layer filter)
+        self._update_ui_state()
+
         if self.layer_combo.currentLayer() is not None:
             return
 
@@ -692,10 +695,10 @@ class AISegmentationDockWidget(QDockWidget):
             if layer.type() == layer.RasterLayer:
                 provider = layer.dataProvider()
                 if provider and provider.name() not in ['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs']:
-                    self.layer_combo.setLayer(layer)
-                    break
-
-        self._update_ui_state()
+                    # Only auto-select if georeferenced
+                    if self._is_layer_georeferenced(layer):
+                        self.layer_combo.setLayer(layer)
+                        break
 
     def _on_layers_removed(self, layer_ids):
         """Handle layers removed from project."""
@@ -1039,7 +1042,74 @@ class AISegmentationDockWidget(QDockWidget):
         self._update_refine_panel_visibility()
         self._update_export_button_style()
 
+    def _is_layer_georeferenced(self, layer) -> bool:
+        """Check if a raster layer is properly georeferenced."""
+        if layer is None or layer.type() != layer.RasterLayer:
+            return False
+
+        # Check file extension for compatible formats
+        source = layer.source().lower()
+        compatible_extensions = ('.tif', '.tiff', '.geotiff', '.img', '.jp2', '.ecw', '.sid')
+
+        # PNG, JPG, BMP etc. without world files are not georeferenced
+        non_georef_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
+
+        has_compatible_ext = any(source.endswith(ext) for ext in compatible_extensions)
+        has_non_georef_ext = any(source.endswith(ext) for ext in non_georef_extensions)
+
+        # If it's a known non-georeferenced format, check if it has a valid CRS
+        if has_non_georef_ext:
+            # Check if the layer has a valid CRS (not just default)
+            if not layer.crs().isValid():
+                return False
+            # Check if extent looks like pixel coordinates (0,0 to width,height)
+            extent = layer.extent()
+            if extent.xMinimum() == 0 and extent.yMinimum() == 0:
+                # Likely not georeferenced - just pixel dimensions
+                return False
+
+        return True
+
+    def _update_layer_filter(self):
+        """Update the layer combo to exclude non-georeferenced rasters."""
+        from qgis.core import QgsProject
+
+        excluded_layers = []
+        all_raster_count = 0
+
+        for layer in QgsProject.instance().mapLayers().values():
+            if layer.type() != layer.RasterLayer:
+                continue
+            # Skip web services
+            provider = layer.dataProvider()
+            if provider and provider.name() in ['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs']:
+                continue
+
+            all_raster_count += 1
+            if not self._is_layer_georeferenced(layer):
+                excluded_layers.append(layer)
+
+        self.layer_combo.setExceptedLayerList(excluded_layers)
+
+        # Update warning message based on situation
+        compatible_count = all_raster_count - len(excluded_layers)
+
+        if compatible_count == 0 and all_raster_count > 0:
+            # Has rasters but none are georeferenced
+            self.no_rasters_label.setText(
+                f"No compatible raster found. {all_raster_count} layer(s) excluded "
+                "(PNG/JPG without georeferencing). Use GeoTIFF format."
+            )
+        else:
+            # Default message
+            self.no_rasters_label.setText(
+                "No compatible raster found. Add a GeoTIFF or georeferenced image to your project."
+            )
+
     def _update_ui_state(self):
+        # Update layer filter first
+        self._update_layer_filter()
+
         layer = self.layer_combo.currentLayer()
         has_layer = layer is not None
 
