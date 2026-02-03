@@ -1127,12 +1127,48 @@ class AISegmentationPlugin:
         self.dock_widget.reset_session()
 
     def _on_tool_deactivated(self):
+        # If we're stopping programmatically (via Stop/Export), just update UI
+        if self._stopping_segmentation:
+            if self.dock_widget:
+                self.dock_widget.set_segmentation_active(False)
+            return
+
+        # Check if there's unsaved work
+        has_unsaved_mask = self.current_mask is not None
+        has_saved_polygons = len(self.saved_polygons) > 0
+
+        if has_unsaved_mask or has_saved_polygons:
+            # Show warning popup
+            if self._batch_mode:
+                polygon_count = len(self.saved_polygons)
+                if has_unsaved_mask:
+                    polygon_count += 1
+                message = f"You have {polygon_count} unsaved mask(s).\n\nDiscard and exit segmentation?"
+            else:
+                message = "You have an unsaved mask.\n\nDiscard and exit segmentation?"
+
+            reply = QMessageBox.warning(
+                self.iface.mainWindow(),
+                "Exit Segmentation?",
+                message,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply != QMessageBox.Yes:
+                # User wants to continue - re-activate the segmentation tool
+                from qgis.PyQt.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self.iface.mapCanvas().setMapTool(self.map_tool))
+                return
+
+            # User confirmed exit - reset session
+            self._reset_session()
+            if self.dock_widget:
+                self.dock_widget.reset_session()
+
         if self.dock_widget:
             self.dock_widget.set_segmentation_active(False)
-        # Only clear the previous tool if the user manually switched tools
-        # (not when we're stopping programmatically via Stop/Export)
-        if not self._stopping_segmentation:
-            self._previous_map_tool = None
+        self._previous_map_tool = None
 
     def _restore_previous_map_tool(self):
         """Restore the map tool that was active before segmentation started."""
