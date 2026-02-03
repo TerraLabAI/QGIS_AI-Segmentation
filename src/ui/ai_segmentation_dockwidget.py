@@ -890,14 +890,8 @@ class AISegmentationDockWidget(QDockWidget):
             self.instructions_label.setVisible(True)
             self._update_instructions()
 
-            # Refine panel visible when there's a mask to refine
-            # - Simple mode: when current mask exists (points placed)
-            # - Batch mode: when at least one mask is saved
-            if self._batch_mode:
-                show_refine = self._saved_polygon_count > 0
-            else:
-                show_refine = self._has_mask
-            self.refine_group.setVisible(show_refine)
+            # Refine panel visibility
+            self._update_refine_panel_visibility()
 
             # Save mask button: only in batch mode
             if self._batch_mode:
@@ -930,6 +924,20 @@ class AISegmentationDockWidget(QDockWidget):
             self.stop_button.setVisible(False)
             self.secondary_buttons_widget.setVisible(False)
             self.one_element_info_widget.setVisible(False)
+
+    def _update_refine_panel_visibility(self):
+        """Update refine panel visibility based on mode and mask state."""
+        if not self._segmentation_active:
+            self.refine_group.setVisible(False)
+            return
+
+        if self._batch_mode:
+            # Batch mode: show when at least one mask is saved
+            show_refine = self._saved_polygon_count > 0
+        else:
+            # Simple mode: show when current mask exists (points placed)
+            show_refine = self._has_mask
+        self.refine_group.setVisible(show_refine)
 
     def _update_export_button_style(self):
         if self._batch_mode:
@@ -974,6 +982,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._negative_count = negative
         total = positive + negative
         has_points = total > 0
+        old_has_mask = self._has_mask
         self._has_mask = has_points
 
         self.undo_button.setEnabled(has_points and self._segmentation_active)
@@ -982,6 +991,9 @@ class AISegmentationDockWidget(QDockWidget):
         if self._segmentation_active:
             self._update_instructions()
             self._update_export_button_style()  # Update export button for simple mode
+            # Update refine panel visibility when mask state changes (for simple mode)
+            if old_has_mask != self._has_mask:
+                self._update_refine_panel_visibility()
 
     def _update_instructions(self):
         """Update instruction text based on current segmentation state."""
@@ -1024,7 +1036,7 @@ class AISegmentationDockWidget(QDockWidget):
 
     def set_saved_polygon_count(self, count: int):
         self._saved_polygon_count = count
-        self._update_button_visibility()
+        self._update_refine_panel_visibility()
         self._update_export_button_style()
 
     def _update_ui_state(self):

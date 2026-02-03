@@ -855,12 +855,8 @@ class AISegmentationPlugin:
 
             self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
 
-            # Reset refinement sliders when a new mask is saved
-            self._refine_expand = 0
-            self._refine_fill = 0
-            self._refine_smooth = 0
-            if self.dock_widget:
-                self.dock_widget.reset_refine_sliders()
+            # Note: We keep refinement settings in batch mode so the user can
+            # apply the same expand/simplify to multiple masks
 
         # Clear current state for next polygon
         self.prompts.clear()
