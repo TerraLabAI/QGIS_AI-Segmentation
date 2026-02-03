@@ -823,21 +823,34 @@ class AISegmentationPlugin:
         if self.current_mask is None:
             return
 
-        from ..core.polygon_exporter import mask_to_polygons
+        from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
 
-        geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
+        # Apply refinement to the mask for display (green shows with effects)
+        mask_for_display = self.current_mask
+        if self._refine_expand != 0:
+            mask_for_display = apply_mask_refinement(self.current_mask, self._refine_expand)
+
+        geometries = mask_to_polygons(mask_for_display, self.current_transform_info)
 
         if not geometries:
             return
 
         combined = QgsGeometry.unaryUnion(geometries)
         if combined and not combined.isEmpty():
-            # Store WKT, score, transform info, AND raw mask for later refinement
+            # Apply simplification if enabled
+            if self._refine_simplify > 0:
+                bbox = self.current_transform_info.get("bbox", [0, 1, 0, 1])
+                img_shape = self.current_transform_info.get("img_shape", (1024, 1024))
+                pixel_size = (bbox[1] - bbox[0]) / img_shape[1]
+                tolerance = pixel_size * self._refine_simplify * 0.5
+                combined = combined.simplify(tolerance)
+
+            # Store WKT (with effects), score, transform info, AND raw mask for later refinement
             self.saved_polygons.append({
                 'geometry_wkt': combined.asWkt(),
                 'score': self.current_score,
                 'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
-                'raw_mask': self.current_mask.copy(),  # Store raw mask for refinement
+                'raw_mask': self.current_mask.copy(),  # Store RAW mask for re-applying different settings
             })
 
             saved_rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
@@ -1173,10 +1186,10 @@ class AISegmentationPlugin:
         self._refine_simplify = simplify
 
         if self._batch_mode:
-            # Batch mode: update the last saved mask's rubber band
-            self._update_last_saved_mask_visualization()
+            # Batch mode: only update saved masks (green), not current (blue)
+            self._update_all_saved_masks_visualization()
         else:
-            # Simple mode: update the current mask preview
+            # Simple mode: update current mask preview
             self._update_mask_visualization()
 
     def _update_last_saved_mask_visualization(self):
@@ -1254,6 +1267,69 @@ class AISegmentationPlugin:
             import traceback
             QgsMessageLog.logMessage(
                 f"Failed to update last saved mask: {str(e)}\n{traceback.format_exc()}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+
+    def _update_all_saved_masks_visualization(self):
+        """Update all saved masks' rubber bands with current refinement settings."""
+        if not self.saved_polygons or not self.saved_rubber_bands:
+            return
+
+        if len(self.saved_polygons) != len(self.saved_rubber_bands):
+            QgsMessageLog.logMessage(
+                f"Mismatch: {len(self.saved_polygons)} polygons vs {len(self.saved_rubber_bands)} rubber bands",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            return
+
+        try:
+            from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
+
+            for i, (polygon_data, rubber_band) in enumerate(zip(self.saved_polygons, self.saved_rubber_bands)):
+                raw_mask = polygon_data.get('raw_mask')
+                transform_info = polygon_data.get('transform_info')
+
+                if raw_mask is None or transform_info is None:
+                    continue
+
+                # Apply mask refinement (expand/contract)
+                mask_to_display = raw_mask
+                if self._refine_expand != 0:
+                    mask_to_display = apply_mask_refinement(raw_mask, self._refine_expand)
+
+                geometries = mask_to_polygons(mask_to_display, transform_info)
+
+                if geometries:
+                    combined = QgsGeometry.unaryUnion(geometries)
+                    if combined and not combined.isEmpty():
+                        # Apply simplification if enabled
+                        if self._refine_simplify > 0:
+                            bbox = transform_info.get("bbox", [0, 1, 0, 1])
+                            img_shape = transform_info.get("img_shape", (1024, 1024))
+                            pixel_size = (bbox[1] - bbox[0]) / img_shape[1]
+                            tolerance = pixel_size * self._refine_simplify * 0.5
+                            combined = combined.simplify(tolerance)
+
+                        rubber_band.setToGeometry(combined, None)
+                        # Update stored WKT for export
+                        polygon_data['geometry_wkt'] = combined.asWkt()
+                    else:
+                        rubber_band.reset(QgsWkbTypes.PolygonGeometry)
+                else:
+                    rubber_band.reset(QgsWkbTypes.PolygonGeometry)
+
+            QgsMessageLog.logMessage(
+                f"Updated {len(self.saved_polygons)} saved masks with refinement settings",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+
+        except Exception as e:
+            import traceback
+            QgsMessageLog.logMessage(
+                f"Failed to update saved masks: {str(e)}\n{traceback.format_exc()}",
                 "AI Segmentation",
                 level=Qgis.Warning
             )
@@ -1423,7 +1499,8 @@ class AISegmentationPlugin:
         try:
             from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
 
-            # Apply refinement if in Simple mode and settings are non-zero
+            # In batch mode: show raw mask (no refinement on blue preview)
+            # In simple mode: apply refinement to preview
             mask_to_display = self.current_mask
             if not self._batch_mode and self._refine_expand != 0:
                 mask_to_display = apply_mask_refinement(self.current_mask, self._refine_expand)
@@ -1433,7 +1510,7 @@ class AISegmentationPlugin:
             if geometries:
                 combined = QgsGeometry.unaryUnion(geometries)
                 if combined and not combined.isEmpty():
-                    # Apply simplification if in Simple mode and enabled
+                    # In simple mode: apply simplification to preview
                     if not self._batch_mode and self._refine_simplify > 0:
                         bbox = self.current_transform_info.get("bbox", [0, 1, 0, 1])
                         img_shape = self.current_transform_info.get("img_shape", (1024, 1024))
