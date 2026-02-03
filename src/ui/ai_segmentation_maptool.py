@@ -124,9 +124,6 @@ class AISegmentationMapTool(QgsMapTool):
         if key == Qt.Key_Z and modifiers & Qt.ControlModifier:
             # Ctrl+Z: Undo last point
             self.undo_requested.emit()
-        elif key == Qt.Key_Z and not (modifiers & Qt.ControlModifier):
-            # Z alone: Undo last point (same as Ctrl+Z)
-            self.undo_requested.emit()
         elif key == Qt.Key_S:
             # S: Save polygon (add to collection)
             self.save_polygon_requested.emit()

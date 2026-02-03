@@ -3,16 +3,18 @@ name=AI Segmentation by TerraLab
 description=Segment anything in your raster using AI
 qgisMinimumVersion=3.0
 version=0.1.9
-author=Yvann Barbot from TerraLab
+author=Yvann and Lilien from TerraLab
 email=barbot.yvann@gmail.com
 license=GPLv2
 
 about=
-    FEATURES:
-    - Automatic install of dependencies
-    - Using Meta's SAM model for segmentation
-    - Interactive segmentation interface
-    - Vector layer export
+    • Automatic install of AI model & dependencies on your pc
+    •  Works on Windows/Mac/Linux
+
+    • Using Meta's AI model for segmentation
+    •  Friendly & pretty user-interface
+
+    •  Vector layer export
 
 changelog=0.1.0 - Initial beta release
 
