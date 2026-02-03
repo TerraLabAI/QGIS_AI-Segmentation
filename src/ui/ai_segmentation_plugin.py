@@ -219,8 +219,8 @@ class AISegmentationPlugin:
         # Refinement settings
         self._refine_expand = 0
         self._refine_simplify = 3  # Default to 3 for smoother outlines
-        self._refine_fill_holes = False
-        self._refine_min_area = 0
+        self._refine_fill_holes = False  # Default: fill holes
+        self._refine_min_area = 200  # Default: remove small artifacts
 
         # Simple mode: per-raster mask counters
         self._mask_counters = {}  # {raster_name: counter}
@@ -281,6 +281,7 @@ class AISegmentationPlugin:
         self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
         self.dock_widget.refine_settings_changed.connect(self._on_refine_settings_changed)
         self.dock_widget.batch_mode_changed.connect(self._on_batch_mode_changed)
+        self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
 
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
 
@@ -810,6 +811,29 @@ class AISegmentationPlugin:
         if batch:
             self._show_tutorial_notification("batch")
 
+    def _on_layer_combo_changed(self, layer):
+        """Handle layer selection change in the combo box."""
+        # Only care if we're currently in segmentation mode
+        if not self._current_layer:
+            return
+
+        # Check if it's actually a different layer
+        new_layer_id = layer.id() if layer else None
+        current_layer_id = self._current_layer.id() if self._current_layer else None
+
+        if new_layer_id == current_layer_id:
+            # Same layer selected, do nothing
+            return
+
+        # Different layer selected while segmenting - stop segmentation silently
+        if self.iface.mapCanvas().mapTool() == self.map_tool:
+            self._stopping_segmentation = True
+            self.iface.mapCanvas().unsetMapTool(self.map_tool)
+            self._restore_previous_map_tool()
+            self._stopping_segmentation = False
+            self._reset_session()
+            self.dock_widget.reset_session()
+
     def _confirm_exit_segmentation(self) -> bool:
         """Show confirmation dialog if user has placed points."""
         has_points = (self.prompts.positive_points or self.prompts.negative_points)
@@ -1191,6 +1215,16 @@ class AISegmentationPlugin:
                 self.dock_widget.set_segmentation_active(False)
             return
 
+        # Check if QGIS is closing - don't show popup in that case
+        # When QGIS closes, the main window is being destroyed or hidden
+        main_window = self.iface.mainWindow()
+        if main_window is None or not main_window.isVisible():
+            # QGIS is closing, just cleanup silently
+            self._reset_session()
+            if self.dock_widget:
+                self.dock_widget.set_segmentation_active(False)
+            return
+
         # Check if there's unsaved work
         has_unsaved_mask = self.current_mask is not None
         has_saved_polygons = len(self.saved_polygons) > 0
@@ -1206,7 +1240,7 @@ class AISegmentationPlugin:
                 message = "You have an unsaved mask.\n\nDiscard and exit segmentation?"
 
             reply = QMessageBox.warning(
-                self.iface.mainWindow(),
+                main_window,
                 "Exit Segmentation?",
                 message,
                 QMessageBox.Yes | QMessageBox.No,
@@ -1801,8 +1835,8 @@ class AISegmentationPlugin:
         # Reset refinement settings to defaults
         self._refine_expand = 0
         self._refine_simplify = 3  # Default
-        self._refine_fill_holes = False
-        self._refine_min_area = 0
+        self._refine_fill_holes = True  # Default
+        self._refine_min_area = 200  # Default
 
         self.dock_widget.set_point_count(0, 0)
         self.dock_widget.set_saved_polygon_count(0)
