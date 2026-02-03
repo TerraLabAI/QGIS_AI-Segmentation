@@ -208,6 +208,7 @@ class AISegmentationPlugin:
         self.current_mask = None
         self.current_score = 0.0
         self.current_transform_info = None
+        self.current_low_res_mask = None  # For iterative refinement with negative points
         self.saved_polygons = []
 
         self._initialized = False
@@ -217,7 +218,9 @@ class AISegmentationPlugin:
 
         # Refinement settings
         self._refine_expand = 0
-        self._refine_simplify = 0
+        self._refine_simplify = 3  # Default to 3 for smoother outlines
+        self._refine_fill_holes = False
+        self._refine_min_area = 0
 
         # Simple mode: per-raster mask counters
         self._mask_counters = {}  # {raster_name: counter}
@@ -830,10 +833,15 @@ class AISegmentationPlugin:
 
         from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
 
-        # Apply refinement to the mask for display (green shows with effects)
+        # Apply all mask-level refinements for display (green shows with effects)
         mask_for_display = self.current_mask
-        if self._refine_expand != 0:
-            mask_for_display = apply_mask_refinement(self.current_mask, self._refine_expand)
+        if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
+            mask_for_display = apply_mask_refinement(
+                self.current_mask,
+                expand_value=self._refine_expand,
+                fill_holes=self._refine_fill_holes,
+                min_area=self._refine_min_area
+            )
 
         geometries = mask_to_polygons(mask_for_display, self.current_transform_info)
 
@@ -860,6 +868,8 @@ class AISegmentationPlugin:
                 'points_negative': list(self.prompts.negative_points),  # Points for undo restoration
                 'refine_expand': self._refine_expand,  # Refine settings at save time
                 'refine_simplify': self._refine_simplify,  # Refine settings at save time
+                'refine_fill_holes': self._refine_fill_holes,  # Refine settings at save time
+                'refine_min_area': self._refine_min_area,  # Refine settings at save time
             })
 
             saved_rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
@@ -887,6 +897,7 @@ class AISegmentationPlugin:
         self._clear_mask_visualization()
         self.current_mask = None
         self.current_score = 0.0
+        self.current_low_res_mask = None
         self.dock_widget.set_point_count(0, 0)
 
     def _on_export_layer(self):
@@ -900,12 +911,27 @@ class AISegmentationPlugin:
 
             polygons_to_export = list(self.saved_polygons)
 
-            # Include current unsaved mask if exists
+            # Include current unsaved mask if exists (apply current refine settings)
             if self.current_mask is not None:
-                geometries = mask_to_polygons(self.current_mask, self.current_transform_info)
+                mask_to_export = self.current_mask
+                if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
+                    mask_to_export = apply_mask_refinement(
+                        self.current_mask,
+                        expand_value=self._refine_expand,
+                        fill_holes=self._refine_fill_holes,
+                        min_area=self._refine_min_area
+                    )
+                geometries = mask_to_polygons(mask_to_export, self.current_transform_info)
                 if geometries:
                     combined = QgsGeometry.unaryUnion(geometries)
                     if combined and not combined.isEmpty():
+                        # Apply simplification
+                        if self._refine_simplify > 0:
+                            bbox = self.current_transform_info.get("bbox", [0, 1, 0, 1])
+                            img_shape = self.current_transform_info.get("img_shape", (1024, 1024))
+                            pixel_size = (bbox[1] - bbox[0]) / img_shape[1]
+                            tolerance = pixel_size * self._refine_simplify * 0.5
+                            combined = combined.simplify(tolerance)
                         polygons_to_export.append({
                             'geometry_wkt': combined.asWkt(),
                             'score': self.current_score,
@@ -916,10 +942,15 @@ class AISegmentationPlugin:
             if self.current_mask is None:
                 return  # Nothing to export
 
-            # Apply refinement settings
+            # Apply all mask-level refinement settings
             mask_to_export = self.current_mask
-            if self._refine_expand != 0:
-                mask_to_export = apply_mask_refinement(self.current_mask, self._refine_expand)
+            if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
+                mask_to_export = apply_mask_refinement(
+                    self.current_mask,
+                    expand_value=self._refine_expand,
+                    fill_holes=self._refine_fill_holes,
+                    min_area=self._refine_min_area
+                )
 
             geometries = mask_to_polygons(mask_to_export, self.current_transform_info)
             if not geometries:
@@ -1238,15 +1269,17 @@ class AISegmentationPlugin:
         self._reset_session()
         self.dock_widget.reset_session()
 
-    def _on_refine_settings_changed(self, expand: int, simplify: int):
+    def _on_refine_settings_changed(self, expand: int, simplify: int, fill_holes: bool, min_area: int):
         """Handle refinement control changes."""
         QgsMessageLog.logMessage(
-            f"Refine settings changed: expand={expand}, simplify={simplify}",
+            f"Refine settings changed: expand={expand}, simplify={simplify}, fill_holes={fill_holes}, min_area={min_area}",
             "AI Segmentation",
             level=Qgis.Info
         )
         self._refine_expand = expand
         self._refine_simplify = simplify
+        self._refine_fill_holes = fill_holes
+        self._refine_min_area = min_area
 
         # In both modes: update current mask preview only
         # Saved masks (green) keep their own refine settings from when they were saved
@@ -1505,14 +1538,22 @@ class AISegmentationPlugin:
         if point_coords is None:
             return
 
-        masks, scores, _ = self.predictor.predict(
+        # Use previous low_res_mask for iterative refinement when we have negative points
+        # This helps SAM understand the context and improves negative point behavior
+        mask_input = None
+        if len(self.prompts.negative_points) > 0 and self.current_low_res_mask is not None:
+            mask_input = self.current_low_res_mask
+
+        masks, scores, low_res_masks = self.predictor.predict(
             point_coords=point_coords,
             point_labels=point_labels,
+            mask_input=mask_input,
             multimask_output=False,
         )
 
         self.current_mask = masks[0]
         self.current_score = float(scores[0])
+        self.current_low_res_mask = low_res_masks  # Store for next refinement
 
         # Use layer CRS as fallback if feature_dataset.crs is None or empty
         crs_value = self.feature_dataset.crs
@@ -1561,8 +1602,14 @@ class AISegmentationPlugin:
 
             # Apply refinement to preview in both modes (refine affects current mask only)
             mask_to_display = self.current_mask
-            if self._refine_expand != 0:
-                mask_to_display = apply_mask_refinement(self.current_mask, self._refine_expand)
+            # Apply all mask-level refinements (fill holes, min area, expand/contract)
+            if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
+                mask_to_display = apply_mask_refinement(
+                    self.current_mask,
+                    expand_value=self._refine_expand,
+                    fill_holes=self._refine_fill_holes,
+                    min_area=self._refine_min_area
+                )
 
             geometries = mask_to_polygons(mask_to_display, self.current_transform_info)
 
@@ -1626,6 +1673,7 @@ class AISegmentationPlugin:
 
         self.current_mask = None
         self.current_score = 0.0
+        self.current_low_res_mask = None
         self.dock_widget.set_point_count(0, 0)
 
     def _on_undo(self):
@@ -1704,10 +1752,17 @@ class AISegmentationPlugin:
 
         # Restore refine settings
         self._refine_expand = last_polygon.get('refine_expand', 0)
-        self._refine_simplify = last_polygon.get('refine_simplify', 0)
+        self._refine_simplify = last_polygon.get('refine_simplify', 3)
+        self._refine_fill_holes = last_polygon.get('refine_fill_holes', False)
+        self._refine_min_area = last_polygon.get('refine_min_area', 0)
 
         # Update UI sliders without emitting signals
-        self.dock_widget.set_refine_values(self._refine_expand, self._refine_simplify)
+        self.dock_widget.set_refine_values(
+            self._refine_expand,
+            self._refine_simplify,
+            self._refine_fill_holes,
+            self._refine_min_area
+        )
 
         # Update visualization
         self._update_mask_visualization()
@@ -1719,7 +1774,8 @@ class AISegmentationPlugin:
 
         QgsMessageLog.logMessage(
             f"Restored mask with {pos_count} positive, {neg_count} negative points. "
-            f"Refine: expand={self._refine_expand}, simplify={self._refine_simplify}",
+            f"Refine: expand={self._refine_expand}, simplify={self._refine_simplify}, "
+            f"fill_holes={self._refine_fill_holes}, min_area={self._refine_min_area}",
             "AI Segmentation",
             level=Qgis.Info
         )
@@ -1740,10 +1796,13 @@ class AISegmentationPlugin:
         self.current_mask = None
         self.current_score = 0.0
         self.current_transform_info = None
+        self.current_low_res_mask = None
 
-        # Reset refinement settings
+        # Reset refinement settings to defaults
         self._refine_expand = 0
-        self._refine_simplify = 0
+        self._refine_simplify = 3  # Default
+        self._refine_fill_holes = False
+        self._refine_min_area = 0
 
         self.dock_widget.set_point_count(0, 0)
         self.dock_widget.set_saved_polygon_count(0)

@@ -269,8 +269,14 @@ class SamPredictorNoImgEncoder:
                 "action": "predict",
                 "point_coords": point_coords.tolist() if point_coords is not None else None,
                 "point_labels": point_labels.tolist() if point_labels is not None else None,
-                "multimask_output": multimask_output
+                "multimask_output": multimask_output,
             }
+
+            # Add mask_input if provided (for iterative refinement with negative points)
+            if mask_input is not None:
+                request["mask_input"] = base64.b64encode(mask_input.tobytes()).decode('utf-8')
+                request["mask_input_shape"] = list(mask_input.shape)
+                request["mask_input_dtype"] = str(mask_input.dtype)
 
             self.process.stdin.write(json.dumps(request) + '\n')
             self.process.stdin.flush()

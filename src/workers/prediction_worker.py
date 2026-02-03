@@ -260,9 +260,19 @@ def main():
                     point_labels = np.array(request["point_labels"]) if request.get("point_labels") else None
                     multimask_output = request.get("multimask_output", False)
 
+                    # Decode mask_input if provided (for iterative refinement)
+                    mask_input = None
+                    if request.get("mask_input"):
+                        mask_input = decode_numpy_array(
+                            request["mask_input"],
+                            request["mask_input_shape"],
+                            request["mask_input_dtype"]
+                        )
+
                     masks, scores, low_res_masks = predictor.predict(
                         point_coords=point_coords,
                         point_labels=point_labels,
+                        mask_input=mask_input,
                         multimask_output=multimask_output,
                     )
 

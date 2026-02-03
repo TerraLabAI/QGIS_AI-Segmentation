@@ -39,7 +39,7 @@ class AISegmentationDockWidget(QDockWidget):
     save_polygon_requested = pyqtSignal()
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
-    refine_settings_changed = pyqtSignal(int, int)  # expand, simplify
+    refine_settings_changed = pyqtSignal(int, int, bool, int)  # expand, simplify, fill_holes, min_area
     batch_mode_changed = pyqtSignal(bool)  # True = batch mode, False = simple mode
 
     def __init__(self, parent=None):
@@ -518,12 +518,36 @@ class AISegmentationDockWidget(QDockWidget):
         simplify_label.setToolTip("Reduce small variations in the outline (0 = no change)")
         self.simplify_spinbox = QSpinBox()
         self.simplify_spinbox.setRange(0, 10)
-        self.simplify_spinbox.setValue(0)
+        self.simplify_spinbox.setValue(3)  # Default to 3 for smoother outlines
         self.simplify_spinbox.setMinimumWidth(80)
         simplify_layout.addWidget(simplify_label)
         simplify_layout.addStretch()
         simplify_layout.addWidget(self.simplify_spinbox)
         refine_content_layout.addLayout(simplify_layout)
+
+        # 3. Fill holes: Checkbox - fills interior holes in the mask
+        fill_holes_layout = QHBoxLayout()
+        self.fill_holes_checkbox = QCheckBox("Fill holes")
+        self.fill_holes_checkbox.setChecked(False)
+        self.fill_holes_checkbox.setToolTip("Fill interior holes in the mask (holes completely surrounded by the selection)")
+        fill_holes_layout.addWidget(self.fill_holes_checkbox)
+        fill_holes_layout.addStretch()
+        refine_content_layout.addLayout(fill_holes_layout)
+
+        # 4. Remove small artifacts: SpinBox - minimum area threshold
+        min_area_layout = QHBoxLayout()
+        min_area_label = QLabel("Min. region size:")
+        min_area_label.setToolTip("Remove disconnected regions smaller than this area (in pixels²).\nExample: 100 = ~10x10 pixel regions, 900 = ~30x30.\n0 = keep all.")
+        self.min_area_spinbox = QSpinBox()
+        self.min_area_spinbox.setRange(0, 3000)
+        self.min_area_spinbox.setValue(0)
+        self.min_area_spinbox.setSuffix(" px²")
+        self.min_area_spinbox.setSingleStep(50)
+        self.min_area_spinbox.setMinimumWidth(80)
+        min_area_layout.addWidget(min_area_label)
+        min_area_layout.addStretch()
+        min_area_layout.addWidget(self.min_area_spinbox)
+        refine_content_layout.addLayout(min_area_layout)
 
         refine_layout.addWidget(self.refine_content_widget)
         self.refine_content_widget.setVisible(self._refine_expanded)
@@ -531,6 +555,8 @@ class AISegmentationDockWidget(QDockWidget):
         # Connect signals
         self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
         self.simplify_spinbox.valueChanged.connect(self._on_refine_changed)
+        self.fill_holes_checkbox.stateChanged.connect(self._on_refine_changed)
+        self.min_area_spinbox.valueChanged.connect(self._on_refine_changed)
 
         parent_layout.addWidget(self.refine_group)
 
@@ -554,22 +580,34 @@ class AISegmentationDockWidget(QDockWidget):
         """Emit the refine settings changed signal after debounce."""
         self.refine_settings_changed.emit(
             self.expand_spinbox.value(),
-            self.simplify_spinbox.value()
+            self.simplify_spinbox.value(),
+            self.fill_holes_checkbox.isChecked(),
+            self.min_area_spinbox.value()
         )
 
     def reset_refine_sliders(self):
         """Reset refinement controls to default values."""
         self.expand_spinbox.setValue(0)
-        self.simplify_spinbox.setValue(0)
+        self.simplify_spinbox.setValue(3)  # Default to 3
+        self.fill_holes_checkbox.setChecked(False)
+        self.min_area_spinbox.setValue(0)
 
-    def set_refine_values(self, expand: int, simplify: int):
+    def set_refine_values(self, expand: int, simplify: int, fill_holes: bool = False, min_area: int = 0):
         """Set refine slider values without emitting signals."""
         self.expand_spinbox.blockSignals(True)
         self.simplify_spinbox.blockSignals(True)
+        self.fill_holes_checkbox.blockSignals(True)
+        self.min_area_spinbox.blockSignals(True)
+
         self.expand_spinbox.setValue(expand)
         self.simplify_spinbox.setValue(simplify)
+        self.fill_holes_checkbox.setChecked(fill_holes)
+        self.min_area_spinbox.setValue(min_area)
+
         self.expand_spinbox.blockSignals(False)
         self.simplify_spinbox.blockSignals(False)
+        self.fill_holes_checkbox.blockSignals(False)
+        self.min_area_spinbox.blockSignals(False)
 
     def _setup_about_section(self):
         """Setup the links section."""
@@ -955,7 +993,10 @@ class AISegmentationDockWidget(QDockWidget):
             # Secondary buttons: visible during segmentation
             self.secondary_buttons_widget.setVisible(True)
             self.undo_button.setVisible(True)
-            self.undo_button.setEnabled(self._positive_count > 0 or self._negative_count > 0)
+            # Undo enabled if: has points OR (batch mode AND has saved masks)
+            has_points = self._positive_count > 0 or self._negative_count > 0
+            can_undo_saved = self._batch_mode and self._saved_polygon_count > 0
+            self.undo_button.setEnabled(has_points or can_undo_saved)
             self.stop_button.setVisible(True)
             self.stop_button.setEnabled(True)
 
@@ -1068,7 +1109,9 @@ class AISegmentationDockWidget(QDockWidget):
         old_has_mask = self._has_mask
         self._has_mask = has_points
 
-        self.undo_button.setEnabled(has_points and self._segmentation_active)
+        # Undo enabled if: has points OR (batch mode AND has saved masks)
+        can_undo_saved = self._batch_mode and self._saved_polygon_count > 0
+        self.undo_button.setEnabled((has_points or can_undo_saved) and self._segmentation_active)
         self.save_mask_button.setEnabled(has_points)
 
         if self._segmentation_active:
@@ -1121,6 +1164,11 @@ class AISegmentationDockWidget(QDockWidget):
         self._saved_polygon_count = count
         self._update_refine_panel_visibility()
         self._update_export_button_style()
+        # Update undo button state (may be enabled/disabled based on saved count in batch mode)
+        if self._segmentation_active:
+            has_points = self._positive_count > 0 or self._negative_count > 0
+            can_undo_saved = self._batch_mode and count > 0
+            self.undo_button.setEnabled(has_points or can_undo_saved)
 
     def _is_layer_georeferenced(self, layer) -> bool:
         """Check if a raster layer is properly georeferenced."""
