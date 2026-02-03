@@ -1179,7 +1179,6 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Check file extension for compatible formats
         source = layer.source().lower()
-        compatible_extensions = ('.tif', '.tiff', '.geotiff', '.img', '.jp2', '.ecw', '.sid')
 
         # PNG, JPG, BMP etc. without world files are not georeferenced
         non_georef_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
