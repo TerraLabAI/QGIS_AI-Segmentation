@@ -1084,8 +1084,8 @@ class AISegmentationPlugin:
             )
             return
 
-        # Add to project
-        QgsProject.instance().addMapLayer(result_layer)
+        # Add to project in a group for this raster
+        self._add_layer_to_raster_group(result_layer)
 
         # Log the layer extent for debugging
         layer_extent = result_layer.extent()
@@ -1125,6 +1125,24 @@ class AISegmentationPlugin:
 
         self._reset_session()
         self.dock_widget.reset_session()
+
+    def _add_layer_to_raster_group(self, layer):
+        """Add the exported layer to a group named after the source raster."""
+        group_name = f"{self._current_layer_name} (AI Segmentation)"
+
+        root = QgsProject.instance().layerTreeRoot()
+
+        # Find or create the group
+        group = root.findGroup(group_name)
+        if group is None:
+            # Create the group at the top of the layer tree
+            group = root.insertGroup(0, group_name)
+
+        # Add layer to project without adding to root
+        QgsProject.instance().addMapLayer(layer, False)
+
+        # Add layer to the group
+        group.addLayer(layer)
 
     def _on_tool_deactivated(self):
         # If we're stopping programmatically (via Stop/Export), just update UI
