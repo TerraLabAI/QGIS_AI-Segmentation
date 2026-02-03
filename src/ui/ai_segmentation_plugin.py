@@ -22,6 +22,7 @@ from qgis.core import (
     QgsFillSymbol,
     QgsSingleSymbolRenderer,
     QgsCoordinateReferenceSystem,
+    QgsPointXY,
 )
 from qgis.gui import QgisInterface, QgsRubberBand
 from qgis.PyQt.QtGui import QColor
@@ -849,12 +850,16 @@ class AISegmentationPlugin:
                 tolerance = pixel_size * self._refine_simplify * 0.5
                 combined = combined.simplify(tolerance)
 
-            # Store WKT (with effects), score, transform info, AND raw mask for later refinement
+            # Store WKT (with effects), score, transform info, raw mask, points, and refine settings
             self.saved_polygons.append({
                 'geometry_wkt': combined.asWkt(),
                 'score': self.current_score,
                 'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
                 'raw_mask': self.current_mask.copy(),  # Store RAW mask for re-applying different settings
+                'points_positive': list(self.prompts.positive_points),  # Points for undo restoration
+                'points_negative': list(self.prompts.negative_points),  # Points for undo restoration
+                'refine_expand': self._refine_expand,  # Refine settings at save time
+                'refine_simplify': self._refine_simplify,  # Refine settings at save time
             })
 
             saved_rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
@@ -1243,12 +1248,9 @@ class AISegmentationPlugin:
         self._refine_expand = expand
         self._refine_simplify = simplify
 
-        if self._batch_mode:
-            # Batch mode: only update saved masks (green), not current (blue)
-            self._update_all_saved_masks_visualization()
-        else:
-            # Simple mode: update current mask preview
-            self._update_mask_visualization()
+        # In both modes: update current mask preview only
+        # Saved masks (green) keep their own refine settings from when they were saved
+        self._update_mask_visualization()
 
     def _update_last_saved_mask_visualization(self):
         """Update the last saved mask's rubber band with current refinement settings."""
@@ -1557,10 +1559,9 @@ class AISegmentationPlugin:
         try:
             from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
 
-            # In batch mode: show raw mask (no refinement on blue preview)
-            # In simple mode: apply refinement to preview
+            # Apply refinement to preview in both modes (refine affects current mask only)
             mask_to_display = self.current_mask
-            if not self._batch_mode and self._refine_expand != 0:
+            if self._refine_expand != 0:
                 mask_to_display = apply_mask_refinement(self.current_mask, self._refine_expand)
 
             geometries = mask_to_polygons(mask_to_display, self.current_transform_info)
@@ -1568,8 +1569,8 @@ class AISegmentationPlugin:
             if geometries:
                 combined = QgsGeometry.unaryUnion(geometries)
                 if combined and not combined.isEmpty():
-                    # In simple mode: apply simplification to preview
-                    if not self._batch_mode and self._refine_simplify > 0:
+                    # Apply simplification to preview in both modes
+                    if self._refine_simplify > 0:
                         bbox = self.current_transform_info.get("bbox", [0, 1, 0, 1])
                         img_shape = self.current_transform_info.get("img_shape", (1024, 1024))
                         pixel_size = (bbox[1] - bbox[0]) / img_shape[1]
@@ -1596,6 +1597,26 @@ class AISegmentationPlugin:
             self.mask_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
 
     def _on_clear_points(self):
+        """Handle Escape key - clear current mask or warn about saved masks."""
+        if self._batch_mode and len(self.saved_polygons) > 0:
+            # Batch mode with saved masks: warn user before clearing everything
+            reply = QMessageBox.warning(
+                self.iface.mainWindow(),
+                "Supprimer tous les masks?",
+                "Ceci va supprimer tous les masks sauvegardés.\n"
+                "Voulez-vous continuer?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+            # User confirmed: reset entire session
+            self._reset_session()
+            self.dock_widget.set_point_count(0, 0)
+            self.dock_widget.set_saved_polygon_count(0)
+            return
+
+        # Normal clear: just clear current mask points
         self.prompts.clear()
 
         if self.map_tool:
@@ -1608,22 +1629,100 @@ class AISegmentationPlugin:
         self.dock_widget.set_point_count(0, 0)
 
     def _on_undo(self):
-        """Undo last point added."""
-        result = self.prompts.undo()
-        if result is None:
+        """Undo last point added, or restore last saved mask in batch mode."""
+        # Check if we have points in current mask
+        current_point_count = self.prompts.point_count[0] + self.prompts.point_count[1]
+
+        if current_point_count > 0:
+            # Normal undo: remove last point from current mask
+            result = self.prompts.undo()
+            if result is None:
+                return
+
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+
+            # Re-run prediction with remaining points
+            if self.prompts.point_count[0] + self.prompts.point_count[1] > 0:
+                self._run_prediction()
+            else:
+                self.current_mask = None
+                self.current_score = 0.0
+                self._clear_mask_visualization()
+                self.dock_widget.set_point_count(0, 0)
+        elif self._batch_mode and len(self.saved_polygons) > 0:
+            # Batch mode: no points in current mask, but have saved masks
+            # Ask user if they want to restore the last saved mask
+            reply = QMessageBox.warning(
+                self.iface.mainWindow(),
+                "Modifier un mask sauvegardé",
+                "Attention: vous allez modifier un mask déjà sauvegardé.\n"
+                "Voulez-vous continuer?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                self._restore_last_saved_mask()
+
+    def _restore_last_saved_mask(self):
+        """Restore the last saved mask for editing in batch mode."""
+        if not self.saved_polygons or not self.saved_rubber_bands:
             return
 
-        if self.map_tool:
-            self.map_tool.remove_last_marker()
+        # Pop the last saved polygon data
+        last_polygon = self.saved_polygons.pop()
 
-        # Re-run prediction with remaining points
-        if self.prompts.point_count[0] + self.prompts.point_count[1] > 0:
-            self._run_prediction()
-        else:
-            self.current_mask = None
-            self.current_score = 0.0
-            self._clear_mask_visualization()
-            self.dock_widget.set_point_count(0, 0)
+        # Remove the corresponding rubber band (green)
+        if self.saved_rubber_bands:
+            last_rb = self.saved_rubber_bands.pop()
+            self.iface.mapCanvas().scene().removeItem(last_rb)
+
+        # Clear current state first
+        self.prompts.clear()
+        if self.map_tool:
+            self.map_tool.clear_markers()
+
+        # Restore points
+        points_positive = last_polygon.get('points_positive', [])
+        points_negative = last_polygon.get('points_negative', [])
+
+        # Rebuild prompts and history
+        for pt in points_positive:
+            self.prompts.add_positive_point(pt[0], pt[1])
+            if self.map_tool:
+                self.map_tool.add_marker(QgsPointXY(pt[0], pt[1]), is_positive=True)
+
+        for pt in points_negative:
+            self.prompts.add_negative_point(pt[0], pt[1])
+            if self.map_tool:
+                self.map_tool.add_marker(QgsPointXY(pt[0], pt[1]), is_positive=False)
+
+        # Restore mask data
+        self.current_mask = last_polygon.get('raw_mask')
+        self.current_score = last_polygon.get('score', 0.0)
+        self.current_transform_info = last_polygon.get('transform_info')
+
+        # Restore refine settings
+        self._refine_expand = last_polygon.get('refine_expand', 0)
+        self._refine_simplify = last_polygon.get('refine_simplify', 0)
+
+        # Update UI sliders without emitting signals
+        self.dock_widget.set_refine_values(self._refine_expand, self._refine_simplify)
+
+        # Update visualization
+        self._update_mask_visualization()
+
+        # Update UI counters
+        pos_count, neg_count = self.prompts.point_count
+        self.dock_widget.set_point_count(pos_count, neg_count)
+        self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
+
+        QgsMessageLog.logMessage(
+            f"Restored mask with {pos_count} positive, {neg_count} negative points. "
+            f"Refine: expand={self._refine_expand}, simplify={self._refine_simplify}",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
 
     def _reset_session(self):
         self.prompts.clear()

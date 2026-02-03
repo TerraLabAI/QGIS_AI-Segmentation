@@ -562,6 +562,15 @@ class AISegmentationDockWidget(QDockWidget):
         self.expand_spinbox.setValue(0)
         self.simplify_spinbox.setValue(0)
 
+    def set_refine_values(self, expand: int, simplify: int):
+        """Set refine slider values without emitting signals."""
+        self.expand_spinbox.blockSignals(True)
+        self.simplify_spinbox.blockSignals(True)
+        self.expand_spinbox.setValue(expand)
+        self.simplify_spinbox.setValue(simplify)
+        self.expand_spinbox.blockSignals(False)
+        self.simplify_spinbox.blockSignals(False)
+
     def _setup_about_section(self):
         """Setup the links section."""
         # Simple horizontal layout for links, aligned right with larger font
@@ -1006,8 +1015,8 @@ class AISegmentationDockWidget(QDockWidget):
             return
 
         if self._batch_mode:
-            # Batch mode: show when at least one mask is saved
-            show_refine = self._saved_polygon_count > 0
+            # Batch mode: show when current mask exists (refine only affects current blue mask)
+            show_refine = self._has_mask
         else:
             # Simple mode: show when current mask exists (points placed)
             show_refine = self._has_mask
