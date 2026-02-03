@@ -2,7 +2,7 @@
 name=AI Segmentation by TerraLab
 description=Segment anything in your raster using AI
 qgisMinimumVersion=3.0
-version=0.2.1
+version=0.2.2
 author=Yvann and Lilien from TerraLab
 email=barbot.yvann@gmail.com
 license=GPLv2
@@ -16,7 +16,7 @@ about=
 
     •  Vector layer export
 
-changelog=0.1.0 - Initial beta release
+changelog=
 
 tracker=https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues
 repository=https://github.com/TerraLabAI/QGIS_AI-Segmentation
