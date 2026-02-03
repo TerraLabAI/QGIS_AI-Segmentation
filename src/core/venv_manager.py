@@ -304,7 +304,10 @@ def _get_subprocess_kwargs() -> dict:
     return kwargs
 
 
-def verify_venv(venv_dir: str = None) -> Tuple[bool, str]:
+def verify_venv(
+    venv_dir: str = None,
+    progress_callback: Optional[Callable[[int, str], None]] = None
+) -> Tuple[bool, str]:
     if venv_dir is None:
         venv_dir = VENV_DIR
 
@@ -315,8 +318,14 @@ def verify_venv(venv_dir: str = None) -> Tuple[bool, str]:
     env = _get_clean_env_for_venv()
     subprocess_kwargs = _get_subprocess_kwargs()
 
-    for package_name, _ in REQUIRED_PACKAGES:
+    total_packages = len(REQUIRED_PACKAGES)
+    for i, (package_name, _) in enumerate(REQUIRED_PACKAGES):
         import_name = package_name.replace("-", "_")
+
+        if progress_callback:
+            # Report progress for each package (0-100% within verification phase)
+            percent = int((i / total_packages) * 100)
+            progress_callback(percent, f"Verifying {package_name}... ({i + 1}/{total_packages})")
 
         cmd = [python_path, "-c", f"import {import_name}"]
 
@@ -337,6 +346,9 @@ def verify_venv(venv_dir: str = None) -> Tuple[bool, str]:
         except Exception as e:
             _log(f"Failed to verify {package_name}: {str(e)}", Qgis.Warning)
             return False, f"Verification error: {package_name}"
+
+    if progress_callback:
+        progress_callback(100, "Verification complete")
 
     _log("✓ Virtual environment verified successfully", Qgis.Success)
     return True, "Virtual environment ready"
@@ -436,11 +448,15 @@ def create_venv_and_install(
     if not success:
         return False, msg
 
-    # Step 4: Verify installation
-    if progress_callback:
-        progress_callback(95, "Verifying installation...")
+    # Step 4: Verify installation (95-100%)
+    def verify_progress(percent: int, msg: str):
+        """Map verification progress (0-100%) to overall progress (95-99%)."""
+        if progress_callback:
+            # Map 0-100 to 95-99 (leave 100% for final success message)
+            mapped = 95 + int(percent * 0.04)
+            progress_callback(min(mapped, 99), msg)
 
-    is_valid, verify_msg = verify_venv()
+    is_valid, verify_msg = verify_venv(progress_callback=verify_progress)
     if not is_valid:
         return False, f"Verification failed: {verify_msg}"
 
