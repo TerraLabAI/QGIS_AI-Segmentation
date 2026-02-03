@@ -70,6 +70,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._plugin_activated = is_plugin_activated()
         self._activation_popup_shown = False  # Track if popup was shown
         self._batch_mode = False  # Simple mode by default
+        self._segmentation_layer_id = None  # Track which layer we're segmenting
         # Note: _refine_expanded is initialized before _setup_ui() call
 
         # Smooth progress animation timer for long-running installs
@@ -528,7 +529,7 @@ class AISegmentationDockWidget(QDockWidget):
         # 3. Fill holes: Checkbox - fills interior holes in the mask
         fill_holes_layout = QHBoxLayout()
         self.fill_holes_checkbox = QCheckBox("Fill holes")
-        self.fill_holes_checkbox.setChecked(False)
+        self.fill_holes_checkbox.setChecked(True)  # Default: fill holes
         self.fill_holes_checkbox.setToolTip("Fill interior holes in the mask (holes completely surrounded by the selection)")
         fill_holes_layout.addWidget(self.fill_holes_checkbox)
         fill_holes_layout.addStretch()
@@ -540,7 +541,7 @@ class AISegmentationDockWidget(QDockWidget):
         min_area_label.setToolTip("Remove disconnected regions smaller than this area (in pixels²).\nExample: 100 = ~10x10 pixel regions, 900 = ~30x30.\n0 = keep all.")
         self.min_area_spinbox = QSpinBox()
         self.min_area_spinbox.setRange(0, 3000)
-        self.min_area_spinbox.setValue(0)
+        self.min_area_spinbox.setValue(200)  # Default: remove small artifacts
         self.min_area_spinbox.setSuffix(" px²")
         self.min_area_spinbox.setSingleStep(50)
         self.min_area_spinbox.setMinimumWidth(80)
@@ -589,8 +590,8 @@ class AISegmentationDockWidget(QDockWidget):
         """Reset refinement controls to default values."""
         self.expand_spinbox.setValue(0)
         self.simplify_spinbox.setValue(3)  # Default to 3
-        self.fill_holes_checkbox.setChecked(False)
-        self.min_area_spinbox.setValue(0)
+        self.fill_holes_checkbox.setChecked(True)  # Default: fill holes
+        self.min_area_spinbox.setValue(200)  # Default: remove small artifacts
 
     def set_refine_values(self, expand: int, simplify: int, fill_holes: bool = False, min_area: int = 0):
         """Set refine slider values without emitting signals."""
@@ -751,17 +752,9 @@ class AISegmentationDockWidget(QDockWidget):
         if reply == QMessageBox.Yes:
             self.cancel_preparation_requested.emit()
 
-    def _on_layer_changed(self, _layer):
+    def _on_layer_changed(self, layer):
+        # Just update UI state - layer change handling is done by the plugin
         self._update_ui_state()
-
-        if self._segmentation_active:
-            self._segmentation_active = False
-            self._update_button_visibility()
-            QMessageBox.warning(
-                self,
-                "Layer Changed",
-                "Segmentation cancelled because the layer was changed."
-            )
 
     def _on_layers_added(self, layers):
         """Handle new layers added to project - auto-select if none selected."""
@@ -961,6 +954,14 @@ class AISegmentationDockWidget(QDockWidget):
 
     def set_segmentation_active(self, active: bool):
         self._segmentation_active = active
+
+        # Track which layer we're segmenting
+        if active:
+            layer = self.layer_combo.currentLayer()
+            self._segmentation_layer_id = layer.id() if layer else None
+        else:
+            self._segmentation_layer_id = None
+
         self._update_button_visibility()
         self._update_ui_state()
         if active:
@@ -1153,6 +1154,7 @@ class AISegmentationDockWidget(QDockWidget):
     def reset_session(self):
         self._has_mask = False
         self._segmentation_active = False
+        self._segmentation_layer_id = None
         self._saved_polygon_count = 0
         self._positive_count = 0
         self._negative_count = 0

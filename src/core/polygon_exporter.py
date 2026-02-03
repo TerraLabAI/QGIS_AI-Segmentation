@@ -372,45 +372,51 @@ def apply_mask_refinement(
 
 def _fill_holes(mask: np.ndarray) -> np.ndarray:
     """
-    Fill interior holes in the mask using iterative morphological approach.
+    Fill interior holes in the mask.
     A hole is a region of 0s completely surrounded by 1s.
-    Fast numpy-vectorized implementation.
+    Uses scipy if available (very fast), otherwise numpy fallback.
     """
+    # Try scipy first - it's much faster (C implementation)
+    try:
+        from scipy import ndimage
+        return ndimage.binary_fill_holes(mask).astype(np.uint8)
+    except ImportError:
+        pass
+
+    # Numpy fallback: iterative flood fill from edges
     h, w = mask.shape
     # Create a padded version to flood fill from outside
     padded = np.zeros((h + 2, w + 2), dtype=np.uint8)
     padded[1:-1, 1:-1] = mask
 
-    # Iterative flood fill from edges using numpy operations
-    # Start with all border pixels marked as exterior
+    # Start with border pixels as exterior (only background pixels)
     exterior = np.zeros_like(padded, dtype=bool)
-    exterior[0, :] = True
-    exterior[-1, :] = True
-    exterior[:, 0] = True
-    exterior[:, -1] = True
-
-    # Keep only exterior pixels that are background (0)
-    exterior = exterior & (padded == 0)
+    exterior[0, :] = (padded[0, :] == 0)
+    exterior[-1, :] = (padded[-1, :] == 0)
+    exterior[:, 0] = (padded[:, 0] == 0)
+    exterior[:, -1] = (padded[:, -1] == 0)
 
     # Iteratively expand exterior into connected background pixels
-    changed = True
-    while changed:
-        # Dilate exterior by 1 pixel in 4 directions
-        expanded = np.zeros_like(exterior)
-        expanded[1:, :] |= exterior[:-1, :]   # down
-        expanded[:-1, :] |= exterior[1:, :]   # up
-        expanded[:, 1:] |= exterior[:, :-1]   # right
-        expanded[:, :-1] |= exterior[:, 1:]   # left
+    background = (padded == 0)
+    for _ in range(max(h, w)):  # Max iterations = image diagonal
+        # Dilate exterior by 1 pixel in 4 directions using slicing
+        expanded = exterior.copy()
+        expanded[1:, :] |= exterior[:-1, :]
+        expanded[:-1, :] |= exterior[1:, :]
+        expanded[:, 1:] |= exterior[:, :-1]
+        expanded[:, :-1] |= exterior[:, 1:]
 
-        # Only expand into background pixels not yet marked
-        new_exterior = expanded & (padded == 0) & (~exterior)
-        changed = np.any(new_exterior)
-        exterior |= new_exterior
+        # Only keep background pixels
+        expanded &= background
+
+        # Check if anything changed
+        if np.array_equal(expanded, exterior):
+            break
+        exterior = expanded
 
     # Holes are background pixels that are not exterior
     result = padded.copy()
-    holes = (padded == 0) & (~exterior)
-    result[holes] = 1
+    result[(padded == 0) & (~exterior)] = 1
 
     return result[1:-1, 1:-1]
 
@@ -418,66 +424,68 @@ def _fill_holes(mask: np.ndarray) -> np.ndarray:
 def _remove_small_regions(mask: np.ndarray, min_area: int) -> np.ndarray:
     """
     Remove connected regions smaller than min_area pixels.
-    Fast numpy-vectorized connected component labeling.
+    Uses scipy if available (very fast), otherwise numpy fallback.
     """
-    # Try to use scipy if available (much faster)
+    if min_area <= 1:
+        return mask.copy()
+
+    # Try to use scipy if available (much faster - C implementation)
     try:
         from scipy import ndimage
         labeled, num_features = ndimage.label(mask)
         if num_features == 0:
             return mask.copy()
 
-        # Count pixels in each region
+        # Count pixels in each region using bincount (very fast)
         component_sizes = np.bincount(labeled.ravel())
 
-        # Create mask of regions to keep (size >= min_area)
-        # component_sizes[0] is background, skip it
+        # Create lookup table: True for regions to keep
         keep_mask = component_sizes >= min_area
-        keep_mask[0] = False  # Don't keep background
+        keep_mask[0] = False  # Background is always 0
 
-        # Apply mask
-        result = keep_mask[labeled].astype(np.uint8)
-        return result
+        # Apply lookup table directly (very fast)
+        return keep_mask[labeled].astype(np.uint8)
 
     except ImportError:
         pass
 
-    # Fallback: numpy-only implementation with iterative labeling
+    # Fallback: numpy-only implementation
     h, w = mask.shape
     labels = np.zeros((h, w), dtype=np.int32)
-    current_label = 0
-
-    # Use a more efficient approach: process row by row with union-find concept
     mask_bool = mask.astype(bool)
+    current_label = 0
+    small_labels = []
 
-    for y in range(h):
-        for x in range(w):
-            if mask_bool[y, x] and labels[y, x] == 0:
+    # Flood fill each component
+    for start_y in range(h):
+        for start_x in range(w):
+            if mask_bool[start_y, start_x] and labels[start_y, start_x] == 0:
                 current_label += 1
-                # Flood fill using a stack (faster than queue for this)
-                stack = [(y, x)]
-                labels[y, x] = current_label
-                count = 0
+                stack = [(start_y, start_x)]
+                labels[start_y, start_x] = current_label
+                count = 1
 
                 while stack:
-                    cy, cx = stack.pop()
-                    count += 1
-
+                    y, x = stack.pop()
                     # Check 4-connected neighbors
-                    for ny, nx in [(cy-1, cx), (cy+1, cx), (cy, cx-1), (cy, cx+1)]:
+                    for ny, nx in ((y-1, x), (y+1, x), (y, x-1), (y, x+1)):
                         if 0 <= ny < h and 0 <= nx < w:
                             if mask_bool[ny, nx] and labels[ny, nx] == 0:
                                 labels[ny, nx] = current_label
                                 stack.append((ny, nx))
+                                count += 1
 
-                # If region too small, mark for removal
                 if count < min_area:
-                    labels[labels == current_label] = -1
+                    small_labels.append(current_label)
 
-    # Keep only non-removed pixels
-    result = mask.copy()
-    result[labels == -1] = 0
-    return result
+    # Remove small regions in one operation
+    if small_labels:
+        remove_mask = np.isin(labels, small_labels)
+        result = mask.copy()
+        result[remove_mask] = 0
+        return result
+
+    return mask.copy()
 
 
 def _numpy_dilate(mask: np.ndarray, iterations: int) -> np.ndarray:
