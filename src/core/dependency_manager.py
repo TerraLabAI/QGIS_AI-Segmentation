@@ -226,7 +226,7 @@ def get_install_size_warning() -> str:
 
     if has_torch:
         return (
-            "⚠️ PyTorch (~2GB) will be downloaded.\n"
+            "⚠️ PyTorch (~600MB) will be downloaded.\n"
             "This may take several minutes depending on your connection."
         )
     return ""
@@ -374,7 +374,7 @@ def install_all_dependencies(
 
         if progress_callback:
             if pip_name == "torch":
-                progress_callback(i, total, f"Installing {pip_name} (~2GB)... ({i + 1}/{total})")
+                progress_callback(i, total, f"Installing {pip_name} (~600MB)... ({i + 1}/{total})")
             else:
                 progress_callback(i, total, f"Installing {pip_name}... ({i + 1}/{total})")
 
