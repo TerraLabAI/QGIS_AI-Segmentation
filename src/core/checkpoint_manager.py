@@ -2,7 +2,7 @@ import os
 import hashlib
 from typing import Tuple, Optional, Callable
 
-from qgis.core import QgsMessageLog, Qgis, QgsBlockingNetworkRequest
+from qgis.core import QgsMessageLog, Qgis
 from qgis.PyQt.QtCore import QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
@@ -72,10 +72,15 @@ def download_checkpoint(
     progress_callback: Optional[Callable[[int, str], None]] = None
 ) -> Tuple[bool, str]:
     """
-    Download SAM checkpoint using QGIS network manager.
+    Download SAM checkpoint using QGIS network manager with progress reporting.
 
-    Uses QgsBlockingNetworkRequest to respect QGIS proxy settings.
+    Uses QNetworkAccessManager with a local event loop to provide real-time
+    download progress updates instead of blocking without feedback.
     """
+    from qgis.PyQt.QtCore import QEventLoop, QTimer
+    from qgis.PyQt.QtNetwork import QNetworkAccessManager, QNetworkReply
+    from qgis.core import QgsNetworkAccessManager
+
     checkpoint_path = get_checkpoint_path()
     temp_path = checkpoint_path + ".tmp"
 
@@ -96,38 +101,110 @@ def download_checkpoint(
             os.remove(checkpoint_path)
 
     if progress_callback:
-        progress_callback(0, "Downloading SAM checkpoint (~375MB)...")
+        progress_callback(0, "Connecting to download server...")
+
+    # State container for progress tracking
+    download_state = {
+        'bytes_received': 0,
+        'bytes_total': 0,
+        'error': None,
+        'data': bytearray()
+    }
+
+    def on_download_progress(received: int, total: int):
+        """Handle download progress updates."""
+        download_state['bytes_received'] = received
+        download_state['bytes_total'] = total
+
+        if total > 0 and progress_callback:
+            # Calculate percentage (reserve 5% for verification)
+            percent = int((received / total) * 90) + 5
+            mb_received = received / (1024 * 1024)
+            mb_total = total / (1024 * 1024)
+            progress_callback(
+                min(percent, 95),
+                f"Downloading: {mb_received:.1f} / {mb_total:.1f} MB"
+            )
+        elif progress_callback and received > 0:
+            # Unknown total size, show bytes downloaded
+            mb_received = received / (1024 * 1024)
+            progress_callback(50, f"Downloading: {mb_received:.1f} MB...")
+
+    def on_ready_read():
+        """Accumulate downloaded data chunks."""
+        data = reply.readAll()
+        download_state['data'].extend(data.data())
+
+    def on_error(error_code):
+        """Handle download errors."""
+        download_state['error'] = reply.errorString()
 
     try:
         # Use QGIS network manager for proxy-aware downloads
-        request = QgsBlockingNetworkRequest()
+        manager = QgsNetworkAccessManager.instance()
         qurl = QUrl(SAM_CHECKPOINT_URL)
+        request = QNetworkRequest(qurl)
+
+        # Start the download
+        reply = manager.get(request)
+
+        # Connect progress signals
+        reply.downloadProgress.connect(on_download_progress)
+        reply.readyRead.connect(on_ready_read)
+        reply.errorOccurred.connect(on_error)
+
+        # Create event loop to wait for download completion
+        loop = QEventLoop()
+        reply.finished.connect(loop.quit)
+
+        # Add timeout (10 minutes for ~375MB file)
+        timeout = QTimer()
+        timeout.setSingleShot(True)
+        timeout.timeout.connect(loop.quit)
+        timeout.start(600000)  # 10 minutes
 
         if progress_callback:
-            progress_callback(5, "Connecting to download server...")
+            progress_callback(5, "Download started...")
 
-        # Perform the download (blocking)
-        err = request.get(QNetworkRequest(qurl))
+        # Run the event loop until download completes
+        loop.exec_()
 
-        if err != QgsBlockingNetworkRequest.NoError:
-            error_msg = request.errorMessage()
+        # Check for timeout
+        if timeout.isActive():
+            timeout.stop()
+        else:
+            reply.abort()
+            return False, "Download timed out after 10 minutes"
+
+        # Check for errors
+        if reply.error() != QNetworkReply.NoError:
+            error_msg = download_state['error'] or reply.errorString()
             QgsMessageLog.logMessage(
                 f"Checkpoint download failed: {error_msg}",
                 "AI Segmentation",
                 level=Qgis.Warning
             )
+            reply.deleteLater()
             return False, f"Download failed: {error_msg}"
 
-        reply = request.reply()
-        content = reply.content()
+        # Read any remaining data
+        remaining = reply.readAll()
+        if remaining:
+            download_state['data'].extend(remaining.data())
+
+        content = bytes(download_state['data'])
+        reply.deleteLater()
+
+        if len(content) == 0:
+            return False, "Download failed: empty response"
 
         if progress_callback:
             mb_total = len(content) / (1024 * 1024)
-            progress_callback(90, f"Downloaded {mb_total:.1f} MB, saving...")
+            progress_callback(92, f"Downloaded {mb_total:.1f} MB, saving...")
 
         # Write content to temp file
         with open(temp_path, 'wb') as f:
-            f.write(content.data())
+            f.write(content)
 
         if progress_callback:
             progress_callback(95, "Verifying download...")
