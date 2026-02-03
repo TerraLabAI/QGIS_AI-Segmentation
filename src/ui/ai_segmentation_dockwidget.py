@@ -11,6 +11,7 @@ from qgis.PyQt.QtWidgets import (
     QMessageBox,
     QLineEdit,
     QSpinBox,
+    QCheckBox,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
 from qgis.PyQt.QtGui import QDesktopServices
@@ -279,6 +280,11 @@ class AISegmentationDockWidget(QDockWidget):
         self.no_rasters_widget.setVisible(False)
         layout.addWidget(self.no_rasters_widget)
 
+        # Mode indicator - shows current mode during segmentation
+        self.mode_indicator_label = QLabel("")
+        self.mode_indicator_label.setVisible(False)
+        layout.addWidget(self.mode_indicator_label)
+
         # Dynamic instruction label - styled as a card
         self.instructions_label = QLabel("")
         self.instructions_label.setWordWrap(True)
@@ -328,6 +334,12 @@ class AISegmentationDockWidget(QDockWidget):
         )
         layout.addWidget(self.cancel_prep_button)
 
+        # Container for start button and batch mode checkbox
+        self.start_container = QWidget()
+        start_layout = QVBoxLayout(self.start_container)
+        start_layout.setContentsMargins(0, 0, 0, 0)
+        start_layout.setSpacing(6)
+
         self.start_button = QPushButton("Start AI Segmentation")
         self.start_button.setEnabled(False)
         self.start_button.setMinimumHeight(36)
@@ -342,7 +354,41 @@ class AISegmentationDockWidget(QDockWidget):
             "Right-click = Refine selection\n"
             "Multiple points refine the segmentation"
         )
-        layout.addWidget(self.start_button)
+        start_layout.addWidget(self.start_button)
+
+        # Batch mode checkbox row - aligned right
+        checkbox_row = QWidget()
+        checkbox_layout = QHBoxLayout(checkbox_row)
+        checkbox_layout.setContentsMargins(0, 0, 0, 0)
+        checkbox_layout.addStretch()  # Push checkbox to the right
+
+        self.batch_mode_checkbox = QCheckBox("Batch mode")
+        self.batch_mode_checkbox.setChecked(False)
+        self.batch_mode_checkbox.setToolTip(
+            "Simple mode: One element per export.\n"
+            "Batch mode: Save multiple masks, then export all together.\n\n"
+            "Mode can only be changed when segmentation is stopped."
+        )
+        self.batch_mode_checkbox.setStyleSheet("""
+            QCheckBox {
+                font-size: 12px;
+                color: palette(text);
+                padding: 2px 4px;
+            }
+            QCheckBox:disabled {
+                color: palette(mid);
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+            }
+        """)
+        self.batch_mode_checkbox.stateChanged.connect(self._on_batch_mode_checkbox_changed)
+        checkbox_layout.addWidget(self.batch_mode_checkbox)
+
+        start_layout.addWidget(checkbox_row)
+
+        layout.addWidget(self.start_container)
 
         # Collapsible Refine mask panel
         self._setup_refine_panel(layout)
@@ -512,32 +558,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.simplify_spinbox.setValue(0)
 
     def _setup_about_section(self):
-        """Setup the batch mode button and links section."""
-        # Batch mode button
-        self.batch_mode_button = QPushButton("Batch Mode (inactive)")
-        self.batch_mode_button.setStyleSheet("""
-            QPushButton {
-                background-color: #e0e0e0;
-                color: #616161;
-                border: 1px solid #bdbdbd;
-                border-radius: 4px;
-                padding: 6px 12px;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #d5d5d5;
-            }
-            QPushButton:checked {
-                background-color: #1976d2;
-                color: white;
-                border-color: #1565c0;
-            }
-        """)
-        self.batch_mode_button.setCheckable(True)
-        self.batch_mode_button.clicked.connect(self._on_batch_mode_toggled)
-        self.batch_mode_button.setVisible(False)  # Only shown when segmentation UI is available
-        self.main_layout.addWidget(self.batch_mode_button)
-
+        """Setup the links section."""
         # Simple horizontal layout for links, aligned right with larger font
         links_widget = QWidget()
         links_layout = QHBoxLayout(links_widget)
@@ -557,7 +578,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Contact link
         contact_link = QLabel(
-            '<a href="https://terra-lab.ai/contact" style="color: #1976d2;">Contact Us</a>'
+            '<a href="https://terra-lab.ai/about" style="color: #1976d2;">Contact Us</a>'
         )
         contact_link.setStyleSheet("font-size: 13px;")
         contact_link.setOpenExternalLinks(True)
@@ -566,8 +587,9 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.main_layout.addWidget(links_widget)
 
-    def _on_batch_mode_toggled(self, checked: bool):
-        """Handle batch mode button toggle."""
+    def _on_batch_mode_checkbox_changed(self, state: int):
+        """Handle batch mode checkbox change."""
+        checked = state == Qt.Checked
         self._batch_mode = checked
         self._update_ui_for_mode()
         self.batch_mode_changed.emit(checked)
@@ -577,11 +599,9 @@ class AISegmentationDockWidget(QDockWidget):
         if self._batch_mode:
             # Batch mode: show Save mask button
             self.save_mask_button.setVisible(self._segmentation_active)
-            self.batch_mode_button.setText("Batch Mode (active)")
         else:
             # Simple mode: hide Save mask button
             self.save_mask_button.setVisible(False)
-            self.batch_mode_button.setText("Batch Mode (inactive)")
 
         self._update_button_visibility()
 
@@ -592,7 +612,7 @@ class AISegmentationDockWidget(QDockWidget):
     def set_batch_mode(self, batch: bool):
         """Set batch mode programmatically."""
         self._batch_mode = batch
-        self.batch_mode_button.setChecked(batch)
+        self.batch_mode_checkbox.setChecked(batch)
         self._update_ui_for_mode()
 
     def _on_get_code_clicked(self):
@@ -633,7 +653,6 @@ class AISegmentationDockWidget(QDockWidget):
         show_segmentation = self._dependencies_ok and self._checkpoint_ok and self._plugin_activated
         self.seg_widget.setVisible(show_segmentation)
         self.seg_separator.setVisible(show_segmentation)
-        self.batch_mode_button.setVisible(show_segmentation)
 
         # Activation section: show if deps OK but not activated AND popup was shown/closed
         deps_ok = self._dependencies_ok
@@ -888,10 +907,13 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _update_button_visibility(self):
         if self._segmentation_active:
-            self.start_button.setVisible(False)
+            self.start_container.setVisible(False)  # Hide start button and mode checkbox
             self.encoding_info_label.setVisible(False)
             self.instructions_label.setVisible(True)
             self._update_instructions()
+
+            # Show mode indicator
+            self._update_mode_indicator()
 
             # Refine panel visibility
             self._update_refine_panel_visibility()
@@ -916,9 +938,14 @@ class AISegmentationDockWidget(QDockWidget):
 
             # Info box: only visible in Simple mode
             self.one_element_info_widget.setVisible(not self._batch_mode)
+
+            # Batch mode checkbox: disabled during segmentation (can't change mode mid-session)
+            self.batch_mode_checkbox.setEnabled(False)
         else:
-            # Not segmenting - hide all segmentation buttons
-            self.start_button.setVisible(True)
+            # Not segmenting - hide all segmentation buttons, show start controls
+            self.start_container.setVisible(True)
+            self.batch_mode_checkbox.setEnabled(True)  # Can change mode when not segmenting
+            self.mode_indicator_label.setVisible(False)
             self.instructions_label.setVisible(False)
             self.refine_group.setVisible(False)
             self.save_mask_button.setVisible(False)
@@ -927,6 +954,36 @@ class AISegmentationDockWidget(QDockWidget):
             self.stop_button.setVisible(False)
             self.secondary_buttons_widget.setVisible(False)
             self.one_element_info_widget.setVisible(False)
+
+    def _update_mode_indicator(self):
+        """Update the mode indicator label based on current mode."""
+        if self._batch_mode:
+            self.mode_indicator_label.setText("Batch mode")
+            self.mode_indicator_label.setStyleSheet("""
+                QLabel {
+                    background-color: rgba(25, 118, 210, 0.15);
+                    border: 1px solid rgba(25, 118, 210, 0.3);
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-size: 11px;
+                    font-weight: bold;
+                    color: palette(text);
+                }
+            """)
+        else:
+            self.mode_indicator_label.setText("Simple mode")
+            self.mode_indicator_label.setStyleSheet("""
+                QLabel {
+                    background-color: rgba(46, 125, 50, 0.15);
+                    border: 1px solid rgba(46, 125, 50, 0.3);
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-size: 11px;
+                    font-weight: bold;
+                    color: palette(text);
+                }
+            """)
+        self.mode_indicator_label.setVisible(True)
 
     def _update_refine_panel_visibility(self):
         """Update refine panel visibility based on mode and mask state."""
