@@ -755,7 +755,7 @@ class AISegmentationPlugin:
     def _show_tutorial_notification(self, mode: str):
         """Show YouTube tutorial notification."""
         # TODO: Replace with actual tutorial URLs when available
-        tutorial_url = "https://www.youtube.com"
+        tutorial_url = "https://www.youtube.com/playlist?list=PL4hCF043nAUW2iIxALNUzy1fKHcCWwDsv&jct=GTA3Fx8pJzuTLPPivC9RRQ"
 
         if mode == "batch":
             # Batch mode: show once per QGIS session (first activation)

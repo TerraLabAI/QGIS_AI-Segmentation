@@ -212,7 +212,7 @@ def install_dependencies(
 
         if progress_callback:
             if package_name == "torch":
-                progress_callback(current_progress, f"Installing {package_name} (~2GB)... ({i + 1}/{total_packages})")
+                progress_callback(current_progress, f"Installing {package_name} (~600MB)... ({i + 1}/{total_packages})")
             else:
                 progress_callback(current_progress, f"Installing {package_name}... ({i + 1}/{total_packages})")
 

@@ -574,7 +574,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Tutorial link
         tutorial_link = QLabel(
-            '<a href="https://www.youtube.com" style="color: #1976d2;">Tutorials</a>'
+            '<a href="https://youtube.com/playlist?list=PL4hCF043nAUW2iIxALNUzy1fKHcCWwDsv&si=KO8kECsezunLe09p" style="color: #1976d2;">Tutorials</a>'
         )
         tutorial_link.setStyleSheet("font-size: 13px;")
         tutorial_link.setOpenExternalLinks(True)
