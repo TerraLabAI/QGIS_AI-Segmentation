@@ -468,7 +468,7 @@ def _remove_small_regions(mask: np.ndarray, min_area: int) -> np.ndarray:
                 while stack:
                     y, x = stack.pop()
                     # Check 4-connected neighbors
-                    for ny, nx in ((y-1, x), (y+1, x), (y, x-1), (y, x+1)):
+                    for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
                         if 0 <= ny < h and 0 <= nx < w:
                             if mask_bool[ny, nx] and labels[ny, nx] == 0:
                                 labels[ny, nx] = current_label

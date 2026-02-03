@@ -1184,7 +1184,6 @@ class AISegmentationDockWidget(QDockWidget):
         # PNG, JPG, BMP etc. without world files are not georeferenced
         non_georef_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
 
-        has_compatible_ext = any(source.endswith(ext) for ext in compatible_extensions)
         has_non_georef_ext = any(source.endswith(ext) for ext in non_georef_extensions)
 
         # If it's a known non-georeferenced format, check if it has a valid CRS

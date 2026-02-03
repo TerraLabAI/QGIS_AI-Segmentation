@@ -79,4 +79,12 @@ The plugin has two modes:
 - Use `_update_button_visibility()` to manage button states based on mode and session state
 - QSettings used for persisting tutorial flags: `AI_Segmentation/tutorial_simple_shown`, `AI_Segmentation/tutorial_batch_shown`
 
+## Code Quality Rules (PEP8/Flake8)
+
+- **No unused imports (F401)**: Remove any imported modules/classes that are not used in the file
+- **No unused variables (F841)**: Don't assign variables that are never referenced; delete them
+- **Whitespace around operators (E226)**: Always use spaces around arithmetic operators: `y - 1` not `y-1`
+- **Import order**: Standard library first, then third-party, then local imports
+- **Line length**: Keep lines under 120 characters
+
 
