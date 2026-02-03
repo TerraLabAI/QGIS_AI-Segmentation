@@ -78,7 +78,7 @@ def download_checkpoint(
     download progress updates instead of blocking without feedback.
     """
     from qgis.PyQt.QtCore import QEventLoop, QTimer
-    from qgis.PyQt.QtNetwork import QNetworkAccessManager, QNetworkReply
+    from qgis.PyQt.QtNetwork import QNetworkReply
     from qgis.core import QgsNetworkAccessManager
 
     checkpoint_path = get_checkpoint_path()
