@@ -535,7 +535,12 @@ class AISegmentationDockWidget(QDockWidget):
         parent_layout.addWidget(self.refine_group)
 
     def _on_refine_group_clicked(self, event):
-        """Toggle the refine panel expanded/collapsed state."""
+        """Toggle the refine panel expanded/collapsed state (only when clicking on title)."""
+        # Only toggle if click is in the title area (top ~25 pixels)
+        # This prevents collapsing when clicking spinbox arrows at min/max values
+        if event.pos().y() > 25:
+            return  # Click was on content, not title - ignore
+
         self._refine_expanded = not self._refine_expanded
         self.refine_content_widget.setVisible(self._refine_expanded)
         arrow = "▼" if self._refine_expanded else "▶"
