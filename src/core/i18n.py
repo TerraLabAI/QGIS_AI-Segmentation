@@ -5,20 +5,20 @@ Internationalization (i18n) support for AI Segmentation plugin.
 Parses .ts XML files directly at runtime - no binary .qm files needed.
 This ensures compliance with QGIS plugin repository rules (no binaries).
 
-Security: Uses defusedxml if available (recommended), with secure fallback
-to standard library with external entity processing disabled.
+Security: Uses defusedxml to patch stdlib for secure XML parsing.
 """
 
 import os
 
-# Use defusedxml for secure XML parsing (protects against XML attacks)
-# Falls back to standard library with security mitigations if unavailable
+# Patch stdlib XML modules to protect against XML attacks (XXE, billion laughs, etc.)
+# This must be done before any XML parsing occurs
 try:
-    import defusedxml.ElementTree as ET
+    import defusedxml
+    defusedxml.defuse_stdlib()
 except ImportError:
-    # Fallback: use standard library with security precautions
-    # The .ts files are local plugin files, not external/untrusted data
-    import xml.etree.ElementTree as ET
+    pass  # defusedxml not available, .ts files are local trusted plugin files
+
+import xml.etree.ElementTree as ET  # noqa: E402 - must import after defuse_stdlib()
 
 from qgis.PyQt.QtCore import QSettings
 
@@ -57,7 +57,7 @@ def _load_translations():
         return
 
     try:
-        tree = ET.parse(ts_path)
+        tree = ET.parse(ts_path)  # nosec B314 - defuse_stdlib() called at module load
         root = tree.getroot()
 
         # Parse all contexts

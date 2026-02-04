@@ -124,9 +124,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_button.clicked.connect(self._on_install_clicked)
         self.install_button.setVisible(False)
         self.install_button.setToolTip(
-            tr("Create isolated virtual environment and install required packages") + "\n" +
-            "(PyTorch, Segment Anything, pandas, rasterio)\n" +
-            tr("Download size: ~800MB")
+            "{}\n(PyTorch, Segment Anything, pandas, rasterio)\n{}".format(
+                tr("Create isolated virtual environment and install required packages"),
+                tr("Download size: ~800MB"))
         )
         layout.addWidget(self.install_button)
 
@@ -367,9 +367,10 @@ class AISegmentationDockWidget(QDockWidget):
         self.batch_mode_checkbox = QCheckBox(tr("Batch mode"))
         self.batch_mode_checkbox.setChecked(False)
         self.batch_mode_checkbox.setToolTip(
-            tr("Simple mode: One element per export.") + "\n" +
-            tr("Batch mode: Save multiple masks, then export all together.") + "\n\n" +
-            tr("Mode can only be changed when segmentation is stopped.")
+            "{}\n{}\n\n{}".format(
+                tr("Simple mode: One element per export."),
+                tr("Batch mode: Save multiple masks, then export all together."),
+                tr("Mode can only be changed when segmentation is stopped."))
         )
         self.batch_mode_checkbox.setStyleSheet("""
             QCheckBox {
@@ -471,8 +472,9 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Info text
         info_text = QLabel(
-            tr("One element per segmentation (e.g., one building, one car).") + "\n" +
-            tr("For multiple elements in one layer, use Batch Mode.")
+            "{}\n{}".format(
+                tr("One element per segmentation (e.g., one building, one car)."),
+                tr("For multiple elements in one layer, use Batch Mode."))
         )
         info_text.setWordWrap(True)
         info_text.setStyleSheet("font-size: 10px; color: palette(text);")
@@ -744,9 +746,10 @@ class AISegmentationDockWidget(QDockWidget):
         reply = QMessageBox.question(
             self,
             tr("Cancel Encoding?"),
-            tr("Are you sure you want to cancel?") + "\n\n" +
-            tr("Once encoding is complete, it's cached permanently.") + "\n" +
-            tr("You'll never need to wait for this image again."),
+            "{}\n\n{}\n{}".format(
+                tr("Are you sure you want to cancel?"),
+                tr("Once encoding is complete, it's cached permanently."),
+                tr("You'll never need to wait for this image again.")),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -940,8 +943,9 @@ class AISegmentationDockWidget(QDockWidget):
             self.start_button.setVisible(False)
             self.cancel_prep_button.setVisible(True)
             self.encoding_info_label.setText(
-                "⏳ " + tr("Encoding this image for AI segmentation...") + "\n" +
-                tr("This is stored permanently, no waiting next time :)")
+                "⏳ {}\n{}".format(
+                    tr("Encoding this image for AI segmentation..."),
+                    tr("This is stored permanently, no waiting next time :)"))
             )
             self.encoding_info_label.setVisible(True)
         elif percent >= 100 or "cancel" in message.lower():
