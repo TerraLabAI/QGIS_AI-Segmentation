@@ -9,11 +9,12 @@ from qgis.core import QgsPointXY
 class AISegmentationMapTool(QgsMapTool):
     """Map tool for AI segmentation with positive/negative point prompts.
 
-    Workflow:
+    Shortcuts:
+    - G: Start segmentation (when not active)
     - Left click: Select this element (add positive point)
     - Right click: Refine selection (add negative point)
     - Ctrl+Z: Undo last point
-    - S: Save mask (add to collection)
+    - S: Save mask (Batch mode only)
     - Enter: Export to layer
     - Escape: Clear current mask
     """

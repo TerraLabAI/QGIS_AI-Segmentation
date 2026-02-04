@@ -14,7 +14,8 @@ from qgis.PyQt.QtWidgets import (
     QCheckBox,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
-from qgis.PyQt.QtGui import QDesktopServices
+from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
+from qgis.PyQt.QtWidgets import QShortcut
 from qgis.core import QgsMapLayerProxyModel, QgsProject
 
 from qgis.gui import QgsMapLayerComboBox
@@ -349,13 +350,12 @@ class AISegmentationDockWidget(QDockWidget):
             "QPushButton { background-color: #2e7d32; font-weight: bold; font-size: 12px; }"
             "QPushButton:disabled { background-color: #c8e6c9; }"
         )
-        self.start_button.setToolTip(
-            "Click to segment objects on the image.\n"
-            "Left-click = Select this element\n"
-            "Right-click = Refine selection\n"
-            "Multiple points refine the segmentation"
-        )
+        self.start_button.setToolTip("Start segmentation (G)")
         start_layout.addWidget(self.start_button)
+
+        # Keyboard shortcut G to start segmentation
+        self.start_shortcut = QShortcut(QKeySequence("G"), self)
+        self.start_shortcut.activated.connect(self._on_start_shortcut)
 
         # Batch mode checkbox row - aligned right
         checkbox_row = QWidget()
@@ -540,7 +540,7 @@ class AISegmentationDockWidget(QDockWidget):
         min_area_label = QLabel("Min. region size:")
         min_area_label.setToolTip("Remove disconnected regions smaller than this area (in pixels²).\nExample: 100 = ~10x10 pixel regions, 900 = ~30x30.\n0 = keep all.")
         self.min_area_spinbox = QSpinBox()
-        self.min_area_spinbox.setRange(0, 3000)
+        self.min_area_spinbox.setRange(0, 10000)
         self.min_area_spinbox.setValue(200)  # Default: remove small artifacts
         self.min_area_spinbox.setSuffix(" px²")
         self.min_area_spinbox.setSingleStep(50)
@@ -781,6 +781,11 @@ class AISegmentationDockWidget(QDockWidget):
         layer = self.layer_combo.currentLayer()
         if layer:
             self.start_segmentation_requested.emit(layer)
+
+    def _on_start_shortcut(self):
+        """Handle G shortcut to start segmentation."""
+        if self.start_button.isEnabled() and self.start_button.isVisible():
+            self._on_start_clicked()
 
     def _on_undo_clicked(self):
         self.undo_requested.emit()
