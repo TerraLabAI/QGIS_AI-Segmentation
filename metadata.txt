@@ -8,7 +8,7 @@ email=barbot.yvann@gmail.com
 license=GPLv2
 
 about=
-    • Automatic install of AI model & dependencies on your pc
+    • Automatic install of AI model & dependencies
     •  Works on Windows/Mac/Linux
     •  Available in English & French
 
