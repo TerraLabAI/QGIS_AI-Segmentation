@@ -29,6 +29,7 @@ from qgis.PyQt.QtGui import QColor
 
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
+from ..core.i18n import tr
 
 # QSettings keys for tutorial flags
 SETTINGS_KEY_TUTORIAL_SIMPLE = "AI_Segmentation/tutorial_simple_shown"
@@ -253,7 +254,7 @@ class AISegmentationPlugin:
         self.action.setCheckable(True)
         self.action.setToolTip(
             "AI Segmentation by TerraLab\n"
-            "Segment objects on raster images using AI"
+            + tr("Segment objects on raster images using AI")
         )
         self.action.triggered.connect(self.toggle_dock_widget)
 
@@ -469,9 +470,9 @@ class AISegmentationPlugin:
 
         reply = QMessageBox.question(
             self.iface.mainWindow(),
-            "Install Dependencies",
-            "Download ~800MB of AI dependencies?\n\n"
-            "This takes about 2-3 minutes.",
+            tr("Install Dependencies"),
+            tr("Download ~800MB of AI dependencies?") + "\n\n"
+            + tr("This takes a few minutes."),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
         )
@@ -520,28 +521,27 @@ class AISegmentationPlugin:
             is_valid, verify_msg = verify_venv()
 
             if is_valid:
-                self.dock_widget.set_dependency_status(True, "✓ Virtual environment ready")
+                self.dock_widget.set_dependency_status(True, "✓ " + tr("Virtual environment ready"))
                 self._verify_venv()
                 self._check_checkpoint()
             else:
-                self.dock_widget.set_dependency_status(False, f"Verification failed: {verify_msg}")
+                self.dock_widget.set_dependency_status(False, tr("Verification failed:") + f" {verify_msg}")
 
                 QMessageBox.warning(
                     self.iface.mainWindow(),
-                    "Verification Failed",
-                    f"Virtual environment was created but verification failed:\n\n{verify_msg}\n\n"
-                    "Please check the logs or try reinstalling."
+                    tr("Verification Failed"),
+                    tr("Virtual environment was created but verification failed:") + f"\n\n{verify_msg}\n\n"
+                    + tr("Please check the logs or try reinstalling.")
                 )
         else:
-            error_msg = message[:300] if message else "Unknown error"
-            self.dock_widget.set_dependency_status(False, "Installation failed")
+            error_msg = message[:300] if message else tr("Unknown error")
+            self.dock_widget.set_dependency_status(False, tr("Installation failed"))
 
             QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Installation Failed",
-                f"Failed to install dependencies:\n\n{error_msg}\n\n"
-                "Check the QGIS log panel (View → Panels → Log Messages) "
-                "for detailed error information."
+                tr("Installation Failed"),
+                tr("Failed to install dependencies:") + f"\n\n{error_msg}\n\n"
+                + tr("Check the QGIS log panel (View → Panels → Log Messages) for detailed error information.")
             )
 
     def _on_cancel_deps_install(self):
@@ -574,9 +574,9 @@ class AISegmentationPlugin:
 
             QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Download Failed",
-                f"Failed to download model:\n{message}\n\n"
-                "Please check your internet connection and try again."
+                tr("Download Failed"),
+                tr("Failed to download model:") + f"\n{message}\n\n"
+                + tr("Please check your internet connection and try again.")
             )
 
     def _on_cancel_download(self):
@@ -595,8 +595,8 @@ class AISegmentationPlugin:
         if self.predictor is None:
             QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Not Ready",
-                "Please wait for the SAM model to load."
+                tr("Not Ready"),
+                tr("Please wait for the SAM model to load.")
             )
             return
 
@@ -677,8 +677,8 @@ class AISegmentationPlugin:
                 # Actual error - show warning dialog
                 QMessageBox.warning(
                     self.iface.mainWindow(),
-                    "Encoding Failed",
-                    f"Failed to encode raster:\n{message}"
+                    tr("Encoding Failed"),
+                    tr("Failed to encode raster:") + f"\n{message}"
                 )
 
     def _load_features_and_activate(self, raster_path: str):
@@ -730,8 +730,8 @@ class AISegmentationPlugin:
             )
             QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Load Failed",
-                f"Failed to load feature data:\n{str(e)}"
+                tr("Load Failed"),
+                tr("Failed to load feature data:") + f"\n{str(e)}"
             )
 
     def _activate_segmentation_tool(self):
@@ -766,14 +766,14 @@ class AISegmentationPlugin:
             if self._batch_tutorial_shown_this_session:
                 return
             self._batch_tutorial_shown_this_session = True
-            message = f'Batch mode activated. <a href="{tutorial_url}">Watch the tutorial</a> to learn how to use it.'
+            message = tr('Batch mode activated.') + f' <a href="{tutorial_url}">' + tr('Watch the tutorial') + '</a> ' + tr('to learn how to use it.')
         else:
             # Simple mode: show only once ever (persisted in QSettings)
             settings = QSettings()
             if settings.value(SETTINGS_KEY_TUTORIAL_SIMPLE, False, type=bool):
                 return
             settings.setValue(SETTINGS_KEY_TUTORIAL_SIMPLE, True)
-            message = f'New to AI Segmentation? <a href="{tutorial_url}">Watch our tutorial</a>'
+            message = tr('New to AI Segmentation?') + f' <a href="{tutorial_url}">' + tr('Watch our tutorial') + '</a>'
 
         self.iface.messageBar().pushMessage(
             "AI Segmentation",
@@ -788,9 +788,9 @@ class AISegmentationPlugin:
         if not batch and len(self.saved_polygons) > 0:
             reply = QMessageBox.question(
                 self.dock_widget,
-                "Unsaved Masks",
-                f"You have {len(self.saved_polygons)} saved mask(s).\n"
-                "Export before changing mode?",
+                tr("Unsaved Masks"),
+                tr("You have {count} saved mask(s).").format(count=len(self.saved_polygons)) + "\n"
+                + tr("Export before changing mode?"),
                 QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
                 QMessageBox.Cancel
             )
@@ -848,8 +848,8 @@ class AISegmentationPlugin:
 
         reply = QMessageBox.question(
             self.dock_widget,
-            "Exit Segmentation",
-            "Exit segmentation?\nThe current mask will be lost.",
+            tr("Exit Segmentation"),
+            tr("Exit segmentation?") + "\n" + tr("The current mask will be lost."),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -1061,8 +1061,8 @@ class AISegmentationPlugin:
         if not temp_layer.isValid():
             QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Layer Creation Failed",
-                "Could not create the output layer."
+                tr("Layer Creation Failed"),
+                tr("Could not create the output layer.")
             )
             return
 
@@ -1132,8 +1132,8 @@ class AISegmentationPlugin:
             )
             QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Export Failed",
-                f"Could not save layer to file:\n{error[1]}"
+                tr("Export Failed"),
+                tr("Could not save layer to file:") + f"\n{error[1]}"
             )
             return
 
@@ -1147,8 +1147,8 @@ class AISegmentationPlugin:
             )
             QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Load Failed",
-                f"Layer was saved but could not be loaded:\n{gpkg_path}"
+                tr("Load Failed"),
+                tr("Layer was saved but could not be loaded:") + f"\n{gpkg_path}"
             )
             return
 
@@ -1239,13 +1239,13 @@ class AISegmentationPlugin:
                 polygon_count = len(self.saved_polygons)
                 if has_unsaved_mask:
                     polygon_count += 1
-                message = f"You have {polygon_count} unsaved mask(s).\n\nDiscard and exit segmentation?"
+                message = tr("You have {count} unsaved mask(s).").format(count=polygon_count) + "\n\n" + tr("Discard and exit segmentation?")
             else:
-                message = "You have an unsaved mask.\n\nDiscard and exit segmentation?"
+                message = tr("You have an unsaved mask.") + "\n\n" + tr("Discard and exit segmentation?")
 
             reply = QMessageBox.warning(
                 main_window,
-                "Exit Segmentation?",
+                tr("Exit Segmentation?"),
                 message,
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
@@ -1287,9 +1287,9 @@ class AISegmentationPlugin:
             if polygon_count > 0:
                 reply = QMessageBox.warning(
                     self.iface.mainWindow(),
-                    "Stop Segmentation?",
-                    f"This will discard {polygon_count} mask(s).\n\n"
-                    "Use 'Export to layer' to keep them.",
+                    tr("Stop Segmentation?"),
+                    tr("This will discard {count} mask(s).").format(count=polygon_count) + "\n\n"
+                    + tr("Use 'Export to layer' to keep them."),
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.No
                 )
@@ -1687,9 +1687,9 @@ class AISegmentationPlugin:
             # Batch mode with saved masks: warn user before clearing everything
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Delete all saved masks?",
-                "This will delete all saved masks.\n"
-                "Do you want to continue?",
+                tr("Delete all saved masks?"),
+                tr("This will delete all saved masks.") + "\n"
+                + tr("Do you want to continue?"),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
@@ -1741,9 +1741,9 @@ class AISegmentationPlugin:
             # Ask user if they want to restore the last saved mask
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Edit saved mask",
-                "Warning: you are about to edit an already saved mask.\n"
-                "Do you want to continue?",
+                tr("Edit saved mask"),
+                tr("Warning: you are about to edit an already saved mask.") + "\n"
+                + tr("Do you want to continue?"),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
@@ -1842,5 +1842,6 @@ class AISegmentationPlugin:
         self._refine_fill_holes = True  # Default
         self._refine_min_area = 200  # Default
 
-        self.dock_widget.set_point_count(0, 0)
-        self.dock_widget.set_saved_polygon_count(0)
+        if self.dock_widget:
+            self.dock_widget.set_point_count(0, 0)
+            self.dock_widget.set_saved_polygon_count(0)
