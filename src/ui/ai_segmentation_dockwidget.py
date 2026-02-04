@@ -519,7 +519,7 @@ class AISegmentationDockWidget(QDockWidget):
         simplify_label.setToolTip("Reduce small variations in the outline (0 = no change)")
         self.simplify_spinbox = QSpinBox()
         self.simplify_spinbox.setRange(0, 10)
-        self.simplify_spinbox.setValue(3)  # Default to 3 for smoother outlines
+        self.simplify_spinbox.setValue(2)  # Default to 2 for smoother outlines
         self.simplify_spinbox.setMinimumWidth(80)
         simplify_layout.addWidget(simplify_label)
         simplify_layout.addStretch()
@@ -529,7 +529,7 @@ class AISegmentationDockWidget(QDockWidget):
         # 3. Fill holes: Checkbox - fills interior holes in the mask
         fill_holes_layout = QHBoxLayout()
         self.fill_holes_checkbox = QCheckBox("Fill holes")
-        self.fill_holes_checkbox.setChecked(True)  # Default: fill holes
+        self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
         self.fill_holes_checkbox.setToolTip("Fill interior holes in the mask (holes completely surrounded by the selection)")
         fill_holes_layout.addWidget(self.fill_holes_checkbox)
         fill_holes_layout.addStretch()
@@ -589,8 +589,8 @@ class AISegmentationDockWidget(QDockWidget):
     def reset_refine_sliders(self):
         """Reset refinement controls to default values."""
         self.expand_spinbox.setValue(0)
-        self.simplify_spinbox.setValue(3)  # Default to 3
-        self.fill_holes_checkbox.setChecked(True)  # Default: fill holes
+        self.simplify_spinbox.setValue(2)  # Default to 2
+        self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
         self.min_area_spinbox.setValue(200)  # Default: remove small artifacts
 
     def set_refine_values(self, expand: int, simplify: int, fill_holes: bool = False, min_area: int = 0):
