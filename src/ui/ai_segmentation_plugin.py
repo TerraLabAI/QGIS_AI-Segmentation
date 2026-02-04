@@ -851,7 +851,11 @@ class AISegmentationPlugin:
         return reply == QMessageBox.Yes
 
     def _on_save_polygon(self):
-        """Save current mask as polygon."""
+        """Save current mask as polygon. Only works in Batch mode."""
+        # S shortcut only works in Batch mode
+        if not self._batch_mode:
+            return
+
         if self.current_mask is None:
             return
 
