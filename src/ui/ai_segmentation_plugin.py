@@ -214,15 +214,14 @@ class AISegmentationPlugin:
         self._initialized = False
         self._current_layer = None
         self._current_layer_name = ""
-        self._segmentation_counter = 0
 
         # Refinement settings
         self._refine_expand = 0
-        self._refine_simplify = 2  # Default to 3 for smoother outlines
-        self._refine_fill_holes = False  # Default: fill holes
+        self._refine_simplify = 2  # Default to 2 for smoother outlines
+        self._refine_fill_holes = False  # Default: no fill holes
         self._refine_min_area = 200  # Default: remove small artifacts
 
-        # Simple mode: per-raster mask counters
+        # Per-raster mask counters (used for both Simple and Batch modes)
         self._mask_counters = {}  # {raster_name: counter}
 
         # Mode flag (simple mode by default)
@@ -1013,14 +1012,9 @@ class AISegmentationPlugin:
         self._restore_previous_map_tool()
         self._stopping_segmentation = False
 
-        # Generate layer name based on mode
-        if self._batch_mode:
-            self._segmentation_counter += 1
-            layer_name = f"{self._current_layer_name}_segmentation_{self._segmentation_counter}"
-        else:
-            # Simple mode: use mask counter for this raster
-            mask_num = self._get_next_mask_counter()
-            layer_name = f"{self._current_layer_name}_mask_{mask_num}"
+        # Generate layer name: {RasterName}_mask_{number} (same for both modes)
+        mask_num = self._get_next_mask_counter()
+        layer_name = f"{self._current_layer_name}_mask_{mask_num}"
 
         # Determine CRS (same logic as before)
         crs_str = None
