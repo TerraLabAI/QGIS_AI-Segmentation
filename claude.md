@@ -148,5 +148,47 @@ tr("Export {count} mask(s)").format(count=5)
 - **Whitespace around operators (E226)**: Always use spaces around arithmetic operators: `y - 1` not `y-1`
 - **Import order**: Standard library first, then third-party, then local imports
 - **Line length**: Keep lines under 120 characters
+- **Line breaks with binary operators (W503)**: Put operators at the END of lines, not at the beginning:
+  ```python
+  # WRONG (W503 violation):
+  message = tr("Line one") + "\n"
+      + tr("Line two")
+
+  # CORRECT:
+  message = tr("Line one") + "\n" +
+      tr("Line two")
+  ```
+- **Global keyword (F824)**: Only use `global` when reassigning a module-level variable. Not needed when just modifying a dict/list:
+  ```python
+  # WRONG (F824 - global not needed for dict modification):
+  _translations = {}
+  def foo():
+      global _translations  # NOT needed
+      _translations["key"] = "value"  # This modifies, not reassigns
+
+  # CORRECT:
+  _loaded = False
+  def foo():
+      global _loaded  # Needed because we reassign
+      _loaded = True
+  ```
+
+## Security Rules (Bandit)
+
+- **XML Parsing (B314)**: Never use `xml.etree.ElementTree.parse()` for potentially untrusted data. Use `defusedxml` instead:
+  ```python
+  # WRONG (vulnerable to XML attacks):
+  import xml.etree.ElementTree as ET
+  tree = ET.parse(file_path)
+
+  # CORRECT (secure):
+  try:
+      import defusedxml.ElementTree as ET
+  except ImportError:
+      import xml.etree.ElementTree as ET  # Fallback for local trusted files only
+  tree = ET.parse(file_path)
+  ```
+- **Hardcoded credentials**: Never hardcode passwords, API keys, or secrets in code
+- **Shell injection**: Use subprocess with list arguments, not shell=True with string interpolation
 
 

@@ -253,8 +253,8 @@ class AISegmentationPlugin:
         )
         self.action.setCheckable(True)
         self.action.setToolTip(
-            "AI Segmentation by TerraLab\n"
-            + tr("Segment objects on raster images using AI")
+            "AI Segmentation by TerraLab\n" +
+            tr("Segment objects on raster images using AI")
         )
         self.action.triggered.connect(self.toggle_dock_widget)
 
@@ -471,8 +471,8 @@ class AISegmentationPlugin:
         reply = QMessageBox.question(
             self.iface.mainWindow(),
             tr("Install Dependencies"),
-            tr("Download ~800MB of AI dependencies?") + "\n\n"
-            + tr("This takes a few minutes."),
+            tr("Download ~800MB of AI dependencies?") + "\n\n" +
+            tr("This takes a few minutes."),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
         )
@@ -530,8 +530,8 @@ class AISegmentationPlugin:
                 QMessageBox.warning(
                     self.iface.mainWindow(),
                     tr("Verification Failed"),
-                    tr("Virtual environment was created but verification failed:") + f"\n\n{verify_msg}\n\n"
-                    + tr("Please check the logs or try reinstalling.")
+                    tr("Virtual environment was created but verification failed:") + f"\n\n{verify_msg}\n\n" +
+                    tr("Please check the logs or try reinstalling.")
                 )
         else:
             error_msg = message[:300] if message else tr("Unknown error")
@@ -540,8 +540,8 @@ class AISegmentationPlugin:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Installation Failed"),
-                tr("Failed to install dependencies:") + f"\n\n{error_msg}\n\n"
-                + tr("Check the QGIS log panel (View → Panels → Log Messages) for detailed error information.")
+                tr("Failed to install dependencies:") + f"\n\n{error_msg}\n\n" +
+                tr("Check the QGIS log panel (View → Panels → Log Messages) for detailed error information.")
             )
 
     def _on_cancel_deps_install(self):
@@ -575,8 +575,8 @@ class AISegmentationPlugin:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Download Failed"),
-                tr("Failed to download model:") + f"\n{message}\n\n"
-                + tr("Please check your internet connection and try again.")
+                tr("Failed to download model:") + f"\n{message}\n\n" +
+                tr("Please check your internet connection and try again.")
             )
 
     def _on_cancel_download(self):
@@ -789,8 +789,8 @@ class AISegmentationPlugin:
             reply = QMessageBox.question(
                 self.dock_widget,
                 tr("Unsaved Masks"),
-                tr("You have {count} saved mask(s).").format(count=len(self.saved_polygons)) + "\n"
-                + tr("Export before changing mode?"),
+                tr("You have {count} saved mask(s).").format(count=len(self.saved_polygons)) + "\n" +
+                tr("Export before changing mode?"),
                 QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
                 QMessageBox.Cancel
             )
@@ -1288,8 +1288,8 @@ class AISegmentationPlugin:
                 reply = QMessageBox.warning(
                     self.iface.mainWindow(),
                     tr("Stop Segmentation?"),
-                    tr("This will discard {count} mask(s).").format(count=polygon_count) + "\n\n"
-                    + tr("Use 'Export to layer' to keep them."),
+                    tr("This will discard {count} mask(s).").format(count=polygon_count) + "\n\n" +
+                    tr("Use 'Export to layer' to keep them."),
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.No
                 )
@@ -1688,8 +1688,8 @@ class AISegmentationPlugin:
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Delete all saved masks?"),
-                tr("This will delete all saved masks.") + "\n"
-                + tr("Do you want to continue?"),
+                tr("This will delete all saved masks.") + "\n" +
+                tr("Do you want to continue?"),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
@@ -1742,8 +1742,8 @@ class AISegmentationPlugin:
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Edit saved mask"),
-                tr("Warning: you are about to edit an already saved mask.") + "\n"
-                + tr("Do you want to continue?"),
+                tr("Warning: you are about to edit an already saved mask.") + "\n" +
+                tr("Do you want to continue?"),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
