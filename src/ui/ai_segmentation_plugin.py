@@ -218,7 +218,7 @@ class AISegmentationPlugin:
 
         # Refinement settings
         self._refine_expand = 0
-        self._refine_simplify = 3  # Default to 3 for smoother outlines
+        self._refine_simplify = 2  # Default to 3 for smoother outlines
         self._refine_fill_holes = False  # Default: fill holes
         self._refine_min_area = 200  # Default: remove small artifacts
 
@@ -818,8 +818,14 @@ class AISegmentationPlugin:
             return
 
         # Check if it's actually a different layer
-        new_layer_id = layer.id() if layer else None
-        current_layer_id = self._current_layer.id() if self._current_layer else None
+        # Handle case where the C++ layer object was deleted
+        try:
+            new_layer_id = layer.id() if layer else None
+            current_layer_id = self._current_layer.id() if self._current_layer else None
+        except RuntimeError:
+            # Layer was deleted, reset our reference
+            self._current_layer = None
+            return
 
         if new_layer_id == current_layer_id:
             # Same layer selected, do nothing
