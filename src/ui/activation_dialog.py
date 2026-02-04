@@ -21,6 +21,7 @@ from ..core.activation_manager import (
     activate_plugin,
     get_newsletter_url,
 )
+from ..core.i18n import tr
 
 
 class ActivationDialog(QDialog):
@@ -62,7 +63,7 @@ class ActivationDialog(QDialog):
         layout.addWidget(banner_label)
 
         # Title - friendly (uses palette for theme compatibility)
-        title_label = QLabel("Thanks for trying our plugin!")
+        title_label = QLabel(tr("Thanks for trying our plugin!"))
         title_font = QFont()
         title_font.setPointSize(14)
         title_font.setBold(True)
@@ -73,8 +74,7 @@ class ActivationDialog(QDialog):
 
         # Description - clear about the email/code relationship
         desc_label = QLabel(
-            "This plugin is in beta. We'd love to keep you updated\n"
-            "when we release new versions and features."
+            tr("This plugin is in beta. We'd love to keep you updated when we release new versions and features.")
         )
         desc_label.setWordWrap(True)
         desc_label.setAlignment(Qt.AlignCenter)
@@ -86,8 +86,8 @@ class ActivationDialog(QDialog):
 
         # Clear instruction about the flow
         flow_label = QLabel(
-            "Enter your email and you'll get a<br>"
-            "<b>Verification Code</b> to paste below."
+            tr("Enter your email and you'll get a") + "<br>"
+            "<b>" + tr("Verification Code") + "</b> " + tr("to paste below.")
         )
         flow_label.setWordWrap(True)
         flow_label.setAlignment(Qt.AlignCenter)
@@ -98,7 +98,7 @@ class ActivationDialog(QDialog):
         layout.addWidget(flow_label)
 
         # Get code button - clearer label
-        get_code_button = QPushButton("Get my verification code")
+        get_code_button = QPushButton(tr("Get my verification code"))
         get_code_button.setMinimumHeight(40)
         get_code_button.setCursor(Qt.PointingHandCursor)
         get_code_button.setStyleSheet(
@@ -116,7 +116,7 @@ class ActivationDialog(QDialog):
         layout.addWidget(sep)
 
         # Code input label (uses palette for theme compatibility)
-        code_label = QLabel("Paste your verification code:")
+        code_label = QLabel(tr("Paste your verification code:"))
         code_label.setAlignment(Qt.AlignLeft)
         code_font = QFont()
         code_font.setPointSize(11)
@@ -129,12 +129,12 @@ class ActivationDialog(QDialog):
         code_layout.setSpacing(8)
 
         self.code_input = QLineEdit()
-        self.code_input.setPlaceholderText("Code")
+        self.code_input.setPlaceholderText(tr("Code"))
         self.code_input.setMinimumHeight(36)
         self.code_input.returnPressed.connect(self._on_activate_clicked)
         code_layout.addWidget(self.code_input)
 
-        self.activate_button = QPushButton("Unlock")
+        self.activate_button = QPushButton(tr("Unlock"))
         self.activate_button.setMinimumHeight(36)
         self.activate_button.setMinimumWidth(80)
         self.activate_button.setStyleSheet(
@@ -166,18 +166,18 @@ class ActivationDialog(QDialog):
         code = self.code_input.text().strip()
 
         if not code:
-            self._show_message("Enter your verification code", is_error=True)
+            self._show_message(tr("Enter your verification code"), is_error=True)
             return
 
         success, message = activate_plugin(code)
 
         if success:
-            self._show_message("Unlocked!", is_error=False)
+            self._show_message(tr("Unlocked!"), is_error=False)
             self.activated.emit()
             from qgis.PyQt.QtCore import QTimer
             QTimer.singleShot(600, self.accept)
         else:
-            self._show_message("Invalid code", is_error=True)
+            self._show_message(tr("Invalid code"), is_error=True)
             self.code_input.selectAll()
             self.code_input.setFocus()
 

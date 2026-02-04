@@ -74,11 +74,72 @@ The plugin has two modes:
 
 ## Development Notes
 
-- All UI text must be in English
+- All UI text must be in English in the source code
 - Buttons hidden when not in segmentation mode (not disabled-but-visible)
 - Use `_update_button_visibility()` to manage button states based on mode and session state
 - QSettings used for persisting tutorial flags: `AI_Segmentation/tutorial_simple_shown`, `AI_Segmentation/tutorial_batch_shown`
-- Never write in french, only write in english
+- Never write comments in french, only write in english
+
+## Internationalization (i18n) - IMPORTANT
+
+The plugin supports French translation. **When modifying any UI string, you MUST update both the code AND the translation file.**
+
+### Architecture
+
+- `src/core/i18n.py`: Contains the `tr()` function - parses `.ts` XML directly at runtime (no binary needed)
+- `i18n/ai_segmentation_fr.ts`: French translation file (XML format, QGIS-compliant - no binaries)
+
+### How to add/modify a UI string
+
+1. **In the Python code**, wrap the string with `tr()`:
+   ```python
+   from ..core.i18n import tr
+
+   # Instead of:
+   button.setText("My button text")
+
+   # Write:
+   button.setText(tr("My button text"))
+   ```
+
+2. **In `i18n/ai_segmentation_fr.ts`**, add a new `<message>` block inside `<context><name>AISegmentation</name>`:
+   ```xml
+   <message>
+       <source>My button text</source>
+       <translation>Mon texte de bouton</translation>
+   </message>
+   ```
+
+3. **Commit the .ts file** - no compilation needed, XML is parsed at runtime
+
+### Terms to keep in English (do NOT translate)
+
+- "AI Segmentation" (product name)
+- "SAM Model" / "SAM" (technical term)
+- "TerraLab" (company name)
+- "Batch mode" / "Batch Mode" (feature name)
+- "Export" (keep as-is, commonly understood)
+- "Checkpoint" (technical term)
+- Package names: PyTorch, rasterio, pandas, etc.
+
+### String formatting with variables
+
+Use `.format()` for dynamic strings:
+```python
+# Code:
+tr("Export {count} mask(s)").format(count=5)
+
+# Translation file:
+<source>Export {count} mask(s)</source>
+<translation>Exporter {count} masque(s)</translation>
+```
+
+### User experience
+
+- **No binaries**: Complies with QGIS plugin repository rules
+- **Automatic language detection**: Plugin reads QGIS locale settings
+- **Fallback**: If translation is missing, English text is shown
+- **Works on all OS**: Pure Python XML parsing, no Qt tools needed
 
 ## Code Quality Rules (PEP8/Flake8)
 
