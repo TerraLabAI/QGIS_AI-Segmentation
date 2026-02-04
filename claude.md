@@ -148,15 +148,20 @@ tr("Export {count} mask(s)").format(count=5)
 - **Whitespace around operators (E226)**: Always use spaces around arithmetic operators: `y - 1` not `y-1`
 - **Import order**: Standard library first, then third-party, then local imports
 - **Line length**: Keep lines under 120 characters
-- **Line breaks with binary operators (W503)**: Put operators at the END of lines, not at the beginning:
+- **Line breaks with binary operators (W503/W504)**: The linter flags both W503 (break before operator) and W504 (break after operator). Use `.format()` or parentheses instead of line-continuation with operators:
   ```python
-  # WRONG (W503 violation):
+  # WRONG (W503 - break before operator):
   message = tr("Line one") + "\n"
       + tr("Line two")
 
-  # CORRECT:
+  # WRONG (W504 - break after operator):
   message = tr("Line one") + "\n" +
       tr("Line two")
+
+  # CORRECT (use .format() to avoid line-continuation):
+  message = "{}\n{}".format(
+      tr("Line one"),
+      tr("Line two"))
   ```
 - **Global keyword (F824)**: Only use `global` when reassigning a module-level variable. Not needed when just modifying a dict/list:
   ```python
@@ -175,17 +180,19 @@ tr("Export {count} mask(s)").format(count=5)
 
 ## Security Rules (Bandit)
 
-- **XML Parsing (B314)**: Never use `xml.etree.ElementTree.parse()` for potentially untrusted data. Use `defusedxml` instead:
+- **XML Parsing (B314)**: Never use `xml.etree.ElementTree.parse()` without protection. Use `defusedxml.defuse_stdlib()` to patch the standard library:
   ```python
-  # WRONG (vulnerable to XML attacks):
+  # WRONG (vulnerable to XML attacks - Bandit flags this):
   import xml.etree.ElementTree as ET
   tree = ET.parse(file_path)
 
-  # CORRECT (secure):
+  # CORRECT (secure - patch stdlib then use normally):
   try:
-      import defusedxml.ElementTree as ET
+      import defusedxml
+      defusedxml.defuse_stdlib()
   except ImportError:
-      import xml.etree.ElementTree as ET  # Fallback for local trusted files only
+      pass  # Only acceptable for local trusted plugin files
+  import xml.etree.ElementTree as ET  # noqa: E402
   tree = ET.parse(file_path)
   ```
 - **Hardcoded credentials**: Never hardcode passwords, API keys, or secrets in code
