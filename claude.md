@@ -78,6 +78,7 @@ The plugin has two modes:
 - Buttons hidden when not in segmentation mode (not disabled-but-visible)
 - Use `_update_button_visibility()` to manage button states based on mode and session state
 - QSettings used for persisting tutorial flags: `AI_Segmentation/tutorial_simple_shown`, `AI_Segmentation/tutorial_batch_shown`
+- Never write in french, only write in english
 
 ## Code Quality Rules (PEP8/Flake8)
 

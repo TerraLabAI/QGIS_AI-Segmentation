@@ -1683,9 +1683,9 @@ class AISegmentationPlugin:
             # Batch mode with saved masks: warn user before clearing everything
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Supprimer tous les masks?",
-                "Ceci va supprimer tous les masks sauvegardés.\n"
-                "Voulez-vous continuer?",
+                "Delete all saved masks?",
+                "This will delete all saved masks.\n"
+                "Do you want to continue?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
@@ -1737,9 +1737,9 @@ class AISegmentationPlugin:
             # Ask user if they want to restore the last saved mask
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
-                "Modifier un mask sauvegardé",
-                "Attention: vous allez modifier un mask déjà sauvegardé.\n"
-                "Voulez-vous continuer?",
+                "Edit saved mask",
+                "Warning: you are about to edit an already saved mask.\n"
+                "Do you want to continue?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
