@@ -333,11 +333,11 @@
         <translation>Sair da segmentação sem salvar (Escape)</translation>
     </message>
     <message>
-        <source>One element per segmentation (e.g., one building, one car).</source>
-        <translation>Um elemento por segmentação (ex: um prédio, um carro).</translation>
+        <source>Simple mode: one element per layer.</source>
+        <translation>Modo simples: um elemento por camada.</translation>
     </message>
     <message>
-        <source>For multiple elements in one layer, use Batch Mode.</source>
+        <source>For multiple elements in one layer, use Batch mode.</source>
         <translation>Para múltiplos elementos em uma camada, use o modo Batch.</translation>
     </message>
     <message>
@@ -353,12 +353,28 @@
         <translation>Um elemento por exportação</translation>
     </message>
     <message>
-        <source>Batch mode: select multiple elements, then export all together.</source>
-        <translation>Modo Batch: selecione vários elementos e exporte todos juntos.</translation>
+        <source>Batch mode: segment objects one by one, save all to same layer.</source>
+        <translation>Modo Batch: segmente objetos um por um, salve todos na mesma camada.</translation>
     </message>
     <message>
-        <source>Example: select all buildings in an area, then export as one layer.</source>
-        <translation>Exemplo: selecione todos os prédios de uma área e exporte como uma única camada.</translation>
+        <source>(e.g. one building, one car, one tree)</source>
+        <translation>(ex. um prédio, um carro, uma árvore)</translation>
+    </message>
+    <message>
+        <source>(e.g. all buildings in an area, all cars in a parking lot)</source>
+        <translation>(ex. todos os prédios de uma área, todos os carros de um estacionamento)</translation>
+    </message>
+    <message>
+        <source>Export polygon to layer</source>
+        <translation>Exportar polígono para camada</translation>
+    </message>
+    <message>
+        <source>Export polygon(s) to layer</source>
+        <translation>Exportar polígono(s) para camada</translation>
+    </message>
+    <message>
+        <source>Export polygon as a new vector layer (Enter)</source>
+        <translation>Exportar polígono como nova camada vetorial (Enter)</translation>
     </message>
 
     <!-- Refine Section -->
@@ -439,6 +455,10 @@
     <message>
         <source>Refine selection or save polygon</source>
         <translation>Refinar seleção ou salvar polígono</translation>
+    </message>
+    <message>
+        <source>Refine selection or export polygon</source>
+        <translation>Refinar seleção ou exportar polígono</translation>
     </message>
 
     <!-- Encoding -->
