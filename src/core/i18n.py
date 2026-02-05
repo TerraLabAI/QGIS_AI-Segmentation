@@ -53,14 +53,33 @@ def _load_translations():
     # Find the translation file
     plugin_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+    # Language fallbacks: map language variants to available translations
+    # e.g., pt_PT (European Portuguese) -> pt_BR (Brazilian Portuguese)
+    language_fallbacks = {
+        "pt": "pt_BR",      # Portuguese -> Brazilian Portuguese
+        "pt_PT": "pt_BR",   # European Portuguese -> Brazilian Portuguese
+        "es_MX": "es",      # Mexican Spanish -> Spanish
+        "es_AR": "es",      # Argentine Spanish -> Spanish
+    }
+
     # Try full locale code first (e.g., pt_BR), then fall back to language code (e.g., pt)
     locale_variants = []
-    if "_" in locale:
-        # e.g., "pt_BR" -> try "pt_BR" first, then "pt"
-        locale_variants.append(locale.replace("-", "_"))  # normalize to underscore
-        locale_variants.append(locale[:2])
+    normalized_locale = locale.replace("-", "_")  # normalize to underscore
+
+    if "_" in normalized_locale:
+        # e.g., "pt_BR" -> try "pt_BR" first, then "pt", then fallback
+        locale_variants.append(normalized_locale)
+        locale_variants.append(normalized_locale[:2])
+        # Add fallback if defined
+        if normalized_locale in language_fallbacks:
+            locale_variants.append(language_fallbacks[normalized_locale])
+        if normalized_locale[:2] in language_fallbacks:
+            locale_variants.append(language_fallbacks[normalized_locale[:2]])
     else:
-        locale_variants.append(locale[:2])
+        locale_variants.append(normalized_locale[:2])
+        # Add fallback if defined
+        if normalized_locale[:2] in language_fallbacks:
+            locale_variants.append(language_fallbacks[normalized_locale[:2]])
 
     ts_path = None
     for variant in locale_variants:
