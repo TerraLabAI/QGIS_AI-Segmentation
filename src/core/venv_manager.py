@@ -664,3 +664,105 @@ def remove_venv(venv_dir: str = None) -> Tuple[bool, str]:
     except Exception as e:
         _log(f"Failed to remove venv: {e}", Qgis.Warning)
         return False, f"Failed to remove venv: {str(e)[:200]}"
+
+
+def _remove_broken_symlinks(directory: str) -> int:
+    """
+    Recursively find and remove broken symlinks in a directory.
+    Returns the number of broken symlinks removed.
+    """
+    removed_count = 0
+    try:
+        for root, dirs, files in os.walk(directory, topdown=False):
+            # Check all entries (files and dirs can be symlinks)
+            for name in files + dirs:
+                path = os.path.join(root, name)
+                # Check if it's a symlink (broken or not)
+                if os.path.islink(path):
+                    # Check if the symlink target exists
+                    if not os.path.exists(path):
+                        # Broken symlink - remove it
+                        try:
+                            os.unlink(path)
+                            removed_count += 1
+                        except Exception:
+                            pass
+    except Exception:
+        pass
+    return removed_count
+
+
+def _remove_all_symlinks(directory: str) -> int:
+    """
+    Recursively find and remove ALL symlinks in a directory.
+    This is more aggressive but ensures Qt can delete the directory.
+    Returns the number of symlinks removed.
+    """
+    removed_count = 0
+    try:
+        for root, dirs, files in os.walk(directory, topdown=False):
+            for name in files + dirs:
+                path = os.path.join(root, name)
+                if os.path.islink(path):
+                    try:
+                        os.unlink(path)
+                        removed_count += 1
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return removed_count
+
+
+def prepare_for_uninstall() -> bool:
+    """
+    Prepare plugin directory for uninstallation.
+
+    On macOS, two issues prevent Qt's QDir.removeRecursively() from working:
+    1. Extended attributes like 'com.apple.provenance'
+    2. Broken symlinks (Qt cannot delete them)
+
+    This function:
+    - Removes extended attributes from all files
+    - Removes all symlinks (broken or not) that Qt can't handle
+
+    Returns True if cleanup was performed, False otherwise.
+    """
+    if sys.platform != "darwin":
+        return False
+
+    # Directories that may have problematic files
+    dirs_to_clean = [
+        VENV_DIR,
+        os.path.join(SRC_DIR, "python_standalone"),
+        os.path.join(SRC_DIR, "checkpoints"),
+    ]
+
+    cleaned = False
+    for dir_path in dirs_to_clean:
+        if os.path.exists(dir_path):
+            # Step 1: Remove all symlinks (Qt can't handle them properly)
+            symlinks_removed = _remove_all_symlinks(dir_path)
+            if symlinks_removed > 0:
+                _log(f"Removed {symlinks_removed} symlinks from: {dir_path}", Qgis.Info)
+                cleaned = True
+
+            # Step 2: Remove extended attributes
+            try:
+                result = subprocess.run(
+                    ["xattr", "-r", "-c", dir_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                if result.returncode == 0:
+                    _log(f"Cleaned extended attributes from: {dir_path}", Qgis.Info)
+                    cleaned = True
+            except subprocess.TimeoutExpired:
+                _log(f"xattr cleanup timed out for: {dir_path}", Qgis.Warning)
+            except FileNotFoundError:
+                _log("xattr command not found", Qgis.Warning)
+            except Exception as e:
+                _log(f"Failed to clean extended attributes: {e}", Qgis.Warning)
+
+    return cleaned

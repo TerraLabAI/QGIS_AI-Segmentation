@@ -2,9 +2,9 @@
 name=AI Segmentation by TerraLab
 description=Segment anything in your raster using AI
 qgisMinimumVersion=3.0
-version=0.2.8
+version=0.2.9
 author=Yvann and Lilien from TerraLab
-email=barbot.yvann@gmail.com
+email=yvann.barbot@terra-lab.ai
 license=GPLv2
 
 about=
