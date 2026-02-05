@@ -333,7 +333,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.no_rasters_widget.setVisible(False)
         layout.addWidget(self.no_rasters_widget)
 
-
         # Dynamic instruction label - styled as a card (slightly darker gray than refine panel)
         self.instructions_label = QLabel("")
         self.instructions_label.setWordWrap(True)
