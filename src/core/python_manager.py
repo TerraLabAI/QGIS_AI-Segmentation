@@ -64,6 +64,20 @@ def _log(message: str, level=Qgis.Info):
     QgsMessageLog.logMessage(message, "AI Segmentation", level=level)
 
 
+def _get_windows_antivirus_help(plugin_path: str) -> str:
+    """
+    Return help message for Windows antivirus issues.
+    """
+    return (
+        "Installation failed - this may be caused by antivirus software blocking the extraction.\n"
+        "Please try:\n"
+        "  1. Temporarily disable your antivirus (Windows Defender, etc.)\n"
+        "  2. Add an exclusion for the QGIS plugins folder\n"
+        "  3. Try the installation again\n"
+        "Folder to exclude: {}".format(plugin_path)
+    )
+
+
 def get_qgis_python_version() -> Tuple[int, int]:
     """Get the Python version used by QGIS."""
     return (sys.version_info.major, sys.version_info.minor)
@@ -236,6 +250,15 @@ def download_python_standalone(
     except Exception as e:
         error_msg = f"Installation failed: {str(e)}"
         _log(error_msg, Qgis.Critical)
+
+        # On Windows, check for antivirus blocking (permission/access errors)
+        if sys.platform == "win32":
+            error_lower = str(e).lower()
+            if "denied" in error_lower or "access" in error_lower or "permission" in error_lower:
+                antivirus_help = _get_windows_antivirus_help(STANDALONE_DIR)
+                _log(antivirus_help, Qgis.Warning)
+                error_msg = "{}\n\n{}".format(error_msg, antivirus_help)
+
         return False, error_msg
     finally:
         # Clean up temp file
