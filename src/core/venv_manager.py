@@ -2,12 +2,14 @@ import subprocess
 import sys
 import os
 import shutil
-from typing import Tuple, Optional, Callable
+import platform
+from typing import Tuple, Optional, Callable, List
 
 from qgis.core import QgsMessageLog, Qgis
 
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC_DIR = PLUGIN_ROOT_DIR  # src/ directory
 PYTHON_VERSION = f"py{sys.version_info.major}.{sys.version_info.minor}"
 VENV_DIR = os.path.join(PLUGIN_ROOT_DIR, f'venv_{PYTHON_VERSION}')
 LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, 'libs')
@@ -24,6 +26,109 @@ REQUIRED_PACKAGES = [
 
 def _log(message: str, level=Qgis.Info):
     QgsMessageLog.logMessage(message, "AI Segmentation", level=level)
+
+
+def _log_system_info():
+    """Log system information for debugging installation issues."""
+    try:
+        qgis_version = Qgis.QGIS_VERSION
+    except Exception:
+        qgis_version = "Unknown"
+
+    info_lines = [
+        "=" * 50,
+        "Installation Environment:",
+        f"  OS: {sys.platform} ({platform.system()} {platform.release()})",
+        f"  Architecture: {platform.machine()}",
+        f"  Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        f"  QGIS: {qgis_version}",
+        "=" * 50,
+    ]
+    for line in info_lines:
+        _log(line, Qgis.Info)
+
+
+def _check_rosetta_warning() -> Optional[str]:
+    """
+    On macOS ARM, detect if running under Rosetta (x86_64 emulation).
+    Returns warning message if Rosetta detected, None otherwise.
+    """
+    if sys.platform != "darwin":
+        return None
+
+    machine = platform.machine()
+
+    # On Apple Silicon running native: machine = "arm64"
+    # If running under Rosetta: machine = "x86_64" but CPU is Apple Silicon
+    if machine == "x86_64":
+        try:
+            result = subprocess.run(
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                capture_output=True, text=True, timeout=5
+            )
+            if "Apple" in result.stdout:
+                return (
+                    "Warning: QGIS is running under Rosetta (x86_64 emulation) "
+                    "on Apple Silicon. This may cause compatibility issues. "
+                    "Consider using the native ARM64 version of QGIS for best performance."
+                )
+        except Exception:
+            pass
+
+    return None
+
+
+def cleanup_old_venv_directories() -> List[str]:
+    """
+    Remove old venv_pyX.Y directories that don't match current Python version.
+    Returns list of removed directories.
+    """
+    current_venv_name = f"venv_{PYTHON_VERSION}"
+    removed = []
+
+    try:
+        for entry in os.listdir(SRC_DIR):
+            if entry.startswith("venv_py") and entry != current_venv_name:
+                old_path = os.path.join(SRC_DIR, entry)
+                if os.path.isdir(old_path):
+                    try:
+                        shutil.rmtree(old_path)
+                        _log(f"Cleaned up old venv directory: {entry}", Qgis.Info)
+                        removed.append(entry)
+                    except Exception as e:
+                        _log(f"Failed to remove old venv {entry}: {e}", Qgis.Warning)
+    except Exception as e:
+        _log(f"Error scanning for old venv directories: {e}", Qgis.Warning)
+
+    return removed
+
+
+def _check_gdal_available() -> Tuple[bool, str]:
+    """
+    Check if GDAL system library is available (Linux only).
+    Returns (is_available, help_message).
+    """
+    if sys.platform != "linux":
+        return True, ""
+
+    try:
+        result = subprocess.run(
+            ["gdal-config", "--version"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return True, f"GDAL {result.stdout.strip()} found"
+        return False, ""
+    except FileNotFoundError:
+        return False, (
+            "GDAL library not found. Rasterio requires GDAL to be installed.\n"
+            "Please install GDAL:\n"
+            "  Ubuntu/Debian: sudo apt install libgdal-dev\n"
+            "  Fedora: sudo dnf install gdal-devel\n"
+            "  Arch: sudo pacman -S gdal"
+        )
+    except Exception:
+        return True, ""  # Assume OK if check fails
 
 
 def get_venv_dir() -> str:
@@ -223,6 +328,7 @@ def install_dependencies(
             "--upgrade",
             "--no-warn-script-location",
             "--disable-pip-version-check",
+            "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
             package_spec
         ]
 
@@ -259,6 +365,15 @@ def install_dependencies(
             else:
                 error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
                 _log(f"✗ Failed to install {package_spec}: {error_msg[:500]}", Qgis.Critical)
+
+                # Check for GDAL issues on Linux when rasterio fails
+                if package_name == "rasterio":
+                    gdal_ok, gdal_help = _check_gdal_available()
+                    if not gdal_ok and gdal_help:
+                        _log(gdal_help, Qgis.Warning)
+                        error_msg = "{}\n\n{}".format(error_msg[:200], gdal_help)
+                        return False, f"Failed to install {package_name}: {error_msg}"
+
                 return False, f"Failed to install {package_name}: {error_msg[:200]}"
 
         except subprocess.TimeoutExpired:
@@ -304,6 +419,33 @@ def _get_subprocess_kwargs() -> dict:
     return kwargs
 
 
+def _get_verification_code(package_name: str) -> str:
+    """
+    Get verification code that actually TESTS the package works, not just imports.
+
+    This catches issues like pandas C extensions not being built properly.
+    """
+    if package_name == "pandas":
+        # Test that pandas C extensions work by creating a DataFrame
+        return "import pandas as pd; df = pd.DataFrame({'a': [1, 2, 3]}); print(df.sum())"
+    elif package_name == "numpy":
+        # Test numpy array operations
+        return "import numpy as np; a = np.array([1, 2, 3]); print(np.sum(a))"
+    elif package_name == "torch":
+        # Test torch tensor creation
+        return "import torch; t = torch.tensor([1, 2, 3]); print(t.sum())"
+    elif package_name == "rasterio":
+        # Just import - rasterio needs a file to test fully
+        return "import rasterio; print(rasterio.__version__)"
+    elif package_name == "segment-anything":
+        return "import segment_anything; print('ok')"
+    elif package_name == "torchvision":
+        return "import torchvision; print(torchvision.__version__)"
+    else:
+        import_name = package_name.replace("-", "_")
+        return f"import {import_name}"
+
+
 def verify_venv(
     venv_dir: str = None,
     progress_callback: Optional[Callable[[int, str], None]] = None
@@ -320,14 +462,14 @@ def verify_venv(
 
     total_packages = len(REQUIRED_PACKAGES)
     for i, (package_name, _) in enumerate(REQUIRED_PACKAGES):
-        import_name = package_name.replace("-", "_")
-
         if progress_callback:
             # Report progress for each package (0-100% within verification phase)
             percent = int((i / total_packages) * 100)
             progress_callback(percent, f"Verifying {package_name}... ({i + 1}/{total_packages})")
 
-        cmd = [python_path, "-c", f"import {import_name}"]
+        # Get functional test code, not just import
+        verify_code = _get_verification_code(package_name)
+        cmd = [python_path, "-c", verify_code]
 
         try:
             result = subprocess.run(
@@ -340,8 +482,12 @@ def verify_venv(
             )
 
             if result.returncode != 0:
-                _log(f"Package {package_name} not importable in venv: {result.stderr[:200] if result.stderr else ''}", Qgis.Warning)
-                return False, f"Missing package: {package_name}"
+                error_detail = result.stderr[:300] if result.stderr else result.stdout[:300]
+                _log(
+                    f"Package {package_name} verification failed: {error_detail}",
+                    Qgis.Warning
+                )
+                return False, f"Package {package_name} is broken: {error_detail[:100]}"
 
         except Exception as e:
             _log(f"Failed to verify {package_name}: {str(e)}", Qgis.Warning)
@@ -387,6 +533,19 @@ def create_venv_and_install(
         download_python_standalone,
         get_python_full_version
     )
+
+    # Log system info for debugging
+    _log_system_info()
+
+    # Check for Rosetta emulation on macOS (warning only, don't block)
+    rosetta_warning = _check_rosetta_warning()
+    if rosetta_warning:
+        _log(rosetta_warning, Qgis.Warning)
+
+    # Clean up old venv directories from previous Python versions
+    removed_venvs = cleanup_old_venv_directories()
+    if removed_venvs:
+        _log(f"Removed {len(removed_venvs)} old venv directories", Qgis.Info)
 
     cleanup_old_libs()
 

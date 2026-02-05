@@ -252,6 +252,7 @@ def _run_pip_install(pip_name: str, version: str = None, target_dir: str = None)
         "--upgrade",
         "--no-warn-script-location",
         "--disable-pip-version-check",
+        "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
     ]
 
     if target_dir:
@@ -410,22 +411,41 @@ def install_all_dependencies(
 
 
 def verify_installation() -> Tuple[bool, str]:
+    """
+    Verify that all packages are installed AND functional.
+
+    This tests actual functionality, not just imports, to catch issues
+    like pandas C extensions not being built properly.
+    """
     try:
         import numpy as np
         numpy_ver = np.__version__
+        # Test numpy actually works
+        _ = np.array([1, 2, 3])
+        _ = np.sum(_)
 
         import torch
         torch_ver = torch.__version__
+        # Test torch actually works
+        _ = torch.tensor([1, 2, 3])
 
         import rasterio
         rasterio_ver = rasterio.__version__
 
+        import pandas as pd
+        pandas_ver = pd.__version__
+        # Test pandas C extensions work - this catches the "C extension: None not built" error
+        df = pd.DataFrame({'a': [1, 2, 3]})
+        _ = df.sum()
+
         import segment_anything  # noqa: F401 - verify import works
 
-        _ = np.array([1, 2, 3])
-
-        _log(f"Verification OK: numpy {numpy_ver}, torch {torch_ver}, rasterio {rasterio_ver}", Qgis.Success)
-        return True, f"numpy {numpy_ver}, torch {torch_ver}"
+        _log(
+            f"Verification OK: numpy {numpy_ver}, torch {torch_ver}, "
+            f"pandas {pandas_ver}, rasterio {rasterio_ver}",
+            Qgis.Success
+        )
+        return True, f"numpy {numpy_ver}, torch {torch_ver}, pandas {pandas_ver}"
 
     except ImportError as e:
         _log(f"Verification failed - import error: {str(e)}", Qgis.Warning)
