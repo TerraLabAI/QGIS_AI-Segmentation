@@ -171,6 +171,10 @@
 
     <!-- Activation Section -->
     <message>
+        <source>Setup AI Segmentation by TerraLab</source>
+        <translation>Configuração AI Segmentation por TerraLab</translation>
+    </message>
+    <message>
         <source>Unlock Plugin</source>
         <translation>Desbloquear plugin</translation>
     </message>

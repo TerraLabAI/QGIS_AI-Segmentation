@@ -34,7 +34,7 @@ class ActivationDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Setup AI Segmentation by TerraLab")
+        self.setWindowTitle(tr("Setup AI Segmentation by TerraLab"))
         self.setModal(True)
         self.setMinimumWidth(420)
         self.setMaximumWidth(500)
