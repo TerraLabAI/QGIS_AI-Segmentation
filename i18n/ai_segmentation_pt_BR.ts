@@ -257,8 +257,8 @@
         <translation>Nenhum raster compatível encontrado. Adicione um GeoTIFF ou imagem georreferenciada ao seu projeto.</translation>
     </message>
     <message>
-        <source>Shortcuts: S (save mask) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)</source>
-        <translation>Atalhos: S (salvar máscara) · Enter (exportar para camada) · Ctrl+Z (desfazer) · Escape (limpar)</translation>
+        <source>Shortcuts: S (save polygon) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)</source>
+        <translation>Atalhos: S (salvar polígono) · Enter (exportar para camada) · Ctrl+Z (desfazer) · Escape (limpar)</translation>
     </message>
     <message>
         <source>Start AI Segmentation</source>
@@ -277,44 +277,44 @@
         <translation>Modo simples: Um elemento por exportação.</translation>
     </message>
     <message>
-        <source>Batch mode: Save multiple masks, then export all together.</source>
-        <translation>Modo Batch: Salve várias máscaras, depois exporte todas juntas.</translation>
+        <source>Batch mode: Save multiple polygons, then export all together.</source>
+        <translation>Modo Batch: Salve vários polígonos, depois exporte todos juntos.</translation>
     </message>
     <message>
         <source>Mode can only be changed when segmentation is stopped.</source>
         <translation>O modo só pode ser alterado quando a segmentação estiver parada.</translation>
     </message>
     <message>
-        <source>Save mask</source>
-        <translation>Salvar máscara</translation>
+        <source>Save polygon</source>
+        <translation>Salvar polígono</translation>
     </message>
     <message>
-        <source>Save current mask to your session (S)</source>
-        <translation>Salvar máscara atual na sua sessão (S)</translation>
+        <source>Save current polygon to your session (S)</source>
+        <translation>Salvar polígono atual na sua sessão (S)</translation>
     </message>
     <message>
         <source>Export to layer</source>
         <translation>Exportar para camada</translation>
     </message>
     <message>
-        <source>Export all saved masks as a new vector layer (Enter)</source>
-        <translation>Exportar todas as máscaras salvas como nova camada vetorial (Enter)</translation>
+        <source>Export all saved polygons as a new vector layer (Enter)</source>
+        <translation>Exportar todos os polígonos salvos como nova camada vetorial (Enter)</translation>
     </message>
     <message>
-        <source>Export {count} mask(s) as a new layer (Enter)</source>
-        <translation>Exportar {count} máscara(s) como nova camada (Enter)</translation>
+        <source>Export {count} polygon(s) as a new layer (Enter)</source>
+        <translation>Exportar {count} polígono(s) como nova camada (Enter)</translation>
     </message>
     <message>
-        <source>Save at least one mask first (S)</source>
-        <translation>Salve pelo menos uma máscara primeiro (S)</translation>
+        <source>Save at least one polygon first (S)</source>
+        <translation>Salve pelo menos um polígono primeiro (S)</translation>
     </message>
     <message>
-        <source>Export current mask as a new layer (Enter)</source>
-        <translation>Exportar máscara atual como nova camada (Enter)</translation>
+        <source>Export polygon to layer (Enter)</source>
+        <translation>Exportar polígono para camada (Enter)</translation>
     </message>
     <message>
-        <source>Place points to create a mask first</source>
-        <translation>Coloque pontos para criar uma máscara primeiro</translation>
+        <source>Place points to create a selection first</source>
+        <translation>Coloque pontos para criar uma seleção primeiro</translation>
     </message>
     <message>
         <source>Undo last point</source>
@@ -344,11 +344,27 @@
         <source>Simple mode</source>
         <translation>Modo simples</translation>
     </message>
+    <message>
+        <source>Select multiple elements, then export all together</source>
+        <translation>Selecione vários elementos e exporte todos juntos</translation>
+    </message>
+    <message>
+        <source>One element per export</source>
+        <translation>Um elemento por exportação</translation>
+    </message>
+    <message>
+        <source>Batch mode: select multiple elements, then export all together.</source>
+        <translation>Modo Batch: selecione vários elementos e exporte todos juntos.</translation>
+    </message>
+    <message>
+        <source>Example: select all buildings in an area, then export as one layer.</source>
+        <translation>Exemplo: selecione todos os prédios de uma área e exporte como uma única camada.</translation>
+    </message>
 
     <!-- Refine Section -->
     <message>
-        <source>Refine mask</source>
-        <translation>Refinar máscara</translation>
+        <source>Refine selection</source>
+        <translation>Refinar seleção</translation>
     </message>
     <message>
         <source>Expand/Contract:</source>
@@ -371,8 +387,8 @@
         <translation>Preencher buracos</translation>
     </message>
     <message>
-        <source>Fill interior holes in the mask (holes completely surrounded by the selection)</source>
-        <translation>Preencher buracos internos na máscara (buracos completamente cercados pela seleção)</translation>
+        <source>Fill interior holes in the selection (holes completely surrounded by the selection)</source>
+        <translation>Preencher buracos internos na seleção (buracos completamente cercados pela seleção)</translation>
     </message>
     <message>
         <source>Min. region size:</source>
@@ -417,12 +433,12 @@
         <translation>{count} ajuste(s)</translation>
     </message>
     <message>
-        <source>{count} mask(s) saved</source>
-        <translation>{count} máscara(s) salva(s)</translation>
+        <source>{count} polygon(s) saved</source>
+        <translation>{count} polígono(s) salvo(s)</translation>
     </message>
     <message>
-        <source>Refine selection or save mask</source>
-        <translation>Refine a seleção ou salve a máscara</translation>
+        <source>Refine selection or save polygon</source>
+        <translation>Refinar seleção ou salvar polígono</translation>
     </message>
 
     <!-- Encoding -->
@@ -505,64 +521,68 @@
         <translation>Sair da segmentação?</translation>
     </message>
     <message>
-        <source>The current mask will be lost.</source>
-        <translation>A máscara atual será perdida.</translation>
+        <source>The current selection will be lost.</source>
+        <translation>A seleção atual será perdida.</translation>
     </message>
     <message>
         <source>Exit Segmentation?</source>
         <translation>Sair da segmentação?</translation>
     </message>
     <message>
-        <source>You have {count} unsaved mask(s).</source>
-        <translation>Você tem {count} máscara(s) não salva(s).</translation>
+        <source>You have {count} unsaved polygon(s).</source>
+        <translation>Você tem {count} polígono(s) não exportado(s).</translation>
     </message>
     <message>
         <source>Discard and exit segmentation?</source>
         <translation>Descartar e sair da segmentação?</translation>
     </message>
     <message>
-        <source>You have an unsaved mask.</source>
-        <translation>Você tem uma máscara não salva.</translation>
+        <source>You have an unsaved selection.</source>
+        <translation>Você tem uma seleção não salva.</translation>
     </message>
     <message>
         <source>Stop Segmentation?</source>
         <translation>Parar segmentação?</translation>
     </message>
     <message>
-        <source>This will discard {count} mask(s).</source>
-        <translation>Isso descartará {count} máscara(s).</translation>
+        <source>This will discard {count} polygon(s).</source>
+        <translation>Isso descartará {count} polígono(s).</translation>
     </message>
     <message>
         <source>Use 'Export to layer' to keep them.</source>
         <translation>Use 'Exportar para camada' para mantê-las.</translation>
     </message>
     <message>
-        <source>Unsaved Masks</source>
-        <translation>Máscaras não salvas</translation>
+        <source>Unsaved Polygons</source>
+        <translation>Polígonos não exportados</translation>
     </message>
     <message>
         <source>Export before changing mode?</source>
         <translation>Exportar antes de mudar o modo?</translation>
     </message>
     <message>
-        <source>Delete all saved masks?</source>
-        <translation>Excluir todas as máscaras salvas?</translation>
+        <source>Delete all saved polygons?</source>
+        <translation>Excluir todos os polígonos salvos?</translation>
     </message>
     <message>
-        <source>This will delete all saved masks.</source>
-        <translation>Isso excluirá todas as máscaras salvas.</translation>
+        <source>This will delete all saved polygons.</source>
+        <translation>Isso excluirá todos os polígonos salvos.</translation>
     </message>
     <message>
         <source>Do you want to continue?</source>
         <translation>Deseja continuar?</translation>
     </message>
     <message>
-        <source>Edit saved mask</source>
-        <translation>Editar máscara salva</translation>
+        <source>You have {count} saved polygon(s).</source>
+        <translation>Você tem {count} polígono(s) salvo(s).</translation>
     </message>
     <message>
-        <source>Warning: you are about to edit an already saved mask.</source>
-        <translation>Atenção: você está prestes a editar uma máscara já salva.</translation>
+        <source>Edit saved polygon</source>
+        <translation>Editar polígono salvo</translation>
+    </message>
+    <message>
+        <source>Warning: you are about to edit an already saved polygon.</source>
+        <translation>Atenção: você está prestes a editar um polígono já salvo.</translation>
     </message>
 
     <!-- Tutorial -->
