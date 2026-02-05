@@ -333,18 +333,14 @@ class AISegmentationDockWidget(QDockWidget):
         self.no_rasters_widget.setVisible(False)
         layout.addWidget(self.no_rasters_widget)
 
-        # Mode indicator - shows current mode during segmentation
-        self.mode_indicator_label = QLabel("")
-        self.mode_indicator_label.setVisible(False)
-        layout.addWidget(self.mode_indicator_label)
 
-        # Dynamic instruction label - styled as a card
+        # Dynamic instruction label - styled as a card (slightly darker gray than refine panel)
         self.instructions_label = QLabel("")
         self.instructions_label.setWordWrap(True)
         self.instructions_label.setStyleSheet("""
             QLabel {
-                background-color: rgba(25, 118, 210, 0.08);
-                border: 1px solid rgba(25, 118, 210, 0.2);
+                background-color: rgba(128, 128, 128, 0.12);
+                border: 1px solid rgba(128, 128, 128, 0.25);
                 border-radius: 4px;
                 padding: 8px;
                 font-size: 12px;
@@ -392,10 +388,9 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.start_button = QPushButton(tr("Start AI Segmentation"))
         self.start_button.setEnabled(False)
-        self.start_button.setMinimumHeight(36)
         self.start_button.clicked.connect(self._on_start_clicked)
         self.start_button.setStyleSheet(
-            "QPushButton { background-color: #2e7d32; font-weight: bold; font-size: 12px; }"
+            "QPushButton { background-color: #2e7d32; padding: 8px 16px; }"
             "QPushButton:disabled { background-color: #c8e6c9; }"
         )
         self.start_button.setToolTip(tr("Start segmentation (G)"))
@@ -448,9 +443,8 @@ class AISegmentationDockWidget(QDockWidget):
         self.save_mask_button.clicked.connect(self._on_save_polygon_clicked)
         self.save_mask_button.setVisible(False)
         self.save_mask_button.setEnabled(False)
-        self.save_mask_button.setMinimumHeight(32)
         self.save_mask_button.setStyleSheet(
-            "QPushButton { background-color: #1976d2; font-weight: bold; }"
+            "QPushButton { background-color: #1976d2; padding: 6px 12px; }"
             "QPushButton:disabled { background-color: #b0bec5; }"
         )
         self.save_mask_button.setToolTip(
@@ -458,16 +452,15 @@ class AISegmentationDockWidget(QDockWidget):
         )
         layout.addWidget(self.save_mask_button)
 
-        self.export_button = QPushButton(tr("Export to layer"))
+        self.export_button = QPushButton(tr("Export polygon to layer"))
         self.export_button.clicked.connect(self._on_export_clicked)
         self.export_button.setVisible(False)
         self.export_button.setEnabled(False)
-        self.export_button.setMinimumHeight(32)
         self.export_button.setStyleSheet(
-            "QPushButton { background-color: #b0bec5; }"
+            "QPushButton { background-color: #b0bec5; padding: 6px 12px; }"
         )
         self.export_button.setToolTip(
-            tr("Export all saved polygons as a new vector layer (Enter)")
+            tr("Export polygon as a new vector layer (Enter)")
         )
         layout.addWidget(self.export_button)
 
@@ -479,30 +472,29 @@ class AISegmentationDockWidget(QDockWidget):
         self.undo_button.setEnabled(False)
         self.undo_button.clicked.connect(self._on_undo_clicked)
         self.undo_button.setVisible(False)  # Hidden until segmentation starts
-        self.undo_button.setMaximumHeight(28)
+        self.undo_button.setStyleSheet("QPushButton { padding: 4px 8px; }")
         self.undo_button.setToolTip(tr("Remove last point (Ctrl+Z)"))
-        secondary_layout.addWidget(self.undo_button)
+        secondary_layout.addWidget(self.undo_button, 1)  # stretch factor 1
 
         self.stop_button = QPushButton(tr("Stop segmentation"))
         self.stop_button.clicked.connect(self._on_stop_clicked)
         self.stop_button.setVisible(False)  # Hidden until segmentation starts
-        self.stop_button.setMaximumHeight(28)
         self.stop_button.setStyleSheet(
-            "QPushButton { background-color: #757575; }"
+            "QPushButton { background-color: #757575; padding: 4px 8px; }"
         )
         self.stop_button.setToolTip(tr("Exit segmentation without saving (Escape)"))
-        secondary_layout.addWidget(self.stop_button)
+        secondary_layout.addWidget(self.stop_button, 1)  # stretch factor 1 for same width
 
         self.secondary_buttons_widget = QWidget()
         self.secondary_buttons_widget.setLayout(secondary_layout)
         self.secondary_buttons_widget.setVisible(False)
         layout.addWidget(self.secondary_buttons_widget)
 
-        # Info box explaining one element per segmentation
+        # Info box explaining one element per segmentation (subtle blue style)
         self.one_element_info_widget = QWidget()
         self.one_element_info_widget.setStyleSheet(
-            "QWidget { background-color: rgba(255, 193, 7, 0.25); "
-            "border: 1px solid rgba(255, 152, 0, 0.5); border-radius: 4px; }"
+            "QWidget { background-color: rgba(100, 149, 237, 0.15); "
+            "border: 1px solid rgba(100, 149, 237, 0.3); border-radius: 4px; }"
             "QLabel { background: transparent; border: none; }"
         )
         info_layout = QHBoxLayout(self.one_element_info_widget)
@@ -517,24 +509,25 @@ class AISegmentationDockWidget(QDockWidget):
         info_icon_label.setFixedSize(14, 14)
         info_layout.addWidget(info_icon_label, 0, Qt.AlignTop)
 
-        # Info text
+        # Info text - 2 lines max
         info_text = QLabel(
-            "{}\n{}".format(
-                tr("One element per segmentation (e.g., one building, one car)."),
-                tr("For multiple elements in one layer, use Batch Mode."))
+            "{} {}\n{}".format(
+                tr("Simple mode: one element per layer."),
+                tr("(e.g. one building, one car, one tree)"),
+                tr("For multiple elements in one layer, use Batch mode."))
         )
         info_text.setWordWrap(True)
-        info_text.setStyleSheet("font-size: 10px; color: palette(text);")
+        info_text.setStyleSheet("font-size: 11px; color: palette(text);")
         info_layout.addWidget(info_text, 1)
 
         self.one_element_info_widget.setVisible(False)
         layout.addWidget(self.one_element_info_widget)
 
-        # Info box for Batch mode
+        # Info box for Batch mode (subtle blue style)
         self.batch_info_widget = QWidget()
         self.batch_info_widget.setStyleSheet(
-            "QWidget { background-color: rgba(255, 193, 7, 0.25); "
-            "border: 1px solid rgba(255, 152, 0, 0.5); border-radius: 4px; }"
+            "QWidget { background-color: rgba(100, 149, 237, 0.15); "
+            "border: 1px solid rgba(100, 149, 237, 0.3); border-radius: 4px; }"
             "QLabel { background: transparent; border: none; }"
         )
         batch_info_layout = QHBoxLayout(self.batch_info_widget)
@@ -549,14 +542,14 @@ class AISegmentationDockWidget(QDockWidget):
         batch_info_icon.setFixedSize(14, 14)
         batch_info_layout.addWidget(batch_info_icon, 0, Qt.AlignTop)
 
-        # Info text
+        # Info text - clearer explanation of batch mode with example
         batch_info_text = QLabel(
             "{}\n{}".format(
-                tr("Batch mode: select multiple elements, then export all together."),
-                tr("Example: select all buildings in an area, then export as one layer."))
+                tr("Batch mode: segment objects one by one, save all to same layer."),
+                tr("(e.g. all buildings in an area, all cars in a parking lot)"))
         )
         batch_info_text.setWordWrap(True)
-        batch_info_text.setStyleSheet("font-size: 10px; color: palette(text);")
+        batch_info_text.setStyleSheet("font-size: 11px; color: palette(text);")
         batch_info_layout.addWidget(batch_info_text, 1)
 
         self.batch_info_widget.setVisible(False)
@@ -593,10 +586,22 @@ class AISegmentationDockWidget(QDockWidget):
         refine_layout.setSpacing(0)
         refine_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Content widget to show/hide
+        # Content widget to show/hide - styled as a subtle bordered box
         self.refine_content_widget = QWidget()
+        self.refine_content_widget.setObjectName("refineContentWidget")
+        self.refine_content_widget.setStyleSheet("""
+            QWidget#refineContentWidget {
+                background-color: rgba(128, 128, 128, 0.08);
+                border: 1px solid rgba(128, 128, 128, 0.2);
+                border-radius: 4px;
+            }
+            QLabel {
+                background: transparent;
+                border: none;
+            }
+        """)
         refine_content_layout = QVBoxLayout(self.refine_content_widget)
-        refine_content_layout.setContentsMargins(8, 8, 8, 8)
+        refine_content_layout.setContentsMargins(10, 10, 10, 10)
         refine_content_layout.setSpacing(8)
 
         # 1. Expand/Contract: SpinBox with +/- buttons (-30 to +30)
@@ -1108,9 +1113,6 @@ class AISegmentationDockWidget(QDockWidget):
             self.instructions_label.setVisible(True)
             self._update_instructions()
 
-            # Show mode indicator
-            self._update_mode_indicator()
-
             # Refine panel visibility
             self._update_refine_panel_visibility()
 
@@ -1145,7 +1147,6 @@ class AISegmentationDockWidget(QDockWidget):
             # Not segmenting - hide all segmentation buttons, show start controls
             self.start_container.setVisible(True)
             self.batch_mode_checkbox.setEnabled(True)  # Can change mode when not segmenting
-            self.mode_indicator_label.setVisible(False)
             self.instructions_label.setVisible(False)
             self.refine_group.setVisible(False)
             self.save_mask_button.setVisible(False)
@@ -1155,38 +1156,6 @@ class AISegmentationDockWidget(QDockWidget):
             self.secondary_buttons_widget.setVisible(False)
             self.one_element_info_widget.setVisible(False)
             self.batch_info_widget.setVisible(False)
-
-    def _update_mode_indicator(self):
-        """Update the mode indicator label based on current mode."""
-        if self._batch_mode:
-            self.mode_indicator_label.setText(tr("Batch mode"))
-            self.mode_indicator_label.setToolTip(tr("Select multiple elements, then export all together"))
-            self.mode_indicator_label.setStyleSheet("""
-                QLabel {
-                    background-color: rgba(25, 118, 210, 0.15);
-                    border: 1px solid rgba(25, 118, 210, 0.3);
-                    border-radius: 4px;
-                    padding: 4px 8px;
-                    font-size: 11px;
-                    font-weight: bold;
-                    color: palette(text);
-                }
-            """)
-        else:
-            self.mode_indicator_label.setText(tr("Simple mode"))
-            self.mode_indicator_label.setToolTip(tr("One element per export"))
-            self.mode_indicator_label.setStyleSheet("""
-                QLabel {
-                    background-color: rgba(46, 125, 50, 0.15);
-                    border: 1px solid rgba(46, 125, 50, 0.3);
-                    border-radius: 4px;
-                    padding: 4px 8px;
-                    font-size: 11px;
-                    font-weight: bold;
-                    color: palette(text);
-                }
-            """)
-        self.mode_indicator_label.setVisible(True)
 
     def _update_refine_panel_visibility(self):
         """Update refine panel visibility based on mode and mask state."""
@@ -1205,10 +1174,11 @@ class AISegmentationDockWidget(QDockWidget):
     def _update_export_button_style(self):
         if self._batch_mode:
             # Batch mode: need saved polygons to export
+            self.export_button.setText(tr("Export polygon(s) to layer"))
             if self._saved_polygon_count > 0:
                 self.export_button.setEnabled(True)
                 self.export_button.setStyleSheet(
-                    "QPushButton { background-color: #4CAF50; font-weight: bold; }"
+                    "QPushButton { background-color: #4CAF50; padding: 6px 12px; }"
                 )
                 self.export_button.setToolTip(
                     tr("Export {count} polygon(s) as a new layer (Enter)").format(count=self._saved_polygon_count)
@@ -1216,17 +1186,18 @@ class AISegmentationDockWidget(QDockWidget):
             else:
                 self.export_button.setEnabled(False)
                 self.export_button.setStyleSheet(
-                    "QPushButton { background-color: #b0bec5; }"
+                    "QPushButton { background-color: #b0bec5; padding: 6px 12px; }"
                 )
                 self.export_button.setToolTip(
                     tr("Save at least one polygon first (S)")
                 )
         else:
             # Simple mode: export current mask directly
+            self.export_button.setText(tr("Export polygon to layer"))
             if self._has_mask:
                 self.export_button.setEnabled(True)
                 self.export_button.setStyleSheet(
-                    "QPushButton { background-color: #4CAF50; font-weight: bold; }"
+                    "QPushButton { background-color: #4CAF50; padding: 6px 12px; }"
                 )
                 self.export_button.setToolTip(
                     tr("Export polygon to layer (Enter)")
@@ -1234,7 +1205,7 @@ class AISegmentationDockWidget(QDockWidget):
             else:
                 self.export_button.setEnabled(False)
                 self.export_button.setStyleSheet(
-                    "QPushButton { background-color: #b0bec5; }"
+                    "QPushButton { background-color: #b0bec5; padding: 6px 12px; }"
                 )
                 self.export_button.setToolTip(
                     tr("Place points to create a selection first")
@@ -1283,8 +1254,10 @@ class AISegmentationDockWidget(QDockWidget):
             counts = "🟢 " + tr("{count} point(s)").format(count=self._positive_count) + " · ❌ " + tr("{count} adjustment(s)").format(count=self._negative_count)
             if self._saved_polygon_count > 0:
                 state = tr("{count} polygon(s) saved").format(count=self._saved_polygon_count)
-            else:
+            elif self._batch_mode:
                 state = tr("Refine selection or save polygon")
+            else:
+                state = tr("Refine selection or export polygon")
             text = f"{counts}\n{state}"
 
         self.instructions_label.setText(text)

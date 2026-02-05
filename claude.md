@@ -16,17 +16,28 @@ The plugin has two modes:
 
 1. **Simple Mode (default)**:
    - Segment one object at a time
-   - Each export creates a new layer named `{RasterName}_mask_{counter}`
-   - No "Save mask" button - only "Export to layer"
+   - Each export creates a new layer named `{RasterName}_polygon_{counter}`
+   - No "Save polygon" button - only "Export to layer"
    - After export, returns to initial state
-   - Yellow info box explains: "One element per export (e.g., one building, one car). For multiple elements in one layer, use Batch Mode."
+   - Blue info box: "Simple mode: one element per export. For multiple elements in one layer, use Batch mode."
 
-2. **Batch Mode (advanced)**:
-   - Activated via "Batch Mode (advanced)" button at bottom of panel
-   - Save multiple masks, then export all together
-   - "Save mask" button visible to add current mask to collection
+2. **Batch Mode**:
+   - Activated via "Batch mode" checkbox
+   - Save multiple polygons, then export all together in one layer
+   - "Save polygon" button visible to add current selection to collection
    - Shows polygon count badge
-   - Tutorial notification shown on first activation
+   - Blue info box: "Batch mode: save multiple polygons, then export all in one layer."
+
+### Terminology
+
+The plugin uses specific terminology for clarity:
+- **Selection** = temporary working state (the current AI-generated mask before saving)
+- **Polygon** = saved items (after clicking "Save polygon" or exporting)
+
+UI strings follow this pattern:
+- "Refine selection" (temporary state)
+- "Save polygon" (action to save)
+- "Export polygon(s) to layer" (final export)
 
 ### Key Classes
 
@@ -41,23 +52,26 @@ The plugin has two modes:
 3. Plugin runs SAM inference -> mask displayed as QgsRubberBand
 4. User clicks "Export to layer" -> `export_layer_requested` signal
 5. In Simple mode: creates new layer, resets session
-6. In Batch mode: "Save mask" -> `save_polygon_requested`, then "Export to layer" -> exports all saved polygons
+6. In Batch mode: "Save polygon" -> `save_polygon_requested`, then "Export to layer" -> exports all saved polygons
 
 ### State Variables (DockWidget)
 
 - `_batch_mode`: Boolean, False = Simple mode (default)
 - `_segmentation_active`: Whether segmentation session is active
-- `_has_mask`: Whether current mask exists
+- `_has_mask`: Whether current mask/selection exists
 - `_saved_polygon_count`: Number of saved polygons (Batch mode)
 - `_refine_expanded`: Collapsed state of refine panel
 - `_positive_count`, `_negative_count`: Point counts for UI
 
 ### Refine Panel
 
-- **Expand/Contract slider**: Dilate/erode mask boundaries (-30 to +30 pixels)
-- **Simplify slider**: Douglas-Peucker simplification tolerance (0-100)
-- Collapsible via click on title (no checkbox)
-- Settings applied in real-time to preview and export
+Collapsible "Refine selection" panel with parameters displayed in a bordered box:
+- **Expand/Contract**: Dilate/erode selection boundaries (-30 to +30 pixels)
+- **Simplify outline**: Douglas-Peucker simplification tolerance (0-20)
+- **Fill holes**: Checkbox to fill interior holes
+- **Min. region size**: Remove small disconnected regions (0-10000 px²)
+
+Settings applied in real-time to preview and export.
 
 ### Dependencies
 
@@ -82,12 +96,16 @@ The plugin has two modes:
 
 ## Internationalization (i18n) - IMPORTANT
 
-The plugin supports French translation. **When modifying any UI string, you MUST update both the code AND the translation file.**
+The plugin supports multiple languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
+
+**When modifying any UI string, you MUST update both the code AND all translation files.**
 
 ### Architecture
 
 - `src/core/i18n.py`: Contains the `tr()` function - parses `.ts` XML directly at runtime (no binary needed)
-- `i18n/ai_segmentation_fr.ts`: French translation file (XML format, QGIS-compliant - no binaries)
+- `i18n/ai_segmentation_fr.ts`: French translation file
+- `i18n/ai_segmentation_pt_BR.ts`: Portuguese (Brazil) translation file
+- `i18n/ai_segmentation_es.ts`: Spanish translation file
 
 ### How to add/modify a UI string
 
@@ -102,7 +120,7 @@ The plugin supports French translation. **When modifying any UI string, you MUST
    button.setText(tr("My button text"))
    ```
 
-2. **In `i18n/ai_segmentation_fr.ts`**, add a new `<message>` block inside `<context><name>AISegmentation</name>`:
+2. **In ALL translation files** (`fr.ts`, `pt_BR.ts`, `es.ts`), add a new `<message>` block inside `<context><name>AISegmentation</name>`:
    ```xml
    <message>
        <source>My button text</source>
@@ -110,14 +128,14 @@ The plugin supports French translation. **When modifying any UI string, you MUST
    </message>
    ```
 
-3. **Commit the .ts file** - no compilation needed, XML is parsed at runtime
+3. **Commit all .ts files** - no compilation needed, XML is parsed at runtime
 
 ### Terms to keep in English (do NOT translate)
 
 - "AI Segmentation" (product name)
-- "SAM Model" / "SAM" (technical term)
+- "SAM" (technical term)
 - "TerraLab" (company name)
-- "Batch mode" / "Batch Mode" (feature name)
+- "Batch mode" (feature name - keep "Batch" in English)
 - "Export" (keep as-is, commonly understood)
 - "Checkpoint" (technical term)
 - Package names: PyTorch, rasterio, pandas, etc.
@@ -127,11 +145,11 @@ The plugin supports French translation. **When modifying any UI string, you MUST
 Use `.format()` for dynamic strings:
 ```python
 # Code:
-tr("Export {count} mask(s)").format(count=5)
+tr("Export {count} polygon(s)").format(count=5)
 
 # Translation file:
-<source>Export {count} mask(s)</source>
-<translation>Exporter {count} masque(s)</translation>
+<source>Export {count} polygon(s)</source>
+<translation>Exporter {count} polygone(s)</translation>
 ```
 
 ### User experience
@@ -197,5 +215,4 @@ tr("Export {count} mask(s)").format(count=5)
   ```
 - **Hardcoded credentials**: Never hardcode passwords, API keys, or secrets in code
 - **Shell injection**: Use subprocess with list arguments, not shell=True with string interpolation
-
 
