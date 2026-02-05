@@ -782,9 +782,9 @@ class AISegmentationPlugin:
         if not batch and len(self.saved_polygons) > 0:
             reply = QMessageBox.question(
                 self.dock_widget,
-                tr("Unsaved Masks"),
+                tr("Unsaved Polygons"),
                 "{}\n{}".format(
-                    tr("You have {count} saved mask(s).").format(count=len(self.saved_polygons)),
+                    tr("You have {count} saved polygon(s).").format(count=len(self.saved_polygons)),
                     tr("Export before changing mode?")),
                 QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
                 QMessageBox.Cancel
@@ -844,7 +844,7 @@ class AISegmentationPlugin:
         reply = QMessageBox.question(
             self.dock_widget,
             tr("Exit Segmentation"),
-            tr("Exit segmentation?") + "\n" + tr("The current mask will be lost."),
+            tr("Exit segmentation?") + "\n" + tr("The current selection will be lost."),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -1234,9 +1234,9 @@ class AISegmentationPlugin:
                 polygon_count = len(self.saved_polygons)
                 if has_unsaved_mask:
                     polygon_count += 1
-                message = tr("You have {count} unsaved mask(s).").format(count=polygon_count) + "\n\n" + tr("Discard and exit segmentation?")
+                message = tr("You have {count} unsaved polygon(s).").format(count=polygon_count) + "\n\n" + tr("Discard and exit segmentation?")
             else:
-                message = tr("You have an unsaved mask.") + "\n\n" + tr("Discard and exit segmentation?")
+                message = tr("You have an unsaved selection.") + "\n\n" + tr("Discard and exit segmentation?")
 
             reply = QMessageBox.warning(
                 main_window,
@@ -1284,7 +1284,7 @@ class AISegmentationPlugin:
                     self.iface.mainWindow(),
                     tr("Stop Segmentation?"),
                     "{}\n\n{}".format(
-                        tr("This will discard {count} mask(s).").format(count=polygon_count),
+                        tr("This will discard {count} polygon(s).").format(count=polygon_count),
                         tr("Use 'Export to layer' to keep them.")),
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.No
@@ -1683,9 +1683,9 @@ class AISegmentationPlugin:
             # Batch mode with saved masks: warn user before clearing everything
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
-                tr("Delete all saved masks?"),
+                tr("Delete all saved polygons?"),
                 "{}\n{}".format(
-                    tr("This will delete all saved masks."),
+                    tr("This will delete all saved polygons."),
                     tr("Do you want to continue?")),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
@@ -1738,9 +1738,9 @@ class AISegmentationPlugin:
             # Ask user if they want to restore the last saved mask
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
-                tr("Edit saved mask"),
+                tr("Edit saved polygon"),
                 "{}\n{}".format(
-                    tr("Warning: you are about to edit an already saved mask."),
+                    tr("Warning: you are about to edit an already saved polygon."),
                     tr("Do you want to continue?")),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No

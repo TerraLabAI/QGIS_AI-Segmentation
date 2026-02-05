@@ -257,8 +257,8 @@
         <translation>No se encontró ráster compatible. Agregue un GeoTIFF o imagen georreferenciada a su proyecto.</translation>
     </message>
     <message>
-        <source>Shortcuts: S (save mask) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)</source>
-        <translation>Atajos: S (guardar máscara) · Enter (exportar a capa) · Ctrl+Z (deshacer) · Escape (limpiar)</translation>
+        <source>Shortcuts: S (save polygon) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)</source>
+        <translation>Atajos: S (guardar polígono) · Enter (exportar a capa) · Ctrl+Z (deshacer) · Escape (limpiar)</translation>
     </message>
     <message>
         <source>Start AI Segmentation</source>
@@ -277,44 +277,44 @@
         <translation>Modo simple: Un elemento por exportación.</translation>
     </message>
     <message>
-        <source>Batch mode: Save multiple masks, then export all together.</source>
-        <translation>Modo Batch: Guarde múltiples máscaras, luego exporte todas juntas.</translation>
+        <source>Batch mode: Save multiple polygons, then export all together.</source>
+        <translation>Modo Batch: Guarde múltiples polígonos, luego expórtelos todos juntos.</translation>
     </message>
     <message>
         <source>Mode can only be changed when segmentation is stopped.</source>
         <translation>El modo solo puede cambiarse cuando la segmentación está detenida.</translation>
     </message>
     <message>
-        <source>Save mask</source>
-        <translation>Guardar máscara</translation>
+        <source>Save polygon</source>
+        <translation>Guardar polígono</translation>
     </message>
     <message>
-        <source>Save current mask to your session (S)</source>
-        <translation>Guardar máscara actual en su sesión (S)</translation>
+        <source>Save current polygon to your session (S)</source>
+        <translation>Guardar polígono actual en su sesión (S)</translation>
     </message>
     <message>
         <source>Export to layer</source>
         <translation>Exportar a capa</translation>
     </message>
     <message>
-        <source>Export all saved masks as a new vector layer (Enter)</source>
-        <translation>Exportar todas las máscaras guardadas como nueva capa vectorial (Enter)</translation>
+        <source>Export all saved polygons as a new vector layer (Enter)</source>
+        <translation>Exportar todos los polígonos guardados como nueva capa vectorial (Enter)</translation>
     </message>
     <message>
-        <source>Export {count} mask(s) as a new layer (Enter)</source>
-        <translation>Exportar {count} máscara(s) como nueva capa (Enter)</translation>
+        <source>Export {count} polygon(s) as a new layer (Enter)</source>
+        <translation>Exportar {count} polígono(s) como nueva capa (Enter)</translation>
     </message>
     <message>
-        <source>Save at least one mask first (S)</source>
-        <translation>Guarde al menos una máscara primero (S)</translation>
+        <source>Save at least one polygon first (S)</source>
+        <translation>Guarde al menos un polígono primero (S)</translation>
     </message>
     <message>
-        <source>Export current mask as a new layer (Enter)</source>
-        <translation>Exportar máscara actual como nueva capa (Enter)</translation>
+        <source>Export polygon to layer (Enter)</source>
+        <translation>Exportar polígono a capa (Enter)</translation>
     </message>
     <message>
-        <source>Place points to create a mask first</source>
-        <translation>Coloque puntos para crear una máscara primero</translation>
+        <source>Place points to create a selection first</source>
+        <translation>Coloque puntos para crear una selección primero</translation>
     </message>
     <message>
         <source>Undo last point</source>
@@ -344,11 +344,27 @@
         <source>Simple mode</source>
         <translation>Modo simple</translation>
     </message>
+    <message>
+        <source>Select multiple elements, then export all together</source>
+        <translation>Seleccione varios elementos y expórtelos todos juntos</translation>
+    </message>
+    <message>
+        <source>One element per export</source>
+        <translation>Un elemento por exportación</translation>
+    </message>
+    <message>
+        <source>Batch mode: select multiple elements, then export all together.</source>
+        <translation>Modo Batch: seleccione varios elementos y expórtelos todos juntos.</translation>
+    </message>
+    <message>
+        <source>Example: select all buildings in an area, then export as one layer.</source>
+        <translation>Ejemplo: seleccione todos los edificios de un área y exporte como una sola capa.</translation>
+    </message>
 
     <!-- Refine Section -->
     <message>
-        <source>Refine mask</source>
-        <translation>Refinar máscara</translation>
+        <source>Refine selection</source>
+        <translation>Refinar selección</translation>
     </message>
     <message>
         <source>Expand/Contract:</source>
@@ -371,8 +387,8 @@
         <translation>Rellenar huecos</translation>
     </message>
     <message>
-        <source>Fill interior holes in the mask (holes completely surrounded by the selection)</source>
-        <translation>Rellenar huecos interiores en la máscara (huecos completamente rodeados por la selección)</translation>
+        <source>Fill interior holes in the selection (holes completely surrounded by the selection)</source>
+        <translation>Rellenar huecos interiores en la selección (huecos completamente rodeados por la selección)</translation>
     </message>
     <message>
         <source>Min. region size:</source>
@@ -417,12 +433,12 @@
         <translation>{count} ajuste(s)</translation>
     </message>
     <message>
-        <source>{count} mask(s) saved</source>
-        <translation>{count} máscara(s) guardada(s)</translation>
+        <source>{count} polygon(s) saved</source>
+        <translation>{count} polígono(s) guardado(s)</translation>
     </message>
     <message>
-        <source>Refine selection or save mask</source>
-        <translation>Refine la selección o guarde la máscara</translation>
+        <source>Refine selection or save polygon</source>
+        <translation>Refinar selección o guardar polígono</translation>
     </message>
 
     <!-- Encoding -->
@@ -505,64 +521,68 @@
         <translation>¿Salir de segmentación?</translation>
     </message>
     <message>
-        <source>The current mask will be lost.</source>
-        <translation>La máscara actual se perderá.</translation>
+        <source>The current selection will be lost.</source>
+        <translation>La selección actual se perderá.</translation>
     </message>
     <message>
         <source>Exit Segmentation?</source>
         <translation>¿Salir de segmentación?</translation>
     </message>
     <message>
-        <source>You have {count} unsaved mask(s).</source>
-        <translation>Tiene {count} máscara(s) sin guardar.</translation>
+        <source>You have {count} unsaved polygon(s).</source>
+        <translation>Tiene {count} polígono(s) no exportado(s).</translation>
     </message>
     <message>
         <source>Discard and exit segmentation?</source>
         <translation>¿Descartar y salir de segmentación?</translation>
     </message>
     <message>
-        <source>You have an unsaved mask.</source>
-        <translation>Tiene una máscara sin guardar.</translation>
+        <source>You have an unsaved selection.</source>
+        <translation>Tiene una selección sin guardar.</translation>
     </message>
     <message>
         <source>Stop Segmentation?</source>
         <translation>¿Detener segmentación?</translation>
     </message>
     <message>
-        <source>This will discard {count} mask(s).</source>
-        <translation>Esto descartará {count} máscara(s).</translation>
+        <source>This will discard {count} polygon(s).</source>
+        <translation>Esto descartará {count} polígono(s).</translation>
     </message>
     <message>
         <source>Use 'Export to layer' to keep them.</source>
         <translation>Use 'Exportar a capa' para conservarlas.</translation>
     </message>
     <message>
-        <source>Unsaved Masks</source>
-        <translation>Máscaras sin guardar</translation>
+        <source>Unsaved Polygons</source>
+        <translation>Polígonos no exportados</translation>
     </message>
     <message>
         <source>Export before changing mode?</source>
         <translation>¿Exportar antes de cambiar de modo?</translation>
     </message>
     <message>
-        <source>Delete all saved masks?</source>
-        <translation>¿Eliminar todas las máscaras guardadas?</translation>
+        <source>Delete all saved polygons?</source>
+        <translation>¿Eliminar todos los polígonos guardados?</translation>
     </message>
     <message>
-        <source>This will delete all saved masks.</source>
-        <translation>Esto eliminará todas las máscaras guardadas.</translation>
+        <source>This will delete all saved polygons.</source>
+        <translation>Esto eliminará todos los polígonos guardados.</translation>
     </message>
     <message>
         <source>Do you want to continue?</source>
         <translation>¿Desea continuar?</translation>
     </message>
     <message>
-        <source>Edit saved mask</source>
-        <translation>Editar máscara guardada</translation>
+        <source>You have {count} saved polygon(s).</source>
+        <translation>Tiene {count} polígono(s) guardado(s).</translation>
     </message>
     <message>
-        <source>Warning: you are about to edit an already saved mask.</source>
-        <translation>Advertencia: está a punto de editar una máscara ya guardada.</translation>
+        <source>Edit saved polygon</source>
+        <translation>Editar polígono guardado</translation>
+    </message>
+    <message>
+        <source>Warning: you are about to edit an already saved polygon.</source>
+        <translation>Advertencia: está a punto de editar un polígono ya guardado.</translation>
     </message>
 
     <!-- Tutorial -->
