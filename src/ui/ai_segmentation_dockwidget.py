@@ -95,6 +95,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._update_full_ui()
 
     def _setup_ui(self):
+        self._setup_welcome_section()
         self._setup_dependencies_section()
         self._setup_checkpoint_section()
         self._setup_activation_section()
@@ -102,11 +103,40 @@ class AISegmentationDockWidget(QDockWidget):
         self.main_layout.addStretch()
         self._setup_about_section()
 
+    def _setup_welcome_section(self):
+        """Setup the welcome/intro section explaining the 2-step setup."""
+        self.welcome_widget = QWidget()
+        self.welcome_widget.setStyleSheet("""
+            QWidget {
+                background-color: rgba(25, 118, 210, 0.08);
+                border: 1px solid rgba(25, 118, 210, 0.2);
+                border-radius: 4px;
+            }
+            QLabel { background: transparent; border: none; }
+        """)
+        layout = QVBoxLayout(self.welcome_widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(4)
+
+        welcome_title = QLabel(tr("Welcome! Two quick steps to get started:"))
+        welcome_title.setStyleSheet("font-weight: bold; font-size: 12px; color: palette(text);")
+        layout.addWidget(welcome_title)
+
+        step1_label = QLabel("1. " + tr("Install AI dependencies (~800MB)"))
+        step1_label.setStyleSheet("font-size: 11px; color: palette(text); margin-left: 8px;")
+        layout.addWidget(step1_label)
+
+        step2_label = QLabel("2. " + tr("Download the segmentation model (~375MB)"))
+        step2_label.setStyleSheet("font-size: 11px; color: palette(text); margin-left: 8px;")
+        layout.addWidget(step2_label)
+
+        self.main_layout.addWidget(self.welcome_widget)
+
     def _setup_dependencies_section(self):
-        self.deps_group = QGroupBox(tr("Dependencies"))
+        self.deps_group = QGroupBox(tr("Step 1: AI Dependencies"))
         layout = QVBoxLayout(self.deps_group)
 
-        self.deps_status_label = QLabel(tr("Checking dependencies..."))
+        self.deps_status_label = QLabel(tr("Checking if dependencies are installed..."))
         self.deps_status_label.setStyleSheet("color: palette(text);")
         layout.addWidget(self.deps_status_label)
 
@@ -139,11 +169,11 @@ class AISegmentationDockWidget(QDockWidget):
         self.main_layout.addWidget(self.deps_group)
 
     def _setup_checkpoint_section(self):
-        self.checkpoint_group = QGroupBox(tr("AI Segmentation Model"))
+        self.checkpoint_group = QGroupBox(tr("Step 2: Segmentation Model"))
         layout = QVBoxLayout(self.checkpoint_group)
 
-        self.checkpoint_status_label = QLabel(tr("Checking model..."))
-        self.checkpoint_status_label.setStyleSheet("color: palette(text);")
+        self.checkpoint_status_label = QLabel(tr("Waiting for Step 1..."))
+        self.checkpoint_status_label.setStyleSheet("color: palette(mid);")
         layout.addWidget(self.checkpoint_status_label)
 
         self.checkpoint_progress = QProgressBar()
@@ -156,7 +186,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.checkpoint_progress_label.setVisible(False)
         layout.addWidget(self.checkpoint_progress_label)
 
-        self.download_button = QPushButton(tr("Download SAM Model (~375MB)"))
+        self.download_button = QPushButton(tr("Download AI Segmentation Model (~375MB)"))
         self.download_button.clicked.connect(self._on_download_clicked)
         self.download_button.setVisible(False)
         self.download_button.setToolTip(tr("Download the SAM checkpoint for segmentation"))
@@ -719,6 +749,19 @@ class AISegmentationDockWidget(QDockWidget):
         self.seg_widget.setVisible(show_segmentation)
         self.seg_separator.setVisible(show_segmentation)
 
+        # Welcome section: hide when both deps and model are installed
+        setup_complete = self._dependencies_ok and self._checkpoint_ok
+        self.welcome_widget.setVisible(not setup_complete)
+
+        # Checkpoint section: disable/grey out if dependencies not installed
+        if not self._dependencies_ok:
+            self.checkpoint_group.setEnabled(False)
+            self.checkpoint_status_label.setText(tr("Waiting for Step 1..."))
+            self.checkpoint_status_label.setStyleSheet("color: palette(mid);")
+            self.download_button.setVisible(False)
+        else:
+            self.checkpoint_group.setEnabled(True)
+
         # Activation section: show if deps OK but not activated AND popup was shown/closed
         deps_ok = self._dependencies_ok
         not_activated = not self._plugin_activated
@@ -805,6 +848,9 @@ class AISegmentationDockWidget(QDockWidget):
 
     def set_dependency_status(self, ok: bool, message: str):
         self._dependencies_ok = ok
+        # Use "Not installed yet" for clearer messaging
+        if not ok and message == tr("Dependencies not installed"):
+            message = tr("Not installed yet")
         self.deps_status_label.setText(message)
 
         if ok:
@@ -882,6 +928,9 @@ class AISegmentationDockWidget(QDockWidget):
 
     def set_checkpoint_status(self, ok: bool, message: str):
         self._checkpoint_ok = ok
+        # Use "Not installed yet" for clearer messaging
+        if not ok and message == tr("Model not found"):
+            message = tr("Not installed yet")
         self.checkpoint_status_label.setText(message)
 
         if ok:
@@ -914,7 +963,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.checkpoint_progress_label.setVisible(False)
             self.cancel_download_button.setVisible(False)
             self.download_button.setEnabled(True)
-            self.download_button.setText(tr("Download SAM Model (~375MB)"))
+            self.download_button.setText(tr("Download AI Segmentation Model (~375MB)"))
             if "cancel" in message.lower():
                 self.checkpoint_status_label.setText(tr("Download cancelled"))
 

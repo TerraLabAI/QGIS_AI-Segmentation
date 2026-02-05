@@ -43,17 +43,33 @@ def _load_translations():
 
     # Get the locale from QGIS settings
     locale = QSettings().value("locale/userLocale", "en_US")
-    locale_code = locale[:2] if locale else "en"
+    if not locale:
+        return
 
     # English is the source language - no translation needed
-    if locale_code == "en":
+    if locale.startswith("en"):
         return
 
     # Find the translation file
     plugin_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    ts_path = os.path.join(plugin_dir, "i18n", f"ai_segmentation_{locale_code}.ts")
 
-    if not os.path.exists(ts_path):
+    # Try full locale code first (e.g., pt_BR), then fall back to language code (e.g., pt)
+    locale_variants = []
+    if "_" in locale:
+        # e.g., "pt_BR" -> try "pt_BR" first, then "pt"
+        locale_variants.append(locale.replace("-", "_"))  # normalize to underscore
+        locale_variants.append(locale[:2])
+    else:
+        locale_variants.append(locale[:2])
+
+    ts_path = None
+    for variant in locale_variants:
+        candidate = os.path.join(plugin_dir, "i18n", f"ai_segmentation_{variant}.ts")
+        if os.path.exists(candidate):
+            ts_path = candidate
+            break
+
+    if ts_path is None:
         return
 
     try:

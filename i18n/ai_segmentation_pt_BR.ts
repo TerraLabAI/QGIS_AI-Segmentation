@@ -1,610 +1,610 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
-<TS version="2.1" language="fr_FR">
+<TS version="2.1" language="pt_BR">
 <context>
     <name>AISegmentation</name>
     <!-- Welcome Section -->
     <message>
         <source>Welcome! Two quick steps to get started:</source>
-        <translation>Bienvenue ! Deux étapes rapides pour commencer :</translation>
+        <translation>Bem-vindo! Duas etapas rápidas para começar:</translation>
     </message>
     <message>
         <source>Install AI dependencies (~800MB)</source>
-        <translation>Installer les dépendances IA (~800 Mo)</translation>
+        <translation>Instalar dependências de IA (~800MB)</translation>
     </message>
     <message>
         <source>Download the segmentation model (~375MB)</source>
-        <translation>Télécharger le modèle de segmentation (~375 Mo)</translation>
+        <translation>Baixar o modelo de segmentação (~375MB)</translation>
     </message>
 
     <!-- Dependencies Section -->
     <message>
         <source>Step 1: AI Dependencies</source>
-        <translation>Étape 1 : Dépendances IA</translation>
+        <translation>Etapa 1: Dependências de IA</translation>
     </message>
     <message>
         <source>Checking if dependencies are installed...</source>
-        <translation>Vérification de l'installation des dépendances...</translation>
+        <translation>Verificando se as dependências estão instaladas...</translation>
     </message>
     <message>
         <source>Not installed yet</source>
-        <translation>Pas encore installé</translation>
+        <translation>Ainda não instalado</translation>
     </message>
     <message>
         <source>Dependencies</source>
-        <translation>Dépendances</translation>
+        <translation>Dependências</translation>
     </message>
     <message>
         <source>Checking dependencies...</source>
-        <translation>Vérification des dépendances...</translation>
+        <translation>Verificando dependências...</translation>
     </message>
     <message>
         <source>Install Dependencies</source>
-        <translation>Installer les dépendances</translation>
+        <translation>Instalar dependências</translation>
     </message>
     <message>
         <source>Create isolated virtual environment and install required packages</source>
-        <translation>Créer un environnement virtuel isolé et installer les packages requis</translation>
+        <translation>Criar ambiente virtual isolado e instalar pacotes necessários</translation>
     </message>
     <message>
         <source>Download size: ~800MB</source>
-        <translation>Taille du téléchargement : ~800 Mo</translation>
+        <translation>Tamanho do download: ~800MB</translation>
     </message>
     <message>
         <source>Cancel</source>
-        <translation>Annuler</translation>
+        <translation>Cancelar</translation>
     </message>
     <message>
         <source>Installing...</source>
-        <translation>Installation...</translation>
+        <translation>Instalando...</translation>
     </message>
     <message>
         <source>Installing dependencies...</source>
-        <translation>Installation des dépendances...</translation>
+        <translation>Instalando dependências...</translation>
     </message>
     <message>
         <source>Installation cancelled</source>
-        <translation>Installation annulée</translation>
+        <translation>Instalação cancelada</translation>
     </message>
     <message>
         <source>Installation failed</source>
-        <translation>Échec de l'installation</translation>
+        <translation>Falha na instalação</translation>
     </message>
     <message>
         <source>Virtual environment ready</source>
-        <translation>Environnement virtuel prêt</translation>
+        <translation>Ambiente virtual pronto</translation>
     </message>
     <message>
         <source>Verification failed:</source>
-        <translation>Échec de la vérification :</translation>
+        <translation>Falha na verificação:</translation>
     </message>
     <message>
         <source>Verification Failed</source>
-        <translation>Échec de la vérification</translation>
+        <translation>Falha na verificação</translation>
     </message>
     <message>
         <source>Virtual environment was created but verification failed:</source>
-        <translation>L'environnement virtuel a été créé mais la vérification a échoué :</translation>
+        <translation>O ambiente virtual foi criado mas a verificação falhou:</translation>
     </message>
     <message>
         <source>Please check the logs or try reinstalling.</source>
-        <translation>Vérifiez les logs ou réessayez l'installation.</translation>
+        <translation>Verifique os logs ou tente reinstalar.</translation>
     </message>
     <message>
         <source>Unknown error</source>
-        <translation>Erreur inconnue</translation>
+        <translation>Erro desconhecido</translation>
     </message>
     <message>
         <source>Installation Failed</source>
-        <translation>Échec de l'installation</translation>
+        <translation>Falha na instalação</translation>
     </message>
     <message>
         <source>Failed to install dependencies:</source>
-        <translation>Impossible d'installer les dépendances :</translation>
+        <translation>Falha ao instalar dependências:</translation>
     </message>
     <message>
         <source>Check the QGIS log panel (View → Panels → Log Messages) for detailed error information.</source>
-        <translation>Consultez le panneau de logs QGIS (Vue → Panneaux → Messages) pour plus de détails.</translation>
+        <translation>Verifique o painel de logs do QGIS (Sketcher → Sketcher → Sketcher de log) para informações detalhadas do erro.</translation>
     </message>
     <message>
         <source>Download ~800MB of AI dependencies?</source>
-        <translation>Télécharger ~800 Mo de dépendances IA ?</translation>
+        <translation>Baixar ~800MB de dependências de IA?</translation>
     </message>
     <message>
         <source>This takes a few minutes.</source>
-        <translation>Cela prend quelques minutes.</translation>
+        <translation>Isso leva alguns minutos.</translation>
     </message>
 
     <!-- Checkpoint/Model Section -->
     <message>
         <source>Step 2: Segmentation Model</source>
-        <translation>Étape 2 : Modèle de segmentation</translation>
+        <translation>Etapa 2: Modelo de segmentação</translation>
     </message>
     <message>
         <source>Waiting for Step 1...</source>
-        <translation>En attente de l'étape 1...</translation>
+        <translation>Aguardando a etapa 1...</translation>
     </message>
     <message>
         <source>Checking if model is installed...</source>
-        <translation>Vérification de l'installation du modèle...</translation>
+        <translation>Verificando se o modelo está instalado...</translation>
     </message>
     <message>
         <source>AI Segmentation Model</source>
-        <translation>Modèle AI Segmentation</translation>
+        <translation>Modelo AI Segmentation</translation>
     </message>
     <message>
         <source>Checking model...</source>
-        <translation>Vérification du modèle...</translation>
+        <translation>Verificando modelo...</translation>
     </message>
     <message>
         <source>Download AI Segmentation Model (~375MB)</source>
-        <translation>Télécharger le modèle AI Segmentation (~375 Mo)</translation>
+        <translation>Baixar modelo AI Segmentation (~375MB)</translation>
     </message>
     <message>
         <source>Download the SAM checkpoint for segmentation</source>
-        <translation>Télécharger le checkpoint SAM pour la segmentation</translation>
+        <translation>Baixar o checkpoint SAM para segmentação</translation>
     </message>
     <message>
         <source>Downloading...</source>
-        <translation>Téléchargement...</translation>
+        <translation>Baixando...</translation>
     </message>
     <message>
         <source>Model downloading...</source>
-        <translation>Téléchargement du modèle...</translation>
+        <translation>Baixando modelo...</translation>
     </message>
     <message>
         <source>Download cancelled</source>
-        <translation>Téléchargement annulé</translation>
+        <translation>Download cancelado</translation>
     </message>
     <message>
         <source>Download Failed</source>
-        <translation>Échec du téléchargement</translation>
+        <translation>Falha no download</translation>
     </message>
     <message>
         <source>Failed to download model:</source>
-        <translation>Impossible de télécharger le modèle :</translation>
+        <translation>Falha ao baixar modelo:</translation>
     </message>
     <message>
         <source>Please check your internet connection and try again.</source>
-        <translation>Vérifiez votre connexion internet et réessayez.</translation>
+        <translation>Verifique sua conexão com a internet e tente novamente.</translation>
     </message>
 
     <!-- Activation Section -->
     <message>
         <source>Unlock Plugin</source>
-        <translation>Activer le plugin</translation>
+        <translation>Desbloquear plugin</translation>
     </message>
     <message>
         <source>Enter your email to receive updates and get a verification code.</source>
-        <translation>Entrez votre email pour recevoir les mises à jour et obtenir un code.</translation>
+        <translation>Digite seu email para receber atualizações e obter um código de verificação.</translation>
     </message>
     <message>
         <source>Get my verification code</source>
-        <translation>Obtenir mon code</translation>
+        <translation>Obter meu código de verificação</translation>
     </message>
     <message>
         <source>Then paste your code:</source>
-        <translation>Puis collez votre code :</translation>
+        <translation>Depois cole seu código:</translation>
     </message>
     <message>
         <source>Code</source>
-        <translation>Code</translation>
+        <translation>Código</translation>
     </message>
     <message>
         <source>Unlock</source>
-        <translation>Activer</translation>
+        <translation>Desbloquear</translation>
     </message>
     <message>
         <source>Enter your code</source>
-        <translation>Entrez votre code</translation>
+        <translation>Digite seu código</translation>
     </message>
     <message>
         <source>Unlocked!</source>
-        <translation>Activé !</translation>
+        <translation>Desbloqueado!</translation>
     </message>
     <message>
         <source>Invalid code</source>
-        <translation>Code invalide</translation>
+        <translation>Código inválido</translation>
     </message>
     <message>
         <source>Thanks for trying our plugin!</source>
-        <translation>Merci d'essayer notre plugin !</translation>
+        <translation>Obrigado por experimentar nosso plugin!</translation>
     </message>
     <message>
         <source>This plugin is in beta. We'd love to keep you updated when we release new versions and features.</source>
-        <translation>Ce plugin est en bêta. Nous aimerions vous tenir informé des nouvelles versions.</translation>
+        <translation>Este plugin está em beta. Gostaríamos de mantê-lo atualizado quando lançarmos novas versões e recursos.</translation>
     </message>
     <message>
         <source>Enter your email and you'll get a</source>
-        <translation>Entrez votre email pour recevoir un</translation>
+        <translation>Digite seu email e você receberá um</translation>
     </message>
     <message>
         <source>Verification Code</source>
-        <translation>Code de vérification</translation>
+        <translation>Código de verificação</translation>
     </message>
     <message>
         <source>to paste below.</source>
-        <translation>à coller ci-dessous.</translation>
+        <translation>para colar abaixo.</translation>
     </message>
     <message>
         <source>Paste your verification code:</source>
-        <translation>Collez votre code de vérification :</translation>
+        <translation>Cole seu código de verificação:</translation>
     </message>
     <message>
         <source>Enter your verification code</source>
-        <translation>Entrez votre code de vérification</translation>
+        <translation>Digite seu código de verificação</translation>
     </message>
 
     <!-- Segmentation Section -->
     <message>
         <source>Select a Raster Layer to Segment:</source>
-        <translation>Sélectionnez un raster à segmenter :</translation>
+        <translation>Selecione uma camada raster para segmentar:</translation>
     </message>
     <message>
         <source>Select a file-based raster layer (GeoTIFF, etc.)</source>
-        <translation>Sélectionnez un raster local (GeoTIFF, etc.)</translation>
+        <translation>Selecione uma camada raster local (GeoTIFF, etc.)</translation>
     </message>
     <message>
         <source>No compatible raster found. Add a GeoTIFF or local image to your project.</source>
-        <translation>Aucun raster compatible. Ajoutez un GeoTIFF ou une image locale à votre projet.</translation>
+        <translation>Nenhum raster compatível encontrado. Adicione um GeoTIFF ou imagem local ao seu projeto.</translation>
     </message>
     <message>
         <source>No compatible raster found. {count} layer(s) excluded (PNG/JPG without georeferencing). Use GeoTIFF format.</source>
-        <translation>Aucun raster compatible. {count} couche(s) exclue(s) (PNG/JPG sans géoréférencement). Utilisez le format GeoTIFF.</translation>
+        <translation>Nenhum raster compatível encontrado. {count} camada(s) excluída(s) (PNG/JPG sem georreferenciamento). Use o formato GeoTIFF.</translation>
     </message>
     <message>
         <source>No compatible raster found. Add a GeoTIFF or georeferenced image to your project.</source>
-        <translation>Aucun raster compatible. Ajoutez un GeoTIFF ou une image géoréférencée à votre projet.</translation>
+        <translation>Nenhum raster compatível encontrado. Adicione um GeoTIFF ou imagem georreferenciada ao seu projeto.</translation>
     </message>
     <message>
         <source>Shortcuts: S (save mask) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)</source>
-        <translation>Raccourcis : S (sauvegarder) · Entrée (exporter) · Ctrl+Z (annuler) · Échap (effacer)</translation>
+        <translation>Atalhos: S (salvar máscara) · Enter (exportar para camada) · Ctrl+Z (desfazer) · Escape (limpar)</translation>
     </message>
     <message>
         <source>Start AI Segmentation</source>
-        <translation>Démarrer AI Segmentation</translation>
+        <translation>Iniciar AI Segmentation</translation>
     </message>
     <message>
         <source>Start segmentation (G)</source>
-        <translation>Démarrer la segmentation (G)</translation>
+        <translation>Iniciar segmentação (G)</translation>
     </message>
     <message>
         <source>Batch mode</source>
-        <translation>Mode Batch</translation>
+        <translation>Modo Batch</translation>
     </message>
     <message>
         <source>Simple mode: One element per export.</source>
-        <translation>Mode simple : Un élément par export.</translation>
+        <translation>Modo simples: Um elemento por exportação.</translation>
     </message>
     <message>
         <source>Batch mode: Save multiple masks, then export all together.</source>
-        <translation>Mode Batch : Sauvegardez plusieurs masques, puis exportez-les ensemble.</translation>
+        <translation>Modo Batch: Salve várias máscaras, depois exporte todas juntas.</translation>
     </message>
     <message>
         <source>Mode can only be changed when segmentation is stopped.</source>
-        <translation>Le mode ne peut être changé qu'après arrêt de la segmentation.</translation>
+        <translation>O modo só pode ser alterado quando a segmentação estiver parada.</translation>
     </message>
     <message>
         <source>Save mask</source>
-        <translation>Sauvegarder le masque</translation>
+        <translation>Salvar máscara</translation>
     </message>
     <message>
         <source>Save current mask to your session (S)</source>
-        <translation>Sauvegarder le masque actuel (S)</translation>
+        <translation>Salvar máscara atual na sua sessão (S)</translation>
     </message>
     <message>
         <source>Export to layer</source>
-        <translation>Exporter en couche</translation>
+        <translation>Exportar para camada</translation>
     </message>
     <message>
         <source>Export all saved masks as a new vector layer (Enter)</source>
-        <translation>Exporter tous les masques en nouvelle couche vecteur (Entrée)</translation>
+        <translation>Exportar todas as máscaras salvas como nova camada vetorial (Enter)</translation>
     </message>
     <message>
         <source>Export {count} mask(s) as a new layer (Enter)</source>
-        <translation>Exporter {count} masque(s) en nouvelle couche (Entrée)</translation>
+        <translation>Exportar {count} máscara(s) como nova camada (Enter)</translation>
     </message>
     <message>
         <source>Save at least one mask first (S)</source>
-        <translation>Sauvegardez d'abord un masque (S)</translation>
+        <translation>Salve pelo menos uma máscara primeiro (S)</translation>
     </message>
     <message>
         <source>Export current mask as a new layer (Enter)</source>
-        <translation>Exporter le masque actuel en nouvelle couche (Entrée)</translation>
+        <translation>Exportar máscara atual como nova camada (Enter)</translation>
     </message>
     <message>
         <source>Place points to create a mask first</source>
-        <translation>Placez des points pour créer un masque</translation>
+        <translation>Coloque pontos para criar uma máscara primeiro</translation>
     </message>
     <message>
         <source>Undo last point</source>
-        <translation>Annuler le dernier point</translation>
+        <translation>Desfazer último ponto</translation>
     </message>
     <message>
         <source>Remove last point (Ctrl+Z)</source>
-        <translation>Supprimer le dernier point (Ctrl+Z)</translation>
+        <translation>Remover último ponto (Ctrl+Z)</translation>
     </message>
     <message>
         <source>Stop segmentation</source>
-        <translation>Arrêter la segmentation</translation>
+        <translation>Parar segmentação</translation>
     </message>
     <message>
         <source>Exit segmentation without saving (Escape)</source>
-        <translation>Quitter sans sauvegarder (Échap)</translation>
+        <translation>Sair da segmentação sem salvar (Escape)</translation>
     </message>
     <message>
         <source>One element per segmentation (e.g., one building, one car).</source>
-        <translation>Un élément par segmentation (ex : un bâtiment, une voiture).</translation>
+        <translation>Um elemento por segmentação (ex: um prédio, um carro).</translation>
     </message>
     <message>
         <source>For multiple elements in one layer, use Batch Mode.</source>
-        <translation>Pour plusieurs éléments dans une couche, utilisez le mode Batch.</translation>
+        <translation>Para múltiplos elementos em uma camada, use o modo Batch.</translation>
     </message>
     <message>
         <source>Simple mode</source>
-        <translation>Mode simple</translation>
+        <translation>Modo simples</translation>
     </message>
 
     <!-- Refine Section -->
     <message>
         <source>Refine mask</source>
-        <translation>Affiner le masque</translation>
+        <translation>Refinar máscara</translation>
     </message>
     <message>
         <source>Expand/Contract:</source>
-        <translation>Dilater/Éroder :</translation>
+        <translation>Expandir/Contrair:</translation>
     </message>
     <message>
         <source>Positive = expand outward, Negative = shrink inward</source>
-        <translation>Positif = dilater, Négatif = éroder</translation>
+        <translation>Positivo = expandir para fora, Negativo = contrair para dentro</translation>
     </message>
     <message>
         <source>Simplify outline:</source>
-        <translation>Simplifier le contour :</translation>
+        <translation>Simplificar contorno:</translation>
     </message>
     <message>
         <source>Reduce small variations in the outline (0 = no change)</source>
-        <translation>Réduire les petites variations du contour (0 = aucun changement)</translation>
+        <translation>Reduzir pequenas variações no contorno (0 = sem alteração)</translation>
     </message>
     <message>
         <source>Fill holes</source>
-        <translation>Combler les trous</translation>
+        <translation>Preencher buracos</translation>
     </message>
     <message>
         <source>Fill interior holes in the mask (holes completely surrounded by the selection)</source>
-        <translation>Combler les trous intérieurs du masque (zones entièrement entourées par la sélection)</translation>
+        <translation>Preencher buracos internos na máscara (buracos completamente cercados pela seleção)</translation>
     </message>
     <message>
         <source>Min. region size:</source>
-        <translation>Taille min. région :</translation>
+        <translation>Tamanho mín. da região:</translation>
     </message>
     <message>
         <source>Remove disconnected regions smaller than this area (in pixels²).</source>
-        <translation>Supprimer les régions déconnectées plus petites que cette surface (en pixels²).</translation>
+        <translation>Remover regiões desconectadas menores que esta área (em pixels²).</translation>
     </message>
     <message>
         <source>Example: 100 = ~10x10 pixel regions, 900 = ~30x30.</source>
-        <translation>Exemple : 100 = régions ~10x10 px, 900 = ~30x30.</translation>
+        <translation>Exemplo: 100 = regiões de ~10x10 pixels, 900 = ~30x30.</translation>
     </message>
     <message>
         <source>0 = keep all.</source>
-        <translation>0 = tout garder.</translation>
+        <translation>0 = manter todos.</translation>
     </message>
 
     <!-- Instructions -->
     <message>
         <source>Click on the element you want to segment:</source>
-        <translation>Cliquez sur l'élément à segmenter :</translation>
+        <translation>Clique no elemento que deseja segmentar:</translation>
     </message>
     <message>
         <source>Left-click to select</source>
-        <translation>Clic gauche pour sélectionner</translation>
+        <translation>Clique esquerdo para selecionar</translation>
     </message>
     <message>
         <source>{count} point(s)</source>
-        <translation>{count} point(s)</translation>
+        <translation>{count} ponto(s)</translation>
     </message>
     <message>
         <source>Left-click to add more</source>
-        <translation>Clic gauche pour en ajouter</translation>
+        <translation>Clique esquerdo para adicionar mais</translation>
     </message>
     <message>
         <source>Right-click to exclude from selection</source>
-        <translation>Clic droit pour exclure de la sélection</translation>
+        <translation>Clique direito para excluir da seleção</translation>
     </message>
     <message>
         <source>{count} adjustment(s)</source>
-        <translation>{count} ajustement(s)</translation>
+        <translation>{count} ajuste(s)</translation>
     </message>
     <message>
         <source>{count} mask(s) saved</source>
-        <translation>{count} masque(s) sauvegardé(s)</translation>
+        <translation>{count} máscara(s) salva(s)</translation>
     </message>
     <message>
         <source>Refine selection or save mask</source>
-        <translation>Affinez la sélection ou sauvegardez le masque</translation>
+        <translation>Refine a seleção ou salve a máscara</translation>
     </message>
 
     <!-- Encoding -->
     <message>
         <source>Cancel Encoding?</source>
-        <translation>Annuler l'encodage ?</translation>
+        <translation>Cancelar codificação?</translation>
     </message>
     <message>
         <source>Are you sure you want to cancel?</source>
-        <translation>Êtes-vous sûr de vouloir annuler ?</translation>
+        <translation>Tem certeza que deseja cancelar?</translation>
     </message>
     <message>
         <source>Once encoding is complete, it's cached permanently.</source>
-        <translation>Une fois l'encodage terminé, il est mis en cache définitivement.</translation>
+        <translation>Uma vez concluída a codificação, ela fica em cache permanentemente.</translation>
     </message>
     <message>
         <source>You'll never need to wait for this image again.</source>
-        <translation>Vous n'aurez plus jamais à attendre pour cette image.</translation>
+        <translation>Você nunca mais precisará esperar por esta imagem.</translation>
     </message>
     <message>
         <source>Encoding this image for AI segmentation...</source>
-        <translation>Encodage de cette image pour AI Segmentation...</translation>
+        <translation>Codificando esta imagem para segmentação IA...</translation>
     </message>
     <message>
         <source>This is stored permanently, no waiting next time :)</source>
-        <translation>Stocké définitivement, plus d'attente la prochaine fois :)</translation>
+        <translation>Isso é armazenado permanentemente, sem espera na próxima vez :)</translation>
     </message>
     <message>
         <source>Encoding Failed</source>
-        <translation>Échec de l'encodage</translation>
+        <translation>Falha na codificação</translation>
     </message>
     <message>
         <source>Failed to encode raster:</source>
-        <translation>Impossible d'encoder le raster :</translation>
+        <translation>Falha ao codificar raster:</translation>
     </message>
 
     <!-- Dialogs -->
     <message>
         <source>Not Ready</source>
-        <translation>Pas prêt</translation>
+        <translation>Não está pronto</translation>
     </message>
     <message>
         <source>Please wait for the SAM model to load.</source>
-        <translation>Veuillez attendre le chargement du modèle SAM.</translation>
+        <translation>Por favor, aguarde o carregamento do modelo SAM.</translation>
     </message>
     <message>
         <source>Load Failed</source>
-        <translation>Échec du chargement</translation>
+        <translation>Falha no carregamento</translation>
     </message>
     <message>
         <source>Failed to load feature data:</source>
-        <translation>Impossible de charger les données :</translation>
+        <translation>Falha ao carregar dados:</translation>
     </message>
     <message>
         <source>Layer Creation Failed</source>
-        <translation>Échec de création de la couche</translation>
+        <translation>Falha na criação da camada</translation>
     </message>
     <message>
         <source>Could not create the output layer.</source>
-        <translation>Impossible de créer la couche de sortie.</translation>
+        <translation>Não foi possível criar a camada de saída.</translation>
     </message>
     <message>
         <source>Export Failed</source>
-        <translation>Échec de l'export</translation>
+        <translation>Falha na exportação</translation>
     </message>
     <message>
         <source>Could not save layer to file:</source>
-        <translation>Impossible de sauvegarder la couche :</translation>
+        <translation>Não foi possível salvar a camada no arquivo:</translation>
     </message>
     <message>
         <source>Layer was saved but could not be loaded:</source>
-        <translation>La couche a été sauvegardée mais n'a pas pu être chargée :</translation>
+        <translation>A camada foi salva mas não pôde ser carregada:</translation>
     </message>
     <message>
         <source>Exit Segmentation</source>
-        <translation>Quitter la segmentation</translation>
+        <translation>Sair da segmentação</translation>
     </message>
     <message>
         <source>Exit segmentation?</source>
-        <translation>Quitter la segmentation ?</translation>
+        <translation>Sair da segmentação?</translation>
     </message>
     <message>
         <source>The current mask will be lost.</source>
-        <translation>Le masque actuel sera perdu.</translation>
+        <translation>A máscara atual será perdida.</translation>
     </message>
     <message>
         <source>Exit Segmentation?</source>
-        <translation>Quitter la segmentation ?</translation>
+        <translation>Sair da segmentação?</translation>
     </message>
     <message>
         <source>You have {count} unsaved mask(s).</source>
-        <translation>Vous avez {count} masque(s) non sauvegardé(s).</translation>
+        <translation>Você tem {count} máscara(s) não salva(s).</translation>
     </message>
     <message>
         <source>Discard and exit segmentation?</source>
-        <translation>Abandonner et quitter la segmentation ?</translation>
+        <translation>Descartar e sair da segmentação?</translation>
     </message>
     <message>
         <source>You have an unsaved mask.</source>
-        <translation>Vous avez un masque non sauvegardé.</translation>
+        <translation>Você tem uma máscara não salva.</translation>
     </message>
     <message>
         <source>Stop Segmentation?</source>
-        <translation>Arrêter la segmentation ?</translation>
+        <translation>Parar segmentação?</translation>
     </message>
     <message>
         <source>This will discard {count} mask(s).</source>
-        <translation>Cela supprimera {count} masque(s).</translation>
+        <translation>Isso descartará {count} máscara(s).</translation>
     </message>
     <message>
         <source>Use 'Export to layer' to keep them.</source>
-        <translation>Utilisez « Exporter en couche » pour les conserver.</translation>
+        <translation>Use 'Exportar para camada' para mantê-las.</translation>
     </message>
     <message>
         <source>Unsaved Masks</source>
-        <translation>Masques non sauvegardés</translation>
+        <translation>Máscaras não salvas</translation>
     </message>
     <message>
         <source>Export before changing mode?</source>
-        <translation>Exporter avant de changer de mode ?</translation>
+        <translation>Exportar antes de mudar o modo?</translation>
     </message>
     <message>
         <source>Delete all saved masks?</source>
-        <translation>Supprimer tous les masques sauvegardés ?</translation>
+        <translation>Excluir todas as máscaras salvas?</translation>
     </message>
     <message>
         <source>This will delete all saved masks.</source>
-        <translation>Cela supprimera tous les masques sauvegardés.</translation>
+        <translation>Isso excluirá todas as máscaras salvas.</translation>
     </message>
     <message>
         <source>Do you want to continue?</source>
-        <translation>Voulez-vous continuer ?</translation>
+        <translation>Deseja continuar?</translation>
     </message>
     <message>
         <source>Edit saved mask</source>
-        <translation>Modifier un masque sauvegardé</translation>
+        <translation>Editar máscara salva</translation>
     </message>
     <message>
         <source>Warning: you are about to edit an already saved mask.</source>
-        <translation>Attention : vous allez modifier un masque déjà sauvegardé.</translation>
+        <translation>Atenção: você está prestes a editar uma máscara já salva.</translation>
     </message>
 
     <!-- Tutorial -->
     <message>
         <source>Batch mode activated.</source>
-        <translation>Mode Batch activé.</translation>
+        <translation>Modo Batch ativado.</translation>
     </message>
     <message>
         <source>Watch the tutorial</source>
-        <translation>Voir le tutoriel</translation>
+        <translation>Assista ao tutorial</translation>
     </message>
     <message>
         <source>to learn how to use it.</source>
-        <translation>pour apprendre à l'utiliser.</translation>
+        <translation>para aprender como usá-lo.</translation>
     </message>
     <message>
         <source>New to AI Segmentation?</source>
-        <translation>Nouveau sur AI Segmentation ?</translation>
+        <translation>Novo no AI Segmentation?</translation>
     </message>
     <message>
         <source>Watch our tutorial</source>
-        <translation>Voir notre tutoriel</translation>
+        <translation>Assista nosso tutorial</translation>
     </message>
 
     <!-- About Section -->
     <message>
         <source>Tutorials</source>
-        <translation>Tutoriels</translation>
+        <translation>Tutoriais</translation>
     </message>
     <message>
         <source>Documentation</source>
-        <translation>Documentation</translation>
+        <translation>Documentação</translation>
     </message>
     <message>
         <source>Contact Us</source>
-        <translation>Nous contacter</translation>
+        <translation>Fale conosco</translation>
     </message>
 
     <!-- Tooltip -->
     <message>
         <source>Segment objects on raster images using AI</source>
-        <translation>Segmenter des objets sur des images raster avec l'IA</translation>
+        <translation>Segmentar objetos em imagens raster usando IA</translation>
     </message>
 </context>
 </TS>

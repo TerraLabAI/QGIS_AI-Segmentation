@@ -468,19 +468,6 @@ class AISegmentationPlugin:
             self._check_checkpoint()
             return
 
-        reply = QMessageBox.question(
-            self.iface.mainWindow(),
-            tr("Install Dependencies"),
-            "{}\n\n{}".format(
-                tr("Download ~800MB of AI dependencies?"),
-                tr("This takes a few minutes.")),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
-        )
-        if reply != QMessageBox.Yes:
-            self.dock_widget.install_button.setEnabled(True)
-            return
-
         QgsMessageLog.logMessage(
             "Starting virtual environment creation and dependency installation...",
             "AI Segmentation",
