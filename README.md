@@ -8,10 +8,6 @@
 
 ---
 
-## Follow steps on the doc to Install & Use this plugin :
+## Follow this tutorial/documentation to use the plugin :
 
  [Documentation-AI_Segmentation](https://www.terra-lab.ai/docs/ai-segmentation)
-
- ---
-
-[Report Issue](https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues) · [TerraLab](https://terra-lab.ai)
