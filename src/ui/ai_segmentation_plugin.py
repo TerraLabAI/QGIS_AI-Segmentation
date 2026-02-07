@@ -220,7 +220,7 @@ class AISegmentationPlugin:
         self._refine_expand = 0
         self._refine_simplify = 2  # Default to 2 for smoother outlines
         self._refine_fill_holes = False  # Default: no fill holes
-        self._refine_min_area = 200  # Default: remove small artifacts
+        self._refine_min_area = 50   # Default: remove small artifacts
 
         # Per-raster mask counters (used for both Simple and Batch modes)
         self._mask_counters = {}  # {raster_name: counter}
@@ -1844,9 +1844,9 @@ class AISegmentationPlugin:
 
         # Reset refinement settings to defaults
         self._refine_expand = 0
-        self._refine_simplify = 3  # Default
-        self._refine_fill_holes = True  # Default
-        self._refine_min_area = 200  # Default
+        self._refine_simplify = 2   # Default
+        self._refine_fill_holes = False  # Default
+        self._refine_min_area = 50  # Default
 
         if self.dock_widget:
             self.dock_widget.set_point_count(0, 0)
