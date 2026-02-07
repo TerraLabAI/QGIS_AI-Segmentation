@@ -645,7 +645,7 @@ class AISegmentationDockWidget(QDockWidget):
         min_area_label.setToolTip(tr("Remove disconnected regions smaller than this area (in pixels²).") + "\n" + tr("Example: 100 = ~10x10 pixel regions, 900 = ~30x30.") + "\n" + tr("0 = keep all."))
         self.min_area_spinbox = QSpinBox()
         self.min_area_spinbox.setRange(0, 10000)
-        self.min_area_spinbox.setValue(200)  # Default: remove small artifacts
+        self.min_area_spinbox.setValue(50)  # Default: remove small artifacts
         self.min_area_spinbox.setSuffix(" px²")
         self.min_area_spinbox.setSingleStep(50)
         self.min_area_spinbox.setMinimumWidth(80)
@@ -703,7 +703,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.expand_spinbox.setValue(0)
         self.simplify_spinbox.setValue(2)  # Default to 2
         self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
-        self.min_area_spinbox.setValue(200)  # Default: remove small artifacts
+        self.min_area_spinbox.setValue(50)  # Default: remove small artifacts
 
     def set_refine_values(self, expand: int, simplify: int, fill_holes: bool = False, min_area: int = 0):
         """Set refine slider values without emitting signals."""
