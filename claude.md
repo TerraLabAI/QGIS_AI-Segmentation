@@ -181,6 +181,8 @@ tr("Export {count} polygon(s)").format(count=5)
       tr("Line one"),
       tr("Line two"))
   ```
+- **Undefined names (F821)**: Never reference a variable before it is defined. Build lists/dicts incrementally using the correct name at each stage:
+  ```python
 - **Global keyword (F824)**: Only use `global` when reassigning a module-level variable. Not needed when just modifying a dict/list:
   ```python
   # WRONG (F824 - global not needed for dict modification):
