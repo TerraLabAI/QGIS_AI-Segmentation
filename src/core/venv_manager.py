@@ -245,6 +245,40 @@ def _get_pip_antivirus_help(venv_dir: str) -> str:
     ).format(venv_dir)
 
 
+# Windows NTSTATUS crash codes (both signed and unsigned representations)
+_WINDOWS_CRASH_CODES = {
+    3221225477,   # 0xC0000005 unsigned - ACCESS_VIOLATION
+    -1073741819,  # 0xC0000005 signed   - ACCESS_VIOLATION
+    3221225725,   # 0xC00000FD unsigned - STACK_OVERFLOW
+    -1073741571,  # 0xC00000FD signed   - STACK_OVERFLOW
+    3221225781,   # 0xC0000135 unsigned - DLL_NOT_FOUND
+    -1073741515,  # 0xC0000135 signed   - DLL_NOT_FOUND
+}
+
+
+def _is_windows_process_crash(returncode: int) -> bool:
+    """Detect Windows process crashes (ACCESS_VIOLATION, STACK_OVERFLOW, etc.)."""
+    if sys.platform != "win32":
+        return False
+    return returncode in _WINDOWS_CRASH_CODES
+
+
+def _get_crash_help(venv_dir: str) -> str:
+    """Get actionable help for Windows process crash during pip install."""
+    return (
+        "The installer process crashed unexpectedly (access violation).\n\n"
+        "This is usually caused by:\n"
+        "  - Antivirus software (Windows Defender, etc.) blocking pip\n"
+        "  - Corrupted virtual environment\n\n"
+        "Please try:\n"
+        "  1. Temporarily disable real-time antivirus scanning\n"
+        "  2. Add an exclusion for the plugin folder:\n"
+        "     {}\n"
+        "  3. Click 'Reinstall Dependencies' to recreate the environment\n"
+        "  4. If the issue persists, run QGIS as administrator"
+    ).format(venv_dir)
+
+
 def get_venv_dir() -> str:
     return VENV_DIR
 
@@ -505,6 +539,8 @@ def install_dependencies(
     base_progress = 20
     progress_per_package = 80 // total_packages
 
+    python_path = get_venv_python_path(venv_dir)
+
     for i, (package_name, version_spec) in enumerate(REQUIRED_PACKAGES):
         if cancel_check and cancel_check():
             _log("Installation cancelled by user", Qgis.Warning)
@@ -534,8 +570,8 @@ def install_dependencies(
 
         _log(f"[{i + 1}/{total_packages}] Installing {package_spec}...", Qgis.Info)
 
-        base_cmd = [
-            pip_path, "install",
+        pip_args = [
+            "install",
             "--upgrade",
             "--no-warn-script-location",
             "--disable-pip-version-check",
@@ -555,16 +591,15 @@ def install_dependencies(
             ])
             _log("Using CUDA {} index for {}".format(cuda_index, package_name), Qgis.Info)
 
-        try:
-            env = os.environ.copy()
-            env["PYTHONIOENCODING"] = "utf-8"
+        # Use clean env to avoid QGIS PYTHONPATH/PYTHONHOME interference
+        env = _get_clean_env_for_venv()
 
-            subprocess_kwargs = {}
-            if sys.platform == "win32":
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
-                subprocess_kwargs["startupinfo"] = startupinfo
+        subprocess_kwargs = _get_subprocess_kwargs()
+
+        try:
+            # Use python -m pip (more reliable than pip.exe on Windows
+            # where antivirus may block the standalone pip executable)
+            base_cmd = [python_path, "-m", "pip"] + pip_args
 
             # First attempt: standard pip install
             result = subprocess.run(
@@ -573,8 +608,29 @@ def install_dependencies(
                 env=env, **subprocess_kwargs,
             )
 
+            # If Windows process crash, retry with pip.exe as fallback
+            if _is_windows_process_crash(result.returncode):
+                _log(
+                    "Process crash detected (code {}), "
+                    "retrying with pip.exe...".format(result.returncode),
+                    Qgis.Warning
+                )
+                if progress_callback:
+                    progress_callback(
+                        current_progress,
+                        "Retrying {}... ({}/{})".format(
+                            package_name, i + 1, total_packages)
+                    )
+
+                fallback_cmd = [pip_path] + pip_args
+                result = subprocess.run(
+                    fallback_cmd,
+                    capture_output=True, text=True, timeout=600,
+                    env=env, **subprocess_kwargs,
+                )
+
             # If failed, check for SSL errors and retry with --trusted-host
-            if result.returncode != 0:
+            if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
                 error_output = result.stderr or result.stdout or ""
 
                 if _is_ssl_error(error_output):
@@ -589,7 +645,7 @@ def install_dependencies(
                                 package_name, i + 1, total_packages)
                         )
 
-                    ssl_cmd = base_cmd[:1] + _get_pip_ssl_flags() + base_cmd[1:]
+                    ssl_cmd = base_cmd[:3] + _get_pip_ssl_flags() + base_cmd[3:]
                     result = subprocess.run(
                         ssl_cmd,
                         capture_output=True, text=True, timeout=600,
@@ -603,6 +659,15 @@ def install_dependencies(
             else:
                 error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
                 _log(f"✗ Failed to install {package_spec}: {error_msg[:500]}", Qgis.Critical)
+
+                # Check for Windows process crash (after retry also failed)
+                if _is_windows_process_crash(result.returncode):
+                    crash_help = _get_crash_help(venv_dir)
+                    _log(crash_help, Qgis.Warning)
+                    error_msg = "{}\n\n{}".format(
+                        f"Process crashed (code {result.returncode})",
+                        crash_help)
+                    return False, f"Failed to install {package_name}: {error_msg}"
 
                 # Check for SSL errors (after retry also failed)
                 if _is_ssl_error(error_msg):
