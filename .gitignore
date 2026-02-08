@@ -18,5 +18,3 @@ python_standalone/
 libs/
 venv_py3.9/
 venv_py3.12/
-
-.claude/

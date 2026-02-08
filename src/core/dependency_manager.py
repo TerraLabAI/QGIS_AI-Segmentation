@@ -13,7 +13,7 @@ ALL_REQUIRED_PACKAGES = [
     ("torch", "torch", "2.0.0"),
     ("segment_anything", "segment-anything", "1.0"),
     ("pandas", "pandas", "1.3.0"),
-    ("numpy", "numpy", "1.20.0,<2.0.0"),
+    ("numpy", "numpy", "1.26.0,<2.0.0"),
     ("rasterio", "rasterio", "1.3.0"),
 ]
 

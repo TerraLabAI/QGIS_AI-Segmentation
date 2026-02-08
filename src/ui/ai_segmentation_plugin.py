@@ -29,6 +29,7 @@ from qgis.PyQt.QtGui import QColor
 
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
+from .error_report_dialog import show_error_report, start_log_collector
 from ..core.i18n import tr
 
 # QSettings keys for tutorial flags
@@ -240,6 +241,8 @@ class AISegmentationPlugin:
         self._stopping_segmentation = False  # Flag to track if we're stopping programmatically
 
     def initGui(self):
+        start_log_collector()
+
         icon_path = str(self.plugin_dir / "resources" / "icons" / "icon.png")
         if not os.path.exists(icon_path):
             icon = QIcon()
@@ -523,25 +526,21 @@ class AISegmentationPlugin:
             else:
                 self.dock_widget.set_dependency_status(False, tr("Verification failed:") + f" {verify_msg}")
 
-                QMessageBox.warning(
+                show_error_report(
                     self.iface.mainWindow(),
                     tr("Verification Failed"),
-                    "{}\n\n{}\n\n{}".format(
+                    "{}\n{}".format(
                         tr("Virtual environment was created but verification failed:"),
-                        verify_msg,
-                        tr("Please check the logs or try reinstalling."))
+                        verify_msg)
                 )
         else:
             error_msg = message[:300] if message else tr("Unknown error")
             self.dock_widget.set_dependency_status(False, tr("Installation failed"))
 
-            QMessageBox.warning(
+            show_error_report(
                 self.iface.mainWindow(),
                 tr("Installation Failed"),
-                "{}\n\n{}\n\n{}".format(
-                    tr("Failed to install dependencies:"),
-                    error_msg,
-                    tr("Check the QGIS log panel (View → Panels → Log Messages) for detailed error information."))
+                error_msg
             )
 
     def _on_cancel_deps_install(self):
@@ -572,13 +571,12 @@ class AISegmentationPlugin:
         else:
             self.dock_widget.set_download_progress(0, "")
 
-            QMessageBox.warning(
+            show_error_report(
                 self.iface.mainWindow(),
                 tr("Download Failed"),
-                "{}\n{}\n\n{}".format(
+                "{}\n{}".format(
                     tr("Failed to download model:"),
-                    message,
-                    tr("Please check your internet connection and try again."))
+                    message)
             )
 
     def _on_cancel_download(self):
@@ -676,11 +674,11 @@ class AISegmentationPlugin:
             self.dock_widget.reset_session()
 
             if not is_cancelled:
-                # Actual error - show warning dialog
-                QMessageBox.warning(
+                # Actual error - show error report dialog
+                show_error_report(
                     self.iface.mainWindow(),
                     tr("Encoding Failed"),
-                    tr("Failed to encode raster:") + f"\n{message}"
+                    "{}\n{}".format(tr("Failed to encode raster:"), message)
                 )
 
     def _load_features_and_activate(self, raster_path: str):
@@ -730,10 +728,10 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Warning
             )
-            QMessageBox.warning(
+            show_error_report(
                 self.iface.mainWindow(),
                 tr("Load Failed"),
-                tr("Failed to load feature data:") + f"\n{str(e)}"
+                "{}\n{}".format(tr("Failed to load feature data:"), str(e))
             )
 
     def _activate_segmentation_tool(self):
@@ -1062,7 +1060,7 @@ class AISegmentationPlugin:
         # Create a temporary memory layer to build features
         temp_layer = QgsVectorLayer("MultiPolygon", layer_name, "memory")
         if not temp_layer.isValid():
-            QMessageBox.warning(
+            show_error_report(
                 self.iface.mainWindow(),
                 tr("Layer Creation Failed"),
                 tr("Could not create the output layer.")
@@ -1133,10 +1131,10 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Warning
             )
-            QMessageBox.warning(
+            show_error_report(
                 self.iface.mainWindow(),
                 tr("Export Failed"),
-                tr("Could not save layer to file:") + f"\n{error[1]}"
+                "{}\n{}".format(tr("Could not save layer to file:"), error[1])
             )
             return
 
@@ -1148,10 +1146,10 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Warning
             )
-            QMessageBox.warning(
+            show_error_report(
                 self.iface.mainWindow(),
                 tr("Load Failed"),
-                tr("Layer was saved but could not be loaded:") + f"\n{gpkg_path}"
+                "{}\n{}".format(tr("Layer was saved but could not be loaded:"), gpkg_path)
             )
             return
 

@@ -732,18 +732,18 @@ class AISegmentationDockWidget(QDockWidget):
 
         links_layout.addStretch()  # Push links to the right
 
-        # Tutorial link
-        tutorial_link = QLabel(
-            '<a href="https://youtube.com/playlist?list=PL4hCF043nAUW2iIxALNUzy1fKHcCWwDsv&si=KO8kECsezunLe09p" style="color: #1976d2;">' + tr("Tutorials") + '</a>'
+        # Report a bug button (styled as link)
+        report_link = QLabel(
+            '<a href="#" style="color: #1976d2;">' + tr("Report a bug") + '</a>'
         )
-        tutorial_link.setStyleSheet("font-size: 13px;")
-        tutorial_link.setOpenExternalLinks(True)
-        tutorial_link.setCursor(Qt.PointingHandCursor)
-        links_layout.addWidget(tutorial_link)
+        report_link.setStyleSheet("font-size: 13px;")
+        report_link.setCursor(Qt.PointingHandCursor)
+        report_link.linkActivated.connect(self._on_report_bug)
+        links_layout.addWidget(report_link)
 
-        # Documentation link
+        # Tutorial & Docs link (merged)
         docs_link = QLabel(
-            '<a href="https://terra-lab.ai/docs/ai-segmentation" style="color: #1976d2;">' + tr("Documentation") + '</a>'
+            '<a href="https://terra-lab.ai/docs/ai-segmentation" style="color: #1976d2;">' + tr("Tutorial & Docs") + '</a>'
         )
         docs_link.setStyleSheet("font-size: 13px;")
         docs_link.setOpenExternalLinks(True)
@@ -760,6 +760,11 @@ class AISegmentationDockWidget(QDockWidget):
         links_layout.addWidget(contact_link)
 
         self.main_layout.addWidget(links_widget)
+
+    def _on_report_bug(self):
+        """Open the bug report dialog."""
+        from .error_report_dialog import show_bug_report
+        show_bug_report(self)
 
     def _on_batch_mode_checkbox_changed(self, state: int):
         """Handle batch mode checkbox change."""
