@@ -40,9 +40,10 @@ class DepsInstallWorker(QThread):
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, parent=None):
+    def __init__(self, cuda_enabled: bool = False, parent=None):
         super().__init__(parent)
         self._cancelled = False
+        self._cuda_enabled = cuda_enabled
 
     def cancel(self):
         self._cancelled = True
@@ -52,7 +53,8 @@ class DepsInstallWorker(QThread):
             from ..core.venv_manager import create_venv_and_install
             success, message = create_venv_and_install(
                 progress_callback=lambda percent, msg: self.progress.emit(percent, msg),
-                cancel_check=lambda: self._cancelled
+                cancel_check=lambda: self._cancelled,
+                cuda_enabled=self._cuda_enabled
             )
             self.finished.emit(success, message)
         except Exception as e:
@@ -383,6 +385,7 @@ class AISegmentationPlugin:
 
             if is_ready:
                 self.dock_widget.set_dependency_status(True, "✓ Virtual environment ready")
+                self._show_device_info()
                 QgsMessageLog.logMessage(
                     "✓ Virtual environment verified successfully",
                     "AI Segmentation",
@@ -470,6 +473,27 @@ class AISegmentationPlugin:
                 level=Qgis.Warning
             )
 
+    def _show_device_info(self):
+        """Detect and display which compute device will be used."""
+        try:
+            from ..core.venv_manager import ensure_venv_packages_available
+            ensure_venv_packages_available()
+
+            from ..core.device_manager import get_device_info
+            info = get_device_info()
+            self.dock_widget.set_device_info(info)
+            QgsMessageLog.logMessage(
+                f"Device info: {info}",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                f"Could not determine device info: {e}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+
     def _on_install_requested(self):
         from ..core.venv_manager import get_venv_status
 
@@ -492,7 +516,8 @@ class AISegmentationPlugin:
 
         self.dock_widget.set_deps_install_progress(0, "Preparing installation...")
 
-        self.deps_install_worker = DepsInstallWorker()
+        cuda_enabled = self.dock_widget.get_cuda_enabled()
+        self.deps_install_worker = DepsInstallWorker(cuda_enabled=cuda_enabled)
         self.deps_install_worker.progress.connect(self._on_deps_install_progress)
         self.deps_install_worker.finished.connect(self._on_deps_install_finished)
         self.deps_install_worker.start()
@@ -521,6 +546,7 @@ class AISegmentationPlugin:
 
             if is_valid:
                 self.dock_widget.set_dependency_status(True, "✓ " + tr("Virtual environment ready"))
+                self._show_device_info()
                 self._verify_venv()
                 self._check_checkpoint()
             else:

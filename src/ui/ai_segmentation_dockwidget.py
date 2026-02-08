@@ -1,3 +1,5 @@
+import sys
+
 from qgis.PyQt.QtWidgets import (
     QDockWidget,
     QWidget,
@@ -180,6 +182,38 @@ class AISegmentationDockWidget(QDockWidget):
         )
         layout.addWidget(self.install_button)
 
+        # CUDA checkbox - only shown on Windows/Linux (macOS uses MPS instead)
+        self.cuda_checkbox = QCheckBox(tr("Enable NVIDIA GPU acceleration (CUDA)"))
+        self.cuda_checkbox.setToolTip(
+            tr("CUDA requires an NVIDIA GPU. Download size: ~2.5GB (vs ~600MB without CUDA)."))
+        self.cuda_checkbox.setVisible(False)
+        self.cuda_checkbox.setStyleSheet("""
+            QCheckBox {
+                font-size: 11px;
+                color: palette(text);
+                padding: 2px 0px;
+            }
+            QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+            }
+        """)
+        layout.addWidget(self.cuda_checkbox)
+
+        # Auto-detect NVIDIA GPU and pre-check if found (non-macOS only)
+        if sys.platform != "darwin":
+            try:
+                from ..core.venv_manager import detect_nvidia_gpu
+                has_gpu, gpu_name = detect_nvidia_gpu()
+                if has_gpu:
+                    self.cuda_checkbox.setChecked(True)
+                    self.cuda_checkbox.setToolTip(
+                        "{}\n{}".format(
+                            tr("Detected: {gpu_name}").format(gpu_name=gpu_name),
+                            tr("CUDA requires an NVIDIA GPU. Download size: ~2.5GB (vs ~600MB without CUDA).")))
+            except Exception:
+                pass
+
         self.cancel_deps_button = QPushButton(tr("Cancel"))
         self.cancel_deps_button.clicked.connect(self._on_cancel_deps_clicked)
         self.cancel_deps_button.setVisible(False)
@@ -187,6 +221,18 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.cancel_deps_button)
 
         self.main_layout.addWidget(self.deps_group)
+
+        # Device info label - outside deps_group so it stays visible after deps installed
+        self.device_info_label = QLabel("")
+        self.device_info_label.setVisible(False)
+        self.device_info_label.setWordWrap(True)
+        self.device_info_label.setStyleSheet(
+            "background-color: rgba(46, 125, 50, 0.12); padding: 6px 8px; "
+            "border-radius: 4px; font-size: 11px; "
+            "border: 1px solid rgba(46, 125, 50, 0.25); "
+            "color: palette(text);"
+        )
+        self.main_layout.addWidget(self.device_info_label)
 
     def _setup_checkpoint_section(self):
         self.checkpoint_group = QGroupBox(tr("Step 2: Segmentation Model"))
@@ -930,6 +976,19 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_stop_clicked(self):
         self.stop_segmentation_requested.emit()
 
+    def get_cuda_enabled(self) -> bool:
+        """Return whether the CUDA checkbox is checked."""
+        return self.cuda_checkbox.isChecked()
+
+    def set_device_info(self, info: str):
+        """Display device info (e.g. 'NVIDIA RTX 3060 (CUDA)') after deps installed."""
+        if info:
+            self.device_info_label.setText(
+                "{} {}".format(tr("Using:"), info))
+            self.device_info_label.setVisible(True)
+        else:
+            self.device_info_label.setVisible(False)
+
     def set_dependency_status(self, ok: bool, message: str):
         self._dependencies_ok = ok
         # Use "Not installed yet" for clearer messaging
@@ -940,6 +999,7 @@ class AISegmentationDockWidget(QDockWidget):
         if ok:
             self.deps_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
             self.install_button.setVisible(False)
+            self.cuda_checkbox.setVisible(False)
             self.cancel_deps_button.setVisible(False)
             self.deps_progress.setVisible(False)
             self.deps_progress_label.setVisible(False)
@@ -948,6 +1008,8 @@ class AISegmentationDockWidget(QDockWidget):
             self.deps_status_label.setStyleSheet("color: palette(text);")
             self.install_button.setVisible(True)
             self.install_button.setEnabled(True)
+            # Show CUDA checkbox on non-macOS when deps need installing
+            self.cuda_checkbox.setVisible(sys.platform != "darwin")
             self.deps_group.setVisible(True)
 
         self._update_full_ui()
