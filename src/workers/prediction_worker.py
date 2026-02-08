@@ -76,6 +76,18 @@ class SamPredictorNoImgEncoder:
         self.model = sam_model
         self.device = device if device is not None else get_optimal_device()
         self.model.to(self.device)
+
+        # Verify CUDA kernels are available for this GPU
+        if self.device.type == "cuda":
+            try:
+                test = torch.zeros(1, device=self.device)
+                _ = test + 1  # Force a kernel execution
+                torch.cuda.synchronize()
+                del test
+            except RuntimeError:
+                self.device = torch.device("cpu")
+                self.model.to(self.device)
+
         self.reset_image()
 
     def reset_image(self) -> None:
