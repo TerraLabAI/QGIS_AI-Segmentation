@@ -684,5 +684,15 @@
         <source>Email copied!</source>
         <translation>Email copiado!</translation>
     </message>
+
+    <!-- SSL / Antivirus error titles -->
+    <message>
+        <source>SSL Certificate Error</source>
+        <translation>Erro de certificado SSL</translation>
+    </message>
+    <message>
+        <source>Installation Blocked</source>
+        <translation>Instalação bloqueada</translation>
+    </message>
 </context>
 </TS>

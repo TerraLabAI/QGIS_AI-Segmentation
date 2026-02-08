@@ -537,9 +537,23 @@ class AISegmentationPlugin:
             error_msg = message[:300] if message else tr("Unknown error")
             self.dock_widget.set_dependency_status(False, tr("Installation failed"))
 
+            # Determine specific error title based on failure type
+            error_title = tr("Installation Failed")
+            msg_lower = message.lower() if message else ""
+            if any(p in msg_lower for p in [
+                "ssl", "certificate verify", "sslerror",
+                "unable to get local issuer",
+            ]):
+                error_title = tr("SSL Certificate Error")
+            elif any(p in msg_lower for p in [
+                "access is denied", "winerror 5", "winerror 225",
+                "permission denied", "blocked",
+            ]):
+                error_title = tr("Installation Blocked")
+
             show_error_report(
                 self.iface.mainWindow(),
-                tr("Installation Failed"),
+                error_title,
                 error_msg
             )
 

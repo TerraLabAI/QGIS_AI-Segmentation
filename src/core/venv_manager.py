@@ -131,6 +131,77 @@ def _check_gdal_available() -> Tuple[bool, str]:
         return True, ""  # Assume OK if check fails
 
 
+_SSL_ERROR_PATTERNS = [
+    "ssl",
+    "certificate verify failed",
+    "CERTIFICATE_VERIFY_FAILED",
+    "SSLError",
+    "SSLCertVerificationError",
+    "tlsv1 alert",
+    "unable to get local issuer certificate",
+    "self signed certificate in certificate chain",
+]
+
+
+def _is_ssl_error(stderr: str) -> bool:
+    """Detect SSL/certificate errors in pip output."""
+    stderr_lower = stderr.lower()
+    return any(pattern.lower() in stderr_lower for pattern in _SSL_ERROR_PATTERNS)
+
+
+def _get_pip_ssl_flags() -> List[str]:
+    """Get pip flags to bypass SSL verification for corporate proxies."""
+    return [
+        "--trusted-host", "pypi.org",
+        "--trusted-host", "pypi.python.org",
+        "--trusted-host", "files.pythonhosted.org",
+    ]
+
+
+def _get_ssl_error_help() -> str:
+    """Get actionable help message for persistent SSL errors."""
+    return (
+        "SSL certificate verification failed. "
+        "This is usually caused by a corporate proxy or firewall "
+        "intercepting HTTPS connections.\n\n"
+        "Please try:\n"
+        "  1. Ask your IT team to whitelist: pypi.org, "
+        "pypi.python.org, files.pythonhosted.org\n"
+        "  2. Check your proxy settings in QGIS "
+        "(Settings > Options > Network)\n"
+        "  3. If using a VPN, try disconnecting temporarily"
+    )
+
+
+def _is_antivirus_error(stderr: str) -> bool:
+    """Detect antivirus/permission blocking in pip output."""
+    stderr_lower = stderr.lower()
+    patterns = [
+        "access is denied",
+        "winerror 5",
+        "winerror 225",
+        "permission denied",
+        "operation did not complete successfully because the file contains a virus",
+        "blocked by your administrator",
+        "blocked by group policy",
+    ]
+    return any(p in stderr_lower for p in patterns)
+
+
+def _get_pip_antivirus_help(venv_dir: str) -> str:
+    """Get actionable help message for antivirus blocking pip."""
+    return (
+        "Installation was blocked, likely by antivirus software "
+        "or security policy.\n\n"
+        "Please try:\n"
+        "  1. Temporarily disable real-time antivirus scanning\n"
+        "  2. Add an exclusion for the plugin folder:\n"
+        "     {}\n"
+        "  3. Run QGIS as administrator (right-click > Run as administrator)\n"
+        "  4. Try the installation again"
+    ).format(venv_dir)
+
+
 def get_venv_dir() -> str:
     return VENV_DIR
 
@@ -199,12 +270,59 @@ def get_venv_pip_path(venv_dir: str = None) -> str:
         return os.path.join(venv_dir, "bin", "pip")
 
 
+def _get_qgis_python() -> Optional[str]:
+    """
+    Get the path to QGIS's bundled Python on Windows.
+
+    QGIS ships with a signed Python interpreter. This is used as a fallback
+    when the standalone Python download is blocked by anti-malware software.
+
+    Returns the path to the Python executable, or None if not found/not Windows.
+    """
+    if sys.platform != "win32":
+        return None
+
+    # QGIS on Windows bundles Python under sys.prefix
+    python_path = os.path.join(sys.prefix, "python.exe")
+    if not os.path.exists(python_path):
+        # Some QGIS installs place it under a python3 name
+        python_path = os.path.join(sys.prefix, "python3.exe")
+
+    if not os.path.exists(python_path):
+        _log("QGIS bundled Python not found at sys.prefix", Qgis.Warning)
+        return None
+
+    # Verify it can execute
+    try:
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+
+        result = subprocess.run(
+            [python_path, "-c", "import sys; print(sys.version)"],
+            capture_output=True, text=True, timeout=15,
+            env=env, startupinfo=startupinfo,
+        )
+        if result.returncode == 0:
+            _log(f"QGIS Python verified: {result.stdout.strip()}", Qgis.Info)
+            return python_path
+        else:
+            _log(f"QGIS Python failed verification: {result.stderr}", Qgis.Warning)
+            return None
+    except Exception as e:
+        _log(f"QGIS Python verification error: {e}", Qgis.Warning)
+        return None
+
+
 def _get_system_python() -> str:
     """
     Get the path to the Python executable for creating venvs.
 
     Uses the standalone Python downloaded by python_manager.
-    No fallback to system Python - fails clearly if standalone not installed.
+    On Windows, falls back to QGIS's bundled Python if standalone is unavailable
+    (e.g. when anti-malware blocks the standalone download).
     """
     from .python_manager import standalone_python_exists, get_standalone_python_path
 
@@ -213,7 +331,17 @@ def _get_system_python() -> str:
         _log(f"Using standalone Python: {python_path}", Qgis.Info)
         return python_path
 
-    # No fallback - require standalone Python
+    # On Windows, try QGIS's bundled Python as fallback
+    if sys.platform == "win32":
+        qgis_python = _get_qgis_python()
+        if qgis_python:
+            _log(
+                "Standalone Python unavailable, using QGIS Python as fallback",
+                Qgis.Warning
+            )
+            return qgis_python
+
+    # No fallback available
     raise RuntimeError(
         "Python standalone not installed. "
         "Please click 'Install Dependencies' to download Python automatically."
@@ -270,6 +398,30 @@ def create_venv(venv_dir: str = None, progress_callback: Optional[Callable[[int,
 
         if result.returncode == 0:
             _log("Virtual environment created successfully", Qgis.Success)
+
+            # Ensure pip is available (QGIS Python fallback may not include pip)
+            pip_path = get_venv_pip_path(venv_dir)
+            if not os.path.exists(pip_path):
+                _log("pip not found in venv, bootstrapping with ensurepip...", Qgis.Info)
+                python_in_venv = get_venv_python_path(venv_dir)
+                ensurepip_cmd = [python_in_venv, "-m", "ensurepip", "--upgrade"]
+                try:
+                    ensurepip_result = subprocess.run(
+                        ensurepip_cmd,
+                        capture_output=True, text=True, timeout=120,
+                        env=env,
+                        **({"startupinfo": startupinfo} if sys.platform == "win32" else {}),
+                    )
+                    if ensurepip_result.returncode == 0:
+                        _log("pip bootstrapped via ensurepip", Qgis.Success)
+                    else:
+                        err = ensurepip_result.stderr or ensurepip_result.stdout
+                        _log(f"ensurepip failed: {err[:200]}", Qgis.Warning)
+                        return False, f"Failed to bootstrap pip: {err[:200]}"
+                except Exception as e:
+                    _log(f"ensurepip exception: {e}", Qgis.Warning)
+                    return False, f"Failed to bootstrap pip: {str(e)[:200]}"
+
             if progress_callback:
                 progress_callback(20, "Virtual environment created")
             return True, "Virtual environment created"
@@ -323,7 +475,7 @@ def install_dependencies(
 
         _log(f"[{i + 1}/{total_packages}] Installing {package_spec}...", Qgis.Info)
 
-        cmd = [
+        base_cmd = [
             pip_path, "install",
             "--upgrade",
             "--no-warn-script-location",
@@ -336,27 +488,42 @@ def install_dependencies(
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
 
+            subprocess_kwargs = {}
             if sys.platform == "win32":
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 startupinfo.wShowWindow = subprocess.SW_HIDE
+                subprocess_kwargs["startupinfo"] = startupinfo
 
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=600,
-                    env=env,
-                    startupinfo=startupinfo,
-                )
-            else:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=600,
-                    env=env,
-                )
+            # First attempt: standard pip install
+            result = subprocess.run(
+                base_cmd,
+                capture_output=True, text=True, timeout=600,
+                env=env, **subprocess_kwargs,
+            )
+
+            # If failed, check for SSL errors and retry with --trusted-host
+            if result.returncode != 0:
+                error_output = result.stderr or result.stdout or ""
+
+                if _is_ssl_error(error_output):
+                    _log(
+                        "SSL error detected, retrying with --trusted-host flags...",
+                        Qgis.Warning
+                    )
+                    if progress_callback:
+                        progress_callback(
+                            current_progress,
+                            "SSL error, retrying {}... ({}/{})".format(
+                                package_name, i + 1, total_packages)
+                        )
+
+                    ssl_cmd = base_cmd[:1] + _get_pip_ssl_flags() + base_cmd[1:]
+                    result = subprocess.run(
+                        ssl_cmd,
+                        capture_output=True, text=True, timeout=600,
+                        env=env, **subprocess_kwargs,
+                    )
 
             if result.returncode == 0:
                 _log(f"✓ Successfully installed {package_spec}", Qgis.Success)
@@ -365,6 +532,20 @@ def install_dependencies(
             else:
                 error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
                 _log(f"✗ Failed to install {package_spec}: {error_msg[:500]}", Qgis.Critical)
+
+                # Check for SSL errors (after retry also failed)
+                if _is_ssl_error(error_msg):
+                    ssl_help = _get_ssl_error_help()
+                    _log(ssl_help, Qgis.Warning)
+                    error_msg = "{}\n\n{}".format(error_msg[:200], ssl_help)
+                    return False, f"Failed to install {package_name}: {error_msg}"
+
+                # Check for antivirus blocking
+                if _is_antivirus_error(error_msg):
+                    av_help = _get_pip_antivirus_help(venv_dir)
+                    _log(av_help, Qgis.Warning)
+                    error_msg = "{}\n\n{}".format(error_msg[:200], av_help)
+                    return False, f"Failed to install {package_name}: {error_msg}"
 
                 # Check for GDAL issues on Linux when rasterio fails
                 if package_name == "rasterio":
@@ -565,7 +746,21 @@ def create_venv_and_install(
         )
 
         if not success:
-            return False, f"Failed to download Python: {msg}"
+            # On Windows, try QGIS Python fallback before giving up
+            if sys.platform == "win32":
+                qgis_python = _get_qgis_python()
+                if qgis_python:
+                    _log(
+                        "Standalone Python download failed, "
+                        "falling back to QGIS Python: {}".format(msg),
+                        Qgis.Warning
+                    )
+                    if progress_callback:
+                        progress_callback(10, "Using QGIS Python (fallback)...")
+                else:
+                    return False, f"Failed to download Python: {msg}"
+            else:
+                return False, f"Failed to download Python: {msg}"
 
         if cancel_check and cancel_check():
             return False, "Installation cancelled"
