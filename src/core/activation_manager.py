@@ -3,6 +3,7 @@ Activation manager for the AI Segmentation plugin.
 Handles plugin activation state using QSettings.
 """
 
+from typing import Tuple
 from qgis.core import QgsSettings
 
 # The unlock code
@@ -23,7 +24,7 @@ def is_plugin_activated() -> bool:
     return settings.value(ACTIVATION_KEY, False, type=bool)
 
 
-def activate_plugin(code: str) -> tuple[bool, str]:
+def activate_plugin(code: str) -> Tuple[bool, str]:
     """
     Attempt to activate the plugin with the given code.
 

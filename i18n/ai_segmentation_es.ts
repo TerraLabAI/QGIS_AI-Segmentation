@@ -104,7 +104,7 @@
     </message>
     <message>
         <source>Check the QGIS log panel (View → Panels → Log Messages) for detailed error information.</source>
-        <translation>Revise el panel de registros de QGIS (Ver → Sketcher → Sketcher de registro) para información detallada del error.</translation>
+        <translation>Revise el panel de registros de QGIS (Ver → Paneles → Mensajes de Registro) para información detallada del error.</translation>
     </message>
     <message>
         <source>Download ~800MB of AI dependencies?</source>
@@ -407,8 +407,8 @@
         <translation>Rellenar huecos</translation>
     </message>
     <message>
-        <source>Fill interior holes in the selection (holes completely surrounded by the selection)</source>
-        <translation>Rellenar huecos interiores en la selección (huecos completamente rodeados por la selección)</translation>
+        <source>Fill interior holes in the selection</source>
+        <translation>Rellenar huecos interiores en la selección</translation>
     </message>
     <message>
         <source>Min. region size:</source>

@@ -686,7 +686,7 @@ class AISegmentationDockWidget(QDockWidget):
         # 3. Fill holes: Checkbox - fills interior holes in the mask
         fill_holes_layout = QHBoxLayout()
         self.fill_holes_checkbox = QCheckBox(tr("Fill holes"))
-        self.fill_holes_checkbox.setChecked(True)  # Default: fill holes
+        self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
         self.fill_holes_checkbox.setToolTip(tr("Fill interior holes in the selection"))
         fill_holes_layout.addWidget(self.fill_holes_checkbox)
         fill_holes_layout.addStretch()
@@ -755,7 +755,7 @@ class AISegmentationDockWidget(QDockWidget):
         """Reset refinement controls to default values."""
         self.expand_spinbox.setValue(0)
         self.simplify_spinbox.setValue(4)  # Default to 4
-        self.fill_holes_checkbox.setChecked(True)  # Default: fill holes
+        self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
         self.min_area_spinbox.setValue(100)  # Default: remove small artifacts
 
     def set_refine_values(self, expand: int, simplify: int, fill_holes: bool = False, min_area: int = 0):
@@ -842,9 +842,11 @@ class AISegmentationDockWidget(QDockWidget):
         return self._batch_mode
 
     def set_batch_mode(self, batch: bool):
-        """Set batch mode programmatically."""
+        """Set batch mode programmatically (without emitting signals)."""
         self._batch_mode = batch
+        self.batch_mode_checkbox.blockSignals(True)
         self.batch_mode_checkbox.setChecked(batch)
+        self.batch_mode_checkbox.blockSignals(False)
         self._update_ui_for_mode()
 
     def _on_get_code_clicked(self):

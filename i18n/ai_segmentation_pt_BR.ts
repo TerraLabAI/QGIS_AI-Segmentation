@@ -104,7 +104,7 @@
     </message>
     <message>
         <source>Check the QGIS log panel (View → Panels → Log Messages) for detailed error information.</source>
-        <translation>Verifique o painel de logs do QGIS (Sketcher → Sketcher → Sketcher de log) para informações detalhadas do erro.</translation>
+        <translation>Verifique o painel de logs do QGIS (Ver → Painéis → Mensagens de Log) para informações detalhadas do erro.</translation>
     </message>
     <message>
         <source>Download ~800MB of AI dependencies?</source>
@@ -407,8 +407,8 @@
         <translation>Preencher buracos</translation>
     </message>
     <message>
-        <source>Fill interior holes in the selection (holes completely surrounded by the selection)</source>
-        <translation>Preencher buracos internos na seleção (buracos completamente cercados pela seleção)</translation>
+        <source>Fill interior holes in the selection</source>
+        <translation>Preencher buracos internos na seleção</translation>
     </message>
     <message>
         <source>Min. region size:</source>

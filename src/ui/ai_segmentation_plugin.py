@@ -139,10 +139,17 @@ class PromptManager:
             return None
 
         label, point = self._history.pop()
-        if label == "positive" and point in self.positive_points:
-            self.positive_points.remove(point)
-        elif label == "negative" and point in self.negative_points:
-            self.negative_points.remove(point)
+        if label == "positive":
+            # Remove last occurrence (not first) to correctly undo duplicate coords
+            for i in range(len(self.positive_points) - 1, -1, -1):
+                if self.positive_points[i] == point:
+                    self.positive_points.pop(i)
+                    break
+        elif label == "negative":
+            for i in range(len(self.negative_points) - 1, -1, -1):
+                if self.negative_points[i] == point:
+                    self.negative_points.pop(i)
+                    break
 
         return label, point
 
@@ -221,9 +228,9 @@ class AISegmentationPlugin:
 
         # Refinement settings
         self._refine_expand = 0
-        self._refine_simplify = 2  # Default to 2 for smoother outlines
-        self._refine_fill_holes = False  # Default: no fill holes
-        self._refine_min_area = 50   # Default: remove small artifacts
+        self._refine_simplify = 4  # Default: matches dockwidget spinbox
+        self._refine_fill_holes = False  # Default: matches dockwidget checkbox
+        self._refine_min_area = 100  # Default: matches dockwidget spinbox
 
         # Per-raster mask counters (used for both Simple and Batch modes)
         self._mask_counters = {}  # {raster_name: counter}
@@ -335,6 +342,12 @@ class AISegmentationPlugin:
         self.iface.removeToolBarIcon(self.action)
 
         if self.dock_widget:
+            # Disconnect QgsProject signals before destroying the widget
+            try:
+                QgsProject.instance().layersAdded.disconnect(self.dock_widget._on_layers_added)
+                QgsProject.instance().layersRemoved.disconnect(self.dock_widget._on_layers_removed)
+            except (TypeError, RuntimeError):
+                pass
             self.iface.removeDockWidget(self.dock_widget)
             self.dock_widget.deleteLater()
             self.dock_widget = None
@@ -838,7 +851,7 @@ class AISegmentationPlugin:
 
             if reply == QMessageBox.Yes:
                 self._on_export_layer()
-                return
+                # Continue to set the mode after exporting
             elif reply == QMessageBox.Cancel:
                 # Revert the toggle
                 self.dock_widget.set_batch_mode(True)
@@ -1834,9 +1847,9 @@ class AISegmentationPlugin:
 
         # Restore refine settings
         self._refine_expand = last_polygon.get('refine_expand', 0)
-        self._refine_simplify = last_polygon.get('refine_simplify', 3)
+        self._refine_simplify = last_polygon.get('refine_simplify', 4)
         self._refine_fill_holes = last_polygon.get('refine_fill_holes', False)
-        self._refine_min_area = last_polygon.get('refine_min_area', 0)
+        self._refine_min_area = last_polygon.get('refine_min_area', 100)
 
         # Update UI sliders without emitting signals
         self.dock_widget.set_refine_values(
@@ -1882,9 +1895,9 @@ class AISegmentationPlugin:
 
         # Reset refinement settings to defaults
         self._refine_expand = 0
-        self._refine_simplify = 2   # Default
-        self._refine_fill_holes = False  # Default
-        self._refine_min_area = 50  # Default
+        self._refine_simplify = 4   # Default: matches dockwidget spinbox
+        self._refine_fill_holes = False  # Default: matches dockwidget checkbox
+        self._refine_min_area = 100  # Default: matches dockwidget spinbox
 
         if self.dock_widget:
             self.dock_widget.set_point_count(0, 0)

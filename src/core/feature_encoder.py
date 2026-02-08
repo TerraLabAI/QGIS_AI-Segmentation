@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import subprocess
+import tempfile
 from typing import Tuple, Optional, Callable
 
 from qgis.core import QgsMessageLog, Qgis
@@ -28,10 +29,6 @@ def _get_subprocess_kwargs() -> dict:
         kwargs['startupinfo'] = startupinfo
         kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
     return kwargs
-
-
-TILE_SIZE = 1024
-STRIDE = 512
 
 
 def encode_raster_to_features(
@@ -79,11 +76,12 @@ def encode_raster_to_features(
         env = _get_clean_env_for_venv()
         subprocess_kwargs = _get_subprocess_kwargs()
 
+        stderr_file = tempfile.TemporaryFile(mode='w+', encoding='utf-8')
         process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=stderr_file,
             text=True,
             env=env,
             **subprocess_kwargs
@@ -140,6 +138,7 @@ def encode_raster_to_features(
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
+                stderr_file.close()
                 return False, "Encoding cancelled by user"
 
         try:
@@ -156,12 +155,16 @@ def encode_raster_to_features(
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+            stderr_file.close()
             return False, "Encoding timed out"
 
         if process.returncode == 0:
+            stderr_file.close()
             return True, f"Encoded {tiles_processed} tiles"
         else:
-            stderr_output = process.stderr.read()
+            stderr_file.seek(0)
+            stderr_output = stderr_file.read()
+            stderr_file.close()
             error_msg = f"Worker process failed with return code {process.returncode}"
             if stderr_output:
                 error_msg += f"\nStderr: {stderr_output[:500]}"
