@@ -92,6 +92,18 @@ def encode_raster(config):
         sam.to(device)
         sam.eval()
 
+        # Verify CUDA kernels are available for this GPU
+        if device.type == "cuda":
+            try:
+                test = torch.zeros(1, device=device)
+                _ = test + 1  # Force a kernel execution
+                torch.cuda.synchronize()
+                del test
+            except RuntimeError:
+                send_progress(0, "GPU not compatible with installed CUDA version, using CPU...")
+                device = torch.device("cpu")
+                sam.to(device)
+
         send_progress(5, "Reading image...")
 
         with rasterio.open(raster_path) as src:

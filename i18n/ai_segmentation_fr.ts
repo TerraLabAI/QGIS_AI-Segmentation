@@ -712,5 +712,13 @@
         <source>Using:</source>
         <translation>Utilisation :</translation>
     </message>
+    <message>
+        <source>Optional: speeds up segmentation. Requires ~2.5GB of disk space.</source>
+        <translation>Optionnel : accélère la segmentation. Nécessite ~2,5 Go d'espace disque.</translation>
+    </message>
+    <message>
+        <source>GPU not compatible with installed CUDA version, using CPU...</source>
+        <translation>GPU non compatible avec la version CUDA installée, utilisation du CPU...</translation>
+    </message>
 </context>
 </TS>

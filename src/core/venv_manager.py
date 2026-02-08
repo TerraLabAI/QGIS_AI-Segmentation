@@ -78,6 +78,17 @@ def _check_rosetta_warning() -> Optional[str]:
     return None
 
 
+def _needs_cu128(gpu_name: str) -> bool:
+    """
+    Detect if the GPU requires CUDA 12.8 wheels.
+    RTX 50-series (Blackwell architecture, compute capability sm_120)
+    needs cu128 because cu121/cu126 wheels don't include SM_120 kernels.
+    """
+    if not gpu_name:
+        return False
+    return "RTX 50" in gpu_name.upper()
+
+
 def detect_nvidia_gpu() -> Tuple[bool, str]:
     """
     Detect if an NVIDIA GPU is present by querying nvidia-smi.
@@ -534,10 +545,15 @@ def install_dependencies(
 
         # For CUDA-enabled torch/torchvision, use PyTorch's CUDA index
         if is_cuda_package:
+            _, gpu_name = detect_nvidia_gpu()
+            if _needs_cu128(gpu_name):
+                cuda_index = "cu128"
+            else:
+                cuda_index = "cu121"
             base_cmd.extend([
-                "--index-url", "https://download.pytorch.org/whl/cu121"
+                "--index-url", "https://download.pytorch.org/whl/{}".format(cuda_index)
             ])
-            _log(f"Using CUDA 12.1 index for {package_name}", Qgis.Info)
+            _log("Using CUDA {} index for {}".format(cuda_index, package_name), Qgis.Info)
 
         try:
             env = os.environ.copy()

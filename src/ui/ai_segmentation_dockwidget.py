@@ -200,6 +200,13 @@ class AISegmentationDockWidget(QDockWidget):
         """)
         layout.addWidget(self.cuda_checkbox)
 
+        # Description label below the CUDA checkbox
+        self.cuda_description = QLabel(tr("Optional: speeds up segmentation. Requires ~2.5GB of disk space."))
+        self.cuda_description.setStyleSheet("font-size: 10px; color: palette(mid); padding-left: 20px;")
+        self.cuda_description.setWordWrap(True)
+        self.cuda_description.setVisible(False)
+        layout.addWidget(self.cuda_description)
+
         # Auto-detect NVIDIA GPU and pre-check if found (non-macOS only)
         if sys.platform != "darwin":
             try:
@@ -654,7 +661,7 @@ class AISegmentationDockWidget(QDockWidget):
         expand_label = QLabel(tr("Expand/Contract:"))
         expand_label.setToolTip(tr("Positive = expand outward, Negative = shrink inward"))
         self.expand_spinbox = QSpinBox()
-        self.expand_spinbox.setRange(-30, 30)
+        self.expand_spinbox.setRange(-100, 100)
         self.expand_spinbox.setValue(0)
         self.expand_spinbox.setSuffix(" px")
         self.expand_spinbox.setMinimumWidth(80)
@@ -668,8 +675,8 @@ class AISegmentationDockWidget(QDockWidget):
         simplify_label = QLabel(tr("Simplify outline:"))
         simplify_label.setToolTip(tr("Reduce small variations in the outline (0 = no change)"))
         self.simplify_spinbox = QSpinBox()
-        self.simplify_spinbox.setRange(0, 20)
-        self.simplify_spinbox.setValue(2)  # Default to 2 for smoother outlines
+        self.simplify_spinbox.setRange(0, 50)
+        self.simplify_spinbox.setValue(4)  # Default to 4 for smoother outlines
         self.simplify_spinbox.setMinimumWidth(80)
         simplify_layout.addWidget(simplify_label)
         simplify_layout.addStretch()
@@ -679,7 +686,7 @@ class AISegmentationDockWidget(QDockWidget):
         # 3. Fill holes: Checkbox - fills interior holes in the mask
         fill_holes_layout = QHBoxLayout()
         self.fill_holes_checkbox = QCheckBox(tr("Fill holes"))
-        self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
+        self.fill_holes_checkbox.setChecked(True)  # Default: fill holes
         self.fill_holes_checkbox.setToolTip(tr("Fill interior holes in the selection"))
         fill_holes_layout.addWidget(self.fill_holes_checkbox)
         fill_holes_layout.addStretch()
@@ -690,8 +697,8 @@ class AISegmentationDockWidget(QDockWidget):
         min_area_label = QLabel(tr("Min. region size:"))
         min_area_label.setToolTip(tr("Remove disconnected regions smaller than this area (in pixels²).") + "\n" + tr("Example: 100 = ~10x10 pixel regions, 900 = ~30x30.") + "\n" + tr("0 = keep all."))
         self.min_area_spinbox = QSpinBox()
-        self.min_area_spinbox.setRange(0, 10000)
-        self.min_area_spinbox.setValue(50)  # Default: remove small artifacts
+        self.min_area_spinbox.setRange(0, 100000)
+        self.min_area_spinbox.setValue(100)  # Default: remove small artifacts
         self.min_area_spinbox.setSuffix(" px²")
         self.min_area_spinbox.setSingleStep(50)
         self.min_area_spinbox.setMinimumWidth(80)
@@ -747,9 +754,9 @@ class AISegmentationDockWidget(QDockWidget):
     def reset_refine_sliders(self):
         """Reset refinement controls to default values."""
         self.expand_spinbox.setValue(0)
-        self.simplify_spinbox.setValue(2)  # Default to 2
-        self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
-        self.min_area_spinbox.setValue(50)  # Default: remove small artifacts
+        self.simplify_spinbox.setValue(4)  # Default to 4
+        self.fill_holes_checkbox.setChecked(True)  # Default: fill holes
+        self.min_area_spinbox.setValue(100)  # Default: remove small artifacts
 
     def set_refine_values(self, expand: int, simplify: int, fill_holes: bool = False, min_area: int = 0):
         """Set refine slider values without emitting signals."""
@@ -1000,6 +1007,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.deps_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
             self.install_button.setVisible(False)
             self.cuda_checkbox.setVisible(False)
+            self.cuda_description.setVisible(False)
             self.cancel_deps_button.setVisible(False)
             self.deps_progress.setVisible(False)
             self.deps_progress_label.setVisible(False)
@@ -1009,7 +1017,9 @@ class AISegmentationDockWidget(QDockWidget):
             self.install_button.setVisible(True)
             self.install_button.setEnabled(True)
             # Show CUDA checkbox on non-macOS when deps need installing
-            self.cuda_checkbox.setVisible(sys.platform != "darwin")
+            show_cuda = sys.platform != "darwin"
+            self.cuda_checkbox.setVisible(show_cuda)
+            self.cuda_description.setVisible(show_cuda)
             self.deps_group.setVisible(True)
 
         self._update_full_ui()
