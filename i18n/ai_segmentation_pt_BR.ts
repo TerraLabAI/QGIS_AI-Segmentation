@@ -633,6 +633,14 @@
 
     <!-- About Section -->
     <message>
+        <source>Report a bug</source>
+        <translation>Reportar um bug</translation>
+    </message>
+    <message>
+        <source>Tutorial &amp; Docs</source>
+        <translation>Tutorial &amp; Docs</translation>
+    </message>
+    <message>
         <source>Tutorials</source>
         <translation>Tutoriais</translation>
     </message>
@@ -644,11 +652,37 @@
         <source>Contact Us</source>
         <translation>Fale conosco</translation>
     </message>
+    <message>
+        <source>Something not working? Copy your logs and send them to us, we'll look into it :)</source>
+        <translation>Algo não está funcionando? Copie seus logs e envie para nós, vamos verificar :)</translation>
+    </message>
 
     <!-- Tooltip -->
     <message>
         <source>Segment objects on raster images using AI</source>
         <translation>Segmentar objetos em imagens raster usando IA</translation>
+    </message>
+
+    <!-- Error Report Dialog -->
+    <message>
+        <source>Copy your logs with the button below and send them to our email so we can fix your issue :)</source>
+        <translation>Copie seus logs com o botão abaixo e envie para nosso email para que possamos corrigir seu problema :)</translation>
+    </message>
+    <message>
+        <source>Copy log to clipboard</source>
+        <translation>Copiar log</translation>
+    </message>
+    <message>
+        <source>Copy email address</source>
+        <translation>Copiar endereço de email</translation>
+    </message>
+    <message>
+        <source>Copied!</source>
+        <translation>Copiado!</translation>
+    </message>
+    <message>
+        <source>Email copied!</source>
+        <translation>Email copiado!</translation>
     </message>
 </context>
 </TS>
