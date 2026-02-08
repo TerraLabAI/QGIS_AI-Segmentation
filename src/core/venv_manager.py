@@ -15,7 +15,7 @@ VENV_DIR = os.path.join(PLUGIN_ROOT_DIR, f'venv_{PYTHON_VERSION}')
 LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, 'libs')
 
 REQUIRED_PACKAGES = [
-    ("numpy", "<2.0,>=1.20.0"),
+    ("numpy", ">=1.26.0,<2.0.0"),
     ("torch", ">=2.0.0"),
     ("torchvision", ">=0.15.0"),
     ("segment-anything", ">=1.0"),
