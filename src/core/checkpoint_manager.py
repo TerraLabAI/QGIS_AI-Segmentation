@@ -213,7 +213,7 @@ def download_checkpoint(
             os.remove(temp_path)
             return False, "Download verification failed - hash mismatch"
 
-        os.rename(temp_path, checkpoint_path)
+        os.replace(temp_path, checkpoint_path)
 
         if progress_callback:
             progress_callback(100, "Checkpoint downloaded successfully!")

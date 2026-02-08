@@ -75,6 +75,10 @@ class SamPredictorNoImgEncoder:
             level=Qgis.Info
         )
 
+    def __del__(self):
+        """Ensure subprocess is cleaned up on garbage collection."""
+        self.cleanup()
+
     def _start_worker(self) -> bool:
         if self.process is not None:
             return True
@@ -95,7 +99,7 @@ class SamPredictorNoImgEncoder:
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
                 bufsize=1,
                 env=env,

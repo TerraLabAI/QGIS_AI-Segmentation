@@ -78,7 +78,7 @@ def _collect_diagnostic_info(error_message: str) -> str:
         )
         metadata_path = os.path.join(plugin_dir, "metadata.txt")
         if os.path.exists(metadata_path):
-            with open(metadata_path, "r") as f:
+            with open(metadata_path, "r", encoding="utf-8") as f:
                 for line in f:
                     if line.startswith("version="):
                         lines.append("Version: {}".format(line.strip().split("=", 1)[1]))
@@ -138,7 +138,7 @@ def _collect_diagnostic_info(error_message: str) -> str:
             result = subprocess.run(
                 [python_path, "-m", "pip", "list", "--format=columns"],
                 capture_output=True, text=True, timeout=15,
-                env=env, **kwargs
+                stdin=subprocess.DEVNULL, env=env, **kwargs
             )
             if result.returncode == 0:
                 for pkg_line in result.stdout.strip().split("\n"):

@@ -22,9 +22,9 @@ def verify_package_source(package_name: str, module: Optional[Any] = None) -> Tu
         if not hasattr(module, '__file__'):
             return False, "No __file__ attribute (built-in module?)"
 
-        module_path = os.path.abspath(module.__file__)
+        module_path = os.path.normcase(os.path.abspath(module.__file__))
 
-        is_isolated = module_path.startswith(LIBS_DIR)
+        is_isolated = module_path.startswith(os.path.normcase(LIBS_DIR))
 
         return is_isolated, module_path
 

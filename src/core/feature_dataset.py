@@ -125,8 +125,12 @@ class FeatureDataset:
             img_shape = None
             input_shape = None
             if "img_shape" in tags:
-                img_shape = ast.literal_eval(tags["img_shape"])
-                input_shape = ast.literal_eval(tags["input_shape"])
+                try:
+                    img_shape = ast.literal_eval(tags["img_shape"])
+                    input_shape = ast.literal_eval(tags["input_shape"])
+                except (ValueError, SyntaxError):
+                    img_shape = None
+                    input_shape = None
 
             if data.dtype == np.uint16:
                 data = data.astype(np.int32)

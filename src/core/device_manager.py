@@ -99,7 +99,10 @@ def _configure_cpu_optimizations():
     torch.set_num_threads(optimal_threads)
 
     if hasattr(torch, 'set_num_interop_threads'):
-        torch.set_num_interop_threads(max(2, optimal_threads // 2))
+        try:
+            torch.set_num_interop_threads(max(2, optimal_threads // 2))
+        except RuntimeError:
+            pass  # Already set or torch parallelism already started
 
     QgsMessageLog.logMessage(
         f"CPU optimizations: {optimal_threads} threads",

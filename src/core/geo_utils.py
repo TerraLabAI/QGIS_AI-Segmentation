@@ -62,9 +62,14 @@ def geo_to_pixel(
     geo_y: float,
     transform: 'rasterio.Affine'
 ) -> Tuple[int, int]:
+    """Convert geographic coordinates to pixel coordinates.
+
+    Returns:
+        (pixel_x, pixel_y) i.e. (col, row)
+    """
     from rasterio import transform as rio_transform
-    col, row = rio_transform.rowcol(transform, geo_x, geo_y)
-    return int(row), int(col)
+    row, col = rio_transform.rowcol(transform, geo_x, geo_y)
+    return int(col), int(row)
 
 
 def pixel_to_geo(
