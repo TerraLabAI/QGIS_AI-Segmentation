@@ -694,5 +694,23 @@
         <source>Installation Blocked</source>
         <translation>Installation bloquée</translation>
     </message>
+
+    <!-- CUDA / Device Info -->
+    <message>
+        <source>Enable NVIDIA GPU acceleration (CUDA)</source>
+        <translation>Activer l'accélération GPU NVIDIA (CUDA)</translation>
+    </message>
+    <message>
+        <source>CUDA requires an NVIDIA GPU. Download size: ~2.5GB (vs ~600MB without CUDA).</source>
+        <translation>CUDA nécessite un GPU NVIDIA. Taille du téléchargement : ~2,5 Go (vs ~600 Mo sans CUDA).</translation>
+    </message>
+    <message>
+        <source>Detected: {gpu_name}</source>
+        <translation>Détecté : {gpu_name}</translation>
+    </message>
+    <message>
+        <source>Using:</source>
+        <translation>Utilisation :</translation>
+    </message>
 </context>
 </TS>

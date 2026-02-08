@@ -78,6 +78,38 @@ def _check_rosetta_warning() -> Optional[str]:
     return None
 
 
+def detect_nvidia_gpu() -> Tuple[bool, str]:
+    """
+    Detect if an NVIDIA GPU is present by querying nvidia-smi.
+    Returns (True, "GPU Name") or (False, "").
+    """
+    try:
+        subprocess_kwargs = {}
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            subprocess_kwargs["startupinfo"] = startupinfo
+
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5,
+            **subprocess_kwargs,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            gpu_name = result.stdout.strip().split("\n")[0].strip()
+            _log(f"NVIDIA GPU detected: {gpu_name}", Qgis.Info)
+            return True, gpu_name
+    except FileNotFoundError:
+        pass  # nvidia-smi not found = no NVIDIA GPU
+    except subprocess.TimeoutExpired:
+        _log("nvidia-smi timed out", Qgis.Warning)
+    except Exception as e:
+        _log(f"nvidia-smi check failed: {e}", Qgis.Warning)
+
+    return False, ""
+
+
 def cleanup_old_venv_directories() -> List[str]:
     """
     Remove old venv_pyX.Y directories that don't match current Python version.
@@ -444,7 +476,8 @@ def create_venv(venv_dir: str = None, progress_callback: Optional[Callable[[int,
 def install_dependencies(
     venv_dir: str = None,
     progress_callback: Optional[Callable[[int, str], None]] = None,
-    cancel_check: Optional[Callable[[], bool]] = None
+    cancel_check: Optional[Callable[[], bool]] = None,
+    cuda_enabled: bool = False
 ) -> Tuple[bool, str]:
     if venv_dir is None:
         venv_dir = VENV_DIR
@@ -454,6 +487,8 @@ def install_dependencies(
 
     pip_path = get_venv_pip_path(venv_dir)
     _log(f"Installing dependencies using: {pip_path}", Qgis.Info)
+    if cuda_enabled:
+        _log("CUDA mode enabled - will install GPU-accelerated PyTorch", Qgis.Info)
 
     total_packages = len(REQUIRED_PACKAGES)
     base_progress = 20
@@ -467,11 +502,24 @@ def install_dependencies(
         package_spec = f"{package_name}{version_spec}"
         current_progress = base_progress + (i * progress_per_package)
 
+        is_cuda_package = cuda_enabled and package_name in ("torch", "torchvision")
+
         if progress_callback:
-            if package_name == "torch":
-                progress_callback(current_progress, f"Installing {package_name} (~600MB)... ({i + 1}/{total_packages})")
+            if package_name == "torch" and cuda_enabled:
+                progress_callback(
+                    current_progress,
+                    "Installing {} (CUDA ~2.5GB)... ({}/{})".format(
+                        package_name, i + 1, total_packages))
+            elif package_name == "torch":
+                progress_callback(
+                    current_progress,
+                    "Installing {} (~600MB)... ({}/{})".format(
+                        package_name, i + 1, total_packages))
             else:
-                progress_callback(current_progress, f"Installing {package_name}... ({i + 1}/{total_packages})")
+                progress_callback(
+                    current_progress,
+                    "Installing {}... ({}/{})".format(
+                        package_name, i + 1, total_packages))
 
         _log(f"[{i + 1}/{total_packages}] Installing {package_spec}...", Qgis.Info)
 
@@ -483,6 +531,13 @@ def install_dependencies(
             "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
             package_spec
         ]
+
+        # For CUDA-enabled torch/torchvision, use PyTorch's CUDA index
+        if is_cuda_package:
+            base_cmd.extend([
+                "--index-url", "https://download.pytorch.org/whl/cu121"
+            ])
+            _log(f"Using CUDA 12.1 index for {package_name}", Qgis.Info)
 
         try:
             env = os.environ.copy()
@@ -698,7 +753,8 @@ def cleanup_old_libs() -> bool:
 
 def create_venv_and_install(
     progress_callback: Optional[Callable[[int, str], None]] = None,
-    cancel_check: Optional[Callable[[], bool]] = None
+    cancel_check: Optional[Callable[[], bool]] = None,
+    cuda_enabled: bool = False
 ) -> Tuple[bool, str]:
     """
     Complete installation: download Python standalone + create venv + install packages.
@@ -706,7 +762,7 @@ def create_venv_and_install(
     Progress breakdown:
     - 0-10%: Download Python standalone (~50MB)
     - 10-15%: Create virtual environment
-    - 15-95%: Install packages (~800MB)
+    - 15-95%: Install packages (~800MB, or ~2.5GB with CUDA)
     - 95-100%: Verify installation
     """
     from .python_manager import (
@@ -796,7 +852,8 @@ def create_venv_and_install(
 
     success, msg = install_dependencies(
         progress_callback=deps_progress,
-        cancel_check=cancel_check
+        cancel_check=cancel_check,
+        cuda_enabled=cuda_enabled
     )
 
     if not success:
