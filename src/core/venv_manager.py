@@ -586,7 +586,7 @@ def install_dependencies(
                 cuda_index = "cu128"
             else:
                 cuda_index = "cu121"
-            base_cmd.extend([
+            pip_args.extend([
                 "--index-url", "https://download.pytorch.org/whl/{}".format(cuda_index)
             ])
             _log("Using CUDA {} index for {}".format(cuda_index, package_name), Qgis.Info)
