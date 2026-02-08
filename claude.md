@@ -94,6 +94,22 @@ Settings applied in real-time to preview and export.
 - QSettings used for persisting tutorial flags: `AI_Segmentation/tutorial_simple_shown`, `AI_Segmentation/tutorial_batch_shown`
 - Never write comments in french, only write in english
 
+## Refine Panel Defaults (KEEP IN SYNC)
+
+Current defaults: `expand=0, simplify=4, fill_holes=False, min_area=100`
+
+5 locations must match: plugin `__init__`, `_reset_session()`, `_restore_last_saved_mask` fallbacks, dockwidget `_setup_refine_panel`, `reset_refine_sliders`.
+
+## Common Pitfalls
+
+- **Subprocess stderr**: Never use `stderr=subprocess.PIPE` without draining it — use `DEVNULL` or a temp file to avoid deadlocks
+- **`os.replace()` not `os.rename()`**: rename fails on Windows if dest exists
+- **`os.path.normcase()`** before comparing paths (Windows case-insensitive)
+- **`encoding='utf-8'`** on all `open()` calls
+- **`Tuple[bool, str]`** from typing, not `tuple[bool, str]` (needs Python 3.9+)
+- **`blockSignals(True/False)`** when setting widget values programmatically
+- **Disconnect `QgsProject.instance()` signals** in `unload()`
+
 ## Internationalization (i18n) - IMPORTANT
 
 The plugin supports multiple languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
