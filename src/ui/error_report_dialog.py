@@ -34,28 +34,28 @@ _log_collector_connected = False
 def _anonymize_paths(text: str) -> str:
     """
     Anonymize file paths to hide the username.
-    
+
     Replaces patterns like:
     - /Users/<username>/... -> <USER>/...
     - /home/<username>/... -> <USER>/...
     - C:\\Users\\<username>\\... -> <USER>/...
-    
+
     This protects user privacy when sending logs and reports.
     """
     if not text:
         return text
-    
+
     # macOS: /Users/<username>/...
     text = re.sub(r'/Users/[^/\s]+/', '<USER>/', text)
-    
+
     # Linux: /home/<username>/...
     text = re.sub(r'/home/[^/\s]+/', '<USER>/', text)
-    
+
     # Windows: C:\Users\<username>\... (and other drive letters)
     # Handle both forward and backslashes
     text = re.sub(r'[A-Za-z]:\\Users\\[^\\]+\\', '<USER>/', text)
     text = re.sub(r'[A-Za-z]:/Users/[^/]+/', '<USER>/', text)
-    
+
     return text
 
 

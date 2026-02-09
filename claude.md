@@ -179,6 +179,7 @@ tr("Export {count} polygon(s)").format(count=5)
 
 - **No unused imports (F401)**: Remove any imported modules/classes that are not used in the file
 - **No unused variables (F841)**: Don't assign variables that are never referenced; delete them
+- **Trailing whitespace on blank lines (W291/W293)**: Blank lines must be completely empty — no spaces or tabs. This includes blank lines inside docstrings, between code blocks, etc. Always strip trailing whitespace.
 - **Whitespace around operators (E226)**: Always use spaces around arithmetic operators: `y - 1` not `y-1`
 - **Import order**: Standard library first, then third-party, then local imports
 - **Line length**: Keep lines under 120 characters
