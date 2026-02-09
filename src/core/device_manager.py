@@ -21,9 +21,28 @@ def get_optimal_device() -> "torch.device":
 
     import torch
 
-    if torch.cuda.is_available():
-        gpu_name = torch.cuda.get_device_name(0)
-        gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+    try:
+        cuda_available = torch.cuda.is_available()
+    except Exception as e:
+        QgsMessageLog.logMessage(
+            "torch.cuda.is_available() failed ({}), skipping CUDA".format(e),
+            "AI Segmentation",
+            level=Qgis.Warning
+        )
+        cuda_available = False
+
+    if cuda_available:
+        try:
+            gpu_name = torch.cuda.get_device_name(0)
+            gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                "Cannot query CUDA device info ({}), falling back to CPU".format(e),
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            gpu_name = None
+            gpu_memory_gb = 0
 
         # Check minimum GPU memory (2 GB needed for SAM inference)
         if gpu_memory_gb < 2.0:
@@ -96,19 +115,26 @@ def get_optimal_device() -> "torch.device":
 def _configure_cuda_optimizations():
     import torch
 
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
+    try:
+        torch.backends.cudnn.enabled = True
+        torch.backends.cudnn.benchmark = True
 
-    if hasattr(torch.backends.cudnn, 'allow_tf32'):
-        torch.backends.cudnn.allow_tf32 = True
-    if hasattr(torch, 'set_float32_matmul_precision'):
-        torch.set_float32_matmul_precision('high')
+        if hasattr(torch.backends.cudnn, 'allow_tf32'):
+            torch.backends.cudnn.allow_tf32 = True
+        if hasattr(torch, 'set_float32_matmul_precision'):
+            torch.set_float32_matmul_precision('high')
 
-    QgsMessageLog.logMessage(
-        "CUDA optimizations enabled: cudnn.benchmark=True",
-        "AI Segmentation",
-        level=Qgis.Info
-    )
+        QgsMessageLog.logMessage(
+            "CUDA optimizations enabled: cudnn.benchmark=True",
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+    except Exception as e:
+        QgsMessageLog.logMessage(
+            "Failed to configure CUDA optimizations: {}".format(e),
+            "AI Segmentation",
+            level=Qgis.Warning
+        )
 
 
 def _configure_mps_optimizations():
@@ -186,14 +212,22 @@ def get_device_capabilities() -> dict:
         except Exception:
             pass
 
-    caps["cuda_available"] = torch.cuda.is_available()
+    try:
+        caps["cuda_available"] = torch.cuda.is_available()
+    except Exception:
+        caps["cuda_available"] = False
+
     if caps["cuda_available"]:
-        caps["cuda_device_count"] = torch.cuda.device_count()
-        caps["cuda_device_name"] = torch.cuda.get_device_name(0)
-        props = torch.cuda.get_device_properties(0)
-        caps["cuda_memory_gb"] = props.total_memory / (1024**3)
-        caps["cuda_compute_capability"] = f"{props.major}.{props.minor}"
-        caps["recommended_device"] = "cuda"
+        try:
+            caps["cuda_device_count"] = torch.cuda.device_count()
+            caps["cuda_device_name"] = torch.cuda.get_device_name(0)
+            props = torch.cuda.get_device_properties(0)
+            caps["cuda_memory_gb"] = props.total_memory / (1024**3)
+            caps["cuda_compute_capability"] = "{}.{}".format(
+                props.major, props.minor)
+            caps["recommended_device"] = "cuda"
+        except Exception:
+            pass
 
     return caps
 
