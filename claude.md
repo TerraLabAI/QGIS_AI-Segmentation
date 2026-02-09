@@ -198,6 +198,15 @@ tr("Export {count} polygon(s)").format(count=5)
   message = "{}\n{}".format(
       tr("Line one"),
       tr("Line two"))
+
+  # CORRECT (for boolean expressions, use intermediate variables):
+  # WRONG (W503):
+  return (bounds[0] <= x <= bounds[1]
+          and bounds[2] <= y <= bounds[3])
+  # CORRECT:
+  in_x = bounds[0] <= x <= bounds[1]
+  in_y = bounds[2] <= y <= bounds[3]
+  return in_x and in_y
   ```
 - **Undefined names (F821)**: Never reference a variable before it is defined. Build lists/dicts incrementally using the correct name at each stage:
   ```python
