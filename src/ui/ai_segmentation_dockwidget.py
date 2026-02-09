@@ -182,11 +182,33 @@ class AISegmentationDockWidget(QDockWidget):
         )
         layout.addWidget(self.install_button)
 
-        # CUDA checkbox - only shown on Windows/Linux (macOS uses MPS instead)
-        self.cuda_checkbox = QCheckBox(tr("Enable NVIDIA GPU acceleration (CUDA) - Experimental"))
-        self.cuda_checkbox.setToolTip(
-            tr("CUDA requires an NVIDIA GPU. Download size: ~2.5GB (vs ~600MB without CUDA)."))
-        self.cuda_checkbox.setVisible(False)
+        # NVIDIA GPU collapsible dropdown - only shown on Windows/Linux
+        self._cuda_expanded = False
+        self.cuda_toggle_label = QLabel(
+            "▶ " + tr("NVIDIA GPU support (Experimental)"))
+        self.cuda_toggle_label.setStyleSheet(
+            "font-size: 10px; color: palette(mid); padding: 4px 0px;")
+        self.cuda_toggle_label.setCursor(Qt.PointingHandCursor)
+        self.cuda_toggle_label.mousePressEvent = self._on_cuda_toggle_clicked
+        self.cuda_toggle_label.setVisible(False)
+        layout.addWidget(self.cuda_toggle_label)
+
+        # NVIDIA GPU content widget (hidden by default, revealed on toggle)
+        self.cuda_content_widget = QWidget()
+        self.cuda_content_widget.setObjectName("cudaContentWidget")
+        self.cuda_content_widget.setStyleSheet("""
+            QWidget#cudaContentWidget {
+                background-color: rgba(128, 128, 128, 0.08);
+                border: 1px solid rgba(128, 128, 128, 0.2);
+                border-radius: 4px;
+            }
+        """)
+        cuda_content_layout = QVBoxLayout(self.cuda_content_widget)
+        cuda_content_layout.setContentsMargins(10, 8, 10, 8)
+        cuda_content_layout.setSpacing(4)
+
+        self.cuda_checkbox = QCheckBox(
+            tr("Enable NVIDIA GPU acceleration"))
         self.cuda_checkbox.setStyleSheet("""
             QCheckBox {
                 font-size: 11px;
@@ -198,27 +220,29 @@ class AISegmentationDockWidget(QDockWidget):
                 height: 14px;
             }
         """)
-        layout.addWidget(self.cuda_checkbox)
+        cuda_content_layout.addWidget(self.cuda_checkbox)
 
-        # Description label below the CUDA checkbox
-        self.cuda_description = QLabel(tr("Experimental: may speed up segmentation but can cause issues. Falls back to CPU if needed. Requires ~2.5GB."))
-        self.cuda_description.setStyleSheet("font-size: 10px; color: palette(mid); padding-left: 20px;")
+        self.cuda_description = QLabel(
+            tr("Experimental - Up to x5 faster. Requires ~2.5GB download."))
+        self.cuda_description.setStyleSheet(
+            "font-size: 10px; color: palette(mid); padding-left: 20px;"
+            " background: transparent; border: none;")
         self.cuda_description.setWordWrap(True)
-        self.cuda_description.setVisible(False)
-        layout.addWidget(self.cuda_description)
+        cuda_content_layout.addWidget(self.cuda_description)
 
-        # Auto-detect NVIDIA GPU and pre-check if found (non-macOS only)
+        self.cuda_content_widget.setVisible(False)
+        layout.addWidget(self.cuda_content_widget)
+
+        # Auto-detect NVIDIA GPU (non-macOS only)
         if sys.platform != "darwin":
             try:
                 from ..core.venv_manager import detect_nvidia_gpu
                 has_gpu, gpu_name = detect_nvidia_gpu()
                 if has_gpu:
                     self.cuda_checkbox.setChecked(False)
-                    self.cuda_description.setVisible(True)
                     self.cuda_checkbox.setToolTip(
-                        "{}\n{}".format(
-                            tr("Detected: {gpu_name}").format(gpu_name=gpu_name),
-                            tr("CUDA requires an NVIDIA GPU. Download size: ~2.5GB (vs ~600MB without CUDA).")))
+                        tr("Detected: {gpu_name}").format(
+                            gpu_name=gpu_name))
             except Exception:
                 pass
 
@@ -974,8 +998,16 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_stop_clicked(self):
         self.stop_segmentation_requested.emit()
 
+    def _on_cuda_toggle_clicked(self, event):
+        """Toggle the NVIDIA GPU dropdown expanded/collapsed."""
+        self._cuda_expanded = not self._cuda_expanded
+        self.cuda_content_widget.setVisible(self._cuda_expanded)
+        arrow = "▼" if self._cuda_expanded else "▶"
+        self.cuda_toggle_label.setText(
+            "{} ".format(arrow) + tr("NVIDIA GPU support (Experimental)"))
+
     def get_cuda_enabled(self) -> bool:
-        """Return whether the CUDA checkbox is checked."""
+        """Return whether the NVIDIA GPU checkbox is checked."""
         return self.cuda_checkbox.isChecked()
 
     def set_device_info(self, info: str):
@@ -992,8 +1024,8 @@ class AISegmentationDockWidget(QDockWidget):
         if ok:
             self.deps_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
             self.install_button.setVisible(False)
-            self.cuda_checkbox.setVisible(False)
-            self.cuda_description.setVisible(False)
+            self.cuda_toggle_label.setVisible(False)
+            self.cuda_content_widget.setVisible(False)
             self.cancel_deps_button.setVisible(False)
             self.deps_progress.setVisible(False)
             self.deps_progress_label.setVisible(False)
@@ -1002,10 +1034,12 @@ class AISegmentationDockWidget(QDockWidget):
             self.deps_status_label.setStyleSheet("color: palette(text);")
             self.install_button.setVisible(True)
             self.install_button.setEnabled(True)
-            # Show CUDA checkbox on non-macOS when deps need installing
+            # Show NVIDIA GPU toggle on non-macOS when deps need installing
             show_cuda = sys.platform != "darwin"
-            self.cuda_checkbox.setVisible(show_cuda)
-            self.cuda_description.setVisible(show_cuda)
+            self.cuda_toggle_label.setVisible(show_cuda)
+            # Keep content collapsed
+            self.cuda_content_widget.setVisible(
+                show_cuda and self._cuda_expanded)
             self.deps_group.setVisible(True)
 
         self._update_full_ui()
