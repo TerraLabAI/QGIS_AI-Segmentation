@@ -29,11 +29,16 @@ STANDALONE_DIR = os.path.join(PLUGIN_ROOT_DIR, "python_standalone")
 def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: str) -> None:
     """Safely extract tar archive with path traversal protection."""
     dest_dir = os.path.realpath(dest_dir)
+    # Python 3.12+ supports the filter parameter (suppresses DeprecationWarning)
+    use_filter = sys.version_info >= (3, 12)
     for member in tar.getmembers():
         member_path = os.path.realpath(os.path.join(dest_dir, member.name))
         if not member_path.startswith(dest_dir + os.sep) and member_path != dest_dir:
             raise ValueError(f"Attempted path traversal in tar archive: {member.name}")
-        tar.extract(member, dest_dir)
+        if use_filter:
+            tar.extract(member, dest_dir, filter='data')
+        else:
+            tar.extract(member, dest_dir)
 
 
 def _safe_extract_zip(zip_file: zipfile.ZipFile, dest_dir: str) -> None:

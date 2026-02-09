@@ -79,21 +79,24 @@ def _check_rosetta_warning() -> Optional[str]:
     return None
 
 
-def _needs_cu128(gpu_name: str) -> bool:
-    """
-    Detect if the GPU requires CUDA 12.8 wheels.
-    RTX 50-series (Blackwell architecture, compute capability sm_120)
-    needs cu128 because cu121/cu126 wheels don't include SM_120 kernels.
-    """
-    if not gpu_name:
-        return False
-    return "RTX 50" in gpu_name.upper()
+# Minimum NVIDIA driver versions for each CUDA toolkit version.
+# cu128 (Blackwell) needs driver >= 570, cu121 needs >= 530.
+_CUDA_DRIVER_REQUIREMENTS = {
+    "cu128": 570,
+    "cu121": 530,
+}
+
+# Blackwell (sm_120+) requires cu128; everything else works with cu121.
+_MIN_COMPUTE_CAP_FOR_CU128 = 12.0
 
 
-def detect_nvidia_gpu() -> Tuple[bool, str]:
+def detect_nvidia_gpu() -> Tuple[bool, dict]:
     """
     Detect if an NVIDIA GPU is present by querying nvidia-smi.
-    Returns (True, "GPU Name") or (False, "").
+
+    Returns (True, info_dict) or (False, {}).
+    info_dict keys: name, compute_cap, driver_version, memory_mb
+    (any key may be missing if nvidia-smi didn't report it).
     """
     try:
         subprocess_kwargs = {}
@@ -104,22 +107,82 @@ def detect_nvidia_gpu() -> Tuple[bool, str]:
             subprocess_kwargs["startupinfo"] = startupinfo
 
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader,nounits"],
+            ["nvidia-smi",
+             "--query-gpu=name,compute_cap,driver_version,memory.total",
+             "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=5,
             **subprocess_kwargs,
         )
         if result.returncode == 0 and result.stdout.strip():
-            gpu_name = result.stdout.strip().split("\n")[0].strip()
-            _log(f"NVIDIA GPU detected: {gpu_name}", Qgis.Info)
-            return True, gpu_name
+            line = result.stdout.strip().split("\n")[0].strip()
+            parts = [p.strip() for p in line.split(",")]
+
+            gpu_info = {}
+            if len(parts) >= 1 and parts[0]:
+                gpu_info["name"] = parts[0]
+            if len(parts) >= 2 and parts[1]:
+                try:
+                    gpu_info["compute_cap"] = float(parts[1])
+                except ValueError:
+                    pass
+            if len(parts) >= 3 and parts[2]:
+                gpu_info["driver_version"] = parts[2]
+            if len(parts) >= 4 and parts[3]:
+                try:
+                    gpu_info["memory_mb"] = int(float(parts[3]))
+                except ValueError:
+                    pass
+
+            _log("NVIDIA GPU detected: {}".format(gpu_info), Qgis.Info)
+            return True, gpu_info
     except FileNotFoundError:
         pass  # nvidia-smi not found = no NVIDIA GPU
     except subprocess.TimeoutExpired:
         _log("nvidia-smi timed out", Qgis.Warning)
     except Exception as e:
-        _log(f"nvidia-smi check failed: {e}", Qgis.Warning)
+        _log("nvidia-smi check failed: {}".format(e), Qgis.Warning)
 
-    return False, ""
+    return False, {}
+
+
+def _select_cuda_index(gpu_info: dict) -> Optional[str]:
+    """
+    Choose the correct PyTorch CUDA wheel index based on GPU info.
+
+    Returns "cu128", "cu121", or None.
+    None means the driver is too old -> caller should install CPU torch.
+    """
+    # Determine which CUDA toolkit the GPU needs
+    compute_cap = gpu_info.get("compute_cap")
+    gpu_name = gpu_info.get("name", "")
+
+    if compute_cap is not None:
+        needs_cu128 = compute_cap >= _MIN_COMPUTE_CAP_FOR_CU128
+    else:
+        # Fallback: name-based heuristic when compute_cap unavailable
+        needs_cu128 = "RTX 50" in gpu_name.upper()
+
+    cuda_index = "cu128" if needs_cu128 else "cu121"
+
+    # Validate driver version is sufficient
+    driver_str = gpu_info.get("driver_version", "")
+    if driver_str:
+        try:
+            driver_major = int(driver_str.split(".")[0])
+            required = _CUDA_DRIVER_REQUIREMENTS.get(cuda_index, 0)
+            if driver_major < required:
+                _log(
+                    "NVIDIA driver {} too old for {} (needs >= {}), "
+                    "will use CPU instead".format(
+                        driver_str, cuda_index, required),
+                    Qgis.Warning
+                )
+                return None
+        except (ValueError, IndexError):
+            _log("Could not parse driver version: {}".format(driver_str),
+                 Qgis.Warning)
+
+    return cuda_index
 
 
 def cleanup_old_venv_directories() -> List[str]:
@@ -621,6 +684,42 @@ def _reinstall_cpu_torch(
         progress_callback(98, "CPU torch installed, re-verifying...")
 
 
+def _verify_cuda_in_venv(venv_dir: str) -> bool:
+    """
+    Run a small CUDA smoke test inside the venv to confirm torch.cuda works.
+
+    Returns True if CUDA is functional, False otherwise.
+    """
+    python_path = get_venv_python_path(venv_dir)
+    env = _get_clean_env_for_venv()
+    subprocess_kwargs = _get_subprocess_kwargs()
+
+    cuda_test_code = (
+        "import torch; "
+        "assert torch.cuda.is_available(), 'CUDA not available'; "
+        "t = torch.zeros(1, device='cuda'); "
+        "torch.cuda.synchronize(); "
+        "print('CUDA OK')"
+    )
+
+    try:
+        result = subprocess.run(
+            [python_path, "-c", cuda_test_code],
+            capture_output=True, text=True, timeout=120,
+            env=env, **subprocess_kwargs,
+        )
+        if result.returncode == 0 and "CUDA OK" in result.stdout:
+            _log("CUDA verification passed in venv", Qgis.Success)
+            return True
+        else:
+            err = result.stderr or result.stdout or ""
+            _log("CUDA verification failed: {}".format(err[:300]), Qgis.Warning)
+            return False
+    except Exception as e:
+        _log("CUDA verification exception: {}".format(e), Qgis.Warning)
+        return False
+
+
 def _get_verification_timeout(package_name: str) -> int:
     """
     Get verification timeout in seconds for a given package.
@@ -728,15 +827,23 @@ def install_dependencies(
 
             # For CUDA-enabled torch/torchvision, use PyTorch's CUDA index
             if is_cuda_package:
-                _, gpu_name = detect_nvidia_gpu()
-                if _needs_cu128(gpu_name):
-                    cuda_index = "cu128"
+                _, gpu_info = detect_nvidia_gpu()
+                cuda_index = _select_cuda_index(gpu_info)
+                if cuda_index is None:
+                    # Driver too old for any CUDA toolkit -> fall back to CPU
+                    _log(
+                        "Driver too old for CUDA, installing CPU {} instead".format(
+                            package_name),
+                        Qgis.Warning
+                    )
+                    is_cuda_package = False
                 else:
-                    cuda_index = "cu121"
-                pip_args.extend([
-                    "--index-url", "https://download.pytorch.org/whl/{}".format(cuda_index)
-                ])
-                _log("Using CUDA {} index for {}".format(cuda_index, package_name), Qgis.Info)
+                    pip_args.extend([
+                        "--index-url",
+                        "https://download.pytorch.org/whl/{}".format(cuda_index)
+                    ])
+                    _log("Using CUDA {} index for {}".format(
+                        cuda_index, package_name), Qgis.Info)
 
             # Use clean env to avoid QGIS PYTHONPATH/PYTHONHOME interference
             env = _get_clean_env_for_venv()
@@ -1240,6 +1347,18 @@ def create_venv_and_install(
         )
         _reinstall_cpu_torch(VENV_DIR, progress_callback=progress_callback)
         is_valid, verify_msg = verify_venv(progress_callback=verify_progress)
+
+    # Step 4b: CUDA smoke test — verify torch.cuda actually works in the venv
+    if is_valid and cuda_enabled:
+        if progress_callback:
+            progress_callback(99, "Verifying CUDA functionality...")
+        if not _verify_cuda_in_venv(VENV_DIR):
+            _log(
+                "CUDA smoke test failed, falling back to CPU torch",
+                Qgis.Warning
+            )
+            _reinstall_cpu_torch(VENV_DIR, progress_callback=progress_callback)
+            is_valid, verify_msg = verify_venv(progress_callback=verify_progress)
 
     if not is_valid:
         return False, f"Verification failed: {verify_msg}"

@@ -2,6 +2,11 @@
 import sys
 import json
 import os
+import gc
+
+# Ensure consistent GPU ordering on multi-GPU systems
+os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+
 import numpy as np
 
 
@@ -28,6 +33,16 @@ def get_optimal_device():
     try:
         import torch
         if torch.cuda.is_available():
+            # Check minimum 2GB GPU memory
+            mem_bytes = torch.cuda.get_device_properties(0).total_memory
+            if mem_bytes < 2 * 1024 ** 3:
+                return torch.device("cpu")
+            # Verify CUDA kernels actually work
+            t = torch.zeros(1, device="cuda")
+            _ = t + 1
+            torch.cuda.synchronize()
+            del t
+            torch.cuda.empty_cache()
             return torch.device("cuda")
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             # Prevent MPS OOM by disabling memory pool upper limit
@@ -89,6 +104,10 @@ def encode_raster(config):
 
         device = get_optimal_device()
         sam = sam_model_registry["vit_b"](checkpoint=checkpoint_path)
+        # Free memory before loading model onto GPU
+        if device.type == "cuda":
+            gc.collect()
+            torch.cuda.empty_cache()
         sam.to(device)
         sam.eval()
 
@@ -207,19 +226,26 @@ def encode_raster(config):
                         try:
                             features = sam.image_encoder(tile_tensor)
                         except RuntimeError as e:
-                            if "out of memory" in str(e).lower() and device.type != "cpu":
-                                # GPU OOM: fall back to CPU for this tile
+                            if device.type != "cpu":
+                                # GPU error (OOM, illegal access, no kernel image, etc.)
                                 pct = int(5 + (processed / total_tiles) * 90)
                                 send_progress(
                                     pct,
-                                    "GPU out of memory, falling back to CPU..."
+                                    "GPU error, falling back to CPU..."
                                 )
-                                if device.type == "cuda":
-                                    torch.cuda.empty_cache()
+                                try:
+                                    if device.type == "cuda":
+                                        torch.cuda.empty_cache()
+                                except Exception:
+                                    pass
                                 device = torch.device("cpu")
                                 sam.to(device)
                                 tile_tensor = tile_tensor.to(device)
-                                features = sam.image_encoder(tile_tensor)
+                                try:
+                                    features = sam.image_encoder(tile_tensor)
+                                except Exception as cpu_err:
+                                    send_error("CPU retry also failed: {}".format(cpu_err))
+                                    sys.exit(1)
                             else:
                                 raise
 

@@ -697,20 +697,20 @@
 
     <!-- NVIDIA GPU -->
     <message>
-        <source>NVIDIA GPU support (Experimental)</source>
-        <translation>Suporte GPU NVIDIA (Experimental)</translation>
+        <source>NVIDIA GPU support</source>
+        <translation>Suporte GPU NVIDIA</translation>
     </message>
     <message>
         <source>Enable NVIDIA GPU acceleration</source>
         <translation>Ativar aceleração GPU NVIDIA</translation>
     </message>
     <message>
-        <source>Experimental - Up to x5 faster. Requires ~2.5GB download.</source>
-        <translation>Experimental - Até x5 mais rápido. Download ~2,5GB.</translation>
+        <source>Up to x5 faster. Falls back to CPU if needed. Requires ~2.5GB download.</source>
+        <translation>Até x5 mais rápido. Volta para CPU se necessário. Download ~2,5GB.</translation>
     </message>
     <message>
-        <source>Detected: {gpu_name}</source>
-        <translation>Detectado: {gpu_name}</translation>
+        <source>Detected: {gpu_details}</source>
+        <translation>Detectado: {gpu_details}</translation>
     </message>
     <message>
         <source>GPU not compatible with installed CUDA version, using CPU...</source>

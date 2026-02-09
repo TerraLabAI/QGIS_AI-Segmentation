@@ -185,7 +185,7 @@ class AISegmentationDockWidget(QDockWidget):
         # NVIDIA GPU collapsible dropdown - only shown on Windows/Linux
         self._cuda_expanded = False
         self.cuda_toggle_label = QLabel(
-            "▶ " + tr("NVIDIA GPU support (Experimental)"))
+            "▶ " + tr("NVIDIA GPU support"))
         self.cuda_toggle_label.setStyleSheet(
             "font-size: 10px; color: palette(mid); padding: 4px 0px;")
         self.cuda_toggle_label.setCursor(Qt.PointingHandCursor)
@@ -223,7 +223,7 @@ class AISegmentationDockWidget(QDockWidget):
         cuda_content_layout.addWidget(self.cuda_checkbox)
 
         self.cuda_description = QLabel(
-            tr("Experimental - Up to x5 faster. Requires ~2.5GB download."))
+            tr("Up to x5 faster. Falls back to CPU if needed. Requires ~2.5GB download."))
         self.cuda_description.setStyleSheet(
             "font-size: 10px; color: palette(mid); padding-left: 20px;"
             " background: transparent; border: none;")
@@ -237,12 +237,22 @@ class AISegmentationDockWidget(QDockWidget):
         if sys.platform != "darwin":
             try:
                 from ..core.venv_manager import detect_nvidia_gpu
-                has_gpu, gpu_name = detect_nvidia_gpu()
+                has_gpu, gpu_info = detect_nvidia_gpu()
                 if has_gpu:
                     self.cuda_checkbox.setChecked(False)
-                    self.cuda_checkbox.setToolTip(
-                        tr("Detected: {gpu_name}").format(
-                            gpu_name=gpu_name))
+                    gpu_name = gpu_info.get("name", "Unknown")
+                    # Build a rich tooltip with compute cap + driver version
+                    tooltip_parts = [gpu_name]
+                    cc = gpu_info.get("compute_cap")
+                    if cc is not None:
+                        tooltip_parts.append("CC {}".format(cc))
+                    drv = gpu_info.get("driver_version")
+                    if drv:
+                        tooltip_parts.append("Driver {}".format(drv))
+                    tooltip_text = tr(
+                        "Detected: {gpu_details}").format(
+                        gpu_details=", ".join(tooltip_parts))
+                    self.cuda_checkbox.setToolTip(tooltip_text)
             except Exception:
                 pass
 
@@ -1004,7 +1014,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.cuda_content_widget.setVisible(self._cuda_expanded)
         arrow = "▼" if self._cuda_expanded else "▶"
         self.cuda_toggle_label.setText(
-            "{} ".format(arrow) + tr("NVIDIA GPU support (Experimental)"))
+            "{} ".format(arrow) + tr("NVIDIA GPU support"))
 
     def get_cuda_enabled(self) -> bool:
         """Return whether the NVIDIA GPU checkbox is checked."""

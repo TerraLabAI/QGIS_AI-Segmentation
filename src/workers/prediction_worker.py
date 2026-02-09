@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 import sys
+import os
+import gc
 import json
 import base64
+
+# Ensure consistent GPU ordering on multi-GPU systems
+os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -62,6 +68,16 @@ def build_sam_vit_b_no_encoder(checkpoint: Optional[str] = None):
 def get_optimal_device():
     try:
         if torch.cuda.is_available():
+            # Check minimum 2GB GPU memory
+            mem_bytes = torch.cuda.get_device_properties(0).total_memory
+            if mem_bytes < 2 * 1024 ** 3:
+                return torch.device("cpu")
+            # Verify CUDA kernels actually work
+            t = torch.zeros(1, device="cuda")
+            _ = t + 1
+            torch.cuda.synchronize()
+            del t
+            torch.cuda.empty_cache()
             return torch.device("cuda")
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             return torch.device("mps")
@@ -75,6 +91,10 @@ class SamPredictorNoImgEncoder:
     def __init__(self, sam_model, device: Optional[torch.device] = None) -> None:
         self.model = sam_model
         self.device = device if device is not None else get_optimal_device()
+        # Free memory before loading model onto GPU
+        if self.device.type == "cuda":
+            gc.collect()
+            torch.cuda.empty_cache()
         self.model.to(self.device)
 
         # Verify CUDA kernels are available for this GPU
@@ -289,21 +309,28 @@ def main():
                             multimask_output=multimask_output,
                         )
                     except RuntimeError as e:
-                        if "out of memory" in str(e).lower() and predictor.device.type != "cpu":
-                            # GPU OOM: fall back to CPU and retry
-                            if predictor.device.type == "cuda":
-                                torch.cuda.empty_cache()
+                        if predictor.device.type != "cpu":
+                            # GPU error (OOM, illegal access, no kernel image, etc.)
+                            # Fall back to CPU and retry
+                            try:
+                                if predictor.device.type == "cuda":
+                                    torch.cuda.empty_cache()
+                            except Exception:
+                                pass
                             predictor.device = torch.device("cpu")
                             predictor.model.to(predictor.device)
-                            # Re-set features on CPU
                             if predictor.features is not None:
                                 predictor.features = predictor.features.to(predictor.device)
-                            masks, scores, low_res_masks = predictor.predict(
-                                point_coords=point_coords,
-                                point_labels=point_labels,
-                                mask_input=mask_input,
-                                multimask_output=multimask_output,
-                            )
+                            try:
+                                masks, scores, low_res_masks = predictor.predict(
+                                    point_coords=point_coords,
+                                    point_labels=point_labels,
+                                    mask_input=mask_input,
+                                    multimask_output=multimask_output,
+                                )
+                            except Exception as cpu_err:
+                                send_error("CPU retry also failed: {}".format(cpu_err))
+                                continue
                         else:
                             raise
 
