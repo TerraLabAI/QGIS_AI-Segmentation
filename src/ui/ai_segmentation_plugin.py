@@ -328,13 +328,6 @@ class AISegmentationPlugin:
                 pass
             self.predictor = None
 
-        # Prepare for uninstallation on macOS by removing extended attributes
-        # that would prevent QGIS from deleting the plugin directory
-        try:
-            from ..core.venv_manager import prepare_for_uninstall
-            prepare_for_uninstall()
-        except Exception:
-            pass
 
         # Remove from Plugins menu
         plugins_menu = self.iface.pluginMenu()

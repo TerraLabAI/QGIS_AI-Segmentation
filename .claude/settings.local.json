@@ -9,7 +9,8 @@
       "Bash(\"C:\\\\Users\\\\yvann_416voxb\\\\AppData\\\\Roaming\\\\QGIS\\\\QGIS3\\\\profiles\\\\default\\\\python\\\\plugins\\\\QGIS_AI-Segmentation\\\\src\\\\venv_py3.12\\\\Scripts\\\\python.exe\" -c \"import torch; print\\(''Torch:'', torch.__version__\\); print\\(''CUDA:'', torch.version.cuda\\); t = torch.zeros\\(1, device=''cuda''\\); r = t + 1; torch.cuda.synchronize\\(\\); print\\(''Kernel test PASSED:'', r.item\\(\\)\\); print\\(''Arch list:'', torch.cuda.get_arch_list\\(\\)\\)\")",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(\"/Users/yvann/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Segmentation/src/venv_py3.12/bin/python3\" -c \"import torch; t = torch.tensor\\([1, 2, 3]\\); print\\(t.sum\\(\\)\\)\")"
     ]
   }
 }
