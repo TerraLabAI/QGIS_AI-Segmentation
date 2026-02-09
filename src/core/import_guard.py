@@ -1,14 +1,27 @@
 import sys
 import os
-from typing import Tuple, Dict, Optional, Any
+from typing import Tuple, Dict, Optional, Any, List
 
 
 PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LIBS_DIR = os.path.join(PLUGIN_DIR, 'libs')
 
 
+def _get_valid_install_dirs() -> List[str]:
+    """Return all valid install directories (libs/ and venv site-packages)."""
+    dirs = [LIBS_DIR]
+    try:
+        from .venv_manager import get_venv_site_packages, get_venv_dir
+        venv_sp = get_venv_site_packages(get_venv_dir())
+        if venv_sp:
+            dirs.append(venv_sp)
+    except Exception:
+        pass
+    return dirs
+
+
 def verify_package_source(package_name: str, module: Optional[Any] = None) -> Tuple[bool, str]:
-    """Check if package is from libs/ directory.
+    """Check if package is from libs/ or venv site-packages directory.
 
     Returns:
         (is_isolated, source_path)
@@ -24,28 +37,32 @@ def verify_package_source(package_name: str, module: Optional[Any] = None) -> Tu
 
         module_path = os.path.normcase(os.path.abspath(module.__file__))
 
-        is_isolated = module_path.startswith(os.path.normcase(LIBS_DIR))
+        for install_dir in _get_valid_install_dirs():
+            if module_path.startswith(os.path.normcase(install_dir)):
+                return True, module_path
 
-        return is_isolated, module_path
+        return False, module_path
 
     except Exception as e:
-        return False, f"Error checking source: {str(e)}"
+        return False, "Error checking source: {}".format(str(e))
 
 
 def assert_package_isolated(package_name: str, module: Optional[Any] = None):
-    """Raise ImportError if package is NOT from libs/.
+    """Raise ImportError if package is NOT from libs/ or venv.
 
     Use this at module level to fail-fast if isolation is broken.
     """
     is_isolated, source = verify_package_source(package_name, module)
 
     if not is_isolated:
+        install_dirs = _get_valid_install_dirs()
         raise ImportError(
-            f"Package '{package_name}' is NOT isolated!\n"
-            f"Expected source: {LIBS_DIR}\n"
-            f"Actual source: {source}\n"
-            f"This indicates dependency isolation failed. "
-            f"Please reinstall dependencies or check plugin installation."
+            "Package '{}' is NOT isolated!\n"
+            "Expected source: {}\n"
+            "Actual source: {}\n"
+            "This indicates dependency isolation failed. "
+            "Please reinstall dependencies or check plugin installation.".format(
+                package_name, install_dirs, source)
         )
 
 

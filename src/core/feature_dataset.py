@@ -2,6 +2,7 @@ import os
 import glob
 import sys
 import ast
+from collections import OrderedDict
 from typing import Dict, Any, Iterator, Tuple, List
 
 from qgis.core import QgsMessageLog, Qgis
@@ -16,10 +17,12 @@ from .device_manager import get_optimal_device  # noqa: E402
 
 
 class FeatureDataset:
+    _MAX_CACHE_ENTRIES = 50
+
     def __init__(self, root: str, cache: bool = True):
         self.root = root
         self.cache = cache
-        self._cache = {}
+        self._cache: OrderedDict = OrderedDict()
 
         self.index = SpatialIndex()
         self.crs = None
@@ -116,6 +119,7 @@ class FeatureDataset:
         filepath = query["path"]
 
         if self.cache and filepath in self._cache:
+            self._cache.move_to_end(filepath)
             return self._cache[filepath]
 
         with rasterio.open(filepath) as src:
@@ -153,8 +157,22 @@ class FeatureDataset:
 
             if self.cache:
                 self._cache[filepath] = sample
+                # Evict oldest entry if cache exceeds max size
+                while len(self._cache) > self._MAX_CACHE_ENTRIES:
+                    evicted_key, evicted_val = self._cache.popitem(last=False)
+                    # Release tensor memory
+                    del evicted_val
+                    QgsMessageLog.logMessage(
+                        "Cache evicted: {}".format(os.path.basename(evicted_key)),
+                        "AI Segmentation",
+                        level=Qgis.Info
+                    )
 
             return sample
+
+    def clear_cache(self):
+        """Explicitly release all cached tensors."""
+        self._cache.clear()
 
     @property
     def bounds(self):

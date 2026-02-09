@@ -72,17 +72,33 @@ class AISegmentationMapTool(QgsMapTool):
         """Remove the last marker added."""
         if self._markers:
             marker = self._markers.pop()
-            self.canvas.scene().removeItem(marker)
-            self.canvas.refresh()
+            try:
+                scene = self.canvas.scene()
+                if scene is not None:
+                    scene.removeItem(marker)
+            except RuntimeError:
+                pass
+            try:
+                self.canvas.refresh()
+            except RuntimeError:
+                pass
             return True
         return False
 
     def clear_markers(self):
         """Remove all markers from the canvas."""
         for marker in self._markers:
-            self.canvas.scene().removeItem(marker)
+            try:
+                scene = self.canvas.scene()
+                if scene is not None:
+                    scene.removeItem(marker)
+            except RuntimeError:
+                pass
         self._markers.clear()
-        self.canvas.refresh()
+        try:
+            self.canvas.refresh()
+        except RuntimeError:
+            pass
 
     def get_marker_count(self) -> int:
         return len(self._markers)
@@ -127,15 +143,22 @@ class AISegmentationMapTool(QgsMapTool):
         if key == Qt.Key_Z and modifiers & Qt.ControlModifier:
             # Ctrl+Z: Undo last point
             self.undo_requested.emit()
-        elif key == Qt.Key_S:
-            # S: Save polygon (add to collection)
+            event.accept()
+        elif key == Qt.Key_S and not (modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier)):
+            # Bare S only: Save polygon (add to collection)
+            # With modifiers (Ctrl+S, etc.) let QGIS handle it
             self.save_polygon_requested.emit()
+            event.accept()
         elif key == Qt.Key_Return or key == Qt.Key_Enter:
             # Enter: Export to layer
             self.export_layer_requested.emit()
+            event.accept()
         elif key == Qt.Key_Escape:
             # Escape: Clear current polygon
             self.clear_requested.emit()
+            event.accept()
+        else:
+            event.ignore()
 
     def isActive(self) -> bool:
         return self._active

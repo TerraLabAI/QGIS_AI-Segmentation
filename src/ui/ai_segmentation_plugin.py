@@ -249,6 +249,71 @@ class AISegmentationPlugin:
         self._previous_map_tool = None  # Store the tool active before segmentation
         self._stopping_segmentation = False  # Flag to track if we're stopping programmatically
 
+    @staticmethod
+    def _safe_remove_rubber_band(rb):
+        """Remove a rubber band from the canvas scene, handling C++ deletion."""
+        if rb is None:
+            return
+        try:
+            canvas = rb.parentWidget() if hasattr(rb, 'parentWidget') else None
+            # QgsRubberBand doesn't expose parentWidget; use scene directly
+            scene = rb.scene()
+            if scene is not None:
+                scene.removeItem(rb)
+        except RuntimeError:
+            pass  # C++ object already deleted (QGIS shutdown)
+
+    def _is_layer_valid(self, layer=None) -> bool:
+        """Check if a layer's C++ object is still alive."""
+        if layer is None:
+            layer = self._current_layer
+        if layer is None:
+            return False
+        try:
+            layer.id()
+            return True
+        except RuntimeError:
+            return False
+
+    def _ensure_polygon_rubberband_sync(self):
+        """Recover from polygon/rubber band list mismatch by truncating to shorter."""
+        n_polygons = len(self.saved_polygons)
+        n_bands = len(self.saved_rubber_bands)
+        if n_polygons == n_bands:
+            return
+        QgsMessageLog.logMessage(
+            "Polygon/rubber band mismatch: {} polygons vs {} bands, syncing".format(
+                n_polygons, n_bands),
+            "AI Segmentation",
+            level=Qgis.Warning
+        )
+        target = min(n_polygons, n_bands)
+        # Remove orphaned rubber bands
+        while len(self.saved_rubber_bands) > target:
+            rb = self.saved_rubber_bands.pop()
+            self._safe_remove_rubber_band(rb)
+        # Trim polygons
+        self.saved_polygons = self.saved_polygons[:target]
+        if self.dock_widget:
+            self.dock_widget.set_saved_polygon_count(target)
+
+    @staticmethod
+    def _compute_simplification_tolerance(transform_info, simplify_value):
+        """Compute simplification tolerance from transform_info and slider value.
+
+        Returns 0 if inputs are invalid or simplify_value is 0.
+        """
+        if simplify_value <= 0 or transform_info is None:
+            return 0
+        bbox = transform_info.get("bbox", [0, 1, 0, 1])
+        img_shape = transform_info.get("img_shape", (1024, 1024))
+        width_pixels = max(img_shape[1], 1)
+        bbox_width = bbox[1] - bbox[0]
+        if bbox_width == 0:
+            return 0
+        pixel_size = bbox_width / width_pixels
+        return pixel_size * simplify_value * 0.5
+
     def initGui(self):
         start_log_collector()
 
@@ -321,6 +386,33 @@ class AISegmentationPlugin:
         )
 
     def unload(self):
+        # 1. Disconnect ALL signals FIRST to prevent callbacks on partially-cleaned state
+        try:
+            QgsProject.instance().layersAdded.disconnect(self.dock_widget._on_layers_added)
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        try:
+            QgsProject.instance().layersRemoved.disconnect(self.dock_widget._on_layers_removed)
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        try:
+            if self.dock_widget:
+                self.dock_widget.layer_combo.layerChanged.disconnect(self._on_layer_combo_changed)
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        try:
+            if self.map_tool:
+                self.map_tool.positive_click.disconnect(self._on_positive_click)
+                self.map_tool.negative_click.disconnect(self._on_negative_click)
+                self.map_tool.tool_deactivated.disconnect(self._on_tool_deactivated)
+                self.map_tool.undo_requested.disconnect(self._on_undo)
+                self.map_tool.save_polygon_requested.disconnect(self._on_save_polygon)
+                self.map_tool.export_layer_requested.disconnect(self._on_export_layer)
+                self.map_tool.clear_requested.disconnect(self._on_clear_points)
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+
+        # 2. Cleanup predictor subprocess
         if self.predictor:
             try:
                 self.predictor.cleanup()
@@ -328,40 +420,47 @@ class AISegmentationPlugin:
                 pass
             self.predictor = None
 
+        # 3. Terminate workers with timeout
+        for worker in [self.deps_install_worker, self.download_worker, self.encoding_worker]:
+            if worker and worker.isRunning():
+                try:
+                    worker.terminate()
+                    if not worker.wait(5000):
+                        QgsMessageLog.logMessage(
+                            "Worker did not terminate within 5s",
+                            "AI Segmentation",
+                            level=Qgis.Warning
+                        )
+                except RuntimeError:
+                    pass
 
-        # Remove from Plugins menu
+        # 4. Remove menu/toolbar
         plugins_menu = self.iface.pluginMenu()
         plugins_menu.removeAction(self.action)
         self.iface.removeToolBarIcon(self.action)
 
+        # 5. Remove dock widget
         if self.dock_widget:
-            # Disconnect QgsProject signals before destroying the widget
-            try:
-                QgsProject.instance().layersAdded.disconnect(self.dock_widget._on_layers_added)
-                QgsProject.instance().layersRemoved.disconnect(self.dock_widget._on_layers_removed)
-            except (TypeError, RuntimeError):
-                pass
             self.iface.removeDockWidget(self.dock_widget)
             self.dock_widget.deleteLater()
             self.dock_widget = None
 
+        # 6. Unset map tool
         if self.map_tool:
-            if self.iface.mapCanvas().mapTool() == self.map_tool:
-                self.iface.mapCanvas().unsetMapTool(self.map_tool)
+            try:
+                if self.iface.mapCanvas().mapTool() == self.map_tool:
+                    self.iface.mapCanvas().unsetMapTool(self.map_tool)
+            except RuntimeError:
+                pass
             self.map_tool = None
 
-        if self.mask_rubber_band:
-            self.iface.mapCanvas().scene().removeItem(self.mask_rubber_band)
-            self.mask_rubber_band = None
+        # 7. Remove rubber bands safely
+        self._safe_remove_rubber_band(self.mask_rubber_band)
+        self.mask_rubber_band = None
 
         for rb in self.saved_rubber_bands:
-            self.iface.mapCanvas().scene().removeItem(rb)
+            self._safe_remove_rubber_band(rb)
         self.saved_rubber_bands = []
-
-        for worker in [self.deps_install_worker, self.download_worker, self.encoding_worker]:
-            if worker and worker.isRunning():
-                worker.terminate()
-                worker.wait()
 
     def toggle_dock_widget(self, checked: bool):
         if self.dock_widget:
@@ -908,8 +1007,10 @@ class AISegmentationPlugin:
         if not self._batch_mode:
             return
 
-        if self.current_mask is None:
+        if self.current_mask is None or self.current_transform_info is None:
             return
+
+        self._ensure_polygon_rubberband_sync()
 
         from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
 
@@ -931,11 +1032,10 @@ class AISegmentationPlugin:
         combined = QgsGeometry.unaryUnion(geometries)
         if combined and not combined.isEmpty():
             # Apply simplification if enabled
-            if self._refine_simplify > 0:
-                bbox = self.current_transform_info.get("bbox", [0, 1, 0, 1])
-                img_shape = self.current_transform_info.get("img_shape", (1024, 1024))
-                pixel_size = (bbox[1] - bbox[0]) / img_shape[1]
-                tolerance = pixel_size * self._refine_simplify * 0.5
+            tolerance = self._compute_simplification_tolerance(
+                self.current_transform_info, self._refine_simplify
+            )
+            if tolerance > 0:
                 combined = combined.simplify(tolerance)
 
             # Store WKT (with effects), score, transform info, raw mask, points, and refine settings
@@ -984,6 +1084,8 @@ class AISegmentationPlugin:
         """Export masks to a new layer. Behavior depends on mode."""
         from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
 
+        self._ensure_polygon_rubberband_sync()
+
         if self._batch_mode:
             # Batch mode: export all saved polygons + current unsaved mask
             if not self.saved_polygons and self.current_mask is None:
@@ -992,7 +1094,7 @@ class AISegmentationPlugin:
             polygons_to_export = list(self.saved_polygons)
 
             # Include current unsaved mask if exists (apply current refine settings)
-            if self.current_mask is not None:
+            if self.current_mask is not None and self.current_transform_info is not None:
                 mask_to_export = self.current_mask
                 if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
                     mask_to_export = apply_mask_refinement(
@@ -1005,12 +1107,10 @@ class AISegmentationPlugin:
                 if geometries:
                     combined = QgsGeometry.unaryUnion(geometries)
                     if combined and not combined.isEmpty():
-                        # Apply simplification
-                        if self._refine_simplify > 0:
-                            bbox = self.current_transform_info.get("bbox", [0, 1, 0, 1])
-                            img_shape = self.current_transform_info.get("img_shape", (1024, 1024))
-                            pixel_size = (bbox[1] - bbox[0]) / img_shape[1]
-                            tolerance = pixel_size * self._refine_simplify * 0.5
+                        tolerance = self._compute_simplification_tolerance(
+                            self.current_transform_info, self._refine_simplify
+                        )
+                        if tolerance > 0:
                             combined = combined.simplify(tolerance)
                         polygons_to_export.append({
                             'geometry_wkt': combined.asWkt(),
@@ -1019,7 +1119,7 @@ class AISegmentationPlugin:
                         })
         else:
             # Simple mode: export only current mask with refinement applied
-            if self.current_mask is None:
+            if self.current_mask is None or self.current_transform_info is None:
                 return  # Nothing to export
 
             # Apply all mask-level refinement settings
@@ -1041,11 +1141,10 @@ class AISegmentationPlugin:
                 return
 
             # Apply simplification if enabled
-            if self._refine_simplify > 0:
-                bbox = self.current_transform_info.get("bbox", [0, 1, 0, 1])
-                img_shape = self.current_transform_info.get("img_shape", (1024, 1024))
-                pixel_size = (bbox[1] - bbox[0]) / img_shape[1]
-                tolerance = pixel_size * self._refine_simplify * 0.5
+            tolerance = self._compute_simplification_tolerance(
+                self.current_transform_info, self._refine_simplify
+            )
+            if tolerance > 0:
                 combined = combined.simplify(tolerance)
 
             polygons_to_export = [{
@@ -1281,33 +1380,62 @@ class AISegmentationPlugin:
         has_saved_polygons = len(self.saved_polygons) > 0
 
         if has_unsaved_mask or has_saved_polygons:
-            # Show warning popup
-            if self._batch_mode:
-                polygon_count = len(self.saved_polygons)
-                if has_unsaved_mask:
-                    polygon_count += 1
-                message = tr("You have {count} unsaved polygon(s).").format(count=polygon_count) + "\n\n" + tr("Discard and exit segmentation?")
-            else:
-                message = tr("You have an unsaved selection.") + "\n\n" + tr("Discard and exit segmentation?")
+            # Defer dialog out of signal handler to avoid re-entrant event loop
+            from qgis.PyQt.QtCore import QTimer
+            QTimer.singleShot(0, self._show_deactivation_dialog)
+            return
 
-            reply = QMessageBox.warning(
-                main_window,
-                tr("Exit Segmentation?"),
-                message,
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
+        if self.dock_widget:
+            self.dock_widget.set_segmentation_active(False)
+        self._previous_map_tool = None
 
-            if reply != QMessageBox.Yes:
-                # User wants to continue - re-activate the segmentation tool
-                from qgis.PyQt.QtCore import QTimer
-                QTimer.singleShot(0, lambda: self.iface.mapCanvas().setMapTool(self.map_tool))
-                return
-
-            # User confirmed exit - reset session
+    def _show_deactivation_dialog(self):
+        """Deferred dialog for tool deactivation (called outside signal handler)."""
+        # Re-check state: it may have changed since the deferred call was scheduled
+        main_window = self.iface.mainWindow()
+        if main_window is None or not main_window.isVisible():
             self._reset_session()
             if self.dock_widget:
-                self.dock_widget.reset_session()
+                self.dock_widget.set_segmentation_active(False)
+            return
+
+        has_unsaved_mask = self.current_mask is not None
+        has_saved_polygons = len(self.saved_polygons) > 0
+
+        if not has_unsaved_mask and not has_saved_polygons:
+            # Nothing to warn about anymore
+            if self.dock_widget:
+                self.dock_widget.set_segmentation_active(False)
+            self._previous_map_tool = None
+            return
+
+        # Show warning popup
+        if self._batch_mode:
+            polygon_count = len(self.saved_polygons)
+            if has_unsaved_mask:
+                polygon_count += 1
+            message = tr("You have {count} unsaved polygon(s).").format(count=polygon_count) + "\n\n" + tr("Discard and exit segmentation?")
+        else:
+            message = tr("You have an unsaved selection.") + "\n\n" + tr("Discard and exit segmentation?")
+
+        reply = QMessageBox.warning(
+            main_window,
+            tr("Exit Segmentation?"),
+            message,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            # User wants to continue - re-activate the segmentation tool
+            from qgis.PyQt.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self.iface.mapCanvas().setMapTool(self.map_tool))
+            return
+
+        # User confirmed exit - reset session
+        self._reset_session()
+        if self.dock_widget:
+            self.dock_widget.reset_session()
 
         if self.dock_widget:
             self.dock_widget.set_segmentation_active(False)
@@ -1421,13 +1549,10 @@ class AISegmentationPlugin:
             if geometries:
                 combined = QgsGeometry.unaryUnion(geometries)
                 if combined and not combined.isEmpty():
-                    # Apply simplification if enabled
-                    if self._refine_simplify > 0:
-                        # Calculate tolerance based on image resolution
-                        bbox = transform_info.get("bbox", [0, 1, 0, 1])
-                        img_shape = transform_info.get("img_shape", (1024, 1024))
-                        pixel_size = (bbox[1] - bbox[0]) / img_shape[1]  # map units per pixel
-                        tolerance = pixel_size * self._refine_simplify * 0.5  # 0.5-5 pixels worth
+                    tolerance = self._compute_simplification_tolerance(
+                        transform_info, self._refine_simplify
+                    )
+                    if tolerance > 0:
                         QgsMessageLog.logMessage(f"Simplifying with tolerance={tolerance:.4f}", "AI Segmentation", level=Qgis.Info)
                         combined = combined.simplify(tolerance)
 
@@ -1455,12 +1580,9 @@ class AISegmentationPlugin:
         if not self.saved_polygons or not self.saved_rubber_bands:
             return
 
-        if len(self.saved_polygons) != len(self.saved_rubber_bands):
-            QgsMessageLog.logMessage(
-                f"Mismatch: {len(self.saved_polygons)} polygons vs {len(self.saved_rubber_bands)} rubber bands",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
+        self._ensure_polygon_rubberband_sync()
+
+        if not self.saved_polygons:
             return
 
         try:
@@ -1483,12 +1605,10 @@ class AISegmentationPlugin:
                 if geometries:
                     combined = QgsGeometry.unaryUnion(geometries)
                     if combined and not combined.isEmpty():
-                        # Apply simplification if enabled
-                        if self._refine_simplify > 0:
-                            bbox = transform_info.get("bbox", [0, 1, 0, 1])
-                            img_shape = transform_info.get("img_shape", (1024, 1024))
-                            pixel_size = (bbox[1] - bbox[0]) / img_shape[1]
-                            tolerance = pixel_size * self._refine_simplify * 0.5
+                        tolerance = self._compute_simplification_tolerance(
+                            transform_info, self._refine_simplify
+                        )
+                        if tolerance > 0:
                             combined = combined.simplify(tolerance)
 
                         rubber_band.setToGeometry(combined, None)
@@ -1679,7 +1799,7 @@ class AISegmentationPlugin:
         if self.mask_rubber_band is None:
             return
 
-        if self.current_mask is None:
+        if self.current_mask is None or self.current_transform_info is None:
             self._clear_mask_visualization()
             return
 
@@ -1703,11 +1823,10 @@ class AISegmentationPlugin:
                 combined = QgsGeometry.unaryUnion(geometries)
                 if combined and not combined.isEmpty():
                     # Apply simplification to preview in both modes
-                    if self._refine_simplify > 0:
-                        bbox = self.current_transform_info.get("bbox", [0, 1, 0, 1])
-                        img_shape = self.current_transform_info.get("img_shape", (1024, 1024))
-                        pixel_size = (bbox[1] - bbox[0]) / img_shape[1]
-                        tolerance = pixel_size * self._refine_simplify * 0.5
+                    tolerance = self._compute_simplification_tolerance(
+                        self.current_transform_info, self._refine_simplify
+                    )
+                    if tolerance > 0:
                         combined = combined.simplify(tolerance)
 
                     self.mask_rubber_band.setToGeometry(combined, None)
@@ -1716,12 +1835,21 @@ class AISegmentationPlugin:
             else:
                 self._clear_mask_visualization()
 
+        except (ValueError, TypeError, RuntimeError) as e:
+            QgsMessageLog.logMessage(
+                "Mask visualization error ({}): {}".format(
+                    type(e).__name__, str(e)),
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            self._clear_mask_visualization()
         except Exception as e:
             import traceback
             QgsMessageLog.logMessage(
-                f"Failed to visualize mask: {str(e)}\n{traceback.format_exc()}",
+                "Unexpected mask visualization error ({}): {}\n{}".format(
+                    type(e).__name__, str(e), traceback.format_exc()),
                 "AI Segmentation",
-                level=Qgis.Warning
+                level=Qgis.Critical
             )
             self._clear_mask_visualization()
 
@@ -1802,6 +1930,8 @@ class AISegmentationPlugin:
 
     def _restore_last_saved_mask(self):
         """Restore the last saved mask for editing in batch mode."""
+        self._ensure_polygon_rubberband_sync()
+
         if not self.saved_polygons or not self.saved_rubber_bands:
             return
 
@@ -1811,7 +1941,7 @@ class AISegmentationPlugin:
         # Remove the corresponding rubber band (green)
         if self.saved_rubber_bands:
             last_rb = self.saved_rubber_bands.pop()
-            self.iface.mapCanvas().scene().removeItem(last_rb)
+            self._safe_remove_rubber_band(last_rb)
 
         # Clear current state first
         self.prompts.clear()
@@ -1873,7 +2003,7 @@ class AISegmentationPlugin:
         self.saved_polygons = []
 
         for rb in self.saved_rubber_bands:
-            self.iface.mapCanvas().scene().removeItem(rb)
+            self._safe_remove_rubber_band(rb)
         self.saved_rubber_bands = []
 
         if self.map_tool:

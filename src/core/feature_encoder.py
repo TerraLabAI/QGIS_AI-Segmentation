@@ -1,34 +1,33 @@
 import os
 import sys
 import json
+import time
 import subprocess
 import tempfile
 from typing import Tuple, Optional, Callable
 
 from qgis.core import QgsMessageLog, Qgis
 
+from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
 
-def _get_clean_env_for_venv() -> dict:
-    env = os.environ.copy()
-    vars_to_remove = [
-        'PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV',
-        'QGIS_PREFIX_PATH', 'QGIS_PLUGINPATH',
-    ]
-    for var in vars_to_remove:
-        env.pop(var, None)
-    env["PYTHONIOENCODING"] = "utf-8"
-    return env
+# Global timeout for the encoding stdout reading loop (15 minutes)
+_ENCODING_GLOBAL_TIMEOUT = 900
 
 
-def _get_subprocess_kwargs() -> dict:
-    kwargs = {}
-    if sys.platform == "win32":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
-        kwargs['startupinfo'] = startupinfo
-        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-    return kwargs
+def _terminate_process(process):
+    """Safely terminate a subprocess: terminate -> wait -> kill."""
+    if process is None:
+        return
+    try:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+    except Exception:
+        pass
 
 
 def encode_raster_to_features(
@@ -40,6 +39,9 @@ def encode_raster_to_features(
     progress_callback: Optional[Callable[[int, str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
 ) -> Tuple[bool, str]:
+    process = None
+    stderr_file = None
+
     try:
         from .venv_manager import get_venv_python_path, get_venv_dir
 
@@ -73,15 +75,25 @@ def encode_raster_to_features(
 
         cmd = [venv_python, worker_script]
 
-        env = _get_clean_env_for_venv()
-        subprocess_kwargs = _get_subprocess_kwargs()
+        env = get_clean_env_for_venv()
+        subprocess_kwargs = get_subprocess_kwargs()
 
-        stderr_file = tempfile.TemporaryFile(mode='w+', encoding='utf-8')
+        # Create stderr temp file with fallback to DEVNULL
+        try:
+            stderr_file = tempfile.TemporaryFile(mode='w+', encoding='utf-8')
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                f"Could not create stderr temp file, using DEVNULL: {e}",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            stderr_file = None
+
         process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=stderr_file,
+            stderr=stderr_file if stderr_file is not None else subprocess.DEVNULL,
             text=True,
             env=env,
             **subprocess_kwargs
@@ -91,8 +103,21 @@ def encode_raster_to_features(
         process.stdin.close()
 
         tiles_processed = 0
+        start_time = time.monotonic()
 
         for line in process.stdout:
+            # Global timeout check
+            elapsed = time.monotonic() - start_time
+            if elapsed > _ENCODING_GLOBAL_TIMEOUT:
+                QgsMessageLog.logMessage(
+                    "Encoding worker exceeded global timeout (15 min), terminating",
+                    "AI Segmentation",
+                    level=Qgis.Warning
+                )
+                _terminate_process(process)
+                process = None
+                return False, "Encoding timed out (15 minutes)"
+
             try:
                 update = json.loads(line.strip())
 
@@ -132,13 +157,8 @@ def encode_raster_to_features(
                     "AI Segmentation",
                     level=Qgis.Info
                 )
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-                stderr_file.close()
+                _terminate_process(process)
+                process = None
                 return False, "Encoding cancelled by user"
 
         try:
@@ -149,22 +169,20 @@ def encode_raster_to_features(
                 "AI Segmentation",
                 level=Qgis.Warning
             )
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-            stderr_file.close()
+            _terminate_process(process)
+            process = None
             return False, "Encoding timed out"
 
         if process.returncode == 0:
-            stderr_file.close()
             return True, f"Encoded {tiles_processed} tiles"
         else:
-            stderr_file.seek(0)
-            stderr_output = stderr_file.read()
-            stderr_file.close()
+            stderr_output = ""
+            if stderr_file is not None:
+                try:
+                    stderr_file.seek(0)
+                    stderr_output = stderr_file.read()
+                except Exception:
+                    pass
             error_msg = f"Worker process failed with return code {process.returncode}"
             if stderr_output:
                 error_msg += f"\nStderr: {stderr_output[:500]}"
@@ -176,3 +194,13 @@ def encode_raster_to_features(
         error_msg = f"Failed to start encoding worker: {str(e)}\n{traceback.format_exc()}"
         QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
         return False, str(e)
+
+    finally:
+        # Ensure process is always cleaned up
+        if process is not None:
+            _terminate_process(process)
+        if stderr_file is not None:
+            try:
+                stderr_file.close()
+            except Exception:
+                pass

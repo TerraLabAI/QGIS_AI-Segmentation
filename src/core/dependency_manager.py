@@ -60,7 +60,7 @@ def check_python_version_match() -> bool:
         return True
 
     try:
-        with open(PYTHON_VERSION_FILE, 'r') as f:
+        with open(PYTHON_VERSION_FILE, 'r', encoding='utf-8') as f:
             installed_version = f.read().strip()
 
         current_version = f"{sys.version_info.major}.{sys.version_info.minor}"
@@ -82,7 +82,7 @@ def write_python_version():
     """Write current Python version marker file."""
     try:
         current_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-        with open(PYTHON_VERSION_FILE, 'w') as f:
+        with open(PYTHON_VERSION_FILE, 'w', encoding='utf-8') as f:
             f.write(current_version)
     except Exception as e:
         _log(f"Failed to write version file: {e}", Qgis.Warning)

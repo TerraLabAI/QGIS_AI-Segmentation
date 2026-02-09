@@ -576,8 +576,9 @@ def install_dependencies(
             "--no-warn-script-location",
             "--disable-pip-version-check",
             "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
-            package_spec
         ]
+        pip_args.extend(_get_pip_proxy_args())
+        pip_args.append(package_spec)
 
         # For CUDA-enabled torch/torchvision, use PyTorch's CUDA index
         if is_cuda_package:
@@ -769,6 +770,57 @@ def install_dependencies(
     return True, "All dependencies installed successfully"
 
 
+def _get_qgis_proxy_settings() -> Optional[str]:
+    """Read proxy configuration from QGIS settings.
+
+    Returns a proxy URL string like 'http://user:pass@host:port'
+    or None if proxy is not configured or disabled.
+    """
+    try:
+        from qgis.core import QgsSettings
+        from urllib.parse import quote as url_quote
+
+        settings = QgsSettings()
+        enabled = settings.value("proxy/proxyEnabled", False, type=bool)
+        if not enabled:
+            return None
+
+        host = settings.value("proxy/proxyHost", "", type=str)
+        if not host:
+            return None
+
+        port = settings.value("proxy/proxyPort", "", type=str)
+        user = settings.value("proxy/proxyUser", "", type=str)
+        password = settings.value("proxy/proxyPassword", "", type=str)
+
+        proxy_url = "http://"
+        if user:
+            proxy_url += url_quote(user, safe="")
+            if password:
+                proxy_url += ":" + url_quote(password, safe="")
+            proxy_url += "@"
+        proxy_url += host
+        if port:
+            proxy_url += ":{}".format(port)
+
+        return proxy_url
+    except Exception as e:
+        _log("Could not read QGIS proxy settings: {}".format(e), Qgis.Warning)
+        return None
+
+
+def _get_pip_proxy_args() -> List[str]:
+    """Get pip --proxy argument if QGIS proxy is configured."""
+    proxy_url = _get_qgis_proxy_settings()
+    if proxy_url:
+        _log("Using QGIS proxy for pip: {}".format(
+            proxy_url.split("@")[-1] if "@" in proxy_url else proxy_url),
+            Qgis.Info
+        )
+        return ["--proxy", proxy_url]
+    return []
+
+
 def _get_clean_env_for_venv() -> dict:
     env = os.environ.copy()
 
@@ -780,6 +832,13 @@ def _get_clean_env_for_venv() -> dict:
         env.pop(var, None)
 
     env["PYTHONIOENCODING"] = "utf-8"
+
+    # Propagate QGIS proxy settings to environment for pip/network calls
+    proxy_url = _get_qgis_proxy_settings()
+    if proxy_url:
+        env.setdefault("HTTP_PROXY", proxy_url)
+        env.setdefault("HTTPS_PROXY", proxy_url)
+
     return env
 
 
