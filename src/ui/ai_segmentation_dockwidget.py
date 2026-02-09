@@ -183,7 +183,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.install_button)
 
         # CUDA checkbox - only shown on Windows/Linux (macOS uses MPS instead)
-        self.cuda_checkbox = QCheckBox(tr("Enable NVIDIA GPU acceleration (CUDA)"))
+        self.cuda_checkbox = QCheckBox(tr("Enable NVIDIA GPU acceleration (CUDA) - Experimental"))
         self.cuda_checkbox.setToolTip(
             tr("CUDA requires an NVIDIA GPU. Download size: ~2.5GB (vs ~600MB without CUDA)."))
         self.cuda_checkbox.setVisible(False)
@@ -201,7 +201,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.cuda_checkbox)
 
         # Description label below the CUDA checkbox
-        self.cuda_description = QLabel(tr("Optional: speeds up segmentation. Requires ~2.5GB of disk space."))
+        self.cuda_description = QLabel(tr("Experimental: may speed up segmentation but can cause issues. Falls back to CPU if needed. Requires ~2.5GB."))
         self.cuda_description.setStyleSheet("font-size: 10px; color: palette(mid); padding-left: 20px;")
         self.cuda_description.setWordWrap(True)
         self.cuda_description.setVisible(False)
