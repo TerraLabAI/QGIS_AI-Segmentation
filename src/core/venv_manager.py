@@ -4,6 +4,8 @@ import os
 import shutil
 import platform
 import tempfile
+import time
+import re
 from typing import Tuple, Optional, Callable, List
 
 from qgis.core import QgsMessageLog, Qgis
@@ -735,6 +737,233 @@ def _get_verification_timeout(package_name: str) -> int:
         return 30
 
 
+class _PipResult:
+    """Lightweight result object compatible with subprocess.CompletedProcess."""
+
+    def __init__(self, returncode: int, stdout: str, stderr: str):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _parse_pip_download_line(line: str) -> Optional[str]:
+    """
+    Extract a human-readable status from a pip stdout/stderr line.
+
+    Looks for pip progress lines like:
+      "Downloading torch-2.5.1+cu128-...-linux_x86_64.whl (2.5 GB)"
+    Returns e.g. "Downloading torch-2.5.1+cu128 (2.5 GB)" or None.
+    """
+    # Match "Downloading <package>-<version>...<ext> (<size>)"
+    m = re.search(
+        r"Downloading\s+(\S+?)(?:-cp\d|\.whl|\.tar).*?\(([^)]+)\)",
+        line,
+    )
+    if m:
+        name_version = m.group(1).rstrip("-")
+        size = m.group(2)
+        return "Downloading {} ({})".format(name_version, size)
+
+    # Simpler match: just "Downloading <something>"
+    m = re.search(r"Downloading\s+(\S+)", line)
+    if m:
+        return "Downloading {}".format(m.group(1).rstrip("-"))
+
+    return None
+
+
+def _run_pip_install(
+    cmd: List[str],
+    timeout: int,
+    env: dict,
+    subprocess_kwargs: dict,
+    package_name: str,
+    package_index: int,
+    total_packages: int,
+    progress_start: int,
+    progress_end: int,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+    is_cuda: bool = False,
+) -> _PipResult:
+    """
+    Run a pip install command with real-time progress updates.
+
+    Uses Popen with stdout/stderr redirected to temp files (not PIPE,
+    per CLAUDE.md) and polls every 2 seconds to provide live feedback.
+    """
+    poll_interval = 2  # seconds
+
+    # Create temp files for stdout and stderr
+    stdout_fd, stdout_path = tempfile.mkstemp(
+        suffix="_stdout.txt", prefix="pip_"
+    )
+    stderr_fd, stderr_path = tempfile.mkstemp(
+        suffix="_stderr.txt", prefix="pip_"
+    )
+
+    try:
+        stdout_file = os.fdopen(stdout_fd, "w", encoding="utf-8")
+        stderr_file = os.fdopen(stderr_fd, "w", encoding="utf-8")
+    except Exception:
+        # If fdopen fails, close the raw fds and re-raise
+        try:
+            os.close(stdout_fd)
+        except Exception:
+            pass
+        try:
+            os.close(stderr_fd)
+        except Exception:
+            pass
+        raise
+
+    process = None
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            text=True,
+            env=env,
+            **subprocess_kwargs,
+        )
+
+        start_time = time.monotonic()
+        last_download_status = ""
+
+        while True:
+            try:
+                process.wait(timeout=poll_interval)
+                # Process finished
+                break
+            except subprocess.TimeoutExpired:
+                pass  # Still running, continue polling
+
+            elapsed = int(time.monotonic() - start_time)
+
+            # Check cancellation
+            if cancel_check and cancel_check():
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+                return _PipResult(-1, "", "Installation cancelled")
+
+            # Check overall timeout
+            if elapsed >= timeout:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+                raise subprocess.TimeoutExpired(cmd, timeout)
+
+            # Read last lines of stdout to find download progress
+            try:
+                with open(stdout_path, "r", encoding="utf-8", errors="replace") as f:
+                    # Read last 4KB to find recent lines
+                    f.seek(0, 2)  # seek to end
+                    file_size = f.tell()
+                    read_from = max(0, file_size - 4096)
+                    f.seek(read_from)
+                    tail = f.read()
+                    lines = tail.strip().split("\n")
+                    # Search from bottom for a Downloading line
+                    for line in reversed(lines):
+                        parsed = _parse_pip_download_line(line)
+                        if parsed:
+                            last_download_status = parsed
+                            break
+            except Exception:
+                pass
+
+            # Build progress message
+            if last_download_status:
+                msg = "{}... {}s elapsed ({}/{})".format(
+                    last_download_status, elapsed,
+                    package_index + 1, total_packages)
+            elif is_cuda and package_name == "torch":
+                msg = "Downloading PyTorch CUDA (~2.5GB)... {}s elapsed ({}/{})".format(
+                    elapsed, package_index + 1, total_packages)
+            elif package_name == "torch":
+                msg = "Downloading PyTorch (~600MB)... {}s elapsed ({}/{})".format(
+                    elapsed, package_index + 1, total_packages)
+            else:
+                msg = "Installing {}... {}s elapsed ({}/{})".format(
+                    package_name, elapsed,
+                    package_index + 1, total_packages)
+
+            # Interpolate progress within the package's range
+            # Use logarithmic-ish curve: fast at start, slows down
+            # Cap interpolated progress at 90% of the range
+            progress_range = progress_end - progress_start
+            if timeout > 0:
+                fraction = min(elapsed / timeout, 0.9)
+            else:
+                fraction = 0
+            interpolated = progress_start + int(progress_range * fraction)
+            interpolated = min(interpolated, progress_end - 1)
+
+            if progress_callback:
+                progress_callback(interpolated, msg)
+
+        # Process finished — close files before reading
+        stdout_file.close()
+        stderr_file.close()
+        stdout_file = None
+        stderr_file = None
+
+        # Read full output
+        try:
+            with open(stdout_path, "r", encoding="utf-8", errors="replace") as f:
+                full_stdout = f.read()
+        except Exception:
+            full_stdout = ""
+
+        try:
+            with open(stderr_path, "r", encoding="utf-8", errors="replace") as f:
+                full_stderr = f.read()
+        except Exception:
+            full_stderr = ""
+
+        return _PipResult(process.returncode, full_stdout, full_stderr)
+
+    except subprocess.TimeoutExpired:
+        raise
+    except Exception:
+        if process and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except Exception:
+                process.kill()
+        raise
+    finally:
+        # Close files if still open
+        if stdout_file is not None:
+            try:
+                stdout_file.close()
+            except Exception:
+                pass
+        if stderr_file is not None:
+            try:
+                stderr_file.close()
+            except Exception:
+                pass
+        # Clean up temp files
+        try:
+            os.unlink(stdout_path)
+        except Exception:
+            pass
+        try:
+            os.unlink(stderr_path)
+        except Exception:
+            pass
+
+
 def install_dependencies(
     venv_dir: str = None,
     progress_callback: Optional[Callable[[int, str], None]] = None,
@@ -754,7 +983,25 @@ def install_dependencies(
 
     total_packages = len(REQUIRED_PACKAGES)
     base_progress = 20
-    progress_per_package = 80 // total_packages
+    progress_range = 80  # from 20% to 100%
+
+    # Weighted progress allocation proportional to download size.
+    # CUDA: torch=45%, torchvision=15%; CPU: torch=30%, torchvision=15%.
+    if cuda_enabled:
+        _weights = [5, 45, 15, 5, 5, 5]
+    else:
+        _weights = [5, 30, 15, 10, 10, 10]
+    weight_total = sum(_weights)
+    # Cumulative start offsets for each package
+    _cumulative = [0]
+    for w in _weights:
+        _cumulative.append(_cumulative[-1] + w)
+
+    def _pkg_progress_start(idx):
+        return base_progress + int(progress_range * _cumulative[idx] / weight_total)
+
+    def _pkg_progress_end(idx):
+        return base_progress + int(progress_range * _cumulative[idx + 1] / weight_total)
 
     python_path = get_venv_python_path(venv_dir)
 
@@ -790,24 +1037,25 @@ def install_dependencies(
                 return False, "Installation cancelled"
 
             package_spec = f"{package_name}{version_spec}"
-            current_progress = base_progress + (i * progress_per_package)
+            pkg_start = _pkg_progress_start(i)
+            pkg_end = _pkg_progress_end(i)
 
             is_cuda_package = cuda_enabled and package_name in ("torch", "torchvision")
 
             if progress_callback:
                 if package_name == "torch" and cuda_enabled:
                     progress_callback(
-                        current_progress,
+                        pkg_start,
                         "Installing {} (CUDA ~2.5GB)... ({}/{})".format(
                             package_name, i + 1, total_packages))
                 elif package_name == "torch":
                     progress_callback(
-                        current_progress,
+                        pkg_start,
                         "Installing {} (~600MB)... ({}/{})".format(
                             package_name, i + 1, total_packages))
                 else:
                     progress_callback(
-                        current_progress,
+                        pkg_start,
                         "Installing {}... ({}/{})".format(
                             package_name, i + 1, total_packages))
 
@@ -865,12 +1113,26 @@ def install_dependencies(
                 # where antivirus may block the standalone pip executable)
                 base_cmd = [python_path, "-m", "pip"] + pip_args
 
-                # First attempt: standard pip install
-                result = subprocess.run(
-                    base_cmd,
-                    capture_output=True, text=True, timeout=pkg_timeout,
-                    env=env, **subprocess_kwargs,
+                # First attempt: pip install with real-time progress
+                result = _run_pip_install(
+                    cmd=base_cmd,
+                    timeout=pkg_timeout,
+                    env=env,
+                    subprocess_kwargs=subprocess_kwargs,
+                    package_name=package_name,
+                    package_index=i,
+                    total_packages=total_packages,
+                    progress_start=pkg_start,
+                    progress_end=pkg_end,
+                    progress_callback=progress_callback,
+                    cancel_check=cancel_check,
+                    is_cuda=is_cuda_package,
                 )
+
+                # If cancelled
+                if result.returncode == -1 and "cancelled" in (result.stderr or "").lower():
+                    _log("Installation cancelled by user", Qgis.Warning)
+                    return False, "Installation cancelled"
 
                 # If Windows process crash, retry with pip.exe as fallback
                 if _is_windows_process_crash(result.returncode):
@@ -881,16 +1143,25 @@ def install_dependencies(
                     )
                     if progress_callback:
                         progress_callback(
-                            current_progress,
+                            pkg_start,
                             "Retrying {}... ({}/{})".format(
                                 package_name, i + 1, total_packages)
                         )
 
                     fallback_cmd = [pip_path] + pip_args
-                    result = subprocess.run(
-                        fallback_cmd,
-                        capture_output=True, text=True, timeout=pkg_timeout,
-                        env=env, **subprocess_kwargs,
+                    result = _run_pip_install(
+                        cmd=fallback_cmd,
+                        timeout=pkg_timeout,
+                        env=env,
+                        subprocess_kwargs=subprocess_kwargs,
+                        package_name=package_name,
+                        package_index=i,
+                        total_packages=total_packages,
+                        progress_start=pkg_start,
+                        progress_end=pkg_end,
+                        progress_callback=progress_callback,
+                        cancel_check=cancel_check,
+                        is_cuda=is_cuda_package,
                     )
 
                 # If failed, check for SSL errors and retry with --trusted-host
@@ -904,22 +1175,31 @@ def install_dependencies(
                         )
                         if progress_callback:
                             progress_callback(
-                                current_progress,
+                                pkg_start,
                                 "SSL error, retrying {}... ({}/{})".format(
                                     package_name, i + 1, total_packages)
                             )
 
                         ssl_cmd = base_cmd[:3] + _get_pip_ssl_flags() + base_cmd[3:]
-                        result = subprocess.run(
-                            ssl_cmd,
-                            capture_output=True, text=True, timeout=pkg_timeout,
-                            env=env, **subprocess_kwargs,
+                        result = _run_pip_install(
+                            cmd=ssl_cmd,
+                            timeout=pkg_timeout,
+                            env=env,
+                            subprocess_kwargs=subprocess_kwargs,
+                            package_name=package_name,
+                            package_index=i,
+                            total_packages=total_packages,
+                            progress_start=pkg_start,
+                            progress_end=pkg_end,
+                            progress_callback=progress_callback,
+                            cancel_check=cancel_check,
+                            is_cuda=is_cuda_package,
                         )
 
                 if result.returncode == 0:
                     _log(f"✓ Successfully installed {package_spec}", Qgis.Success)
                     if progress_callback:
-                        progress_callback(current_progress + progress_per_package, f"✓ {package_name} installed")
+                        progress_callback(pkg_end, f"✓ {package_name} installed")
                 else:
                     error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
                     _log(f"✗ Failed to install {package_spec}: {error_msg[:500]}", Qgis.Critical)
@@ -944,7 +1224,7 @@ def install_dependencies(
                 )
                 if progress_callback:
                     progress_callback(
-                        current_progress,
+                        pkg_start,
                         "CUDA failed, installing {} (CPU)...".format(package_name)
                     )
 
@@ -957,16 +1237,25 @@ def install_dependencies(
                     cpu_pip_args.extend(["--constraint", constraints_path])
                 cpu_cmd = [python_path, "-m", "pip"] + cpu_pip_args
                 try:
-                    cpu_result = subprocess.run(
-                        cpu_cmd,
-                        capture_output=True, text=True, timeout=600,
-                        env=env, **subprocess_kwargs,
+                    cpu_result = _run_pip_install(
+                        cmd=cpu_cmd,
+                        timeout=600,
+                        env=env,
+                        subprocess_kwargs=subprocess_kwargs,
+                        package_name=package_name,
+                        package_index=i,
+                        total_packages=total_packages,
+                        progress_start=pkg_start,
+                        progress_end=pkg_end,
+                        progress_callback=progress_callback,
+                        cancel_check=cancel_check,
+                        is_cuda=False,
                     )
                     if cpu_result.returncode == 0:
                         _log("✓ Successfully installed {} (CPU version)".format(package_spec), Qgis.Success)
                         if progress_callback:
                             progress_callback(
-                                current_progress + progress_per_package,
+                                pkg_end,
                                 "✓ {} installed (CPU)".format(package_name)
                             )
                         install_failed = False
