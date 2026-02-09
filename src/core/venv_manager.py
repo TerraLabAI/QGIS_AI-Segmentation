@@ -282,6 +282,34 @@ def _get_ssl_error_help() -> str:
     )
 
 
+_NETWORK_ERROR_PATTERNS = [
+    "connectionreseterror",
+    "connection aborted",
+    "connection was forcibly closed",
+    "remotedisconnected",
+    "connectionerror",
+    "newconnectionerror",
+    "maxretryerror",
+    "protocolerror",
+    "readtimeouterror",
+    "connecttimeouterror",
+    "urlib3.exceptions",
+    "requests.exceptions.connectionerror",
+    "network is unreachable",
+    "temporary failure in name resolution",
+    "name or service not known",
+]
+
+
+def _is_network_error(output: str) -> bool:
+    """Detect transient network/connection errors in pip output."""
+    output_lower = output.lower()
+    # Exclude SSL errors — they have their own retry path
+    if _is_ssl_error(output):
+        return False
+    return any(p in output_lower for p in _NETWORK_ERROR_PATTERNS)
+
+
 def _is_antivirus_error(stderr: str) -> bool:
     """Detect antivirus/permission blocking in pip output."""
     stderr_lower = stderr.lower()
@@ -750,26 +778,35 @@ def _parse_pip_download_line(line: str) -> Optional[str]:
     """
     Extract a human-readable status from a pip stdout/stderr line.
 
-    Looks for pip progress lines like:
-      "Downloading torch-2.5.1+cu128-...-linux_x86_64.whl (2.5 GB)"
-    Returns e.g. "Downloading torch-2.5.1+cu128 (2.5 GB)" or None.
+    Pip outputs lines like:
+      "Downloading https://download.pytorch.org/whl/cu121/torch-2.5.1%2Bcu121-cp312-...-linux_x86_64.whl (2449.3 MB)"
+    Returns e.g. "Downloading torch (2.4 GB)" or None.
     """
-    # Match "Downloading <package>-<version>...<ext> (<size>)"
-    m = re.search(
-        r"Downloading\s+(\S+?)(?:-cp\d|\.whl|\.tar).*?\(([^)]+)\)",
-        line,
-    )
-    if m:
-        name_version = m.group(1).rstrip("-")
-        size = m.group(2)
-        return "Downloading {} ({})".format(name_version, size)
+    m = re.search(r"Downloading\s+(\S+)\s+\(([^)]+)\)", line)
+    if not m:
+        return None
 
-    # Simpler match: just "Downloading <something>"
-    m = re.search(r"Downloading\s+(\S+)", line)
-    if m:
-        return "Downloading {}".format(m.group(1).rstrip("-"))
+    raw_name = m.group(1)
+    size = m.group(2)
 
-    return None
+    # Strip URL prefix: keep only the filename from the path
+    if "/" in raw_name:
+        raw_name = raw_name.rsplit("/", 1)[-1]
+
+    # Extract just the package name (before version): "torch-2.5.1%2Bcu121-cp312-..." -> "torch"
+    # URL-encoded + is %2B, so split on first "-" that is followed by a digit
+    name_match = re.match(r"([A-Za-z][A-Za-z0-9_]*)", raw_name)
+    pkg_name = name_match.group(1) if name_match else raw_name
+
+    # Convert size to human-friendly: "2449.3 MB" -> "2.4 GB"
+    size_match = re.match(r"([\d.]+)\s*(kB|MB|GB)", size)
+    if size_match:
+        num = float(size_match.group(1))
+        unit = size_match.group(2)
+        if unit == "MB" and num >= 1000:
+            size = "{:.1f} GB".format(num / 1000)
+
+    return "Downloading {} ({})".format(pkg_name, size)
 
 
 def _run_pip_install(
@@ -1196,6 +1233,43 @@ def install_dependencies(
                             is_cuda=is_cuda_package,
                         )
 
+                # If failed, check for network errors and retry after delay
+                if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
+                    error_output = result.stderr or result.stdout or ""
+
+                    if _is_network_error(error_output):
+                        for attempt in range(1, 3):  # up to 2 retries
+                            _log(
+                                "Network error detected, retrying in 5s "
+                                "(attempt {}/2)...".format(attempt),
+                                Qgis.Warning
+                            )
+                            if progress_callback:
+                                progress_callback(
+                                    pkg_start,
+                                    "Network error, retrying {}... ({}/{})".format(
+                                        package_name, i + 1, total_packages)
+                                )
+                            time.sleep(5)
+                            if cancel_check and cancel_check():
+                                return False, "Installation cancelled"
+                            result = _run_pip_install(
+                                cmd=base_cmd,
+                                timeout=pkg_timeout,
+                                env=env,
+                                subprocess_kwargs=subprocess_kwargs,
+                                package_name=package_name,
+                                package_index=i,
+                                total_packages=total_packages,
+                                progress_start=pkg_start,
+                                progress_end=pkg_end,
+                                progress_callback=progress_callback,
+                                cancel_check=cancel_check,
+                                is_cuda=is_cuda_package,
+                            )
+                            if result.returncode == 0:
+                                break
+
                 if result.returncode == 0:
                     _log(f"✓ Successfully installed {package_spec}", Qgis.Success)
                     if progress_callback:
@@ -1285,6 +1359,23 @@ def install_dependencies(
                     _log(ssl_help, Qgis.Warning)
                     install_error_msg = "{}\n\n{}".format(install_error_msg[:200], ssl_help)
                     return False, f"Failed to install {package_name}: {install_error_msg}"
+
+                # Check for network/connection errors (after retries exhausted)
+                if _is_network_error(install_error_msg):
+                    net_help = (
+                        "Network connection failed after multiple retries.\n\n"
+                        "Please try:\n"
+                        "  1. Check your internet connection\n"
+                        "  2. If using a VPN or proxy, try disconnecting temporarily\n"
+                        "  3. Wait a few minutes and try again\n"
+                        "  4. Check firewall settings for pypi.org and "
+                        "files.pythonhosted.org"
+                    )
+                    _log(net_help, Qgis.Warning)
+                    install_error_msg = "{}\n\n{}".format(
+                        install_error_msg[:200], net_help)
+                    return False, "Failed to install {}: {}".format(
+                        package_name, install_error_msg)
 
                 # Check for antivirus blocking
                 if _is_antivirus_error(install_error_msg):
