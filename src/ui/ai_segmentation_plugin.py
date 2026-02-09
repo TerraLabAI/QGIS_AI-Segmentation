@@ -1636,8 +1636,9 @@ class AISegmentationPlugin:
         """Check if a point falls within the encoded raster extent."""
         bounds = self.feature_dataset.bounds
         # bounds = (minx, maxx, miny, maxy, mint, maxt)
-        return (bounds[0] <= point.x() <= bounds[1]
-                and bounds[2] <= point.y() <= bounds[3])
+        in_x = bounds[0] <= point.x() <= bounds[1]
+        in_y = bounds[2] <= point.y() <= bounds[3]
+        return in_x and in_y
 
     def _on_positive_click(self, point):
         """Handle left-click: add positive point (select this element)."""
