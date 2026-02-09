@@ -1193,6 +1193,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.prep_progress.setVisible(True)
             self.prep_status_label.setVisible(True)
             self.start_button.setVisible(False)
+            self.batch_mode_checkbox.setVisible(False)
             self.cancel_prep_button.setVisible(True)
             self.encoding_info_label.setText(
                 "⏳ {}\n{}".format(
@@ -1206,6 +1207,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.cancel_prep_button.setVisible(False)
             self.encoding_info_label.setVisible(False)
             self.start_button.setVisible(True)
+            self.batch_mode_checkbox.setVisible(True)
             self._encoding_start_time = None
             self._update_ui_state()
 
@@ -1269,6 +1271,7 @@ class AISegmentationDockWidget(QDockWidget):
         else:
             # Not segmenting - hide all segmentation buttons, show start controls
             self.start_container.setVisible(True)
+            self.batch_mode_checkbox.setVisible(True)
             self.batch_mode_checkbox.setEnabled(True)  # Can change mode when not segmenting
             self.instructions_label.setVisible(False)
             self.refine_group.setVisible(False)
