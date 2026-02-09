@@ -695,22 +695,22 @@
         <translation>Installation bloquée</translation>
     </message>
 
-    <!-- CUDA / Device Info -->
+    <!-- NVIDIA GPU -->
     <message>
-        <source>Enable NVIDIA GPU acceleration (CUDA) - Experimental</source>
-        <translation>Activer l'accélération GPU NVIDIA (CUDA) - Experimental</translation>
+        <source>NVIDIA GPU support (Experimental)</source>
+        <translation>Support GPU NVIDIA (Experimental)</translation>
     </message>
     <message>
-        <source>CUDA requires an NVIDIA GPU. Download size: ~2.5GB (vs ~600MB without CUDA).</source>
-        <translation>CUDA nécessite un GPU NVIDIA. Taille du téléchargement : ~2,5 Go (vs ~600 Mo sans CUDA).</translation>
+        <source>Enable NVIDIA GPU acceleration</source>
+        <translation>Activer l'accélération GPU NVIDIA</translation>
+    </message>
+    <message>
+        <source>Experimental - Up to x5 faster. Requires ~2.5GB download.</source>
+        <translation>Experimental - Jusqu'à x5 plus rapide. Téléchargement ~2,5 Go.</translation>
     </message>
     <message>
         <source>Detected: {gpu_name}</source>
         <translation>Détecté : {gpu_name}</translation>
-    </message>
-    <message>
-        <source>Experimental: may speed up segmentation but can cause issues. Falls back to CPU if needed. Requires ~2.5GB.</source>
-        <translation>Experimental : peut accélérer la segmentation mais peut causer des problèmes. Bascule en CPU si nécessaire. Nécessite ~2,5 Go.</translation>
     </message>
     <message>
         <source>GPU not compatible with installed CUDA version, using CPU...</source>
