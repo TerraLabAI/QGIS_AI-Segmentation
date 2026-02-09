@@ -750,26 +750,35 @@ def _parse_pip_download_line(line: str) -> Optional[str]:
     """
     Extract a human-readable status from a pip stdout/stderr line.
 
-    Looks for pip progress lines like:
-      "Downloading torch-2.5.1+cu128-...-linux_x86_64.whl (2.5 GB)"
-    Returns e.g. "Downloading torch-2.5.1+cu128 (2.5 GB)" or None.
+    Pip outputs lines like:
+      "Downloading https://download.pytorch.org/whl/cu121/torch-2.5.1%2Bcu121-cp312-...-linux_x86_64.whl (2449.3 MB)"
+    Returns e.g. "Downloading torch (2.4 GB)" or None.
     """
-    # Match "Downloading <package>-<version>...<ext> (<size>)"
-    m = re.search(
-        r"Downloading\s+(\S+?)(?:-cp\d|\.whl|\.tar).*?\(([^)]+)\)",
-        line,
-    )
-    if m:
-        name_version = m.group(1).rstrip("-")
-        size = m.group(2)
-        return "Downloading {} ({})".format(name_version, size)
+    m = re.search(r"Downloading\s+(\S+)\s+\(([^)]+)\)", line)
+    if not m:
+        return None
 
-    # Simpler match: just "Downloading <something>"
-    m = re.search(r"Downloading\s+(\S+)", line)
-    if m:
-        return "Downloading {}".format(m.group(1).rstrip("-"))
+    raw_name = m.group(1)
+    size = m.group(2)
 
-    return None
+    # Strip URL prefix: keep only the filename from the path
+    if "/" in raw_name:
+        raw_name = raw_name.rsplit("/", 1)[-1]
+
+    # Extract just the package name (before version): "torch-2.5.1%2Bcu121-cp312-..." -> "torch"
+    # URL-encoded + is %2B, so split on first "-" that is followed by a digit
+    name_match = re.match(r"([A-Za-z][A-Za-z0-9_]*)", raw_name)
+    pkg_name = name_match.group(1) if name_match else raw_name
+
+    # Convert size to human-friendly: "2449.3 MB" -> "2.4 GB"
+    size_match = re.match(r"([\d.]+)\s*(kB|MB|GB)", size)
+    if size_match:
+        num = float(size_match.group(1))
+        unit = size_match.group(2)
+        if unit == "MB" and num >= 1000:
+            size = "{:.1f} GB".format(num / 1000)
+
+    return "Downloading {} ({})".format(pkg_name, size)
 
 
 def _run_pip_install(
