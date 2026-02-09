@@ -1632,12 +1632,30 @@ class AISegmentationPlugin:
                 level=Qgis.Warning
             )
 
+    def _is_point_in_encoded_area(self, point):
+        """Check if a point falls within the encoded raster extent."""
+        bounds = self.feature_dataset.bounds
+        # bounds = (minx, maxx, miny, maxy, mint, maxt)
+        return (bounds[0] <= point.x() <= bounds[1]
+                and bounds[2] <= point.y() <= bounds[3])
+
     def _on_positive_click(self, point):
         """Handle left-click: add positive point (select this element)."""
         if self.predictor is None or self.feature_dataset is None:
             # Remove the marker that was added by the maptool
             if self.map_tool:
                 self.map_tool.remove_last_marker()
+            return
+
+        if not self._is_point_in_encoded_area(point):
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("Point is outside the encoded image. Click inside the raster."),
+                level=Qgis.Warning,
+                duration=4
+            )
             return
 
         QgsMessageLog.logMessage(
@@ -1666,6 +1684,17 @@ class AISegmentationPlugin:
                 "Negative point ignored - need at least one positive point first",
                 "AI Segmentation",
                 level=Qgis.Info
+            )
+            return
+
+        if not self._is_point_in_encoded_area(point):
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("Point is outside the encoded image. Click inside the raster."),
+                level=Qgis.Warning,
+                duration=4
             )
             return
 

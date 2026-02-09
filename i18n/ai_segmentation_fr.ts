@@ -716,5 +716,9 @@
         <source>GPU not compatible with installed CUDA version, using CPU...</source>
         <translation>GPU non compatible avec la version CUDA installée, utilisation du CPU...</translation>
     </message>
+    <message>
+        <source>Point is outside the encoded image. Click inside the raster.</source>
+        <translation>Le point est en dehors de l'image encodée. Cliquez à l'intérieur du raster.</translation>
+    </message>
 </context>
 </TS>
