@@ -596,6 +596,16 @@ def install_dependencies(
 
         subprocess_kwargs = _get_subprocess_kwargs()
 
+        # CUDA wheels are ~2.5GB, need more time than standard packages
+        if is_cuda_package and package_name in ("torch", "torchvision"):
+            pkg_timeout = 1800  # 30 min for CUDA wheels
+        else:
+            pkg_timeout = 600  # 10 min for standard packages
+
+        install_failed = False
+        install_error_msg = ""
+        last_returncode = None
+
         try:
             # Use python -m pip (more reliable than pip.exe on Windows
             # where antivirus may block the standalone pip executable)
@@ -604,7 +614,7 @@ def install_dependencies(
             # First attempt: standard pip install
             result = subprocess.run(
                 base_cmd,
-                capture_output=True, text=True, timeout=600,
+                capture_output=True, text=True, timeout=pkg_timeout,
                 env=env, **subprocess_kwargs,
             )
 
@@ -625,7 +635,7 @@ def install_dependencies(
                 fallback_cmd = [pip_path] + pip_args
                 result = subprocess.run(
                     fallback_cmd,
-                    capture_output=True, text=True, timeout=600,
+                    capture_output=True, text=True, timeout=pkg_timeout,
                     env=env, **subprocess_kwargs,
                 )
 
@@ -648,7 +658,7 @@ def install_dependencies(
                     ssl_cmd = base_cmd[:3] + _get_pip_ssl_flags() + base_cmd[3:]
                     result = subprocess.run(
                         ssl_cmd,
-                        capture_output=True, text=True, timeout=600,
+                        capture_output=True, text=True, timeout=pkg_timeout,
                         env=env, **subprocess_kwargs,
                     )
 
@@ -659,46 +669,94 @@ def install_dependencies(
             else:
                 error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
                 _log(f"✗ Failed to install {package_spec}: {error_msg[:500]}", Qgis.Critical)
-
-                # Check for Windows process crash (after retry also failed)
-                if _is_windows_process_crash(result.returncode):
-                    crash_help = _get_crash_help(venv_dir)
-                    _log(crash_help, Qgis.Warning)
-                    error_msg = "{}\n\n{}".format(
-                        f"Process crashed (code {result.returncode})",
-                        crash_help)
-                    return False, f"Failed to install {package_name}: {error_msg}"
-
-                # Check for SSL errors (after retry also failed)
-                if _is_ssl_error(error_msg):
-                    ssl_help = _get_ssl_error_help()
-                    _log(ssl_help, Qgis.Warning)
-                    error_msg = "{}\n\n{}".format(error_msg[:200], ssl_help)
-                    return False, f"Failed to install {package_name}: {error_msg}"
-
-                # Check for antivirus blocking
-                if _is_antivirus_error(error_msg):
-                    av_help = _get_pip_antivirus_help(venv_dir)
-                    _log(av_help, Qgis.Warning)
-                    error_msg = "{}\n\n{}".format(error_msg[:200], av_help)
-                    return False, f"Failed to install {package_name}: {error_msg}"
-
-                # Check for GDAL issues on Linux when rasterio fails
-                if package_name == "rasterio":
-                    gdal_ok, gdal_help = _check_gdal_available()
-                    if not gdal_ok and gdal_help:
-                        _log(gdal_help, Qgis.Warning)
-                        error_msg = "{}\n\n{}".format(error_msg[:200], gdal_help)
-                        return False, f"Failed to install {package_name}: {error_msg}"
-
-                return False, f"Failed to install {package_name}: {error_msg[:200]}"
+                install_failed = True
+                install_error_msg = error_msg
+                last_returncode = result.returncode
 
         except subprocess.TimeoutExpired:
             _log(f"Installation of {package_spec} timed out", Qgis.Critical)
-            return False, f"Installation of {package_name} timed out"
+            install_failed = True
+            install_error_msg = f"Installation of {package_name} timed out"
         except Exception as e:
             _log(f"Exception during installation of {package_spec}: {str(e)}", Qgis.Critical)
-            return False, f"Error installing {package_name}: {str(e)[:200]}"
+            install_failed = True
+            install_error_msg = f"Error installing {package_name}: {str(e)[:200]}"
+
+        # CUDA → CPU silent fallback: if CUDA install failed, retry with CPU wheel
+        if install_failed and is_cuda_package:
+            _log(
+                "CUDA install of {} failed, falling back to CPU version...".format(package_name),
+                Qgis.Warning
+            )
+            if progress_callback:
+                progress_callback(
+                    current_progress,
+                    "CUDA failed, installing {} (CPU)...".format(package_name)
+                )
+
+            cpu_pip_args = [
+                "install", "--upgrade", "--no-warn-script-location",
+                "--disable-pip-version-check", "--prefer-binary",
+                package_spec
+            ]
+            cpu_cmd = [python_path, "-m", "pip"] + cpu_pip_args
+            try:
+                cpu_result = subprocess.run(
+                    cpu_cmd,
+                    capture_output=True, text=True, timeout=600,
+                    env=env, **subprocess_kwargs,
+                )
+                if cpu_result.returncode == 0:
+                    _log("✓ Successfully installed {} (CPU version)".format(package_spec), Qgis.Success)
+                    if progress_callback:
+                        progress_callback(
+                            current_progress + progress_per_package,
+                            "✓ {} installed (CPU)".format(package_name)
+                        )
+                    install_failed = False
+                else:
+                    cpu_err = cpu_result.stderr or cpu_result.stdout or ""
+                    install_error_msg = "CUDA and CPU install both failed for {}: {}".format(
+                        package_name, cpu_err[:200])
+            except subprocess.TimeoutExpired:
+                install_error_msg = "CUDA and CPU install both timed out for {}".format(package_name)
+            except Exception as e:
+                install_error_msg = "CUDA and CPU install both failed for {}: {}".format(
+                    package_name, str(e)[:200])
+
+        if install_failed:
+            # Check for Windows process crash
+            if last_returncode is not None and _is_windows_process_crash(last_returncode):
+                crash_help = _get_crash_help(venv_dir)
+                _log(crash_help, Qgis.Warning)
+                install_error_msg = "{}\n\n{}".format(
+                    "Process crashed (code {})".format(last_returncode),
+                    crash_help)
+                return False, f"Failed to install {package_name}: {install_error_msg}"
+
+            # Check for SSL errors
+            if _is_ssl_error(install_error_msg):
+                ssl_help = _get_ssl_error_help()
+                _log(ssl_help, Qgis.Warning)
+                install_error_msg = "{}\n\n{}".format(install_error_msg[:200], ssl_help)
+                return False, f"Failed to install {package_name}: {install_error_msg}"
+
+            # Check for antivirus blocking
+            if _is_antivirus_error(install_error_msg):
+                av_help = _get_pip_antivirus_help(venv_dir)
+                _log(av_help, Qgis.Warning)
+                install_error_msg = "{}\n\n{}".format(install_error_msg[:200], av_help)
+                return False, f"Failed to install {package_name}: {install_error_msg}"
+
+            # Check for GDAL issues on Linux when rasterio fails
+            if package_name == "rasterio":
+                gdal_ok, gdal_help = _check_gdal_available()
+                if not gdal_ok and gdal_help:
+                    _log(gdal_help, Qgis.Warning)
+                    install_error_msg = "{}\n\n{}".format(install_error_msg[:200], gdal_help)
+                    return False, f"Failed to install {package_name}: {install_error_msg}"
+
+            return False, f"Failed to install {package_name}: {install_error_msg[:200]}"
 
     if progress_callback:
         progress_callback(100, "✓ All dependencies installed")

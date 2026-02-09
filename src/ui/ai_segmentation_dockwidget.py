@@ -213,7 +213,8 @@ class AISegmentationDockWidget(QDockWidget):
                 from ..core.venv_manager import detect_nvidia_gpu
                 has_gpu, gpu_name = detect_nvidia_gpu()
                 if has_gpu:
-                    self.cuda_checkbox.setChecked(True)
+                    self.cuda_checkbox.setChecked(False)
+                    self.cuda_description.setVisible(True)
                     self.cuda_checkbox.setToolTip(
                         "{}\n{}".format(
                             tr("Detected: {gpu_name}").format(gpu_name=gpu_name),
