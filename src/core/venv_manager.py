@@ -672,6 +672,15 @@ def install_dependencies(
         _log(f"Created pip constraints file: {constraints_path}", Qgis.Info)
     except Exception as e:
         _log(f"Failed to write constraints file: {e}", Qgis.Warning)
+        # Clean up fd/file on failure so nothing is leaked
+        try:
+            os.close(constraints_fd)
+        except Exception:
+            pass
+        try:
+            os.unlink(constraints_path)
+        except Exception:
+            pass
         constraints_path = None
 
     try:  # try/finally to guarantee constraints file cleanup
@@ -1229,7 +1238,7 @@ def create_venv_and_install(
             "falling back to CPU: {}".format(verify_msg),
             Qgis.Warning
         )
-        _reinstall_cpu_torch(venv_dir, progress_callback=progress_callback)
+        _reinstall_cpu_torch(VENV_DIR, progress_callback=progress_callback)
         is_valid, verify_msg = verify_venv(progress_callback=verify_progress)
 
     if not is_valid:
