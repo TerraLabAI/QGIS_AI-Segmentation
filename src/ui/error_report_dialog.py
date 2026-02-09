@@ -19,6 +19,7 @@ from qgis.PyQt.QtWidgets import (
     QApplication,
 )
 from qgis.PyQt.QtCore import Qt
+import re
 
 from ..core.i18n import tr
 
@@ -28,6 +29,34 @@ TERRALAB_URL = "https://terra-lab.ai/ai-segmentation"
 # In-memory log buffer - captures AI Segmentation messages
 _log_buffer = deque(maxlen=100)
 _log_collector_connected = False
+
+
+def _anonymize_paths(text: str) -> str:
+    """
+    Anonymize file paths to hide the username.
+    
+    Replaces patterns like:
+    - /Users/<username>/... -> <USER>/...
+    - /home/<username>/... -> <USER>/...
+    - C:\\Users\\<username>\\... -> <USER>/...
+    
+    This protects user privacy when sending logs and reports.
+    """
+    if not text:
+        return text
+    
+    # macOS: /Users/<username>/...
+    text = re.sub(r'/Users/[^/\s]+/', '<USER>/', text)
+    
+    # Linux: /home/<username>/...
+    text = re.sub(r'/home/[^/\s]+/', '<USER>/', text)
+    
+    # Windows: C:\Users\<username>\... (and other drive letters)
+    # Handle both forward and backslashes
+    text = re.sub(r'[A-Za-z]:\\Users\\[^\\]+\\', '<USER>/', text)
+    text = re.sub(r'[A-Za-z]:/Users/[^/]+/', '<USER>/', text)
+    
+    return text
 
 
 def start_log_collector():
@@ -52,10 +81,11 @@ def _on_log_message(message, tag, level):
 
 
 def _get_recent_logs() -> str:
-    """Return recent AI Segmentation log lines."""
+    """Return recent AI Segmentation log lines (with paths anonymized)."""
     if not _log_buffer:
         return "(No logs captured this session)"
-    return "\n".join(_log_buffer)
+    logs = "\n".join(_log_buffer)
+    return _anonymize_paths(logs)
 
 
 def _collect_diagnostic_info(error_message: str) -> str:
@@ -157,7 +187,9 @@ def _collect_diagnostic_info(error_message: str) -> str:
 
     lines.append("")
     lines.append("=== End of Report ===")
-    return "\n".join(lines)
+    # Anonymize all paths in the report to protect user privacy
+    report = "\n".join(lines)
+    return _anonymize_paths(report)
 
 
 class ErrorReportDialog(QDialog):
