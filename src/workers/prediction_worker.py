@@ -8,10 +8,10 @@ import base64
 # Ensure consistent GPU ordering on multi-GPU systems
 os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 
-import numpy as np
-import torch
-import torch.nn as nn
-from typing import Tuple, Optional
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
+import torch.nn as nn  # noqa: E402
+from typing import Tuple, Optional  # noqa: E402
 
 
 class FakeImageEncoderViT(nn.Module):
@@ -308,7 +308,7 @@ def main():
                             mask_input=mask_input,
                             multimask_output=multimask_output,
                         )
-                    except RuntimeError as e:
+                    except RuntimeError:
                         if predictor.device.type != "cpu":
                             # GPU error (OOM, illegal access, no kernel image, etc.)
                             # Fall back to CPU and retry

@@ -7,7 +7,7 @@ import gc
 # Ensure consistent GPU ordering on multi-GPU systems
 os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 
-import numpy as np
+import numpy as np  # noqa: E402
 
 
 TILE_SIZE = 1024
@@ -225,7 +225,7 @@ def encode_raster(config):
                     with torch.no_grad():
                         try:
                             features = sam.image_encoder(tile_tensor)
-                        except RuntimeError as e:
+                        except RuntimeError:
                             if device.type != "cpu":
                                 # GPU error (OOM, illegal access, no kernel image, etc.)
                                 pct = int(5 + (processed / total_tiles) * 90)

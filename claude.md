@@ -178,11 +178,11 @@ tr("Export {count} polygon(s)").format(count=5)
 ## Code Quality Rules (PEP8/Flake8)
 
 - **No unused imports (F401)**: Remove any imported modules/classes that are not used in the file. Always verify `sys`, `os`, etc. are actually referenced before importing.
-- **No unused variables (F841)**: Don't assign variables that are never referenced; delete them or use `_` prefix only if needed for unpacking
+- **No unused variables (F841)**: Don't assign variables that are never referenced; delete them or use `_` prefix only if needed for unpacking. In `except` clauses, if you don't use the exception variable, omit it: write `except RuntimeError:` not `except RuntimeError as e:`
 - **Too many blank lines (E303)**: Maximum 2 blank lines between top-level definitions, 1 blank line between methods inside a class
 - **Trailing whitespace on blank lines (W291/W293)**: Blank lines must be completely empty — no spaces or tabs. This includes blank lines inside docstrings, between code blocks, etc. Always strip trailing whitespace.
 - **Whitespace around operators (E226)**: Always use spaces around arithmetic operators: `y - 1` not `y-1`
-- **Import order**: Standard library first, then third-party, then local imports
+- **Import order**: Standard library first, then third-party, then local imports. When an import must come after runtime setup (e.g. `os.environ.setdefault()` before `import numpy`), add `# noqa: E402` to suppress the linter warning
 - **Line length**: Keep lines under 120 characters
 - **Line breaks with binary operators (W503/W504)**: The linter flags both W503 (break before operator) and W504 (break after operator). Use `.format()` or parentheses instead of line-continuation with operators:
   ```python
