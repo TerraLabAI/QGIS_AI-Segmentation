@@ -697,8 +697,8 @@
 
     <!-- CUDA / Device Info -->
     <message>
-        <source>Enable NVIDIA GPU acceleration (CUDA)</source>
-        <translation>Activer l'accélération GPU NVIDIA (CUDA)</translation>
+        <source>Enable NVIDIA GPU acceleration (CUDA) - Experimental</source>
+        <translation>Activer l'accélération GPU NVIDIA (CUDA) - Experimental</translation>
     </message>
     <message>
         <source>CUDA requires an NVIDIA GPU. Download size: ~2.5GB (vs ~600MB without CUDA).</source>
@@ -709,8 +709,8 @@
         <translation>Détecté : {gpu_name}</translation>
     </message>
     <message>
-        <source>Optional: speeds up segmentation. Requires ~2.5GB of disk space.</source>
-        <translation>Optionnel : accélère la segmentation. Nécessite ~2,5 Go d'espace disque.</translation>
+        <source>Experimental: may speed up segmentation but can cause issues. Falls back to CPU if needed. Requires ~2.5GB.</source>
+        <translation>Experimental : peut accélérer la segmentation mais peut causer des problèmes. Bascule en CPU si nécessaire. Nécessite ~2,5 Go.</translation>
     </message>
     <message>
         <source>GPU not compatible with installed CUDA version, using CPU...</source>

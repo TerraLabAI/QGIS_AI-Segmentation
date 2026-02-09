@@ -3,6 +3,7 @@ import sys
 import os
 import shutil
 import platform
+import tempfile
 from typing import Tuple, Optional, Callable, List
 
 from qgis.core import QgsMessageLog, Qgis
@@ -518,6 +519,123 @@ def create_venv(venv_dir: str = None, progress_callback: Optional[Callable[[int,
         return False, f"Error: {str(e)[:200]}"
 
 
+def _repin_numpy(venv_dir: str):
+    """
+    Check numpy version in the venv and force-downgrade if >= 2.0.
+
+    This is a safety net: the CUDA torch index may pull numpy 2.x as a
+    transitive dependency, which breaks torchvision and other packages.
+    """
+    python_path = get_venv_python_path(venv_dir)
+    env = _get_clean_env_for_venv()
+    subprocess_kwargs = _get_subprocess_kwargs()
+
+    try:
+        result = subprocess.run(
+            [python_path, "-c",
+             "import numpy; print(numpy.__version__)"],
+            capture_output=True, text=True, timeout=30,
+            env=env, **subprocess_kwargs,
+        )
+        if result.returncode != 0:
+            return  # numpy not installed or broken, nothing to fix here
+
+        version_str = result.stdout.strip()
+        major = int(version_str.split(".")[0])
+        if major >= 2:
+            _log(
+                "numpy {} detected (>=2.0), forcing downgrade to <2.0.0...".format(version_str),
+                Qgis.Warning
+            )
+            downgrade_cmd = [
+                python_path, "-m", "pip", "install",
+                "--force-reinstall", "--no-deps",
+                "--disable-pip-version-check",
+                "numpy>=1.26.0,<2.0.0",
+            ]
+            downgrade_result = subprocess.run(
+                downgrade_cmd,
+                capture_output=True, text=True, timeout=120,
+                env=env, **subprocess_kwargs,
+            )
+            if downgrade_result.returncode == 0:
+                _log("numpy downgraded successfully to <2.0.0", Qgis.Success)
+            else:
+                err = downgrade_result.stderr or downgrade_result.stdout or ""
+                _log("numpy downgrade failed: {}".format(err[:200]), Qgis.Warning)
+    except Exception as e:
+        _log("numpy version check failed: {}".format(e), Qgis.Warning)
+
+
+def _reinstall_cpu_torch(
+    venv_dir: str,
+    progress_callback: Optional[Callable[[int, str], None]] = None
+):
+    """
+    Uninstall CUDA torch/torchvision and reinstall CPU versions from PyPI.
+
+    Called as a fallback when CUDA verification fails after installation.
+    Also re-pins numpy to <2.0.0 since CPU wheels may pull a different numpy.
+    """
+    python_path = get_venv_python_path(venv_dir)
+    env = _get_clean_env_for_venv()
+    subprocess_kwargs = _get_subprocess_kwargs()
+
+    _log("Reinstalling CPU-only torch/torchvision...", Qgis.Warning)
+    if progress_callback:
+        progress_callback(96, "CUDA failed, reinstalling CPU torch...")
+
+    # Uninstall existing torch and torchvision
+    try:
+        subprocess.run(
+            [python_path, "-m", "pip", "uninstall", "-y",
+             "torch", "torchvision"],
+            capture_output=True, text=True, timeout=120,
+            env=env, **subprocess_kwargs,
+        )
+    except Exception as e:
+        _log("torch uninstall error (continuing): {}".format(e), Qgis.Warning)
+
+    # Install CPU versions from default PyPI
+    for pkg in ("torch>=2.0.0", "torchvision>=0.15.0"):
+        try:
+            result = subprocess.run(
+                [python_path, "-m", "pip", "install",
+                 "--no-warn-script-location", "--disable-pip-version-check",
+                 "--prefer-binary", pkg],
+                capture_output=True, text=True, timeout=600,
+                env=env, **subprocess_kwargs,
+            )
+            if result.returncode == 0:
+                _log("✓ Installed {} (CPU)".format(pkg), Qgis.Success)
+            else:
+                err = result.stderr or result.stdout or ""
+                _log("Failed to install {} (CPU): {}".format(pkg, err[:200]), Qgis.Warning)
+        except Exception as e:
+            _log("Exception installing {} (CPU): {}".format(pkg, e), Qgis.Warning)
+
+    # Re-pin numpy after torch reinstall
+    _repin_numpy(venv_dir)
+
+    if progress_callback:
+        progress_callback(98, "CPU torch installed, re-verifying...")
+
+
+def _get_verification_timeout(package_name: str) -> int:
+    """
+    Get verification timeout in seconds for a given package.
+
+    torch needs extra time because the first import loads CUDA DLLs on Windows,
+    which can take >30s. torchvision also loads heavy native libraries.
+    """
+    if package_name == "torch":
+        return 120
+    elif package_name == "torchvision":
+        return 60
+    else:
+        return 30
+
+
 def install_dependencies(
     venv_dir: str = None,
     progress_callback: Optional[Callable[[int, str], None]] = None,
@@ -541,233 +659,267 @@ def install_dependencies(
 
     python_path = get_venv_python_path(venv_dir)
 
-    for i, (package_name, version_spec) in enumerate(REQUIRED_PACKAGES):
-        if cancel_check and cancel_check():
-            _log("Installation cancelled by user", Qgis.Warning)
-            return False, "Installation cancelled"
+    # Create a pip constraints file to prevent numpy 2.x drift.
+    # When pip resolves torch from the CUDA index, it may pull numpy>=2.0
+    # as a dependency, ignoring our version spec. The constraints file
+    # forces pip to honour the upper bound on every install command.
+    constraints_fd, constraints_path = tempfile.mkstemp(
+        suffix=".txt", prefix="pip_constraints_"
+    )
+    try:
+        with os.fdopen(constraints_fd, "w", encoding="utf-8") as f:
+            f.write("numpy<2.0.0\n")
+        _log(f"Created pip constraints file: {constraints_path}", Qgis.Info)
+    except Exception as e:
+        _log(f"Failed to write constraints file: {e}", Qgis.Warning)
+        constraints_path = None
 
-        package_spec = f"{package_name}{version_spec}"
-        current_progress = base_progress + (i * progress_per_package)
+    try:  # try/finally to guarantee constraints file cleanup
 
-        is_cuda_package = cuda_enabled and package_name in ("torch", "torchvision")
+        for i, (package_name, version_spec) in enumerate(REQUIRED_PACKAGES):
+            if cancel_check and cancel_check():
+                _log("Installation cancelled by user", Qgis.Warning)
+                return False, "Installation cancelled"
 
-        if progress_callback:
-            if package_name == "torch" and cuda_enabled:
-                progress_callback(
-                    current_progress,
-                    "Installing {} (CUDA ~2.5GB)... ({}/{})".format(
-                        package_name, i + 1, total_packages))
-            elif package_name == "torch":
-                progress_callback(
-                    current_progress,
-                    "Installing {} (~600MB)... ({}/{})".format(
-                        package_name, i + 1, total_packages))
-            else:
-                progress_callback(
-                    current_progress,
-                    "Installing {}... ({}/{})".format(
-                        package_name, i + 1, total_packages))
+            package_spec = f"{package_name}{version_spec}"
+            current_progress = base_progress + (i * progress_per_package)
 
-        _log(f"[{i + 1}/{total_packages}] Installing {package_spec}...", Qgis.Info)
+            is_cuda_package = cuda_enabled and package_name in ("torch", "torchvision")
 
-        pip_args = [
-            "install",
-            "--upgrade",
-            "--no-warn-script-location",
-            "--disable-pip-version-check",
-            "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
-        ]
-        pip_args.extend(_get_pip_proxy_args())
-        pip_args.append(package_spec)
-
-        # For CUDA-enabled torch/torchvision, use PyTorch's CUDA index
-        if is_cuda_package:
-            _, gpu_name = detect_nvidia_gpu()
-            if _needs_cu128(gpu_name):
-                cuda_index = "cu128"
-            else:
-                cuda_index = "cu121"
-            pip_args.extend([
-                "--index-url", "https://download.pytorch.org/whl/{}".format(cuda_index)
-            ])
-            _log("Using CUDA {} index for {}".format(cuda_index, package_name), Qgis.Info)
-
-        # Use clean env to avoid QGIS PYTHONPATH/PYTHONHOME interference
-        env = _get_clean_env_for_venv()
-
-        subprocess_kwargs = _get_subprocess_kwargs()
-
-        # CUDA wheels are ~2.5GB, need more time than standard packages
-        if is_cuda_package and package_name in ("torch", "torchvision"):
-            pkg_timeout = 1800  # 30 min for CUDA wheels
-        else:
-            pkg_timeout = 600  # 10 min for standard packages
-
-        install_failed = False
-        install_error_msg = ""
-        last_returncode = None
-
-        try:
-            # Use python -m pip (more reliable than pip.exe on Windows
-            # where antivirus may block the standalone pip executable)
-            base_cmd = [python_path, "-m", "pip"] + pip_args
-
-            # First attempt: standard pip install
-            result = subprocess.run(
-                base_cmd,
-                capture_output=True, text=True, timeout=pkg_timeout,
-                env=env, **subprocess_kwargs,
-            )
-
-            # If Windows process crash, retry with pip.exe as fallback
-            if _is_windows_process_crash(result.returncode):
-                _log(
-                    "Process crash detected (code {}), "
-                    "retrying with pip.exe...".format(result.returncode),
-                    Qgis.Warning
-                )
-                if progress_callback:
+            if progress_callback:
+                if package_name == "torch" and cuda_enabled:
                     progress_callback(
                         current_progress,
-                        "Retrying {}... ({}/{})".format(
-                            package_name, i + 1, total_packages)
-                    )
+                        "Installing {} (CUDA ~2.5GB)... ({}/{})".format(
+                            package_name, i + 1, total_packages))
+                elif package_name == "torch":
+                    progress_callback(
+                        current_progress,
+                        "Installing {} (~600MB)... ({}/{})".format(
+                            package_name, i + 1, total_packages))
+                else:
+                    progress_callback(
+                        current_progress,
+                        "Installing {}... ({}/{})".format(
+                            package_name, i + 1, total_packages))
 
-                fallback_cmd = [pip_path] + pip_args
+            _log(f"[{i + 1}/{total_packages}] Installing {package_spec}...", Qgis.Info)
+
+            pip_args = [
+                "install",
+                "--upgrade",
+                "--no-warn-script-location",
+                "--disable-pip-version-check",
+                "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
+            ]
+            if constraints_path:
+                pip_args.extend(["--constraint", constraints_path])
+            pip_args.extend(_get_pip_proxy_args())
+            pip_args.append(package_spec)
+
+            # For CUDA-enabled torch/torchvision, use PyTorch's CUDA index
+            if is_cuda_package:
+                _, gpu_name = detect_nvidia_gpu()
+                if _needs_cu128(gpu_name):
+                    cuda_index = "cu128"
+                else:
+                    cuda_index = "cu121"
+                pip_args.extend([
+                    "--index-url", "https://download.pytorch.org/whl/{}".format(cuda_index)
+                ])
+                _log("Using CUDA {} index for {}".format(cuda_index, package_name), Qgis.Info)
+
+            # Use clean env to avoid QGIS PYTHONPATH/PYTHONHOME interference
+            env = _get_clean_env_for_venv()
+
+            subprocess_kwargs = _get_subprocess_kwargs()
+
+            # CUDA wheels are ~2.5GB, need more time than standard packages
+            if is_cuda_package and package_name in ("torch", "torchvision"):
+                pkg_timeout = 1800  # 30 min for CUDA wheels
+            else:
+                pkg_timeout = 600  # 10 min for standard packages
+
+            install_failed = False
+            install_error_msg = ""
+            last_returncode = None
+
+            try:
+                # Use python -m pip (more reliable than pip.exe on Windows
+                # where antivirus may block the standalone pip executable)
+                base_cmd = [python_path, "-m", "pip"] + pip_args
+
+                # First attempt: standard pip install
                 result = subprocess.run(
-                    fallback_cmd,
+                    base_cmd,
                     capture_output=True, text=True, timeout=pkg_timeout,
                     env=env, **subprocess_kwargs,
                 )
 
-            # If failed, check for SSL errors and retry with --trusted-host
-            if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
-                error_output = result.stderr or result.stdout or ""
-
-                if _is_ssl_error(error_output):
+                # If Windows process crash, retry with pip.exe as fallback
+                if _is_windows_process_crash(result.returncode):
                     _log(
-                        "SSL error detected, retrying with --trusted-host flags...",
+                        "Process crash detected (code {}), "
+                        "retrying with pip.exe...".format(result.returncode),
                         Qgis.Warning
                     )
                     if progress_callback:
                         progress_callback(
                             current_progress,
-                            "SSL error, retrying {}... ({}/{})".format(
+                            "Retrying {}... ({}/{})".format(
                                 package_name, i + 1, total_packages)
                         )
 
-                    ssl_cmd = base_cmd[:3] + _get_pip_ssl_flags() + base_cmd[3:]
+                    fallback_cmd = [pip_path] + pip_args
                     result = subprocess.run(
-                        ssl_cmd,
+                        fallback_cmd,
                         capture_output=True, text=True, timeout=pkg_timeout,
                         env=env, **subprocess_kwargs,
                     )
 
-            if result.returncode == 0:
-                _log(f"✓ Successfully installed {package_spec}", Qgis.Success)
-                if progress_callback:
-                    progress_callback(current_progress + progress_per_package, f"✓ {package_name} installed")
-            else:
-                error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
-                _log(f"✗ Failed to install {package_spec}: {error_msg[:500]}", Qgis.Critical)
-                install_failed = True
-                install_error_msg = error_msg
-                last_returncode = result.returncode
+                # If failed, check for SSL errors and retry with --trusted-host
+                if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
+                    error_output = result.stderr or result.stdout or ""
 
-        except subprocess.TimeoutExpired:
-            _log(f"Installation of {package_spec} timed out", Qgis.Critical)
-            install_failed = True
-            install_error_msg = f"Installation of {package_name} timed out"
-        except Exception as e:
-            _log(f"Exception during installation of {package_spec}: {str(e)}", Qgis.Critical)
-            install_failed = True
-            install_error_msg = f"Error installing {package_name}: {str(e)[:200]}"
-
-        # CUDA → CPU silent fallback: if CUDA install failed, retry with CPU wheel
-        if install_failed and is_cuda_package:
-            _log(
-                "CUDA install of {} failed, falling back to CPU version...".format(package_name),
-                Qgis.Warning
-            )
-            if progress_callback:
-                progress_callback(
-                    current_progress,
-                    "CUDA failed, installing {} (CPU)...".format(package_name)
-                )
-
-            cpu_pip_args = [
-                "install", "--upgrade", "--no-warn-script-location",
-                "--disable-pip-version-check", "--prefer-binary",
-                package_spec
-            ]
-            cpu_cmd = [python_path, "-m", "pip"] + cpu_pip_args
-            try:
-                cpu_result = subprocess.run(
-                    cpu_cmd,
-                    capture_output=True, text=True, timeout=600,
-                    env=env, **subprocess_kwargs,
-                )
-                if cpu_result.returncode == 0:
-                    _log("✓ Successfully installed {} (CPU version)".format(package_spec), Qgis.Success)
-                    if progress_callback:
-                        progress_callback(
-                            current_progress + progress_per_package,
-                            "✓ {} installed (CPU)".format(package_name)
+                    if _is_ssl_error(error_output):
+                        _log(
+                            "SSL error detected, retrying with --trusted-host flags...",
+                            Qgis.Warning
                         )
-                    install_failed = False
+                        if progress_callback:
+                            progress_callback(
+                                current_progress,
+                                "SSL error, retrying {}... ({}/{})".format(
+                                    package_name, i + 1, total_packages)
+                            )
+
+                        ssl_cmd = base_cmd[:3] + _get_pip_ssl_flags() + base_cmd[3:]
+                        result = subprocess.run(
+                            ssl_cmd,
+                            capture_output=True, text=True, timeout=pkg_timeout,
+                            env=env, **subprocess_kwargs,
+                        )
+
+                if result.returncode == 0:
+                    _log(f"✓ Successfully installed {package_spec}", Qgis.Success)
+                    if progress_callback:
+                        progress_callback(current_progress + progress_per_package, f"✓ {package_name} installed")
                 else:
-                    cpu_err = cpu_result.stderr or cpu_result.stdout or ""
-                    install_error_msg = "CUDA and CPU install both failed for {}: {}".format(
-                        package_name, cpu_err[:200])
+                    error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
+                    _log(f"✗ Failed to install {package_spec}: {error_msg[:500]}", Qgis.Critical)
+                    install_failed = True
+                    install_error_msg = error_msg
+                    last_returncode = result.returncode
+
             except subprocess.TimeoutExpired:
-                install_error_msg = "CUDA and CPU install both timed out for {}".format(package_name)
+                _log(f"Installation of {package_spec} timed out", Qgis.Critical)
+                install_failed = True
+                install_error_msg = f"Installation of {package_name} timed out"
             except Exception as e:
-                install_error_msg = "CUDA and CPU install both failed for {}: {}".format(
-                    package_name, str(e)[:200])
+                _log(f"Exception during installation of {package_spec}: {str(e)}", Qgis.Critical)
+                install_failed = True
+                install_error_msg = f"Error installing {package_name}: {str(e)[:200]}"
 
-        if install_failed:
-            # Check for Windows process crash
-            if last_returncode is not None and _is_windows_process_crash(last_returncode):
-                crash_help = _get_crash_help(venv_dir)
-                _log(crash_help, Qgis.Warning)
-                install_error_msg = "{}\n\n{}".format(
-                    "Process crashed (code {})".format(last_returncode),
-                    crash_help)
-                return False, f"Failed to install {package_name}: {install_error_msg}"
+            # CUDA → CPU silent fallback: if CUDA install failed, retry with CPU wheel
+            if install_failed and is_cuda_package:
+                _log(
+                    "CUDA install of {} failed, falling back to CPU version...".format(package_name),
+                    Qgis.Warning
+                )
+                if progress_callback:
+                    progress_callback(
+                        current_progress,
+                        "CUDA failed, installing {} (CPU)...".format(package_name)
+                    )
 
-            # Check for SSL errors
-            if _is_ssl_error(install_error_msg):
-                ssl_help = _get_ssl_error_help()
-                _log(ssl_help, Qgis.Warning)
-                install_error_msg = "{}\n\n{}".format(install_error_msg[:200], ssl_help)
-                return False, f"Failed to install {package_name}: {install_error_msg}"
+                cpu_pip_args = [
+                    "install", "--upgrade", "--no-warn-script-location",
+                    "--disable-pip-version-check", "--prefer-binary",
+                    package_spec
+                ]
+                if constraints_path:
+                    cpu_pip_args.extend(["--constraint", constraints_path])
+                cpu_cmd = [python_path, "-m", "pip"] + cpu_pip_args
+                try:
+                    cpu_result = subprocess.run(
+                        cpu_cmd,
+                        capture_output=True, text=True, timeout=600,
+                        env=env, **subprocess_kwargs,
+                    )
+                    if cpu_result.returncode == 0:
+                        _log("✓ Successfully installed {} (CPU version)".format(package_spec), Qgis.Success)
+                        if progress_callback:
+                            progress_callback(
+                                current_progress + progress_per_package,
+                                "✓ {} installed (CPU)".format(package_name)
+                            )
+                        install_failed = False
+                    else:
+                        cpu_err = cpu_result.stderr or cpu_result.stdout or ""
+                        install_error_msg = "CUDA and CPU install both failed for {}: {}".format(
+                            package_name, cpu_err[:200])
+                except subprocess.TimeoutExpired:
+                    install_error_msg = "CUDA and CPU install both timed out for {}".format(package_name)
+                except Exception as e:
+                    install_error_msg = "CUDA and CPU install both failed for {}: {}".format(
+                        package_name, str(e)[:200])
 
-            # Check for antivirus blocking
-            if _is_antivirus_error(install_error_msg):
-                av_help = _get_pip_antivirus_help(venv_dir)
-                _log(av_help, Qgis.Warning)
-                install_error_msg = "{}\n\n{}".format(install_error_msg[:200], av_help)
-                return False, f"Failed to install {package_name}: {install_error_msg}"
-
-            # Check for GDAL issues on Linux when rasterio fails
-            if package_name == "rasterio":
-                gdal_ok, gdal_help = _check_gdal_available()
-                if not gdal_ok and gdal_help:
-                    _log(gdal_help, Qgis.Warning)
-                    install_error_msg = "{}\n\n{}".format(install_error_msg[:200], gdal_help)
+            if install_failed:
+                # Check for Windows process crash
+                if last_returncode is not None and _is_windows_process_crash(last_returncode):
+                    crash_help = _get_crash_help(venv_dir)
+                    _log(crash_help, Qgis.Warning)
+                    install_error_msg = "{}\n\n{}".format(
+                        "Process crashed (code {})".format(last_returncode),
+                        crash_help)
                     return False, f"Failed to install {package_name}: {install_error_msg}"
 
-            return False, f"Failed to install {package_name}: {install_error_msg[:200]}"
+                # Check for SSL errors
+                if _is_ssl_error(install_error_msg):
+                    ssl_help = _get_ssl_error_help()
+                    _log(ssl_help, Qgis.Warning)
+                    install_error_msg = "{}\n\n{}".format(install_error_msg[:200], ssl_help)
+                    return False, f"Failed to install {package_name}: {install_error_msg}"
 
-    if progress_callback:
-        progress_callback(100, "✓ All dependencies installed")
+                # Check for antivirus blocking
+                if _is_antivirus_error(install_error_msg):
+                    av_help = _get_pip_antivirus_help(venv_dir)
+                    _log(av_help, Qgis.Warning)
+                    install_error_msg = "{}\n\n{}".format(install_error_msg[:200], av_help)
+                    return False, f"Failed to install {package_name}: {install_error_msg}"
 
-    _log("=" * 50, Qgis.Success)
-    _log("All dependencies installed successfully!", Qgis.Success)
-    _log(f"Virtual environment: {venv_dir}", Qgis.Success)
-    _log("=" * 50, Qgis.Success)
+                # Check for GDAL issues on Linux when rasterio fails
+                if package_name == "rasterio":
+                    gdal_ok, gdal_help = _check_gdal_available()
+                    if not gdal_ok and gdal_help:
+                        _log(gdal_help, Qgis.Warning)
+                        install_error_msg = "{}\n\n{}".format(install_error_msg[:200], gdal_help)
+                        return False, f"Failed to install {package_name}: {install_error_msg}"
 
-    return True, "All dependencies installed successfully"
+                return False, f"Failed to install {package_name}: {install_error_msg[:200]}"
+
+        # Post-install numpy version safety net:
+        # Even with constraints, the CUDA index may have pulled numpy>=2.0.
+        # Check and force-downgrade if needed.
+        _repin_numpy(venv_dir)
+
+        if progress_callback:
+            progress_callback(100, "✓ All dependencies installed")
+
+        _log("=" * 50, Qgis.Success)
+        _log("All dependencies installed successfully!", Qgis.Success)
+        _log(f"Virtual environment: {venv_dir}", Qgis.Success)
+        _log("=" * 50, Qgis.Success)
+
+        return True, "All dependencies installed successfully"
+
+    finally:
+        # Always clean up the constraints temp file
+        if constraints_path:
+            try:
+                os.unlink(constraints_path)
+            except Exception:
+                pass
 
 
 def _get_qgis_proxy_settings() -> Optional[str]:
@@ -904,13 +1056,14 @@ def verify_venv(
         # Get functional test code, not just import
         verify_code = _get_verification_code(package_name)
         cmd = [python_path, "-c", verify_code]
+        pkg_timeout = _get_verification_timeout(package_name)
 
         try:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=pkg_timeout,
                 env=env,
                 **subprocess_kwargs
             )
@@ -1066,6 +1219,19 @@ def create_venv_and_install(
             progress_callback(min(mapped, 99), msg)
 
     is_valid, verify_msg = verify_venv(progress_callback=verify_progress)
+
+    # CUDA → CPU fallback at verification level:
+    # If verification fails and CUDA was enabled, the CUDA torch build may be
+    # incompatible with the user's GPU/driver. Silently fall back to CPU torch.
+    if not is_valid and cuda_enabled:
+        _log(
+            "Verification failed with CUDA torch, "
+            "falling back to CPU: {}".format(verify_msg),
+            Qgis.Warning
+        )
+        _reinstall_cpu_torch(venv_dir, progress_callback=progress_callback)
+        is_valid, verify_msg = verify_venv(progress_callback=verify_progress)
+
     if not is_valid:
         return False, f"Verification failed: {verify_msg}"
 
