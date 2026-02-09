@@ -230,17 +230,6 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.main_layout.addWidget(self.deps_group)
 
-        # Device info label - outside deps_group so it stays visible after deps installed
-        self.device_info_label = QLabel("")
-        self.device_info_label.setVisible(False)
-        self.device_info_label.setWordWrap(True)
-        self.device_info_label.setStyleSheet(
-            "background-color: rgba(46, 125, 50, 0.12); padding: 6px 8px; "
-            "border-radius: 4px; font-size: 11px; "
-            "border: 1px solid rgba(46, 125, 50, 0.25); "
-            "color: palette(text);"
-        )
-        self.main_layout.addWidget(self.device_info_label)
 
     def _setup_checkpoint_section(self):
         self.checkpoint_group = QGroupBox(tr("Step 2: Segmentation Model"))
@@ -991,13 +980,8 @@ class AISegmentationDockWidget(QDockWidget):
         return self.cuda_checkbox.isChecked()
 
     def set_device_info(self, info: str):
-        """Display device info (e.g. 'NVIDIA RTX 3060 (CUDA)') after deps installed."""
-        if info:
-            self.device_info_label.setText(
-                "{} {}".format(tr("Using:"), info))
-            self.device_info_label.setVisible(True)
-        else:
-            self.device_info_label.setVisible(False)
+        """No-op: device info box removed from UI."""
+        pass
 
     def set_dependency_status(self, ok: bool, message: str):
         self._dependencies_ok = ok

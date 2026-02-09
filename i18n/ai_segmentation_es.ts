@@ -709,10 +709,6 @@
         <translation>Detectado: {gpu_name}</translation>
     </message>
     <message>
-        <source>Using:</source>
-        <translation>Usando:</translation>
-    </message>
-    <message>
         <source>Optional: speeds up segmentation. Requires ~2.5GB of disk space.</source>
         <translation>Opcional: acelera la segmentación. Requiere ~2,5GB de espacio en disco.</translation>
     </message>
