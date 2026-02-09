@@ -282,6 +282,34 @@ def _get_ssl_error_help() -> str:
     )
 
 
+_NETWORK_ERROR_PATTERNS = [
+    "connectionreseterror",
+    "connection aborted",
+    "connection was forcibly closed",
+    "remotedisconnected",
+    "connectionerror",
+    "newconnectionerror",
+    "maxretryerror",
+    "protocolerror",
+    "readtimeouterror",
+    "connecttimeouterror",
+    "urlib3.exceptions",
+    "requests.exceptions.connectionerror",
+    "network is unreachable",
+    "temporary failure in name resolution",
+    "name or service not known",
+]
+
+
+def _is_network_error(output: str) -> bool:
+    """Detect transient network/connection errors in pip output."""
+    output_lower = output.lower()
+    # Exclude SSL errors — they have their own retry path
+    if _is_ssl_error(output):
+        return False
+    return any(p in output_lower for p in _NETWORK_ERROR_PATTERNS)
+
+
 def _is_antivirus_error(stderr: str) -> bool:
     """Detect antivirus/permission blocking in pip output."""
     stderr_lower = stderr.lower()
@@ -1205,6 +1233,43 @@ def install_dependencies(
                             is_cuda=is_cuda_package,
                         )
 
+                # If failed, check for network errors and retry after delay
+                if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
+                    error_output = result.stderr or result.stdout or ""
+
+                    if _is_network_error(error_output):
+                        for attempt in range(1, 3):  # up to 2 retries
+                            _log(
+                                "Network error detected, retrying in 5s "
+                                "(attempt {}/2)...".format(attempt),
+                                Qgis.Warning
+                            )
+                            if progress_callback:
+                                progress_callback(
+                                    pkg_start,
+                                    "Network error, retrying {}... ({}/{})".format(
+                                        package_name, i + 1, total_packages)
+                                )
+                            time.sleep(5)
+                            if cancel_check and cancel_check():
+                                return False, "Installation cancelled"
+                            result = _run_pip_install(
+                                cmd=base_cmd,
+                                timeout=pkg_timeout,
+                                env=env,
+                                subprocess_kwargs=subprocess_kwargs,
+                                package_name=package_name,
+                                package_index=i,
+                                total_packages=total_packages,
+                                progress_start=pkg_start,
+                                progress_end=pkg_end,
+                                progress_callback=progress_callback,
+                                cancel_check=cancel_check,
+                                is_cuda=is_cuda_package,
+                            )
+                            if result.returncode == 0:
+                                break
+
                 if result.returncode == 0:
                     _log(f"✓ Successfully installed {package_spec}", Qgis.Success)
                     if progress_callback:
@@ -1294,6 +1359,23 @@ def install_dependencies(
                     _log(ssl_help, Qgis.Warning)
                     install_error_msg = "{}\n\n{}".format(install_error_msg[:200], ssl_help)
                     return False, f"Failed to install {package_name}: {install_error_msg}"
+
+                # Check for network/connection errors (after retries exhausted)
+                if _is_network_error(install_error_msg):
+                    net_help = (
+                        "Network connection failed after multiple retries.\n\n"
+                        "Please try:\n"
+                        "  1. Check your internet connection\n"
+                        "  2. If using a VPN or proxy, try disconnecting temporarily\n"
+                        "  3. Wait a few minutes and try again\n"
+                        "  4. Check firewall settings for pypi.org and "
+                        "files.pythonhosted.org"
+                    )
+                    _log(net_help, Qgis.Warning)
+                    install_error_msg = "{}\n\n{}".format(
+                        install_error_msg[:200], net_help)
+                    return False, "Failed to install {}: {}".format(
+                        package_name, install_error_msg)
 
                 # Check for antivirus blocking
                 if _is_antivirus_error(install_error_msg):
