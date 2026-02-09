@@ -255,7 +255,6 @@ class AISegmentationPlugin:
         if rb is None:
             return
         try:
-            canvas = rb.parentWidget() if hasattr(rb, 'parentWidget') else None
             # QgsRubberBand doesn't expose parentWidget; use scene directly
             scene = rb.scene()
             if scene is not None:

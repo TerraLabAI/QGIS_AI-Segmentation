@@ -230,7 +230,6 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.main_layout.addWidget(self.deps_group)
 
-
     def _setup_checkpoint_section(self):
         self.checkpoint_group = QGroupBox(tr("Step 2: Segmentation Model"))
         layout = QVBoxLayout(self.checkpoint_group)

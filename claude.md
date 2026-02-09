@@ -177,8 +177,9 @@ tr("Export {count} polygon(s)").format(count=5)
 
 ## Code Quality Rules (PEP8/Flake8)
 
-- **No unused imports (F401)**: Remove any imported modules/classes that are not used in the file
-- **No unused variables (F841)**: Don't assign variables that are never referenced; delete them
+- **No unused imports (F401)**: Remove any imported modules/classes that are not used in the file. Always verify `sys`, `os`, etc. are actually referenced before importing.
+- **No unused variables (F841)**: Don't assign variables that are never referenced; delete them or use `_` prefix only if needed for unpacking
+- **Too many blank lines (E303)**: Maximum 2 blank lines between top-level definitions, 1 blank line between methods inside a class
 - **Trailing whitespace on blank lines (W291/W293)**: Blank lines must be completely empty — no spaces or tabs. This includes blank lines inside docstrings, between code blocks, etc. Always strip trailing whitespace.
 - **Whitespace around operators (E226)**: Always use spaces around arithmetic operators: `y - 1` not `y-1`
 - **Import order**: Standard library first, then third-party, then local imports
@@ -232,6 +233,6 @@ tr("Export {count} polygon(s)").format(count=5)
   import xml.etree.ElementTree as ET  # noqa: E402
   tree = ET.parse(file_path)
   ```
-- **Hardcoded credentials**: Never hardcode passwords, API keys, or secrets in code
+- **Hardcoded credentials**: Never hardcode passwords, API keys, or secrets in code. Also avoid credential-like patterns in docstrings/comments (e.g. `user:pass@host`) — use generic descriptions instead.
 - **Shell injection**: Use subprocess with list arguments, not shell=True with string interpolation
 

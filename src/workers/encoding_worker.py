@@ -209,8 +209,9 @@ def encode_raster(config):
                         except RuntimeError as e:
                             if "out of memory" in str(e).lower() and device.type != "cpu":
                                 # GPU OOM: fall back to CPU for this tile
+                                pct = int(5 + (processed / total_tiles) * 90)
                                 send_progress(
-                                    percent,
+                                    pct,
                                     "GPU out of memory, falling back to CPU..."
                                 )
                                 if device.type == "cuda":
