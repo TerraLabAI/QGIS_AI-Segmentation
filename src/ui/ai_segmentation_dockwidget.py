@@ -14,6 +14,8 @@ from qgis.PyQt.QtWidgets import (
     QLineEdit,
     QSpinBox,
     QCheckBox,
+    QToolButton,
+    QStyle,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
 from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
@@ -47,11 +49,10 @@ class AISegmentationDockWidget(QDockWidget):
     batch_mode_changed = pyqtSignal(bool)  # True = batch mode, False = simple mode
 
     def __init__(self, parent=None):
-        super().__init__("", parent)  # Empty title, we use custom title bar
+        super().__init__("", parent)
 
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
-        # Custom title bar with clickable TerraLab link
         self._setup_title_bar()
 
         # Initialize state variables that are needed during UI setup
@@ -100,19 +101,35 @@ class AISegmentationDockWidget(QDockWidget):
         self._update_full_ui()
 
     def _setup_title_bar(self):
-        """Setup custom title bar with clickable TerraLab link."""
+        """Custom title bar with clickable TerraLab link and native buttons."""
         title_widget = QWidget()
         title_layout = QHBoxLayout(title_widget)
-        title_layout.setContentsMargins(8, 4, 8, 4)
+        title_layout.setContentsMargins(4, 0, 0, 0)
         title_layout.setSpacing(0)
 
         title_label = QLabel(
-            'AI Segmentation by <a href="https://terra-lab.ai" style="color: #1976d2; text-decoration: none;">TerraLab</a>'
+            'AI Segmentation by '
+            '<a href="https://terra-lab.ai" style="color: #1976d2; text-decoration: none;">TerraLab</a>'
         )
         title_label.setOpenExternalLinks(True)
-        title_label.setStyleSheet("font-weight: bold; font-size: 12px;")
         title_layout.addWidget(title_label)
         title_layout.addStretch()
+
+        icon_size = self.style().pixelMetric(QStyle.PM_SmallIconSize)
+
+        float_btn = QToolButton()
+        float_btn.setIcon(self.style().standardIcon(QStyle.SP_TitleBarNormalButton))
+        float_btn.setFixedSize(icon_size + 4, icon_size + 4)
+        float_btn.setAutoRaise(True)
+        float_btn.clicked.connect(lambda: self.setFloating(not self.isFloating()))
+        title_layout.addWidget(float_btn)
+
+        close_btn = QToolButton()
+        close_btn.setIcon(self.style().standardIcon(QStyle.SP_TitleBarCloseButton))
+        close_btn.setFixedSize(icon_size + 4, icon_size + 4)
+        close_btn.setAutoRaise(True)
+        close_btn.clicked.connect(self.close)
+        title_layout.addWidget(close_btn)
 
         self.setTitleBarWidget(title_widget)
 
