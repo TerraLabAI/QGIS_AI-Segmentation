@@ -773,7 +773,7 @@ def install_dependencies(
 def _get_qgis_proxy_settings() -> Optional[str]:
     """Read proxy configuration from QGIS settings.
 
-    Returns a proxy URL string like 'http://user:pass@host:port'
+    Returns a proxy URL string (with optional authentication)
     or None if proxy is not configured or disabled.
     """
     try:

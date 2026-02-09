@@ -1,7 +1,6 @@
 from typing import Tuple, Optional
 import numpy as np
 import os
-import sys
 import json
 import subprocess
 import threading
