@@ -1019,7 +1019,7 @@ class AISegmentationDockWidget(QDockWidget):
         time_info = ""
         if percent > 5 and percent < 100 and self._install_start_time:
             elapsed = time.time() - self._install_start_time
-            if elapsed > 5:
+            if elapsed > 5 and percent > 0:
                 estimated_total = elapsed / (percent / 100)
                 remaining = estimated_total - elapsed
                 if remaining > 60:
@@ -1118,7 +1118,7 @@ class AISegmentationDockWidget(QDockWidget):
         time_info = ""
         if percent > 5 and percent < 100 and self._encoding_start_time:
             elapsed = time.time() - self._encoding_start_time
-            if elapsed > 2:
+            if elapsed > 2 and percent > 0:
                 estimated_total = elapsed / (percent / 100)
                 remaining = estimated_total - elapsed
                 if remaining > 60:

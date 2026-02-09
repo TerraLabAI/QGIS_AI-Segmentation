@@ -22,17 +22,46 @@ def get_optimal_device() -> "torch.device":
     import torch
 
     if torch.cuda.is_available():
-        _cached_device = torch.device("cuda")
         gpu_name = torch.cuda.get_device_name(0)
-        gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-        _device_info = f"NVIDIA GPU ({gpu_name}, {gpu_memory:.1f}GB)"
-        _configure_cuda_optimizations()
-        QgsMessageLog.logMessage(
-            f"Using CUDA acceleration: {gpu_name}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-        return _cached_device
+        gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+
+        # Check minimum GPU memory (2 GB needed for SAM inference)
+        if gpu_memory_gb < 2.0:
+            QgsMessageLog.logMessage(
+                "GPU has {:.1f}GB memory (<2GB minimum), falling back to CPU".format(
+                    gpu_memory_gb),
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+        else:
+            # Test that GPU kernels actually work with a small allocation
+            try:
+                test = torch.zeros(1, device="cuda")
+                _ = test + 1
+                torch.cuda.synchronize()
+                del test
+                torch.cuda.empty_cache()
+
+                _cached_device = torch.device("cuda")
+                _device_info = "NVIDIA GPU ({}, {:.1f}GB)".format(
+                    gpu_name, gpu_memory_gb)
+                _configure_cuda_optimizations()
+                QgsMessageLog.logMessage(
+                    "Using CUDA acceleration: {}".format(gpu_name),
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+                return _cached_device
+            except RuntimeError as e:
+                QgsMessageLog.logMessage(
+                    "CUDA test failed ({}), falling back to CPU".format(str(e)),
+                    "AI Segmentation",
+                    level=Qgis.Warning
+                )
+                try:
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
 
     if sys.platform == "darwin":
         try:

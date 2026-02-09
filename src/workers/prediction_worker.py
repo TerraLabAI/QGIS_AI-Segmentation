@@ -281,12 +281,31 @@ def main():
                             request["mask_input_dtype"]
                         )
 
-                    masks, scores, low_res_masks = predictor.predict(
-                        point_coords=point_coords,
-                        point_labels=point_labels,
-                        mask_input=mask_input,
-                        multimask_output=multimask_output,
-                    )
+                    try:
+                        masks, scores, low_res_masks = predictor.predict(
+                            point_coords=point_coords,
+                            point_labels=point_labels,
+                            mask_input=mask_input,
+                            multimask_output=multimask_output,
+                        )
+                    except RuntimeError as e:
+                        if "out of memory" in str(e).lower() and predictor.device.type != "cpu":
+                            # GPU OOM: fall back to CPU and retry
+                            if predictor.device.type == "cuda":
+                                torch.cuda.empty_cache()
+                            predictor.device = torch.device("cpu")
+                            predictor.model.to(predictor.device)
+                            # Re-set features on CPU
+                            if predictor.features is not None:
+                                predictor.features = predictor.features.to(predictor.device)
+                            masks, scores, low_res_masks = predictor.predict(
+                                point_coords=point_coords,
+                                point_labels=point_labels,
+                                mask_input=mask_input,
+                                multimask_output=multimask_output,
+                            )
+                        else:
+                            raise
 
                     send_response("prediction", {
                         "masks": encode_numpy_array(masks),

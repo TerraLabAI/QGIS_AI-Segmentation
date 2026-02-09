@@ -4,32 +4,12 @@ import os
 import sys
 import json
 import subprocess
+import threading
 import base64
 
 from qgis.core import QgsMessageLog, Qgis
 
-
-def _get_clean_env_for_venv() -> dict:
-    env = os.environ.copy()
-    vars_to_remove = [
-        'PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV',
-        'QGIS_PREFIX_PATH', 'QGIS_PLUGINPATH',
-    ]
-    for var in vars_to_remove:
-        env.pop(var, None)
-    env["PYTHONIOENCODING"] = "utf-8"
-    return env
-
-
-def _get_subprocess_kwargs() -> dict:
-    kwargs = {}
-    if sys.platform == "win32":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
-        kwargs['startupinfo'] = startupinfo
-        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-    return kwargs
+from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
 
 
 def build_sam_vit_b_no_encoder(checkpoint: Optional[str] = None):
@@ -53,6 +33,12 @@ def build_sam_vit_b_no_encoder(checkpoint: Optional[str] = None):
 
 
 class SamPredictorNoImgEncoder:
+    # Per-operation timeouts (seconds)
+    _TIMEOUT_INIT = 120       # Model loading
+    _TIMEOUT_RESET = 30
+    _TIMEOUT_SET_FEATURES = 60
+    _TIMEOUT_PREDICT = 120
+
     def __init__(self, sam_config: dict, device: Optional[str] = None) -> None:
         self.venv_python = sam_config['venv_python']
         self.worker_script = sam_config['worker_script']
@@ -75,6 +61,43 @@ class SamPredictorNoImgEncoder:
             level=Qgis.Info
         )
 
+    def _read_response(self, timeout_seconds: int) -> str:
+        """Read a line from the worker stdout with a timeout.
+
+        Uses a daemon thread to perform the blocking readline so
+        the main thread is not blocked indefinitely.
+        """
+        if self.process is None or self.process.poll() is not None:
+            raise RuntimeError("Worker process is not running")
+
+        result = [None]
+        error = [None]
+
+        def _reader():
+            try:
+                result[0] = self.process.stdout.readline()
+            except Exception as e:
+                error[0] = e
+
+        reader_thread = threading.Thread(target=_reader, daemon=True)
+        reader_thread.start()
+        reader_thread.join(timeout=timeout_seconds)
+
+        if reader_thread.is_alive():
+            # Thread is still blocking - worker is hung
+            raise TimeoutError(
+                f"Worker did not respond within {timeout_seconds}s"
+            )
+
+        if error[0] is not None:
+            raise error[0]
+
+        line = result[0]
+        if not line:
+            raise RuntimeError("Worker process closed stdout unexpectedly")
+
+        return line
+
     def __del__(self):
         """Ensure subprocess is cleaned up on garbage collection."""
         self.cleanup()
@@ -92,8 +115,8 @@ class SamPredictorNoImgEncoder:
 
             cmd = [self.venv_python, self.worker_script]
 
-            env = _get_clean_env_for_venv()
-            subprocess_kwargs = _get_subprocess_kwargs()
+            env = get_clean_env_for_venv()
+            subprocess_kwargs = get_subprocess_kwargs()
 
             self.process = subprocess.Popen(
                 cmd,
@@ -114,7 +137,7 @@ class SamPredictorNoImgEncoder:
             self.process.stdin.write(json.dumps(init_request) + '\n')
             self.process.stdin.flush()
 
-            response_line = self.process.stdout.readline()
+            response_line = self._read_response(self._TIMEOUT_INIT)
             response = json.loads(response_line.strip())
 
             if response.get("type") == "ready":
@@ -182,7 +205,7 @@ class SamPredictorNoImgEncoder:
                 self.process.stdin.write(json.dumps(request) + '\n')
                 self.process.stdin.flush()
 
-                response_line = self.process.stdout.readline()
+                response_line = self._read_response(self._TIMEOUT_RESET)
                 response = json.loads(response_line.strip())
 
                 if response.get("type") != "reset_done":
@@ -226,7 +249,7 @@ class SamPredictorNoImgEncoder:
             self.process.stdin.write(json.dumps(request) + '\n')
             self.process.stdin.flush()
 
-            response_line = self.process.stdout.readline()
+            response_line = self._read_response(self._TIMEOUT_SET_FEATURES)
             response = json.loads(response_line.strip())
 
             if response.get("type") == "features_set":
@@ -285,7 +308,7 @@ class SamPredictorNoImgEncoder:
             self.process.stdin.write(json.dumps(request) + '\n')
             self.process.stdin.flush()
 
-            response_line = self.process.stdout.readline()
+            response_line = self._read_response(self._TIMEOUT_PREDICT)
             response = json.loads(response_line.strip())
 
             if response.get("type") == "prediction":

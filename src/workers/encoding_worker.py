@@ -204,7 +204,23 @@ def encode_raster(config):
                     tile_tensor = sam.preprocess(tile_tensor)
 
                     with torch.no_grad():
-                        features = sam.image_encoder(tile_tensor)
+                        try:
+                            features = sam.image_encoder(tile_tensor)
+                        except RuntimeError as e:
+                            if "out of memory" in str(e).lower() and device.type != "cpu":
+                                # GPU OOM: fall back to CPU for this tile
+                                send_progress(
+                                    percent,
+                                    "GPU out of memory, falling back to CPU..."
+                                )
+                                if device.type == "cuda":
+                                    torch.cuda.empty_cache()
+                                device = torch.device("cpu")
+                                sam.to(device)
+                                tile_tensor = tile_tensor.to(device)
+                                features = sam.image_encoder(tile_tensor)
+                            else:
+                                raise
 
                     synchronize_device(device)
                     features_np = features.squeeze(0).cpu().numpy()

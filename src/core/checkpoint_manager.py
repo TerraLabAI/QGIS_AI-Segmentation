@@ -157,11 +157,11 @@ def download_checkpoint(
         loop = QEventLoop()
         reply.finished.connect(loop.quit)
 
-        # Add timeout (10 minutes for ~375MB file)
+        # Add timeout (20 minutes for ~375MB file on slow connections)
         timeout = QTimer()
         timeout.setSingleShot(True)
         timeout.timeout.connect(loop.quit)
-        timeout.start(600000)  # 10 minutes
+        timeout.start(1200000)  # 20 minutes
 
         if progress_callback:
             progress_callback(5, "Download started...")
@@ -174,7 +174,7 @@ def download_checkpoint(
             timeout.stop()
         else:
             reply.abort()
-            return False, "Download timed out after 10 minutes"
+            return False, "Download timed out after 20 minutes"
 
         # Check for errors
         if reply.error() != QNetworkReply.NoError:
