@@ -1,6 +1,6 @@
 [general]
 name=AI Segmentation by TerraLab
-description=Segment anything in your raster using AI
+description=Segment buildings, vegetation, or any object in your raster using AI & export as vector polygons
 qgisMinimumVersion=3.0
 version=0.3.4
 author=Yvann and Lilien from TerraLab
@@ -8,15 +8,17 @@ email=yvann.barbot@terra-lab.ai
 license=GPLv2
 
 about=
-    • Automatic install of AI model & dependencies
-    •  Works on Windows/Mac/Linux
-    •  Available in English, French, Portuguese & Spanish 
+    Point-and-click AI segmentation that turns raster objects into vector polygons.
 
+    - Fully automatic: AI model and dependencies install themselves
+    - Precise: positive and negative click points control boundaries
+    - Flexible: Simple mode or Batch mode for multi-polygon export
+    - Refinable: expand, contract, simplify, fill holes, remove small regions
+    - Fast: auto GPU detection (CUDA, Apple Metal) with CPU fallback
+    - Universal: Windows, macOS, Linux
+    - Multilingual: English, French, Portuguese, Spanish
 
-    • Using Meta's AI model for segmentation
-    •  Friendly & pretty user-interface
-
-    •  Vector layer export
+    Works with drone, satellite, aerial, or any raster imagery.
 
 changelog=
 
@@ -26,8 +28,7 @@ homepage=https://terra-lab.ai/ai-segmentation
 
 hasProcessingProvider=no
 
-tags=segmentation, AI, image segmentation, TerraLab, feature extraction, SAM, deep learning, remote sensing, satellite, raster, segment anything, IA, segmentation, vectorization, object
-  detection, machine learning, digitizing, automatic, classification, polygon, artificial intelligence
+tags=segmentation, ai, artificial intelligence, machine learning, deep learning, computer vision, image segmentation, feature extraction, object detection, classification, vectorization, digitizing, raster, satellite, satellite imagery, remote sensing, drone, polygon, export, pytorch, automatic, automation, interactive, building detection, land cover, python, ia
 
 category=Raster
 icon=resources/icons/icon.png
