@@ -705,8 +705,8 @@
         <translation>Ativar aceleração GPU NVIDIA</translation>
     </message>
     <message>
-        <source>Up to x5 faster. Falls back to CPU if needed. Requires ~2.5GB download.</source>
-        <translation>Até x5 mais rápido. Volta para CPU se necessário. Download ~2,5GB.</translation>
+        <source>Up to x5 faster. Requires ~2.5GB download.</source>
+        <translation>Até x5 mais rápido. Download ~2,5GB.</translation>
     </message>
     <message>
         <source>Detected: {gpu_details}</source>

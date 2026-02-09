@@ -223,7 +223,7 @@ class AISegmentationDockWidget(QDockWidget):
         cuda_content_layout.addWidget(self.cuda_checkbox)
 
         self.cuda_description = QLabel(
-            tr("Up to x5 faster. Falls back to CPU if needed. Requires ~2.5GB download."))
+            tr("Up to x5 faster. Requires ~2.5GB download."))
         self.cuda_description.setStyleSheet(
             "font-size: 10px; color: palette(mid); padding-left: 20px;"
             " background: transparent; border: none;")
