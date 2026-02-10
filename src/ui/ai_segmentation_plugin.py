@@ -517,6 +517,7 @@ class AISegmentationPlugin:
             if checkpoint_exists():
                 self.dock_widget.set_checkpoint_status(True, "SAM model ready")
                 self._load_predictor()
+                self._show_activation_popup_if_needed()
             else:
                 self.dock_widget.set_checkpoint_status(False, "Model not downloaded")
 
@@ -626,14 +627,8 @@ class AISegmentationPlugin:
         self.deps_install_worker.finished.connect(self._on_deps_install_finished)
         self.deps_install_worker.start()
 
-        # Show activation popup 2 seconds after install starts (if not already activated)
-        from ..core.activation_manager import is_plugin_activated
-        if not is_plugin_activated():
-            from qgis.PyQt.QtCore import QTimer
-            QTimer.singleShot(2000, self._show_activation_popup_if_needed)
-
     def _show_activation_popup_if_needed(self):
-        """Show activation popup during installation if not already activated."""
+        """Show activation popup if not already activated (after deps+model ready)."""
         from ..core.activation_manager import is_plugin_activated
         if not is_plugin_activated() and not self.dock_widget.is_activated():
             self.dock_widget.show_activation_dialog()
@@ -712,6 +707,7 @@ class AISegmentationPlugin:
             self.dock_widget.set_download_progress(100, "Download complete!")
             self.dock_widget.set_checkpoint_status(True, "SAM model ready")
             self._load_predictor()
+            self._show_activation_popup_if_needed()
         else:
             self.dock_widget.set_download_progress(0, "")
 
