@@ -23,7 +23,8 @@ from qgis.PyQt.QtNetwork import QNetworkRequest
 
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STANDALONE_DIR = os.path.join(PLUGIN_ROOT_DIR, "python_standalone")
+CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
+STANDALONE_DIR = os.path.join(CACHE_DIR, "python_standalone")
 
 
 def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: str) -> None:

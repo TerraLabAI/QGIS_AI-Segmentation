@@ -14,7 +14,8 @@ from qgis.core import QgsMessageLog, Qgis
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = PLUGIN_ROOT_DIR  # src/ directory
 PYTHON_VERSION = f"py{sys.version_info.major}.{sys.version_info.minor}"
-VENV_DIR = os.path.join(PLUGIN_ROOT_DIR, f'venv_{PYTHON_VERSION}')
+CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
+VENV_DIR = os.path.join(CACHE_DIR, f'venv_{PYTHON_VERSION}')
 LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, 'libs')
 
 REQUIRED_PACKAGES = [
@@ -190,24 +191,31 @@ def _select_cuda_index(gpu_info: dict) -> Optional[str]:
 def cleanup_old_venv_directories() -> List[str]:
     """
     Remove old venv_pyX.Y directories that don't match current Python version.
+    Scans both the external cache dir (new location) and the plugin dir (legacy).
     Returns list of removed directories.
     """
     current_venv_name = f"venv_{PYTHON_VERSION}"
     removed = []
 
-    try:
-        for entry in os.listdir(SRC_DIR):
-            if entry.startswith("venv_py") and entry != current_venv_name:
-                old_path = os.path.join(SRC_DIR, entry)
-                if os.path.isdir(old_path):
-                    try:
-                        shutil.rmtree(old_path)
-                        _log(f"Cleaned up old venv directory: {entry}", Qgis.Info)
-                        removed.append(entry)
-                    except Exception as e:
-                        _log(f"Failed to remove old venv {entry}: {e}", Qgis.Warning)
-    except Exception as e:
-        _log(f"Error scanning for old venv directories: {e}", Qgis.Warning)
+    for scan_dir in [CACHE_DIR, SRC_DIR]:
+        try:
+            if not os.path.exists(scan_dir):
+                continue
+            for entry in os.listdir(scan_dir):
+                if entry.startswith("venv_py") and entry != current_venv_name:
+                    old_path = os.path.join(scan_dir, entry)
+                    if os.path.isdir(old_path):
+                        try:
+                            shutil.rmtree(old_path)
+                            _log("Cleaned up old venv: {}".format(old_path),
+                                 Qgis.Info)
+                            removed.append(old_path)
+                        except Exception as e:
+                            _log("Failed to remove old venv {}: {}".format(
+                                old_path, e), Qgis.Warning)
+        except Exception as e:
+            _log("Error scanning for old venvs in {}: {}".format(
+                scan_dir, e), Qgis.Warning)
 
     return removed
 
@@ -1855,12 +1863,15 @@ def prepare_for_uninstall() -> bool:
     if sys.platform != "darwin":
         return False
 
-    # Directories that may have problematic files
-    dirs_to_clean = [
-        VENV_DIR,
-        os.path.join(SRC_DIR, "python_standalone"),
-        os.path.join(SRC_DIR, "checkpoints"),
-    ]
+    # Only clean directories inside the plugin dir (legacy locations).
+    # The external cache (~/.qgis_ai_segmentation/) should survive uninstall.
+    dirs_to_clean = []
+    old_venv = os.path.join(SRC_DIR, f'venv_{PYTHON_VERSION}')
+    old_standalone = os.path.join(SRC_DIR, "python_standalone")
+    old_checkpoints = os.path.join(SRC_DIR, "checkpoints")
+    for d in [old_venv, old_standalone, old_checkpoints]:
+        if os.path.exists(d):
+            dirs_to_clean.append(d)
 
     cleaned = False
     for dir_path in dirs_to_clean:
