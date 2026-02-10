@@ -181,6 +181,56 @@ def _collect_diagnostic_info(error_message: str) -> str:
         lines.append("Could not list packages: {}".format(str(e)[:100]))
     lines.append("")
 
+    # Last encoded image info
+    lines.append("--- Last Encoded Image ---")
+    try:
+        from ..core.checkpoint_manager import FEATURES_DIR
+        if os.path.isdir(FEATURES_DIR):
+            subdirs = [
+                os.path.join(FEATURES_DIR, d)
+                for d in os.listdir(FEATURES_DIR)
+                if os.path.isdir(os.path.join(FEATURES_DIR, d))
+            ]
+            if subdirs:
+                latest = max(subdirs, key=os.path.getmtime)
+                folder_name = os.path.basename(latest)
+                lines.append("Raster: {}".format(folder_name))
+
+                csv_path = os.path.join(latest, folder_name + ".csv")
+                tif_count = len([
+                    f for f in os.listdir(latest) if f.endswith('.tif')
+                ])
+                lines.append("Tiles: {}".format(tif_count))
+
+                if os.path.exists(csv_path):
+                    import csv as csv_mod
+                    with open(csv_path, "r", encoding="utf-8") as cf:
+                        reader = csv_mod.DictReader(cf)
+                        rows = list(reader)
+                    if rows:
+                        first = rows[0]
+                        crs_val = first.get("crs", "unknown")
+                        res_val = first.get("res", "unknown")
+                        lines.append("CRS: {}".format(crs_val))
+                        lines.append("Resolution: {}".format(res_val))
+
+                        all_minx = [float(r["minx"]) for r in rows]
+                        all_maxx = [float(r["maxx"]) for r in rows]
+                        all_miny = [float(r["miny"]) for r in rows]
+                        all_maxy = [float(r["maxy"]) for r in rows]
+                        lines.append("Bounds: [{:.2f}, {:.2f}, {:.2f}, {:.2f}]".format(
+                            min(all_minx), max(all_maxx),
+                            min(all_miny), max(all_maxy)))
+                else:
+                    lines.append("(CSV index not found)")
+            else:
+                lines.append("(No encoded images found)")
+        else:
+            lines.append("(No features directory)")
+    except Exception as e:
+        lines.append("Could not read: {}".format(str(e)[:100]))
+    lines.append("")
+
     # Recent logs from the in-memory buffer
     lines.append("--- Recent Logs ---")
     lines.append(_get_recent_logs())
