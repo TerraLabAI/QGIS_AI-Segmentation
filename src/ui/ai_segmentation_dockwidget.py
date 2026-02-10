@@ -1529,7 +1529,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_button.setEnabled(can_start and not self._segmentation_active)
 
     def show_activation_dialog(self):
-        """Show the activation dialog (called from plugin during install)."""
+        """Show the activation dialog (popup). Only shown once per session."""
+        if self._activation_popup_shown:
+            return
         from .activation_dialog import ActivationDialog
 
         self._activation_popup_shown = True
