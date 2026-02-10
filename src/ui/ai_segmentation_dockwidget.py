@@ -1,3 +1,4 @@
+import os
 import sys
 
 from qgis.PyQt.QtWidgets import (
@@ -315,15 +316,39 @@ class AISegmentationDockWidget(QDockWidget):
         self.main_layout.addWidget(self.checkpoint_group)
 
     def _setup_activation_section(self):
-        """Setup the minimal activation section - only shown if popup was closed without activating."""
-        self.activation_group = QGroupBox(tr("Unlock Plugin"))
+        """Setup the activation section - only shown if popup was closed without activating."""
+        self.activation_group = QGroupBox()
+        self.activation_group.setStyleSheet(
+            "QGroupBox { border: none; margin: 0; padding: 0; }"
+        )
         layout = QVBoxLayout(self.activation_group)
+        layout.setSpacing(8)
+        layout.setContentsMargins(4, 4, 4, 4)
 
-        # Explanation about why we need the email
-        desc_label = QLabel(tr("Enter your email to receive updates and get a verification code."))
-        desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("font-size: 11px; color: palette(text);")
-        layout.addWidget(desc_label)
+        # TerraLab banner
+        banner_label = QLabel()
+        banner_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__)))),
+            "resources", "icons", "terralab-banner.png")
+        if os.path.exists(banner_path):
+            from qgis.PyQt.QtGui import QPixmap
+            pixmap = QPixmap(banner_path)
+            scaled = pixmap.scaledToWidth(280, Qt.SmoothTransformation)
+            banner_label.setPixmap(scaled)
+        else:
+            banner_label.setText("TerraLab")
+            banner_label.setStyleSheet(
+                "font-size: 16px; font-weight: bold; color: palette(text);")
+        banner_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(banner_label)
+
+        # Title
+        title_label = QLabel(tr("Unlock Plugin"))
+        title_label.setStyleSheet(
+            "font-size: 13px; font-weight: bold; color: palette(text);")
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
 
         # Get code button
         get_code_button = QPushButton(tr("Get my verification code"))
@@ -337,12 +362,12 @@ class AISegmentationDockWidget(QDockWidget):
         get_code_button.clicked.connect(self._on_get_code_clicked)
         layout.addWidget(get_code_button)
 
-        # Code input label
+        # Code input section - compact
         code_label = QLabel(tr("Then paste your code:"))
-        code_label.setStyleSheet("font-size: 11px; margin-top: 6px; color: palette(text);")
+        code_label.setStyleSheet(
+            "font-size: 11px; margin-top: 2px; color: palette(text);")
         layout.addWidget(code_label)
 
-        # Code input section - compact
         code_layout = QHBoxLayout()
         code_layout.setSpacing(6)
 

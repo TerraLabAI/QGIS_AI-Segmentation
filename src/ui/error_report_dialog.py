@@ -194,7 +194,8 @@ def _collect_diagnostic_info(error_message: str) -> str:
             if subdirs:
                 latest = max(subdirs, key=os.path.getmtime)
                 folder_name = os.path.basename(latest)
-                lines.append("Raster: {}".format(folder_name))
+                # Anonymize raster name for privacy - only show extension
+                lines.append("Raster: xxx.tif")
 
                 csv_path = os.path.join(latest, folder_name + ".csv")
                 tif_count = len([
