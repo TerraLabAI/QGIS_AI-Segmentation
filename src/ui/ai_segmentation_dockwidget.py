@@ -942,12 +942,18 @@ class AISegmentationDockWidget(QDockWidget):
         else:
             self.checkpoint_group.setEnabled(True)
 
-        # Activation section: show if deps OK but not activated AND popup was shown/closed
+        # Activation section: show ONLY after deps+model ready, not activated, popup shown
         deps_ok = self._dependencies_ok
+        checkpoint_ok = self._checkpoint_ok
         not_activated = not self._plugin_activated
         popup_shown = self._activation_popup_shown
-        show_activation = deps_ok and not_activated and popup_shown
+        show_activation = deps_ok and checkpoint_ok and not_activated and popup_shown
         self.activation_group.setVisible(show_activation)
+
+        # When showing activation panel, hide setup sections
+        if show_activation:
+            self.welcome_widget.setVisible(False)
+            self.checkpoint_group.setVisible(False)
 
         self._update_ui_state()
 
