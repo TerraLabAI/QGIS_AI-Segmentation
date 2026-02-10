@@ -627,6 +627,10 @@ class AISegmentationPlugin:
         self.deps_install_worker.finished.connect(self._on_deps_install_finished)
         self.deps_install_worker.start()
 
+        # Show activation popup 2 seconds after install starts
+        from qgis.PyQt.QtCore import QTimer
+        QTimer.singleShot(2000, self._show_activation_popup_if_needed)
+
     def _show_activation_popup_if_needed(self):
         """Show activation popup if not already activated (after deps+model ready)."""
         from ..core.activation_manager import is_plugin_activated
