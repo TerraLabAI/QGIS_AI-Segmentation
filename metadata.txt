@@ -2,10 +2,11 @@
 name=AI Segmentation by TerraLab
 description=Segment buildings, vegetation, or any object in your raster using AI & export as vector polygons
 qgisMinimumVersion=3.0
-version=0.4.0
+version=0.4.1
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
+
 
 about=
     Point-and-click AI segmentation that turns raster objects into vector polygons.
