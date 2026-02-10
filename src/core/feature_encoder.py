@@ -9,8 +9,8 @@ from qgis.core import QgsMessageLog, Qgis
 
 from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
 
-# Global timeout for the encoding stdout reading loop (15 minutes)
-_ENCODING_GLOBAL_TIMEOUT = 900
+# Global timeout for the encoding stdout reading loop (45 minutes)
+_ENCODING_GLOBAL_TIMEOUT = 2700
 
 
 def _terminate_process(process):
@@ -109,13 +109,13 @@ def encode_raster_to_features(
             elapsed = time.monotonic() - start_time
             if elapsed > _ENCODING_GLOBAL_TIMEOUT:
                 QgsMessageLog.logMessage(
-                    "Encoding worker exceeded global timeout (15 min), terminating",
+                    "Encoding worker exceeded global timeout (30 min), terminating",
                     "AI Segmentation",
                     level=Qgis.Warning
                 )
                 _terminate_process(process)
                 process = None
-                return False, "Encoding timed out (15 minutes)"
+                return False, "Encoding timed out (30 minutes)"
 
             try:
                 update = json.loads(line.strip())

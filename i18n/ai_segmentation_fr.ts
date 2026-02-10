@@ -491,6 +491,14 @@
         <translation>Stocké définitivement, plus d'attente la prochaine fois :)</translation>
     </message>
     <message>
+        <source>Encoding is taking a long time.</source>
+        <translation>L'encodage prend beaucoup de temps.</translation>
+    </message>
+    <message>
+        <source>To speed up, reduce the image size or resolution before importing.</source>
+        <translation>Pour accélérer, réduisez la taille ou la résolution de l'image avant de l'importer.</translation>
+    </message>
+    <message>
         <source>Encoding Failed</source>
         <translation>Échec de l'encodage</translation>
     </message>

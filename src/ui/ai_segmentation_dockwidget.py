@@ -73,6 +73,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._has_mask = False
         self._saved_polygon_count = 0
         self._encoding_start_time = None
+        self._slow_encoding_warned = False
         self._positive_count = 0
         self._negative_count = 0
         self._plugin_activated = is_plugin_activated()
@@ -1188,8 +1189,28 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.prep_status_label.setText(f"{message}{time_info}")
 
+        # Show warning after 10 minutes of encoding (once)
+        if (not self._slow_encoding_warned
+                and self._encoding_start_time
+                and percent > 0 and percent < 100):
+            elapsed = time.time() - self._encoding_start_time
+            if elapsed > 600:
+                self._slow_encoding_warned = True
+                self.encoding_info_label.setText(
+                    "⚠️ {}\n{}".format(
+                        tr("Encoding is taking a long time."),
+                        tr("To speed up, reduce the image size or resolution before importing."))
+                )
+                self.encoding_info_label.setStyleSheet(
+                    "background-color: rgba(230, 160, 0, 0.18); padding: 8px; "
+                    "border-radius: 4px; font-size: 11px; "
+                    "border: 1px solid rgba(230, 160, 0, 0.4); "
+                    "color: palette(text);"
+                )
+
         if percent == 0:
             self._encoding_start_time = time.time()
+            self._slow_encoding_warned = False
             self.prep_progress.setVisible(True)
             self.prep_status_label.setVisible(True)
             self.start_button.setVisible(False)
@@ -1200,15 +1221,29 @@ class AISegmentationDockWidget(QDockWidget):
                     tr("Encoding this image for AI segmentation..."),
                     tr("This is stored permanently, no waiting next time :)"))
             )
+            self.encoding_info_label.setStyleSheet(
+                "background-color: rgba(46, 125, 50, 0.15); padding: 8px; "
+                "border-radius: 4px; font-size: 11px; "
+                "border: 1px solid rgba(46, 125, 50, 0.3); "
+                "color: palette(text);"
+            )
             self.encoding_info_label.setVisible(True)
         elif percent >= 100 or "cancel" in message.lower():
             self.prep_progress.setVisible(False)
             self.prep_status_label.setVisible(False)
             self.cancel_prep_button.setVisible(False)
             self.encoding_info_label.setVisible(False)
+            # Restore green style for next time
+            self.encoding_info_label.setStyleSheet(
+                "background-color: rgba(46, 125, 50, 0.15); padding: 8px; "
+                "border-radius: 4px; font-size: 11px; "
+                "border: 1px solid rgba(46, 125, 50, 0.3); "
+                "color: palette(text);"
+            )
             self.start_button.setVisible(True)
             self.batch_mode_checkbox.setVisible(True)
             self._encoding_start_time = None
+            self._slow_encoding_warned = False
             self._update_ui_state()
 
     def set_encoding_cache_path(self, cache_path: str):

@@ -491,6 +491,14 @@
         <translation>Isso é armazenado permanentemente, sem espera na próxima vez :)</translation>
     </message>
     <message>
+        <source>Encoding is taking a long time.</source>
+        <translation>A codificação está demorando muito.</translation>
+    </message>
+    <message>
+        <source>To speed up, reduce the image size or resolution before importing.</source>
+        <translation>Para acelerar, reduza o tamanho ou a resolução da imagem antes de importar.</translation>
+    </message>
+    <message>
         <source>Encoding Failed</source>
         <translation>Falha na codificação</translation>
     </message>
