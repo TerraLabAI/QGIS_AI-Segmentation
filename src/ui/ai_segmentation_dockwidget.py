@@ -1221,9 +1221,8 @@ class AISegmentationDockWidget(QDockWidget):
         self.prep_status_label.setText(f"{message}{time_info}")
 
         # Show warning after 10 minutes of encoding (once)
-        if (not self._slow_encoding_warned
-                and self._encoding_start_time
-                and percent > 0 and percent < 100):
+        is_encoding = self._encoding_start_time and 0 < percent < 100
+        if not self._slow_encoding_warned and is_encoding:
             elapsed = time.time() - self._encoding_start_time
             if elapsed > 600:
                 self._slow_encoding_warned = True
