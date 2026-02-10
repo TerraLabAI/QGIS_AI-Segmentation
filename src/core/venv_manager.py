@@ -1757,29 +1757,75 @@ def create_venv_and_install(
     return True, "Virtual environment ready"
 
 
+def _quick_check_packages(venv_dir: str = None) -> Tuple[bool, str]:
+    """
+    Fast filesystem-based check that packages exist in the venv site-packages.
+
+    Does NOT spawn subprocesses — safe to call from the main thread.
+    Checks for known package directories/files in site-packages.
+    """
+    if venv_dir is None:
+        venv_dir = VENV_DIR
+
+    site_packages = get_venv_site_packages(venv_dir)
+    if not os.path.exists(site_packages):
+        _log("Quick check: site-packages not found: {}".format(site_packages),
+             Qgis.Warning)
+        return False, "site-packages directory not found"
+
+    # Map package names to their expected directory names in site-packages
+    package_markers = {
+        "numpy": "numpy",
+        "torch": "torch",
+        "torchvision": "torchvision",
+        "segment-anything": "segment_anything",
+        "pandas": "pandas",
+        "rasterio": "rasterio",
+    }
+
+    for package_name, dir_name in package_markers.items():
+        pkg_dir = os.path.join(site_packages, dir_name)
+        if not os.path.exists(pkg_dir):
+            _log("Quick check: {} not found at {}".format(
+                package_name, pkg_dir), Qgis.Warning)
+            return False, "Package {} not found".format(package_name)
+
+    _log("Quick check: all packages found in {}".format(site_packages),
+         Qgis.Info)
+    return True, "All packages found"
+
+
 def get_venv_status() -> Tuple[bool, str]:
     """Get the status of the complete installation (Python standalone + venv)."""
     from .python_manager import standalone_python_exists, get_python_full_version
 
     # Check for old libs/ installation
     if os.path.exists(LIBS_DIR):
+        _log("get_venv_status: old libs/ detected at {}".format(LIBS_DIR),
+             Qgis.Warning)
         return False, "Old installation detected. Migration required."
 
     # Check Python standalone
     if not standalone_python_exists():
+        _log("get_venv_status: standalone Python not found", Qgis.Info)
         return False, "Dependencies not installed"
 
     # Check venv
     if not venv_exists():
+        _log("get_venv_status: venv not found at {}".format(VENV_DIR),
+             Qgis.Info)
         return False, "Virtual environment not configured"
 
-    # Verify packages
-    is_valid, msg = verify_venv()
-    if is_valid:
+    # Quick filesystem check (no subprocess, safe for main thread)
+    is_present, msg = _quick_check_packages()
+    if is_present:
         python_version = get_python_full_version()
-        return True, f"Ready (Python {python_version})"
+        _log("get_venv_status: ready (quick check passed)", Qgis.Success)
+        return True, "Ready (Python {})".format(python_version)
     else:
-        return False, f"Virtual environment incomplete: {msg}"
+        _log("get_venv_status: quick check failed: {}".format(msg),
+             Qgis.Warning)
+        return False, "Virtual environment incomplete: {}".format(msg)
 
 
 def remove_venv(venv_dir: str = None) -> Tuple[bool, str]:
