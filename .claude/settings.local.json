@@ -14,7 +14,8 @@
       "Bash(git status:*)",
       "Bash(python3 -m pyflakes:*)",
       "Bash(python3:*)",
-      "Bash(pip3 list:*)"
+      "Bash(pip3 list:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }

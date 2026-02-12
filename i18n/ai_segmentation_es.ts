@@ -43,6 +43,22 @@
         <translation>Instalar dependencias</translation>
     </message>
     <message>
+        <source>Dependencies need updating</source>
+        <translation>Las dependencias necesitan actualizarse</translation>
+    </message>
+    <message>
+        <source>Update Dependencies</source>
+        <translation>Actualizar dependencias</translation>
+    </message>
+    <message>
+        <source>Updating...</source>
+        <translation>Actualizando...</translation>
+    </message>
+    <message>
+        <source>Updating dependencies...</source>
+        <translation>Actualizando dependencias...</translation>
+    </message>
+    <message>
         <source>Create isolated virtual environment and install required packages</source>
         <translation>Crear entorno virtual aislado e instalar paquetes requeridos</translation>
     </message>
@@ -505,6 +521,14 @@
     <message>
         <source>Failed to encode raster:</source>
         <translation>Error al codificar ráster:</translation>
+    </message>
+    <message>
+        <source>Invalid Layer</source>
+        <translation>Capa inválida</translation>
+    </message>
+    <message>
+        <source>Layer extent contains invalid coordinates (NaN/Inf). Check the raster file.</source>
+        <translation>La extensión de la capa contiene coordenadas inválidas (NaN/Inf). Verifique el archivo ráster.</translation>
     </message>
 
     <!-- Dialogs -->

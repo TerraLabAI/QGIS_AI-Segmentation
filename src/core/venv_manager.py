@@ -6,6 +6,7 @@ import platform
 import tempfile
 import time
 import re
+import hashlib
 from typing import Tuple, Optional, Callable, List
 
 from qgis.core import QgsMessageLog, Qgis
@@ -26,6 +27,33 @@ REQUIRED_PACKAGES = [
     ("pandas", ">=1.3.0"),
     ("rasterio", ">=1.3.0"),
 ]
+
+DEPS_HASH_FILE = os.path.join(VENV_DIR, "deps_hash.txt")
+
+
+def _compute_deps_hash() -> str:
+    """Compute MD5 hash of REQUIRED_PACKAGES to detect version spec changes."""
+    data = repr(REQUIRED_PACKAGES).encode("utf-8")
+    return hashlib.md5(data).hexdigest()
+
+
+def _read_deps_hash() -> Optional[str]:
+    """Read stored deps hash from the venv directory."""
+    try:
+        with open(DEPS_HASH_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except (OSError, IOError):
+        return None
+
+
+def _write_deps_hash():
+    """Write the current deps hash to the venv directory."""
+    try:
+        os.makedirs(os.path.dirname(DEPS_HASH_FILE), exist_ok=True)
+        with open(DEPS_HASH_FILE, "w", encoding="utf-8") as f:
+            f.write(_compute_deps_hash())
+    except (OSError, IOError) as e:
+        _log("Failed to write deps hash: {}".format(e), Qgis.Warning)
 
 
 def _log(message: str, level=Qgis.Info):
@@ -1916,6 +1944,9 @@ def create_venv_and_install(
     if not is_valid:
         return False, f"Verification failed: {verify_msg}"
 
+    # Persist deps hash so future upgrades can detect spec changes
+    _write_deps_hash()
+
     if progress_callback:
         progress_callback(100, "✓ All dependencies installed")
 
@@ -1984,6 +2015,25 @@ def get_venv_status() -> Tuple[bool, str]:
     # Quick filesystem check (no subprocess, safe for main thread)
     is_present, msg = _quick_check_packages()
     if is_present:
+        # Check if dependency specs have changed since last install
+        stored_hash = _read_deps_hash()
+        current_hash = _compute_deps_hash()
+        if stored_hash is not None and stored_hash != current_hash:
+            _log(
+                "get_venv_status: deps hash mismatch "
+                "(stored={}, current={})".format(stored_hash, current_hash),
+                Qgis.Warning
+            )
+            return False, "Dependencies need updating"
+        if stored_hash is None:
+            # First run after upgrade from a version without hash tracking.
+            # Packages exist but we can't verify versions — assume outdated.
+            _log(
+                "get_venv_status: no deps hash file, "
+                "assuming update needed",
+                Qgis.Warning
+            )
+            return False, "Dependencies need updating"
         python_version = get_python_full_version()
         _log("get_venv_status: ready (quick check passed)", Qgis.Success)
         return True, "Ready (Python {})".format(python_version)

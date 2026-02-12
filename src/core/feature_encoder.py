@@ -123,8 +123,11 @@ def encode_raster_to_features(
                 if update.get("type") == "progress":
                     percent = update.get("percent", 0)
                     message = update.get("message", "")
-                    if progress_callback:
-                        progress_callback(percent, message)
+                    try:
+                        if progress_callback:
+                            progress_callback(percent, message)
+                    except Exception:
+                        pass  # Don't let callback errors kill the reader loop
 
                 elif update.get("type") == "success":
                     tiles_processed = update.get("tiles_processed", 0)
@@ -150,7 +153,11 @@ def encode_raster_to_features(
                     level=Qgis.Warning
                 )
 
-            if cancel_check and cancel_check():
+            try:
+                cancelled = cancel_check and cancel_check()
+            except Exception:
+                cancelled = False
+            if cancelled:
                 QgsMessageLog.logMessage(
                     "Encoding cancelled by user, terminating worker",
                     "AI Segmentation",

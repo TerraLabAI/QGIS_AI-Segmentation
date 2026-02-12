@@ -43,6 +43,22 @@
         <translation>Installer les dépendances</translation>
     </message>
     <message>
+        <source>Dependencies need updating</source>
+        <translation>Les dépendances doivent être mises à jour</translation>
+    </message>
+    <message>
+        <source>Update Dependencies</source>
+        <translation>Mettre à jour les dépendances</translation>
+    </message>
+    <message>
+        <source>Updating...</source>
+        <translation>Mise à jour...</translation>
+    </message>
+    <message>
+        <source>Updating dependencies...</source>
+        <translation>Mise à jour des dépendances...</translation>
+    </message>
+    <message>
         <source>Create isolated virtual environment and install required packages</source>
         <translation>Créer un environnement virtuel isolé et installer les packages requis</translation>
     </message>
@@ -505,6 +521,14 @@
     <message>
         <source>Failed to encode raster:</source>
         <translation>Impossible d'encoder le raster :</translation>
+    </message>
+    <message>
+        <source>Invalid Layer</source>
+        <translation>Couche invalide</translation>
+    </message>
+    <message>
+        <source>Layer extent contains invalid coordinates (NaN/Inf). Check the raster file.</source>
+        <translation>L'étendue de la couche contient des coordonnées invalides (NaN/Inf). Vérifiez le fichier raster.</translation>
     </message>
 
     <!-- Dialogs -->

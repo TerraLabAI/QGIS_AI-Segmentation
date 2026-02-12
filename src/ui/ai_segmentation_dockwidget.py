@@ -38,7 +38,6 @@ class AISegmentationDockWidget(QDockWidget):
     install_dependencies_requested = pyqtSignal()
     cancel_deps_install_requested = pyqtSignal()
     download_checkpoint_requested = pyqtSignal()
-    cancel_download_requested = pyqtSignal()
     cancel_preparation_requested = pyqtSignal()
     start_segmentation_requested = pyqtSignal(object)
     clear_points_requested = pyqtSignal()
@@ -306,12 +305,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.download_button.setVisible(False)
         self.download_button.setToolTip(tr("Download the SAM checkpoint for segmentation"))
         layout.addWidget(self.download_button)
-
-        self.cancel_download_button = QPushButton(tr("Cancel"))
-        self.cancel_download_button.clicked.connect(self._on_cancel_download_clicked)
-        self.cancel_download_button.setVisible(False)
-        self.cancel_download_button.setStyleSheet("background-color: #d32f2f;")
-        layout.addWidget(self.cancel_download_button)
 
         self.main_layout.addWidget(self.checkpoint_group)
 
@@ -722,12 +715,12 @@ class AISegmentationDockWidget(QDockWidget):
         refine_content_layout.setContentsMargins(10, 10, 10, 10)
         refine_content_layout.setSpacing(8)
 
-        # 1. Expand/Contract: SpinBox with +/- buttons (-30 to +30)
+        # 1. Expand/Contract: SpinBox with +/- buttons (-1000 to +1000)
         expand_layout = QHBoxLayout()
         expand_label = QLabel(tr("Expand/Contract:"))
         expand_label.setToolTip(tr("Positive = expand outward, Negative = shrink inward"))
         self.expand_spinbox = QSpinBox()
-        self.expand_spinbox.setRange(-100, 100)
+        self.expand_spinbox.setRange(-1000, 1000)
         self.expand_spinbox.setValue(0)
         self.expand_spinbox.setSuffix(" px")
         self.expand_spinbox.setMinimumWidth(80)
@@ -736,12 +729,12 @@ class AISegmentationDockWidget(QDockWidget):
         expand_layout.addWidget(self.expand_spinbox)
         refine_content_layout.addLayout(expand_layout)
 
-        # 2. Simplify outline: SpinBox (0 to 20) - reduces small variations in the outline
+        # 2. Simplify outline: SpinBox (0 to 1000) - reduces small variations in the outline
         simplify_layout = QHBoxLayout()
         simplify_label = QLabel(tr("Simplify outline:"))
         simplify_label.setToolTip(tr("Reduce small variations in the outline (0 = no change)"))
         self.simplify_spinbox = QSpinBox()
-        self.simplify_spinbox.setRange(0, 50)
+        self.simplify_spinbox.setRange(0, 1000)
         self.simplify_spinbox.setValue(4)  # Default to 4 for smoother outlines
         self.simplify_spinbox.setMinimumWidth(80)
         simplify_layout.addWidget(simplify_label)
@@ -993,9 +986,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.download_button.setEnabled(False)
         self.download_checkpoint_requested.emit()
 
-    def _on_cancel_download_clicked(self):
-        self.cancel_download_requested.emit()
-
     def _on_cancel_prep_clicked(self):
         reply = QMessageBox.question(
             self,
@@ -1093,12 +1083,21 @@ class AISegmentationDockWidget(QDockWidget):
             self.deps_status_label.setStyleSheet("color: palette(text);")
             self.install_button.setVisible(True)
             self.install_button.setEnabled(True)
-            # Show NVIDIA GPU toggle on non-macOS when deps need installing
-            show_cuda = sys.platform != "darwin"
-            self.cuda_toggle_label.setVisible(show_cuda)
-            # Keep content collapsed
-            self.cuda_content_widget.setVisible(
-                show_cuda and self._cuda_expanded)
+            # Detect update mode (deps exist but specs changed)
+            is_update = "updating" in message.lower()
+            if is_update:
+                self.install_button.setText(tr("Update Dependencies"))
+                # Hide CUDA toggle during update — choice was already made
+                self.cuda_toggle_label.setVisible(False)
+                self.cuda_content_widget.setVisible(False)
+            else:
+                self.install_button.setText(tr("Install Dependencies"))
+                # Show NVIDIA GPU toggle on non-macOS when deps need installing
+                show_cuda = sys.platform != "darwin"
+                self.cuda_toggle_label.setVisible(show_cuda)
+                # Keep content collapsed
+                self.cuda_content_widget.setVisible(
+                    show_cuda and self._cuda_expanded)
             self.deps_group.setVisible(True)
 
         self._update_full_ui()
@@ -1121,6 +1120,10 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.deps_progress_label.setText(f"{message}{time_info}")
 
+        # Detect update mode from button text set by set_dependency_status()
+        is_update = self.install_button.text() in (
+            tr("Update Dependencies"), tr("Updating..."))
+
         if percent == 0:
             self._install_start_time = time.time()
             self._current_progress = 0
@@ -1129,8 +1132,12 @@ class AISegmentationDockWidget(QDockWidget):
             self.deps_progress_label.setVisible(True)
             self.cancel_deps_button.setVisible(True)
             self.install_button.setEnabled(False)
-            self.install_button.setText(tr("Installing..."))
-            self.deps_status_label.setText(tr("Installing dependencies..."))
+            if is_update:
+                self.install_button.setText(tr("Updating..."))
+                self.deps_status_label.setText(tr("Updating dependencies..."))
+            else:
+                self.install_button.setText(tr("Installing..."))
+                self.deps_status_label.setText(tr("Installing dependencies..."))
             self._progress_timer.start(500)
         elif percent >= 100 or "cancel" in message.lower() or "failed" in message.lower():
             self._progress_timer.stop()
@@ -1140,7 +1147,10 @@ class AISegmentationDockWidget(QDockWidget):
             self.deps_progress_label.setVisible(False)
             self.cancel_deps_button.setVisible(False)
             self.install_button.setEnabled(True)
-            self.install_button.setText(tr("Install Dependencies"))
+            if is_update:
+                self.install_button.setText(tr("Update Dependencies"))
+            else:
+                self.install_button.setText(tr("Install Dependencies"))
             if "cancel" in message.lower():
                 self.deps_status_label.setText(tr("Installation cancelled"))
             elif "failed" in message.lower():
@@ -1189,18 +1199,14 @@ class AISegmentationDockWidget(QDockWidget):
         if percent == 0:
             self.checkpoint_progress.setVisible(True)
             self.checkpoint_progress_label.setVisible(True)
-            self.cancel_download_button.setVisible(True)
             self.download_button.setEnabled(False)
             self.download_button.setText(tr("Downloading..."))
             self.checkpoint_status_label.setText(tr("Model downloading..."))
-        elif percent >= 100 or "cancel" in message.lower():
+        elif percent >= 100:
             self.checkpoint_progress.setVisible(False)
             self.checkpoint_progress_label.setVisible(False)
-            self.cancel_download_button.setVisible(False)
             self.download_button.setEnabled(True)
             self.download_button.setText(tr("Download AI Segmentation Model (~375MB)"))
-            if "cancel" in message.lower():
-                self.checkpoint_status_label.setText(tr("Download cancelled"))
 
     def set_preparation_progress(self, percent: int, message: str, cache_path: str = None):
         import time
@@ -1571,6 +1577,17 @@ class AISegmentationDockWidget(QDockWidget):
         """Handle activation from dialog."""
         self._plugin_activated = True
         self._update_full_ui()
+
+    def cleanup_signals(self):
+        """Disconnect project signals to prevent accumulation on plugin reload."""
+        try:
+            QgsProject.instance().layersAdded.disconnect(self._on_layers_added)
+        except (TypeError, RuntimeError):
+            pass
+        try:
+            QgsProject.instance().layersRemoved.disconnect(self._on_layers_removed)
+        except (TypeError, RuntimeError):
+            pass
 
     def is_activated(self) -> bool:
         """Check if the plugin is activated."""
