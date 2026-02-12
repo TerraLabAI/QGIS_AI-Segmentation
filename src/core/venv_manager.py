@@ -34,7 +34,7 @@ DEPS_HASH_FILE = os.path.join(VENV_DIR, "deps_hash.txt")
 def _compute_deps_hash() -> str:
     """Compute MD5 hash of REQUIRED_PACKAGES to detect version spec changes."""
     data = repr(REQUIRED_PACKAGES).encode("utf-8")
-    return hashlib.md5(data).hexdigest()
+    return hashlib.md5(data, usedforsecurity=False).hexdigest()
 
 
 def _read_deps_hash() -> Optional[str]:
@@ -480,6 +480,51 @@ def ensure_venv_packages_available():
     if site_packages not in sys.path:
         sys.path.insert(0, site_packages)
         _log(f"Added venv site-packages to sys.path: {site_packages}", Qgis.Info)
+
+    # SAFE FIX for old QGIS versions (< 3.28) with numpy/pandas compatibility issue
+    # QGIS 3.26-3.27 ships with numpy 1.20.x which is incompatible with pandas >= 2.0
+    # We safely reload numpy from venv ONLY for these old versions
+    if "numpy" in sys.modules:
+        try:
+            # Check QGIS version - only apply fix for QGIS < 3.28
+            qgis_version = Qgis.QGIS_VERSION.split("-")[0]
+            version_parts = [int(x) for x in qgis_version.split(".")]
+            is_old_qgis = version_parts[0] < 3 or (version_parts[0] == 3 and version_parts[1] < 28)
+
+            if not is_old_qgis:
+                return True
+
+            import numpy as old_numpy
+            old_version = old_numpy.__version__
+            version_nums = [int(x) for x in old_version.split(".")[:3]]
+
+            # Check if version is < 1.22.4 (incompatible with pandas >= 2.0)
+            needs_upgrade = False
+            if version_nums[0] < 1:
+                needs_upgrade = True
+            elif version_nums[0] == 1 and version_nums[1] < 22:
+                needs_upgrade = True
+            elif version_nums[0] == 1 and version_nums[1] == 22 and version_nums[2] < 4:
+                needs_upgrade = True
+
+            if needs_upgrade:
+                _log(
+                    "Detected QGIS {} with numpy {} (incompatible with pandas >= 2.0). "
+                    "Reloading numpy from venv...".format(qgis_version, old_version),
+                    Qgis.Info
+                )
+
+                # Remove numpy and related modules from cache
+                modules_to_remove = [key for key in sys.modules.keys() if key.startswith("numpy")]
+                for mod in modules_to_remove:
+                    del sys.modules[mod]
+
+                # Reimport numpy from venv
+                import numpy as new_numpy
+                _log("Successfully reloaded numpy {} from venv".format(new_numpy.__version__), Qgis.Info)
+
+        except Exception as e:
+            _log("Failed to reload numpy: {}. Plugin may not work on this QGIS version.".format(e), Qgis.Warning)
 
     return True
 

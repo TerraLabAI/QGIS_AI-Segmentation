@@ -135,7 +135,19 @@ def encode_raster(config):
 
         send_progress(5, "Reading image...")
 
-        with rasterio.open(raster_path) as src:
+        try:
+            src_dataset = rasterio.open(raster_path)
+        except rasterio.errors.RasterioIOError:
+            ext = os.path.splitext(raster_path)[1].upper()
+            send_error(
+                "{ext} format is not supported by the encoding engine.\n"
+                "Please convert your raster to GeoTIFF (.tif) using:\n"
+                "  QGIS: Raster > Conversion > Translate\n"
+                "  Or: gdal_translate input{ext} output.tif".format(ext=ext)
+            )
+            sys.exit(1)
+
+        with src_dataset as src:
             raster_width = src.width
             raster_height = src.height
             raster_transform = src.transform

@@ -8,9 +8,94 @@ from typing import Tuple, Optional, Callable
 from qgis.core import QgsMessageLog, Qgis
 
 from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
+from .i18n import tr
 
 # Global timeout for the encoding stdout reading loop (45 minutes)
 _ENCODING_GLOBAL_TIMEOUT = 2700
+
+# Raster formats that require GDAL conversion (not supported by pip-installed rasterio)
+_GDAL_ONLY_FORMATS = {'.ecw', '.sid'}
+
+
+def _needs_gdal_conversion(raster_path):
+    """Check if raster format requires GDAL conversion for rasterio."""
+    ext = os.path.splitext(raster_path)[1].lower()
+    return ext in _GDAL_ONLY_FORMATS
+
+
+def _convert_with_gdal(raster_path, output_dir, progress_callback=None):
+    """Convert raster to GeoTIFF using QGIS's GDAL.
+
+    Returns (converted_path, error_message). On success error_message is None.
+    """
+    ext = os.path.splitext(raster_path)[1].upper()
+
+    try:
+        from osgeo import gdal
+    except ImportError:
+        return None, tr(
+            "{ext} format is not directly supported. "
+            "GDAL is not available for automatic conversion.\n"
+            "Please convert your raster to GeoTIFF (.tif) before using "
+            "AI Segmentation."
+        ).format(ext=ext)
+
+    if progress_callback:
+        progress_callback(0, tr("Converting {ext} to GeoTIFF...").format(ext=ext))
+
+    try:
+        ds = gdal.Open(raster_path)
+        if ds is None:
+            return None, tr(
+                "Cannot open {ext} file. The format may not be supported "
+                "by your QGIS installation.\n"
+                "Please convert your raster to GeoTIFF (.tif) before using "
+                "AI Segmentation."
+            ).format(ext=ext)
+
+        # Use .tmp extension so FeatureDataset's *.tif glob never picks it up
+        converted_path = os.path.join(output_dir, '_converted_source.tmp')
+
+        def gdal_progress(complete, message, data):
+            if progress_callback:
+                pct = int(complete * 5)
+                progress_callback(
+                    pct,
+                    tr("Converting {ext} to GeoTIFF ({pct}%)...").format(
+                        ext=ext, pct=int(complete * 100))
+                )
+            return 1
+
+        result = gdal.Translate(
+            converted_path, ds,
+            format='GTiff',
+            creationOptions=['COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=IF_SAFER'],
+            callback=gdal_progress
+        )
+        ds = None
+        if result is None:
+            return None, tr(
+                "Failed to convert {ext} file to GeoTIFF."
+            ).format(ext=ext)
+        result = None
+
+        if not os.path.exists(converted_path):
+            return None, tr(
+                "Failed to convert {ext} file to GeoTIFF."
+            ).format(ext=ext)
+
+        QgsMessageLog.logMessage(
+            "Converted {} to GeoTIFF for encoding: {}".format(ext, converted_path),
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+        return converted_path, None
+
+    except Exception as e:
+        return None, tr(
+            "Failed to convert {ext} file to GeoTIFF: {error}\n"
+            "Please convert your raster to GeoTIFF (.tif) manually."
+        ).format(ext=ext, error=str(e))
 
 
 def _terminate_process(process):
@@ -40,6 +125,7 @@ def encode_raster_to_features(
 ) -> Tuple[bool, str]:
     process = None
     stderr_file = None
+    converted_path = None
 
     try:
         from .venv_manager import get_venv_python_path, get_venv_dir
@@ -58,8 +144,18 @@ def encode_raster_to_features(
             QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
             return False, error_msg
 
+        # Convert unsupported formats (ECW, MrSID) to GeoTIFF using QGIS's GDAL
+        encoding_raster_path = raster_path
+        if _needs_gdal_conversion(raster_path):
+            converted_path, conv_error = _convert_with_gdal(
+                raster_path, output_dir, progress_callback
+            )
+            if conv_error:
+                return False, conv_error
+            encoding_raster_path = converted_path
+
         config = {
-            'raster_path': raster_path,
+            'raster_path': encoding_raster_path,
             'output_dir': output_dir,
             'checkpoint_path': checkpoint_path,
             'layer_crs_wkt': layer_crs_wkt,
@@ -208,5 +304,11 @@ def encode_raster_to_features(
         if stderr_file is not None:
             try:
                 stderr_file.close()
+            except Exception:
+                pass
+        # Clean up temporary converted raster
+        if converted_path and os.path.exists(converted_path):
+            try:
+                os.remove(converted_path)
             except Exception:
                 pass
