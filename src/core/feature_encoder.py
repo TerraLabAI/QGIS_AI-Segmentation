@@ -109,13 +109,13 @@ def encode_raster_to_features(
             elapsed = time.monotonic() - start_time
             if elapsed > _ENCODING_GLOBAL_TIMEOUT:
                 QgsMessageLog.logMessage(
-                    "Encoding worker exceeded global timeout (30 min), terminating",
+                    "Encoding worker exceeded global timeout (45 min), terminating",
                     "AI Segmentation",
                     level=Qgis.Warning
                 )
                 _terminate_process(process)
                 process = None
-                return False, "Encoding timed out (30 minutes)"
+                return False, "Encoding timed out (45 minutes)"
 
             try:
                 update = json.loads(line.strip())

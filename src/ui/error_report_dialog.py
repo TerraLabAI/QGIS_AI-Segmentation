@@ -138,9 +138,11 @@ def _collect_diagnostic_info(error_message: str) -> str:
         ensure_venv_packages_available()
         import torch
         if torch.cuda.is_available():
-            gpu_name = torch.cuda.get_device_name(0)
-            gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-            lines.append("CUDA: {} ({:.1f}GB)".format(gpu_name, gpu_mem))
+            count = torch.cuda.device_count()
+            for i in range(count):
+                gpu_name = torch.cuda.get_device_name(i)
+                gpu_mem = torch.cuda.get_device_properties(i).total_memory / (1024**3)
+                lines.append("CUDA {}: {} ({:.1f}GB)".format(i, gpu_name, gpu_mem))
         elif sys.platform == "darwin" and hasattr(torch.backends, "mps"):
             if torch.backends.mps.is_available():
                 lines.append("GPU: Apple Silicon (MPS)")
