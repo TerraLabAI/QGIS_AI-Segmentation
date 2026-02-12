@@ -9,15 +9,21 @@ license=GPLv2
 
 
 about=
-    Point-and-click AI segmentation that turns raster objects into vector polygons.
+    Point-and-click AI segmentation tool that turns raster objects into vector polygons.
 
-    - Fully automatic: AI model and dependencies install themselves
-    - Precise: positive and negative click points control boundaries
-    - Flexible: Simple mode or Batch mode for multi-polygon export
-    - Refinable: expand, contract, simplify, fill holes, remove small regions
-    - Fast: auto GPU detection (CUDA, Apple Metal) with CPU fallback
-    - Universal: Windows, macOS, Linux
-    - Multilingual: English, French, Portuguese, Spanish
+    • Fully automatic: AI model and dependencies install themselves
+
+    • Precise: positive and negative click points control boundaries
+
+    • Flexible: Simple mode or Batch mode for multi-polygon export
+
+    • Refinable: expand, contract, simplify, fill holes, remove small regions
+
+    • Fast: auto GPU detection (CUDA, Apple Metal) or CPU
+
+    • Universal: Windows, macOS, Linux
+
+    • Multilingual: English, French, Portuguese, Spanish
 
     Works with drone, satellite, aerial, or any raster imagery.
 

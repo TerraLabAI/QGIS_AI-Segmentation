@@ -518,6 +518,15 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Warning)
             self.dock_widget.set_dependency_status(False, f"Error: {str(e)[:50]}")
 
+        # Check for plugin updates after a delay (gives QGIS time to fetch repo metadata)
+        from qgis.PyQt.QtCore import QTimer
+        QTimer.singleShot(5000, self._check_for_plugin_update)
+
+    def _check_for_plugin_update(self):
+        """Trigger the update check on the dock widget."""
+        if self.dock_widget:
+            self.dock_widget.check_for_updates()
+
     def _check_checkpoint(self):
         try:
             from ..core.checkpoint_manager import checkpoint_exists
