@@ -767,7 +767,9 @@ def _get_verification_timeout(package_name: str) -> int:
     """
     if package_name == "torch":
         return 120
-    elif package_name == "torchvision":
+    elif package_name in ("torchvision", "pandas"):
+        # pandas loads many .pyd C extensions on first import;
+        # antivirus (Windows Defender) scans each one, easily exceeding 30s
         return 60
     else:
         return 30
@@ -1575,14 +1577,130 @@ def verify_venv(
             if result.returncode != 0:
                 error_detail = result.stderr[:300] if result.stderr else result.stdout[:300]
                 _log(
-                    f"Package {package_name} verification failed: {error_detail}",
+                    "Package {} verification failed: {}".format(
+                        package_name, error_detail),
                     Qgis.Warning
                 )
-                return False, f"Package {package_name} is broken: {error_detail[:100]}"
+
+                # Detect broken C extensions (antivirus may have quarantined .pyd files)
+                broken_markers = [
+                    "No module named", "_libs",
+                    "DLL load failed", "ImportError",
+                ]
+                is_broken = any(m in error_detail for m in broken_markers)
+
+                if is_broken:
+                    _log(
+                        "Package {} has broken C extensions, "
+                        "attempting force-reinstall...".format(package_name),
+                        Qgis.Warning
+                    )
+                    # Find the version spec from REQUIRED_PACKAGES
+                    pkg_spec = package_name
+                    for name, spec in REQUIRED_PACKAGES:
+                        if name == package_name:
+                            pkg_spec = "{}{}".format(name, spec)
+                            break
+                    reinstall_cmd = [
+                        python_path, "-m", "pip", "install",
+                        "--force-reinstall", "--no-deps",
+                        "--disable-pip-version-check",
+                        "--prefer-binary",
+                        pkg_spec,
+                    ]
+                    try:
+                        subprocess.run(
+                            reinstall_cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=300,
+                            env=env,
+                            **subprocess_kwargs
+                        )
+                    except Exception:
+                        pass
+                    # Retry verification after force-reinstall
+                    try:
+                        result2 = subprocess.run(
+                            cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=pkg_timeout,
+                            env=env,
+                            **subprocess_kwargs
+                        )
+                        if result2.returncode == 0:
+                            _log(
+                                "Package {} fixed after force-reinstall".format(
+                                    package_name),
+                                Qgis.Success
+                            )
+                            continue  # Move to next package
+                    except Exception:
+                        pass
+                    # Still broken after reinstall
+                    return False, (
+                        "Package {} is broken (antivirus may be "
+                        "interfering): {}".format(
+                            package_name, error_detail[:100])
+                    )
+
+                return False, "Package {} is broken: {}".format(
+                    package_name, error_detail[:100])
+
+        except subprocess.TimeoutExpired:
+            # Retry once - antivirus scanning .pyd files on first import
+            # causes timeouts; the 2nd import is near-instant once cached
+            _log(
+                "Verification of {} timed out ({}s), retrying...".format(
+                    package_name, pkg_timeout),
+                Qgis.Info
+            )
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=pkg_timeout,
+                    env=env,
+                    **subprocess_kwargs
+                )
+                if result.returncode != 0:
+                    error_detail = (
+                        result.stderr[:300] if result.stderr
+                        else result.stdout[:300]
+                    )
+                    _log(
+                        "Package {} verification failed on retry: {}".format(
+                            package_name, error_detail),
+                        Qgis.Warning
+                    )
+                    return False, "Package {} is broken: {}".format(
+                        package_name, error_detail[:100])
+            except subprocess.TimeoutExpired:
+                _log(
+                    "Verification of {} timed out twice".format(package_name),
+                    Qgis.Warning
+                )
+                return False, (
+                    "Verification error: {} "
+                    "(timed out - antivirus may be blocking)".format(
+                        package_name)
+                )
+            except Exception as e:
+                _log(
+                    "Failed to verify {} on retry: {}".format(
+                        package_name, str(e)),
+                    Qgis.Warning
+                )
+                return False, "Verification error: {}".format(package_name)
 
         except Exception as e:
-            _log(f"Failed to verify {package_name}: {str(e)}", Qgis.Warning)
-            return False, f"Verification error: {package_name}"
+            _log(
+                "Failed to verify {}: {}".format(package_name, str(e)),
+                Qgis.Warning
+            )
+            return False, "Verification error: {}".format(package_name)
 
     if progress_callback:
         progress_callback(100, "Verification complete")
