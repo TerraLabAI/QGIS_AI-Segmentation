@@ -752,5 +752,15 @@
         <source>Point is outside the encoded image. Click inside the raster.</source>
         <translation>El punto está fuera de la imagen codificada. Haga clic dentro del ráster.</translation>
     </message>
+
+    <!-- Update notification -->
+    <message>
+        <source>New version available ({version}). This plugin is in beta and evolves quickly.</source>
+        <translation>Nueva versión disponible ({version}). Este plugin está en beta y evoluciona rápidamente.</translation>
+    </message>
+    <message>
+        <source>Update now</source>
+        <translation>Actualizar ahora</translation>
+    </message>
 </context>
 </TS>

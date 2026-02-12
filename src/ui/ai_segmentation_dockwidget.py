@@ -141,6 +141,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._setup_activation_section()
         self._setup_segmentation_section()
         self.main_layout.addStretch()
+        self._setup_update_notification()
         self._setup_about_section()
 
     def _setup_welcome_section(self):
@@ -833,6 +834,63 @@ class AISegmentationDockWidget(QDockWidget):
         self.simplify_spinbox.blockSignals(False)
         self.fill_holes_checkbox.blockSignals(False)
         self.min_area_spinbox.blockSignals(False)
+
+    def _setup_update_notification(self):
+        """Setup the update notification widget (hidden by default)."""
+        self.update_notification_widget = QWidget()
+        self.update_notification_widget.setStyleSheet(
+            "QWidget { background-color: rgba(255, 152, 0, 0.15); "
+            "border: 1px solid rgba(255, 152, 0, 0.4); border-radius: 4px; }"
+            "QLabel { background: transparent; border: none; }"
+        )
+        notif_layout = QHBoxLayout(self.update_notification_widget)
+        notif_layout.setContentsMargins(8, 6, 8, 6)
+        notif_layout.setSpacing(8)
+
+        # Warning icon
+        notif_icon_label = QLabel()
+        style = self.update_notification_widget.style()
+        notif_icon = style.standardIcon(style.SP_MessageBoxWarning)
+        notif_icon_label.setPixmap(notif_icon.pixmap(14, 14))
+        notif_icon_label.setFixedSize(14, 14)
+        notif_layout.addWidget(notif_icon_label, 0, Qt.AlignTop)
+
+        self.update_notification_label = QLabel("")
+        self.update_notification_label.setWordWrap(True)
+        self.update_notification_label.setStyleSheet(
+            "font-size: 11px; color: palette(text);")
+        self.update_notification_label.setOpenExternalLinks(False)
+        self.update_notification_label.linkActivated.connect(
+            self._on_open_plugin_manager)
+        notif_layout.addWidget(self.update_notification_label, 1)
+
+        self.update_notification_widget.setVisible(False)
+        self.main_layout.addWidget(self.update_notification_widget)
+
+    def check_for_updates(self):
+        """Check if a newer version is available in the QGIS plugin repository."""
+        try:
+            from pyplugin_installer.installer_data import plugins
+            plugin_data = plugins.all().get('QGIS_AI-Segmentation')
+            if plugin_data and plugin_data.get('status') == 'upgradeable':
+                available_version = plugin_data.get(
+                    'version_available', '?')
+                text = '{} <a href="#update" style="color: #e65100;">{}</a>'.format(
+                    tr("New version available ({version}). This plugin is in beta and evolves quickly.").format(
+                        version=available_version),
+                    tr("Update now"))
+                self.update_notification_label.setText(text)
+                self.update_notification_widget.setVisible(True)
+        except Exception:
+            pass  # No repo data yet, dev install, etc.
+
+    def _on_open_plugin_manager(self, link=None):
+        """Open the QGIS Plugin Manager on the Upgradeable tab."""
+        try:
+            from qgis.utils import iface
+            iface.pluginManagerInterface().showPluginManager(4)
+        except Exception:
+            pass
 
     def _setup_about_section(self):
         """Setup the links section."""
