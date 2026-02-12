@@ -245,3 +245,6 @@ tr("Export {count} polygon(s)").format(count=5)
 - **Hardcoded credentials**: Never hardcode passwords, API keys, or secrets in code. Also avoid credential-like patterns in docstrings/comments (e.g. `user:pass@host`) — use generic descriptions instead.
 - **Shell injection**: Use subprocess with list arguments, not shell=True with string interpolation
 
+
+
+Always output a short line and bullet points resuming the changes that you made when you made a big change like from a plan

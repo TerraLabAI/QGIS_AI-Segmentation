@@ -33,17 +33,27 @@ def get_optimal_device():
     try:
         import torch
         if torch.cuda.is_available():
-            # Check minimum 2GB GPU memory
-            mem_bytes = torch.cuda.get_device_properties(0).total_memory
-            if mem_bytes < 2 * 1024 ** 3:
+            best_idx = -1
+            best_mem = 0
+            count = torch.cuda.device_count()
+            for i in range(count):
+                try:
+                    mem = torch.cuda.get_device_properties(i).total_memory
+                    if mem >= 2 * 1024 ** 3 and mem > best_mem:
+                        best_mem = mem
+                        best_idx = i
+                except Exception:
+                    continue
+            if best_idx < 0:
                 return torch.device("cpu")
             # Verify CUDA kernels actually work
-            t = torch.zeros(1, device="cuda")
+            cuda_dev = "cuda:{}".format(best_idx)
+            t = torch.zeros(1, device=cuda_dev)
             _ = t + 1
-            torch.cuda.synchronize()
+            torch.cuda.synchronize(best_idx)
             del t
             torch.cuda.empty_cache()
-            return torch.device("cuda")
+            return torch.device(cuda_dev)
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             # Prevent MPS OOM by disabling memory pool upper limit
             os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")

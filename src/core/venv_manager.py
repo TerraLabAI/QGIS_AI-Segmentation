@@ -117,27 +117,43 @@ def detect_nvidia_gpu() -> Tuple[bool, dict]:
             **subprocess_kwargs,
         )
         if result.returncode == 0 and result.stdout.strip():
-            line = result.stdout.strip().split("\n")[0].strip()
-            parts = [p.strip() for p in line.split(",")]
+            lines = result.stdout.strip().split("\n")
+            best_gpu = {}
+            best_compute_cap = -1.0
 
-            gpu_info = {}
-            if len(parts) >= 1 and parts[0]:
-                gpu_info["name"] = parts[0]
-            if len(parts) >= 2 and parts[1]:
-                try:
-                    gpu_info["compute_cap"] = float(parts[1])
-                except ValueError:
-                    pass
-            if len(parts) >= 3 and parts[2]:
-                gpu_info["driver_version"] = parts[2]
-            if len(parts) >= 4 and parts[3]:
-                try:
-                    gpu_info["memory_mb"] = int(float(parts[3]))
-                except ValueError:
-                    pass
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = [p.strip() for p in line.split(",")]
 
-            _log("NVIDIA GPU detected: {}".format(gpu_info), Qgis.Info)
-            return True, gpu_info
+                gpu_info = {}
+                if len(parts) >= 1 and parts[0]:
+                    gpu_info["name"] = parts[0]
+                if len(parts) >= 2 and parts[1]:
+                    try:
+                        gpu_info["compute_cap"] = float(parts[1])
+                    except ValueError:
+                        pass
+                if len(parts) >= 3 and parts[2]:
+                    gpu_info["driver_version"] = parts[2]
+                if len(parts) >= 4 and parts[3]:
+                    try:
+                        gpu_info["memory_mb"] = int(float(parts[3]))
+                    except ValueError:
+                        pass
+
+                cc = gpu_info.get("compute_cap", 0.0)
+                if cc > best_compute_cap:
+                    best_compute_cap = cc
+                    best_gpu = gpu_info
+
+            if not best_gpu:
+                return False, {}
+
+            _log("NVIDIA GPU detected (best of {}): {}".format(
+                len(lines), best_gpu), Qgis.Info)
+            return True, best_gpu
     except FileNotFoundError:
         pass  # nvidia-smi not found = no NVIDIA GPU
     except subprocess.TimeoutExpired:

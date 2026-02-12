@@ -13,7 +13,8 @@
       "Bash(\"/Users/yvann/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Segmentation/src/venv_py3.12/bin/python3\" -c \"import torch; t = torch.tensor\\([1, 2, 3]\\); print\\(t.sum\\(\\)\\)\")",
       "Bash(git status:*)",
       "Bash(python3 -m pyflakes:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(pip3 list:*)"
     ]
   }
 }
