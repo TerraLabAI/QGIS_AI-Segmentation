@@ -1112,6 +1112,8 @@ def install_dependencies(
                 "--no-warn-script-location",
                 "--disable-pip-version-check",
                 "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
+                "--retries", "5",  # Retry failed downloads up to 5 times
+                "--timeout", "60",  # 60 second timeout per request
             ]
             if constraints_path:
                 pip_args.extend(["--constraint", constraints_path])
@@ -1246,10 +1248,12 @@ def install_dependencies(
                     error_output = result.stderr or result.stdout or ""
 
                     if _is_network_error(error_output):
-                        for attempt in range(1, 3):  # up to 2 retries
+                        for attempt in range(1, 5):  # up to 4 retries with exponential backoff
+                            # Exponential backoff: 5s, 10s, 20s, 40s
+                            delay = 5 * (2 ** (attempt - 1))
                             _log(
-                                "Network error detected, retrying in 5s "
-                                "(attempt {}/2)...".format(attempt),
+                                "Network error detected, retrying in {}s "
+                                "(attempt {}/4)...".format(delay, attempt),
                                 Qgis.Warning
                             )
                             if progress_callback:
@@ -1258,7 +1262,7 @@ def install_dependencies(
                                     "Network error, retrying {}... ({}/{})".format(
                                         package_name, i + 1, total_packages)
                                 )
-                            time.sleep(5)
+                            time.sleep(delay)
                             if cancel_check and cancel_check():
                                 return False, "Installation cancelled"
                             result = _run_pip_install(
@@ -1371,13 +1375,13 @@ def install_dependencies(
                 # Check for network/connection errors (after retries exhausted)
                 if _is_network_error(install_error_msg):
                     net_help = (
-                        "Network connection failed after multiple retries.\n\n"
+                        "Network connection failed after multiple retries with exponential backoff.\n\n"
                         "Please try:\n"
                         "  1. Check your internet connection\n"
                         "  2. If using a VPN or proxy, try disconnecting temporarily\n"
-                        "  3. Wait a few minutes and try again\n"
-                        "  4. Check firewall settings for pypi.org and "
-                        "files.pythonhosted.org"
+                        "  3. Wait a few minutes and try again (server may be temporarily unavailable)\n"
+                        "  4. Check firewall settings for pypi.org and files.pythonhosted.org\n"
+                        "  5. Try installing at a different time if the issue persists"
                     )
                     _log(net_help, Qgis.Warning)
                     install_error_msg = "{}\n\n{}".format(

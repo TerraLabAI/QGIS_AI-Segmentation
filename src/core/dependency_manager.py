@@ -253,6 +253,8 @@ def _run_pip_install(pip_name: str, version: str = None, target_dir: str = None)
         "--no-warn-script-location",
         "--disable-pip-version-check",
         "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
+        "--retries", "5",  # Retry failed downloads up to 5 times
+        "--timeout", "60",  # 60 second timeout per request
     ]
 
     if target_dir:
