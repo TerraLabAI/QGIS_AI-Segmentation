@@ -15,7 +15,11 @@
       "Bash(python3 -m pyflakes:*)",
       "Bash(python3:*)",
       "Bash(pip3 list:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "WebFetch(domain:plugins.qgis.org)",
+      "Bash(pip3 install:*)",
+      "Bash(detect-secrets scan:*)",
+      "Bash(echo:*)"
     ]
   }
 }
