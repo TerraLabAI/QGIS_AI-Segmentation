@@ -41,14 +41,13 @@ class FeatureDataset:
 
         for name in tif_files:
             basename = os.path.basename(name)
-            if "vit_b" in basename:
-                self.model_type = "vit_b"
-                break
-            elif "vit_l" in basename:
-                self.model_type = "vit_l"
-                break
-            elif "vit_h" in basename:
-                self.model_type = "vit_h"
+            # Detect model type from tile filename suffix
+            # Pattern: tile_{tx}_{ty}_{suffix}.tif
+            base = basename[:-4] if basename.endswith('.tif') else basename
+            parts = base.split('_')
+            if len(parts) >= 4 and parts[0] == 'tile':
+                suffix = '_'.join(parts[3:])
+                self.model_type = suffix
                 break
 
         if os.path.exists(csv_path):
@@ -154,6 +153,16 @@ class FeatureDataset:
             if img_shape:
                 sample["img_shape"] = img_shape
                 sample["input_shape"] = input_shape
+
+            # Load SAM2 high_res_feats if present
+            tile_basename = os.path.splitext(filepath)[0]
+            hr0_path = "{}_hr0.npy".format(tile_basename)
+            hr1_path = "{}_hr1.npy".format(tile_basename)
+            if os.path.exists(hr0_path) and os.path.exists(hr1_path):
+                sample["high_res_feats"] = [
+                    np.load(hr0_path),
+                    np.load(hr1_path),
+                ]
 
             if self.cache:
                 self._cache[filepath] = sample

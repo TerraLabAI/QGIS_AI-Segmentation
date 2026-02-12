@@ -12,24 +12,39 @@ from qgis.core import QgsMessageLog, Qgis
 from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
 
 
-def build_sam_vit_b_no_encoder(checkpoint: Optional[str] = None):
+def build_sam_no_encoder(
+    checkpoint: Optional[str] = None,
+    model_id: str = "sam_vit_b"
+):
     from .venv_manager import get_venv_python_path, get_venv_dir
+    from .model_registry import get_model_info
 
     plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     venv_python = get_venv_python_path(get_venv_dir())
     worker_script = os.path.join(plugin_dir, 'workers', 'prediction_worker.py')
 
     if not os.path.exists(venv_python):
-        raise FileNotFoundError(f"Virtual environment Python not found: {venv_python}")
+        raise FileNotFoundError(
+            "Virtual environment Python not found: {}".format(venv_python))
 
     if not os.path.exists(worker_script):
-        raise FileNotFoundError(f"Worker script not found: {worker_script}")
+        raise FileNotFoundError(
+            "Worker script not found: {}".format(worker_script))
+
+    model_info = get_model_info(model_id) or {}
 
     return {
         'venv_python': venv_python,
         'worker_script': worker_script,
-        'checkpoint': checkpoint
+        'checkpoint': checkpoint,
+        'model_id': model_id,
+        'model_family': model_info.get('family', 'sam1'),
+        'sam2_model_cfg': model_info.get('sam2_model_cfg'),
     }
+
+
+# Keep old name as alias for backward compatibility
+build_sam_vit_b_no_encoder = build_sam_no_encoder
 
 
 class SamPredictorNoImgEncoder:
@@ -43,6 +58,9 @@ class SamPredictorNoImgEncoder:
         self.venv_python = sam_config['venv_python']
         self.worker_script = sam_config['worker_script']
         self.checkpoint = sam_config['checkpoint']
+        self.model_id = sam_config.get('model_id', 'sam_vit_b')
+        self.model_family = sam_config.get('model_family', 'sam1')
+        self.sam2_model_cfg = sam_config.get('sam2_model_cfg')
         self.process = None
         self._stderr_file = None
         self.is_image_set = False
@@ -164,8 +182,12 @@ class SamPredictorNoImgEncoder:
 
             init_request = {
                 "action": "init",
-                "checkpoint_path": self.checkpoint
+                "checkpoint_path": self.checkpoint,
+                "model_id": self.model_id,
+                "model_family": self.model_family,
             }
+            if self.sam2_model_cfg:
+                init_request["sam2_model_cfg"] = self.sam2_model_cfg
 
             self.process.stdin.write(json.dumps(init_request) + '\n')
             self.process.stdin.flush()
@@ -274,7 +296,8 @@ class SamPredictorNoImgEncoder:
         self,
         img_features: np.ndarray,
         img_size: Tuple[int, int],
-        input_size: Optional[Tuple[int, int]] = None
+        input_size: Optional[Tuple[int, int]] = None,
+        high_res_feats: Optional[list] = None
     ) -> None:
         if not self._start_worker():
             raise RuntimeError("Failed to start prediction worker")
@@ -290,6 +313,18 @@ class SamPredictorNoImgEncoder:
                 "img_size": list(img_size),
                 "input_size": list(input_size) if input_size else None
             }
+
+            if high_res_feats is not None:
+                hr_list = []
+                for hr in high_res_feats:
+                    hr_np = np.asarray(hr)
+                    hr_list.append({
+                        "data": base64.b64encode(
+                            hr_np.tobytes()).decode('utf-8'),
+                        "shape": list(hr_np.shape),
+                        "dtype": str(hr_np.dtype),
+                    })
+                request["high_res_feats"] = hr_list
 
             self.process.stdin.write(json.dumps(request) + '\n')
             self.process.stdin.flush()

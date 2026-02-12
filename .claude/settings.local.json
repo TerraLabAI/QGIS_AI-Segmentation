@@ -15,7 +15,15 @@
       "Bash(python3 -m pyflakes:*)",
       "Bash(python3:*)",
       "Bash(pip3 list:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "WebFetch(domain:pypi.org)",
+      "Bash(brew install:*)",
+      "Bash(for f in src/core/model_registry.py src/core/checkpoint_manager.py src/core/feature_encoder.py src/core/feature_dataset.py src/core/sam_predictor.py src/ui/ai_segmentation_dockwidget.py src/workers/encoding_worker.py src/workers/prediction_worker.py)",
+      "Bash(do echo -n \"$f: \")",
+      "Bash(done)",
+      "Bash(pdftoppm:*)",
+      "Bash(for f in src/core/model_registry.py src/core/checkpoint_manager.py src/core/feature_encoder.py src/core/feature_dataset.py src/core/sam_predictor.py src/ui/ai_segmentation_plugin.py src/ui/ai_segmentation_dockwidget.py src/workers/encoding_worker.py src/workers/prediction_worker.py)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

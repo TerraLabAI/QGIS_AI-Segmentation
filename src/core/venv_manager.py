@@ -21,9 +21,10 @@ LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, 'libs')
 
 REQUIRED_PACKAGES = [
     ("numpy", ">=1.26.0,<2.0.0"),
-    ("torch", ">=2.0.0"),
+    ("torch", ">=2.5.1"),
     ("torchvision", ">=0.15.0"),
     ("segment-anything", ">=1.0"),
+    ("sam2", ">=1.0"),
     ("pandas", ">=1.3.0"),
     ("rasterio", ">=1.3.0"),
 ]
@@ -753,7 +754,7 @@ def _reinstall_cpu_torch(
         _log("torch uninstall error (continuing): {}".format(e), Qgis.Warning)
 
     # Install CPU versions from default PyPI
-    for pkg in ("torch>=2.0.0", "torchvision>=0.15.0"):
+    for pkg in ("torch>=2.5.1", "torchvision>=0.15.0"):
         try:
             result = subprocess.run(
                 [python_path, "-m", "pip", "install",
@@ -1088,11 +1089,12 @@ def install_dependencies(
     progress_range = 80  # from 20% to 100%
 
     # Weighted progress allocation proportional to download size.
+    # Order: numpy, torch, torchvision, segment-anything, sam2, pandas, rasterio
     # CUDA: torch=45%, torchvision=15%; CPU: torch=30%, torchvision=15%.
     if cuda_enabled:
-        _weights = [5, 45, 15, 5, 5, 5]
+        _weights = [5, 45, 15, 5, 5, 5, 5]
     else:
-        _weights = [5, 30, 15, 10, 10, 10]
+        _weights = [5, 30, 15, 8, 8, 8, 8]
     weight_total = sum(_weights)
     # Cumulative start offsets for each package
     _cumulative = [0]
@@ -1591,6 +1593,8 @@ def _get_verification_code(package_name: str) -> str:
         return "import rasterio; print(rasterio.__version__)"
     elif package_name == "segment-anything":
         return "import segment_anything; print('ok')"
+    elif package_name == "sam2":
+        return "import sam2; print('ok')"
     elif package_name == "torchvision":
         return "import torchvision; print(torchvision.__version__)"
     else:
@@ -1975,6 +1979,7 @@ def _quick_check_packages(venv_dir: str = None) -> Tuple[bool, str]:
         "torch": "torch",
         "torchvision": "torchvision",
         "segment-anything": "segment_anything",
+        "sam2": "sam2",
         "pandas": "pandas",
         "rasterio": "rasterio",
     }

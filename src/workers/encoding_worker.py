@@ -65,6 +65,17 @@ def get_optimal_device():
         return torch.device("cpu")
 
 
+def _save_sam2_high_res_feats(feats, output_dir, tx, ty, feature_suffix):
+    """Save SAM2 high_res_feats as float16 .npy files alongside the tile .tif."""
+    high_res_feats = feats.get("high_res_feats", [])
+    for idx, hr_feat in enumerate(high_res_feats):
+        hr_np = hr_feat.squeeze(0).cpu().numpy().astype(np.float16)
+        hr_filename = "tile_{}_{}_{}_hr{}.npy".format(
+            tx, ty, feature_suffix, idx)
+        hr_path = os.path.join(output_dir, hr_filename)
+        np.save(hr_path, hr_np)
+
+
 def synchronize_device(device):
     import torch
     if device.type == "cuda":
@@ -95,43 +106,81 @@ def pad_to_size(arr: np.ndarray, target_size: int) -> np.ndarray:
         return np.pad(arr, ((0, pad_h), (0, pad_w)), mode='constant', constant_values=0)
 
 
+def _load_sam1_model(config, device):
+    """Load a SAM1 model (ViT-B or ViT-L) and return (model, None)."""
+    import torch
+    from segment_anything import sam_model_registry
+
+    checkpoint_path = config['checkpoint_path']
+    registry_key = config.get('registry_key', 'vit_b')
+
+    sam = sam_model_registry[registry_key](checkpoint=checkpoint_path)
+    if device.type == "cuda":
+        gc.collect()
+        torch.cuda.empty_cache()
+    sam.to(device)
+    sam.eval()
+
+    # Verify CUDA kernels are available for this GPU
+    if device.type == "cuda":
+        try:
+            test = torch.zeros(1, device=device)
+            _ = test + 1
+            torch.cuda.synchronize()
+            del test
+        except RuntimeError:
+            send_progress(0, "GPU not compatible with installed CUDA version, using CPU...")
+            device = torch.device("cpu")
+            sam.to(device)
+
+    return sam, device
+
+
+def _load_sam2_model(config, device):
+    """Load a SAM2 model and return (predictor, device)."""
+    import torch
+    from sam2.build_sam import build_sam2
+    from sam2.sam2_image_predictor import SAM2ImagePredictor
+
+    checkpoint_path = config['checkpoint_path']
+    sam2_model_cfg = config.get('sam2_model_cfg', 'configs/sam2.1/sam2.1_hiera_l.yaml')
+
+    if device.type == "cuda":
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    model = build_sam2(sam2_model_cfg, checkpoint_path, device=str(device))
+    predictor = SAM2ImagePredictor(model)
+
+    return predictor, device
+
+
 def encode_raster(config):
     try:
         import torch
         import rasterio
         import pandas as pd
         from rasterio.windows import Window
-        from segment_anything import sam_model_registry
-        from segment_anything.utils.transforms import ResizeLongestSide
 
         raster_path = config['raster_path']
         output_dir = config['output_dir']
-        checkpoint_path = config['checkpoint_path']
         layer_crs_wkt = config.get('layer_crs_wkt')
         layer_extent = config.get('layer_extent')
+        model_family = config.get('model_family', 'sam1')
+        feature_suffix = config.get('feature_suffix', 'vit_b')
 
         send_progress(0, "Preparing AI model...")
 
         device = get_optimal_device()
-        sam = sam_model_registry["vit_b"](checkpoint=checkpoint_path)
-        # Free memory before loading model onto GPU
-        if device.type == "cuda":
-            gc.collect()
-            torch.cuda.empty_cache()
-        sam.to(device)
-        sam.eval()
 
-        # Verify CUDA kernels are available for this GPU
-        if device.type == "cuda":
-            try:
-                test = torch.zeros(1, device=device)
-                _ = test + 1  # Force a kernel execution
-                torch.cuda.synchronize()
-                del test
-            except RuntimeError:
-                send_progress(0, "GPU not compatible with installed CUDA version, using CPU...")
-                device = torch.device("cpu")
-                sam.to(device)
+        # Load model based on family
+        if model_family == "sam2":
+            sam2_predictor, device = _load_sam2_model(config, device)
+            sam = None
+        else:
+            sam, device = _load_sam1_model(config, device)
+            sam2_predictor = None
+            from segment_anything.utils.transforms import ResizeLongestSide
 
         send_progress(5, "Reading image...")
 
@@ -187,7 +236,8 @@ def encode_raster(config):
             index_data = []
             processed = 0
 
-            transform_obj = ResizeLongestSide(TILE_SIZE)
+            if model_family != "sam2":
+                transform_obj = ResizeLongestSide(TILE_SIZE)
 
             for ty in range(num_tiles_y):
                 for tx in range(num_tiles_x):
@@ -205,8 +255,10 @@ def encode_raster(config):
 
                     if tile_data.shape[0] == 1:
                         tile_data = np.repeat(tile_data, 3, axis=0)
-                    elif tile_data.shape[0] == 4:
-                        tile_data = tile_data[:3, :, :]
+                    elif tile_data.shape[0] == 2:
+                        # 2-band (e.g. SAR, spectral index): duplicate first band
+                        tile_data = np.concatenate(
+                            [tile_data, tile_data[:1, :, :]], axis=0)
                     elif tile_data.shape[0] > 3:
                         tile_data = tile_data[:3, :, :]
 
@@ -218,56 +270,91 @@ def encode_raster(config):
                         else:
                             tile_data = np.zeros_like(tile_data, dtype=np.uint8)
 
-                    input_h, input_w = get_preprocess_shape(actual_height, actual_width, TILE_SIZE)
-
                     tile_hwc = np.transpose(tile_data, (1, 2, 0))
-                    tile_resized = transform_obj.apply_image(tile_hwc)
 
-                    tile_padded = pad_to_size(
-                        np.transpose(tile_resized, (2, 0, 1)),
-                        TILE_SIZE
-                    )
+                    if model_family == "sam2":
+                        # SAM2: use SAM2ImagePredictor to encode
+                        # set_image handles preprocessing internally
+                        with torch.no_grad():
+                            try:
+                                sam2_predictor.set_image(tile_hwc)
+                                # Extract internal features after set_image
+                                feats = sam2_predictor._features
+                                # feats["image_embed"] shape: (1, C, H, W)
+                                features_np = feats["image_embed"].squeeze(0).cpu().numpy()
+                                _save_sam2_high_res_feats(
+                                    feats, output_dir, tx, ty,
+                                    feature_suffix)
+                                input_h, input_w = actual_height, actual_width
+                            except RuntimeError:
+                                if device.type != "cpu":
+                                    pct = int(5 + (processed / total_tiles) * 90)
+                                    send_progress(pct, "GPU error, falling back to CPU...")
+                                    try:
+                                        if device.type == "cuda":
+                                            torch.cuda.empty_cache()
+                                    except Exception:
+                                        pass
+                                    device = torch.device("cpu")
+                                    sam2_predictor, device = _load_sam2_model(config, device)
+                                    sam2_predictor.set_image(tile_hwc)
+                                    feats = sam2_predictor._features
+                                    features_np = feats["image_embed"].squeeze(0).cpu().numpy()
+                                    _save_sam2_high_res_feats(
+                                        feats, output_dir, tx, ty,
+                                        feature_suffix)
+                                    input_h, input_w = actual_height, actual_width
+                                else:
+                                    raise
+                    else:
+                        # SAM1: existing encoding path
+                        input_h, input_w = get_preprocess_shape(actual_height, actual_width, TILE_SIZE)
+                        tile_resized = transform_obj.apply_image(tile_hwc)
 
-                    tile_tensor = torch.as_tensor(tile_padded, dtype=torch.float32, device=device)
-                    tile_tensor = tile_tensor.unsqueeze(0)
-                    tile_tensor = sam.preprocess(tile_tensor)
+                        tile_padded = pad_to_size(
+                            np.transpose(tile_resized, (2, 0, 1)),
+                            TILE_SIZE
+                        )
 
-                    with torch.no_grad():
-                        try:
-                            features = sam.image_encoder(tile_tensor)
-                        except RuntimeError:
-                            if device.type != "cpu":
-                                # GPU error (OOM, illegal access, no kernel image, etc.)
-                                pct = int(5 + (processed / total_tiles) * 90)
-                                send_progress(
-                                    pct,
-                                    "GPU error, falling back to CPU..."
-                                )
-                                try:
-                                    if device.type == "cuda":
-                                        torch.cuda.empty_cache()
-                                except Exception:
-                                    pass
-                                device = torch.device("cpu")
-                                sam.to(device)
-                                tile_tensor = tile_tensor.to(device)
-                                try:
-                                    features = sam.image_encoder(tile_tensor)
-                                except Exception as cpu_err:
-                                    send_error("CPU retry also failed: {}".format(cpu_err))
-                                    sys.exit(1)
-                            else:
-                                raise
+                        tile_tensor = torch.as_tensor(tile_padded, dtype=torch.float32, device=device)
+                        tile_tensor = tile_tensor.unsqueeze(0)
+                        tile_tensor = sam.preprocess(tile_tensor)
 
-                    synchronize_device(device)
-                    features_np = features.squeeze(0).cpu().numpy()
+                        with torch.no_grad():
+                            try:
+                                features = sam.image_encoder(tile_tensor)
+                            except RuntimeError:
+                                if device.type != "cpu":
+                                    pct = int(5 + (processed / total_tiles) * 90)
+                                    send_progress(
+                                        pct,
+                                        "GPU error, falling back to CPU..."
+                                    )
+                                    try:
+                                        if device.type == "cuda":
+                                            torch.cuda.empty_cache()
+                                    except Exception:
+                                        pass
+                                    device = torch.device("cpu")
+                                    sam.to(device)
+                                    tile_tensor = tile_tensor.to(device)
+                                    try:
+                                        features = sam.image_encoder(tile_tensor)
+                                    except Exception as cpu_err:
+                                        send_error("CPU retry also failed: {}".format(cpu_err))
+                                        sys.exit(1)
+                                else:
+                                    raise
+
+                        synchronize_device(device)
+                        features_np = features.squeeze(0).cpu().numpy()
 
                     tile_minx = raster_bounds_left + col_off * pixel_size_x
                     tile_maxx = tile_minx + actual_width * pixel_size_x
                     tile_maxy = raster_bounds_top - row_off * pixel_size_y
                     tile_miny = tile_maxy - actual_height * pixel_size_y
 
-                    feature_filename = f"tile_{tx}_{ty}_vit_b.tif"
+                    feature_filename = "tile_{}_{}_{}.tif".format(tx, ty, feature_suffix)
                     feature_path = os.path.join(output_dir, feature_filename)
 
                     feature_transform = rasterio.transform.from_bounds(
@@ -307,7 +394,7 @@ def encode_raster(config):
 
                     processed += 1
                     percent = int(5 + (processed / total_tiles) * 90)
-                    send_progress(percent, f"Encoding tile {processed}/{total_tiles}...")
+                    send_progress(percent, "Encoding tile {}/{}...".format(processed, total_tiles))
 
             dir_name = os.path.basename(output_dir)
             csv_path = os.path.join(output_dir, dir_name + ".csv")

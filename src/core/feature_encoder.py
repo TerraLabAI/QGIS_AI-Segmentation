@@ -37,6 +37,7 @@ def encode_raster_to_features(
     layer_extent: Optional[Tuple[float, float, float, float]] = None,
     progress_callback: Optional[Callable[[int, str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
+    model_id: str = "sam_vit_b",
 ) -> Tuple[bool, str]:
     process = None
     stderr_file = None
@@ -58,12 +59,20 @@ def encode_raster_to_features(
             QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
             return False, error_msg
 
+        from .model_registry import get_model_info
+        model_info = get_model_info(model_id) or {}
+
         config = {
             'raster_path': raster_path,
             'output_dir': output_dir,
             'checkpoint_path': checkpoint_path,
             'layer_crs_wkt': layer_crs_wkt,
-            'layer_extent': layer_extent
+            'layer_extent': layer_extent,
+            'model_id': model_id,
+            'model_family': model_info.get('family', 'sam1'),
+            'feature_suffix': model_info.get('feature_suffix', 'vit_b'),
+            'registry_key': model_info.get('registry_key', 'vit_b'),
+            'sam2_model_cfg': model_info.get('sam2_model_cfg'),
         }
 
         QgsMessageLog.logMessage(

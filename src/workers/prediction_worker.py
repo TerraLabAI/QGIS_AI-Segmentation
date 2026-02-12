@@ -23,7 +23,12 @@ class FakeImageEncoderViT(nn.Module):
         return x
 
 
-def build_sam_vit_b_no_encoder(checkpoint: Optional[str] = None):
+def build_sam_no_encoder(checkpoint: Optional[str] = None, model_id: str = "sam_vit_b"):
+    """Build a SAM1 model with a fake encoder (decoder-only for prediction).
+
+    Works for both ViT-B and ViT-L since they share the same decoder architecture
+    (prompt_embed_dim=256, vit_patch_size=16, image_embedding_size=64).
+    """
     from segment_anything.modeling import MaskDecoder, PromptEncoder, Sam, TwoWayTransformer
 
     prompt_embed_dim = 256
@@ -63,6 +68,10 @@ def build_sam_vit_b_no_encoder(checkpoint: Optional[str] = None):
         sam.load_state_dict(state_dict, strict=False)
 
     return sam
+
+
+# Keep old name as alias for backward compatibility
+build_sam_vit_b_no_encoder = build_sam_no_encoder
 
 
 def get_optimal_device():
@@ -261,6 +270,52 @@ def decode_numpy_array(b64_string: str, shape: list, dtype: str) -> np.ndarray:
     return arr.reshape(shape)
 
 
+def _build_sam2_predictor(init_request):
+    """Build a SAM2 predictor for prediction."""
+    from sam2.build_sam import build_sam2
+    from sam2.sam2_image_predictor import SAM2ImagePredictor
+
+    checkpoint_path = init_request.get("checkpoint_path")
+    sam2_model_cfg = init_request.get(
+        "sam2_model_cfg", "configs/sam2.1/sam2.1_hiera_l.yaml")
+
+    device = get_optimal_device()
+    model = build_sam2(sam2_model_cfg, checkpoint_path, device=str(device))
+    return SAM2ImagePredictor(model), device
+
+
+def _set_sam2_features(
+    sam2_predictor, features_np, img_size, device,
+    high_res_feats_np=None
+):
+    """Manually set pre-encoded features on a SAM2ImagePredictor.
+
+    Sets the internal _features dict with image_embed and high_res_feats
+    from the cached encoding.
+    """
+    features_torch = torch.as_tensor(
+        features_np, dtype=torch.float32, device=device)
+
+    if high_res_feats_np is not None:
+        hr_tensors = [
+            torch.as_tensor(
+                hr.astype(np.float32),
+                dtype=torch.float32,
+                device=device
+            ).unsqueeze(0)
+            for hr in high_res_feats_np
+        ]
+    else:
+        hr_tensors = []
+
+    sam2_predictor._features = {
+        "image_embed": features_torch.unsqueeze(0),
+        "high_res_feats": hr_tensors,
+    }
+    sam2_predictor._is_image_set = True
+    sam2_predictor._orig_hw = [img_size]
+
+
 def main():
     try:
         init_request = json.loads(sys.stdin.readline())
@@ -270,11 +325,25 @@ def main():
             sys.exit(1)
 
         checkpoint_path = init_request.get("checkpoint_path")
+        model_id = init_request.get("model_id", "sam_vit_b")
+        model_family = init_request.get("model_family", "sam1")
 
-        sam = build_sam_vit_b_no_encoder(checkpoint=checkpoint_path)
-        predictor = SamPredictorNoImgEncoder(sam)
+        if model_family == "sam2":
+            sam2_predictor, sam2_device = _build_sam2_predictor(init_request)
+            predictor = None
+        else:
+            sam = build_sam_no_encoder(
+                checkpoint=checkpoint_path, model_id=model_id)
+            predictor = SamPredictorNoImgEncoder(sam)
+            sam2_predictor = None
+            sam2_device = None
 
         send_ready()
+
+        # State for SAM2 CPU fallback (store last features to re-set after rebuild)
+        sam2_last_features_np = None
+        sam2_last_img_size = None
+        sam2_last_hr_feats_np = None
 
         while True:
             line = sys.stdin.readline()
@@ -290,16 +359,51 @@ def main():
                     features_shape = request["features_shape"]
                     features_dtype = request["features_dtype"]
                     img_size = tuple(request["img_size"])
-                    input_size = tuple(request["input_size"]) if request.get("input_size") else None
 
-                    features_np = decode_numpy_array(features_b64, features_shape, features_dtype)
-                    predictor.set_image_feature(features_np, img_size, input_size)
+                    features_np = decode_numpy_array(
+                        features_b64, features_shape, features_dtype)
+
+                    if model_family == "sam2":
+                        # SAM2: manually set internal predictor state
+                        sam2_last_features_np = features_np.copy()
+                        sam2_last_img_size = img_size
+
+                        # Deserialize high_res_feats if provided
+                        hr_feats_np = None
+                        if request.get("high_res_feats"):
+                            hr_feats_np = []
+                            for hr_item in request["high_res_feats"]:
+                                hr_arr = decode_numpy_array(
+                                    hr_item["data"],
+                                    hr_item["shape"],
+                                    hr_item["dtype"])
+                                hr_feats_np.append(hr_arr)
+                        sam2_last_hr_feats_np = hr_feats_np
+
+                        _set_sam2_features(
+                            sam2_predictor, features_np,
+                            img_size, sam2_device,
+                            high_res_feats_np=hr_feats_np)
+                    else:
+                        # SAM1: use dedicated predictor method
+                        input_size = (
+                            tuple(request["input_size"])
+                            if request.get("input_size") else None
+                        )
+                        predictor.set_image_feature(
+                            features_np, img_size, input_size)
 
                     send_response("features_set", {})
 
                 elif action == "predict":
-                    point_coords = np.array(request["point_coords"]) if request.get("point_coords") else None
-                    point_labels = np.array(request["point_labels"]) if request.get("point_labels") else None
+                    point_coords = (
+                        np.array(request["point_coords"])
+                        if request.get("point_coords") else None
+                    )
+                    point_labels = (
+                        np.array(request["point_labels"])
+                        if request.get("point_labels") else None
+                    )
                     multimask_output = request.get("multimask_output", False)
 
                     # Decode mask_input if provided (for iterative refinement)
@@ -311,62 +415,131 @@ def main():
                             request["mask_input_dtype"]
                         )
 
-                    try:
-                        masks, scores, low_res_masks = predictor.predict(
-                            point_coords=point_coords,
-                            point_labels=point_labels,
-                            mask_input=mask_input,
-                            multimask_output=multimask_output,
-                        )
-                    except RuntimeError:
-                        if predictor.device.type != "cpu":
-                            # GPU error (OOM, illegal access, no kernel image, etc.)
-                            # Fall back to CPU and retry
-                            try:
-                                if predictor.device.type == "cuda":
-                                    torch.cuda.empty_cache()
-                            except Exception:
-                                pass
-                            predictor.device = torch.device("cpu")
-                            predictor.model.to(predictor.device)
-                            if predictor.features is not None:
-                                predictor.features = predictor.features.to(predictor.device)
-                            try:
-                                masks, scores, low_res_masks = predictor.predict(
+                    if model_family == "sam2":
+                        try:
+                            with torch.no_grad():
+                                masks, scores, logits = sam2_predictor.predict(
                                     point_coords=point_coords,
                                     point_labels=point_labels,
                                     mask_input=mask_input,
                                     multimask_output=multimask_output,
                                 )
-                            except Exception as cpu_err:
-                                send_error("CPU retry also failed: {}".format(cpu_err))
-                                continue
-                        else:
-                            raise
+                        except RuntimeError:
+                            if sam2_device.type != "cpu":
+                                try:
+                                    if sam2_device.type == "cuda":
+                                        torch.cuda.empty_cache()
+                                except Exception:
+                                    pass
+                                sam2_device = torch.device("cpu")
+                                sam2_predictor, sam2_device = (
+                                    _build_sam2_predictor(init_request))
+                                # Re-set features on rebuilt predictor
+                                if sam2_last_features_np is not None:
+                                    _set_sam2_features(
+                                        sam2_predictor,
+                                        sam2_last_features_np,
+                                        sam2_last_img_size,
+                                        sam2_device,
+                                        high_res_feats_np=sam2_last_hr_feats_np)
+                                try:
+                                    with torch.no_grad():
+                                        masks, scores, logits = (
+                                            sam2_predictor.predict(
+                                                point_coords=point_coords,
+                                                point_labels=point_labels,
+                                                mask_input=mask_input,
+                                                multimask_output=multimask_output,
+                                            ))
+                                except Exception as cpu_err:
+                                    send_error(
+                                        "CPU retry also failed: {}".format(
+                                            cpu_err))
+                                    continue
+                            else:
+                                raise
 
-                    send_response("prediction", {
-                        "masks": encode_numpy_array(masks),
-                        "masks_shape": list(masks.shape),
-                        "masks_dtype": str(masks.dtype),
-                        "scores": scores.tolist(),
-                        "low_res_masks": encode_numpy_array(low_res_masks),
-                        "low_res_masks_shape": list(low_res_masks.shape),
-                        "low_res_masks_dtype": str(low_res_masks.dtype),
-                    })
+                        send_response("prediction", {
+                            "masks": encode_numpy_array(masks),
+                            "masks_shape": list(masks.shape),
+                            "masks_dtype": str(masks.dtype),
+                            "scores": scores.tolist(),
+                            "low_res_masks": encode_numpy_array(logits),
+                            "low_res_masks_shape": list(logits.shape),
+                            "low_res_masks_dtype": str(logits.dtype),
+                        })
+
+                    else:
+                        # SAM1 prediction path
+                        try:
+                            masks, scores, low_res_masks = predictor.predict(
+                                point_coords=point_coords,
+                                point_labels=point_labels,
+                                mask_input=mask_input,
+                                multimask_output=multimask_output,
+                            )
+                        except RuntimeError:
+                            if predictor.device.type != "cpu":
+                                try:
+                                    if predictor.device.type == "cuda":
+                                        torch.cuda.empty_cache()
+                                except Exception:
+                                    pass
+                                predictor.device = torch.device("cpu")
+                                predictor.model.to(predictor.device)
+                                if predictor.features is not None:
+                                    predictor.features = (
+                                        predictor.features.to(
+                                            predictor.device))
+                                try:
+                                    masks, scores, low_res_masks = (
+                                        predictor.predict(
+                                            point_coords=point_coords,
+                                            point_labels=point_labels,
+                                            mask_input=mask_input,
+                                            multimask_output=multimask_output,
+                                        ))
+                                except Exception as cpu_err:
+                                    send_error(
+                                        "CPU retry also failed: {}".format(
+                                            cpu_err))
+                                    continue
+                            else:
+                                raise
+
+                        send_response("prediction", {
+                            "masks": encode_numpy_array(masks),
+                            "masks_shape": list(masks.shape),
+                            "masks_dtype": str(masks.dtype),
+                            "scores": scores.tolist(),
+                            "low_res_masks": encode_numpy_array(
+                                low_res_masks),
+                            "low_res_masks_shape": list(
+                                low_res_masks.shape),
+                            "low_res_masks_dtype": str(
+                                low_res_masks.dtype),
+                        })
 
                 elif action == "reset":
-                    predictor.reset_image()
+                    if model_family == "sam2":
+                        sam2_predictor.reset_predictor()
+                        sam2_last_features_np = None
+                        sam2_last_img_size = None
+                        sam2_last_hr_feats_np = None
+                    else:
+                        predictor.reset_image()
                     send_response("reset_done", {})
 
                 elif action == "quit":
                     break
 
                 else:
-                    send_error(f"Unknown action: {action}")
+                    send_error("Unknown action: {}".format(action))
 
             except Exception as e:
                 import traceback
-                send_error(f"Error processing request: {str(e)}\n{traceback.format_exc()}")
+                send_error("Error processing request: {}\n{}".format(
+                    str(e), traceback.format_exc()))
 
     except Exception as e:
         import traceback

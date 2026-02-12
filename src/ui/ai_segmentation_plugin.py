@@ -68,14 +68,16 @@ class DownloadWorker(QThread):
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, parent=None):
+    def __init__(self, model_id: str = "sam_vit_b", parent=None):
         super().__init__(parent)
+        self.model_id = model_id
 
     def run(self):
         try:
             from ..core.checkpoint_manager import download_checkpoint
             success, message = download_checkpoint(
-                progress_callback=lambda p, m: self.progress.emit(p, m)
+                progress_callback=lambda p, m: self.progress.emit(p, m),
+                model_id=self.model_id
             )
             self.finished.emit(success, message)
         except Exception as e:
@@ -86,13 +88,16 @@ class EncodingWorker(QThread):
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, raster_path: str, output_dir: str, checkpoint_path: str, layer_crs_wkt: str = None, layer_extent: tuple = None, parent=None):
+    def __init__(self, raster_path: str, output_dir: str, checkpoint_path: str,
+                 layer_crs_wkt: str = None, layer_extent: tuple = None,
+                 model_id: str = "sam_vit_b", parent=None):
         super().__init__(parent)
         self.raster_path = raster_path
         self.output_dir = output_dir
         self.checkpoint_path = checkpoint_path
         self.layer_crs_wkt = layer_crs_wkt
         self.layer_extent = layer_extent  # (xmin, ymin, xmax, ymax)
+        self.model_id = model_id
         self._cancelled = False
 
     def cancel(self):
@@ -109,12 +114,14 @@ class EncodingWorker(QThread):
                 layer_extent=self.layer_extent,
                 progress_callback=lambda p, m: self.progress.emit(p, m),
                 cancel_check=lambda: self._cancelled,
+                model_id=self.model_id,
             )
             self.finished.emit(success, message)
         except Exception as e:
             import traceback
             QgsMessageLog.logMessage(
-                f"Encoding error: {str(e)}\n{traceback.format_exc()}",
+                "Encoding error: {}\n{}".format(
+                    str(e), traceback.format_exc()),
                 "AI Segmentation",
                 level=Qgis.Warning
             )
@@ -240,9 +247,14 @@ class AISegmentationPlugin:
         self._batch_mode = False
         self._batch_tutorial_shown_this_session = False  # Reset each QGIS launch
 
+        # Active model (persisted in QSettings)
+        self._active_model_id = QSettings().value(
+            "AI_Segmentation/active_model", "sam_vit_b")
+
         self.deps_install_worker = None
         self.download_worker = None
         self.encoding_worker = None
+        self._settings_download_model_id = None
 
         self.mask_rubber_band: Optional[QgsRubberBand] = None
         self.saved_rubber_bands: List[QgsRubberBand] = []
@@ -338,6 +350,7 @@ class AISegmentationPlugin:
         self.dock_widget.install_dependencies_requested.connect(self._on_install_requested)
         self.dock_widget.cancel_deps_install_requested.connect(self._on_cancel_deps_install)
         self.dock_widget.download_checkpoint_requested.connect(self._on_download_checkpoint_requested)
+        self.dock_widget.download_model_requested.connect(self._on_download_model_requested)
         self.dock_widget.cancel_preparation_requested.connect(self._on_cancel_preparation)
         self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
         self.dock_widget.save_polygon_requested.connect(self._on_save_polygon)
@@ -347,6 +360,8 @@ class AISegmentationPlugin:
         self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
         self.dock_widget.refine_settings_changed.connect(self._on_refine_settings_changed)
         self.dock_widget.batch_mode_changed.connect(self._on_batch_mode_changed)
+        self.dock_widget.active_model_changed.connect(self._on_active_model_changed)
+        self.dock_widget.gpu_toggle_requested.connect(self._on_gpu_toggle_requested)
         self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
 
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
@@ -529,43 +544,76 @@ class AISegmentationPlugin:
 
     def _check_checkpoint(self):
         try:
-            from ..core.checkpoint_manager import checkpoint_exists
+            from ..core.model_registry import (
+                get_installed_models, model_checkpoint_exists)
 
-            if checkpoint_exists():
-                self.dock_widget.set_checkpoint_status(True, "SAM model ready")
+            installed = get_installed_models()
+
+            if installed:
+                # Set active model to saved preference if still installed,
+                # otherwise fall back to first installed model
+                if not model_checkpoint_exists(self._active_model_id):
+                    self._active_model_id = installed[0]
+                    QSettings().setValue(
+                        "AI_Segmentation/active_model",
+                        self._active_model_id)
+
+                self.dock_widget.set_checkpoint_status(
+                    True, tr("Model ready"))
+                self._refresh_installed_models()
                 self._load_predictor()
                 self._show_activation_popup_if_needed()
             else:
-                self.dock_widget.set_checkpoint_status(False, "Model not downloaded")
+                self.dock_widget.set_checkpoint_status(
+                    False, tr("Model not downloaded"))
 
         except Exception as e:
             QgsMessageLog.logMessage(
-                f"Checkpoint check error: {str(e)}",
+                "Checkpoint check error: {}".format(str(e)),
                 "AI Segmentation",
                 level=Qgis.Warning
             )
-            self.dock_widget.set_checkpoint_status(False, f"Error: {str(e)[:50]}")
+            self.dock_widget.set_checkpoint_status(
+                False, "Error: {}".format(str(e)[:50]))
 
     def _load_predictor(self):
         try:
             from ..core.checkpoint_manager import get_checkpoint_path
-            from ..core.sam_predictor import build_sam_vit_b_no_encoder, SamPredictorNoImgEncoder
+            from ..core.sam_predictor import (
+                build_sam_no_encoder, SamPredictorNoImgEncoder)
 
-            checkpoint_path = get_checkpoint_path()
-            sam_config = build_sam_vit_b_no_encoder(checkpoint=checkpoint_path)
+            # Cleanup existing predictor if any
+            if self.predictor:
+                try:
+                    self.predictor.cleanup()
+                except Exception:
+                    pass
+                self.predictor = None
+
+            model_id = self._active_model_id
+            checkpoint_path = get_checkpoint_path(model_id)
+            sam_config = build_sam_no_encoder(
+                checkpoint=checkpoint_path, model_id=model_id)
             self.predictor = SamPredictorNoImgEncoder(sam_config)
 
+            from ..core.model_registry import get_model_info
+            info = get_model_info(model_id)
+            display_name = info["display_name"] if info else model_id
+
             QgsMessageLog.logMessage(
-                "SAM predictor initialized (subprocess mode)",
+                "Predictor initialized for {} (subprocess mode)".format(
+                    display_name),
                 "AI Segmentation",
                 level=Qgis.Info
             )
-            self.dock_widget.set_checkpoint_status(True, "SAM ready (subprocess)")
+            self.dock_widget.set_checkpoint_status(
+                True, "{} {}".format(display_name, tr("ready")))
 
         except Exception as e:
             import traceback
             QgsMessageLog.logMessage(
-                f"Failed to initialize predictor: {str(e)}\n{traceback.format_exc()}",
+                "Failed to initialize predictor: {}\n{}".format(
+                    str(e), traceback.format_exc()),
                 "AI Segmentation",
                 level=Qgis.Warning
             )
@@ -604,14 +652,15 @@ class AISegmentationPlugin:
             from ..core.device_manager import get_device_info
             info = get_device_info()
             self.dock_widget.set_device_info(info)
+            self.dock_widget.set_settings_device_info(info)
             QgsMessageLog.logMessage(
-                f"Device info: {info}",
+                "Device info: {}".format(info),
                 "AI Segmentation",
                 level=Qgis.Info
             )
         except Exception as e:
             QgsMessageLog.logMessage(
-                f"Could not determine device info: {e}",
+                "Could not determine device info: {}".format(e),
                 "AI Segmentation",
                 level=Qgis.Warning
             )
@@ -717,28 +766,79 @@ class AISegmentationPlugin:
             )
 
     def _on_download_checkpoint_requested(self):
-        self.dock_widget.set_download_progress(0, "Downloading SAM checkpoint...")
+        # Legacy signal handler - use default model
+        self._start_model_download(self._active_model_id)
 
-        self.download_worker = DownloadWorker()
+    def _on_download_model_requested(self, model_id: str):
+        """Handle download request for a specific model."""
+        self._start_model_download(model_id)
+
+    def _start_model_download(self, model_id: str):
+        from ..core.model_registry import get_model_info
+        info = get_model_info(model_id)
+        display_name = info["display_name"] if info else model_id
+
+        # Route progress to Settings or welcome section
+        is_settings = self.dock_widget._checkpoint_ok
+        self._settings_download_model_id = (
+            model_id if is_settings else None)
+
+        msg = tr("Downloading {model}...").format(model=display_name)
+        if is_settings:
+            self.dock_widget.set_settings_download_progress(
+                model_id, 0, msg)
+        else:
+            self.dock_widget.set_download_progress(0, msg)
+
+        self.download_worker = DownloadWorker(model_id=model_id)
         self.download_worker.progress.connect(self._on_download_progress)
-        self.download_worker.finished.connect(self._on_download_finished)
+        self.download_worker.finished.connect(
+            lambda s, m: self._on_download_finished(s, m, model_id))
         self.download_worker.start()
 
     def _on_download_progress(self, percent: int, message: str):
         if not self.dock_widget:
             return
-        self.dock_widget.set_download_progress(percent, message)
+        if self._settings_download_model_id:
+            self.dock_widget.set_settings_download_progress(
+                self._settings_download_model_id, percent, message)
+        else:
+            self.dock_widget.set_download_progress(percent, message)
 
-    def _on_download_finished(self, success: bool, message: str):
+    def _on_download_finished(self, success: bool, message: str,
+                              model_id: str = "sam_vit_b"):
         if not self.dock_widget:
             return
+
+        is_settings = self._settings_download_model_id == model_id
+        self._settings_download_model_id = None
+
         if success:
-            self.dock_widget.set_download_progress(100, "Download complete!")
-            self.dock_widget.set_checkpoint_status(True, "SAM model ready")
+            if is_settings:
+                self.dock_widget.set_settings_download_progress(
+                    model_id, 100, tr("Download complete!"))
+            else:
+                self.dock_widget.set_download_progress(
+                    100, tr("Download complete!"))
+
+            # Set the downloaded model as active
+            self._active_model_id = model_id
+            QSettings().setValue(
+                "AI_Segmentation/active_model", model_id)
+
+            if not is_settings:
+                self.dock_widget.set_checkpoint_status(
+                    True, tr("Model ready"))
+            self._refresh_installed_models()
             self._load_predictor()
-            self._show_activation_popup_if_needed()
+            if not is_settings:
+                self._show_activation_popup_if_needed()
         else:
-            self.dock_widget.set_download_progress(0, "")
+            if is_settings:
+                # Refresh rows to restore Download button
+                self.dock_widget._refresh_settings_model_rows()
+            else:
+                self.dock_widget.set_download_progress(0, "")
 
             show_error_report(
                 self.iface.mainWindow(),
@@ -747,6 +847,97 @@ class AISegmentationPlugin:
                     tr("Failed to download model:"),
                     message)
             )
+
+    def _refresh_installed_models(self):
+        """Refresh the installed models UI in the dock widget."""
+        if not self.dock_widget:
+            return
+        from ..core.model_registry import get_installed_models
+        installed = get_installed_models()
+        self.dock_widget.update_installed_models(installed)
+        self.dock_widget.set_active_model_id(self._active_model_id)
+
+        # Update settings device info
+        try:
+            from ..core.venv_manager import ensure_venv_packages_available
+            ensure_venv_packages_available()
+            from ..core.device_manager import get_device_info
+            self.dock_widget.set_settings_device_info(get_device_info())
+        except Exception:
+            pass
+
+    def _on_active_model_changed(self, model_id: str):
+        """Handle model switch from the UI selector."""
+        if model_id == self._active_model_id:
+            return
+
+        self._active_model_id = model_id
+        QSettings().setValue("AI_Segmentation/active_model", model_id)
+
+        # Reload predictor for the new model
+        self._load_predictor()
+
+        QgsMessageLog.logMessage(
+            "Switched active model to: {}".format(model_id),
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+    def _on_gpu_toggle_requested(self, gpu_enabled: bool):
+        """Handle GPU checkbox toggle from Settings section."""
+        if gpu_enabled:
+            msg = tr("Enabling GPU requires reinstalling "
+                     "dependencies (~2.5GB download). Continue?")
+        else:
+            msg = tr("Switching to CPU requires reinstalling "
+                     "dependencies. Continue?")
+
+        reply = QMessageBox.question(
+            self.dock_widget,
+            tr("Reinstall Dependencies?"),
+            msg,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            # Revert checkbox
+            self.dock_widget.set_gpu_checkbox_state(not gpu_enabled)
+            return
+
+        # Cleanup predictor before reinstall
+        if self.predictor:
+            try:
+                self.predictor.cleanup()
+            except Exception:
+                pass
+            self.predictor = None
+
+        self.dock_widget.set_dependency_status(
+            False, tr("Reinstalling..."))
+        self.dock_widget.set_deps_install_progress(
+            0, tr("Removing old environment..."))
+
+        # Remove existing venv
+        try:
+            from ..core.venv_manager import get_venv_dir
+            import shutil
+            venv_dir = get_venv_dir()
+            if os.path.exists(venv_dir):
+                shutil.rmtree(venv_dir)
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                "Failed to remove venv: {}".format(str(e)),
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+
+        self.deps_install_worker = DepsInstallWorker(
+            cuda_enabled=gpu_enabled)
+        self.deps_install_worker.progress.connect(
+            self._on_deps_install_progress)
+        self.deps_install_worker.finished.connect(
+            self._on_deps_install_finished)
+        self.deps_install_worker.start()
 
     def _on_cancel_preparation(self):
         if self.encoding_worker and self.encoding_worker.isRunning():
@@ -782,78 +973,97 @@ class AISegmentationPlugin:
                 "AI Segmentation", level=Qgis.Warning)
             return
 
-        from ..core.checkpoint_manager import has_features_for_raster, get_raster_features_dir, get_checkpoint_path
+        from ..core.checkpoint_manager import (
+            has_features_for_raster, get_raster_features_dir,
+            get_checkpoint_path)
+        from ..core.model_registry import get_model_info
 
-        if has_features_for_raster(raster_path):
-            self._load_features_and_activate(raster_path)
-        else:
-            output_dir = get_raster_features_dir(raster_path)
-            checkpoint_path = get_checkpoint_path()
+        model_id = self._active_model_id
+        model_info = get_model_info(model_id)
+        feature_suffix = model_info["feature_suffix"] if model_info else model_id
 
-            layer_crs_wkt = None
-            try:
-                if layer.crs().isValid():
-                    layer_crs_wkt = layer.crs().toWkt()
-            except RuntimeError:
-                pass
+        # Check if features exist for this specific model
+        if has_features_for_raster(raster_path, feature_suffix):
+            self._load_features_and_activate(raster_path, feature_suffix)
+            return
 
-            # Get layer extent for rasters without embedded georeferencing (e.g., PNG)
-            layer_extent = None
-            try:
-                ext = layer.extent()
-                if ext and not ext.isEmpty():
-                    coords = (ext.xMinimum(), ext.yMinimum(), ext.xMaximum(), ext.yMaximum())
-                    if any(math.isnan(c) or math.isinf(c) for c in coords):
-                        show_error_report(
-                            self.iface.mainWindow(),
-                            tr("Invalid Layer"),
-                            tr("Layer extent contains invalid coordinates (NaN/Inf). Check the raster file.")
-                        )
-                        return
-                    layer_extent = coords
-            except RuntimeError:
-                pass
+        output_dir = get_raster_features_dir(raster_path, feature_suffix)
+        checkpoint_path = get_checkpoint_path(model_id)
 
-            QgsMessageLog.logMessage(
-                f"Starting encoding - Layer extent: {layer_extent}, Layer CRS valid: {layer.crs().isValid()}, CRS: {layer.crs().authid() if layer.crs().isValid() else 'None'}",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
+        layer_crs_wkt = None
+        try:
+            if layer.crs().isValid():
+                layer_crs_wkt = layer.crs().toWkt()
+        except RuntimeError:
+            pass
 
-            self.dock_widget.set_preparation_progress(0, "Encoding raster (first time)...")
+        # Get layer extent for rasters without embedded georeferencing (e.g., PNG)
+        layer_extent = None
+        try:
+            ext = layer.extent()
+            if ext and not ext.isEmpty():
+                coords = (ext.xMinimum(), ext.yMinimum(), ext.xMaximum(), ext.yMaximum())
+                if any(math.isnan(c) or math.isinf(c) for c in coords):
+                    show_error_report(
+                        self.iface.mainWindow(),
+                        tr("Invalid Layer"),
+                        tr("Layer extent contains invalid coordinates (NaN/Inf). Check the raster file.")
+                    )
+                    return
+                layer_extent = coords
+        except RuntimeError:
+            pass
 
-            self.encoding_worker = EncodingWorker(raster_path, output_dir, checkpoint_path, layer_crs_wkt, layer_extent)
-            self.encoding_worker.progress.connect(self._on_encoding_progress)
-            self.encoding_worker.finished.connect(
-                lambda s, m: self._on_encoding_finished(s, m, raster_path)
-            )
-            self.encoding_worker.start()
+        QgsMessageLog.logMessage(
+            "Starting encoding - Layer extent: {}, Layer CRS valid: {}, CRS: {}".format(
+                layer_extent,
+                layer.crs().isValid(),
+                layer.crs().authid() if layer.crs().isValid() else 'None'),
+            "AI Segmentation",
+            level=Qgis.Info
+        )
+
+        self.dock_widget.set_preparation_progress(0, "Encoding raster (first time)...")
+
+        self.encoding_worker = EncodingWorker(
+            raster_path, output_dir, checkpoint_path,
+            layer_crs_wkt, layer_extent, model_id=model_id)
+        self.encoding_worker.progress.connect(self._on_encoding_progress)
+        self.encoding_worker.finished.connect(
+            lambda s, m: self._on_encoding_finished(
+                s, m, raster_path, feature_suffix)
+        )
+        self.encoding_worker.start()
 
     def _on_encoding_progress(self, percent: int, message: str):
         if not self.dock_widget:
             return
         self.dock_widget.set_preparation_progress(percent, message)
 
-    def _on_encoding_finished(self, success: bool, message: str, raster_path: str):
+    def _on_encoding_finished(
+        self, success: bool, message: str,
+        raster_path: str, feature_suffix: str
+    ):
         if not self.dock_widget:
             return
         if success:
             from ..core.checkpoint_manager import get_raster_features_dir
-            cache_dir = get_raster_features_dir(raster_path)
+            cache_dir = get_raster_features_dir(raster_path, feature_suffix)
             self.dock_widget.set_preparation_progress(100, "Done!")
             self.dock_widget.set_encoding_cache_path(str(cache_dir))
-            self._load_features_and_activate(raster_path)
+            self._load_features_and_activate(raster_path, feature_suffix)
         else:
             # Check if this was a user cancellation
             is_cancelled = "cancelled" in message.lower() or "canceled" in message.lower()
 
             try:
-                # Clean up partial cache files
+                # Clean up partial cache files for this model only
                 from ..core.checkpoint_manager import clear_features_for_raster
                 try:
-                    clear_features_for_raster(raster_path)
+                    clear_features_for_raster(raster_path, feature_suffix)
                     QgsMessageLog.logMessage(
-                        f"Cleaned up partial cache for: {raster_path}",
+                        "Cleaned up partial cache for: {} ({})".format(
+                            raster_path, feature_suffix),
                         "AI Segmentation",
                         level=Qgis.Info
                     )
@@ -876,12 +1086,14 @@ class AISegmentationPlugin:
                 self.dock_widget.set_preparation_progress(100, "Cancelled")
                 self.dock_widget.reset_session()
 
-    def _load_features_and_activate(self, raster_path: str):
+    def _load_features_and_activate(
+        self, raster_path: str, feature_suffix: Optional[str] = None
+    ):
         try:
             from ..core.checkpoint_manager import get_raster_features_dir
             from ..core.feature_dataset import FeatureDataset
 
-            features_dir = get_raster_features_dir(raster_path)
+            features_dir = get_raster_features_dir(raster_path, feature_suffix)
             self.feature_dataset = FeatureDataset(features_dir, cache=True)
 
             bounds = self.feature_dataset.bounds
@@ -1821,10 +2033,13 @@ class AISegmentationPlugin:
         else:
             features_np = features.numpy() if hasattr(features, 'numpy') else features
 
+        high_res_feats = sample.get("high_res_feats")
+
         self.predictor.set_image_feature(
             img_features=features_np,
             img_size=(img_height, img_width),
             input_size=(input_height, input_width),
+            high_res_feats=high_res_feats,
         )
 
         minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]

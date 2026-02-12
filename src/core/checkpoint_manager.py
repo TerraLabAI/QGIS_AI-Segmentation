@@ -27,7 +27,7 @@ def get_features_dir() -> str:
     return FEATURES_DIR
 
 
-def get_raster_features_dir(raster_path: str) -> str:
+def get_raster_features_dir(raster_path: str, feature_suffix: Optional[str] = None) -> str:
     import re
 
     # Get the raster filename without extension
@@ -48,31 +48,48 @@ def get_raster_features_dir(raster_path: str) -> str:
     folder_name = f"{sanitized_name}_{raster_hash}"
 
     features_path = os.path.join(FEATURES_DIR, folder_name)
+
+    # When feature_suffix is given, return model-specific subdirectory
+    if feature_suffix:
+        features_path = os.path.join(features_path, feature_suffix)
+
     os.makedirs(features_path, exist_ok=True)
     return features_path
 
 
-def get_checkpoint_path() -> str:
+def get_checkpoint_path(model_id: str = "sam_vit_b") -> str:
+    from .model_registry import get_checkpoint_path as _registry_path
+    path = _registry_path(model_id)
+    if path is not None:
+        return path
+    # Fallback for legacy callers
     return os.path.join(get_checkpoints_dir(), SAM_CHECKPOINT_FILENAME)
 
 
-def checkpoint_exists() -> bool:
-    return os.path.exists(get_checkpoint_path())
+def checkpoint_exists(model_id: Optional[str] = None) -> bool:
+    if model_id is not None:
+        return os.path.exists(get_checkpoint_path(model_id))
+    # Legacy: check if ANY model is installed
+    from .model_registry import get_installed_models
+    return len(get_installed_models()) > 0
 
 
-def verify_checkpoint_hash(filepath: str) -> bool:
+def verify_checkpoint_hash(filepath: str, expected_hash: Optional[str] = None) -> bool:
+    if expected_hash is None:
+        expected_hash = SAM_CHECKPOINT_SHA256
     sha256_hash = hashlib.sha256()
     with open(filepath, "rb") as f:
         for byte_block in iter(lambda: f.read(4096), b""):
             sha256_hash.update(byte_block)
-    return sha256_hash.hexdigest() == SAM_CHECKPOINT_SHA256
+    return sha256_hash.hexdigest() == expected_hash
 
 
 def download_checkpoint(
-    progress_callback: Optional[Callable[[int, str], None]] = None
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+    model_id: str = "sam_vit_b"
 ) -> Tuple[bool, str]:
     """
-    Download SAM checkpoint using QGIS network manager with progress reporting.
+    Download a model checkpoint using QGIS network manager with progress reporting.
 
     Uses QNetworkAccessManager with a local event loop to provide real-time
     download progress updates instead of blocking without feedback.
@@ -80,25 +97,36 @@ def download_checkpoint(
     from qgis.PyQt.QtCore import QEventLoop, QTimer
     from qgis.PyQt.QtNetwork import QNetworkReply
     from qgis.core import QgsNetworkAccessManager
+    from .model_registry import get_model_info
 
-    checkpoint_path = get_checkpoint_path()
+    model_info = get_model_info(model_id)
+    if model_info is None:
+        return False, "Unknown model: {}".format(model_id)
+
+    download_url = model_info["url"]
+    expected_sha256 = model_info.get("sha256")
+
+    checkpoint_path = get_checkpoint_path(model_id)
     temp_path = checkpoint_path + ".tmp"
 
-    if checkpoint_exists():
+    if os.path.exists(checkpoint_path):
         QgsMessageLog.logMessage(
-            "Checkpoint already exists, verifying...",
+            "Checkpoint already exists for {}, verifying...".format(model_id),
             "AI Segmentation",
             level=Qgis.Info
         )
-        if verify_checkpoint_hash(checkpoint_path):
+        if expected_sha256 and verify_checkpoint_hash(checkpoint_path, expected_sha256):
             return True, "Checkpoint verified"
-        else:
+        elif expected_sha256:
             QgsMessageLog.logMessage(
                 "Checkpoint hash mismatch, re-downloading...",
                 "AI Segmentation",
                 level=Qgis.Warning
             )
             os.remove(checkpoint_path)
+        else:
+            # No hash to verify, assume OK
+            return True, "Checkpoint exists (no hash verification)"
 
     if progress_callback:
         progress_callback(0, "Connecting to download server...")
@@ -142,7 +170,7 @@ def download_checkpoint(
     try:
         # Use QGIS network manager for proxy-aware downloads
         manager = QgsNetworkAccessManager.instance()
-        qurl = QUrl(SAM_CHECKPOINT_URL)
+        qurl = QUrl(download_url)
         request = QNetworkRequest(qurl)
 
         # Start the download
@@ -157,11 +185,12 @@ def download_checkpoint(
         loop = QEventLoop()
         reply.finished.connect(loop.quit)
 
-        # Add timeout (20 minutes for ~375MB file on slow connections)
+        # Dynamic timeout based on model size (1min per 100MB, minimum 20min)
+        timeout_ms = max(1200000, model_info["size_mb"] * 600 * 10)
         timeout = QTimer()
         timeout.setSingleShot(True)
         timeout.timeout.connect(loop.quit)
-        timeout.start(1200000)  # 20 minutes
+        timeout.start(timeout_ms)
 
         if progress_callback:
             progress_callback(5, "Download started...")
@@ -174,7 +203,8 @@ def download_checkpoint(
             timeout.stop()
         else:
             reply.abort()
-            return False, "Download timed out after 20 minutes"
+            timeout_min = timeout_ms // 60000
+            return False, "Download timed out after {} minutes".format(timeout_min)
 
         # Check for errors
         if reply.error() != QNetworkReply.NoError:
@@ -209,9 +239,10 @@ def download_checkpoint(
         if progress_callback:
             progress_callback(95, "Verifying download...")
 
-        if not verify_checkpoint_hash(temp_path):
-            os.remove(temp_path)
-            return False, "Download verification failed - hash mismatch"
+        if expected_sha256:
+            if not verify_checkpoint_hash(temp_path, expected_sha256):
+                os.remove(temp_path)
+                return False, "Download verification failed - hash mismatch"
 
         os.replace(temp_path, checkpoint_path)
 
@@ -239,20 +270,55 @@ def download_checkpoint(
         return False, f"Download failed: {str(e)}"
 
 
-def has_features_for_raster(raster_path: str) -> bool:
-    features_dir = get_raster_features_dir(raster_path)
-    csv_path = os.path.join(features_dir, os.path.basename(features_dir) + ".csv")
-    if not os.path.exists(csv_path):
+def has_features_for_raster(raster_path: str, feature_suffix: Optional[str] = None) -> bool:
+    """Check if cached features exist for a raster.
+
+    When feature_suffix is given, check only that model's subdirectory.
+    When None, check if ANY model subdirectory has features.
+    """
+    if feature_suffix:
+        features_dir = get_raster_features_dir(raster_path, feature_suffix)
+        csv_name = "{}.csv".format(feature_suffix)
+        csv_path = os.path.join(features_dir, csv_name)
+        if not os.path.exists(csv_path):
+            return False
+        tif_files = [f for f in os.listdir(features_dir) if f.endswith('.tif')]
+        return len(tif_files) > 0
+
+    # No suffix: check if any model subdirectory has features
+    base_dir = get_raster_features_dir(raster_path)
+    if not os.path.exists(base_dir):
         return False
-    tif_files = [f for f in os.listdir(features_dir) if f.endswith('.tif')]
-    return len(tif_files) > 0
+    for entry in os.listdir(base_dir):
+        subdir = os.path.join(base_dir, entry)
+        if not os.path.isdir(subdir):
+            continue
+        csv_path = os.path.join(subdir, "{}.csv".format(entry))
+        if os.path.exists(csv_path):
+            tif_files = [f for f in os.listdir(subdir) if f.endswith('.tif')]
+            if len(tif_files) > 0:
+                return True
+    return False
 
 
-def clear_features_for_raster(raster_path: str) -> bool:
-    features_dir = get_raster_features_dir(raster_path)
-    if os.path.exists(features_dir):
-        import shutil
-        shutil.rmtree(features_dir)
-        os.makedirs(features_dir, exist_ok=True)
+def clear_features_for_raster(raster_path: str, feature_suffix: Optional[str] = None) -> bool:
+    """Clear cached features for a raster.
+
+    When feature_suffix is given, only clear that model's subdirectory.
+    When None, clear all model subdirectories (whole raster cache).
+    """
+    import shutil
+    if feature_suffix:
+        features_dir = get_raster_features_dir(raster_path, feature_suffix)
+        if os.path.exists(features_dir):
+            shutil.rmtree(features_dir)
+            os.makedirs(features_dir, exist_ok=True)
+            return True
+        return False
+
+    base_dir = get_raster_features_dir(raster_path)
+    if os.path.exists(base_dir):
+        shutil.rmtree(base_dir)
+        os.makedirs(base_dir, exist_ok=True)
         return True
     return False

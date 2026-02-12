@@ -17,6 +17,7 @@ from qgis.PyQt.QtWidgets import (
     QCheckBox,
     QToolButton,
     QStyle,
+    QComboBox,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
 from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
@@ -38,6 +39,7 @@ class AISegmentationDockWidget(QDockWidget):
     install_dependencies_requested = pyqtSignal()
     cancel_deps_install_requested = pyqtSignal()
     download_checkpoint_requested = pyqtSignal()
+    download_model_requested = pyqtSignal(str)  # model_id
     cancel_preparation_requested = pyqtSignal()
     start_segmentation_requested = pyqtSignal(object)
     clear_points_requested = pyqtSignal()
@@ -47,6 +49,8 @@ class AISegmentationDockWidget(QDockWidget):
     stop_segmentation_requested = pyqtSignal()
     refine_settings_changed = pyqtSignal(int, int, bool, int)  # expand, simplify, fill_holes, min_area
     batch_mode_changed = pyqtSignal(bool)  # True = batch mode, False = simple mode
+    active_model_changed = pyqtSignal(str)  # model_id
+    gpu_toggle_requested = pyqtSignal(bool)  # True = enable GPU
 
     def __init__(self, parent=None):
         super().__init__("", parent)
@@ -140,6 +144,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._setup_checkpoint_section()
         self._setup_activation_section()
         self._setup_segmentation_section()
+        self._setup_settings_section()
         self.main_layout.addStretch()
         self._setup_update_notification()
         self._setup_about_section()
@@ -167,7 +172,7 @@ class AISegmentationDockWidget(QDockWidget):
         step1_label.setStyleSheet("font-size: 11px; color: palette(text); margin-left: 8px;")
         layout.addWidget(step1_label)
 
-        step2_label = QLabel("2. " + tr("Download the segmentation model (~375MB)"))
+        step2_label = QLabel("2. " + tr("Download a segmentation model"))
         step2_label.setStyleSheet("font-size: 11px; color: palette(text); margin-left: 8px;")
         layout.addWidget(step2_label)
 
@@ -291,20 +296,29 @@ class AISegmentationDockWidget(QDockWidget):
         self.checkpoint_status_label.setStyleSheet("color: palette(mid);")
         layout.addWidget(self.checkpoint_status_label)
 
+        # Model selection dropdown
+        self.model_download_combo = QComboBox()
+        self.model_download_combo.setVisible(False)
+        self.model_download_combo.setToolTip(
+            tr("Select which AI model to download"))
+        layout.addWidget(self.model_download_combo)
+
         self.checkpoint_progress = QProgressBar()
         self.checkpoint_progress.setRange(0, 100)
         self.checkpoint_progress.setVisible(False)
         layout.addWidget(self.checkpoint_progress)
 
         self.checkpoint_progress_label = QLabel("")
-        self.checkpoint_progress_label.setStyleSheet("color: palette(text); font-size: 10px;")
+        self.checkpoint_progress_label.setStyleSheet(
+            "color: palette(text); font-size: 10px;")
         self.checkpoint_progress_label.setVisible(False)
         layout.addWidget(self.checkpoint_progress_label)
 
-        self.download_button = QPushButton(tr("Download AI Segmentation Model (~375MB)"))
+        self.download_button = QPushButton(tr("Download Model"))
         self.download_button.clicked.connect(self._on_download_clicked)
         self.download_button.setVisible(False)
-        self.download_button.setToolTip(tr("Download the SAM checkpoint for segmentation"))
+        self.download_button.setToolTip(
+            tr("Download the selected segmentation model"))
         layout.addWidget(self.download_button)
 
         self.main_layout.addWidget(self.checkpoint_group)
@@ -512,10 +526,21 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_shortcut = QShortcut(QKeySequence("G"), self)
         self.start_shortcut.activated.connect(self._on_start_shortcut)
 
-        # Batch mode checkbox row - aligned right
+        # Model selector + batch mode checkbox row
         checkbox_row = QWidget()
         checkbox_layout = QHBoxLayout(checkbox_row)
         checkbox_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Model selector (shows only installed models)
+        self.model_selector_combo = QComboBox()
+        self.model_selector_combo.setMinimumWidth(120)
+        self.model_selector_combo.setToolTip(
+            tr("Select which AI model to use"))
+        self.model_selector_combo.currentIndexChanged.connect(
+            self._on_model_selector_changed)
+        self.model_selector_combo.setVisible(False)
+        checkbox_layout.addWidget(self.model_selector_combo)
+
         checkbox_layout.addStretch()  # Push checkbox to the right
 
         self.batch_mode_checkbox = QCheckBox(tr("Batch mode"))
@@ -835,6 +860,315 @@ class AISegmentationDockWidget(QDockWidget):
         self.fill_holes_checkbox.blockSignals(False)
         self.min_area_spinbox.blockSignals(False)
 
+    def _setup_settings_section(self):
+        """Setup the collapsible Settings section at the bottom."""
+        self._settings_expanded = False
+        self._settings_model_progress = {}
+        self._settings_model_buttons = {}
+
+        self.settings_group = QGroupBox(
+            "▶ " + tr("Settings"))
+        self.settings_group.setCheckable(False)
+        self.settings_group.setVisible(False)
+        self.settings_group.setCursor(Qt.PointingHandCursor)
+        self.settings_group.mousePressEvent = self._on_settings_group_clicked
+        self.settings_group.setStyleSheet("""
+            QGroupBox {
+                background-color: transparent;
+                border: none;
+                border-radius: 0px;
+                margin: 0px;
+                padding: 0px;
+                padding-top: 20px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: padding;
+                subcontrol-position: top left;
+                padding: 2px 4px;
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        settings_layout = QVBoxLayout(self.settings_group)
+        settings_layout.setSpacing(0)
+        settings_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Content widget
+        self.settings_content_widget = QWidget()
+        self.settings_content_widget.setObjectName("settingsContentWidget")
+        self.settings_content_widget.setStyleSheet("""
+            QWidget#settingsContentWidget {
+                background-color: rgba(128, 128, 128, 0.08);
+                border: 1px solid rgba(128, 128, 128, 0.2);
+                border-radius: 4px;
+            }
+            QLabel {
+                background: transparent;
+                border: none;
+            }
+        """)
+        settings_content_layout = QVBoxLayout(self.settings_content_widget)
+        settings_content_layout.setContentsMargins(10, 10, 10, 10)
+        settings_content_layout.setSpacing(6)
+
+        # Models subsection
+        models_title = QLabel(tr("Models"))
+        models_title.setStyleSheet(
+            "font-weight: bold; font-size: 11px; color: palette(text);")
+        settings_content_layout.addWidget(models_title)
+
+        # Model rows will be populated dynamically
+        self.settings_model_rows_widget = QWidget()
+        self.settings_model_rows_layout = QVBoxLayout(
+            self.settings_model_rows_widget)
+        self.settings_model_rows_layout.setContentsMargins(0, 0, 0, 0)
+        self.settings_model_rows_layout.setSpacing(4)
+        settings_content_layout.addWidget(self.settings_model_rows_widget)
+
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Sunken)
+        settings_content_layout.addWidget(sep)
+
+        # Device subsection
+        device_title = QLabel(tr("Device"))
+        device_title.setStyleSheet(
+            "font-weight: bold; font-size: 11px; color: palette(text);")
+        settings_content_layout.addWidget(device_title)
+
+        self.settings_device_label = QLabel(tr("Current device:") + " —")
+        self.settings_device_label.setStyleSheet(
+            "font-size: 11px; color: palette(text);")
+        settings_content_layout.addWidget(self.settings_device_label)
+
+        # GPU checkbox - only on non-macOS when NVIDIA GPU detected
+        self.settings_gpu_checkbox = None
+        if sys.platform != "darwin":
+            try:
+                from ..core.venv_manager import detect_nvidia_gpu
+                has_gpu, gpu_info = detect_nvidia_gpu()
+                if has_gpu:
+                    self.settings_gpu_checkbox = QCheckBox(
+                        tr("Use GPU"))
+                    self.settings_gpu_checkbox.setChecked(False)
+                    self.settings_gpu_checkbox.setStyleSheet(
+                        "QCheckBox { font-size: 11px;"
+                        " color: palette(text); }"
+                        " QCheckBox::indicator {"
+                        " width: 14px; height: 14px; }")
+                    gpu_name = gpu_info.get("name", "Unknown")
+                    self.settings_gpu_checkbox.setToolTip(
+                        tr("Detected: {gpu_details}").format(
+                            gpu_details=gpu_name))
+                    self.settings_gpu_checkbox.stateChanged.connect(
+                        self._on_settings_gpu_checkbox_changed)
+                    settings_content_layout.addWidget(
+                        self.settings_gpu_checkbox)
+            except Exception:
+                pass
+
+        self.settings_content_widget.setVisible(False)
+        settings_layout.addWidget(self.settings_content_widget)
+
+        if not self._settings_expanded:
+            self.settings_group.setMaximumHeight(25)
+
+        self.main_layout.addWidget(self.settings_group)
+
+    def _on_settings_group_clicked(self, event):
+        """Toggle the settings panel expanded/collapsed state."""
+        if event.pos().y() > 25:
+            return
+
+        self._settings_expanded = not self._settings_expanded
+        self.settings_content_widget.setVisible(self._settings_expanded)
+        arrow = "▼" if self._settings_expanded else "▶"
+        self.settings_group.setTitle(
+            "{} ".format(arrow) + tr("Settings"))
+        if self._settings_expanded:
+            self.settings_group.setMaximumHeight(16777215)
+        else:
+            self.settings_group.setMaximumHeight(25)
+
+    def populate_model_download_combo(self):
+        """Populate the Step 2 model download dropdown with all models."""
+        from ..core.model_registry import (
+            get_all_model_ids, get_display_name_with_size,
+            model_checkpoint_exists)
+
+        self.model_download_combo.blockSignals(True)
+        self.model_download_combo.clear()
+
+        for model_id in get_all_model_ids():
+            display = get_display_name_with_size(model_id)
+            if model_checkpoint_exists(model_id):
+                display = "✓ " + display
+            self.model_download_combo.addItem(display, model_id)
+
+        self.model_download_combo.blockSignals(False)
+
+    def get_selected_download_model_id(self) -> str:
+        """Return the model_id selected in the Step 2 dropdown."""
+        idx = self.model_download_combo.currentIndex()
+        if idx >= 0:
+            return self.model_download_combo.itemData(idx)
+        return "sam_vit_b"
+
+    def update_installed_models(self, installed_model_ids: list):
+        """Update the model selector (near batch mode) with installed models."""
+        from ..core.model_registry import get_model_info
+
+        self.model_selector_combo.blockSignals(True)
+        current_data = None
+        if self.model_selector_combo.currentIndex() >= 0:
+            current_data = self.model_selector_combo.itemData(
+                self.model_selector_combo.currentIndex())
+
+        self.model_selector_combo.clear()
+        for model_id in installed_model_ids:
+            info = get_model_info(model_id)
+            if info:
+                self.model_selector_combo.addItem(
+                    info["display_name"], model_id)
+
+        # Restore previous selection if still available
+        if current_data:
+            idx = self.model_selector_combo.findData(current_data)
+            if idx >= 0:
+                self.model_selector_combo.setCurrentIndex(idx)
+
+        # Show selector only if more than 1 model installed
+        self.model_selector_combo.setVisible(
+            len(installed_model_ids) > 1)
+
+        self.model_selector_combo.blockSignals(False)
+
+        # Also refresh the settings model rows
+        self._refresh_settings_model_rows()
+
+    def get_active_model_id(self) -> str:
+        """Return the model_id selected in the model selector."""
+        idx = self.model_selector_combo.currentIndex()
+        if idx >= 0:
+            return self.model_selector_combo.itemData(idx)
+        return "sam_vit_b"
+
+    def set_active_model_id(self, model_id: str):
+        """Set the active model in the selector without emitting signals."""
+        self.model_selector_combo.blockSignals(True)
+        idx = self.model_selector_combo.findData(model_id)
+        if idx >= 0:
+            self.model_selector_combo.setCurrentIndex(idx)
+        self.model_selector_combo.blockSignals(False)
+
+    def _on_model_selector_changed(self, index: int):
+        """Handle model selector change."""
+        if index >= 0:
+            model_id = self.model_selector_combo.itemData(index)
+            if model_id:
+                self.active_model_changed.emit(model_id)
+
+    def _refresh_settings_model_rows(self):
+        """Refresh the model rows in the Settings section."""
+        from ..core.model_registry import (
+            get_all_model_ids, get_model_info,
+            model_checkpoint_exists)
+
+        # Clear existing rows and widget references
+        self._settings_model_progress = {}
+        self._settings_model_buttons = {}
+        while self.settings_model_rows_layout.count():
+            item = self.settings_model_rows_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        for model_id in get_all_model_ids():
+            info = get_model_info(model_id)
+            if not info:
+                continue
+
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(4, 2, 4, 2)
+            row_layout.setSpacing(8)
+
+            size_mb = info["size_mb"]
+            if size_mb >= 1000:
+                size_str = "{:.1f}GB".format(size_mb / 1000)
+            else:
+                size_str = "{}MB".format(size_mb)
+
+            name_label = QLabel("{} ({})".format(
+                info["display_name"], size_str))
+            name_label.setStyleSheet(
+                "font-size: 11px; color: palette(text);")
+            row_layout.addWidget(name_label)
+            row_layout.addStretch()
+
+            if model_checkpoint_exists(model_id):
+                status_label = QLabel(tr("Installed"))
+                status_label.setStyleSheet(
+                    "font-size: 10px; color: #2e7d32;"
+                    " font-weight: bold;")
+                row_layout.addWidget(status_label)
+            else:
+                progress = QProgressBar()
+                progress.setRange(0, 100)
+                progress.setMaximumHeight(20)
+                progress.setMinimumWidth(60)
+                progress.setVisible(False)
+                row_layout.addWidget(progress)
+
+                dl_btn = QPushButton(tr("Download"))
+                dl_btn.setMaximumHeight(24)
+                dl_btn.setStyleSheet(
+                    "QPushButton { font-size: 10px;"
+                    " padding: 2px 8px; }")
+                # Capture model_id in closure
+                dl_btn.clicked.connect(
+                    lambda checked, mid=model_id:
+                        self.download_model_requested.emit(mid))
+                row_layout.addWidget(dl_btn)
+
+                self._settings_model_progress[model_id] = progress
+                self._settings_model_buttons[model_id] = dl_btn
+
+            self.settings_model_rows_layout.addWidget(row)
+
+    def set_settings_device_info(self, device_text: str):
+        """Update the device label in the Settings section."""
+        self.settings_device_label.setText(
+            tr("Current device:") + " " + device_text)
+
+    def set_settings_download_progress(self, model_id, percent, message):
+        """Update download progress for a model in the Settings section."""
+        progress = self._settings_model_progress.get(model_id)
+        btn = self._settings_model_buttons.get(model_id)
+
+        if percent == 0 and btn and progress:
+            btn.setVisible(False)
+            progress.setVisible(True)
+
+        if progress:
+            progress.setValue(percent)
+            progress.setToolTip(message)
+
+        if percent >= 100:
+            self._refresh_settings_model_rows()
+
+    def set_gpu_checkbox_state(self, checked):
+        """Set GPU checkbox state without emitting signals."""
+        if self.settings_gpu_checkbox is not None:
+            self.settings_gpu_checkbox.blockSignals(True)
+            self.settings_gpu_checkbox.setChecked(checked)
+            self.settings_gpu_checkbox.blockSignals(False)
+
+    def _on_settings_gpu_checkbox_changed(self, state):
+        """Emit GPU toggle signal when checkbox changes."""
+        checked = state == Qt.Checked
+        self.gpu_toggle_requested.emit(checked)
+
     def _setup_update_notification(self):
         """Setup the update notification widget (hidden by default)."""
         self.update_notification_widget = QWidget()
@@ -1001,9 +1335,16 @@ class AISegmentationDockWidget(QDockWidget):
     def _update_full_ui(self):
         """Update the full UI based on current state."""
         # Segmentation section visibility: only show if deps + model + activated
-        show_segmentation = self._dependencies_ok and self._checkpoint_ok and self._plugin_activated
+        show_segmentation = (
+            self._dependencies_ok
+            and self._checkpoint_ok
+            and self._plugin_activated
+        )
         self.seg_widget.setVisible(show_segmentation)
         self.seg_separator.setVisible(show_segmentation)
+
+        # Settings section: visible when setup is complete
+        self.settings_group.setVisible(show_segmentation)
 
         # Welcome section: hide when both deps and model are installed
         setup_complete = self._dependencies_ok and self._checkpoint_ok
@@ -1042,6 +1383,9 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _on_download_clicked(self):
         self.download_button.setEnabled(False)
+        model_id = self.get_selected_download_model_id()
+        self.download_model_requested.emit(model_id)
+        # Also emit legacy signal for backward compatibility
         self.download_checkpoint_requested.emit()
 
     def _on_cancel_prep_clicked(self):
@@ -1237,13 +1581,18 @@ class AISegmentationDockWidget(QDockWidget):
         self.checkpoint_status_label.setText(message)
 
         if ok:
-            self.checkpoint_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
+            self.checkpoint_status_label.setStyleSheet(
+                "font-weight: bold; color: palette(text);")
             self.download_button.setVisible(False)
+            self.model_download_combo.setVisible(False)
             self.checkpoint_progress.setVisible(False)
             self.checkpoint_progress_label.setVisible(False)
             self.checkpoint_group.setVisible(False)
         else:
-            self.checkpoint_status_label.setStyleSheet("color: palette(text);")
+            self.checkpoint_status_label.setStyleSheet(
+                "color: palette(text);")
+            self.populate_model_download_combo()
+            self.model_download_combo.setVisible(True)
             self.download_button.setVisible(True)
             self.download_button.setEnabled(True)
             self.checkpoint_group.setVisible(True)
@@ -1264,7 +1613,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.checkpoint_progress.setVisible(False)
             self.checkpoint_progress_label.setVisible(False)
             self.download_button.setEnabled(True)
-            self.download_button.setText(tr("Download AI Segmentation Model (~375MB)"))
+            self.download_button.setText(tr("Download Model"))
 
     def set_preparation_progress(self, percent: int, message: str, cache_path: str = None):
         import time

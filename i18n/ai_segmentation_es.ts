@@ -13,8 +13,8 @@
         <translation>Instalar dependencias de IA (~800MB)</translation>
     </message>
     <message>
-        <source>Download the segmentation model (~375MB)</source>
-        <translation>Descargar el modelo de segmentación (~375MB)</translation>
+        <source>Download a segmentation model</source>
+        <translation>Descargar un modelo de segmentación</translation>
     </message>
 
     <!-- Dependencies Section -->
@@ -761,6 +761,100 @@
     <message>
         <source>Update now</source>
         <translation>Actualizar ahora</translation>
+    </message>
+
+    <!-- Settings / Models / Device -->
+    <message>
+        <source>Select which AI model to download</source>
+        <translation>Seleccione qué modelo de IA descargar</translation>
+    </message>
+    <message>
+        <source>Download Model</source>
+        <translation>Descargar Modelo</translation>
+    </message>
+    <message>
+        <source>Download the selected segmentation model</source>
+        <translation>Descargar el modelo de segmentación seleccionado</translation>
+    </message>
+    <message>
+        <source>Select which AI model to use</source>
+        <translation>Seleccione qué modelo de IA usar</translation>
+    </message>
+    <message>
+        <source>Settings</source>
+        <translation>Configuración</translation>
+    </message>
+    <message>
+        <source>Models</source>
+        <translation>Modelos</translation>
+    </message>
+    <message>
+        <source>Device</source>
+        <translation>Dispositivo</translation>
+    </message>
+    <message>
+        <source>Current device:</source>
+        <translation>Dispositivo actual:</translation>
+    </message>
+    <message>
+        <source>Use GPU</source>
+        <translation>Usar GPU</translation>
+    </message>
+    <message>
+        <source>Enabling GPU requires reinstalling dependencies (~2.5GB download). Continue?</source>
+        <translation>Habilitar GPU requiere reinstalar dependencias (~2.5GB de descarga). ¿Continuar?</translation>
+    </message>
+    <message>
+        <source>Switching to CPU requires reinstalling dependencies. Continue?</source>
+        <translation>Cambiar a CPU requiere reinstalar dependencias. ¿Continuar?</translation>
+    </message>
+    <message>
+        <source>Installed</source>
+        <translation>Instalado</translation>
+    </message>
+    <message>
+        <source>Download</source>
+        <translation>Descargar</translation>
+    </message>
+    <message>
+        <source>Model ready</source>
+        <translation>Modelo listo</translation>
+    </message>
+    <message>
+        <source>Model not downloaded</source>
+        <translation>Modelo no descargado</translation>
+    </message>
+    <message>
+        <source>ready</source>
+        <translation>listo</translation>
+    </message>
+    <message>
+        <source>Downloading {model}...</source>
+        <translation>Descargando {model}...</translation>
+    </message>
+    <message>
+        <source>Download complete!</source>
+        <translation>¡Descarga completada!</translation>
+    </message>
+    <message>
+        <source>Reinstall Dependencies?</source>
+        <translation>¿Reinstalar Dependencias?</translation>
+    </message>
+    <message>
+        <source>This will remove and recreate the virtual environment.</source>
+        <translation>Esto eliminará y recreará el entorno virtual.</translation>
+    </message>
+    <message>
+        <source>Continue?</source>
+        <translation>¿Continuar?</translation>
+    </message>
+    <message>
+        <source>Reinstalling...</source>
+        <translation>Reinstalando...</translation>
+    </message>
+    <message>
+        <source>Removing old environment...</source>
+        <translation>Eliminando entorno antiguo...</translation>
     </message>
 </context>
 </TS>
