@@ -318,6 +318,17 @@ def _is_network_error(output: str) -> bool:
     return any(p in output_lower for p in _NETWORK_ERROR_PATTERNS)
 
 
+def _is_proxy_auth_error(output: str) -> bool:
+    """Detect proxy authentication errors (HTTP 407)."""
+    output_lower = output.lower()
+    patterns = [
+        "407 proxy authentication",
+        "proxy authentication required",
+        "proxyerror",
+    ]
+    return any(p in output_lower for p in patterns)
+
+
 def _is_antivirus_error(stderr: str) -> bool:
     """Detect antivirus/permission blocking in pip output."""
     stderr_lower = stderr.lower()
@@ -1354,55 +1365,60 @@ def install_dependencies(
                         package_name, str(e)[:200])
 
             if install_failed:
+                # Log detailed pip output for debugging
+                _log("pip error output: {}".format(install_error_msg[:500]), Qgis.Critical)
+
                 # Check for Windows process crash
                 if last_returncode is not None and _is_windows_process_crash(last_returncode):
-                    crash_help = _get_crash_help(venv_dir)
-                    _log(crash_help, Qgis.Warning)
-                    install_error_msg = "{}\n\n{}".format(
-                        "Process crashed (code {})".format(last_returncode),
-                        crash_help)
-                    return False, f"Failed to install {package_name}: {install_error_msg}"
+                    _log(_get_crash_help(venv_dir), Qgis.Warning)
+                    return False, "Failed to install {}: process crashed (code {})".format(
+                        package_name, last_returncode)
 
                 # Check for SSL errors
                 if _is_ssl_error(install_error_msg):
-                    ssl_help = _get_ssl_error_help()
-                    _log(ssl_help, Qgis.Warning)
-                    install_error_msg = "{}\n\n{}".format(install_error_msg[:200], ssl_help)
-                    return False, f"Failed to install {package_name}: {install_error_msg}"
+                    _log(_get_ssl_error_help(), Qgis.Warning)
+                    return False, "Failed to install {}: SSL certificate error".format(
+                        package_name)
+
+                # Check for proxy authentication errors (407)
+                if _is_proxy_auth_error(install_error_msg):
+                    _log(
+                        "Proxy authentication failed (HTTP 407). "
+                        "Configure proxy credentials in: "
+                        "QGIS > Settings > Options > Network > Proxy "
+                        "(User and Password fields).",
+                        Qgis.Warning
+                    )
+                    return False, "Failed to install {}: proxy authentication required (407)".format(
+                        package_name)
 
                 # Check for network/connection errors (after retries exhausted)
                 if _is_network_error(install_error_msg):
-                    net_help = (
-                        "Network connection failed after multiple retries.\n\n"
-                        "Please try:\n"
-                        "  1. Check your internet connection\n"
-                        "  2. If using a VPN or proxy, try disconnecting temporarily\n"
-                        "  3. Wait a few minutes and try again\n"
-                        "  4. Check firewall settings for pypi.org and "
-                        "files.pythonhosted.org"
+                    _log(
+                        "Network connection failed after multiple retries. "
+                        "Check internet connection, VPN/proxy settings, "
+                        "and firewall rules for pypi.org and files.pythonhosted.org.",
+                        Qgis.Warning
                     )
-                    _log(net_help, Qgis.Warning)
-                    install_error_msg = "{}\n\n{}".format(
-                        install_error_msg[:200], net_help)
-                    return False, "Failed to install {}: {}".format(
-                        package_name, install_error_msg)
+                    return False, "Failed to install {}: network error".format(
+                        package_name)
 
                 # Check for antivirus blocking
                 if _is_antivirus_error(install_error_msg):
-                    av_help = _get_pip_antivirus_help(venv_dir)
-                    _log(av_help, Qgis.Warning)
-                    install_error_msg = "{}\n\n{}".format(install_error_msg[:200], av_help)
-                    return False, f"Failed to install {package_name}: {install_error_msg}"
+                    _log(_get_pip_antivirus_help(venv_dir), Qgis.Warning)
+                    return False, "Failed to install {}: blocked by antivirus or security policy".format(
+                        package_name)
 
                 # Check for GDAL issues on Linux when rasterio fails
                 if package_name == "rasterio":
                     gdal_ok, gdal_help = _check_gdal_available()
                     if not gdal_ok and gdal_help:
                         _log(gdal_help, Qgis.Warning)
-                        install_error_msg = "{}\n\n{}".format(install_error_msg[:200], gdal_help)
-                        return False, f"Failed to install {package_name}: {install_error_msg}"
+                        return False, "Failed to install {}: GDAL library not found".format(
+                            package_name)
 
-                return False, f"Failed to install {package_name}: {install_error_msg[:200]}"
+                return False, "Failed to install {}: {}".format(
+                    package_name, install_error_msg[:200])
 
         # Post-install numpy version safety net:
         # Even with constraints, the CUDA index may have pulled numpy>=2.0.
@@ -1779,6 +1795,21 @@ def create_venv_and_install(
             if sys.platform == "win32":
                 qgis_python = _get_qgis_python()
                 if qgis_python:
+                    # Check minimum Python version for dependencies
+                    if sys.version_info < (3, 9):
+                        py_ver = "{}.{}.{}".format(
+                            sys.version_info.major,
+                            sys.version_info.minor,
+                            sys.version_info.micro)
+                        _log(
+                            "Python {} is too old. AI Segmentation requires "
+                            "Python 3.9 or later (numpy >= 1.26 and "
+                            "PyTorch >= 2.0 need it). "
+                            "Please upgrade to QGIS 3.22 or later.".format(py_ver),
+                            Qgis.Critical
+                        )
+                        return False, "Python {} is too old. Please upgrade to QGIS 3.22 or later.".format(
+                            py_ver)
                     _log(
                         "Standalone Python download failed, "
                         "falling back to QGIS Python: {}".format(msg),
