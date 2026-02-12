@@ -27,6 +27,12 @@ REQUIRED_PACKAGES = [
     ("rasterio", ">=1.3.0"),
 ]
 
+# Network retry configuration
+MAX_NETWORK_RETRIES = 4  # Number of application-level retries for network errors
+BASE_RETRY_DELAY_SECONDS = 5  # Base delay for exponential backoff (5s, 10s, 20s, 40s)
+PIP_RETRIES = 5  # Number of pip-level retries for downloads
+PIP_TIMEOUT_SECONDS = 60  # Timeout per individual pip network request
+
 
 def _log(message: str, level=Qgis.Info):
     QgsMessageLog.logMessage(message, "AI Segmentation", level=level)
@@ -1112,8 +1118,8 @@ def install_dependencies(
                 "--no-warn-script-location",
                 "--disable-pip-version-check",
                 "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
-                "--retries", "5",  # Retry failed downloads up to 5 times
-                "--timeout", "60",  # 60 second timeout per request
+                "--retries", str(PIP_RETRIES),  # Retry failed downloads
+                "--timeout", str(PIP_TIMEOUT_SECONDS),  # Timeout per request
             ]
             if constraints_path:
                 pip_args.extend(["--constraint", constraints_path])
@@ -1248,12 +1254,12 @@ def install_dependencies(
                     error_output = result.stderr or result.stdout or ""
 
                     if _is_network_error(error_output):
-                        for attempt in range(1, 5):  # up to 4 retries with exponential backoff
-                            # Exponential backoff: 5s, 10s, 20s, 40s
-                            delay = 5 * (2 ** (attempt - 1))
+                        for attempt in range(1, MAX_NETWORK_RETRIES + 1):
+                            # Exponential backoff based on BASE_RETRY_DELAY_SECONDS
+                            delay = BASE_RETRY_DELAY_SECONDS * (2 ** (attempt - 1))
                             _log(
                                 "Network error detected, retrying in {}s "
-                                "(attempt {}/4)...".format(delay, attempt),
+                                "(attempt {}/{})...".format(delay, attempt, MAX_NETWORK_RETRIES),
                                 Qgis.Warning
                             )
                             if progress_callback:

@@ -27,6 +27,10 @@ PYTHON_VERSION_FILE = os.path.join(LIBS_DIR, '.python_version')
 
 CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
 
+# Network retry configuration for pip
+PIP_RETRIES = 5  # Number of pip-level retries for downloads
+PIP_TIMEOUT_SECONDS = 60  # Timeout per individual pip network request
+
 
 def _log(message: str, level=Qgis.Info):
     QgsMessageLog.logMessage(message, "AI Segmentation", level=level)
@@ -253,8 +257,8 @@ def _run_pip_install(pip_name: str, version: str = None, target_dir: str = None)
         "--no-warn-script-location",
         "--disable-pip-version-check",
         "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
-        "--retries", "5",  # Retry failed downloads up to 5 times
-        "--timeout", "60",  # 60 second timeout per request
+        "--retries", str(PIP_RETRIES),  # Retry failed downloads
+        "--timeout", str(PIP_TIMEOUT_SECONDS),  # Timeout per request
     ]
 
     if target_dir:
