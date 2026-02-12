@@ -4,6 +4,7 @@ import os
 import json
 import subprocess
 import threading
+import tempfile
 import base64
 
 from qgis.core import QgsMessageLog, Qgis
@@ -43,6 +44,7 @@ class SamPredictorNoImgEncoder:
         self.worker_script = sam_config['worker_script']
         self.checkpoint = sam_config['checkpoint']
         self.process = None
+        self._stderr_file = None
         self.is_image_set = False
         self.original_size = None
         self.input_size = None
@@ -59,6 +61,16 @@ class SamPredictorNoImgEncoder:
             "AI Segmentation",
             level=Qgis.Info
         )
+
+    def _read_stderr(self) -> str:
+        """Read captured stderr from the worker subprocess."""
+        if self._stderr_file is None:
+            return ""
+        try:
+            self._stderr_file.seek(0)
+            return self._stderr_file.read()
+        except Exception:
+            return ""
 
     def _read_response(self, timeout_seconds: int) -> str:
         """Read a line from the worker stdout with a timeout.
@@ -93,7 +105,18 @@ class SamPredictorNoImgEncoder:
 
         line = result[0]
         if not line:
-            raise RuntimeError("Worker process closed stdout unexpectedly")
+            stderr_output = self._read_stderr()
+            msg = "Worker process closed stdout unexpectedly"
+            if stderr_output:
+                msg = "{}\nWorker stderr: {}".format(
+                    msg, stderr_output[:500])
+                QgsMessageLog.logMessage(
+                    "Prediction worker stderr:\n{}".format(
+                        stderr_output[:1000]),
+                    "AI Segmentation",
+                    level=Qgis.Critical
+                )
+            raise RuntimeError(msg)
 
         return line
 
@@ -117,11 +140,22 @@ class SamPredictorNoImgEncoder:
             env = get_clean_env_for_venv()
             subprocess_kwargs = get_subprocess_kwargs()
 
+            # Capture stderr to temp file for crash diagnostics
+            try:
+                self._stderr_file = tempfile.TemporaryFile(
+                    mode='w+', encoding='utf-8'
+                )
+            except Exception:
+                self._stderr_file = None
+
             self.process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
+                stderr=(
+                    self._stderr_file if self._stderr_file is not None
+                    else subprocess.DEVNULL
+                ),
                 text=True,
                 bufsize=1,
                 env=env,
@@ -180,6 +214,12 @@ class SamPredictorNoImgEncoder:
                         self.process.stdin.flush()
                         self.process.wait(timeout=2)
                     except (subprocess.TimeoutExpired, BrokenPipeError, OSError):
+                        # Close stdout to unblock any daemon thread stuck on readline()
+                        try:
+                            if self.process.stdout:
+                                self.process.stdout.close()
+                        except Exception:
+                            pass
                         self.process.terminate()
                         try:
                             self.process.wait(timeout=2)
@@ -194,6 +234,12 @@ class SamPredictorNoImgEncoder:
                 )
             finally:
                 self.process = None
+                if self._stderr_file is not None:
+                    try:
+                        self._stderr_file.close()
+                    except Exception:
+                        pass
+                    self._stderr_file = None
 
         self.is_image_set = False
 
