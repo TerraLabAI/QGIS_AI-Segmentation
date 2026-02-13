@@ -824,6 +824,7 @@ def _repin_numpy(venv_dir: str):
                 python_path, "-m", "pip", "install",
                 "--force-reinstall", "--no-deps",
                 "--disable-pip-version-check",
+            ] + _get_pip_ssl_flags() + [
                 "numpy>=1.26.0,<2.0.0",
             ]
             downgrade_result = subprocess.run(
@@ -872,10 +873,11 @@ def _reinstall_cpu_torch(
     # Install CPU versions from default PyPI
     for pkg in ("torch>=2.0.0", "torchvision>=0.15.0"):
         try:
+            cmd = [python_path, "-m", "pip", "install",
+                   "--no-warn-script-location", "--disable-pip-version-check",
+                   "--prefer-binary"] + _get_pip_ssl_flags() + [pkg]
             result = subprocess.run(
-                [python_path, "-m", "pip", "install",
-                 "--no-warn-script-location", "--disable-pip-version-check",
-                 "--prefer-binary", pkg],
+                cmd,
                 capture_output=True, text=True, timeout=600,
                 env=env, **subprocess_kwargs,
             )
@@ -1289,6 +1291,8 @@ def install_dependencies(
                 "--disable-pip-version-check",
                 "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
             ]
+            # Add SSL bypass flags upfront for corporate proxies (not just as retry)
+            pip_args.extend(_get_pip_ssl_flags())
             if constraints_path:
                 pip_args.extend(["--constraint", constraints_path])
             pip_args.extend(_get_pip_proxy_args())
@@ -1490,8 +1494,10 @@ def install_dependencies(
                 cpu_pip_args = [
                     "install", "--upgrade", "--no-warn-script-location",
                     "--disable-pip-version-check", "--prefer-binary",
-                    package_spec
                 ]
+                # Add SSL bypass flags for corporate proxies
+                cpu_pip_args.extend(_get_pip_ssl_flags())
+                cpu_pip_args.append(package_spec)
                 if constraints_path:
                     cpu_pip_args.extend(["--constraint", constraints_path])
                 cpu_cmd = [python_path, "-m", "pip"] + cpu_pip_args
@@ -1789,6 +1795,7 @@ def verify_venv(
                         "--force-reinstall", "--no-deps",
                         "--disable-pip-version-check",
                         "--prefer-binary",
+                    ] + _get_pip_ssl_flags() + [
                         pkg_spec,
                     ]
                     try:
