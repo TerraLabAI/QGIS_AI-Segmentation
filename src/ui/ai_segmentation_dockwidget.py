@@ -1539,29 +1539,22 @@ class AISegmentationDockWidget(QDockWidget):
                 continue
 
             all_raster_count += 1
-            if not self._is_layer_georeferenced(layer):
-                excluded_layers.append(layer)
+            # Note: We now support non-georeferenced images (pixel coordinates mode)
+            # No longer excluding them - they will work automatically
 
         self.layer_combo.setExceptedLayerList(excluded_layers)
 
-        # Update warning message based on situation
-        compatible_count = all_raster_count - len(excluded_layers)
-
-        if compatible_count == 0:
-            if web_service_count > 0 and all_raster_count == 0:
-                # Only web services detected
+        # Update warning message
+        if all_raster_count == 0:
+            if web_service_count > 0:
+                # Only web services detected (not supported)
                 self.no_rasters_label.setText(
-                    tr("XYZ Tiles and web layers are not supported. Please add a local GeoTIFF file.")
-                )
-            elif all_raster_count > 0:
-                # Has rasters but none are georeferenced
-                self.no_rasters_label.setText(
-                    tr("{count} image(s) found but not georeferenced. Please use GeoTIFF format.").format(count=all_raster_count)
+                    tr("Found {count} web layer(s), but web services are not supported. Please add a local image file (GeoTIFF, PNG, JPG, etc.).").format(count=web_service_count)
                 )
             else:
-                # Default message
+                # No images at all
                 self.no_rasters_label.setText(
-                    tr("No image found. Please add a GeoTIFF file to your project.")
+                    tr("No image found. Please add an image file to your project (GeoTIFF, PNG, JPG, etc.).")
                 )
 
     def _update_ui_state(self):
