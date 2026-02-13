@@ -615,6 +615,30 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Info
             )
+        except RuntimeError as e:
+            error_str = str(e)
+            # Check if this is a PyTorch DLL error (Windows)
+            if "DLL" in error_str or "shm.dll" in error_str:
+                QgsMessageLog.logMessage(
+                    f"PyTorch DLL error: {error_str}",
+                    "AI Segmentation",
+                    level=Qgis.Critical
+                )
+                # Show user-friendly error dialog
+                from qgis.PyQt.QtWidgets import QMessageBox
+                msg_box = QMessageBox(self.iface.mainWindow())
+                msg_box.setIcon(QMessageBox.Critical)
+                msg_box.setWindowTitle(tr("PyTorch Error"))
+                msg_box.setText(tr("PyTorch cannot load on Windows"))
+                msg_box.setInformativeText(
+                    tr("The plugin requires Visual C++ Redistributables to run PyTorch.\n\n"
+                       "Please download and install:\n"
+                       "https://aka.ms/vs/17/release/vc_redist.x64.exe\n\n"
+                       "After installation, restart QGIS and try again."))
+                msg_box.setStandardButtons(QMessageBox.Ok)
+                msg_box.exec_()
+            else:
+                raise
         except Exception as e:
             QgsMessageLog.logMessage(
                 f"Could not determine device info: {e}",
@@ -1871,12 +1895,38 @@ class AISegmentationPlugin:
         if len(self.prompts.negative_points) > 0 and self.current_low_res_mask is not None:
             mask_input = self.current_low_res_mask
 
-        masks, scores, low_res_masks = self.predictor.predict(
-            point_coords=point_coords,
-            point_labels=point_labels,
-            mask_input=mask_input,
-            multimask_output=False,
-        )
+        try:
+            masks, scores, low_res_masks = self.predictor.predict(
+                point_coords=point_coords,
+                point_labels=point_labels,
+                mask_input=mask_input,
+                multimask_output=False,
+            )
+        except RuntimeError as e:
+            error_str = str(e)
+            QgsMessageLog.logMessage(
+                "Prediction failed: {}".format(error_str),
+                "AI Segmentation",
+                level=Qgis.Critical
+            )
+            # Check if this is a DLL error
+            if "DLL" in error_str or "Visual C++" in error_str:
+                from qgis.PyQt.QtWidgets import QMessageBox
+                msg_box = QMessageBox(self.iface.mainWindow())
+                msg_box.setIcon(QMessageBox.Critical)
+                msg_box.setWindowTitle(tr("Prediction Error"))
+                msg_box.setText(tr("Segmentation failed"))
+                msg_box.setInformativeText(tr("{}").format(error_str))
+                msg_box.setStandardButtons(QMessageBox.Ok)
+                msg_box.exec_()
+            return
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                "Unexpected prediction error: {}".format(str(e)),
+                "AI Segmentation",
+                level=Qgis.Critical
+            )
+            return
 
         self.current_mask = masks[0]
         self.current_score = float(scores[0])

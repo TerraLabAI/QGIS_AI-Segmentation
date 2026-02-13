@@ -8,10 +8,35 @@ import base64
 # Ensure consistent GPU ordering on multi-GPU systems
 os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 
-import numpy as np  # noqa: E402
-import torch  # noqa: E402
-import torch.nn as nn  # noqa: E402
-from typing import Tuple, Optional  # noqa: E402
+try:
+    import numpy as np  # noqa: E402
+    import torch  # noqa: E402
+    import torch.nn as nn  # noqa: E402
+    from typing import Tuple, Optional  # noqa: E402
+except ImportError as e:
+    error_msg = {
+        "type": "error",
+        "message": "Failed to import dependencies: {}. "
+                   "Please reinstall dependencies.".format(str(e))
+    }
+    print(json.dumps(error_msg), flush=True)
+    sys.exit(1)
+except OSError as e:
+    # Catch Windows DLL loading errors (shm.dll, etc.)
+    if "shm.dll" in str(e) or "DLL" in str(e).upper():
+        error_msg = {
+            "type": "error",
+            "message": "PyTorch DLL error (Windows): {}. "
+                       "This usually means Visual C++ Redistributables are missing. "
+                       "Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe".format(str(e))
+        }
+    else:
+        error_msg = {
+            "type": "error",
+            "message": "Failed to load PyTorch: {}".format(str(e))
+        }
+    print(json.dumps(error_msg), flush=True)
+    sys.exit(1)
 
 
 class FakeImageEncoderViT(nn.Module):
