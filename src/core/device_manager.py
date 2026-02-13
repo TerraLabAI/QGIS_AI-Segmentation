@@ -19,7 +19,27 @@ def get_optimal_device() -> "torch.device":
     if _cached_device is not None:
         return _cached_device
 
-    import torch
+    try:
+        import torch
+    except OSError as e:
+        # Windows DLL loading error (shm.dll, etc.)
+        if "shm.dll" in str(e) or "DLL" in str(e).upper():
+            error_msg = (
+                "PyTorch DLL loading failed on Windows. "
+                "This usually means Visual C++ Redistributables are missing. "
+                "Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe\n"
+                "Error: {}".format(str(e))
+            )
+            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
+            _cached_device = None
+            _device_info = "Error: PyTorch DLL failed"
+            raise RuntimeError(error_msg)
+        else:
+            raise
+    except ImportError as e:
+        error_msg = "Failed to import PyTorch: {}".format(str(e))
+        QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
+        raise
 
     try:
         cuda_available = torch.cuda.is_available()

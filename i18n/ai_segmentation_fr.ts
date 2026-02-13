@@ -822,5 +822,37 @@ Please convert your raster to GeoTIFF (.tif) manually.</source>
         <translation>Échec de la conversion du fichier {ext} en GeoTIFF : {error}
 Veuillez convertir votre raster en GeoTIFF (.tif) manuellement.</translation>
     </message>
+
+    <!-- PyTorch DLL Error Messages -->
+    <message>
+        <source>PyTorch Error</source>
+        <translation>Erreur PyTorch</translation>
+    </message>
+    <message>
+        <source>PyTorch cannot load on Windows</source>
+        <translation>PyTorch ne peut pas se charger sur Windows</translation>
+    </message>
+    <message>
+        <source>The plugin requires Visual C++ Redistributables to run PyTorch.
+
+Please download and install:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+After installation, restart QGIS and try again.</source>
+        <translation>Le plugin nécessite Visual C++ Redistributables pour exécuter PyTorch.
+
+Veuillez télécharger et installer :
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+Après l'installation, redémarrez QGIS et réessayez.</translation>
+    </message>
+    <message>
+        <source>Prediction Error</source>
+        <translation>Erreur de prédiction</translation>
+    </message>
+    <message>
+        <source>Segmentation failed</source>
+        <translation>Échec de la segmentation</translation>
+    </message>
 </context>
 </TS>
