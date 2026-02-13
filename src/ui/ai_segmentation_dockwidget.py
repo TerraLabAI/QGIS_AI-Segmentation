@@ -1527,6 +1527,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         excluded_layers = []
         all_raster_count = 0
+        web_service_count = 0
 
         for layer in QgsProject.instance().mapLayers().values():
             if layer.type() != layer.RasterLayer:
@@ -1534,6 +1535,7 @@ class AISegmentationDockWidget(QDockWidget):
             # Skip web services
             provider = layer.dataProvider()
             if provider and provider.name() in ['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs']:
+                web_service_count += 1
                 continue
 
             all_raster_count += 1
@@ -1545,16 +1547,22 @@ class AISegmentationDockWidget(QDockWidget):
         # Update warning message based on situation
         compatible_count = all_raster_count - len(excluded_layers)
 
-        if compatible_count == 0 and all_raster_count > 0:
-            # Has rasters but none are georeferenced
-            self.no_rasters_label.setText(
-                tr("No compatible raster found. {count} layer(s) excluded (PNG/JPG without georeferencing). Use GeoTIFF format.").format(count=all_raster_count)
-            )
-        else:
-            # Default message
-            self.no_rasters_label.setText(
-                tr("No compatible raster found. Add a GeoTIFF or georeferenced image to your project.")
-            )
+        if compatible_count == 0:
+            if web_service_count > 0 and all_raster_count == 0:
+                # Only web services detected
+                self.no_rasters_label.setText(
+                    tr("XYZ Tiles and web layers are not supported. Please add a local GeoTIFF file.")
+                )
+            elif all_raster_count > 0:
+                # Has rasters but none are georeferenced
+                self.no_rasters_label.setText(
+                    tr("{count} image(s) found but not georeferenced. Please use GeoTIFF format.").format(count=all_raster_count)
+                )
+            else:
+                # Default message
+                self.no_rasters_label.setText(
+                    tr("No image found. Please add a GeoTIFF file to your project.")
+                )
 
     def _update_ui_state(self):
         # Update layer filter first
