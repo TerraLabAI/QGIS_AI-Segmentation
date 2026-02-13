@@ -239,6 +239,7 @@ class AISegmentationPlugin:
         # Mode flag (simple mode by default)
         self._batch_mode = False
         self._batch_tutorial_shown_this_session = False  # Reset each QGIS launch
+        self._is_non_georeferenced_mode = False  # Track if current layer is non-georeferenced
 
         self.deps_install_worker = None
         self.download_worker = None
@@ -274,6 +275,36 @@ class AISegmentationPlugin:
             return True
         except RuntimeError:
             return False
+
+    def _is_layer_georeferenced(self, layer) -> bool:
+        """Check if a raster layer is properly georeferenced."""
+        if layer is None or layer.type() != layer.RasterLayer:
+            return False
+
+        try:
+            source = layer.source().lower()
+        except RuntimeError:
+            return False
+
+        # PNG, JPG, BMP etc. without world files are not georeferenced
+        non_georef_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
+        has_non_georef_ext = any(source.endswith(ext) for ext in non_georef_extensions)
+
+        # If it's a known non-georeferenced format, check if it has a valid CRS
+        if has_non_georef_ext:
+            try:
+                # Check if the layer has a valid CRS (not just default)
+                if not layer.crs().isValid():
+                    return False
+                # Check if extent looks like pixel coordinates (0,0 to width,height)
+                extent = layer.extent()
+                if extent.xMinimum() == 0 and extent.yMinimum() == 0:
+                    # Likely not georeferenced - just pixel dimensions
+                    return False
+            except RuntimeError:
+                return False
+
+        return True
 
     def _ensure_polygon_rubberband_sync(self):
         """Check polygon/rubber band list consistency. Log and preserve on mismatch."""
@@ -836,6 +867,16 @@ class AISegmentationPlugin:
                 "AI Segmentation", level=Qgis.Warning)
             return
 
+        # Detect if layer is non-georeferenced (pixel coordinate mode)
+        self._is_non_georeferenced_mode = not self._is_layer_georeferenced(layer)
+        if self._is_non_georeferenced_mode:
+            QgsMessageLog.logMessage(
+                "Non-georeferenced image detected - using pixel coordinate mode. "
+                "Polygons will be created in pixel coordinates.",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+
         from ..core.checkpoint_manager import has_features_for_raster, get_raster_features_dir, get_checkpoint_path
 
         if has_features_for_raster(raster_path):
@@ -1266,29 +1307,41 @@ class AISegmentationPlugin:
         mask_num = self._get_next_mask_counter()
         layer_name = f"{self._current_layer_name}_mask_{mask_num}"
 
-        # Determine CRS (same logic as before)
-        crs_str = None
-        for pg in polygons_to_export:
-            ti = pg.get('transform_info')
-            if ti:
-                crs_str = ti.get('crs', None)
-                if crs_str and not (isinstance(crs_str, float) and str(crs_str) == 'nan'):
-                    break
-        if crs_str is None or (isinstance(crs_str, float) and str(crs_str) == 'nan'):
-            if self.current_transform_info:
-                crs_str = self.current_transform_info.get('crs', None)
-        if crs_str is None or (isinstance(crs_str, float) and str(crs_str) == 'nan'):
-            try:
-                crs_str = self._current_layer.crs().authid() if self._is_layer_valid() and self._current_layer.crs().isValid() else 'EPSG:4326'
-            except RuntimeError:
-                crs_str = 'EPSG:4326'
-        if isinstance(crs_str, str) and crs_str.strip():
-            crs = QgsCoordinateReferenceSystem(crs_str)
+        # Determine CRS
+        # For non-georeferenced images, use a local pixel-based CRS
+        if self._is_non_georeferenced_mode:
+            # Use EPSG:3857 (Web Mercator) with pixel coordinates
+            # This allows visualization while being clear it's not true geographic data
+            crs = QgsCoordinateReferenceSystem('EPSG:3857')
+            QgsMessageLog.logMessage(
+                "Non-georeferenced mode: Using EPSG:3857 with pixel coordinates",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
         else:
-            try:
-                crs = self._current_layer.crs() if self._is_layer_valid() else QgsCoordinateReferenceSystem('EPSG:4326')
-            except RuntimeError:
-                crs = QgsCoordinateReferenceSystem('EPSG:4326')
+            # Normal georeferenced mode
+            crs_str = None
+            for pg in polygons_to_export:
+                ti = pg.get('transform_info')
+                if ti:
+                    crs_str = ti.get('crs', None)
+                    if crs_str and not (isinstance(crs_str, float) and str(crs_str) == 'nan'):
+                        break
+            if crs_str is None or (isinstance(crs_str, float) and str(crs_str) == 'nan'):
+                if self.current_transform_info:
+                    crs_str = self.current_transform_info.get('crs', None)
+            if crs_str is None or (isinstance(crs_str, float) and str(crs_str) == 'nan'):
+                try:
+                    crs_str = self._current_layer.crs().authid() if self._is_layer_valid() and self._current_layer.crs().isValid() else 'EPSG:4326'
+                except RuntimeError:
+                    crs_str = 'EPSG:4326'
+            if isinstance(crs_str, str) and crs_str.strip():
+                crs = QgsCoordinateReferenceSystem(crs_str)
+            else:
+                try:
+                    crs = self._current_layer.crs() if self._is_layer_valid() else QgsCoordinateReferenceSystem('EPSG:4326')
+                except RuntimeError:
+                    crs = QgsCoordinateReferenceSystem('EPSG:4326')
 
         # Determine output directory for GeoPackage file
         # Priority: 1) Project directory (if project is saved), 2) Raster source directory

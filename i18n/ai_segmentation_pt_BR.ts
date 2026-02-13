@@ -265,16 +265,12 @@
         <translation>Selecione uma camada raster local (GeoTIFF, etc.)</translation>
     </message>
     <message>
-        <source>XYZ Tiles and web layers are not supported. Please add a local GeoTIFF file.</source>
-        <translation>Camadas XYZ Tiles e web não são suportadas. Adicione um arquivo GeoTIFF local.</translation>
+        <source>Found {count} web layer(s), but web services are not supported. Please add a local image file (GeoTIFF, PNG, JPG, etc.).</source>
+        <translation>Encontrado {count} camada(s) web, mas serviços web não são suportados. Adicione um arquivo de imagem local (GeoTIFF, PNG, JPG, etc.).</translation>
     </message>
     <message>
-        <source>{count} image(s) found but not georeferenced. Please use GeoTIFF format.</source>
-        <translation>{count} imagem(ns) encontrada(s) mas não georreferenciada(s). Use o formato GeoTIFF.</translation>
-    </message>
-    <message>
-        <source>No image found. Please add a GeoTIFF file to your project.</source>
-        <translation>Nenhuma imagem encontrada. Adicione um arquivo GeoTIFF ao seu projeto.</translation>
+        <source>No image found. Please add an image file to your project (GeoTIFF, PNG, JPG, etc.).</source>
+        <translation>Nenhuma imagem encontrada. Adicione um arquivo de imagem ao seu projeto (GeoTIFF, PNG, JPG, etc.).</translation>
     </message>
     <message>
         <source>Shortcuts: S (save polygon) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)</source>
