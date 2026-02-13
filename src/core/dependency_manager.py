@@ -253,6 +253,10 @@ def _run_pip_install(pip_name: str, version: str = None, target_dir: str = None)
         "--no-warn-script-location",
         "--disable-pip-version-check",
         "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
+        # SSL workarounds for corporate networks and systems with cert issues
+        "--trusted-host", "pypi.org",
+        "--trusted-host", "pypi.python.org",
+        "--trusted-host", "files.pythonhosted.org",
     ]
 
     if target_dir:
@@ -299,7 +303,18 @@ def _run_pip_install(pip_name: str, version: str = None, target_dir: str = None)
                 _log(f"pip stdout: {result.stdout[:1000]}", Qgis.Warning)
             if result.stderr:
                 _log(f"pip stderr: {result.stderr[:1000]}", Qgis.Warning)
+
             error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
+
+            # Provide helpful SSL error message
+            if "SSL" in error_msg or "certificate" in error_msg.lower():
+                _log(
+                    "SSL certificate error detected. The plugin uses --trusted-host flags "
+                    "to bypass certificate verification for PyPI. If the error persists, "
+                    "check your network proxy settings or firewall.",
+                    Qgis.Warning
+                )
+
             return False, f"pip error: {error_msg[:300]}"
 
     except subprocess.TimeoutExpired:
