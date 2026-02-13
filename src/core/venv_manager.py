@@ -29,6 +29,65 @@ REQUIRED_PACKAGES = [
 ]
 
 DEPS_HASH_FILE = os.path.join(VENV_DIR, "deps_hash.txt")
+CUDA_FLAG_FILE = os.path.join(VENV_DIR, "cuda_installed.txt")
+
+
+def _write_cuda_flag(value: str):
+    """Persist CUDA install state.
+
+    Valid values:
+      'cuda'          – CUDA torch installed and working
+      'cpu'           – CPU torch installed, no GPU available
+      'cuda_fallback' – GPU available but CUDA failed, don't retry
+    """
+    try:
+        os.makedirs(os.path.dirname(CUDA_FLAG_FILE), exist_ok=True)
+        with open(CUDA_FLAG_FILE, "w", encoding="utf-8") as f:
+            f.write(value)
+    except (OSError, IOError) as e:
+        _log("Failed to write CUDA flag: {}".format(e), Qgis.Warning)
+
+
+def _read_cuda_flag() -> Optional[str]:
+    """Returns 'cuda', 'cpu', 'cuda_fallback', or None."""
+    try:
+        with open(CUDA_FLAG_FILE, "r", encoding="utf-8") as f:
+            value = f.read().strip()
+            if value in ("cuda", "cpu", "cuda_fallback"):
+                return value
+    except (OSError, IOError):
+        pass
+    return None
+
+
+def needs_cuda_upgrade() -> bool:
+    """Check if an existing CPU install should be upgraded to CUDA.
+
+    Returns True only if GPU is available, torch was installed as
+    CPU-only, and we haven't already tried and failed CUDA.
+    """
+    if sys.platform == "darwin":
+        return False
+
+    flag = _read_cuda_flag()
+    # Old install without flag file -> treat as CPU (eligible for upgrade)
+    if flag is None:
+        flag = "cpu"
+    # Already CUDA, or already tried CUDA and fell back -> don't retry
+    if flag in ("cuda", "cuda_fallback"):
+        return False
+
+    # Check if NVIDIA GPU is available with sufficient driver
+    try:
+        has_gpu, gpu_info = detect_nvidia_gpu()
+        if not has_gpu:
+            return False
+        cuda_index = _select_cuda_index(gpu_info)
+        if cuda_index is None:
+            return False  # Driver too old
+        return True
+    except Exception:
+        return False
 
 
 def _compute_deps_hash() -> str:
@@ -120,15 +179,25 @@ _CUDA_DRIVER_REQUIREMENTS = {
 # Blackwell (sm_120+) requires cu128; everything else works with cu121.
 _MIN_COMPUTE_CAP_FOR_CU128 = 12.0
 
+# Cache for detect_nvidia_gpu() result — avoids re-running nvidia-smi
+# each time (subprocess is expensive and can block up to 5 seconds).
+_gpu_detect_cache = None  # type: Optional[Tuple[bool, dict]]
+
 
 def detect_nvidia_gpu() -> Tuple[bool, dict]:
     """
     Detect if an NVIDIA GPU is present by querying nvidia-smi.
 
+    Results are cached for the lifetime of the QGIS session so that
+    nvidia-smi is only invoked once.
+
     Returns (True, info_dict) or (False, {}).
     info_dict keys: name, compute_cap, driver_version, memory_mb
     (any key may be missing if nvidia-smi didn't report it).
     """
+    global _gpu_detect_cache
+    if _gpu_detect_cache is not None:
+        return _gpu_detect_cache
     try:
         subprocess_kwargs = {}
         if sys.platform == "win32":
@@ -177,11 +246,13 @@ def detect_nvidia_gpu() -> Tuple[bool, dict]:
                     best_gpu = gpu_info
 
             if not best_gpu:
-                return False, {}
+                _gpu_detect_cache = (False, {})
+                return _gpu_detect_cache
 
             _log("NVIDIA GPU detected (best of {}): {}".format(
                 len(lines), best_gpu), Qgis.Info)
-            return True, best_gpu
+            _gpu_detect_cache = (True, best_gpu)
+            return _gpu_detect_cache
     except FileNotFoundError:
         pass  # nvidia-smi not found = no NVIDIA GPU
     except subprocess.TimeoutExpired:
@@ -189,7 +260,8 @@ def detect_nvidia_gpu() -> Tuple[bool, dict]:
     except Exception as e:
         _log("nvidia-smi check failed: {}".format(e), Qgis.Warning)
 
-    return False, {}
+    _gpu_detect_cache = (False, {})
+    return _gpu_detect_cache
 
 
 def _select_cuda_index(gpu_info: dict) -> Optional[str]:
@@ -1033,7 +1105,7 @@ def _run_pip_install(
                     last_download_status, elapsed,
                     package_index + 1, total_packages)
             elif is_cuda and package_name == "torch":
-                msg = "Downloading PyTorch CUDA (~2.5GB)... {}s elapsed ({}/{})".format(
+                msg = "Installing GPU dependencies... {}s ({}/{})".format(
                     elapsed, package_index + 1, total_packages)
             elif package_name == "torch":
                 msg = "Downloading PyTorch (~600MB)... {}s elapsed ({}/{})".format(
@@ -1128,6 +1200,8 @@ def install_dependencies(
     if cuda_enabled:
         _log("CUDA mode enabled - will install GPU-accelerated PyTorch", Qgis.Info)
 
+    _cuda_fell_back = False  # Track if CUDA install fell back to CPU
+
     total_packages = len(REQUIRED_PACKAGES)
     base_progress = 20
     progress_range = 80  # from 20% to 100%
@@ -1193,8 +1267,8 @@ def install_dependencies(
                 if package_name == "torch" and cuda_enabled:
                     progress_callback(
                         pkg_start,
-                        "Installing {} (CUDA ~2.5GB)... ({}/{})".format(
-                            package_name, i + 1, total_packages))
+                        "Installing GPU dependencies... ({}/{})".format(
+                            i + 1, total_packages))
                 elif package_name == "torch":
                     progress_callback(
                         pkg_start,
@@ -1232,6 +1306,7 @@ def install_dependencies(
                         Qgis.Warning
                     )
                     is_cuda_package = False
+                    _cuda_fell_back = True
                 else:
                     pip_args.extend([
                         "--index-url",
@@ -1443,6 +1518,7 @@ def install_dependencies(
                                 "✓ {} installed (CPU)".format(package_name)
                             )
                         install_failed = False
+                        _cuda_fell_back = True
                     else:
                         cpu_err = cpu_result.stderr or cpu_result.stdout or ""
                         install_error_msg = "CUDA and CPU install both failed for {}: {}".format(
@@ -1522,6 +1598,8 @@ def install_dependencies(
         _log(f"Virtual environment: {venv_dir}", Qgis.Success)
         _log("=" * 50, Qgis.Success)
 
+        if _cuda_fell_back:
+            return True, "All dependencies installed successfully [CUDA_FALLBACK]"
         return True, "All dependencies installed successfully"
 
     finally:
@@ -1952,6 +2030,9 @@ def create_venv_and_install(
     if not success:
         return False, msg
 
+    # Track if CUDA fell back to CPU at any level (install or verification)
+    _cuda_fell_back = "[CUDA_FALLBACK]" in msg
+
     # Step 4: Verify installation (95-100%)
     def verify_progress(percent: int, msg: str):
         """Map verification progress (0-100%) to overall progress (95-99%)."""
@@ -1973,9 +2054,10 @@ def create_venv_and_install(
         )
         _reinstall_cpu_torch(VENV_DIR, progress_callback=progress_callback)
         is_valid, verify_msg = verify_venv(progress_callback=verify_progress)
+        _cuda_fell_back = True
 
     # Step 4b: CUDA smoke test — verify torch.cuda actually works in the venv
-    if is_valid and cuda_enabled:
+    if is_valid and cuda_enabled and not _cuda_fell_back:
         if progress_callback:
             progress_callback(99, "Verifying CUDA functionality...")
         if not _verify_cuda_in_venv(VENV_DIR):
@@ -1985,6 +2067,7 @@ def create_venv_and_install(
             )
             _reinstall_cpu_torch(VENV_DIR, progress_callback=progress_callback)
             is_valid, verify_msg = verify_venv(progress_callback=verify_progress)
+            _cuda_fell_back = True
 
     if not is_valid:
         return False, f"Verification failed: {verify_msg}"
@@ -1992,9 +2075,19 @@ def create_venv_and_install(
     # Persist deps hash so future upgrades can detect spec changes
     _write_deps_hash()
 
+    # Persist whether CUDA or CPU torch was installed
+    if cuda_enabled and not _cuda_fell_back:
+        _write_cuda_flag("cuda")
+    elif cuda_enabled and _cuda_fell_back:
+        _write_cuda_flag("cuda_fallback")
+    else:
+        _write_cuda_flag("cpu")
+
     if progress_callback:
         progress_callback(100, "✓ All dependencies installed")
 
+    if _cuda_fell_back:
+        return True, "Virtual environment ready [CUDA_FALLBACK]"
     return True, "Virtual environment ready"
 
 
@@ -2079,6 +2172,11 @@ def get_venv_status() -> Tuple[bool, str]:
                 Qgis.Warning
             )
             return False, "Dependencies need updating"
+        # Check if CPU torch should be upgraded to CUDA
+        if needs_cuda_upgrade():
+            _log("CPU torch detected but GPU available, upgrade needed",
+                 Qgis.Info)
+            return False, "GPU acceleration available - upgrading"
         python_version = get_python_full_version()
         _log("get_venv_status: ready (quick check passed)", Qgis.Success)
         return True, "Ready (Python {})".format(python_version)
