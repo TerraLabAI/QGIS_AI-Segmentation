@@ -488,6 +488,9 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
 
+        # Show GPU info in dependencies section (uses cached result, no extra overhead)
+        self.dock_widget.update_gpu_info()
+
         try:
             from ..core.venv_manager import get_venv_status, cleanup_old_libs
 
@@ -511,6 +514,9 @@ class AISegmentationPlugin:
                     "AI Segmentation",
                     level=Qgis.Info
                 )
+                # Auto-trigger CUDA upgrade if GPU is available
+                if "GPU acceleration" in message:
+                    self._on_install_requested()
 
         except Exception as e:
             import traceback
@@ -617,6 +623,15 @@ class AISegmentationPlugin:
             )
 
     def _on_install_requested(self):
+        # Guard: prevent concurrent installs
+        if self.deps_install_worker is not None and self.deps_install_worker.isRunning():
+            QgsMessageLog.logMessage(
+                "Install already in progress, ignoring duplicate request",
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+            return
+
         from ..core.venv_manager import get_venv_status
 
         is_ready, message = get_venv_status()
@@ -665,6 +680,21 @@ class AISegmentationPlugin:
         self.dock_widget.set_deps_install_progress(100, "Done")
 
         if success:
+            # Warn user if CUDA install fell back to CPU
+            if "CUDA_FALLBACK" in message:
+                from .error_report_dialog import show_error_report
+                # Disable install button during dialog to prevent re-entrant installs
+                self.dock_widget.install_button.setEnabled(False)
+                fallback_msg = "{}\n\n{}".format(
+                    tr("Your GPU was detected but CUDA installation didn't work."),
+                    tr("No worries, the plugin now uses CPU mode and everything works fine :) "
+                       "If you'd like us to fix GPU support for your setup, send us your logs!"))
+                show_error_report(
+                    self.iface.mainWindow(),
+                    tr("GPU mode failed, using CPU"),
+                    fallback_msg
+                )
+
             from ..core.venv_manager import verify_venv
             is_valid, verify_msg = verify_venv()
 

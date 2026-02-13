@@ -277,7 +277,9 @@ class ErrorReportDialog(QDialog):
 
         # Help text
         help_label = QLabel(
-            tr("Copy your logs with the button below and send them to our email so we can fix your issue :)")
+            "{}\n\n{}".format(
+                tr("Copy your logs with the button below and send them to our email."),
+                tr("We'll fix your issue :)"))
         )
         help_label.setWordWrap(True)
         help_label.setStyleSheet("color: palette(text); margin-top: 6px;")
@@ -349,7 +351,9 @@ class BugReportDialog(QDialog):
 
         # Friendly message
         msg_label = QLabel(
-            tr("Something not working? Copy your logs and send them to us, we'll look into it :)")
+            "{}\n\n{}".format(
+                tr("Something not working?"),
+                tr("Copy your logs and send them to us, we'll look into it :)"))
         )
         msg_label.setWordWrap(True)
         layout.addWidget(msg_label)
@@ -405,4 +409,84 @@ def show_error_report(parent, error_title: str, error_message: str):
 def show_bug_report(parent):
     """Convenience function to show the bug report dialog."""
     dialog = BugReportDialog(parent)
+    dialog.exec_()
+
+
+CALENDLY_URL = "https://calendly.com/barbot-yvann/30min"
+
+
+class SuggestFeatureDialog(QDialog):
+    """Dialog for users to suggest features or share feedback."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("AI Segmentation")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+        self.setMaximumWidth(500)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        msg_label = QLabel(
+            "{}\n\n{}".format(
+                tr("We're building AI Segmentation for real-world geospatial workflows."),
+                tr("We'd love to understand your use case and make the plugin more useful for you :)"))
+        )
+        msg_label.setWordWrap(True)
+        layout.addWidget(msg_label)
+
+        action_layout = QHBoxLayout()
+        action_layout.setSpacing(8)
+
+        # Email button (blue)
+        self._email_btn = QPushButton(SUPPORT_EMAIL)
+        self._email_btn.setToolTip(tr("Copy email address"))
+        self._email_btn.setStyleSheet(
+            "background-color: #1976d2; color: white; padding: 6px 12px;"
+        )
+        self._email_btn.clicked.connect(self._on_copy_email)
+        action_layout.addWidget(self._email_btn)
+
+        # Take a call button (green)
+        call_btn = QPushButton(tr("Take a call"))
+        call_btn.setStyleSheet(
+            "background-color: #2e7d32; color: white; padding: 6px 12px;"
+        )
+        call_btn.clicked.connect(self._on_take_call)
+        action_layout.addWidget(call_btn)
+
+        layout.addLayout(action_layout)
+
+        # TerraLab link
+        link_label = QLabel(
+            '<a href="{}" style="color: palette(link);">terra-lab.ai</a>'.format(
+                TERRALAB_URL)
+        )
+        link_label.setOpenExternalLinks(True)
+        link_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(link_label)
+
+    def _on_copy_email(self):
+        """Copy support email address to clipboard."""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(SUPPORT_EMAIL)
+        self._email_btn.setText(tr("Email copied!"))
+        from qgis.PyQt.QtCore import QTimer
+        QTimer.singleShot(
+            2000, lambda: self._email_btn.setText(SUPPORT_EMAIL))
+
+    def _on_take_call(self):
+        """Open Calendly link in browser."""
+        from qgis.PyQt.QtCore import QUrl
+        from qgis.PyQt.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl(CALENDLY_URL))
+
+
+def show_suggest_feature(parent):
+    """Convenience function to show the suggest feature dialog."""
+    dialog = SuggestFeatureDialog(parent)
     dialog.exec_()

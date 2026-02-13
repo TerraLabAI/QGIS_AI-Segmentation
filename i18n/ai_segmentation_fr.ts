@@ -9,12 +9,16 @@
         <translation>Bienvenue ! Deux étapes rapides pour commencer :</translation>
     </message>
     <message>
-        <source>Install AI dependencies (~800MB)</source>
-        <translation>Installer les dépendances IA (~800 Mo)</translation>
+        <source>Install AI dependencies</source>
+        <translation>Installer les dépendances IA</translation>
     </message>
     <message>
-        <source>Download the segmentation model (~375MB)</source>
-        <translation>Télécharger le modèle de segmentation (~375 Mo)</translation>
+        <source>Download the segmentation model</source>
+        <translation>Télécharger le modèle de segmentation</translation>
+    </message>
+    <message>
+        <source>{gpu_name} detected :) GPU dependencies will be installed, so it takes a bit longer, but segmentation will be 5 to 10x faster and handle large rasters easily.</source>
+        <translation>{gpu_name} détecté :) Les dépendances GPU seront installées, c'est un peu plus long, mais la segmentation sera 5 à 10x plus rapide et gérera facilement les gros rasters.</translation>
     </message>
 
     <!-- Dependencies Section -->
@@ -61,10 +65,6 @@
     <message>
         <source>Create isolated virtual environment and install required packages</source>
         <translation>Créer un environnement virtuel isolé et installer les packages requis</translation>
-    </message>
-    <message>
-        <source>Download size: ~800MB</source>
-        <translation>Taille du téléchargement : ~800 Mo</translation>
     </message>
     <message>
         <source>Cancel</source>
@@ -669,6 +669,22 @@
         <translation>Signaler un bug</translation>
     </message>
     <message>
+        <source>Suggest a feature</source>
+        <translation>Suggérer une fonctionnalité</translation>
+    </message>
+    <message>
+        <source>We're building AI Segmentation for real-world geospatial workflows.</source>
+        <translation>On développe AI Segmentation pour de vrais usages géospatiaux.</translation>
+    </message>
+    <message>
+        <source>We'd love to understand your use case and make the plugin more useful for you :)</source>
+        <translation>On aimerait comprendre votre cas d'usage et rendre le plugin plus utile pour vous :)</translation>
+    </message>
+    <message>
+        <source>Take a call</source>
+        <translation>Prendre un appel</translation>
+    </message>
+    <message>
         <source>Tutorial &amp; Docs</source>
         <translation>Tutoriel &amp; Docs</translation>
     </message>
@@ -685,8 +701,12 @@
         <translation>Nous contacter</translation>
     </message>
     <message>
-        <source>Something not working? Copy your logs and send them to us, we'll look into it :)</source>
-        <translation>Quelque chose ne fonctionne pas ? Copiez vos logs et envoyez-les nous, on regarde ça :)</translation>
+        <source>Something not working?</source>
+        <translation>Quelque chose ne fonctionne pas ?</translation>
+    </message>
+    <message>
+        <source>Copy your logs and send them to us, we'll look into it :)</source>
+        <translation>Copiez vos logs et envoyez-les nous, on regarde ça :)</translation>
     </message>
 
     <!-- Tooltip -->
@@ -697,8 +717,12 @@
 
     <!-- Error Report Dialog -->
     <message>
-        <source>Copy your logs with the button below and send them to our email so we can fix your issue :)</source>
-        <translation>Copiez vos logs avec le bouton ci-dessous et envoyez-les à notre email pour qu'on puisse corriger votre problème :)</translation>
+        <source>Copy your logs with the button below and send them to our email.</source>
+        <translation>Copiez vos logs avec le bouton ci-dessous et envoyez-les à notre email.</translation>
+    </message>
+    <message>
+        <source>We'll fix your issue :)</source>
+        <translation>On va corriger votre problème :)</translation>
     </message>
     <message>
         <source>Copy log to clipboard</source>
@@ -727,22 +751,26 @@
         <translation>Installation bloquée</translation>
     </message>
 
-    <!-- NVIDIA GPU -->
+    <!-- GPU auto-detection -->
     <message>
-        <source>NVIDIA GPU support</source>
-        <translation>Support GPU NVIDIA</translation>
+        <source>GPU mode failed, using CPU</source>
+        <translation>Mode GPU échoué, utilisation du CPU</translation>
     </message>
     <message>
-        <source>Enable NVIDIA GPU acceleration</source>
-        <translation>Activer l'accélération GPU NVIDIA</translation>
+        <source>Your GPU was detected but CUDA installation didn't work.</source>
+        <translation>Votre GPU a été détecté mais l'installation CUDA n'a pas fonctionné.</translation>
     </message>
     <message>
-        <source>Up to x5 faster. Requires ~2.5GB download.</source>
-        <translation>Jusqu'à x5 plus rapide. Téléchargement ~2,5 Go.</translation>
+        <source>No worries, the plugin now uses CPU mode and everything works fine :) If you'd like us to fix GPU support for your setup, send us your logs!</source>
+        <translation>Pas de souci, le plugin utilise maintenant le mode CPU et tout fonctionne :) Si vous souhaitez qu'on corrige le support GPU pour votre config, envoyez-nous vos logs !</translation>
     </message>
     <message>
-        <source>Detected: {gpu_details}</source>
-        <translation>Détecté : {gpu_details}</translation>
+        <source>GPU acceleration available - upgrading</source>
+        <translation>Accélération GPU disponible - mise à jour</translation>
+    </message>
+    <message>
+        <source>Switching to CPU mode...</source>
+        <translation>Passage en mode CPU...</translation>
     </message>
     <message>
         <source>GPU not compatible with installed CUDA version, using CPU...</source>

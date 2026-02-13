@@ -163,11 +163,11 @@ class AISegmentationDockWidget(QDockWidget):
         welcome_title.setStyleSheet("font-weight: bold; font-size: 12px; color: palette(text);")
         layout.addWidget(welcome_title)
 
-        step1_label = QLabel("1. " + tr("Install AI dependencies (~800MB)"))
+        step1_label = QLabel("1. " + tr("Install AI dependencies"))
         step1_label.setStyleSheet("font-size: 11px; color: palette(text); margin-left: 8px;")
         layout.addWidget(step1_label)
 
-        step2_label = QLabel("2. " + tr("Download the segmentation model (~375MB)"))
+        step2_label = QLabel("2. " + tr("Download the segmentation model"))
         step2_label.setStyleSheet("font-size: 11px; color: palette(text); margin-left: 8px;")
         layout.addWidget(step2_label)
 
@@ -194,92 +194,27 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_button = QPushButton(tr("Install Dependencies"))
         self.install_button.clicked.connect(self._on_install_clicked)
         self.install_button.setVisible(False)
-        self.install_button.setToolTip(
-            "{}\n(PyTorch, Segment Anything, pandas, rasterio)\n{}".format(
-                tr("Create isolated virtual environment and install required packages"),
-                tr("Download size: ~800MB"))
-        )
+        self.install_button.setToolTip("")
         layout.addWidget(self.install_button)
-
-        # NVIDIA GPU collapsible dropdown - only shown on Windows/Linux
-        self._cuda_expanded = False
-        self.cuda_toggle_label = QLabel(
-            "▶ " + tr("NVIDIA GPU support"))
-        self.cuda_toggle_label.setStyleSheet(
-            "font-size: 10px; color: palette(mid); padding: 4px 0px;")
-        self.cuda_toggle_label.setCursor(Qt.PointingHandCursor)
-        self.cuda_toggle_label.mousePressEvent = self._on_cuda_toggle_clicked
-        self.cuda_toggle_label.setVisible(False)
-        layout.addWidget(self.cuda_toggle_label)
-
-        # NVIDIA GPU content widget (hidden by default, revealed on toggle)
-        self.cuda_content_widget = QWidget()
-        self.cuda_content_widget.setObjectName("cudaContentWidget")
-        self.cuda_content_widget.setStyleSheet("""
-            QWidget#cudaContentWidget {
-                background-color: rgba(128, 128, 128, 0.08);
-                border: 1px solid rgba(128, 128, 128, 0.2);
-                border-radius: 4px;
-            }
-        """)
-        cuda_content_layout = QVBoxLayout(self.cuda_content_widget)
-        cuda_content_layout.setContentsMargins(10, 8, 10, 8)
-        cuda_content_layout.setSpacing(4)
-
-        self.cuda_checkbox = QCheckBox(
-            tr("Enable NVIDIA GPU acceleration"))
-        self.cuda_checkbox.setStyleSheet("""
-            QCheckBox {
-                font-size: 11px;
-                color: palette(text);
-                padding: 2px 0px;
-            }
-            QCheckBox::indicator {
-                width: 14px;
-                height: 14px;
-            }
-        """)
-        cuda_content_layout.addWidget(self.cuda_checkbox)
-
-        self.cuda_description = QLabel(
-            tr("Up to x5 faster. Requires ~2.5GB download."))
-        self.cuda_description.setStyleSheet(
-            "font-size: 10px; color: palette(mid); padding-left: 20px;"
-            " background: transparent; border: none;")
-        self.cuda_description.setWordWrap(True)
-        cuda_content_layout.addWidget(self.cuda_description)
-
-        self.cuda_content_widget.setVisible(False)
-        layout.addWidget(self.cuda_content_widget)
-
-        # Auto-detect NVIDIA GPU (non-macOS only)
-        if sys.platform != "darwin":
-            try:
-                from ..core.venv_manager import detect_nvidia_gpu
-                has_gpu, gpu_info = detect_nvidia_gpu()
-                if has_gpu:
-                    self.cuda_checkbox.setChecked(False)
-                    gpu_name = gpu_info.get("name", "Unknown")
-                    # Build a rich tooltip with compute cap + driver version
-                    tooltip_parts = [gpu_name]
-                    cc = gpu_info.get("compute_cap")
-                    if cc is not None:
-                        tooltip_parts.append("CC {}".format(cc))
-                    drv = gpu_info.get("driver_version")
-                    if drv:
-                        tooltip_parts.append("Driver {}".format(drv))
-                    tooltip_text = tr(
-                        "Detected: {gpu_details}").format(
-                        gpu_details=", ".join(tooltip_parts))
-                    self.cuda_checkbox.setToolTip(tooltip_text)
-            except Exception:
-                pass
 
         self.cancel_deps_button = QPushButton(tr("Cancel"))
         self.cancel_deps_button.clicked.connect(self._on_cancel_deps_clicked)
         self.cancel_deps_button.setVisible(False)
         self.cancel_deps_button.setStyleSheet("background-color: #d32f2f;")
         layout.addWidget(self.cancel_deps_button)
+
+        self.gpu_info_box = QLabel("")
+        self.gpu_info_box.setWordWrap(True)
+        self.gpu_info_box.setStyleSheet(
+            "background-color: rgba(46, 125, 50, 0.08);"
+            "border: 1px solid rgba(46, 125, 50, 0.25);"
+            "border-radius: 4px;"
+            "padding: 8px;"
+            "font-size: 11px;"
+            "color: palette(text);"
+        )
+        self.gpu_info_box.setVisible(False)
+        layout.addWidget(self.gpu_info_box)
 
         self.main_layout.addWidget(self.deps_group)
 
@@ -420,12 +355,12 @@ class AISegmentationDockWidget(QDockWidget):
         self.layer_combo.setToolTip(tr("Select a file-based raster layer (GeoTIFF, etc.)"))
         layout.addWidget(self.layer_combo)
 
-        # Warning container with icon and text - yellow background with white text
+        # Warning container with icon and text - yellow background with dark text
         self.no_rasters_widget = QWidget()
         self.no_rasters_widget.setStyleSheet(
             "QWidget { background-color: rgba(255, 193, 7, 0.4); "
             "border: 1px solid rgba(255, 152, 0, 0.6); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; color: white; }"
+            "QLabel { background: transparent; border: none; color: #333333; }"
         )
         no_rasters_layout = QHBoxLayout(self.no_rasters_widget)
         no_rasters_layout.setContentsMargins(8, 8, 8, 8)
@@ -911,6 +846,15 @@ class AISegmentationDockWidget(QDockWidget):
         report_link.linkActivated.connect(self._on_report_bug)
         links_layout.addWidget(report_link)
 
+        # Suggest a feature button (styled as link)
+        suggest_link = QLabel(
+            '<a href="#" style="color: #1976d2;">' + tr("Suggest a feature") + '</a>'
+        )
+        suggest_link.setStyleSheet("font-size: 13px;")
+        suggest_link.setCursor(Qt.PointingHandCursor)
+        suggest_link.linkActivated.connect(self._on_suggest_feature)
+        links_layout.addWidget(suggest_link)
+
         # Tutorial & Docs link (merged)
         docs_link = QLabel(
             '<a href="https://terra-lab.ai/docs/ai-segmentation" style="color: #1976d2;">' + tr("Tutorial & Docs") + '</a>'
@@ -935,6 +879,11 @@ class AISegmentationDockWidget(QDockWidget):
         """Open the bug report dialog."""
         from .error_report_dialog import show_bug_report
         show_bug_report(self)
+
+    def _on_suggest_feature(self):
+        """Open the suggest a feature dialog."""
+        from .error_report_dialog import show_suggest_feature
+        show_suggest_feature(self)
 
     def _on_batch_mode_checkbox_changed(self, state: int):
         """Handle batch mode checkbox change."""
@@ -1105,17 +1054,35 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_stop_clicked(self):
         self.stop_segmentation_requested.emit()
 
-    def _on_cuda_toggle_clicked(self, event):
-        """Toggle the NVIDIA GPU dropdown expanded/collapsed."""
-        self._cuda_expanded = not self._cuda_expanded
-        self.cuda_content_widget.setVisible(self._cuda_expanded)
-        arrow = "▼" if self._cuda_expanded else "▶"
-        self.cuda_toggle_label.setText(
-            "{} ".format(arrow) + tr("NVIDIA GPU support"))
+    def update_gpu_info(self):
+        """Show GPU info box in dependencies section if NVIDIA GPU detected."""
+        if sys.platform == "darwin":
+            return
+        try:
+            from ..core.venv_manager import detect_nvidia_gpu
+            has_gpu, gpu_info = detect_nvidia_gpu()
+            if has_gpu:
+                gpu_name = gpu_info.get("name", "NVIDIA GPU")
+                self.gpu_info_box.setText(
+                    tr("{gpu_name} detected :) GPU dependencies will be "
+                       "installed, so it takes a bit longer, but segmentation "
+                       "will be 5 to 10x faster and handle large rasters "
+                       "easily.").format(gpu_name=gpu_name)
+                )
+                self.gpu_info_box.setVisible(True)
+        except Exception:
+            pass
 
     def get_cuda_enabled(self) -> bool:
-        """Return whether the NVIDIA GPU checkbox is checked."""
-        return self.cuda_checkbox.isChecked()
+        """Auto-detect NVIDIA GPU and return whether CUDA should be used."""
+        if sys.platform == "darwin":
+            return False
+        try:
+            from ..core.venv_manager import detect_nvidia_gpu
+            has_gpu, _ = detect_nvidia_gpu()
+            return has_gpu
+        except Exception:
+            return False
 
     def set_device_info(self, info: str):
         """No-op: device info box removed from UI."""
@@ -1131,31 +1098,21 @@ class AISegmentationDockWidget(QDockWidget):
         if ok:
             self.deps_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
             self.install_button.setVisible(False)
-            self.cuda_toggle_label.setVisible(False)
-            self.cuda_content_widget.setVisible(False)
             self.cancel_deps_button.setVisible(False)
             self.deps_progress.setVisible(False)
             self.deps_progress_label.setVisible(False)
+            self.gpu_info_box.setVisible(False)
             self.deps_group.setVisible(False)
         else:
             self.deps_status_label.setStyleSheet("color: palette(text);")
             self.install_button.setVisible(True)
             self.install_button.setEnabled(True)
             # Detect update mode (deps exist but specs changed)
-            is_update = "updating" in message.lower()
+            is_update = "updating" in message.lower() or "upgrading" in message.lower()
             if is_update:
                 self.install_button.setText(tr("Update Dependencies"))
-                # Hide CUDA toggle during update — choice was already made
-                self.cuda_toggle_label.setVisible(False)
-                self.cuda_content_widget.setVisible(False)
             else:
                 self.install_button.setText(tr("Install Dependencies"))
-                # Show NVIDIA GPU toggle on non-macOS when deps need installing
-                show_cuda = sys.platform != "darwin"
-                self.cuda_toggle_label.setVisible(show_cuda)
-                # Keep content collapsed
-                self.cuda_content_widget.setVisible(
-                    show_cuda and self._cuda_expanded)
             self.deps_group.setVisible(True)
 
         self._update_full_ui()
