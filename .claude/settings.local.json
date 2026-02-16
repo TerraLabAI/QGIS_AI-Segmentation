@@ -19,7 +19,14 @@
       "WebFetch(domain:plugins.qgis.org)",
       "Bash(pip3 install:*)",
       "Bash(detect-secrets scan:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh issue list:*)",
+      "Bash(for i in 93 94 96 97 99 100)",
+      "Bash(do echo \"=== ISSUE #$i ===\")",
+      "Bash(gh issue view:*)",
+      "Bash(done)",
+      "Bash(gh issue close:*)"
     ]
   }
 }
