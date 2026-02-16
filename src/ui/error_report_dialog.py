@@ -52,9 +52,8 @@ def _anonymize_paths(text: str) -> str:
     text = re.sub(r'/home/[^/\s]+/', '<USER>/', text)
 
     # Windows: C:\Users\<username>\... (and other drive letters)
-    # Handle both forward and backslashes
-    text = re.sub(r'[A-Za-z]:\\Users\\[^\\]+\\', '<USER>/', text)
-    text = re.sub(r'[A-Za-z]:/Users/[^/]+/', '<USER>/', text)
+    # Handle forward slashes, backslashes, and mixed combinations
+    text = re.sub(r'[A-Za-z]:[/\\]Users[/\\][^/\\\s]+[/\\]', '<USER>/', text)
 
     return text
 
