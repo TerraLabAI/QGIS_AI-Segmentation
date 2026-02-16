@@ -553,6 +553,24 @@ def ensure_venv_packages_available():
         sys.path.insert(0, site_packages)
         _log(f"Added venv site-packages to sys.path: {site_packages}", Qgis.Info)
 
+    # SAFE FIX for old QGIS with stale typing_extensions (missing TypeIs)
+    # QGIS may load an old typing_extensions at startup that lacks TypeIs,
+    # which torch requires. Remove it so Python reimports from venv.
+    if "typing_extensions" in sys.modules:
+        try:
+            te = sys.modules["typing_extensions"]
+            if not hasattr(te, "TypeIs"):
+                old_ver = getattr(te, "__version__", "unknown")
+                del sys.modules["typing_extensions"]
+                import typing_extensions as new_te
+                _log(
+                    "Reloaded typing_extensions {} -> {} from venv".format(
+                        old_ver, new_te.__version__),
+                    Qgis.Info
+                )
+        except Exception:
+            _log("Failed to reload typing_extensions, torch may fail", Qgis.Warning)
+
     # SAFE FIX for old QGIS versions (< 3.28) with numpy/pandas compatibility issue
     # QGIS 3.26-3.27 ships with numpy 1.20.x which is incompatible with pandas >= 2.0
     # We safely reload numpy from venv ONLY for these old versions
@@ -2172,13 +2190,13 @@ def get_venv_status() -> Tuple[bool, str]:
             return False, "Dependencies need updating"
         if stored_hash is None:
             # First run after upgrade from a version without hash tracking.
-            # Packages exist but we can't verify versions — assume outdated.
+            # Packages already passed quick check — write hash and proceed.
             _log(
                 "get_venv_status: no deps hash file, "
-                "assuming update needed",
-                Qgis.Warning
+                "writing current hash (packages already present)",
+                Qgis.Info
             )
-            return False, "Dependencies need updating"
+            _write_deps_hash()
         # Check if CPU torch should be upgraded to CUDA
         if needs_cuda_upgrade():
             _log("CPU torch detected but GPU available, upgrade needed",
