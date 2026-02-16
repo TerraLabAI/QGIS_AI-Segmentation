@@ -289,6 +289,14 @@ def encode_raster_to_features(
             if stderr_output:
                 error_msg += f"\nStderr: {stderr_output[:500]}"
             QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
+
+            # Detect OOM and show a clearer message
+            oom_markers = ["not enough memory", "OutOfMemoryError", "MemoryError"]
+            if any(m in stderr_output for m in oom_markers):
+                return False, (
+                    "Out of memory: your raster is too large for available RAM. "
+                    "Try a smaller area or close other applications."
+                )
             return False, error_msg
 
     except Exception as e:
