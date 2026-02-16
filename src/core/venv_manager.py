@@ -725,6 +725,16 @@ def venv_exists(venv_dir: str = None) -> bool:
     return os.path.exists(python_path)
 
 
+def _cleanup_partial_venv(venv_dir: str):
+    """Remove a partially-created venv directory to prevent broken state on retry."""
+    if os.path.exists(venv_dir):
+        try:
+            shutil.rmtree(venv_dir, ignore_errors=True)
+            _log(f"Cleaned up partial venv: {venv_dir}", Qgis.Info)
+        except Exception:
+            _log(f"Could not clean up partial venv: {venv_dir}", Qgis.Warning)
+
+
 def create_venv(venv_dir: str = None, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[bool, str]:
     if venv_dir is None:
         venv_dir = VENV_DIR
@@ -786,9 +796,11 @@ def create_venv(venv_dir: str = None, progress_callback: Optional[Callable[[int,
                     else:
                         err = ensurepip_result.stderr or ensurepip_result.stdout
                         _log(f"ensurepip failed: {err[:200]}", Qgis.Warning)
+                        _cleanup_partial_venv(venv_dir)
                         return False, f"Failed to bootstrap pip: {err[:200]}"
                 except Exception as e:
                     _log(f"ensurepip exception: {e}", Qgis.Warning)
+                    _cleanup_partial_venv(venv_dir)
                     return False, f"Failed to bootstrap pip: {str(e)[:200]}"
 
             if progress_callback:
@@ -797,16 +809,19 @@ def create_venv(venv_dir: str = None, progress_callback: Optional[Callable[[int,
         else:
             error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
             _log(f"Failed to create venv: {error_msg}", Qgis.Critical)
+            _cleanup_partial_venv(venv_dir)
             return False, f"Failed to create venv: {error_msg[:200]}"
 
     except subprocess.TimeoutExpired:
         _log("Virtual environment creation timed out", Qgis.Critical)
+        _cleanup_partial_venv(venv_dir)
         return False, "Virtual environment creation timed out"
     except FileNotFoundError:
         _log(f"Python executable not found: {system_python}", Qgis.Critical)
         return False, f"Python not found: {system_python}"
     except Exception as e:
         _log(f"Exception during venv creation: {str(e)}", Qgis.Critical)
+        _cleanup_partial_venv(venv_dir)
         return False, f"Error: {str(e)[:200]}"
 
 
