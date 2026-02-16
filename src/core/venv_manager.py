@@ -735,7 +735,10 @@ def _cleanup_partial_venv(venv_dir: str):
             _log(f"Could not clean up partial venv: {venv_dir}", Qgis.Warning)
 
 
-def create_venv(venv_dir: str = None, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[bool, str]:
+def create_venv(
+    venv_dir: str = None,
+    progress_callback: Optional[Callable[[int, str], None]] = None
+) -> Tuple[bool, str]:
     if venv_dir is None:
         venv_dir = VENV_DIR
 
