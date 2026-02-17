@@ -1,13 +1,9 @@
 import sys
 import os
-from typing import Optional, TYPE_CHECKING
 from qgis.core import QgsMessageLog, Qgis
 
 from .venv_manager import ensure_venv_packages_available
 ensure_venv_packages_available()
-
-if TYPE_CHECKING:
-    import torch
 
 _cached_device = None
 _device_info = None
@@ -117,6 +113,12 @@ def get_optimal_device() -> "torch.device":
     if sys.platform == "darwin":
         try:
             if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+                # Verify MPS actually works with a test allocation
+                test = torch.zeros(1, device="mps")
+                _ = test + 1
+                torch.mps.synchronize()
+                del test
+
                 _cached_device = torch.device("mps")
                 _device_info = "Apple Silicon GPU (MPS)"
                 _configure_mps_optimizations()
@@ -202,139 +204,3 @@ def get_device_info() -> str:
     if _device_info is None:
         get_optimal_device()
     return _device_info or "Unknown"
-
-
-def is_mps_available() -> bool:
-    if sys.platform != "darwin":
-        return False
-    try:
-        import torch
-        return torch.backends.mps.is_available() and torch.backends.mps.is_built()
-    except Exception:
-        return False
-
-
-def is_cuda_available() -> bool:
-    try:
-        import torch
-        return torch.cuda.is_available()
-    except Exception:
-        return False
-
-
-def get_device_capabilities() -> dict:
-    import torch
-
-    caps = {
-        "platform": sys.platform,
-        "mps_available": False,
-        "mps_built": False,
-        "cuda_available": False,
-        "cpu_cores": os.cpu_count() or 1,
-        "recommended_device": "cpu",
-        "pytorch_version": torch.__version__,
-    }
-
-    if sys.platform == "darwin":
-        try:
-            caps["mps_built"] = torch.backends.mps.is_built()
-            caps["mps_available"] = torch.backends.mps.is_available()
-            if caps["mps_available"]:
-                caps["recommended_device"] = "mps"
-        except Exception:
-            pass
-
-    try:
-        caps["cuda_available"] = torch.cuda.is_available()
-    except Exception:
-        caps["cuda_available"] = False
-
-    if caps["cuda_available"]:
-        try:
-            count = torch.cuda.device_count()
-            caps["cuda_device_count"] = count
-            best_idx = 0
-            best_mem = 0.0
-            for i in range(count):
-                try:
-                    mem = torch.cuda.get_device_properties(i).total_memory
-                    if mem > best_mem:
-                        best_mem = mem
-                        best_idx = i
-                except Exception:
-                    continue
-            caps["cuda_device_name"] = torch.cuda.get_device_name(best_idx)
-            props = torch.cuda.get_device_properties(best_idx)
-            caps["cuda_memory_gb"] = props.total_memory / (1024**3)
-            caps["cuda_compute_capability"] = "{}.{}".format(
-                props.major, props.minor)
-            caps["cuda_device_index"] = best_idx
-            caps["recommended_device"] = "cuda"
-        except Exception:
-            pass
-
-    return caps
-
-
-def reset_device_cache():
-    global _cached_device, _device_info
-    _cached_device = None
-    _device_info = None
-
-
-def move_to_device(tensor_or_model, device: Optional["torch.device"] = None):
-    if device is None:
-        device = get_optimal_device()
-    return tensor_or_model.to(device)
-
-
-def synchronize_device(device: Optional["torch.device"] = None):
-    import torch
-
-    if device is None:
-        device = get_optimal_device()
-
-    if device.type == "mps":
-        torch.mps.synchronize()
-    elif device.type == "cuda":
-        torch.cuda.synchronize()
-
-
-def clear_gpu_memory():
-    import torch
-    import gc
-
-    gc.collect()
-
-    device = get_optimal_device()
-
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
-        QgsMessageLog.logMessage(
-            "CUDA memory cache cleared",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-    elif device.type == "mps":
-        if hasattr(torch.mps, 'empty_cache'):
-            torch.mps.empty_cache()
-        QgsMessageLog.logMessage(
-            "MPS memory cache cleared",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-
-
-def get_gpu_memory_usage() -> Optional[dict]:
-    import torch
-
-    device = get_optimal_device()
-
-    if device.type == "cuda":
-        return {
-            "allocated_mb": torch.cuda.memory_allocated() / (1024**2),
-            "reserved_mb": torch.cuda.memory_reserved() / (1024**2),
-            "max_allocated_mb": torch.cuda.max_memory_allocated() / (1024**2),
-        }
-    return None

@@ -1,6 +1,7 @@
 import math
 import os
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
@@ -174,29 +175,13 @@ class PromptManager:
         point_coords = []
         point_labels = []
 
-        QgsMessageLog.logMessage(
-            f"DEBUG get_points_for_predictor - Transform: {transform}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-
         for x, y in self.positive_points:
             row, col = rio_transform.rowcol(transform, x, y)
-            QgsMessageLog.logMessage(
-                f"DEBUG - Positive point geo ({x:.2f}, {y:.2f}) -> pixel (row={row}, col={col})",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
             point_coords.append([col, row])
             point_labels.append(1)
 
         for x, y in self.negative_points:
             row, col = rio_transform.rowcol(transform, x, y)
-            QgsMessageLog.logMessage(
-                f"DEBUG - Negative point geo ({x:.2f}, {y:.2f}) -> pixel (row={row}, col={col})",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
             point_coords.append([col, row])
             point_labels.append(0)
 
@@ -399,11 +384,35 @@ class AISegmentationPlugin:
         self.mask_rubber_band.setStrokeColor(QColor(0, 80, 200))
         self.mask_rubber_band.setWidth(2)
 
-        QgsMessageLog.logMessage(
-            "AI Segmentation plugin loaded (checks deferred until panel opens)",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
+        # Log plugin version and environment for diagnostics (no personal paths)
+        try:
+            metadata_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "metadata.txt"
+            )
+            plugin_version = "unknown"
+            if os.path.exists(metadata_path):
+                with open(metadata_path, encoding="utf-8") as mf:
+                    for mline in mf:
+                        if mline.startswith("version="):
+                            plugin_version = mline.strip().split("=", 1)[1]
+                            break
+            qgis_version = Qgis.version() if hasattr(Qgis, 'version') else "unknown"
+            QgsMessageLog.logMessage(
+                "AI Segmentation v{} | QGIS {} | Python {}.{}.{} | {}".format(
+                    plugin_version, qgis_version,
+                    sys.version_info.major, sys.version_info.minor,
+                    sys.version_info.micro, sys.platform
+                ),
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+        except Exception:
+            QgsMessageLog.logMessage(
+                "AI Segmentation plugin loaded",
+                "AI Segmentation",
+                level=Qgis.Info
+            )
 
     def unload(self):
         # 1. Disconnect ALL signals FIRST to prevent callbacks on partially-cleaned state
@@ -640,7 +649,6 @@ class AISegmentationPlugin:
 
             from ..core.device_manager import get_device_info
             info = get_device_info()
-            self.dock_widget.set_device_info(info)
             QgsMessageLog.logMessage(
                 f"Device info: {info}",
                 "AI Segmentation",
@@ -916,6 +924,7 @@ class AISegmentationPlugin:
             )
 
             self.dock_widget.set_preparation_progress(0, "Encoding raster (first time)...")
+            self._encoding_start_time = time.monotonic()
 
             self.encoding_worker = EncodingWorker(raster_path, output_dir, checkpoint_path, layer_crs_wkt, layer_extent)
             self.encoding_worker.progress.connect(self._on_encoding_progress)
@@ -932,11 +941,23 @@ class AISegmentationPlugin:
     def _on_encoding_finished(self, success: bool, message: str, raster_path: str):
         if not self.dock_widget:
             return
+
+        # Log encoding duration
+        encoding_duration = 0
+        if hasattr(self, '_encoding_start_time'):
+            encoding_duration = time.monotonic() - self._encoding_start_time
+            QgsMessageLog.logMessage(
+                "Encoding {}: {:.1f}s".format(
+                    "completed" if success else "failed", encoding_duration),
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+
         if success:
             from ..core.checkpoint_manager import get_raster_features_dir
             cache_dir = get_raster_features_dir(raster_path)
             self.dock_widget.set_preparation_progress(100, "Done!")
-            self.dock_widget.set_encoding_cache_path(str(cache_dir))
+            self.dock_widget.encoding_info_label.setVisible(False)
             self._load_features_and_activate(raster_path)
         else:
             # Check if this was a user cancellation
@@ -995,20 +1016,6 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Info
             )
-            QgsMessageLog.logMessage(
-                f"DEBUG - Canvas CRS: {canvas_crs.authid() if canvas_crs else 'None'}, "
-                f"Raster CRS: {raster_crs.authid() if raster_crs else 'None'}",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-            if raster_extent:
-                QgsMessageLog.logMessage(
-                    f"DEBUG - Raster layer extent (in layer CRS): xmin={raster_extent.xMinimum():.2f}, "
-                    f"xmax={raster_extent.xMaximum():.2f}, ymin={raster_extent.yMinimum():.2f}, ymax={raster_extent.yMaximum():.2f}",
-                    "AI Segmentation",
-                    level=Qgis.Info
-                )
-
             self._activate_segmentation_tool()
 
         except Exception as e:
@@ -1666,140 +1673,6 @@ class AISegmentationPlugin:
         # In both modes: update current mask preview only
         # Saved masks (green) keep their own refine settings from when they were saved
         self._update_mask_visualization()
-
-    def _update_last_saved_mask_visualization(self):
-        """Update the last saved mask's rubber band with current refinement settings."""
-        QgsMessageLog.logMessage(
-            f"_update_last_saved_mask_visualization called. saved_polygons={len(self.saved_polygons)}, saved_rubber_bands={len(self.saved_rubber_bands)}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-
-        if not self.saved_polygons or not self.saved_rubber_bands:
-            QgsMessageLog.logMessage("No saved polygons or rubber bands", "AI Segmentation", level=Qgis.Warning)
-            return
-
-        last_polygon = self.saved_polygons[-1]
-        last_rubber_band = self.saved_rubber_bands[-1]
-
-        raw_mask = last_polygon.get('raw_mask')
-        transform_info = last_polygon.get('transform_info')
-
-        QgsMessageLog.logMessage(
-            f"raw_mask is None: {raw_mask is None}, transform_info is None: {transform_info is None}",
-            "AI Segmentation",
-            level=Qgis.Info
-        )
-
-        if raw_mask is None or transform_info is None:
-            QgsMessageLog.logMessage("raw_mask or transform_info is None, returning", "AI Segmentation", level=Qgis.Warning)
-            return
-
-        try:
-            from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
-
-            QgsMessageLog.logMessage(
-                f"Applying refinement: expand={self._refine_expand}, simplify={self._refine_simplify}",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-
-            # Apply mask refinement (expand/contract only)
-            mask_to_display = raw_mask
-            if self._refine_expand != 0:
-                QgsMessageLog.logMessage("Calling apply_mask_refinement...", "AI Segmentation", level=Qgis.Info)
-                mask_to_display = apply_mask_refinement(raw_mask, self._refine_expand)
-                QgsMessageLog.logMessage(f"Refinement done, mask shape: {mask_to_display.shape}", "AI Segmentation", level=Qgis.Info)
-
-            geometries = mask_to_polygons(mask_to_display, transform_info)
-            QgsMessageLog.logMessage(f"Generated {len(geometries)} geometries", "AI Segmentation", level=Qgis.Info)
-
-            if geometries:
-                combined = QgsGeometry.unaryUnion(geometries)
-                if combined and not combined.isEmpty():
-                    tolerance = self._compute_simplification_tolerance(
-                        transform_info, self._refine_simplify
-                    )
-                    if tolerance > 0:
-                        QgsMessageLog.logMessage(f"Simplifying with tolerance={tolerance:.4f}", "AI Segmentation", level=Qgis.Info)
-                        combined = combined.simplify(tolerance)
-
-                    last_rubber_band.setToGeometry(combined, None)
-                    # Also update the stored WKT for export
-                    last_polygon['geometry_wkt'] = combined.asWkt()
-                    QgsMessageLog.logMessage("Updated rubber band geometry", "AI Segmentation", level=Qgis.Info)
-                else:
-                    last_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
-                    QgsMessageLog.logMessage("Combined geometry was empty", "AI Segmentation", level=Qgis.Warning)
-            else:
-                last_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
-                QgsMessageLog.logMessage("No geometries generated", "AI Segmentation", level=Qgis.Warning)
-
-        except Exception as e:
-            import traceback
-            QgsMessageLog.logMessage(
-                f"Failed to update last saved mask: {str(e)}\n{traceback.format_exc()}",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
-
-    def _update_all_saved_masks_visualization(self):
-        """Update all saved masks' rubber bands with current refinement settings."""
-        if not self.saved_polygons or not self.saved_rubber_bands:
-            return
-
-        self._ensure_polygon_rubberband_sync()
-
-        if not self.saved_polygons:
-            return
-
-        try:
-            from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
-
-            for i, (polygon_data, rubber_band) in enumerate(zip(self.saved_polygons, self.saved_rubber_bands)):
-                raw_mask = polygon_data.get('raw_mask')
-                transform_info = polygon_data.get('transform_info')
-
-                if raw_mask is None or transform_info is None:
-                    continue
-
-                # Apply mask refinement (expand/contract)
-                mask_to_display = raw_mask
-                if self._refine_expand != 0:
-                    mask_to_display = apply_mask_refinement(raw_mask, self._refine_expand)
-
-                geometries = mask_to_polygons(mask_to_display, transform_info)
-
-                if geometries:
-                    combined = QgsGeometry.unaryUnion(geometries)
-                    if combined and not combined.isEmpty():
-                        tolerance = self._compute_simplification_tolerance(
-                            transform_info, self._refine_simplify
-                        )
-                        if tolerance > 0:
-                            combined = combined.simplify(tolerance)
-
-                        rubber_band.setToGeometry(combined, None)
-                        # Update stored WKT for export
-                        polygon_data['geometry_wkt'] = combined.asWkt()
-                    else:
-                        rubber_band.reset(QgsWkbTypes.PolygonGeometry)
-                else:
-                    rubber_band.reset(QgsWkbTypes.PolygonGeometry)
-
-            QgsMessageLog.logMessage(
-                f"Updated {len(self.saved_polygons)} saved masks with refinement settings",
-                "AI Segmentation",
-                level=Qgis.Info
-            )
-
-        except Exception as e:
-            import traceback
-            QgsMessageLog.logMessage(
-                f"Failed to update saved masks: {str(e)}\n{traceback.format_exc()}",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
 
     def _is_point_in_encoded_area(self, point):
         """Check if a point falls within the encoded raster extent."""
