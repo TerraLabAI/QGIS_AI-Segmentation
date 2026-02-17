@@ -26,7 +26,13 @@
       "Bash(do echo \"=== ISSUE #$i ===\")",
       "Bash(gh issue view:*)",
       "Bash(done)",
-      "Bash(gh issue close:*)"
+      "Bash(gh issue close:*)",
+      "Bash(gh pr list:*)",
+      "Bash(git rev-list:*)",
+      "Bash(git cat-file:*)",
+      "Bash(find:*)",
+      "Bash(gh api:*)",
+      "Bash(gh issue edit:*)"
     ]
   }
 }
