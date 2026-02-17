@@ -850,5 +850,14 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <source>Segmentation failed</source>
         <translation>Falló la segmentación</translation>
     </message>
+    <!-- Cloud waitlist banner -->
+    <message>
+        <source>Large rasters can take time locally. Cloud processing is coming soon for faster results!</source>
+        <translation>Los rasters grandes pueden tardar localmente. ¡El procesamiento en la nube llegará pronto para resultados más rápidos!</translation>
+    </message>
+    <message>
+        <source>Join waitlist</source>
+        <translation>Unirse a la lista de espera</translation>
+    </message>
 </context>
 </TS>

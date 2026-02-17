@@ -427,6 +427,40 @@ class AISegmentationDockWidget(QDockWidget):
         )
         layout.addWidget(self.cancel_prep_button)
 
+        # Cloud processing waitlist banner (shown during long encodings)
+        self._cloud_banner = QWidget()
+        cloud_layout = QVBoxLayout(self._cloud_banner)
+        cloud_layout.setContentsMargins(8, 8, 8, 8)
+        cloud_layout.setSpacing(4)
+        self._cloud_banner.setStyleSheet(
+            "background-color: rgba(33, 150, 243, 0.12); "
+            "border-radius: 4px; border: 1px solid rgba(33, 150, 243, 0.3);"
+        )
+        cloud_text = QLabel(tr(
+            "Large rasters can take time locally. "
+            "Cloud processing is coming soon for faster results!"
+        ))
+        cloud_text.setWordWrap(True)
+        cloud_text.setStyleSheet(
+            "font-size: 11px; color: palette(text); "
+            "border: none; background: transparent;"
+        )
+        cloud_layout.addWidget(cloud_text)
+        cloud_btn = QPushButton(tr("Join waitlist"))
+        cloud_btn.setMaximumHeight(24)
+        cloud_btn.setStyleSheet(
+            "QPushButton { background-color: rgba(33, 150, 243, 0.25); "
+            "font-size: 10px; padding: 2px 12px; border: 1px solid rgba(33, 150, 243, 0.4); "
+            "border-radius: 3px; color: palette(text); }"
+            "QPushButton:hover { background-color: rgba(33, 150, 243, 0.4); }"
+        )
+        cloud_btn.setCursor(Qt.PointingHandCursor)
+        cloud_btn.clicked.connect(self._on_cloud_waitlist_clicked)
+        cloud_layout.addWidget(cloud_btn, alignment=Qt.AlignLeft)
+        self._cloud_banner.setVisible(False)
+        self._cloud_banner_shown = False
+        layout.addWidget(self._cloud_banner)
+
         # Container for start button and batch mode checkbox
         self.start_container = QWidget()
         start_layout = QVBoxLayout(self.start_container)
@@ -993,6 +1027,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.download_button.setEnabled(False)
         self.download_checkpoint_requested.emit()
 
+    def _on_cloud_waitlist_clicked(self):
+        QDesktopServices.openUrl(QUrl("https://terra-lab.ai/ai-segmentation-waitlist"))
+
     def _on_cancel_prep_clicked(self):
         reply = QMessageBox.question(
             self,
@@ -1083,10 +1120,6 @@ class AISegmentationDockWidget(QDockWidget):
             return has_gpu
         except Exception:
             return False
-
-    def set_device_info(self, info: str):
-        """No-op: device info box removed from UI."""
-        pass
 
     def set_dependency_status(self, ok: bool, message: str):
         self._dependencies_ok = ok
@@ -1241,8 +1274,15 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.prep_status_label.setText(f"{message}{time_info}")
 
-        # Show warning after 10 minutes of encoding (once)
+        # Show cloud waitlist banner after 1 minute of encoding
         is_encoding = self._encoding_start_time and 0 < percent < 100
+        if not self._cloud_banner_shown and is_encoding:
+            elapsed = time.time() - self._encoding_start_time
+            if elapsed > 60:
+                self._cloud_banner_shown = True
+                self._cloud_banner.setVisible(True)
+
+        # Show warning after 10 minutes of encoding (once)
         if not self._slow_encoding_warned and is_encoding:
             elapsed = time.time() - self._encoding_start_time
             if elapsed > 600:
@@ -1262,6 +1302,8 @@ class AISegmentationDockWidget(QDockWidget):
         if percent == 0:
             self._encoding_start_time = time.time()
             self._slow_encoding_warned = False
+            self._cloud_banner_shown = False
+            self._cloud_banner.setVisible(False)
             self.prep_progress.setVisible(True)
             self.prep_status_label.setVisible(True)
             self.start_button.setVisible(False)
@@ -1284,6 +1326,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.prep_status_label.setVisible(False)
             self.cancel_prep_button.setVisible(False)
             self.encoding_info_label.setVisible(False)
+            self._cloud_banner.setVisible(False)
             # Restore green style for next time
             self.encoding_info_label.setStyleSheet(
                 "background-color: rgba(46, 125, 50, 0.15); padding: 8px; "
@@ -1296,11 +1339,6 @@ class AISegmentationDockWidget(QDockWidget):
             self._encoding_start_time = None
             self._slow_encoding_warned = False
             self._update_ui_state()
-
-    def set_encoding_cache_path(self, cache_path: str):
-        """Hide the encoding info label when encoding completes (no longer show cache path)."""
-        # Simply hide the label when ready - no need to show cache path to user
-        self.encoding_info_label.setVisible(False)
 
     def set_segmentation_active(self, active: bool):
         self._segmentation_active = active
