@@ -115,6 +115,16 @@ def get_optimal_device():
             torch.cuda.empty_cache()
             return torch.device(cuda_dev)
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            # Prevent MPS OOM by disabling memory pool upper limit
+            os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
+            # Verify MPS actually works
+            try:
+                t = torch.zeros(1, device="mps")
+                _ = t + 1
+                torch.mps.synchronize()
+                del t
+            except Exception:
+                return torch.device("cpu")
             return torch.device("mps")
         else:
             return torch.device("cpu")
@@ -130,14 +140,26 @@ class SamPredictorNoImgEncoder:
         if self.device.type == "cuda":
             gc.collect()
             torch.cuda.empty_cache()
+        elif self.device.type == "mps" and hasattr(torch.mps, 'empty_cache'):
+            gc.collect()
+            torch.mps.empty_cache()
         self.model.to(self.device)
 
-        # Verify CUDA kernels are available for this GPU
+        # Verify GPU kernels are available
         if self.device.type == "cuda":
             try:
                 test = torch.zeros(1, device=self.device)
-                _ = test + 1  # Force a kernel execution
+                _ = test + 1
                 torch.cuda.synchronize()
+                del test
+            except RuntimeError:
+                self.device = torch.device("cpu")
+                self.model.to(self.device)
+        elif self.device.type == "mps":
+            try:
+                test = torch.zeros(1, device=self.device)
+                _ = test + 1
+                torch.mps.synchronize()
                 del test
             except RuntimeError:
                 self.device = torch.device("cpu")
@@ -298,6 +320,25 @@ def main():
 
         sam = build_sam_vit_b_no_encoder(checkpoint=checkpoint_path)
         predictor = SamPredictorNoImgEncoder(sam)
+
+        # Log environment info for diagnostics (no personal paths)
+        device_name = str(predictor.device)
+        if predictor.device.type == "cuda":
+            try:
+                gpu_name = torch.cuda.get_device_name(predictor.device)
+                gpu_mem = torch.cuda.get_device_properties(
+                    predictor.device).total_memory / (1024**3)
+                device_name = "cuda ({}, {:.1f}GB)".format(gpu_name, gpu_mem)
+            except Exception:
+                pass
+        sys.stderr.write(
+            "[prediction_worker] PyTorch={}, device={}, Python={}.{}.{}\n".format(
+                torch.__version__, device_name,
+                sys.version_info.major, sys.version_info.minor,
+                sys.version_info.micro
+            )
+        )
+        sys.stderr.flush()
 
         send_ready()
 
