@@ -57,6 +57,14 @@ def get_optimal_device():
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             # Prevent MPS OOM by disabling memory pool upper limit
             os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
+            # Verify MPS actually works
+            try:
+                t = torch.zeros(1, device="mps")
+                _ = t + 1
+                torch.mps.synchronize()
+                del t
+            except Exception:
+                return torch.device("cpu")
             return torch.device("mps")
         else:
             return torch.device("cpu")
@@ -113,11 +121,29 @@ def encode_raster(config):
         send_progress(0, "Preparing AI model...")
 
         device = get_optimal_device()
+
+        # Log environment info for diagnostics
+        device_name = str(device)
+        if device.type == "cuda":
+            try:
+                gpu_name = torch.cuda.get_device_name(device)
+                gpu_mem = torch.cuda.get_device_properties(device).total_memory / (1024**3)
+                device_name = "cuda ({}, {:.1f}GB)".format(gpu_name, gpu_mem)
+            except Exception:
+                pass
+        sys.stderr.write("[encoding_worker] PyTorch={}, device={}, Python={}.{}.{}\n".format(
+            torch.__version__, device_name,
+            sys.version_info.major, sys.version_info.minor, sys.version_info.micro
+        ))
+        sys.stderr.flush()
         sam = sam_model_registry["vit_b"](checkpoint=checkpoint_path)
         # Free memory before loading model onto GPU
         if device.type == "cuda":
             gc.collect()
             torch.cuda.empty_cache()
+        elif device.type == "mps" and hasattr(torch.mps, 'empty_cache'):
+            gc.collect()
+            torch.mps.empty_cache()
         sam.to(device)
         sam.eval()
 
@@ -196,6 +222,17 @@ def encode_raster(config):
             num_tiles_y = max(1, (raster_height + STRIDE - 1) // STRIDE)
             total_tiles = num_tiles_x * num_tiles_y
 
+            # Log raster info for diagnostics (no paths - privacy)
+            sys.stderr.write(
+                "[encoding_worker] Raster: {}x{}px, bands={}, dtype={}, "
+                "CRS={}, tiles={}x{}={}\n".format(
+                    raster_width, raster_height, src.count, src.dtypes[0],
+                    raster_crs if raster_crs else "none",
+                    num_tiles_x, num_tiles_y, total_tiles
+                )
+            )
+            sys.stderr.flush()
+
             index_data = []
             processed = 0
 
@@ -256,13 +293,21 @@ def encode_raster(config):
                                     "GPU error, falling back to CPU..."
                                 )
                                 try:
+                                    del tile_tensor
                                     if device.type == "cuda":
                                         torch.cuda.empty_cache()
+                                    elif device.type == "mps" and hasattr(torch.mps, 'empty_cache'):
+                                        torch.mps.empty_cache()
+                                    gc.collect()
                                 except Exception:
                                     pass
                                 device = torch.device("cpu")
                                 sam.to(device)
-                                tile_tensor = tile_tensor.to(device)
+                                # Re-create tile tensor on CPU
+                                tile_tensor = torch.as_tensor(
+                                    tile_padded, dtype=torch.float32, device=device
+                                ).unsqueeze(0)
+                                tile_tensor = sam.preprocess(tile_tensor)
                                 try:
                                     features = sam.image_encoder(tile_tensor)
                                 except Exception as cpu_err:
@@ -273,6 +318,15 @@ def encode_raster(config):
 
                     synchronize_device(device)
                     features_np = features.squeeze(0).cpu().numpy()
+
+                    # Free GPU memory after each tile to prevent OOM accumulation
+                    del tile_tensor, features
+                    if processed % 10 == 0:
+                        if device.type == "cuda":
+                            torch.cuda.empty_cache()
+                        elif device.type == "mps" and hasattr(torch.mps, 'empty_cache'):
+                            torch.mps.empty_cache()
+                        gc.collect()
 
                     tile_minx = raster_bounds_left + col_off * pixel_size_x
                     tile_maxx = tile_minx + actual_width * pixel_size_x
