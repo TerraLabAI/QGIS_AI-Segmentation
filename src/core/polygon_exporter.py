@@ -9,13 +9,10 @@ ensure_venv_packages_available()
 import numpy as np  # noqa: E402
 
 from qgis.core import (  # noqa: E402
-    QgsVectorLayer,
     QgsGeometry,
     QgsPointXY,
     QgsPolygon,
     QgsLineString,
-    QgsProject,
-    QgsVectorFileWriter,
     QgsMessageLog,
     Qgis,
 )
@@ -518,36 +515,3 @@ def _numpy_erode(mask: np.ndarray, iterations: int) -> np.ndarray:
         eroded = center & up & down & left & right
         result = eroded.astype(np.uint8)
     return result
-
-
-def export_to_geopackage(
-    layer: QgsVectorLayer,
-    output_path: str
-) -> Tuple[bool, str]:
-    try:
-        if not output_path.lower().endswith('.gpkg'):
-            output_path += '.gpkg'
-
-        options = QgsVectorFileWriter.SaveVectorOptions()
-        options.driverName = "GPKG"
-        options.fileEncoding = "UTF-8"
-
-        error = QgsVectorFileWriter.writeAsVectorFormatV3(
-            layer,
-            output_path,
-            QgsProject.instance().transformContext(),
-            options
-        )
-
-        if error[0] == QgsVectorFileWriter.NoError:
-            QgsMessageLog.logMessage(
-                f"Exported to: {output_path}",
-                "AI Segmentation",
-                level=Qgis.Success
-            )
-            return True, f"Successfully exported to {output_path}"
-        else:
-            return False, f"Export error: {error[1]}"
-
-    except Exception as e:
-        return False, f"Export failed: {str(e)}"
