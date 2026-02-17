@@ -262,7 +262,7 @@ class FeatureSampler:
         self.length = 1 if self.q_bbox is not None else 0
 
         QgsMessageLog.logMessage(
-            f"Sampler found {len(list(hits))} intersecting features, selected nearest",
+            f"Sampler found {len(hits)} intersecting features, selected nearest",
             "AI Segmentation",
             level=Qgis.Info
         )
