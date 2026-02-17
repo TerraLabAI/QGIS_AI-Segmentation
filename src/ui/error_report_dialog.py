@@ -157,15 +157,13 @@ def _collect_diagnostic_info(error_message: str) -> str:
     # Installed packages
     lines.append("--- Packages ---")
     try:
-        from ..core.venv_manager import (
-            get_venv_python_path, venv_exists,
-            _get_clean_env_for_venv, _get_subprocess_kwargs
-        )
+        from ..core.venv_manager import get_venv_python_path, venv_exists
+        from ..core.subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
         if venv_exists():
             import subprocess
             python_path = get_venv_python_path()
-            env = _get_clean_env_for_venv()
-            kwargs = _get_subprocess_kwargs()
+            env = get_clean_env_for_venv()
+            kwargs = get_subprocess_kwargs()
             result = subprocess.run(
                 [python_path, "-m", "pip", "list", "--format=columns"],
                 capture_output=True, text=True, timeout=15,
