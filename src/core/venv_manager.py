@@ -31,6 +31,12 @@ REQUIRED_PACKAGES = [
 DEPS_HASH_FILE = os.path.join(VENV_DIR, "deps_hash.txt")
 CUDA_FLAG_FILE = os.path.join(VENV_DIR, "cuda_installed.txt")
 
+# Bump this when install logic changes significantly (e.g., --no-cache-dir,
+# new retry strategies) to force a dependency re-install on plugin update.
+# This invalidates the deps hash so users with stale cuda_fallback flags
+# get a clean retry with the improved install logic.
+_INSTALL_LOGIC_VERSION = "2"
+
 
 def _write_cuda_flag(value: str):
     """Persist CUDA install state.
@@ -91,8 +97,13 @@ def needs_cuda_upgrade() -> bool:
 
 
 def _compute_deps_hash() -> str:
-    """Compute MD5 hash of REQUIRED_PACKAGES to detect version spec changes."""
+    """Compute MD5 hash of REQUIRED_PACKAGES + install logic version.
+
+    Changing either REQUIRED_PACKAGES or _INSTALL_LOGIC_VERSION will
+    invalidate the stored hash and trigger a dependency re-install.
+    """
     data = repr(REQUIRED_PACKAGES).encode("utf-8")
+    data += _INSTALL_LOGIC_VERSION.encode("utf-8")
     return hashlib.md5(data, usedforsecurity=False).hexdigest()
 
 
@@ -382,6 +393,13 @@ def _is_ssl_error(stderr: str) -> bool:
     return any(pattern.lower() in stderr_lower for pattern in _SSL_ERROR_PATTERNS)
 
 
+def _is_hash_mismatch(output: str) -> bool:
+    """Detect pip hash mismatch errors (corrupted cache from interrupted download)."""
+    output_lower = output.lower()
+    return ("do not match the hashes" in output_lower
+            or "hash mismatch" in output_lower)
+
+
 def _get_pip_ssl_flags() -> List[str]:
     """Get pip flags to bypass SSL verification for corporate proxies."""
     return [
@@ -394,15 +412,13 @@ def _get_pip_ssl_flags() -> List[str]:
 def _get_ssl_error_help() -> str:
     """Get actionable help message for persistent SSL errors."""
     return (
-        "SSL certificate verification failed. "
-        "This is usually caused by a corporate proxy or firewall "
-        "intercepting HTTPS connections.\n\n"
-        "Please try:\n"
-        "  1. Ask your IT team to whitelist: pypi.org, "
-        "pypi.python.org, files.pythonhosted.org\n"
-        "  2. Check your proxy settings in QGIS "
-        "(Settings > Options > Network)\n"
-        "  3. If using a VPN, try disconnecting temporarily"
+        "Installation failed due to network restrictions.\n\n"
+        "Please contact your IT department to allow access to:\n"
+        "  - pypi.org\n"
+        "  - files.pythonhosted.org\n"
+        "  - download.pytorch.org\n\n"
+        "You can also try checking your proxy settings in QGIS "
+        "(Settings > Options > Network)."
     )
 
 
@@ -944,7 +960,10 @@ def _verify_cuda_in_venv(venv_dir: str) -> bool:
 
     cuda_test_code = (
         "import torch; "
+        "print('torch=' + torch.__version__); "
+        "print('cuda_built=' + str(torch.version.cuda)); "
         "assert torch.cuda.is_available(), 'CUDA not available'; "
+        "print('device=' + torch.cuda.get_device_name(0)); "
         "t = torch.zeros(1, device='cuda'); "
         "torch.cuda.synchronize(); "
         "print('CUDA OK')"
@@ -957,11 +976,14 @@ def _verify_cuda_in_venv(venv_dir: str) -> bool:
             env=env, **subprocess_kwargs,
         )
         if result.returncode == 0 and "CUDA OK" in result.stdout:
-            _log("CUDA verification passed in venv", Qgis.Success)
+            _log("CUDA verification passed: {}".format(
+                result.stdout.strip()[:200]), Qgis.Success)
             return True
         else:
-            err = result.stderr or result.stdout or ""
-            _log("CUDA verification failed: {}".format(err[:300]), Qgis.Warning)
+            out = result.stdout or ""
+            err = result.stderr or ""
+            _log("CUDA verification failed.\nstdout: {}\nstderr: {}".format(
+                out[:200], err[:200]), Qgis.Warning)
             return False
     except Exception as e:
         _log("CUDA verification exception: {}".format(e), Qgis.Warning)
@@ -1239,6 +1261,7 @@ def install_dependencies(
         _log("CUDA mode enabled - will install GPU-accelerated PyTorch", Qgis.Info)
 
     _cuda_fell_back = False  # Track if CUDA install fell back to CPU
+    _driver_too_old = False  # Track if GPU driver was too old (not an error)
 
     total_packages = len(REQUIRED_PACKAGES)
     base_progress = 20
@@ -1346,11 +1369,12 @@ def install_dependencies(
                         Qgis.Warning
                     )
                     is_cuda_package = False
-                    _cuda_fell_back = True
+                    _driver_too_old = True
                 else:
                     pip_args.extend([
                         "--index-url",
-                        "https://download.pytorch.org/whl/{}".format(cuda_index)
+                        "https://download.pytorch.org/whl/{}".format(cuda_index),
+                        "--no-cache-dir",
                     ])
                     _log("Using CUDA {} index for {}".format(
                         cuda_index, package_name), Qgis.Info)
@@ -1445,6 +1469,39 @@ def install_dependencies(
                         ssl_cmd = base_cmd[:3] + _get_pip_ssl_flags() + base_cmd[3:]
                         result = _run_pip_install(
                             cmd=ssl_cmd,
+                            timeout=pkg_timeout,
+                            env=env,
+                            subprocess_kwargs=subprocess_kwargs,
+                            package_name=package_name,
+                            package_index=i,
+                            total_packages=total_packages,
+                            progress_start=pkg_start,
+                            progress_end=pkg_end,
+                            progress_callback=progress_callback,
+                            cancel_check=cancel_check,
+                            is_cuda=is_cuda_package,
+                        )
+
+                # If failed, check for hash mismatch (corrupted cache) and retry
+                if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
+                    error_output = result.stderr or result.stdout or ""
+
+                    if _is_hash_mismatch(error_output):
+                        _log(
+                            "Hash mismatch detected (corrupted cache), "
+                            "retrying with --no-cache-dir...",
+                            Qgis.Warning
+                        )
+                        if progress_callback:
+                            progress_callback(
+                                pkg_start,
+                                "Cache error, retrying {}... ({}/{})".format(
+                                    package_name, i + 1, total_packages)
+                            )
+
+                        nocache_cmd = base_cmd + ["--no-cache-dir"]
+                        result = _run_pip_install(
+                            cmd=nocache_cmd,
                             timeout=pkg_timeout,
                             env=env,
                             subprocess_kwargs=subprocess_kwargs,
@@ -1640,6 +1697,8 @@ def install_dependencies(
         _log(f"Virtual environment: {venv_dir}", Qgis.Success)
         _log("=" * 50, Qgis.Success)
 
+        if _driver_too_old:
+            return True, "All dependencies installed successfully [DRIVER_TOO_OLD]"
         if _cuda_fell_back:
             return True, "All dependencies installed successfully [CUDA_FALLBACK]"
         return True, "All dependencies installed successfully"
@@ -1710,6 +1769,8 @@ def _get_clean_env_for_venv() -> dict:
     vars_to_remove = [
         'PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV',
         'QGIS_PREFIX_PATH', 'QGIS_PLUGINPATH',
+        'PROJ_DATA', 'PROJ_LIB',
+        'GDAL_DATA', 'GDAL_DRIVER_PATH',
     ]
     for var in vars_to_remove:
         env.pop(var, None)
@@ -1977,6 +2038,10 @@ def create_venv_and_install(
     rosetta_warning = _check_rosetta_warning()
     if rosetta_warning:
         _log(rosetta_warning, Qgis.Warning)
+        return False, (
+            "QGIS is running under Rosetta (x86_64 emulation) on Apple Silicon. "
+            "Please install the native ARM64 version of QGIS for best compatibility."
+        )
 
     # Clean up old venv directories from previous Python versions
     removed_venvs = cleanup_old_venv_directories()
@@ -2074,6 +2139,7 @@ def create_venv_and_install(
         return False, msg
 
     # Track if CUDA fell back to CPU at any level (install or verification)
+    _driver_too_old = "[DRIVER_TOO_OLD]" in msg
     _cuda_fell_back = "[CUDA_FALLBACK]" in msg
 
     # Step 4: Verify installation (95-100%)
@@ -2119,7 +2185,7 @@ def create_venv_and_install(
     _write_deps_hash()
 
     # Persist whether CUDA or CPU torch was installed
-    if cuda_enabled and not _cuda_fell_back:
+    if cuda_enabled and not _cuda_fell_back and not _driver_too_old:
         _write_cuda_flag("cuda")
     elif cuda_enabled and _cuda_fell_back:
         _write_cuda_flag("cuda_fallback")
@@ -2129,6 +2195,8 @@ def create_venv_and_install(
     if progress_callback:
         progress_callback(100, "✓ All dependencies installed")
 
+    if _driver_too_old:
+        return True, "Virtual environment ready [DRIVER_TOO_OLD]"
     if _cuda_fell_back:
         return True, "Virtual environment ready [CUDA_FALLBACK]"
     return True, "Virtual environment ready"

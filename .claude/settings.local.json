@@ -32,7 +32,23 @@
       "Bash(git cat-file:*)",
       "Bash(find:*)",
       "Bash(gh api:*)",
-      "Bash(gh issue edit:*)"
+      "Bash(gh issue edit:*)",
+      "Bash(gh label list:*)",
+      "Bash(gh label create:*)",
+      "mcp__mcp-registry__search_mcp_registry",
+      "mcp__83fd827c-458e-5143-b2ff-484904737d48__search_gmail_messages",
+      "mcp__83fd827c-458e-5143-b2ff-484904737d48__read_gmail_message",
+      "mcp__83fd827c-458e-5143-b2ff-484904737d48__read_gmail_thread",
+      "Bash(gh issue create:*)",
+      "Bash(gh issue comment:*)",
+      "Bash(xargs:*)",
+      "mcp__plugin_github_github__get_me",
+      "mcp__plugin_github_github__list_issues",
+      "Bash(git remote get-url:*)",
+      "mcp__plugin_github_github__issue_read",
+      "mcp__plugin_github_github__add_issue_comment",
+      "mcp__plugin_github_github__issue_write",
+      "Bash(git merge:*)"
     ]
   }
 }
