@@ -401,15 +401,13 @@ def _get_pip_ssl_flags() -> List[str]:
 def _get_ssl_error_help() -> str:
     """Get actionable help message for persistent SSL errors."""
     return (
-        "SSL certificate verification failed. "
-        "This is usually caused by a corporate proxy or firewall "
-        "intercepting HTTPS connections.\n\n"
-        "Please try:\n"
-        "  1. Ask your IT team to whitelist: pypi.org, "
-        "pypi.python.org, files.pythonhosted.org\n"
-        "  2. Check your proxy settings in QGIS "
-        "(Settings > Options > Network)\n"
-        "  3. If using a VPN, try disconnecting temporarily"
+        "Installation failed due to network restrictions.\n\n"
+        "Please contact your IT department to allow access to:\n"
+        "  - pypi.org\n"
+        "  - files.pythonhosted.org\n"
+        "  - download.pytorch.org\n\n"
+        "You can also try checking your proxy settings in QGIS "
+        "(Settings > Options > Network)."
     )
 
 
