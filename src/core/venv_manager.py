@@ -2029,6 +2029,10 @@ def create_venv_and_install(
     rosetta_warning = _check_rosetta_warning()
     if rosetta_warning:
         _log(rosetta_warning, Qgis.Warning)
+        return False, (
+            "QGIS is running under Rosetta (x86_64 emulation) on Apple Silicon. "
+            "Please install the native ARM64 version of QGIS for best compatibility."
+        )
 
     # Clean up old venv directories from previous Python versions
     removed_venvs = cleanup_old_venv_directories()
