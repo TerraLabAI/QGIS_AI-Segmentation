@@ -753,6 +753,10 @@
         <translation>Mode GPU échoué, utilisation du CPU</translation>
     </message>
     <message>
+        <source>Using CPU mode (GPU driver needs update).</source>
+        <translation>Utilisation du mode CPU (le pilote GPU nécessite une mise à jour).</translation>
+    </message>
+    <message>
         <source>Your GPU was detected but CUDA installation didn't work.</source>
         <translation>Votre GPU a été détecté mais l'installation CUDA n'a pas fonctionné.</translation>
     </message>

@@ -1245,6 +1245,7 @@ def install_dependencies(
         _log("CUDA mode enabled - will install GPU-accelerated PyTorch", Qgis.Info)
 
     _cuda_fell_back = False  # Track if CUDA install fell back to CPU
+    _driver_too_old = False  # Track if GPU driver was too old (not an error)
 
     total_packages = len(REQUIRED_PACKAGES)
     base_progress = 20
@@ -1352,7 +1353,7 @@ def install_dependencies(
                         Qgis.Warning
                     )
                     is_cuda_package = False
-                    _cuda_fell_back = True
+                    _driver_too_old = True
                 else:
                     pip_args.extend([
                         "--index-url",
@@ -1647,6 +1648,8 @@ def install_dependencies(
         _log(f"Virtual environment: {venv_dir}", Qgis.Success)
         _log("=" * 50, Qgis.Success)
 
+        if _driver_too_old:
+            return True, "All dependencies installed successfully [DRIVER_TOO_OLD]"
         if _cuda_fell_back:
             return True, "All dependencies installed successfully [CUDA_FALLBACK]"
         return True, "All dependencies installed successfully"
@@ -2083,6 +2086,7 @@ def create_venv_and_install(
         return False, msg
 
     # Track if CUDA fell back to CPU at any level (install or verification)
+    _driver_too_old = "[DRIVER_TOO_OLD]" in msg
     _cuda_fell_back = "[CUDA_FALLBACK]" in msg
 
     # Step 4: Verify installation (95-100%)
@@ -2128,7 +2132,7 @@ def create_venv_and_install(
     _write_deps_hash()
 
     # Persist whether CUDA or CPU torch was installed
-    if cuda_enabled and not _cuda_fell_back:
+    if cuda_enabled and not _cuda_fell_back and not _driver_too_old:
         _write_cuda_flag("cuda")
     elif cuda_enabled and _cuda_fell_back:
         _write_cuda_flag("cuda_fallback")
@@ -2138,6 +2142,8 @@ def create_venv_and_install(
     if progress_callback:
         progress_callback(100, "✓ All dependencies installed")
 
+    if _driver_too_old:
+        return True, "Virtual environment ready [DRIVER_TOO_OLD]"
     if _cuda_fell_back:
         return True, "Virtual environment ready [CUDA_FALLBACK]"
     return True, "Virtual environment ready"

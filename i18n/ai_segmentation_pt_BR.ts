@@ -753,6 +753,10 @@
         <translation>Modo GPU falhou, usando CPU</translation>
     </message>
     <message>
+        <source>Using CPU mode (GPU driver needs update).</source>
+        <translation>Usando modo CPU (o driver da GPU precisa de atualização).</translation>
+    </message>
+    <message>
         <source>Your GPU was detected but CUDA installation didn't work.</source>
         <translation>Sua GPU foi detectada mas a instalação CUDA não funcionou.</translation>
     </message>
