@@ -24,6 +24,7 @@ from qgis.core import (
     QgsFillSymbol,
     QgsSingleSymbolRenderer,
     QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
     QgsPointXY,
 )
 from qgis.gui import QgisInterface, QgsRubberBand
@@ -235,6 +236,11 @@ class AISegmentationPlugin:
 
         self._previous_map_tool = None  # Store the tool active before segmentation
         self._stopping_segmentation = False  # Flag to track if we're stopping programmatically
+
+        # CRS transforms (canvas CRS <-> raster CRS), created when features load.
+        # None when both CRS are the same (no transform needed).
+        self._canvas_to_raster_xform = None  # type: Optional[QgsCoordinateTransform]
+        self._raster_to_canvas_xform = None  # type: Optional[QgsCoordinateTransform]
 
     @staticmethod
     def _safe_remove_rubber_band(rb):
@@ -1011,7 +1017,26 @@ class AISegmentationPlugin:
             bounds = self.feature_dataset.bounds
             canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
             raster_crs = self._current_layer.crs() if self._current_layer else None
-            raster_extent = self._current_layer.extent() if self._current_layer else None
+
+            # Build CRS transforms when canvas and raster CRS differ.
+            # All click coordinates arrive in canvas CRS and must be
+            # transformed to raster CRS before bounds checks, tile lookup,
+            # and point-to-pixel conversion. Geometries produced from masks
+            # (in raster CRS) must be transformed back for rubberband display.
+            self._canvas_to_raster_xform = None
+            self._raster_to_canvas_xform = None
+            if raster_crs and canvas_crs.isValid() and raster_crs.isValid():
+                if canvas_crs != raster_crs:
+                    self._canvas_to_raster_xform = QgsCoordinateTransform(
+                        canvas_crs, raster_crs, QgsProject.instance())
+                    self._raster_to_canvas_xform = QgsCoordinateTransform(
+                        raster_crs, canvas_crs, QgsProject.instance())
+                    QgsMessageLog.logMessage(
+                        "CRS transform enabled: {} -> {}".format(
+                            canvas_crs.authid(), raster_crs.authid()),
+                        "AI Segmentation",
+                        level=Qgis.Info
+                    )
 
             QgsMessageLog.logMessage(
                 f"Loaded {len(self.feature_dataset)} feature tiles",
@@ -1019,8 +1044,17 @@ class AISegmentationPlugin:
                 level=Qgis.Info
             )
             QgsMessageLog.logMessage(
-                f"Feature dataset bounds: minx={bounds[0]:.2f}, maxx={bounds[1]:.2f}, "
-                f"miny={bounds[2]:.2f}, maxy={bounds[3]:.2f}, CRS={self.feature_dataset.crs}",
+                "Feature dataset bounds: minx={:.2f}, maxx={:.2f}, "
+                "miny={:.2f}, maxy={:.2f}, CRS={}".format(
+                    bounds[0], bounds[1], bounds[2], bounds[3],
+                    self.feature_dataset.crs),
+                "AI Segmentation",
+                level=Qgis.Info
+            )
+            QgsMessageLog.logMessage(
+                "DEBUG - Canvas CRS: {}, Raster CRS: {}".format(
+                    canvas_crs.authid(),
+                    raster_crs.authid() if raster_crs else "None"),
                 "AI Segmentation",
                 level=Qgis.Info
             )
@@ -1216,7 +1250,10 @@ class AISegmentationPlugin:
             saved_rb.setColor(QColor(0, 200, 100, 120))
             saved_rb.setFillColor(QColor(0, 200, 100, 80))
             saved_rb.setWidth(2)
-            saved_rb.setToGeometry(QgsGeometry(combined), None)
+            # Geometry is in raster CRS; transform to canvas CRS for display
+            display_geom = QgsGeometry(combined)
+            self._transform_geometry_to_canvas_crs(display_geom)
+            saved_rb.setToGeometry(display_geom, None)
             self.saved_rubber_bands.append(saved_rb)
 
             QgsMessageLog.logMessage(
@@ -1682,8 +1719,34 @@ class AISegmentationPlugin:
         # Saved masks (green) keep their own refine settings from when they were saved
         self._update_mask_visualization()
 
+    def _transform_to_raster_crs(self, point):
+        """Transform a QgsPointXY from canvas CRS to raster CRS.
+
+        Returns the original point unchanged when both CRS are identical.
+        """
+        if self._canvas_to_raster_xform is not None:
+            return self._canvas_to_raster_xform.transform(point)
+        return point
+
+    def _transform_geometry_to_canvas_crs(self, geometry):
+        """Transform a QgsGeometry from raster CRS to canvas CRS (in-place).
+
+        Does nothing when both CRS are identical.
+        """
+        if self._raster_to_canvas_xform is not None:
+            geometry.transform(self._raster_to_canvas_xform)
+
+    def _transform_to_canvas_crs(self, point):
+        """Transform a QgsPointXY from raster CRS to canvas CRS.
+
+        Returns the original point unchanged when both CRS are identical.
+        """
+        if self._raster_to_canvas_xform is not None:
+            return self._raster_to_canvas_xform.transform(point)
+        return point
+
     def _is_point_in_encoded_area(self, point):
-        """Check if a point falls within the encoded raster extent."""
+        """Check if a point (in raster CRS) falls within the encoded extent."""
         bounds = self.feature_dataset.bounds
         # bounds = (minx, maxx, miny, maxy, mint, maxt)
         in_x = bounds[0] <= point.x() <= bounds[1]
@@ -1698,7 +1761,10 @@ class AISegmentationPlugin:
                 self.map_tool.remove_last_marker()
             return
 
-        if not self._is_point_in_encoded_area(point):
+        # Transform click from canvas CRS to raster CRS for all downstream use
+        raster_pt = self._transform_to_raster_crs(point)
+
+        if not self._is_point_in_encoded_area(raster_pt):
             if self.map_tool:
                 self.map_tool.remove_last_marker()
             self.iface.messageBar().pushMessage(
@@ -1710,12 +1776,13 @@ class AISegmentationPlugin:
             return
 
         QgsMessageLog.logMessage(
-            f"POSITIVE POINT at ({point.x():.6f}, {point.y():.6f})",
+            "POSITIVE POINT at ({:.6f}, {:.6f})".format(
+                raster_pt.x(), raster_pt.y()),
             "AI Segmentation",
             level=Qgis.Info
         )
 
-        self.prompts.add_positive_point(point.x(), point.y())
+        self.prompts.add_positive_point(raster_pt.x(), raster_pt.y())
         self._run_prediction()
 
     def _on_negative_click(self, point):
@@ -1738,7 +1805,10 @@ class AISegmentationPlugin:
             )
             return
 
-        if not self._is_point_in_encoded_area(point):
+        # Transform click from canvas CRS to raster CRS for all downstream use
+        raster_pt = self._transform_to_raster_crs(point)
+
+        if not self._is_point_in_encoded_area(raster_pt):
             if self.map_tool:
                 self.map_tool.remove_last_marker()
             self.iface.messageBar().pushMessage(
@@ -1750,12 +1820,13 @@ class AISegmentationPlugin:
             return
 
         QgsMessageLog.logMessage(
-            f"NEGATIVE POINT at ({point.x():.6f}, {point.y():.6f})",
+            "NEGATIVE POINT at ({:.6f}, {:.6f})".format(
+                raster_pt.x(), raster_pt.y()),
             "AI Segmentation",
             level=Qgis.Info
         )
 
-        self.prompts.add_negative_point(point.x(), point.y())
+        self.prompts.add_negative_point(raster_pt.x(), raster_pt.y())
         self._run_prediction()
 
     def _run_prediction(self):
@@ -1934,6 +2005,8 @@ class AISegmentationPlugin:
                     if tolerance > 0:
                         combined = combined.simplify(tolerance)
 
+                    # Geometry is in raster CRS; transform to canvas CRS
+                    self._transform_geometry_to_canvas_crs(combined)
                     self.mask_rubber_band.setToGeometry(combined, None)
                 else:
                     self._clear_mask_visualization()
@@ -2057,16 +2130,18 @@ class AISegmentationPlugin:
         points_positive = last_polygon.get('points_positive', [])
         points_negative = last_polygon.get('points_negative', [])
 
-        # Rebuild prompts and history
+        # Rebuild prompts (stored in raster CRS) and markers (displayed in canvas CRS)
         for pt in points_positive:
             self.prompts.add_positive_point(pt[0], pt[1])
             if self.map_tool:
-                self.map_tool.add_marker(QgsPointXY(pt[0], pt[1]), is_positive=True)
+                canvas_pt = self._transform_to_canvas_crs(QgsPointXY(pt[0], pt[1]))
+                self.map_tool.add_marker(canvas_pt, is_positive=True)
 
         for pt in points_negative:
             self.prompts.add_negative_point(pt[0], pt[1])
             if self.map_tool:
-                self.map_tool.add_marker(QgsPointXY(pt[0], pt[1]), is_positive=False)
+                canvas_pt = self._transform_to_canvas_crs(QgsPointXY(pt[0], pt[1]))
+                self.map_tool.add_marker(canvas_pt, is_positive=False)
 
         # Restore mask data
         self.current_mask = last_polygon.get('raw_mask')
