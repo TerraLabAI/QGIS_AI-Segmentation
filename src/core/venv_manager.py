@@ -31,6 +31,12 @@ REQUIRED_PACKAGES = [
 DEPS_HASH_FILE = os.path.join(VENV_DIR, "deps_hash.txt")
 CUDA_FLAG_FILE = os.path.join(VENV_DIR, "cuda_installed.txt")
 
+# Bump this when install logic changes significantly (e.g., --no-cache-dir,
+# new retry strategies) to force a dependency re-install on plugin update.
+# This invalidates the deps hash so users with stale cuda_fallback flags
+# get a clean retry with the improved install logic.
+_INSTALL_LOGIC_VERSION = "2"
+
 
 def _write_cuda_flag(value: str):
     """Persist CUDA install state.
@@ -91,8 +97,13 @@ def needs_cuda_upgrade() -> bool:
 
 
 def _compute_deps_hash() -> str:
-    """Compute MD5 hash of REQUIRED_PACKAGES to detect version spec changes."""
+    """Compute MD5 hash of REQUIRED_PACKAGES + install logic version.
+
+    Changing either REQUIRED_PACKAGES or _INSTALL_LOGIC_VERSION will
+    invalidate the stored hash and trigger a dependency re-install.
+    """
     data = repr(REQUIRED_PACKAGES).encode("utf-8")
+    data += _INSTALL_LOGIC_VERSION.encode("utf-8")
     return hashlib.md5(data, usedforsecurity=False).hexdigest()
 
 

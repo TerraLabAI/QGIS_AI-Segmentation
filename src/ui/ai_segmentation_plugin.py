@@ -554,8 +554,8 @@ class AISegmentationPlugin:
                     "AI Segmentation",
                     level=Qgis.Info
                 )
-                # Auto-trigger CUDA upgrade if GPU is available
-                if "GPU acceleration" in message:
+                # Auto-trigger install for upgrades and CUDA upgrades
+                if "GPU acceleration" in message or "need updating" in message:
                     self._on_install_requested()
 
         except Exception as e:
