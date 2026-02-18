@@ -51,7 +51,8 @@
       "Bash(git merge:*)",
       "Bash(git push:*)",
       "mcp__plugin_github_github__get_latest_release",
-      "Bash(gh release:*)"
+      "Bash(gh release:*)",
+      "Bash(raster\" errors when the QGIS project uses a different CRS than the\n   raster \\(e.g. EPSG:2948 canvas vs EPSG:32619 raster\\). Now all click\n   coordinates are transformed to raster CRS before bounds checks, tile\n   lookup, and point-to-pixel conversion. Mask geometries are transformed\n   back to canvas CRS for rubberband display.\n\n2. CUDA upgrade: pip silently skipped CUDA torch installation when a\n   higher-versioned CPU torch was already in the venv \\(e.g. 2.10.0+cpu\n   vs 2.5.1+cu121 on the CUDA index\\). Now detects CPU torch and\n   uninstalls it before installing from the CUDA index. Also adds\n   versioned cuda_fallback tracking so users stuck on CPU due to this\n   bug get an automatic retry on plugin update, without affecting users\n   whose setup already works.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }
