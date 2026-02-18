@@ -48,7 +48,10 @@
       "mcp__plugin_github_github__issue_read",
       "mcp__plugin_github_github__add_issue_comment",
       "mcp__plugin_github_github__issue_write",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(git push:*)",
+      "mcp__plugin_github_github__get_latest_release",
+      "Bash(gh release:*)"
     ]
   }
 }
