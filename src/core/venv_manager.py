@@ -382,6 +382,13 @@ def _is_ssl_error(stderr: str) -> bool:
     return any(pattern.lower() in stderr_lower for pattern in _SSL_ERROR_PATTERNS)
 
 
+def _is_hash_mismatch(output: str) -> bool:
+    """Detect pip hash mismatch errors (corrupted cache from interrupted download)."""
+    output_lower = output.lower()
+    return ("do not match the hashes" in output_lower
+            or "hash mismatch" in output_lower)
+
+
 def _get_pip_ssl_flags() -> List[str]:
     """Get pip flags to bypass SSL verification for corporate proxies."""
     return [
@@ -1453,6 +1460,39 @@ def install_dependencies(
                         ssl_cmd = base_cmd[:3] + _get_pip_ssl_flags() + base_cmd[3:]
                         result = _run_pip_install(
                             cmd=ssl_cmd,
+                            timeout=pkg_timeout,
+                            env=env,
+                            subprocess_kwargs=subprocess_kwargs,
+                            package_name=package_name,
+                            package_index=i,
+                            total_packages=total_packages,
+                            progress_start=pkg_start,
+                            progress_end=pkg_end,
+                            progress_callback=progress_callback,
+                            cancel_check=cancel_check,
+                            is_cuda=is_cuda_package,
+                        )
+
+                # If failed, check for hash mismatch (corrupted cache) and retry
+                if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
+                    error_output = result.stderr or result.stdout or ""
+
+                    if _is_hash_mismatch(error_output):
+                        _log(
+                            "Hash mismatch detected (corrupted cache), "
+                            "retrying with --no-cache-dir...",
+                            Qgis.Warning
+                        )
+                        if progress_callback:
+                            progress_callback(
+                                pkg_start,
+                                "Cache error, retrying {}... ({}/{})".format(
+                                    package_name, i + 1, total_packages)
+                            )
+
+                        nocache_cmd = base_cmd + ["--no-cache-dir"]
+                        result = _run_pip_install(
+                            cmd=nocache_cmd,
                             timeout=pkg_timeout,
                             env=env,
                             subprocess_kwargs=subprocess_kwargs,
