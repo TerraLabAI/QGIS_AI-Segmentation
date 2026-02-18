@@ -944,7 +944,10 @@ def _verify_cuda_in_venv(venv_dir: str) -> bool:
 
     cuda_test_code = (
         "import torch; "
+        "print('torch=' + torch.__version__); "
+        "print('cuda_built=' + str(torch.version.cuda)); "
         "assert torch.cuda.is_available(), 'CUDA not available'; "
+        "print('device=' + torch.cuda.get_device_name(0)); "
         "t = torch.zeros(1, device='cuda'); "
         "torch.cuda.synchronize(); "
         "print('CUDA OK')"
@@ -957,11 +960,14 @@ def _verify_cuda_in_venv(venv_dir: str) -> bool:
             env=env, **subprocess_kwargs,
         )
         if result.returncode == 0 and "CUDA OK" in result.stdout:
-            _log("CUDA verification passed in venv", Qgis.Success)
+            _log("CUDA verification passed: {}".format(
+                result.stdout.strip()[:200]), Qgis.Success)
             return True
         else:
-            err = result.stderr or result.stdout or ""
-            _log("CUDA verification failed: {}".format(err[:300]), Qgis.Warning)
+            out = result.stdout or ""
+            err = result.stderr or ""
+            _log("CUDA verification failed.\nstdout: {}\nstderr: {}".format(
+                out[:200], err[:200]), Qgis.Warning)
             return False
     except Exception as e:
         _log("CUDA verification exception: {}".format(e), Qgis.Warning)
@@ -1350,7 +1356,8 @@ def install_dependencies(
                 else:
                     pip_args.extend([
                         "--index-url",
-                        "https://download.pytorch.org/whl/{}".format(cuda_index)
+                        "https://download.pytorch.org/whl/{}".format(cuda_index),
+                        "--no-cache-dir",
                     ])
                     _log("Using CUDA {} index for {}".format(
                         cuda_index, package_name), Qgis.Info)
