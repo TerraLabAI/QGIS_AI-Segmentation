@@ -248,3 +248,6 @@ tr("Export {count} polygon(s)").format(count=5)
 
 
 Always output a short line and bullet points resuming the changes that you made when you made a big change like from a plan
+
+
+never put this character when you write : "—" ca fait trop ia evite les em dashes surtout dans les issues github
