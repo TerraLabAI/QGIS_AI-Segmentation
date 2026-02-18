@@ -743,8 +743,16 @@ class AISegmentationPlugin:
         self.dock_widget.set_deps_install_progress(100, "Done")
 
         if success:
-            # Warn user if CUDA install fell back to CPU
-            if "CUDA_FALLBACK" in message:
+            # GPU driver too old: just show a simple message bar, no error dialog
+            if "DRIVER_TOO_OLD" in message:
+                self.iface.messageBar().pushMessage(
+                    "AI Segmentation",
+                    tr("Using CPU mode (GPU driver needs update)."),
+                    level=Qgis.Info,
+                    duration=10,
+                )
+            # CUDA install actually failed: show error dialog with log option
+            elif "CUDA_FALLBACK" in message:
                 from .error_report_dialog import show_error_report
                 # Disable install button during dialog to prevent re-entrant installs
                 self.dock_widget.install_button.setEnabled(False)
