@@ -1710,6 +1710,8 @@ def _get_clean_env_for_venv() -> dict:
     vars_to_remove = [
         'PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV',
         'QGIS_PREFIX_PATH', 'QGIS_PLUGINPATH',
+        'PROJ_DATA', 'PROJ_LIB',
+        'GDAL_DATA', 'GDAL_DRIVER_PATH',
     ]
     for var in vars_to_remove:
         env.pop(var, None)
