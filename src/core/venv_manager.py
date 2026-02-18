@@ -37,6 +37,13 @@ CUDA_FLAG_FILE = os.path.join(VENV_DIR, "cuda_installed.txt")
 # get a clean retry with the improved install logic.
 _INSTALL_LOGIC_VERSION = "2"
 
+# Bumped independently of _INSTALL_LOGIC_VERSION so only users with a stale
+# cuda_fallback flag get a targeted CUDA retry — without forcing a full
+# dependency reinstall for everyone.  Increment this whenever the CUDA
+# install logic is fixed in a way that makes a previous fallback worth
+# retrying (e.g. adding --force-reinstall to overcome pip version skipping).
+_CUDA_LOGIC_VERSION = "3"
+
 
 def _write_cuda_flag(value: str):
     """Persist CUDA install state.
@@ -44,23 +51,53 @@ def _write_cuda_flag(value: str):
     Valid values:
       'cuda'          – CUDA torch installed and working
       'cpu'           – CPU torch installed, no GPU available
-      'cuda_fallback' – GPU available but CUDA failed, don't retry
+      'cuda_fallback' – GPU available but CUDA failed
+
+    For 'cuda_fallback' the current _CUDA_LOGIC_VERSION is appended so that
+    needs_cuda_upgrade() can allow a retry when the install logic improves.
+    Example on disk: 'cuda_fallback:3'
     """
+    if value == "cuda_fallback":
+        content = "cuda_fallback:{}".format(_CUDA_LOGIC_VERSION)
+    else:
+        content = value
     try:
         os.makedirs(os.path.dirname(CUDA_FLAG_FILE), exist_ok=True)
         with open(CUDA_FLAG_FILE, "w", encoding="utf-8") as f:
-            f.write(value)
+            f.write(content)
     except (OSError, IOError) as e:
         _log("Failed to write CUDA flag: {}".format(e), Qgis.Warning)
 
 
 def _read_cuda_flag() -> Optional[str]:
-    """Returns 'cuda', 'cpu', 'cuda_fallback', or None."""
+    """Returns 'cuda', 'cpu', 'cuda_fallback', or None.
+
+    Handles both the legacy bare format ('cuda_fallback') and the versioned
+    format ('cuda_fallback:3') written by newer plugin versions.
+    """
     try:
         with open(CUDA_FLAG_FILE, "r", encoding="utf-8") as f:
             value = f.read().strip()
-            if value in ("cuda", "cpu", "cuda_fallback"):
-                return value
+        base = value.split(":")[0]
+        if base in ("cuda", "cpu", "cuda_fallback"):
+            return base
+    except (OSError, IOError):
+        pass
+    return None
+
+
+def _read_cuda_fallback_version() -> Optional[str]:
+    """Return the _CUDA_LOGIC_VERSION stored with a cuda_fallback flag, or None.
+
+    Returns None when the flag is missing, not a fallback, or was written by
+    an older plugin version that did not record the logic version.
+    """
+    try:
+        with open(CUDA_FLAG_FILE, "r", encoding="utf-8") as f:
+            value = f.read().strip()
+        parts = value.split(":", 1)
+        if len(parts) == 2 and parts[0] == "cuda_fallback":
+            return parts[1]
     except (OSError, IOError):
         pass
     return None
@@ -69,8 +106,15 @@ def _read_cuda_flag() -> Optional[str]:
 def needs_cuda_upgrade() -> bool:
     """Check if an existing CPU install should be upgraded to CUDA.
 
-    Returns True only if GPU is available, torch was installed as
-    CPU-only, and we haven't already tried and failed CUDA.
+    Returns True only if:
+    - An NVIDIA GPU is present with a sufficient driver, AND
+    - torch was installed as CPU-only ('cpu' flag or no flag file), OR
+    - a previous CUDA install fell back but the install logic has since
+      been updated (_CUDA_LOGIC_VERSION differs from what was recorded).
+
+    This second condition lets users who were incorrectly stuck on CPU
+    due to a now-fixed pip bug get a GPU upgrade after a plugin update,
+    without triggering any reinstall for users whose setup already works.
     """
     if sys.platform == "darwin":
         return False
@@ -79,9 +123,16 @@ def needs_cuda_upgrade() -> bool:
     # Old install without flag file -> treat as CPU (eligible for upgrade)
     if flag is None:
         flag = "cpu"
-    # Already CUDA, or already tried CUDA and fell back -> don't retry
-    if flag in ("cuda", "cuda_fallback"):
+    # Already on CUDA -> nothing to do
+    if flag == "cuda":
         return False
+    # cuda_fallback: allow retry only if install logic has been updated
+    if flag == "cuda_fallback":
+        stored_version = _read_cuda_fallback_version()
+        if stored_version == _CUDA_LOGIC_VERSION:
+            return False  # Same logic version, GPU genuinely unsupported
+        # Logic version differs (or flag was written by older plugin without
+        # version tracking) -> a fix may resolve the failure, allow one retry
 
     # Check if NVIDIA GPU is available with sufficient driver
     try:
@@ -990,6 +1041,26 @@ def _verify_cuda_in_venv(venv_dir: str) -> bool:
         return False
 
 
+def _is_cpu_torch_installed(python_path: str, env: dict, subprocess_kwargs: dict) -> bool:
+    """Return True if the installed torch has no CUDA support (CPU-only build).
+
+    Detects the case where pip would silently skip a CUDA wheel because the
+    installed CPU torch version is numerically higher than what is available
+    on the CUDA wheel index (e.g. 2.10.0+cpu > 2.5.1+cu121).
+    """
+    try:
+        result = subprocess.run(
+            [python_path, "-c", "import torch; print(torch.version.cuda)"],
+            capture_output=True, text=True, timeout=30,
+            env=env, **subprocess_kwargs
+        )
+        if result.returncode == 0:
+            return result.stdout.strip() == "None"
+    except Exception:
+        pass
+    return False
+
+
 def _get_verification_timeout(package_name: str) -> int:
     """
     Get verification timeout in seconds for a given package.
@@ -1313,6 +1384,21 @@ def install_dependencies(
 
     try:  # try/finally to guarantee constraints file cleanup
 
+        # Detect CPU-only torch already in the venv. pip's --upgrade skips
+        # the CUDA wheel when the installed CPU torch version is numerically
+        # higher than the latest wheel on the CUDA index (e.g. 2.10.0+cpu >
+        # 2.5.1+cu121). Use --force-reinstall to guarantee the CUDA build is
+        # actually fetched in that case.
+        _force_cuda_reinstall = False
+        if cuda_enabled:
+            _precheck_env = _get_clean_env_for_venv()
+            _precheck_kwargs = _get_subprocess_kwargs()
+            if _is_cpu_torch_installed(python_path, _precheck_env, _precheck_kwargs):
+                _force_cuda_reinstall = True
+                _log(
+                    "CPU torch detected in venv, CUDA packages will use "
+                    "--force-reinstall", Qgis.Info)
+
         for i, (package_name, version_spec) in enumerate(REQUIRED_PACKAGES):
             if cancel_check and cancel_check():
                 _log("Installation cancelled by user", Qgis.Warning)
@@ -1383,6 +1469,27 @@ def install_dependencies(
             env = _get_clean_env_for_venv()
 
             subprocess_kwargs = _get_subprocess_kwargs()
+
+            # If CPU torch/torchvision is installed and we need CUDA, uninstall
+            # the CPU version first. This forces pip to fetch the CUDA wheel
+            # from the index instead of silently skipping because the installed
+            # CPU version has a higher version number.
+            # We do NOT use --force-reinstall because --index-url points to the
+            # CUDA-only index which lacks transitive deps (typing-extensions,
+            # sympy, etc.), causing pip to fail resolving them.
+            if _force_cuda_reinstall and is_cuda_package:
+                _log("Uninstalling CPU {} before CUDA install".format(
+                    package_name), Qgis.Info)
+                try:
+                    subprocess.run(
+                        [python_path, "-m", "pip", "uninstall", "-y",
+                         package_name],
+                        capture_output=True, text=True, timeout=120,
+                        env=env, **subprocess_kwargs
+                    )
+                except Exception as exc:
+                    _log("Failed to uninstall CPU {}: {}".format(
+                        package_name, exc), Qgis.Warning)
 
             # CUDA wheels are ~2.5GB, need more time than standard packages
             if is_cuda_package and package_name in ("torch", "torchvision"):
