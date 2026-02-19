@@ -693,8 +693,8 @@
         <translation>Documentação</translation>
     </message>
     <message>
-        <source>Contact Us</source>
-        <translation>Fale conosco</translation>
+        <source>About us</source>
+        <translation>Sobre nos</translation>
     </message>
     <message>
         <source>Something not working?</source>
@@ -862,6 +862,32 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
     <message>
         <source>Join waitlist</source>
         <translation>Entrar na lista de espera</translation>
+    </message>
+
+    <!-- Encoding error messages -->
+    <message>
+        <source>Encoding timed out after 45 minutes. Try reducing the image size or closing other applications.</source>
+        <translation>A codificacao expirou apos 45 minutos. Tente reduzir o tamanho da imagem ou fechar outros aplicativos.</translation>
+    </message>
+    <message>
+        <source>Encoding stalled (no progress for 5 minutes). Try restarting QGIS and running again.</source>
+        <translation>A codificacao parou (sem progresso por 5 minutos). Tente reiniciar o QGIS e executar novamente.</translation>
+    </message>
+    <message>
+        <source>Out of memory: your raster is too large for available RAM. Try a smaller area or close other applications.</source>
+        <translation>Memoria insuficiente: seu raster e muito grande para a RAM disponivel. Tente uma area menor ou feche outros aplicativos.</translation>
+    </message>
+    <message>
+        <source>PROJ library conflict detected. Try updating QGIS to the latest version.</source>
+        <translation>Conflito de biblioteca PROJ detectado. Tente atualizar o QGIS para a versao mais recente.</translation>
+    </message>
+    <message>
+        <source>Windows DLL error detected. Please install Visual C++ Redistributables: https://aka.ms/vs/17/release/vc_redist.x64.exe</source>
+        <translation>Erro de DLL do Windows detectado. Instale o Visual C++ Redistributables: https://aka.ms/vs/17/release/vc_redist.x64.exe</translation>
+    </message>
+    <message>
+        <source>The encoding process crashed. Try closing other applications, reinstalling dependencies, or running QGIS as administrator.</source>
+        <translation>O processo de codificacao travou. Tente fechar outros aplicativos, reinstalar dependencias ou executar o QGIS como administrador.</translation>
     </message>
 </context>
 </TS>

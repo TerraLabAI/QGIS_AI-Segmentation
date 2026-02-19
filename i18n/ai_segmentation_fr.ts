@@ -693,8 +693,8 @@
         <translation>Documentation</translation>
     </message>
     <message>
-        <source>Contact Us</source>
-        <translation>Nous contacter</translation>
+        <source>About us</source>
+        <translation>A propos</translation>
     </message>
     <message>
         <source>Something not working?</source>
@@ -862,6 +862,32 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <source>Join waitlist</source>
         <translation>Rejoindre la liste d'attente</translation>
+    </message>
+
+    <!-- Encoding error messages -->
+    <message>
+        <source>Encoding timed out after 45 minutes. Try reducing the image size or closing other applications.</source>
+        <translation>L'encodage a expiré après 45 minutes. Essayez de réduire la taille de l'image ou de fermer d'autres applications.</translation>
+    </message>
+    <message>
+        <source>Encoding stalled (no progress for 5 minutes). Try restarting QGIS and running again.</source>
+        <translation>L'encodage est bloqué (aucun progrès depuis 5 minutes). Essayez de redémarrer QGIS et de relancer.</translation>
+    </message>
+    <message>
+        <source>Out of memory: your raster is too large for available RAM. Try a smaller area or close other applications.</source>
+        <translation>Mémoire insuffisante : votre raster est trop volumineux pour la RAM disponible. Essayez une zone plus petite ou fermez d'autres applications.</translation>
+    </message>
+    <message>
+        <source>PROJ library conflict detected. Try updating QGIS to the latest version.</source>
+        <translation>Conflit de bibliothèque PROJ détecté. Essayez de mettre à jour QGIS vers la dernière version.</translation>
+    </message>
+    <message>
+        <source>Windows DLL error detected. Please install Visual C++ Redistributables: https://aka.ms/vs/17/release/vc_redist.x64.exe</source>
+        <translation>Erreur DLL Windows détectée. Veuillez installer Visual C++ Redistributables : https://aka.ms/vs/17/release/vc_redist.x64.exe</translation>
+    </message>
+    <message>
+        <source>The encoding process crashed. Try closing other applications, reinstalling dependencies, or running QGIS as administrator.</source>
+        <translation>Le processus d'encodage a planté. Essayez de fermer d'autres applications, de réinstaller les dépendances ou de lancer QGIS en administrateur.</translation>
     </message>
 </context>
 </TS>

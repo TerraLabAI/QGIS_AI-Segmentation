@@ -840,7 +840,7 @@ class AISegmentationDockWidget(QDockWidget):
         """Check if a newer version is available in the QGIS plugin repository."""
         try:
             from pyplugin_installer.installer_data import plugins
-            plugin_data = plugins.all().get('QGIS_AI-Segmentation')
+            plugin_data = plugins.all().get('AI_Segmentation')
             if plugin_data and plugin_data.get('status') == 'upgradeable':
                 available_version = plugin_data.get(
                     'version_available', '?')
@@ -898,14 +898,14 @@ class AISegmentationDockWidget(QDockWidget):
         docs_link.setCursor(Qt.PointingHandCursor)
         links_layout.addWidget(docs_link)
 
-        # Contact link
-        contact_link = QLabel(
-            '<a href="https://terra-lab.ai/about" style="color: #1976d2;">' + tr("Contact Us") + '</a>'
+        # About link
+        about_link = QLabel(
+            '<a href="https://terra-lab.ai/about" style="color: #1976d2;">' + tr("About us") + '</a>'
         )
-        contact_link.setStyleSheet("font-size: 13px;")
-        contact_link.setOpenExternalLinks(True)
-        contact_link.setCursor(Qt.PointingHandCursor)
-        links_layout.addWidget(contact_link)
+        about_link.setStyleSheet("font-size: 13px;")
+        about_link.setOpenExternalLinks(True)
+        about_link.setCursor(Qt.PointingHandCursor)
+        links_layout.addWidget(about_link)
 
         self.main_layout.addWidget(links_widget)
 
