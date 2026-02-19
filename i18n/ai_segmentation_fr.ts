@@ -856,8 +856,12 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     </message>
     <!-- Cloud waitlist banner -->
     <message>
-        <source>Large rasters can take time locally. Cloud processing is coming soon for faster results!</source>
-        <translation>Les gros rasters prennent du temps en local. Le traitement cloud arrive bientôt pour des résultats plus rapides !</translation>
+        <source>Large rasters can take time locally.</source>
+        <translation>Les gros rasters prennent du temps en local.</translation>
+    </message>
+    <message>
+        <source>Cloud processing is coming soon for faster encoding, more precise and automated segmentation!</source>
+        <translation>Le traitement cloud arrive bientot pour un encodage plus rapide, une segmentation plus precise et automatisee !</translation>
     </message>
     <message>
         <source>Join waitlist</source>
@@ -888,6 +892,40 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <source>The encoding process crashed. Try closing other applications, reinstalling dependencies, or running QGIS as administrator.</source>
         <translation>Le processus d'encodage a planté. Essayez de fermer d'autres applications, de réinstaller les dépendances ou de lancer QGIS en administrateur.</translation>
+    </message>
+
+    <!-- Visible Area Mode -->
+    <message>
+        <source>Segment only in the visible area</source>
+        <translation>Segmenter uniquement dans la zone visible</translation>
+    </message>
+    <message>
+        <source>When checked, only the area currently visible on your map will be encoded.</source>
+        <translation>Si coché, seule la zone actuellement visible sur votre carte sera encodée.</translation>
+    </message>
+    <message>
+        <source>Useful for large rasters that take too long to encode entirely.</source>
+        <translation>Utile pour les gros rasters dont l'encodage complet prend trop de temps.</translation>
+    </message>
+    <message>
+        <source>Faster encoding for large rasters. Only the visible map area will be processed.</source>
+        <translation>Encodage plus rapide pour les gros rasters. Seule la zone visible de la carte sera traitée.</translation>
+    </message>
+    <message>
+        <source>Encoding visible area for AI segmentation...</source>
+        <translation>Encodage de la zone visible pour la segmentation IA...</translation>
+    </message>
+    <message>
+        <source>Only the visible map extent will be processed.</source>
+        <translation>Seule l'étendue visible de la carte sera traitée.</translation>
+    </message>
+    <message>
+        <source>Could not determine visible area. Encoding full raster instead.</source>
+        <translation>Impossible de déterminer la zone visible. Encodage du raster complet.</translation>
+    </message>
+    <message>
+        <source>Click is outside the encoded visible area. Restart segmentation to encode a different area.</source>
+        <translation>Le clic est en dehors de la zone visible encodée. Relancez la segmentation pour encoder une autre zone.</translation>
     </message>
 </context>
 </TS>
