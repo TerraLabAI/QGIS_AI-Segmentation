@@ -58,7 +58,7 @@ def get_optimal_device() -> "torch.device":
                 try:
                     props = torch.cuda.get_device_properties(i)
                     mem_gb = props.total_memory / (1024**3)
-                    if mem_gb >= 2.0 and mem_gb > best_mem:
+                    if mem_gb >= 1.5 and mem_gb > best_mem:
                         best_mem = mem_gb
                         best_idx = i
                         best_name = props.name
@@ -74,7 +74,7 @@ def get_optimal_device() -> "torch.device":
         if best_idx < 0:
             if best_mem > 0:
                 QgsMessageLog.logMessage(
-                    "No GPU with >=2GB memory found, falling back to CPU",
+                    "No GPU with >=1.5GB memory found, falling back to CPU",
                     "AI Segmentation",
                     level=Qgis.Warning
                 )

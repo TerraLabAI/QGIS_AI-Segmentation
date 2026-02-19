@@ -1073,7 +1073,7 @@ def _get_verification_timeout(package_name: str) -> int:
     elif package_name in ("torchvision", "pandas"):
         # pandas loads many .pyd C extensions on first import;
         # antivirus (Windows Defender) scans each one, easily exceeding 30s
-        return 60
+        return 120
     else:
         return 30
 
@@ -1493,7 +1493,7 @@ def install_dependencies(
 
             # CUDA wheels are ~2.5GB, need more time than standard packages
             if is_cuda_package and package_name in ("torch", "torchvision"):
-                pkg_timeout = 1800  # 30 min for CUDA wheels
+                pkg_timeout = 2400  # 40 min for CUDA wheels
             else:
                 pkg_timeout = 600  # 10 min for standard packages
 
@@ -2039,8 +2039,11 @@ def verify_venv(
                             package_name, error_detail[:100])
                     )
 
-                return False, "Package {} is broken: {}".format(
-                    package_name, error_detail[:100])
+                hint = ""
+                if package_name == "torch":
+                    hint = " Try reinstalling dependencies or check if antivirus is blocking."
+                return False, "Package {} is broken: {}{}".format(
+                    package_name, error_detail[:100], hint)
 
         except subprocess.TimeoutExpired:
             # Retry once - antivirus scanning .pyd files on first import
