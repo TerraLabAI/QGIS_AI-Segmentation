@@ -759,7 +759,6 @@ class AISegmentationPlugin:
                 )
             # CUDA install actually failed: show error dialog with log option
             elif "CUDA_FALLBACK" in message:
-                from .error_report_dialog import show_error_report
                 # Disable install button during dialog to prevent re-entrant installs
                 self.dock_widget.install_button.setEnabled(False)
                 fallback_msg = "{}\n\n{}".format(
@@ -968,8 +967,6 @@ class AISegmentationPlugin:
             )
 
         if success:
-            from ..core.checkpoint_manager import get_raster_features_dir
-            cache_dir = get_raster_features_dir(raster_path)
             self.dock_widget.set_preparation_progress(100, "Done!")
             self.dock_widget.encoding_info_label.setVisible(False)
             self._load_features_and_activate(raster_path)

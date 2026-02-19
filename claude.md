@@ -175,6 +175,12 @@ tr("Export {count} polygon(s)").format(count=5)
 - **Fallback**: If translation is missing, English text is shown
 - **Works on all OS**: Pure Python XML parsing, no Qt tools needed
 
+## Plugin Naming Convention
+
+- The GitHub repo is `QGIS_AI-Segmentation` but the QGIS plugin folder is `AI_Segmentation`
+- Users only see `AI_Segmentation` - the `QGIS_` prefix is only in the repo name
+- Code referencing the plugin key (update check, plugin manager) must use `'AI_Segmentation'`
+
 ## Code Quality Rules (PEP8/Flake8)
 
 - **No unused imports (F401)**: Remove any imported modules/classes that are not used in the file. Always verify `sys`, `os`, etc. are actually referenced before importing.
