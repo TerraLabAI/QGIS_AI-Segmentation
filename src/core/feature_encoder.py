@@ -133,6 +133,7 @@ def encode_raster_to_features(
     checkpoint_path: str,
     layer_crs_wkt: Optional[str] = None,
     layer_extent: Optional[Tuple[float, float, float, float]] = None,
+    visible_extent: Optional[Tuple[float, float, float, float]] = None,
     progress_callback: Optional[Callable[[int, str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
 ) -> Tuple[bool, str]:
@@ -172,7 +173,8 @@ def encode_raster_to_features(
             'output_dir': output_dir,
             'checkpoint_path': checkpoint_path,
             'layer_crs_wkt': layer_crs_wkt,
-            'layer_extent': layer_extent
+            'layer_extent': layer_extent,
+            'visible_extent': visible_extent,
         }
 
         QgsMessageLog.logMessage(

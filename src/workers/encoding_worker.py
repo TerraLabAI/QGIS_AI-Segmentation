@@ -117,6 +117,7 @@ def encode_raster(config):
         checkpoint_path = config['checkpoint_path']
         layer_crs_wkt = config.get('layer_crs_wkt')
         layer_extent = config.get('layer_extent')
+        visible_extent = config.get('visible_extent')  # (xmin, ymin, xmax, ymax) in raster CRS
 
         send_progress(0, "Preparing AI model...")
 
@@ -218,17 +219,84 @@ def encode_raster(config):
                 except Exception:
                     raster_crs = None
 
-            num_tiles_x = max(1, (raster_width + STRIDE - 1) // STRIDE)
-            num_tiles_y = max(1, (raster_height + STRIDE - 1) // STRIDE)
+            # Apply visible extent crop if specified
+            crop_col_off = 0
+            crop_row_off = 0
+            crop_width = raster_width
+            crop_height = raster_height
+
+            if visible_extent:
+                vxmin, vymin, vxmax, vymax = visible_extent
+                # Convert geo coords to pixel coords
+                try:
+                    if use_layer_extent and layer_extent:
+                        # Non-georeferenced: compute pixel coords from layer extent
+                        le_xmin, le_ymin, le_xmax, le_ymax = layer_extent
+                        c_left = (vxmin - le_xmin) / pixel_size_x
+                        c_right = (vxmax - le_xmin) / pixel_size_x
+                        r_top = (le_ymax - vymax) / pixel_size_y
+                        r_bottom = (le_ymax - vymin) / pixel_size_y
+                    else:
+                        # Georeferenced: use rasterio transform
+                        from rasterio.transform import rowcol
+                        r_top, c_left = rowcol(raster_transform, vxmin, vymax)
+                        r_bottom, c_right = rowcol(raster_transform, vxmax, vymin)
+
+                    # Clamp to raster bounds
+                    c_left = max(0, min(c_left, raster_width))
+                    c_right = max(0, min(c_right, raster_width))
+                    r_top = max(0, min(r_top, raster_height))
+                    r_bottom = max(0, min(r_bottom, raster_height))
+
+                    # Ensure valid range
+                    if c_left > c_right:
+                        c_left, c_right = c_right, c_left
+                    if r_top > r_bottom:
+                        r_top, r_bottom = r_bottom, r_top
+
+                    crop_col_off = int(c_left)
+                    crop_row_off = int(r_top)
+                    crop_width = int(c_right - c_left)
+                    crop_height = int(r_bottom - r_top)
+
+                    if crop_width <= 0 or crop_height <= 0:
+                        send_error("Visible area does not overlap with the raster.")
+                        sys.exit(1)
+
+                    # Update bounds for the cropped region
+                    raster_bounds_left = raster_bounds_left + crop_col_off * pixel_size_x
+                    raster_bounds_top = raster_bounds_top - crop_row_off * pixel_size_y
+
+                    sys.stderr.write(
+                        "[encoding_worker] Visible extent crop: "
+                        "col_off={}, row_off={}, width={}, height={}\n".format(
+                            crop_col_off, crop_row_off, crop_width, crop_height)
+                    )
+                    sys.stderr.flush()
+                except Exception as crop_err:
+                    sys.stderr.write(
+                        "[encoding_worker] Failed to apply visible extent crop: {}\n".format(
+                            crop_err)
+                    )
+                    sys.stderr.flush()
+                    # Fall back to full raster
+                    crop_col_off = 0
+                    crop_row_off = 0
+                    crop_width = raster_width
+                    crop_height = raster_height
+
+            num_tiles_x = max(1, (crop_width + STRIDE - 1) // STRIDE)
+            num_tiles_y = max(1, (crop_height + STRIDE - 1) // STRIDE)
             total_tiles = num_tiles_x * num_tiles_y
 
             # Log raster info for diagnostics (no paths - privacy)
             sys.stderr.write(
                 "[encoding_worker] Raster: {}x{}px, bands={}, dtype={}, "
-                "CRS={}, tiles={}x{}={}\n".format(
+                "CRS={}, tiles={}x{}={}{}\n".format(
                     raster_width, raster_height, src.count, src.dtypes[0],
                     raster_crs if raster_crs else "none",
-                    num_tiles_x, num_tiles_y, total_tiles
+                    num_tiles_x, num_tiles_y, total_tiles,
+                    " (visible crop: {}x{})".format(crop_width, crop_height) if visible_extent else ""
                 )
             )
             sys.stderr.flush()
@@ -240,11 +308,11 @@ def encode_raster(config):
 
             for ty in range(num_tiles_y):
                 for tx in range(num_tiles_x):
-                    row_off = ty * STRIDE
-                    col_off = tx * STRIDE
+                    row_off = crop_row_off + ty * STRIDE
+                    col_off = crop_col_off + tx * STRIDE
 
-                    actual_height = min(TILE_SIZE, raster_height - row_off)
-                    actual_width = min(TILE_SIZE, raster_width - col_off)
+                    actual_height = min(TILE_SIZE, crop_row_off + crop_height - row_off)
+                    actual_width = min(TILE_SIZE, crop_col_off + crop_width - col_off)
 
                     if actual_height <= 0 or actual_width <= 0:
                         continue
@@ -328,9 +396,12 @@ def encode_raster(config):
                             torch.mps.empty_cache()
                         gc.collect()
 
-                    tile_minx = raster_bounds_left + col_off * pixel_size_x
+                    # Use relative offset within crop region for geo bounds
+                    rel_col = col_off - crop_col_off
+                    rel_row = row_off - crop_row_off
+                    tile_minx = raster_bounds_left + rel_col * pixel_size_x
                     tile_maxx = tile_minx + actual_width * pixel_size_x
-                    tile_maxy = raster_bounds_top - row_off * pixel_size_y
+                    tile_maxy = raster_bounds_top - rel_row * pixel_size_y
                     tile_miny = tile_maxy - actual_height * pixel_size_y
 
                     feature_filename = f"tile_{tx}_{ty}_vit_b.tif"

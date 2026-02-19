@@ -95,6 +95,7 @@ class EncodingWorker(QThread):
         self.checkpoint_path = checkpoint_path
         self.layer_crs_wkt = layer_crs_wkt
         self.layer_extent = layer_extent  # (xmin, ymin, xmax, ymax)
+        self.visible_extent = None  # (xmin, ymin, xmax, ymax) in raster CRS - set externally
         self._cancelled = False
 
     def cancel(self):
@@ -109,6 +110,7 @@ class EncodingWorker(QThread):
                 self.checkpoint_path,
                 layer_crs_wkt=self.layer_crs_wkt,
                 layer_extent=self.layer_extent,
+                visible_extent=self.visible_extent,
                 progress_callback=lambda p, m: self.progress.emit(p, m),
                 cancel_check=lambda: self._cancelled,
             )
@@ -224,6 +226,8 @@ class AISegmentationPlugin:
 
         # Mode flag (simple mode by default)
         self._batch_mode = False
+        self._visible_area_mode = False  # Encode full raster by default
+        self._visible_extent = None  # Captured canvas extent (raster CRS) when visible area mode is on
         self._batch_tutorial_shown_this_session = False  # Reset each QGIS launch
         self._is_non_georeferenced_mode = False  # Track if current layer is non-georeferenced
 
@@ -233,6 +237,7 @@ class AISegmentationPlugin:
 
         self.mask_rubber_band: Optional[QgsRubberBand] = None
         self.saved_rubber_bands: List[QgsRubberBand] = []
+        self._encoded_area_rubber_band: Optional[QgsRubberBand] = None
 
         self._previous_map_tool = None  # Store the tool active before segmentation
         self._stopping_segmentation = False  # Flag to track if we're stopping programmatically
@@ -369,6 +374,7 @@ class AISegmentationPlugin:
         self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
         self.dock_widget.refine_settings_changed.connect(self._on_refine_settings_changed)
         self.dock_widget.batch_mode_changed.connect(self._on_batch_mode_changed)
+        self.dock_widget.visible_area_changed.connect(self._on_visible_area_changed)
         self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
 
         self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
@@ -510,6 +516,9 @@ class AISegmentationPlugin:
         # 8. Remove rubber bands safely
         self._safe_remove_rubber_band(self.mask_rubber_band)
         self.mask_rubber_band = None
+
+        self._safe_remove_rubber_band(self._encoded_area_rubber_band)
+        self._encoded_area_rubber_band = None
 
         for rb in self.saved_rubber_bands:
             self._safe_remove_rubber_band(rb)
@@ -900,10 +909,21 @@ class AISegmentationPlugin:
 
         from ..core.checkpoint_manager import has_features_for_raster, get_raster_features_dir, get_checkpoint_path
 
-        if has_features_for_raster(raster_path):
+        # Capture visible extent if visible area mode is enabled
+        self._visible_extent = None
+        if self._visible_area_mode:
+            self._visible_extent = self._capture_visible_extent(layer)
+            if self._visible_extent is None:
+                self.iface.messageBar().pushMessage(
+                    "AI Segmentation",
+                    tr("Could not determine visible area. Encoding full raster instead."),
+                    level=Qgis.Warning, duration=5
+                )
+
+        if has_features_for_raster(raster_path, self._visible_extent):
             self._load_features_and_activate(raster_path)
         else:
-            output_dir = get_raster_features_dir(raster_path)
+            output_dir = get_raster_features_dir(raster_path, self._visible_extent)
             checkpoint_path = get_checkpoint_path()
 
             layer_crs_wkt = None
@@ -931,7 +951,11 @@ class AISegmentationPlugin:
                 pass
 
             QgsMessageLog.logMessage(
-                f"Starting encoding - Layer extent: {layer_extent}, Layer CRS valid: {layer.crs().isValid()}, CRS: {layer.crs().authid() if layer.crs().isValid() else 'None'}",
+                "Starting encoding - Layer extent: {}, Visible extent: {}, "
+                "CRS valid: {}, CRS: {}".format(
+                    layer_extent, self._visible_extent,
+                    layer.crs().isValid(),
+                    layer.crs().authid() if layer.crs().isValid() else 'None'),
                 "AI Segmentation",
                 level=Qgis.Info
             )
@@ -939,7 +963,10 @@ class AISegmentationPlugin:
             self.dock_widget.set_preparation_progress(0, "Encoding raster (first time)...")
             self._encoding_start_time = time.monotonic()
 
-            self.encoding_worker = EncodingWorker(raster_path, output_dir, checkpoint_path, layer_crs_wkt, layer_extent)
+            self.encoding_worker = EncodingWorker(
+                raster_path, output_dir, checkpoint_path,
+                layer_crs_wkt, layer_extent)
+            self.encoding_worker.visible_extent = self._visible_extent
             self.encoding_worker.progress.connect(self._on_encoding_progress)
             self.encoding_worker.finished.connect(
                 lambda s, m: self._on_encoding_finished(s, m, raster_path)
@@ -978,7 +1005,7 @@ class AISegmentationPlugin:
                 # Clean up partial cache files
                 from ..core.checkpoint_manager import clear_features_for_raster
                 try:
-                    clear_features_for_raster(raster_path)
+                    clear_features_for_raster(raster_path, self._visible_extent)
                     QgsMessageLog.logMessage(
                         f"Cleaned up partial cache for: {raster_path}",
                         "AI Segmentation",
@@ -1008,7 +1035,7 @@ class AISegmentationPlugin:
             from ..core.checkpoint_manager import get_raster_features_dir
             from ..core.feature_dataset import FeatureDataset
 
-            features_dir = get_raster_features_dir(raster_path)
+            features_dir = get_raster_features_dir(raster_path, self._visible_extent)
             self.feature_dataset = FeatureDataset(features_dir, cache=True)
 
             bounds = self.feature_dataset.bounds
@@ -1055,12 +1082,16 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Info
             )
+            # Show encoded area rectangle if visible area mode is active
+            if self._visible_extent is not None:
+                self._show_encoded_area_rectangle()
+
             self._activate_segmentation_tool()
 
         except Exception as e:
             import traceback
             QgsMessageLog.logMessage(
-                f"Failed to load features: {str(e)}\n{traceback.format_exc()}",
+                "Failed to load features: {}\n{}".format(str(e), traceback.format_exc()),
                 "AI Segmentation",
                 level=Qgis.Warning
             )
@@ -1146,6 +1177,58 @@ class AISegmentationPlugin:
         # Show tutorial for batch mode on first activation
         if batch:
             self._show_tutorial_notification("batch")
+
+    def _on_visible_area_changed(self, visible: bool):
+        """Handle visible area mode toggle from the dock widget."""
+        self._visible_area_mode = visible
+
+    def _capture_visible_extent(self, layer):
+        """Capture the current canvas visible extent in the raster's CRS.
+
+        Returns (xmin, ymin, xmax, ymax) tuple in raster CRS, or None on failure.
+        """
+        try:
+            canvas = self.iface.mapCanvas()
+            canvas_extent = canvas.extent()
+            canvas_crs = canvas.mapSettings().destinationCrs()
+            raster_crs = layer.crs()
+
+            if not canvas_crs.isValid() or not raster_crs.isValid():
+                return None
+
+            # Transform canvas extent to raster CRS if different
+            if canvas_crs != raster_crs:
+                xform = QgsCoordinateTransform(
+                    canvas_crs, raster_crs, QgsProject.instance())
+                canvas_extent = xform.transformBoundingBox(canvas_extent)
+
+            # Intersect with layer extent to avoid encoding outside the raster
+            layer_extent = layer.extent()
+            intersected = canvas_extent.intersect(layer_extent)
+
+            if intersected.isEmpty():
+                QgsMessageLog.logMessage(
+                    "Visible area does not intersect with raster extent",
+                    "AI Segmentation", level=Qgis.Warning)
+                return None
+
+            result = (
+                intersected.xMinimum(), intersected.yMinimum(),
+                intersected.xMaximum(), intersected.yMaximum()
+            )
+
+            QgsMessageLog.logMessage(
+                "Captured visible extent (raster CRS): {:.2f}, {:.2f}, {:.2f}, {:.2f}".format(
+                    *result),
+                "AI Segmentation", level=Qgis.Info
+            )
+            return result
+
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                "Failed to capture visible extent: {}".format(e),
+                "AI Segmentation", level=Qgis.Warning)
+            return None
 
     def _on_layer_combo_changed(self, layer):
         """Handle layer selection change in the combo box."""
@@ -1750,6 +1833,12 @@ class AISegmentationPlugin:
         in_y = bounds[2] <= point.y() <= bounds[3]
         return in_x and in_y
 
+    def _get_out_of_bounds_message(self):
+        """Return an appropriate message when clicking outside encoded area."""
+        if self._visible_extent is not None:
+            return tr("Click is outside the encoded visible area. Restart segmentation to encode a different area.")
+        return tr("Point is outside the encoded image. Click inside the raster.")
+
     def _on_positive_click(self, point):
         """Handle left-click: add positive point (select this element)."""
         if self.predictor is None or self.feature_dataset is None:
@@ -1766,7 +1855,7 @@ class AISegmentationPlugin:
                 self.map_tool.remove_last_marker()
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("Point is outside the encoded image. Click inside the raster."),
+                self._get_out_of_bounds_message(),
                 level=Qgis.Warning,
                 duration=4
             )
@@ -1810,7 +1899,7 @@ class AISegmentationPlugin:
                 self.map_tool.remove_last_marker()
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("Point is outside the encoded image. Click inside the raster."),
+                self._get_out_of_bounds_message(),
                 level=Qgis.Warning,
                 duration=4
             )
@@ -2032,6 +2121,45 @@ class AISegmentationPlugin:
         if self.mask_rubber_band:
             self.mask_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
 
+    def _show_encoded_area_rectangle(self):
+        """Show a blue semi-transparent rectangle on the map for the encoded area."""
+        self._clear_encoded_area_rectangle()
+
+        if self.feature_dataset is None:
+            return
+
+        bounds = self.feature_dataset.bounds
+        # bounds = (minx, maxx, miny, maxy, mint, maxt)
+        minx, maxx, miny, maxy = bounds[0], bounds[1], bounds[2], bounds[3]
+
+        rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
+        rb.setColor(QColor(30, 120, 220, 160))
+        rb.setFillColor(QColor(30, 120, 220, 20))
+        rb.setWidth(2)
+
+        # Build rectangle geometry in raster CRS
+        rect_geom = QgsGeometry.fromRect(
+            self._make_qgs_rectangle(minx, miny, maxx, maxy))
+
+        # Transform to canvas CRS if needed
+        if self._raster_to_canvas_xform:
+            rect_geom.transform(self._raster_to_canvas_xform)
+
+        rb.setToGeometry(rect_geom, None)
+        self._encoded_area_rubber_band = rb
+
+    def _clear_encoded_area_rectangle(self):
+        """Remove the encoded area rectangle from the map."""
+        if self._encoded_area_rubber_band is not None:
+            self._safe_remove_rubber_band(self._encoded_area_rubber_band)
+            self._encoded_area_rubber_band = None
+
+    @staticmethod
+    def _make_qgs_rectangle(minx, miny, maxx, maxy):
+        """Create a QgsRectangle from coordinates."""
+        from qgis.core import QgsRectangle
+        return QgsRectangle(minx, miny, maxx, maxy)
+
     def _on_clear_points(self):
         """Handle Escape key - clear current mask or warn about saved masks."""
         if self._batch_mode and len(self.saved_polygons) > 0:
@@ -2187,6 +2315,7 @@ class AISegmentationPlugin:
             self.map_tool.clear_markers()
 
         self._clear_mask_visualization()
+        self._clear_encoded_area_rectangle()
 
         self.current_mask = None
         self.current_score = 0.0

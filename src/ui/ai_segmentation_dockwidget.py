@@ -438,9 +438,10 @@ class AISegmentationDockWidget(QDockWidget):
             "background-color: rgba(33, 150, 243, 0.12); "
             "border-radius: 4px; border: 1px solid rgba(33, 150, 243, 0.3);"
         )
-        cloud_text = QLabel(tr(
-            "Large rasters can take time locally. "
-            "Cloud processing is coming soon for faster results!"
+        cloud_text = QLabel("{}\n\n{}".format(
+            tr("Large rasters can take time locally."),
+            tr("Cloud processing is coming soon for faster encoding, "
+               "more precise and automated segmentation!")
         ))
         cloud_text.setWordWrap(True)
         cloud_text.setStyleSheet(
@@ -477,10 +478,20 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.visible_area_checkbox = QCheckBox(tr("Segment only in the visible area"))
         self.visible_area_checkbox.setChecked(False)
+        check_icon = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__)))),
+            "resources", "icons", "check-white.svg"
+        ).replace("\\", "/")
         self.visible_area_checkbox.setStyleSheet(
-            "QCheckBox { font-size: 12px; font-weight: bold; color: palette(text); }"
-            "QCheckBox:disabled { color: palette(mid); }"
-            "QCheckBox::indicator { width: 16px; height: 16px; }"
+            "QCheckBox {{ font-size: 12px; font-weight: bold; color: palette(text); }}"
+            "QCheckBox:disabled {{ color: palette(mid); }}"
+            "QCheckBox::indicator {{ width: 16px; height: 16px; "
+            "border: 2px solid rgba(255, 255, 255, 0.7); border-radius: 2px; "
+            "background: rgba(0, 0, 0, 0.2); }}"
+            "QCheckBox::indicator:checked {{ "
+            "background: #4a90d9; border-color: #4a90d9; "
+            "image: url({icon}); }}".format(icon=check_icon)
         )
         self.visible_area_checkbox.setToolTip(
             "{}\n{}".format(
@@ -533,28 +544,11 @@ class AISegmentationDockWidget(QDockWidget):
                 tr("Batch mode: Save multiple polygons, then export all together."),
                 tr("Mode can only be changed when segmentation is stopped."))
         )
-        self.batch_mode_checkbox.setStyleSheet("""
-            QCheckBox {
-                font-size: 12px;
-                color: palette(text);
-                padding: 2px 4px;
-            }
-            QCheckBox:disabled {
-                color: palette(mid);
-            }
-            QCheckBox::indicator {
-                width: 16px;
-                height: 16px;
-                border: 1px solid palette(light);
-                border-radius: 2px;
-                background: palette(base);
-            }
-            QCheckBox::indicator:checked {
-                background: #4a90d9;
-                border-color: #4a90d9;
-                image: none;
-            }
-        """)
+        self.batch_mode_checkbox.setStyleSheet(
+            "QCheckBox { font-size: 12px; color: palette(text); padding: 2px 4px; }"
+            "QCheckBox:disabled { color: palette(mid); }"
+            "QCheckBox::indicator { width: 16px; height: 16px; }"
+        )
         self.batch_mode_checkbox.stateChanged.connect(self._on_batch_mode_checkbox_changed)
         checkbox_layout.addWidget(self.batch_mode_checkbox)
 
@@ -1330,11 +1324,11 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.prep_status_label.setText(f"{message}{time_info}")
 
-        # Show cloud waitlist banner after 1 minute of encoding
+        # Show cloud waitlist banner after 45 seconds of encoding
         is_encoding = self._encoding_start_time and 0 < percent < 100
         if not self._cloud_banner_shown and is_encoding:
             elapsed = time.time() - self._encoding_start_time
-            if elapsed > 60:
+            if elapsed > 45:
                 self._cloud_banner_shown = True
                 self._cloud_banner.setVisible(True)
 
