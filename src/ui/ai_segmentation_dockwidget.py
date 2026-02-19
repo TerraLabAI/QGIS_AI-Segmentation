@@ -47,6 +47,7 @@ class AISegmentationDockWidget(QDockWidget):
     stop_segmentation_requested = pyqtSignal()
     refine_settings_changed = pyqtSignal(int, int, bool, int)  # expand, simplify, fill_holes, min_area
     batch_mode_changed = pyqtSignal(bool)  # True = batch mode, False = simple mode
+    visible_area_changed = pyqtSignal(bool)  # True = encode visible area only
 
     def __init__(self, parent=None):
         super().__init__("", parent)
@@ -79,6 +80,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._plugin_activated = is_plugin_activated()
         self._activation_popup_shown = False  # Track if popup was shown
         self._batch_mode = False  # Simple mode by default
+        self._visible_area_mode = False  # Encode full raster by default
         self._segmentation_layer_id = None  # Track which layer we're segmenting
         # Note: _refine_expanded is initialized before _setup_ui() call
 
@@ -461,6 +463,42 @@ class AISegmentationDockWidget(QDockWidget):
         self._cloud_banner_shown = False
         layout.addWidget(self._cloud_banner)
 
+        # Visible area option box (blue info box with checkbox)
+        self.visible_area_widget = QWidget()
+        self.visible_area_widget.setStyleSheet(
+            "QWidget { background-color: rgba(100, 149, 237, 0.15); "
+            "border: 1px solid rgba(100, 149, 237, 0.3); border-radius: 4px; }"
+            "QLabel { background: transparent; border: none; }"
+            "QCheckBox { background: transparent; border: none; }"
+        )
+        visible_area_layout = QVBoxLayout(self.visible_area_widget)
+        visible_area_layout.setContentsMargins(8, 6, 8, 6)
+        visible_area_layout.setSpacing(4)
+
+        self.visible_area_checkbox = QCheckBox(tr("Segment only in the visible area"))
+        self.visible_area_checkbox.setChecked(False)
+        self.visible_area_checkbox.setStyleSheet(
+            "QCheckBox { font-size: 12px; font-weight: bold; color: palette(text); }"
+            "QCheckBox:disabled { color: palette(mid); }"
+            "QCheckBox::indicator { width: 16px; height: 16px; }"
+        )
+        self.visible_area_checkbox.setToolTip(
+            "{}\n{}".format(
+                tr("When checked, only the area currently visible on your map will be encoded."),
+                tr("Useful for large rasters that take too long to encode entirely."))
+        )
+        self.visible_area_checkbox.stateChanged.connect(self._on_visible_area_checkbox_changed)
+        visible_area_layout.addWidget(self.visible_area_checkbox)
+
+        visible_area_hint = QLabel(
+            tr("Faster encoding for large rasters. Only the visible map area will be processed.")
+        )
+        visible_area_hint.setWordWrap(True)
+        visible_area_hint.setStyleSheet("font-size: 11px; color: palette(text);")
+        visible_area_layout.addWidget(visible_area_hint)
+
+        layout.addWidget(self.visible_area_widget)
+
         # Container for start button and batch mode checkbox
         self.start_container = QWidget()
         start_layout = QVBoxLayout(self.start_container)
@@ -507,6 +545,14 @@ class AISegmentationDockWidget(QDockWidget):
             QCheckBox::indicator {
                 width: 16px;
                 height: 16px;
+                border: 1px solid palette(light);
+                border-radius: 2px;
+                background: palette(base);
+            }
+            QCheckBox::indicator:checked {
+                background: #4a90d9;
+                border-color: #4a90d9;
+                image: none;
             }
         """)
         self.batch_mode_checkbox.stateChanged.connect(self._on_batch_mode_checkbox_changed)
@@ -919,6 +965,16 @@ class AISegmentationDockWidget(QDockWidget):
         from .error_report_dialog import show_suggest_feature
         show_suggest_feature(self)
 
+    def _on_visible_area_checkbox_changed(self, state: int):
+        """Handle visible area checkbox change."""
+        checked = state == Qt.Checked
+        self._visible_area_mode = checked
+        self.visible_area_changed.emit(checked)
+
+    def is_visible_area_mode(self) -> bool:
+        """Return whether visible area encoding mode is active."""
+        return self._visible_area_mode
+
     def _on_batch_mode_checkbox_changed(self, state: int):
         """Handle batch mode checkbox change."""
         checked = state == Qt.Checked
@@ -1308,12 +1364,20 @@ class AISegmentationDockWidget(QDockWidget):
             self.prep_status_label.setVisible(True)
             self.start_button.setVisible(False)
             self.batch_mode_checkbox.setVisible(False)
+            self.visible_area_widget.setVisible(False)
             self.cancel_prep_button.setVisible(True)
-            self.encoding_info_label.setText(
-                "⏳ {}\n{}".format(
-                    tr("Encoding this image for AI segmentation..."),
-                    tr("This is stored permanently, no waiting next time :)"))
-            )
+            if self._visible_area_mode:
+                self.encoding_info_label.setText(
+                    "⏳ {}\n{}".format(
+                        tr("Encoding visible area for AI segmentation..."),
+                        tr("Only the visible map extent will be processed."))
+                )
+            else:
+                self.encoding_info_label.setText(
+                    "⏳ {}\n{}".format(
+                        tr("Encoding this image for AI segmentation..."),
+                        tr("This is stored permanently, no waiting next time :)"))
+                )
             self.encoding_info_label.setStyleSheet(
                 "background-color: rgba(46, 125, 50, 0.15); padding: 8px; "
                 "border-radius: 4px; font-size: 11px; "
@@ -1336,6 +1400,7 @@ class AISegmentationDockWidget(QDockWidget):
             )
             self.start_button.setVisible(True)
             self.batch_mode_checkbox.setVisible(True)
+            self.visible_area_widget.setVisible(True)
             self._encoding_start_time = None
             self._slow_encoding_warned = False
             self._update_ui_state()
@@ -1358,6 +1423,7 @@ class AISegmentationDockWidget(QDockWidget):
     def _update_button_visibility(self):
         if self._segmentation_active:
             self.start_container.setVisible(False)  # Hide start button and mode checkbox
+            self.visible_area_widget.setVisible(False)  # Hide visible area option
             self.encoding_info_label.setVisible(False)
             self.instructions_label.setVisible(True)
             self._update_instructions()
@@ -1392,11 +1458,15 @@ class AISegmentationDockWidget(QDockWidget):
 
             # Batch mode checkbox: disabled during segmentation (can't change mode mid-session)
             self.batch_mode_checkbox.setEnabled(False)
+            # Visible area: disabled during segmentation
+            self.visible_area_checkbox.setEnabled(False)
         else:
             # Not segmenting - hide all segmentation buttons, show start controls
             self.start_container.setVisible(True)
+            self.visible_area_widget.setVisible(True)
             self.batch_mode_checkbox.setVisible(True)
             self.batch_mode_checkbox.setEnabled(True)  # Can change mode when not segmenting
+            self.visible_area_checkbox.setEnabled(True)
             self.instructions_label.setVisible(False)
             self.refine_group.setVisible(False)
             self.save_mask_button.setVisible(False)

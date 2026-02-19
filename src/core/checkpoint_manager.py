@@ -27,27 +27,101 @@ def get_features_dir() -> str:
     return FEATURES_DIR
 
 
-def get_raster_features_dir(raster_path: str) -> str:
+def _migrate_old_cache_layout():
+    """Migrate old flat cache dirs into the new raster/full/ subfolder layout.
+
+    Old layout: features/rastername_hash/*.tif + rastername_hash.csv
+    New layout: features/rastername_hash/full/*.tif + full.csv
+
+    Only runs once per session (idempotent).
+    """
+    if not os.path.exists(FEATURES_DIR):
+        return
+
+    try:
+        for entry in os.listdir(FEATURES_DIR):
+            entry_path = os.path.join(FEATURES_DIR, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            # Skip already-migrated dirs (contain only subdirs like full/, visible_*)
+            has_tif = any(f.endswith('.tif') for f in os.listdir(entry_path))
+            if not has_tif:
+                continue
+            # Old format detected: tif files directly in the raster folder
+            full_dir = os.path.join(entry_path, "full")
+            os.makedirs(full_dir, exist_ok=True)
+            for fname in os.listdir(entry_path):
+                if fname == "full":
+                    continue
+                src = os.path.join(entry_path, fname)
+                if os.path.isfile(src):
+                    # Rename old CSV to full.csv
+                    if fname.endswith('.csv'):
+                        dst = os.path.join(full_dir, "full.csv")
+                    else:
+                        dst = os.path.join(full_dir, fname)
+                    os.replace(src, dst)
+            QgsMessageLog.logMessage(
+                "Migrated old cache folder: {}".format(entry),
+                "AI Segmentation", level=Qgis.Info)
+    except Exception as e:
+        QgsMessageLog.logMessage(
+            "Cache migration warning: {}".format(e),
+            "AI Segmentation", level=Qgis.Warning)
+
+
+_cache_migrated = False
+
+
+def _get_raster_base_dir(raster_path: str) -> str:
+    """Get the base cache directory for a raster (parent of full/ and visible_*/).
+
+    Structure: features/{sanitized_name}_{path_hash}/
+    The hash is based on the raster path only (not the extent).
+    """
     import re
 
-    # Get the raster filename without extension
     raster_filename = os.path.splitext(os.path.basename(raster_path))[0]
 
-    # Sanitize: keep only alphanumeric, underscore, hyphen (replace others with underscore)
     sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '_', raster_filename)
-    # Limit length to avoid too long folder names
     sanitized_name = sanitized_name[:40]
-    # Remove trailing underscores
     sanitized_name = sanitized_name.rstrip('_')
 
-    # Add short hash suffix for uniqueness (based on full path)
     # MD5 is used here only for generating a short identifier, not for security
-    raster_hash = hashlib.md5(raster_path.encode(), usedforsecurity=False).hexdigest()[:8]
+    path_hash = hashlib.md5(
+        raster_path.encode(), usedforsecurity=False
+    ).hexdigest()[:8]
 
-    # Combine: rastername_abc12345
-    folder_name = f"{sanitized_name}_{raster_hash}"
+    return os.path.join(FEATURES_DIR, "{}_{}".format(sanitized_name, path_hash))
 
-    features_path = os.path.join(FEATURES_DIR, folder_name)
+
+def get_raster_features_dir(raster_path: str, visible_extent: tuple = None) -> str:
+    """Get the encoding cache directory for a raster.
+
+    Structure:
+      features/{rastername}_{path_hash}/full/          (full raster)
+      features/{rastername}_{path_hash}/visible_{hash}/ (visible area)
+
+    Each raster gets one parent folder, with subfolders for each encoding type.
+    """
+    global _cache_migrated
+    if not _cache_migrated:
+        _migrate_old_cache_layout()
+        _cache_migrated = True
+
+    base_dir = _get_raster_base_dir(raster_path)
+
+    if visible_extent is None:
+        features_path = os.path.join(base_dir, "full")
+    else:
+        extent_str = "{:.2f}_{:.2f}_{:.2f}_{:.2f}".format(
+            visible_extent[0], visible_extent[1],
+            visible_extent[2], visible_extent[3])
+        extent_hash = hashlib.md5(
+            extent_str.encode(), usedforsecurity=False
+        ).hexdigest()[:8]
+        features_path = os.path.join(base_dir, "visible_{}".format(extent_hash))
+
     os.makedirs(features_path, exist_ok=True)
     return features_path
 
@@ -266,8 +340,8 @@ def download_checkpoint(
         max_retries, last_error)
 
 
-def has_features_for_raster(raster_path: str) -> bool:
-    features_dir = get_raster_features_dir(raster_path)
+def has_features_for_raster(raster_path: str, visible_extent: tuple = None) -> bool:
+    features_dir = get_raster_features_dir(raster_path, visible_extent)
     csv_path = os.path.join(features_dir, os.path.basename(features_dir) + ".csv")
     if not os.path.exists(csv_path):
         return False
@@ -275,8 +349,8 @@ def has_features_for_raster(raster_path: str) -> bool:
     return len(tif_files) > 0
 
 
-def clear_features_for_raster(raster_path: str) -> bool:
-    features_dir = get_raster_features_dir(raster_path)
+def clear_features_for_raster(raster_path: str, visible_extent: tuple = None) -> bool:
+    features_dir = get_raster_features_dir(raster_path, visible_extent)
     if os.path.exists(features_dir):
         import shutil
         shutil.rmtree(features_dir)
