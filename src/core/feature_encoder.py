@@ -13,8 +13,21 @@ from .i18n import tr
 # Global timeout for the encoding stdout reading loop (45 minutes)
 _ENCODING_GLOBAL_TIMEOUT = 2700
 
+# Stall detection: if no progress update for this many seconds, abort
+_ENCODING_STALL_TIMEOUT = 300  # 5 minutes
+
+# Windows NTSTATUS crash codes (reuse from venv_manager pattern)
+_WINDOWS_ENCODING_CRASH_CODES = {
+    3221225477,   # 0xC0000005 unsigned - ACCESS_VIOLATION
+    -1073741819,  # 0xC0000005 signed   - ACCESS_VIOLATION
+    3221225725,   # 0xC00000FD unsigned - STACK_OVERFLOW
+    -1073741571,  # 0xC00000FD signed   - STACK_OVERFLOW
+    3221225781,   # 0xC0000135 unsigned - DLL_NOT_FOUND
+    -1073741515,  # 0xC0000135 signed   - DLL_NOT_FOUND
+}
+
 # Raster formats that require GDAL conversion (not supported by pip-installed rasterio)
-_GDAL_ONLY_FORMATS = {'.ecw', '.sid'}
+_GDAL_ONLY_FORMATS = {'.ecw', '.sid', '.jp2', '.j2k', '.j2c'}
 
 
 def _needs_gdal_conversion(raster_path):
@@ -199,6 +212,7 @@ def encode_raster_to_features(
 
         tiles_processed = 0
         start_time = time.monotonic()
+        last_progress_time = time.monotonic()
 
         for line in process.stdout:
             # Global timeout check
@@ -211,12 +225,31 @@ def encode_raster_to_features(
                 )
                 _terminate_process(process)
                 process = None
-                return False, "Encoding timed out (45 minutes)"
+                return False, tr(
+                    "Encoding timed out after 45 minutes. "
+                    "Try reducing the image size or closing other applications."
+                )
+
+            # Stall detection: no progress for 5 minutes
+            stall_elapsed = time.monotonic() - last_progress_time
+            if stall_elapsed > _ENCODING_STALL_TIMEOUT:
+                QgsMessageLog.logMessage(
+                    "Encoding worker stalled (no output for 5 min), terminating",
+                    "AI Segmentation",
+                    level=Qgis.Warning
+                )
+                _terminate_process(process)
+                process = None
+                return False, tr(
+                    "Encoding stalled (no progress for 5 minutes). "
+                    "Try restarting QGIS and running again."
+                )
 
             try:
                 update = json.loads(line.strip())
 
                 if update.get("type") == "progress":
+                    last_progress_time = time.monotonic()
                     percent = update.get("percent", 0)
                     message = update.get("message", "")
                     try:
@@ -293,10 +326,36 @@ def encode_raster_to_features(
             # Detect OOM and show a clearer message
             oom_markers = ["not enough memory", "OutOfMemoryError", "MemoryError"]
             if any(m in stderr_output for m in oom_markers):
-                return False, (
+                return False, tr(
                     "Out of memory: your raster is too large for available RAM. "
                     "Try a smaller area or close other applications."
                 )
+
+            # Detect PROJ library conflict
+            if "PROJ" in stderr_output or "proj_create" in stderr_output:
+                return False, tr(
+                    "PROJ library conflict detected. "
+                    "Try updating QGIS to the latest version."
+                )
+
+            # Detect Windows DLL errors
+            stderr_upper = stderr_output.upper()
+            if "DLL" in stderr_upper or "WINERROR 1114" in stderr_upper:
+                return False, tr(
+                    "Windows DLL error detected. "
+                    "Please install Visual C++ Redistributables: "
+                    "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+                )
+
+            # Detect Windows crash codes
+            if process.returncode in _WINDOWS_ENCODING_CRASH_CODES:
+                return False, tr(
+                    "The encoding process crashed. "
+                    "Try closing other applications, "
+                    "reinstalling dependencies, "
+                    "or running QGIS as administrator."
+                )
+
             return False, error_msg
 
     except Exception as e:
