@@ -638,50 +638,107 @@ def ensure_venv_packages_available():
         except Exception:
             _log("Failed to reload typing_extensions, torch may fail", Qgis.Warning)
 
-    # SAFE FIX for old QGIS versions (< 3.28) with numpy/pandas compatibility issue
-    # QGIS 3.26-3.27 ships with numpy 1.20.x which is incompatible with pandas >= 2.0
-    # We safely reload numpy from venv ONLY for these old versions
-    if "numpy" in sys.modules:
-        try:
-            # Check QGIS version - only apply fix for QGIS < 3.28
-            qgis_version = Qgis.QGIS_VERSION.split("-")[0]
-            version_parts = [int(x) for x in qgis_version.split(".")]
-            is_old_qgis = version_parts[0] < 3 or (version_parts[0] == 3 and version_parts[1] < 28)
+    # SAFE FIX for old QGIS versions (< 3.28) with numpy/pandas compatibility
+    # QGIS 3.26-3.27 ships with numpy 1.20.x which is incompatible with
+    # pandas >= 2.0. We force-reload numpy from venv for these versions.
+    # (issue #130)
+    try:
+        qgis_version = Qgis.QGIS_VERSION.split("-")[0]
+        version_parts = [int(x) for x in qgis_version.split(".")]
+        is_old_qgis = (
+            version_parts[0] < 3
+            or (version_parts[0] == 3 and version_parts[1] < 28)
+        )
+    except Exception:
+        is_old_qgis = False
 
-            if not is_old_qgis:
-                return True
+    if not is_old_qgis:
+        return True
 
-            import numpy as old_numpy
-            old_version = old_numpy.__version__
-            version_nums = [int(x) for x in old_version.split(".")[:3]]
+    # Determine if numpy is too old (< 1.22.4)
+    needs_numpy_fix = False
+    old_version = "unknown"
+    try:
+        if "numpy" in sys.modules:
+            old_np = sys.modules["numpy"]
+            old_version = getattr(old_np, "__version__", "0.0.0")
+        else:
+            # numpy not loaded yet; check if QGIS Python path has an old one
+            # by probing before we import (which would lock in the wrong one)
+            old_version = "not_loaded"
 
-            # Check if version is < 1.22.4 (incompatible with pandas >= 2.0)
-            needs_upgrade = False
-            if version_nums[0] < 1:
-                needs_upgrade = True
-            elif version_nums[0] == 1 and version_nums[1] < 22:
-                needs_upgrade = True
-            elif version_nums[0] == 1 and version_nums[1] == 22 and version_nums[2] < 4:
-                needs_upgrade = True
+        if old_version == "not_loaded":
+            # numpy not yet imported; ensure venv path is first so the
+            # first import picks up the venv copy
+            needs_numpy_fix = True
+        else:
+            vn = [int(x) for x in old_version.split(".")[:3]]
+            np_old = (vn[0] < 1) or (vn[0] == 1 and vn[1] < 22)
+            np_old = np_old or (vn[0] == 1 and vn[1] == 22 and vn[2] < 4)
+            needs_numpy_fix = np_old
+    except Exception:
+        needs_numpy_fix = False
 
-            if needs_upgrade:
-                _log(
-                    "Detected QGIS {} with numpy {} (incompatible with pandas >= 2.0). "
-                    "Reloading numpy from venv...".format(qgis_version, old_version),
-                    Qgis.Info
-                )
+    if not needs_numpy_fix:
+        return True
 
-                # Remove numpy and related modules from cache
-                modules_to_remove = [key for key in sys.modules.keys() if key.startswith("numpy")]
-                for mod in modules_to_remove:
-                    del sys.modules[mod]
+    _log(
+        "Old QGIS {} with numpy {} detected. "
+        "Forcing venv numpy/pandas...".format(qgis_version, old_version),
+        Qgis.Info)
 
-                # Reimport numpy from venv
-                import numpy as new_numpy
-                _log("Successfully reloaded numpy {} from venv".format(new_numpy.__version__), Qgis.Info)
+    try:
+        import importlib
 
-        except Exception as e:
-            _log("Failed to reload numpy: {}. Plugin may not work on this QGIS version.".format(e), Qgis.Warning)
+        # 1. Remove ALL numpy and pandas modules from cache
+        mods_to_clear = [
+            k for k in list(sys.modules.keys())
+            if k.startswith("numpy") or k.startswith("pandas")
+        ]
+        for mod in mods_to_clear:
+            del sys.modules[mod]
+
+        # 2. Temporarily remove QGIS Python paths that contain numpy
+        #    so the reimport finds the venv copy first
+        removed_paths = []
+        for p in sys.path[:]:
+            if p == site_packages:
+                continue
+            np_init = os.path.join(p, "numpy", "__init__.py")
+            if os.path.exists(np_init):
+                removed_paths.append(p)
+                sys.path.remove(p)
+
+        # 3. Invalidate import caches so Python re-scans directories
+        importlib.invalidate_caches()
+
+        # 4. Reimport numpy from venv
+        import numpy as new_numpy  # noqa: E402
+
+        # 5. Restore removed paths (after venv so venv stays first)
+        for p in removed_paths:
+            if p not in sys.path:
+                sys.path.append(p)
+
+        # 6. Verify the reload actually worked
+        new_ver = new_numpy.__version__
+        if new_ver == old_version and old_version != "not_loaded":
+            _log(
+                "WARNING: numpy reload did not change version "
+                "(still {}). pandas may fail on this QGIS.".format(
+                    old_version),
+                Qgis.Warning)
+        else:
+            _log(
+                "Reloaded numpy {} -> {} from venv".format(
+                    old_version, new_ver),
+                Qgis.Info)
+
+    except Exception as e:
+        _log(
+            "Failed to reload numpy: {}. "
+            "Plugin may not work on this QGIS version.".format(e),
+            Qgis.Warning)
 
     return True
 
@@ -820,8 +877,9 @@ def create_venv(
     cmd = [system_python, "-m", "venv", venv_dir]
 
     try:
-        env = os.environ.copy()
-        env["PYTHONIOENCODING"] = "utf-8"
+        # Use clean env to prevent QGIS PYTHONPATH/PYTHONHOME from leaking
+        # into the standalone Python subprocess (issue #131)
+        env = _get_clean_env_for_venv()
 
         if sys.platform == "win32":
             startupinfo = subprocess.STARTUPINFO()
@@ -2276,10 +2334,21 @@ def create_venv_and_install(
         _cuda_fell_back = True
 
     # Step 4b: CUDA smoke test — verify torch.cuda actually works in the venv
-    if is_valid and cuda_enabled and not _cuda_fell_back:
+    # Always run when CUDA was requested, even after fallback: a later package
+    # install (e.g. torchvision CUDA) may have pulled in CUDA torch as a
+    # dependency, resolving the earlier failure (issue #132).
+    if is_valid and cuda_enabled:
         if progress_callback:
             progress_callback(99, "Verifying CUDA functionality...")
-        if not _verify_cuda_in_venv(VENV_DIR):
+        cuda_works = _verify_cuda_in_venv(VENV_DIR)
+        if cuda_works and _cuda_fell_back:
+            # CUDA actually works despite earlier fallback — clear the flag
+            _log(
+                "CUDA smoke test passed after earlier fallback. "
+                "GPU acceleration is available.",
+                Qgis.Info)
+            _cuda_fell_back = False
+        elif not cuda_works and not _cuda_fell_back:
             _log(
                 "CUDA smoke test failed, falling back to CPU torch",
                 Qgis.Warning
