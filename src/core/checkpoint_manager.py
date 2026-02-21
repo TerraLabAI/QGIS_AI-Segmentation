@@ -149,9 +149,10 @@ def download_checkpoint(
     Download SAM checkpoint using QGIS network manager with progress reporting.
 
     Uses QNetworkAccessManager with a local event loop to provide real-time
-    download progress updates instead of blocking without feedback.
+    download progress updates. Supports resuming partial downloads via HTTP
+    Range requests (issue #129).
     """
-    from qgis.PyQt.QtCore import QEventLoop, QTimer
+    from qgis.PyQt.QtCore import QEventLoop, QTimer, QByteArray
     from qgis.PyQt.QtNetwork import QNetworkReply
     from qgis.core import QgsNetworkAccessManager
 
@@ -177,82 +178,99 @@ def download_checkpoint(
     if progress_callback:
         progress_callback(0, "Connecting to download server...")
 
-    # State container for progress tracking
-    download_state = {
-        'bytes_received': 0,
-        'bytes_total': 0,
-        'error': None,
-        'data': bytearray()
-    }
-
-    def on_download_progress(received: int, total: int):
-        """Handle download progress updates."""
-        download_state['bytes_received'] = received
-        download_state['bytes_total'] = total
-
-        if total > 0 and progress_callback:
-            # Calculate percentage (reserve 5% for verification)
-            percent = int((received / total) * 90) + 5
-            mb_received = received / (1024 * 1024)
-            mb_total = total / (1024 * 1024)
-            progress_callback(
-                min(percent, 95),
-                f"Downloading: {mb_received:.1f} / {mb_total:.1f} MB"
-            )
-        elif progress_callback and received > 0:
-            # Unknown total size, show bytes downloaded
-            mb_received = received / (1024 * 1024)
-            progress_callback(50, f"Downloading: {mb_received:.1f} MB...")
-
-    def on_ready_read():
-        """Accumulate downloaded data chunks."""
-        data = reply.readAll()
-        download_state['data'].extend(data.data())
-
-    def on_error(error_code):
-        """Handle download errors."""
-        download_state['error'] = reply.errorString()
-
-    max_retries = 3
+    max_retries = 5
     last_error = ""
 
     for attempt in range(1, max_retries + 1):
-        # Reset state for each attempt
-        download_state['bytes_received'] = 0
-        download_state['bytes_total'] = 0
-        download_state['error'] = None
-        download_state['data'] = bytearray()
+        # Check for existing partial download to resume
+        resume_offset = 0
+        if os.path.exists(temp_path):
+            resume_offset = os.path.getsize(temp_path)
+            if resume_offset > 0:
+                QgsMessageLog.logMessage(
+                    "Resuming download from {:.1f} MB".format(
+                        resume_offset / (1024 * 1024)),
+                    "AI Segmentation", level=Qgis.Info)
+
+        # State container for progress tracking
+        download_state = {
+            'bytes_received': 0,
+            'bytes_total': 0,
+            'error': None,
+            'file': None,
+            'resume_offset': resume_offset,
+        }
+
+        def on_download_progress(received, total):
+            download_state['bytes_received'] = received
+            download_state['bytes_total'] = total
+            if progress_callback:
+                actual_received = resume_offset + received
+                actual_total = resume_offset + total if total > 0 else 0
+                if actual_total > 0:
+                    percent = int((actual_received / actual_total) * 90) + 5
+                    mb_recv = actual_received / (1024 * 1024)
+                    mb_tot = actual_total / (1024 * 1024)
+                    progress_callback(
+                        min(percent, 95),
+                        "Downloading: {:.1f} / {:.1f} MB".format(
+                            mb_recv, mb_tot))
+                elif actual_received > 0:
+                    mb_recv = actual_received / (1024 * 1024)
+                    progress_callback(
+                        50, "Downloading: {:.1f} MB...".format(mb_recv))
+
+        def on_ready_read():
+            data = reply.readAll()
+            if download_state['file'] is not None:
+                download_state['file'].write(data.data())
+
+        def on_error(error_code):
+            download_state['error'] = reply.errorString()
 
         try:
-            # Use QGIS network manager for proxy-aware downloads
             manager = QgsNetworkAccessManager.instance()
             qurl = QUrl(SAM_CHECKPOINT_URL)
             request = QNetworkRequest(qurl)
 
-            # Start the download
+            # Resume from partial download using HTTP Range header
+            if resume_offset > 0:
+                range_header = "bytes={}-".format(resume_offset)
+                request.setRawHeader(
+                    QByteArray(b"Range"),
+                    QByteArray(range_header.encode("ascii")))
+
+            # Open temp file in append mode for resume, write mode for fresh
+            if resume_offset > 0:
+                download_state['file'] = open(temp_path, 'ab')
+            else:
+                download_state['file'] = open(temp_path, 'wb')
+
             reply = manager.get(request)
 
-            # Connect progress signals
             reply.downloadProgress.connect(on_download_progress)
             reply.readyRead.connect(on_ready_read)
             reply.errorOccurred.connect(on_error)
 
-            # Create event loop to wait for download completion
             loop = QEventLoop()
             reply.finished.connect(loop.quit)
 
-            # Add timeout (20 minutes for ~375MB file on slow connections)
             timeout = QTimer()
             timeout.setSingleShot(True)
             timeout.timeout.connect(loop.quit)
             timeout.start(1200000)  # 20 minutes
 
             if progress_callback:
-                retry_msg = "" if attempt == 1 else " (retry {}/{})".format(
-                    attempt, max_retries)
-                progress_callback(5, "Download started...{}".format(retry_msg))
+                retry_msg = ""
+                if attempt > 1:
+                    retry_msg = " (retry {}/{})".format(attempt, max_retries)
+                if resume_offset > 0:
+                    progress_callback(
+                        5, "Resuming download...{}".format(retry_msg))
+                else:
+                    progress_callback(
+                        5, "Download started...{}".format(retry_msg))
 
-            # Run the event loop until download completes
             loop.exec_()
 
             # Check for timeout
@@ -261,7 +279,31 @@ def download_checkpoint(
             else:
                 reply.abort()
                 reply.deleteLater()
+                download_state['file'].close()
+                download_state['file'] = None
                 last_error = "Download timed out after 20 minutes"
+                if attempt < max_retries:
+                    import time
+                    time.sleep(2 * attempt)
+                continue
+
+            # Check if server returned 416 (range not satisfiable)
+            # This means the partial file is invalid, restart from scratch
+            status_code = reply.attribute(QNetworkRequest.HttpStatusCodeAttribute)
+            if status_code == 416:
+                QgsMessageLog.logMessage(
+                    "Server rejected range request, restarting download",
+                    "AI Segmentation", level=Qgis.Warning)
+                download_state['file'].close()
+                download_state['file'] = None
+                reply.deleteLater()
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+                if attempt < max_retries:
+                    import time
+                    time.sleep(1)
                 continue
 
             # Check for errors
@@ -270,41 +312,49 @@ def download_checkpoint(
                 QgsMessageLog.logMessage(
                     "Checkpoint download attempt {}/{} failed: {}".format(
                         attempt, max_retries, last_error),
-                    "AI Segmentation",
-                    level=Qgis.Warning
-                )
+                    "AI Segmentation", level=Qgis.Warning)
                 reply.deleteLater()
+                download_state['file'].close()
+                download_state['file'] = None
                 if attempt < max_retries:
                     import time
                     time.sleep(2 * attempt)
                 continue
 
-            # Read any remaining data
+            # Flush remaining data
             remaining = reply.readAll()
             if remaining:
-                download_state['data'].extend(remaining.data())
-
-            content = bytes(download_state['data'])
+                download_state['file'].write(remaining.data())
+            download_state['file'].close()
+            download_state['file'] = None
             reply.deleteLater()
 
-            if len(content) == 0:
-                last_error = "Download failed: empty response"
+            # Verify file is not empty
+            file_size = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
+            if file_size == 0:
+                last_error = "Download failed: empty file"
+                if attempt < max_retries:
+                    import time
+                    time.sleep(2 * attempt)
                 continue
 
             if progress_callback:
-                mb_total = len(content) / (1024 * 1024)
-                progress_callback(92, f"Downloaded {mb_total:.1f} MB, saving...")
-
-            # Write content to temp file
-            with open(temp_path, 'wb') as f:
-                f.write(content)
-
-            if progress_callback:
-                progress_callback(95, "Verifying download...")
+                mb_total = file_size / (1024 * 1024)
+                progress_callback(
+                    95, "Verifying {:.1f} MB download...".format(mb_total))
 
             if not verify_checkpoint_hash(temp_path):
+                # Hash mismatch after full download: partial file was
+                # corrupted, delete and retry from scratch
+                QgsMessageLog.logMessage(
+                    "Hash mismatch, deleting partial file and retrying",
+                    "AI Segmentation", level=Qgis.Warning)
                 os.remove(temp_path)
-                return False, "Download verification failed - hash mismatch"
+                last_error = "Download verification failed - hash mismatch"
+                if attempt < max_retries:
+                    import time
+                    time.sleep(2 * attempt)
+                continue
 
             os.replace(temp_path, checkpoint_path)
 
@@ -312,10 +362,8 @@ def download_checkpoint(
                 progress_callback(100, "Checkpoint downloaded successfully!")
 
             QgsMessageLog.logMessage(
-                f"Checkpoint downloaded to: {checkpoint_path}",
-                "AI Segmentation",
-                level=Qgis.Success
-            )
+                "Checkpoint downloaded to: {}".format(checkpoint_path),
+                "AI Segmentation", level=Qgis.Success)
             return True, "Checkpoint downloaded and verified"
 
         except Exception as e:
@@ -323,19 +371,26 @@ def download_checkpoint(
             QgsMessageLog.logMessage(
                 "Checkpoint download attempt {}/{} exception: {}".format(
                     attempt, max_retries, last_error),
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
+                "AI Segmentation", level=Qgis.Warning)
+            if download_state.get('file') is not None:
+                try:
+                    download_state['file'].close()
+                except Exception:
+                    pass
+                download_state['file'] = None
             if attempt < max_retries:
                 import time
                 time.sleep(2 * attempt)
 
-    # All retries exhausted
+    # All retries exhausted - keep partial file for next resume attempt
+    partial_mb = 0
     if os.path.exists(temp_path):
-        try:
-            os.remove(temp_path)
-        except OSError:
-            pass
+        partial_mb = os.path.getsize(temp_path) / (1024 * 1024)
+    if partial_mb > 0:
+        return False, (
+            "Download failed after {} attempts: {}. "
+            "Partial file ({:.1f} MB) saved, will resume on next try."
+        ).format(max_retries, last_error, partial_mb)
     return False, "Download failed after {} attempts: {}".format(
         max_retries, last_error)
 
