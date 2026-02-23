@@ -59,7 +59,9 @@
       "Bash(bandit:*)",
       "Bash(for i in 136 137 138)",
       "WebFetch(domain:github.com)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "WebFetch(domain:discuss.pytorch.org)",
+      "WebFetch(domain:dev-discuss.pytorch.org)"
     ]
   }
 }

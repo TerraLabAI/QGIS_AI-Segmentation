@@ -90,13 +90,23 @@ Current defaults: `expand=0, simplify=4, fill_holes=False, min_area=100`
 
 ## Common Pitfalls
 
-- **Subprocess stderr**: Never use `stderr=subprocess.PIPE` without draining it — use `DEVNULL` or a temp file to avoid deadlocks
+- **Subprocess stderr**: Never use `stderr=subprocess.PIPE` without draining it -- use `DEVNULL` or a temp file to avoid deadlocks
 - **`os.replace()` not `os.rename()`**: rename fails on Windows if dest exists
 - **`os.path.normcase()`** before comparing paths (Windows case-insensitive)
 - **`encoding='utf-8'`** on all `open()` calls
 - **`Tuple[bool, str]`** from typing, not `tuple[bool, str]` (needs Python 3.9+)
-- **`blockSignals(True/False)`** when setting widget values programmatically
+- **`blockSignals(True/False)`** when setting widget values programmatically (including `reset_refine_sliders`)
 - **Disconnect `QgsProject.instance()` signals** in `unload()`
+
+## Dark Theme Compatibility - IMPORTANT
+
+QGIS supports light and dark themes. All UI styling MUST work in both.
+
+- **NEVER use `palette(mid)` for text color** -- it is invisible on dark backgrounds. Use `palette(text)` instead for readable text in both themes.
+- **For secondary/muted text**: use `palette(text)` with a smaller `font-size` (e.g. 11px). The size alone communicates secondary importance.
+- **For disabled elements**: rely on Qt's native `setEnabled(False)` dimming, or use `palette(dark)` for disabled-state overrides.
+- **Hardcoded colors** (e.g. `#333333`) are OK for text on elements with their own hardcoded background (e.g. a yellow warning box), but never for text on the default window background.
+- **Always test new UI changes in both light and dark theme** before committing.
 
 ## Internationalization (i18n) - IMPORTANT
 

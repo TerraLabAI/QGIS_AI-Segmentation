@@ -230,7 +230,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout = QVBoxLayout(self.checkpoint_group)
 
         self.checkpoint_status_label = QLabel(tr("Waiting for Step 1..."))
-        self.checkpoint_status_label.setStyleSheet("color: palette(mid);")
+        self.checkpoint_status_label.setStyleSheet("color: palette(text);")
         layout.addWidget(self.checkpoint_status_label)
 
         self.checkpoint_progress = QProgressBar()
@@ -500,8 +500,8 @@ class AISegmentationDockWidget(QDockWidget):
             tr("Segment only in the visible area") + " (beta)")
         self.visible_area_checkbox.setChecked(False)
         self.visible_area_checkbox.setStyleSheet(
-            "QCheckBox { font-size: 11px; color: palette(mid); }"
-            "QCheckBox:disabled { color: palette(mid); }"
+            "QCheckBox { font-size: 11px; color: palette(text); }"
+            "QCheckBox:disabled { color: palette(dark); }"
             "QCheckBox::indicator { width: 14px; height: 14px; }"
         )
         self.visible_area_checkbox.setToolTip(
@@ -749,11 +749,21 @@ class AISegmentationDockWidget(QDockWidget):
         )
 
     def reset_refine_sliders(self):
-        """Reset refinement controls to default values."""
+        """Reset refinement controls to default values without emitting signals."""
+        self.expand_spinbox.blockSignals(True)
+        self.simplify_spinbox.blockSignals(True)
+        self.fill_holes_checkbox.blockSignals(True)
+        self.min_area_spinbox.blockSignals(True)
+
         self.expand_spinbox.setValue(0)
         self.simplify_spinbox.setValue(4)  # Default to 4
         self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
         self.min_area_spinbox.setValue(100)  # Default: remove small artifacts
+
+        self.expand_spinbox.blockSignals(False)
+        self.simplify_spinbox.blockSignals(False)
+        self.fill_holes_checkbox.blockSignals(False)
+        self.min_area_spinbox.blockSignals(False)
 
     def set_refine_values(self, expand: int, simplify: int, fill_holes: bool = False, min_area: int = 0):
         """Set refine slider values without emitting signals."""
@@ -827,7 +837,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._shortcuts_expanded = False
 
         self._shortcuts_toggle = QLabel(
-            '<a href="#" style="color: palette(mid); '
+            '<a href="#" style="color: palette(text); '
             'text-decoration: none; font-size: 11px;">'
             '&#9654; ' + tr("Shortcuts") + '</a>'
         )
@@ -849,7 +859,7 @@ class AISegmentationDockWidget(QDockWidget):
                 stop=tr("Stop segmentation"))
         )
         self._shortcuts_content.setStyleSheet(
-            "font-size: 11px; color: palette(mid); "
+            "font-size: 11px; color: palette(text); "
             "padding: 4px 8px; margin: 0;"
         )
         self._shortcuts_content.setAlignment(Qt.AlignRight)
@@ -862,7 +872,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._shortcuts_content.setVisible(self._shortcuts_expanded)
         arrow = "&#9660;" if self._shortcuts_expanded else "&#9654;"
         self._shortcuts_toggle.setText(
-            '<a href="#" style="color: palette(mid); '
+            '<a href="#" style="color: palette(text); '
             'text-decoration: none; font-size: 11px;">'
             '{} '.format(arrow) + tr("Shortcuts") + '</a>'
         )
@@ -1000,7 +1010,7 @@ class AISegmentationDockWidget(QDockWidget):
         if not self._dependencies_ok:
             self.checkpoint_group.setEnabled(False)
             self.checkpoint_status_label.setText(tr("Waiting for Step 1..."))
-            self.checkpoint_status_label.setStyleSheet("color: palette(mid);")
+            self.checkpoint_status_label.setStyleSheet("color: palette(text);")
             self.download_button.setVisible(False)
         else:
             self.checkpoint_group.setEnabled(True)

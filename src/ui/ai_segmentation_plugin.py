@@ -2068,7 +2068,7 @@ class AISegmentationPlugin:
 
         rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
         rb.setColor(QColor(30, 120, 220, 160))
-        rb.setFillColor(QColor(30, 120, 220, 20))
+        rb.setFillColor(QColor(0, 0, 0, 0))
         rb.setWidth(2)
 
         # Build rectangle geometry in raster CRS
