@@ -1177,9 +1177,10 @@ class AISegmentationDockWidget(QDockWidget):
                 remaining_pct = 100 - percent
 
                 # Weighted average: 70% recent speed, 30% overall
-                if (self._last_percent_time
-                        and percent > self._last_percent
-                        and now > self._last_percent_time):
+                has_prev = self._last_percent_time is not None
+                pct_increased = percent > self._last_percent
+                time_increased = now > self._last_percent_time if has_prev else False
+                if has_prev and pct_increased and time_increased:
                     dt = now - self._last_percent_time
                     dp = percent - self._last_percent
                     recent_speed = dp / dt
