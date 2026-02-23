@@ -9,7 +9,7 @@ _cached_device = None
 _device_info = None
 
 
-def get_optimal_device() -> "torch.device":
+def get_optimal_device():  # -> torch.device
     global _cached_device, _device_info
 
     if _cached_device is not None:

@@ -447,8 +447,9 @@ def _is_ssl_error(stderr: str) -> bool:
 def _is_hash_mismatch(output: str) -> bool:
     """Detect pip hash mismatch errors (corrupted cache from interrupted download)."""
     output_lower = output.lower()
-    return ("do not match the hashes" in output_lower
-            or "hash mismatch" in output_lower)
+    has_mismatch = "do not match the hashes" in output_lower
+    has_hash_err = "hash mismatch" in output_lower
+    return has_mismatch or has_hash_err
 
 
 def _get_pip_ssl_flags() -> List[str]:
