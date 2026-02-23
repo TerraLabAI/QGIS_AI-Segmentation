@@ -17,8 +17,8 @@
         <translation>Télécharger le modèle de segmentation</translation>
     </message>
     <message>
-        <source>{gpu_name} detected :) GPU dependencies will be installed, so it takes a bit longer, but segmentation will be 5 to 10x faster and handle large rasters easily.</source>
-        <translation>{gpu_name} détecté :) Les dépendances GPU seront installées, c'est un peu plus long, mais la segmentation sera 5 à 10x plus rapide et gérera facilement les gros rasters.</translation>
+        <source>GPU detected: {gpu_name}. Segmentation will be 5-10x faster! Installation takes a few extra minutes.</source>
+        <translation>GPU detecte : {gpu_name}. La segmentation sera 5-10x plus rapide ! L'installation prend quelques minutes de plus.</translation>
     </message>
 
     <!-- Dependencies Section -->
@@ -289,18 +289,6 @@
         <translation>Mode Batch</translation>
     </message>
     <message>
-        <source>Simple mode: One element per export.</source>
-        <translation>Mode simple : Un élément par export.</translation>
-    </message>
-    <message>
-        <source>Batch mode: Save multiple polygons, then export all together.</source>
-        <translation>Mode Batch : Sauvegardez plusieurs polygones, puis exportez-les ensemble.</translation>
-    </message>
-    <message>
-        <source>Mode can only be changed when segmentation is stopped.</source>
-        <translation>Le mode ne peut être changé qu'après arrêt de la segmentation.</translation>
-    </message>
-    <message>
         <source>Save polygon</source>
         <translation>Sauvegarder le polygone</translation>
     </message>
@@ -349,36 +337,40 @@
         <translation>Quitter sans sauvegarder (Échap)</translation>
     </message>
     <message>
-        <source>Simple mode: one element per layer.</source>
-        <translation>Mode simple : un élément par couche.</translation>
+        <source>Shortcuts</source>
+        <translation>Raccourcis</translation>
     </message>
     <message>
-        <source>For multiple elements in one layer, use Batch mode.</source>
-        <translation>Pour plusieurs éléments dans une couche, utilisez le mode Batch.</translation>
+        <source>Start segmentation</source>
+        <translation>Lancer la segmentation</translation>
     </message>
     <message>
-        <source>Simple mode</source>
-        <translation>Mode simple</translation>
+        <source>Save current polygon to your session</source>
+        <translation>Sauvegarder le polygone actuel dans votre session</translation>
     </message>
     <message>
-        <source>Select multiple elements, then export all together</source>
-        <translation>Sélectionnez plusieurs éléments, puis exportez-les ensemble</translation>
+        <source>Export polygon as a new vector layer</source>
+        <translation>Exporter le polygone comme nouvelle couche vectorielle</translation>
     </message>
     <message>
-        <source>One element per export</source>
-        <translation>Un élément par export</translation>
+        <source>Remove last point</source>
+        <translation>Supprimer le dernier point</translation>
     </message>
     <message>
-        <source>Batch mode: segment objects one by one, save all to same layer.</source>
-        <translation>Mode Batch : segmentez les objets un par un, sauvegardez-les tous dans la même couche.</translation>
+        <source>Exit segmentation without saving</source>
+        <translation>Quitter sans sauvegarder</translation>
     </message>
     <message>
-        <source>(e.g. one building, one car, one tree)</source>
-        <translation>(ex. un bâtiment, une voiture, un arbre)</translation>
+        <source>Export {count} polygon(s) as a new layer</source>
+        <translation>Exporter {count} polygone(s) comme nouvelle couche</translation>
     </message>
     <message>
-        <source>(e.g. all buildings in an area, all cars in a parking lot)</source>
-        <translation>(ex. tous les bâtiments d'une zone, toutes les voitures d'un parking)</translation>
+        <source>Save at least one polygon first</source>
+        <translation>Sauvegardez au moins un polygone d'abord</translation>
+    </message>
+    <message>
+        <source>Segment elements one by one, save them, then export all polygons to one layer.</source>
+        <translation>Segmentez les elements un par un, sauvegardez-les, puis exportez tous les polygones dans une couche.</translation>
     </message>
     <message>
         <source>Export polygon to layer</source>
@@ -665,7 +657,7 @@
         <translation>Signaler un bug</translation>
     </message>
     <message>
-        <source>Suggest a feature</source>
+        <source>Suggest feature</source>
         <translation>Suggérer une fonctionnalité</translation>
     </message>
     <message>
@@ -681,8 +673,8 @@
         <translation>Prendre un appel</translation>
     </message>
     <message>
-        <source>Tutorial &amp; Docs</source>
-        <translation>Tutoriel &amp; Docs</translation>
+        <source>Tutorial</source>
+        <translation>Tutoriel</translation>
     </message>
     <message>
         <source>Tutorials</source>
@@ -707,8 +699,8 @@
 
     <!-- Tooltip -->
     <message>
-        <source>Segment objects on raster images using AI</source>
-        <translation>Segmenter des objets sur des images raster avec l'IA</translation>
+        <source>Segment elements on raster images using AI</source>
+        <translation>Segmenter des elements sur des images raster avec l'IA</translation>
     </message>
 
     <!-- Error Report Dialog -->
@@ -783,8 +775,8 @@
 
     <!-- Update notification -->
     <message>
-        <source>New version available ({version}). This plugin is in beta and evolves quickly.</source>
-        <translation>Nouvelle version disponible ({version}). Ce plugin est en bêta et évolue rapidement.</translation>
+        <source>A new version is available (v{version}).</source>
+        <translation>Une nouvelle version est disponible (v{version}).</translation>
     </message>
     <message>
         <source>Update now</source>

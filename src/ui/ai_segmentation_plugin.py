@@ -36,7 +36,7 @@ from .error_report_dialog import show_error_report, start_log_collector
 from ..core.i18n import tr
 
 # QSettings keys for tutorial flags
-SETTINGS_KEY_TUTORIAL_SIMPLE = "AI_Segmentation/tutorial_simple_shown"
+SETTINGS_KEY_TUTORIAL_SHOWN = "AI_Segmentation/tutorial_simple_shown"
 
 
 class DepsInstallWorker(QThread):
@@ -221,14 +221,11 @@ class AISegmentationPlugin:
         self._refine_fill_holes = False  # Default: matches dockwidget checkbox
         self._refine_min_area = 100  # Default: matches dockwidget spinbox
 
-        # Per-raster mask counters (used for both Simple and Batch modes)
+        # Per-raster mask counters
         self._mask_counters = {}  # {raster_name: counter}
 
-        # Mode flag (simple mode by default)
-        self._batch_mode = False
         self._visible_area_mode = False  # Encode full raster by default
         self._visible_extent = None  # Captured canvas extent (raster CRS) when visible area mode is on
-        self._batch_tutorial_shown_this_session = False  # Reset each QGIS launch
         self._is_non_georeferenced_mode = False  # Track if current layer is non-georeferenced
 
         self.deps_install_worker = None
@@ -348,7 +345,7 @@ class AISegmentationPlugin:
         self.action.setCheckable(True)
         self.action.setToolTip(
             "AI Segmentation by TerraLab\n{}".format(
-                tr("Segment objects on raster images using AI"))
+                tr("Segment elements on raster images using AI"))
         )
         self.action.triggered.connect(self.toggle_dock_widget)
 
@@ -595,6 +592,7 @@ class AISegmentationPlugin:
             if checkpoint_exists():
                 self.dock_widget.set_checkpoint_status(True, "SAM model ready")
                 self._load_predictor()
+                self._update_raster_encoded_status()
                 self._show_activation_popup_if_needed()
             else:
                 self.dock_widget.set_checkpoint_status(False, "Model not downloaded")
@@ -920,6 +918,11 @@ class AISegmentationPlugin:
                     level=Qgis.Warning, duration=5
                 )
 
+        # Check if full raster is already encoded (no visible extent restriction)
+        full_raster_encoded = has_features_for_raster(raster_path, None)
+        if self.dock_widget:
+            self.dock_widget.set_raster_fully_encoded(full_raster_encoded)
+
         if has_features_for_raster(raster_path, self._visible_extent):
             self._load_features_and_activate(raster_path)
         else:
@@ -996,6 +999,9 @@ class AISegmentationPlugin:
         if success:
             self.dock_widget.set_preparation_progress(100, "Done!")
             self.dock_widget.encoding_info_label.setVisible(False)
+            # Update fully encoded flag if this was a full raster encoding
+            if self._visible_extent is None:
+                self.dock_widget.set_raster_fully_encoded(True)
             self._load_features_and_activate(raster_path)
         else:
             # Check if this was a user cancellation
@@ -1111,9 +1117,8 @@ class AISegmentationPlugin:
         self.dock_widget.set_segmentation_active(True)
         # Status bar hint will be set by _update_status_hint via set_point_count
 
-        # Show tutorial notification for first-time users (simple mode)
-        if not self._batch_mode:
-            self._show_tutorial_notification("simple")
+        # Show tutorial notification for first-time users
+        self._show_tutorial_notification()
 
     def _get_next_mask_counter(self) -> int:
         """Increment and return the mask counter for the current raster."""
@@ -1123,24 +1128,18 @@ class AISegmentationPlugin:
         self._mask_counters[name] += 1
         return self._mask_counters[name]
 
-    def _show_tutorial_notification(self, mode: str):
-        """Show YouTube tutorial notification."""
-        # TODO: Replace with actual tutorial URLs when available
-        tutorial_url = "https://www.youtube.com/playlist?list=PL4hCF043nAUW2iIxALNUzy1fKHcCWwDsv&jct=GTA3Fx8pJzuTLPPivC9RRQ"
+    def _show_tutorial_notification(self):
+        """Show YouTube tutorial notification (once ever, persisted in QSettings)."""
+        settings = QSettings()
+        if settings.value(SETTINGS_KEY_TUTORIAL_SHOWN, False, type=bool):
+            return
+        settings.setValue(SETTINGS_KEY_TUTORIAL_SHOWN, True)
 
-        if mode == "batch":
-            # Batch mode: show once per QGIS session (first activation)
-            if self._batch_tutorial_shown_this_session:
-                return
-            self._batch_tutorial_shown_this_session = True
-            message = tr('Batch mode activated.') + f' <a href="{tutorial_url}">' + tr('Watch the tutorial') + '</a> ' + tr('to learn how to use it.')
-        else:
-            # Simple mode: show only once ever (persisted in QSettings)
-            settings = QSettings()
-            if settings.value(SETTINGS_KEY_TUTORIAL_SIMPLE, False, type=bool):
-                return
-            settings.setValue(SETTINGS_KEY_TUTORIAL_SIMPLE, True)
-            message = tr('New to AI Segmentation?') + f' <a href="{tutorial_url}">' + tr('Watch our tutorial') + '</a>'
+        tutorial_url = "https://www.youtube.com/playlist?list=PL4hCF043nAUW2iIxALNUzy1fKHcCWwDsv&jct=GTA3Fx8pJzuTLPPivC9RRQ"
+        message = '{} <a href="{}">{}</a>'.format(
+            tr('New to AI Segmentation?'),
+            tutorial_url,
+            tr('Watch our tutorial'))
 
         self.iface.messageBar().pushMessage(
             "AI Segmentation",
@@ -1150,33 +1149,8 @@ class AISegmentationPlugin:
         )
 
     def _on_batch_mode_changed(self, batch: bool):
-        """Handle batch mode toggle from the dock widget."""
-        # Check if we have unsaved masks when switching from batch to simple
-        if not batch and len(self.saved_polygons) > 0:
-            reply = QMessageBox.question(
-                self.dock_widget,
-                tr("Unsaved Polygons"),
-                "{}\n{}".format(
-                    tr("You have {count} saved polygon(s).").format(count=len(self.saved_polygons)),
-                    tr("Export before changing mode?")),
-                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-                QMessageBox.Cancel
-            )
-
-            if reply == QMessageBox.Yes:
-                self._on_export_layer()
-                # Continue to set the mode after exporting
-            elif reply == QMessageBox.Cancel:
-                # Revert the toggle
-                self.dock_widget.set_batch_mode(True)
-                return
-            # If No, continue and lose the masks
-
-        self._batch_mode = batch
-
-        # Show tutorial for batch mode on first activation
-        if batch:
-            self._show_tutorial_notification("batch")
+        """Handle batch mode toggle (no-op, batch mode is always on)."""
+        pass
 
     def _on_visible_area_changed(self, visible: bool):
         """Handle visible area mode toggle from the dock widget."""
@@ -1232,7 +1206,10 @@ class AISegmentationPlugin:
 
     def _on_layer_combo_changed(self, layer):
         """Handle layer selection change in the combo box."""
-        # Only care if we're currently in segmentation mode
+        # Always check if the selected raster is fully encoded (for visible area checkbox)
+        self._update_raster_encoded_status(layer)
+
+        # Only care about segmentation reset if we're currently segmenting
         if not self._current_layer:
             return
 
@@ -1259,28 +1236,29 @@ class AISegmentationPlugin:
             self._reset_session()
             self.dock_widget.reset_session()
 
-    def _confirm_exit_segmentation(self) -> bool:
-        """Show confirmation dialog if user has placed points."""
-        has_points = (self.prompts.positive_points or self.prompts.negative_points)
-
-        if not has_points:
-            return True  # No confirmation needed
-
-        reply = QMessageBox.question(
-            self.dock_widget,
-            tr("Exit Segmentation"),
-            tr("Exit segmentation?") + "\n" + tr("The current selection will be lost."),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        return reply == QMessageBox.Yes
+    def _update_raster_encoded_status(self, layer=None):
+        """Check if a raster layer is fully encoded and update the dock widget."""
+        if not self.dock_widget:
+            return
+        if layer is None:
+            layer = self.dock_widget.layer_combo.currentLayer()
+        if layer is None:
+            self.dock_widget.set_raster_fully_encoded(False)
+            return
+        try:
+            raster_path = os.path.normcase(layer.source())
+        except RuntimeError:
+            self.dock_widget.set_raster_fully_encoded(False)
+            return
+        try:
+            from ..core.checkpoint_manager import has_features_for_raster
+            fully_encoded = has_features_for_raster(raster_path, None)
+            self.dock_widget.set_raster_fully_encoded(fully_encoded)
+        except Exception:
+            self.dock_widget.set_raster_fully_encoded(False)
 
     def _on_save_polygon(self):
-        """Save current mask as polygon. Only works in Batch mode."""
-        # S shortcut only works in Batch mode
-        if not self._batch_mode:
-            return
-
+        """Save current mask as polygon."""
         if self.current_mask is None or self.current_transform_info is None:
             return
 
@@ -1358,48 +1336,18 @@ class AISegmentationPlugin:
         self.dock_widget.set_point_count(0, 0)
 
     def _on_export_layer(self):
-        """Export masks to a new layer. Behavior depends on mode."""
+        """Export all saved polygons + current unsaved mask to a new layer."""
         from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
 
         self._ensure_polygon_rubberband_sync()
 
-        if self._batch_mode:
-            # Batch mode: export all saved polygons + current unsaved mask
-            if not self.saved_polygons and self.current_mask is None:
-                return  # Nothing to export
+        if not self.saved_polygons and self.current_mask is None:
+            return  # Nothing to export
 
-            polygons_to_export = list(self.saved_polygons)
+        polygons_to_export = list(self.saved_polygons)
 
-            # Include current unsaved mask if exists (apply current refine settings)
-            if self.current_mask is not None and self.current_transform_info is not None:
-                mask_to_export = self.current_mask
-                if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
-                    mask_to_export = apply_mask_refinement(
-                        self.current_mask,
-                        expand_value=self._refine_expand,
-                        fill_holes=self._refine_fill_holes,
-                        min_area=self._refine_min_area
-                    )
-                geometries = mask_to_polygons(mask_to_export, self.current_transform_info)
-                if geometries:
-                    combined = QgsGeometry.unaryUnion(geometries)
-                    if combined and not combined.isEmpty():
-                        tolerance = self._compute_simplification_tolerance(
-                            self.current_transform_info, self._refine_simplify
-                        )
-                        if tolerance > 0:
-                            combined = combined.simplify(tolerance)
-                        polygons_to_export.append({
-                            'geometry_wkt': combined.asWkt(),
-                            'score': self.current_score,
-                            'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
-                        })
-        else:
-            # Simple mode: export only current mask with refinement applied
-            if self.current_mask is None or self.current_transform_info is None:
-                return  # Nothing to export
-
-            # Apply all mask-level refinement settings
+        # Include current unsaved mask if exists (apply current refine settings)
+        if self.current_mask is not None and self.current_transform_info is not None:
             mask_to_export = self.current_mask
             if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
                 mask_to_export = apply_mask_refinement(
@@ -1408,27 +1356,20 @@ class AISegmentationPlugin:
                     fill_holes=self._refine_fill_holes,
                     min_area=self._refine_min_area
                 )
-
             geometries = mask_to_polygons(mask_to_export, self.current_transform_info)
-            if not geometries:
-                return
-
-            combined = QgsGeometry.unaryUnion(geometries)
-            if not combined or combined.isEmpty():
-                return
-
-            # Apply simplification if enabled
-            tolerance = self._compute_simplification_tolerance(
-                self.current_transform_info, self._refine_simplify
-            )
-            if tolerance > 0:
-                combined = combined.simplify(tolerance)
-
-            polygons_to_export = [{
-                'geometry_wkt': combined.asWkt(),
-                'score': self.current_score,
-                'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
-            }]
+            if geometries:
+                combined = QgsGeometry.unaryUnion(geometries)
+                if combined and not combined.isEmpty():
+                    tolerance = self._compute_simplification_tolerance(
+                        self.current_transform_info, self._refine_simplify
+                    )
+                    if tolerance > 0:
+                        combined = combined.simplify(tolerance)
+                    polygons_to_export.append({
+                        'geometry_wkt': combined.asWkt(),
+                        'score': self.current_score,
+                        'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
+                    })
 
         self._stopping_segmentation = True
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
@@ -1710,13 +1651,12 @@ class AISegmentationPlugin:
             return
 
         # Show warning popup
-        if self._batch_mode:
-            polygon_count = len(self.saved_polygons)
-            if has_unsaved_mask:
-                polygon_count += 1
-            message = tr("You have {count} unsaved polygon(s).").format(count=polygon_count) + "\n\n" + tr("Discard and exit segmentation?")
-        else:
-            message = tr("You have an unsaved selection.") + "\n\n" + tr("Discard and exit segmentation?")
+        polygon_count = len(self.saved_polygons)
+        if has_unsaved_mask:
+            polygon_count += 1
+        message = "{}\n\n{}".format(
+            tr("You have {count} unsaved polygon(s).").format(count=polygon_count),
+            tr("Discard and exit segmentation?"))
 
         reply = QMessageBox.warning(
             main_window,
@@ -1753,27 +1693,21 @@ class AISegmentationPlugin:
 
     def _on_stop_segmentation(self):
         """Exit segmentation mode without saving."""
-        if self._batch_mode:
-            # Batch mode: warn about saved polygons
-            polygon_count = len(self.saved_polygons)
-            if self.current_mask is not None:
-                polygon_count += 1
+        polygon_count = len(self.saved_polygons)
+        if self.current_mask is not None:
+            polygon_count += 1
 
-            if polygon_count > 0:
-                reply = QMessageBox.warning(
-                    self.iface.mainWindow(),
-                    tr("Stop Segmentation?"),
-                    "{}\n\n{}".format(
-                        tr("This will discard {count} polygon(s).").format(count=polygon_count),
-                        tr("Use 'Export to layer' to keep them.")),
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No
-                )
-                if reply != QMessageBox.Yes:
-                    return
-        else:
-            # Simple mode: use the standard confirmation dialog
-            if not self._confirm_exit_segmentation():
+        if polygon_count > 0:
+            reply = QMessageBox.warning(
+                self.iface.mainWindow(),
+                tr("Stop Segmentation?"),
+                "{}\n\n{}".format(
+                    tr("This will discard {count} polygon(s).").format(count=polygon_count),
+                    tr("Use 'Export to layer' to keep them.")),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
                 return
 
         self._stopping_segmentation = True
@@ -2162,7 +2096,7 @@ class AISegmentationPlugin:
 
     def _on_clear_points(self):
         """Handle Escape key - clear current mask or warn about saved masks."""
-        if self._batch_mode and len(self.saved_polygons) > 0:
+        if len(self.saved_polygons) > 0:
             # Batch mode with saved masks: warn user before clearing everything
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
@@ -2216,8 +2150,8 @@ class AISegmentationPlugin:
                 self.current_score = 0.0
                 self._clear_mask_visualization()
                 self.dock_widget.set_point_count(0, 0)
-        elif self._batch_mode and len(self.saved_polygons) > 0:
-            # Batch mode: no points in current mask, but have saved masks
+        elif len(self.saved_polygons) > 0:
+            # No points in current mask, but have saved masks
             # Ask user if they want to restore the last saved mask
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
