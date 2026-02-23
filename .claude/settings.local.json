@@ -56,7 +56,10 @@
       "mcp__github__issue_write",
       "mcp__github__add_issue_comment",
       "Bash(flake8:*)",
-      "Bash(bandit:*)"
+      "Bash(bandit:*)",
+      "Bash(for i in 136 137 138)",
+      "WebFetch(domain:github.com)",
+      "Bash(git pull:*)"
     ]
   }
 }
