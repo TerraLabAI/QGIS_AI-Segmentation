@@ -355,11 +355,10 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.layer_combo = QgsMapLayerComboBox()
         self.layer_combo.setFilters(QgsMapLayerProxyModel.RasterLayer)
-        self.layer_combo.setExcludedProviders(['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs'])
         self.layer_combo.setAllowEmptyLayer(False)
         self.layer_combo.setShowCrs(False)
         self.layer_combo.layerChanged.connect(self._on_layer_changed)
-        self.layer_combo.setToolTip(tr("Select a file-based raster layer (GeoTIFF, etc.)"))
+        self.layer_combo.setToolTip(tr("Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)"))
         layout.addWidget(self.layer_combo)
 
         # Warning container with icon and text - yellow background with dark text
@@ -381,7 +380,9 @@ class AISegmentationDockWidget(QDockWidget):
         warning_icon_label.setFixedSize(16, 16)
         no_rasters_layout.addWidget(warning_icon_label, 0, Qt.AlignTop)
 
-        self.no_rasters_label = QLabel(tr("No compatible raster found. Add a GeoTIFF or local image to your project."))
+        self.no_rasters_label = QLabel(
+            tr("No raster layer found. Add a GeoTIFF, image file, "
+               "or online layer (WMS, XYZ) to your project."))
         self.no_rasters_label.setWordWrap(True)
         no_rasters_layout.addWidget(self.no_rasters_label, 1)
 
@@ -1072,12 +1073,13 @@ class AISegmentationDockWidget(QDockWidget):
 
         for layer in layers:
             if layer.type() == layer.RasterLayer:
-                provider = layer.dataProvider()
-                if provider and provider.name() not in ['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs']:
-                    # Only auto-select if georeferenced
-                    if self._is_layer_georeferenced(layer):
-                        self.layer_combo.setLayer(layer)
-                        break
+                # Auto-select: prefer local georeferenced, then online, then any raster
+                if self._is_online_layer(layer):
+                    self.layer_combo.setLayer(layer)
+                    break
+                if self._is_layer_georeferenced(layer):
+                    self.layer_combo.setLayer(layer)
+                    break
 
     def _on_layers_removed(self, layer_ids):
         """Handle layers removed from project."""
@@ -1444,7 +1446,26 @@ class AISegmentationDockWidget(QDockWidget):
                 self.visible_area_widget.setVisible(False)
             else:
                 self.visible_area_widget.setVisible(True)
-            self.visible_area_checkbox.setEnabled(True)
+
+            # Force visible area mode ON for online layers (infinite extent)
+            layer = self.layer_combo.currentLayer()
+            if self._is_online_layer(layer):
+                self.visible_area_checkbox.blockSignals(True)
+                self.visible_area_checkbox.setChecked(True)
+                self.visible_area_checkbox.blockSignals(False)
+                self._visible_area_mode = True
+                self.visible_area_checkbox.setEnabled(False)
+                self.visible_area_checkbox.setToolTip(
+                    tr("Online layers always use visible area mode.")
+                )
+                self.visible_area_widget.setVisible(True)
+            else:
+                self.visible_area_checkbox.setEnabled(True)
+                self.visible_area_checkbox.setToolTip(
+                    "{}\n{}".format(
+                        tr("When checked, only the area currently visible on your map will be encoded."),
+                        tr("Useful for large rasters that take too long to encode entirely."))
+                )
             self.instructions_label.setVisible(False)
             self.refine_group.setVisible(False)
             self.save_mask_button.setVisible(False)
@@ -1550,6 +1571,16 @@ class AISegmentationDockWidget(QDockWidget):
             can_undo_saved = count > 0
             self.undo_button.setEnabled(has_points or can_undo_saved)
 
+    @staticmethod
+    def _is_online_layer(layer) -> bool:
+        """Check if a raster layer is an online/remote service."""
+        if layer is None or layer.type() != layer.RasterLayer:
+            return False
+        provider = layer.dataProvider()
+        if provider is None:
+            return False
+        return provider.name() in ('wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs')
+
     def _is_layer_georeferenced(self, layer) -> bool:
         """Check if a raster layer is properly georeferenced."""
         if layer is None or layer.type() != layer.RasterLayer:
@@ -1582,35 +1613,19 @@ class AISegmentationDockWidget(QDockWidget):
 
         excluded_layers = []
         all_raster_count = 0
-        web_service_count = 0
 
         for layer in QgsProject.instance().mapLayers().values():
             if layer.type() != layer.RasterLayer:
                 continue
-            # Skip web services
-            provider = layer.dataProvider()
-            if provider and provider.name() in ['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs']:
-                web_service_count += 1
-                continue
-
             all_raster_count += 1
-            # Note: We now support non-georeferenced images (pixel coordinates mode)
-            # No longer excluding them - they will work automatically
 
         self.layer_combo.setExceptedLayerList(excluded_layers)
 
         # Update warning message
         if all_raster_count == 0:
-            if web_service_count > 0:
-                # Only web services detected (not supported)
-                self.no_rasters_label.setText(
-                    tr("Found {count} web layer(s), but web services are not supported. Please add a local image file (GeoTIFF, PNG, JPG, etc.).").format(count=web_service_count)
-                )
-            else:
-                # No images at all
-                self.no_rasters_label.setText(
-                    tr("No image found. Please add an image file to your project (GeoTIFF, PNG, JPG, etc.).")
-                )
+            self.no_rasters_label.setText(
+                tr("No image found. Please add an image file to your project (GeoTIFF, PNG, JPG, etc.).")
+            )
 
     def _update_ui_state(self):
         # Update layer filter first

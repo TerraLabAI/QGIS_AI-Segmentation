@@ -261,12 +261,12 @@
         <translation>Sélectionnez un raster à segmenter :</translation>
     </message>
     <message>
-        <source>Select a file-based raster layer (GeoTIFF, etc.)</source>
-        <translation>Sélectionnez un raster local (GeoTIFF, etc.)</translation>
+        <source>Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)</source>
+        <translation>Sélectionnez une couche raster (GeoTIFF, WMS, tuiles XYZ, etc.)</translation>
     </message>
     <message>
-        <source>Found {count} web layer(s), but web services are not supported. Please add a local image file (GeoTIFF, PNG, JPG, etc.).</source>
-        <translation>Trouvé {count} couche(s) web, mais les services web ne sont pas supportés. Ajoutez un fichier image local (GeoTIFF, PNG, JPG, etc.).</translation>
+        <source>No raster layer found. Add a GeoTIFF, image file, or online layer (WMS, XYZ) to your project.</source>
+        <translation>Aucune couche raster trouvée. Ajoutez un GeoTIFF, un fichier image ou une couche en ligne (WMS, XYZ) a votre projet.</translation>
     </message>
     <message>
         <source>No image found. Please add an image file to your project (GeoTIFF, PNG, JPG, etc.).</source>
@@ -918,6 +918,86 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <source>Click is outside the encoded visible area. Restart segmentation to encode a different area.</source>
         <translation>Le clic est en dehors de la zone visible encodée. Relancez la segmentation pour encoder une autre zone.</translation>
+    </message>
+    <message>
+        <source>Online layers always use visible area mode.</source>
+        <translation>Les couches en ligne utilisent toujours le mode zone visible.</translation>
+    </message>
+    <message>
+        <source>Rendering online layer...</source>
+        <translation>Rendu de la couche en ligne...</translation>
+    </message>
+    <message>
+        <source>GDAL is not available. Cannot render online layer to GeoTIFF.</source>
+        <translation>GDAL n'est pas disponible. Impossible de convertir la couche en ligne en GeoTIFF.</translation>
+    </message>
+    <message>
+        <source>Layer data provider is not available.</source>
+        <translation>Le fournisseur de données de la couche n'est pas disponible.</translation>
+    </message>
+    <message>
+        <source>Visible area is too small to render.</source>
+        <translation>La zone visible est trop petite pour le rendu.</translation>
+    </message>
+    <message>
+        <source>The visible area is too large ({w}x{h} pixels). Zoom in to reduce the area below {max}x{max} pixels.</source>
+        <translation>La zone visible est trop grande ({w}x{h} pixels). Zoomez pour reduire la zone en dessous de {max}x{max} pixels.</translation>
+    </message>
+    <message>
+        <source>Failed to fetch tiles from the online layer. Check your network connection.</source>
+        <translation>Impossible de recuperer les tuiles de la couche en ligne. Verifiez votre connexion reseau.</translation>
+    </message>
+    <message>
+        <source>Online layer returned empty data. The area may not have coverage.</source>
+        <translation>La couche en ligne a retourne des donnees vides. La zone n'a peut-etre pas de couverture.</translation>
+    </message>
+    <message>
+        <source>Processing tiles...</source>
+        <translation>Traitement des tuiles...</translation>
+    </message>
+    <message>
+        <source>Unexpected data format from online layer (dataType={dt}, {size} bytes for {w}x{h}).</source>
+        <translation>Format de donnees inattendu de la couche en ligne (dataType={dt}, {size} octets pour {w}x{h}).</translation>
+    </message>
+    <message>
+        <source>Online layer returned blank tiles for this area. Try panning to an area with data coverage.</source>
+        <translation>La couche en ligne a retourne des tuiles vides pour cette zone. Essayez de deplacer la carte vers une zone avec des donnees.</translation>
+    </message>
+    <message>
+        <source>Writing GeoTIFF...</source>
+        <translation>Ecriture du GeoTIFF...</translation>
+    </message>
+    <message>
+        <source>GDAL GTiff driver is not available.</source>
+        <translation>Le pilote GDAL GTiff n'est pas disponible.</translation>
+    </message>
+    <message>
+        <source>Failed to create GeoTIFF file.</source>
+        <translation>Impossible de creer le fichier GeoTIFF.</translation>
+    </message>
+    <message>
+        <source>GeoTIFF ready for encoding.</source>
+        <translation>GeoTIFF pret pour l'encodage.</translation>
+    </message>
+    <message>
+        <source>Failed to write rendered GeoTIFF.</source>
+        <translation>Impossible d'ecrire le GeoTIFF rendu.</translation>
+    </message>
+    <message>
+        <source>Failed to render online layer: {error}</source>
+        <translation>Impossible de convertir la couche en ligne : {error}</translation>
+    </message>
+    <message>
+        <source>Cannot Segment</source>
+        <translation>Segmentation impossible</translation>
+    </message>
+    <message>
+        <source>Could not determine visible area for the online layer. Make sure the layer is visible on the map.</source>
+        <translation>Impossible de determiner la zone visible pour la couche en ligne. Verifiez que la couche est visible sur la carte.</translation>
+    </message>
+    <message>
+        <source>Online Layer Error</source>
+        <translation>Erreur de couche en ligne</translation>
     </message>
 </context>
 </TS>

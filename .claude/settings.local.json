@@ -61,7 +61,9 @@
       "WebFetch(domain:github.com)",
       "Bash(git pull:*)",
       "WebFetch(domain:discuss.pytorch.org)",
-      "WebFetch(domain:dev-discuss.pytorch.org)"
+      "WebFetch(domain:dev-discuss.pytorch.org)",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:dev.to)"
     ]
   }
 }

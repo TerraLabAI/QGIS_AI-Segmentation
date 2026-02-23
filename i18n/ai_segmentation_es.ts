@@ -261,16 +261,16 @@
         <translation>Seleccione una capa ráster para segmentar:</translation>
     </message>
     <message>
-        <source>Select a file-based raster layer (GeoTIFF, etc.)</source>
-        <translation>Seleccione una capa ráster local (GeoTIFF, etc.)</translation>
+        <source>Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)</source>
+        <translation>Seleccione una capa raster (GeoTIFF, WMS, tiles XYZ, etc.)</translation>
     </message>
     <message>
-        <source>Found {count} web layer(s), but web services are not supported. Please add a local image file (GeoTIFF, PNG, JPG, etc.).</source>
-        <translation>Se encontró {count} capa(s) web, pero los servicios web no son compatibles. Agregue un archivo de imagen local (GeoTIFF, PNG, JPG, etc.).</translation>
+        <source>No raster layer found. Add a GeoTIFF, image file, or online layer (WMS, XYZ) to your project.</source>
+        <translation>No se encontro capa raster. Agregue un GeoTIFF, archivo de imagen o capa en linea (WMS, XYZ) a su proyecto.</translation>
     </message>
     <message>
         <source>No image found. Please add an image file to your project (GeoTIFF, PNG, JPG, etc.).</source>
-        <translation>No se encontró imagen. Agregue un archivo de imagen a su proyecto (GeoTIFF, PNG, JPG, etc.).</translation>
+        <translation>No se encontro imagen. Agregue un archivo de imagen a su proyecto (GeoTIFF, PNG, JPG, etc.).</translation>
     </message>
     <message>
         <source>Shortcuts: S (save polygon) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)</source>
@@ -918,6 +918,86 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     <message>
         <source>Click is outside the encoded visible area. Restart segmentation to encode a different area.</source>
         <translation>El clic esta fuera del area visible codificada. Reinicie la segmentacion para codificar una area diferente.</translation>
+    </message>
+    <message>
+        <source>Online layers always use visible area mode.</source>
+        <translation>Las capas en linea siempre usan el modo de area visible.</translation>
+    </message>
+    <message>
+        <source>Rendering online layer...</source>
+        <translation>Renderizando capa en linea...</translation>
+    </message>
+    <message>
+        <source>GDAL is not available. Cannot render online layer to GeoTIFF.</source>
+        <translation>GDAL no esta disponible. No se puede convertir la capa en linea a GeoTIFF.</translation>
+    </message>
+    <message>
+        <source>Layer data provider is not available.</source>
+        <translation>El proveedor de datos de la capa no esta disponible.</translation>
+    </message>
+    <message>
+        <source>Visible area is too small to render.</source>
+        <translation>El area visible es demasiado pequena para renderizar.</translation>
+    </message>
+    <message>
+        <source>The visible area is too large ({w}x{h} pixels). Zoom in to reduce the area below {max}x{max} pixels.</source>
+        <translation>El area visible es demasiado grande ({w}x{h} pixeles). Acerque el zoom para reducir el area por debajo de {max}x{max} pixeles.</translation>
+    </message>
+    <message>
+        <source>Failed to fetch tiles from the online layer. Check your network connection.</source>
+        <translation>Error al obtener tiles de la capa en linea. Verifique su conexion de red.</translation>
+    </message>
+    <message>
+        <source>Online layer returned empty data. The area may not have coverage.</source>
+        <translation>La capa en linea devolvio datos vacios. El area puede no tener cobertura.</translation>
+    </message>
+    <message>
+        <source>Processing tiles...</source>
+        <translation>Procesando tiles...</translation>
+    </message>
+    <message>
+        <source>Unexpected data format from online layer (dataType={dt}, {size} bytes for {w}x{h}).</source>
+        <translation>Formato de datos inesperado de la capa en linea (dataType={dt}, {size} bytes para {w}x{h}).</translation>
+    </message>
+    <message>
+        <source>Online layer returned blank tiles for this area. Try panning to an area with data coverage.</source>
+        <translation>La capa en linea devolvio tiles en blanco para esta area. Intente mover el mapa a una area con cobertura de datos.</translation>
+    </message>
+    <message>
+        <source>Writing GeoTIFF...</source>
+        <translation>Escribiendo GeoTIFF...</translation>
+    </message>
+    <message>
+        <source>GDAL GTiff driver is not available.</source>
+        <translation>El controlador GDAL GTiff no esta disponible.</translation>
+    </message>
+    <message>
+        <source>Failed to create GeoTIFF file.</source>
+        <translation>Error al crear el archivo GeoTIFF.</translation>
+    </message>
+    <message>
+        <source>GeoTIFF ready for encoding.</source>
+        <translation>GeoTIFF listo para codificacion.</translation>
+    </message>
+    <message>
+        <source>Failed to write rendered GeoTIFF.</source>
+        <translation>Error al escribir el GeoTIFF renderizado.</translation>
+    </message>
+    <message>
+        <source>Failed to render online layer: {error}</source>
+        <translation>Error al renderizar la capa en linea: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot Segment</source>
+        <translation>No se puede segmentar</translation>
+    </message>
+    <message>
+        <source>Could not determine visible area for the online layer. Make sure the layer is visible on the map.</source>
+        <translation>No se pudo determinar el area visible para la capa en linea. Asegurese de que la capa sea visible en el mapa.</translation>
+    </message>
+    <message>
+        <source>Online Layer Error</source>
+        <translation>Error de capa en linea</translation>
     </message>
 </context>
 </TS>
