@@ -10,23 +10,13 @@ A QGIS plugin for AI-powered image segmentation using Meta's Segment Anything Mo
 - **`src/ui/ai_segmentation_dockwidget.py`**: Qt dock widget with all UI elements (dependency management, model download, segmentation controls, mode switching)
 - **`src/ui/ai_segmentation_maptool.py`**: Custom QgsMapTool for handling map clicks (positive/negative points) and keyboard shortcuts
 
-### Segmentation Modes
+### Segmentation Workflow
 
-The plugin has two modes:
-
-1. **Simple Mode (default)**:
-   - Segment one object at a time
-   - Each export creates a new layer named `{RasterName}_polygon_{counter}`
-   - No "Save polygon" button - only "Export to layer"
-   - After export, returns to initial state
-   - Blue info box: "Simple mode: one element per export. For multiple elements in one layer, use Batch mode."
-
-2. **Batch Mode**:
-   - Activated via "Batch mode" checkbox
-   - Save multiple polygons, then export all together in one layer
-   - "Save polygon" button visible to add current selection to collection
-   - Shows polygon count badge
-   - Blue info box: "Batch mode: save multiple polygons, then export all in one layer."
+The plugin uses a single workflow (batch mode is always on):
+- Segment elements one by one using positive/negative clicks
+- "Save polygon" button to add current selection to collection
+- Export all saved polygons together in one layer
+- Blue info box: "Segment elements one by one, save them, then export all polygons to one layer."
 
 ### Terminology
 
@@ -50,13 +40,11 @@ UI strings follow this pattern:
 1. User clicks "Start AI Segmentation" -> `start_segmentation_requested` signal
 2. User clicks on map -> `positive_click` or `negative_click` signal
 3. Plugin runs SAM inference -> mask displayed as QgsRubberBand
-4. User clicks "Export to layer" -> `export_layer_requested` signal
-5. In Simple mode: creates new layer, resets session
-6. In Batch mode: "Save polygon" -> `save_polygon_requested`, then "Export to layer" -> exports all saved polygons
+4. User clicks "Save polygon" -> `save_polygon_requested` signal (adds to collection)
+5. User clicks "Export to layer" -> `export_layer_requested` signal (exports all saved polygons)
 
 ### State Variables (DockWidget)
 
-- `_batch_mode`: Boolean, False = Simple mode (default)
 - `_segmentation_active`: Whether segmentation session is active
 - `_has_mask`: Whether current mask/selection exists
 - `_saved_polygon_count`: Number of saved polygons (Batch mode)
@@ -91,7 +79,7 @@ Settings applied in real-time to preview and export.
 - All UI text must be in English in the source code
 - Buttons hidden when not in segmentation mode (not disabled-but-visible)
 - Use `_update_button_visibility()` to manage button states based on mode and session state
-- QSettings used for persisting tutorial flags: `AI_Segmentation/tutorial_simple_shown`, `AI_Segmentation/tutorial_batch_shown`
+- QSettings used for persisting tutorial flag: `AI_Segmentation/tutorial_simple_shown`
 - Never write comments in french, only write in english
 
 ## Refine Panel Defaults (KEEP IN SYNC)

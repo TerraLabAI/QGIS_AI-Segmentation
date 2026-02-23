@@ -523,22 +523,37 @@ def _is_antivirus_error(stderr: str) -> bool:
         "operation did not complete successfully because the file contains a virus",
         "blocked by your administrator",
         "blocked by group policy",
+        "application control policy",
+        "control de aplicaciones",
+        "applocker",
+        "blocked by your organization",
     ]
     return any(p in stderr_lower for p in patterns)
 
 
 def _get_pip_antivirus_help(venv_dir: str) -> str:
     """Get actionable help message for antivirus blocking pip."""
-    return (
+    steps = (
         "Installation was blocked, likely by antivirus software "
         "or security policy.\n\n"
         "Please try:\n"
         "  1. Temporarily disable real-time antivirus scanning\n"
         "  2. Add an exclusion for the plugin folder:\n"
-        "     {}\n"
-        "  3. Run QGIS as administrator (right-click > Run as administrator)\n"
-        "  4. Try the installation again"
-    ).format(venv_dir)
+        "     {}\n".format(venv_dir)
+    )
+    if sys.platform == "win32":
+        steps += (
+            "  3. Run QGIS as administrator "
+            "(right-click > Run as administrator)\n"
+            "  4. Try the installation again"
+        )
+    else:
+        steps += (
+            "  3. Check folder permissions: "
+            "chmod -R u+rwX \"{}\"\n"
+            "  4. Try the installation again".format(venv_dir)
+        )
+    return steps
 
 
 # Windows NTSTATUS crash codes (both signed and unsigned representations)
@@ -638,24 +653,9 @@ def ensure_venv_packages_available():
         except Exception:
             _log("Failed to reload typing_extensions, torch may fail", Qgis.Warning)
 
-    # SAFE FIX for old QGIS versions (< 3.28) with numpy/pandas compatibility
-    # QGIS 3.26-3.27 ships with numpy 1.20.x which is incompatible with
-    # pandas >= 2.0. We force-reload numpy from venv for these versions.
-    # (issue #130)
-    try:
-        qgis_version = Qgis.QGIS_VERSION.split("-")[0]
-        version_parts = [int(x) for x in qgis_version.split(".")]
-        is_old_qgis = (
-            version_parts[0] < 3
-            or (version_parts[0] == 3 and version_parts[1] < 28)
-        )
-    except Exception:
-        is_old_qgis = False
-
-    if not is_old_qgis:
-        return True
-
-    # Determine if numpy is too old (< 1.22.4)
+    # FIX for QGIS bundling old numpy (< 1.22.4) incompatible with pandas >= 2.0
+    # Check numpy version directly instead of gating on QGIS version, because
+    # multiple QGIS releases (3.26-3.28.x) can ship old numpy. (issues #130/#133/#138)
     needs_numpy_fix = False
     old_version = "unknown"
     try:
@@ -682,9 +682,10 @@ def ensure_venv_packages_available():
     if not needs_numpy_fix:
         return True
 
+    qgis_ver = Qgis.QGIS_VERSION.split("-")[0]
     _log(
-        "Old QGIS {} with numpy {} detected. "
-        "Forcing venv numpy/pandas...".format(qgis_version, old_version),
+        "QGIS {} with old numpy {} detected. "
+        "Forcing venv numpy/pandas...".format(qgis_ver, old_version),
         Qgis.Info)
 
     try:
@@ -1288,21 +1289,24 @@ def _run_pip_install(
             except Exception:
                 pass
 
+            # Format elapsed time nicely
+            if elapsed >= 60:
+                elapsed_str = "{}m {}s".format(elapsed // 60, elapsed % 60)
+            else:
+                elapsed_str = "{}s".format(elapsed)
+
             # Build progress message
             if last_download_status:
-                msg = "{}... {}s elapsed ({}/{})".format(
-                    last_download_status, elapsed,
-                    package_index + 1, total_packages)
+                msg = "{}... {}".format(last_download_status, elapsed_str)
             elif is_cuda and package_name == "torch":
-                msg = "Installing GPU dependencies... {}s ({}/{})".format(
-                    elapsed, package_index + 1, total_packages)
+                msg = "Installing GPU PyTorch (~2.5 GB)... {}".format(
+                    elapsed_str)
             elif package_name == "torch":
-                msg = "Downloading PyTorch (~600MB)... {}s elapsed ({}/{})".format(
-                    elapsed, package_index + 1, total_packages)
+                msg = "Downloading PyTorch (~600 MB)... {}".format(
+                    elapsed_str)
             else:
-                msg = "Installing {}... {}s elapsed ({}/{})".format(
-                    package_name, elapsed,
-                    package_index + 1, total_packages)
+                msg = "Installing {}... {}".format(
+                    package_name, elapsed_str)
 
             # Interpolate progress within the package's range
             # Use logarithmic-ish curve: fast at start, slows down
@@ -2034,11 +2038,14 @@ def verify_venv(
                 )
 
                 # Detect broken C extensions (antivirus may have quarantined .pyd files)
+                error_lower = error_detail.lower()
                 broken_markers = [
-                    "No module named", "_libs",
-                    "DLL load failed", "ImportError",
+                    "no module named", "_libs",
+                    "dll load failed", "importerror",
+                    "applocker", "application control",
+                    "blocked by your organization",
                 ]
-                is_broken = any(m in error_detail for m in broken_markers)
+                is_broken = any(m in error_lower for m in broken_markers)
 
                 if is_broken:
                     _log(
@@ -2090,18 +2097,62 @@ def verify_venv(
                             continue  # Move to next package
                     except Exception:
                         pass
-                    # Still broken after reinstall
+                    # Still broken after reinstall - check for AppLocker
+                    detail_lower = error_detail.lower()
+                    applocker_markers = [
+                        "applocker", "application control",
+                        "blocked by your organization",
+                    ]
+                    if any(m in detail_lower for m in applocker_markers):
+                        return False, (
+                            "Package {} is blocked by AppLocker or "
+                            "application control policy.\n\n"
+                            "Ask your IT administrator to whitelist "
+                            "this folder:\n  {}\n\n"
+                            "Then restart QGIS and reinstall "
+                            "dependencies.".format(
+                                package_name, venv_dir)
+                        )
                     return False, (
                         "Package {} is broken (antivirus may be "
                         "interfering): {}".format(
-                            package_name, error_detail[:100])
+                            package_name, error_detail[:200])
                     )
 
-                hint = ""
-                if package_name == "torch":
-                    hint = " Try reinstalling dependencies or check if antivirus is blocking."
+                if sys.platform == "win32":
+                    vcpp_url = (
+                        "https://aka.ms/vs/17/release/"
+                        "vc_redist.x64.exe"
+                    )
+                    if package_name == "torch":
+                        hint = (
+                            "\n\nPlease try:\n"
+                            "  1. Install Visual C++ "
+                            "Redistributable:\n"
+                            "     {}\n"
+                            "  2. Add an antivirus exclusion for "
+                            "the plugin folder\n"
+                            "  3. Restart QGIS".format(vcpp_url)
+                        )
+                    else:
+                        hint = (
+                            "\n\nPlease try:\n"
+                            "  1. Install Visual C++ "
+                            "Redistributable:\n"
+                            "     {}\n"
+                            "  2. Click 'Reinstall dependencies' "
+                            "in the plugin panel\n"
+                            "  3. Restart QGIS".format(vcpp_url)
+                        )
+                else:
+                    hint = (
+                        "\n\nPlease try:\n"
+                        "  1. Click 'Reinstall dependencies' "
+                        "in the plugin panel\n"
+                        "  2. Restart QGIS"
+                    )
                 return False, "Package {} is broken: {}{}".format(
-                    package_name, error_detail[:100], hint)
+                    package_name, error_detail[:200], hint)
 
         except subprocess.TimeoutExpired:
             # Retry once - antivirus scanning .pyd files on first import
@@ -2130,8 +2181,24 @@ def verify_venv(
                             package_name, error_detail),
                         Qgis.Warning
                     )
+                    # Check for AppLocker on retry too
+                    retry_lower = error_detail.lower()
+                    applocker_kw = [
+                        "applocker", "application control",
+                        "blocked by your organization",
+                    ]
+                    if any(m in retry_lower for m in applocker_kw):
+                        return False, (
+                            "Package {} is blocked by AppLocker "
+                            "or application control policy.\n\n"
+                            "Ask your IT administrator to "
+                            "whitelist this folder:\n"
+                            "  {}\n\nThen restart QGIS and "
+                            "reinstall dependencies.".format(
+                                package_name, venv_dir)
+                        )
                     return False, "Package {} is broken: {}".format(
-                        package_name, error_detail[:100])
+                        package_name, error_detail[:200])
             except subprocess.TimeoutExpired:
                 _log(
                     "Verification of {} timed out twice".format(package_name),
