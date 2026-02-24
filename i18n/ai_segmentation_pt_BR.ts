@@ -17,8 +17,8 @@
         <translation>Baixar o modelo de segmentação</translation>
     </message>
     <message>
-        <source>{gpu_name} detected :) GPU dependencies will be installed, so it takes a bit longer, but segmentation will be 5 to 10x faster and handle large rasters easily.</source>
-        <translation>{gpu_name} detectada :) As dependências GPU serão instaladas, demora um pouco mais, mas a segmentação será 5 a 10x mais rápida e lidará facilmente com rasters grandes.</translation>
+        <source>GPU detected: {gpu_name}. Segmentation will be 5-10x faster! Installation takes a few extra minutes.</source>
+        <translation>GPU detectada: {gpu_name}. A segmentacao sera 5-10x mais rapida! A instalacao leva alguns minutos extras.</translation>
     </message>
 
     <!-- Dependencies Section -->
@@ -153,8 +153,12 @@
         <translation>Verificando modelo...</translation>
     </message>
     <message>
-        <source>Download AI Segmentation Model (~375MB)</source>
-        <translation>Baixar modelo AI Segmentation (~375MB)</translation>
+        <source>Download AI Segmentation Model ({size})</source>
+        <translation>Baixar modelo AI Segmentation ({size})</translation>
+    </message>
+    <message>
+        <source>Update QGIS to 3.34+ for the latest AI model</source>
+        <translation>Atualize o QGIS para 3.34+ para o modelo de IA mais recente</translation>
     </message>
     <message>
         <source>Download the SAM checkpoint for segmentation</source>
@@ -183,6 +187,12 @@
     <message>
         <source>Please check your internet connection and try again.</source>
         <translation>Verifique sua conexão com a internet e tente novamente.</translation>
+    </message>
+
+    <!-- Panel Title -->
+    <message>
+        <source>AI Segmentation by TerraLab</source>
+        <translation>AI Segmentation por TerraLab</translation>
     </message>
 
     <!-- Activation Section -->
@@ -261,20 +271,20 @@
         <translation>Selecione uma camada raster para segmentar:</translation>
     </message>
     <message>
-        <source>Select a file-based raster layer (GeoTIFF, etc.)</source>
-        <translation>Selecione uma camada raster local (GeoTIFF, etc.)</translation>
+        <source>Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)</source>
+        <translation>Selecione uma camada raster (GeoTIFF, WMS, tiles XYZ, etc.)</translation>
     </message>
     <message>
-        <source>Found {count} web layer(s), but web services are not supported. Please add a local image file (GeoTIFF, PNG, JPG, etc.).</source>
-        <translation>Encontrado {count} camada(s) web, mas serviços web não são suportados. Adicione um arquivo de imagem local (GeoTIFF, PNG, JPG, etc.).</translation>
+        <source>No raster layer found. Add a GeoTIFF, image file, or online layer (WMS, XYZ) to your project.</source>
+        <translation>Nenhuma camada raster encontrada. Adicione um GeoTIFF, arquivo de imagem ou camada online (WMS, XYZ) ao seu projeto.</translation>
     </message>
     <message>
-        <source>No image found. Please add an image file to your project (GeoTIFF, PNG, JPG, etc.).</source>
-        <translation>Nenhuma imagem encontrada. Adicione um arquivo de imagem ao seu projeto (GeoTIFF, PNG, JPG, etc.).</translation>
+        <source>No layer found. Add a raster or online layer to your project.</source>
+        <translation>Nenhuma camada encontrada. Adicione uma camada raster ou online ao seu projeto.</translation>
     </message>
     <message>
-        <source>Shortcuts: S (save polygon) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)</source>
-        <translation>Atalhos: S (salvar polígono) · Enter (exportar para camada) · Ctrl+Z (desfazer) · Escape (limpar)</translation>
+        <source>Shortcuts: S (save polygon) · Enter (export to layer) · Ctrl+Z (undo)</source>
+        <translation>Atalhos: S (salvar polígono) · Enter (exportar para camada) · Ctrl+Z (desfazer)</translation>
     </message>
     <message>
         <source>Start AI Segmentation</source>
@@ -287,18 +297,6 @@
     <message>
         <source>Batch mode</source>
         <translation>Modo Batch</translation>
-    </message>
-    <message>
-        <source>Simple mode: One element per export.</source>
-        <translation>Modo simples: Um elemento por exportação.</translation>
-    </message>
-    <message>
-        <source>Batch mode: Save multiple polygons, then export all together.</source>
-        <translation>Modo Batch: Salve vários polígonos, depois exporte todos juntos.</translation>
-    </message>
-    <message>
-        <source>Mode can only be changed when segmentation is stopped.</source>
-        <translation>O modo só pode ser alterado quando a segmentação estiver parada.</translation>
     </message>
     <message>
         <source>Save polygon</source>
@@ -345,40 +343,48 @@
         <translation>Parar segmentação</translation>
     </message>
     <message>
-        <source>Exit segmentation without saving (Escape)</source>
-        <translation>Sair da segmentação sem salvar (Escape)</translation>
+        <source>Exit segmentation without saving</source>
+        <translation>Sair da segmentação sem salvar</translation>
     </message>
     <message>
-        <source>Simple mode: one element per layer.</source>
-        <translation>Modo simples: um elemento por camada.</translation>
+        <source>Shortcuts</source>
+        <translation>Atalhos</translation>
     </message>
     <message>
-        <source>For multiple elements in one layer, use Batch mode.</source>
-        <translation>Para múltiplos elementos em uma camada, use o modo Batch.</translation>
+        <source>Start segmentation</source>
+        <translation>Iniciar segmentação</translation>
     </message>
     <message>
-        <source>Simple mode</source>
-        <translation>Modo simples</translation>
+        <source>Save current polygon to your session</source>
+        <translation>Salvar poligono atual na sua sessão</translation>
     </message>
     <message>
-        <source>Select multiple elements, then export all together</source>
-        <translation>Selecione vários elementos e exporte todos juntos</translation>
+        <source>Export polygon as a new vector layer</source>
+        <translation>Exportar poligono como nova camada vetorial</translation>
     </message>
     <message>
-        <source>One element per export</source>
-        <translation>Um elemento por exportação</translation>
+        <source>Remove last point</source>
+        <translation>Remover ultimo ponto</translation>
     </message>
     <message>
-        <source>Batch mode: segment objects one by one, save all to same layer.</source>
-        <translation>Modo Batch: segmente objetos um por um, salve todos na mesma camada.</translation>
+        <source>Exit segmentation without saving</source>
+        <translation>Sair da segmentação sem salvar</translation>
     </message>
     <message>
-        <source>(e.g. one building, one car, one tree)</source>
-        <translation>(ex. um prédio, um carro, uma árvore)</translation>
+        <source>Export {count} polygon(s) as a new layer</source>
+        <translation>Exportar {count} poligono(s) como nova camada</translation>
     </message>
     <message>
-        <source>(e.g. all buildings in an area, all cars in a parking lot)</source>
-        <translation>(ex. todos os prédios de uma área, todos os carros de um estacionamento)</translation>
+        <source>Save at least one polygon first</source>
+        <translation>Salve pelo menos um poligono primeiro</translation>
+    </message>
+    <message>
+        <source>The AI model works best on one element at a time.</source>
+        <translation>O modelo IA funciona melhor com um elemento de cada vez.</translation>
+    </message>
+    <message>
+        <source>Save your polygon before selecting the next element.</source>
+        <translation>Salve seu poligono antes de selecionar o proximo.</translation>
     </message>
     <message>
         <source>Export polygon to layer</source>
@@ -387,6 +393,14 @@
     <message>
         <source>Export polygon(s) to layer</source>
         <translation>Exportar polígono(s) para camada</translation>
+    </message>
+    <message>
+        <source>Export polygon to a layer</source>
+        <translation>Exportar poligono para uma camada</translation>
+    </message>
+    <message>
+        <source>Export {count} polygons to a layer</source>
+        <translation>Exportar {count} poligonos para uma camada</translation>
     </message>
     <message>
         <source>Export polygon as a new vector layer (Enter)</source>
@@ -589,6 +603,14 @@
         <translation>Descartar e sair da segmentação?</translation>
     </message>
     <message>
+        <source>Changing layer will discard your current segmentation. Continue?</source>
+        <translation>Mudar de camada descartará sua segmentação atual. Continuar?</translation>
+    </message>
+    <message>
+        <source>Change Layer?</source>
+        <translation>Mudar de camada?</translation>
+    </message>
+    <message>
         <source>You have an unsaved selection.</source>
         <translation>Você tem uma seleção não salva.</translation>
     </message>
@@ -665,24 +687,24 @@
         <translation>Reportar um bug</translation>
     </message>
     <message>
-        <source>Suggest a feature</source>
-        <translation>Sugerir uma funcionalidade</translation>
+        <source>Suggest feature</source>
+        <translation>Sugerir funcionalidade</translation>
     </message>
     <message>
-        <source>We're building AI Segmentation for real-world geospatial workflows.</source>
-        <translation>Estamos desenvolvendo AI Segmentation para fluxos geoespaciais reais.</translation>
+        <source>Share your ideas with us! :)</source>
+        <translation>Compartilhe suas ideias conosco! :)</translation>
     </message>
     <message>
-        <source>We'd love to understand your use case and make the plugin more useful for you :)</source>
-        <translation>Adoraríamos entender seu caso de uso e tornar o plugin mais útil para você :)</translation>
+        <source>Tell us how AI Segmentation could work better for your projects. Every suggestion helps us build a more useful tool.</source>
+        <translation>Conte-nos como AI Segmentation poderia funcionar melhor para seus projetos. Cada sugestao nos ajuda a construir uma ferramenta mais util.</translation>
     </message>
     <message>
         <source>Take a call</source>
         <translation>Agendar uma chamada</translation>
     </message>
     <message>
-        <source>Tutorial &amp; Docs</source>
-        <translation>Tutorial &amp; Docs</translation>
+        <source>Tutorial</source>
+        <translation>Tutorial</translation>
     </message>
     <message>
         <source>Tutorials</source>
@@ -693,8 +715,8 @@
         <translation>Documentação</translation>
     </message>
     <message>
-        <source>Contact Us</source>
-        <translation>Fale conosco</translation>
+        <source>About us</source>
+        <translation>Sobre nos</translation>
     </message>
     <message>
         <source>Something not working?</source>
@@ -707,8 +729,8 @@
 
     <!-- Tooltip -->
     <message>
-        <source>Segment objects on raster images using AI</source>
-        <translation>Segmentar objetos em imagens raster usando IA</translation>
+        <source>Segment elements on raster images using AI</source>
+        <translation>Segmentar elementos em imagens raster usando IA</translation>
     </message>
 
     <!-- Error Report Dialog -->
@@ -777,14 +799,14 @@
         <translation>GPU não compatível com a versão CUDA instalada, usando CPU...</translation>
     </message>
     <message>
-        <source>Point is outside the encoded image. Click inside the raster.</source>
-        <translation>O ponto está fora da imagem codificada. Clique dentro do raster.</translation>
+        <source>Point is outside the raster image. Click inside the raster.</source>
+        <translation>O ponto está fora da imagem raster. Clique dentro do raster.</translation>
     </message>
 
     <!-- Update notification -->
     <message>
-        <source>New version available ({version}). This plugin is in beta and evolves quickly.</source>
-        <translation>Nova versão disponível ({version}). Este plugin está em beta e evolui rapidamente.</translation>
+        <source>A new version is available (v{version}).</source>
+        <translation>Uma nova versao esta disponivel (v{version}).</translation>
     </message>
     <message>
         <source>Update now</source>
@@ -856,12 +878,184 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
     </message>
     <!-- Cloud waitlist banner -->
     <message>
-        <source>Large rasters can take time locally. Cloud processing is coming soon for faster results!</source>
-        <translation>Rasters grandes podem demorar localmente. O processamento na nuvem está chegando para resultados mais rápidos!</translation>
+        <source>Large rasters can take time locally.</source>
+        <translation>Rasters grandes podem demorar localmente.</translation>
+    </message>
+    <message>
+        <source>Cloud processing is coming soon for faster encoding, more precise and automated segmentation!</source>
+        <translation>O processamento na nuvem esta chegando para codificacao mais rapida, segmentacao mais precisa e automatizada!</translation>
     </message>
     <message>
         <source>Join waitlist</source>
         <translation>Entrar na lista de espera</translation>
+    </message>
+
+    <!-- Encoding error messages -->
+    <message>
+        <source>Encoding timed out after 45 minutes. Try reducing the image size or closing other applications.</source>
+        <translation>A codificacao expirou apos 45 minutos. Tente reduzir o tamanho da imagem ou fechar outros aplicativos.</translation>
+    </message>
+    <message>
+        <source>Encoding stalled (no progress for 5 minutes). Try restarting QGIS and running again.</source>
+        <translation>A codificacao parou (sem progresso por 5 minutos). Tente reiniciar o QGIS e executar novamente.</translation>
+    </message>
+    <message>
+        <source>Out of memory: your raster is too large for available RAM. Try a smaller area or close other applications.</source>
+        <translation>Memoria insuficiente: seu raster e muito grande para a RAM disponivel. Tente uma area menor ou feche outros aplicativos.</translation>
+    </message>
+    <message>
+        <source>PROJ library conflict detected. Try updating QGIS to the latest version.</source>
+        <translation>Conflito de biblioteca PROJ detectado. Tente atualizar o QGIS para a versao mais recente.</translation>
+    </message>
+    <message>
+        <source>Windows DLL error detected. Please install Visual C++ Redistributables: https://aka.ms/vs/17/release/vc_redist.x64.exe</source>
+        <translation>Erro de DLL do Windows detectado. Instale o Visual C++ Redistributables: https://aka.ms/vs/17/release/vc_redist.x64.exe</translation>
+    </message>
+    <message>
+        <source>The encoding process crashed. Try closing other applications, reinstalling dependencies, or running QGIS as administrator.</source>
+        <translation>O processo de codificacao travou. Tente fechar outros aplicativos, reinstalar dependencias ou executar o QGIS como administrador.</translation>
+    </message>
+
+    <!-- Visible Area Mode -->
+    <message>
+        <source>Segment only in the visible area</source>
+        <translation>Segmentar apenas na area visivel</translation>
+    </message>
+    <message>
+        <source>When checked, only the area currently visible on your map will be encoded.</source>
+        <translation>Quando marcado, apenas a area atualmente visivel no seu mapa sera codificada.</translation>
+    </message>
+    <message>
+        <source>Useful for large rasters that take too long to encode entirely.</source>
+        <translation>Util para rasters grandes que demoram muito para codificar inteiramente.</translation>
+    </message>
+    <message>
+        <source>Faster encoding for large rasters. Only the visible map area will be processed.</source>
+        <translation>Codificacao mais rapida para rasters grandes. Apenas a area visivel do mapa sera processada.</translation>
+    </message>
+    <message>
+        <source>Encoding visible area for AI segmentation...</source>
+        <translation>Codificando area visivel para segmentacao IA...</translation>
+    </message>
+    <message>
+        <source>Only the visible map extent will be processed.</source>
+        <translation>Apenas a extensao visivel do mapa sera processada.</translation>
+    </message>
+    <message>
+        <source>Could not determine visible area. Encoding full raster instead.</source>
+        <translation>Nao foi possivel determinar a area visivel. Codificando o raster completo.</translation>
+    </message>
+    <message>
+        <source>Click is outside the encoded visible area. Restart segmentation to encode a different area.</source>
+        <translation>O clique esta fora da area visivel codificada. Reinicie a segmentacao para codificar uma area diferente.</translation>
+    </message>
+    <message>
+        <source>Online layers always use visible area mode.</source>
+        <translation>Camadas online sempre usam o modo de area visivel.</translation>
+    </message>
+    <message>
+        <source>Rendering online layer...</source>
+        <translation>Renderizando camada online...</translation>
+    </message>
+    <message>
+        <source>GDAL is not available. Cannot render online layer to GeoTIFF.</source>
+        <translation>GDAL nao esta disponivel. Nao e possivel converter a camada online para GeoTIFF.</translation>
+    </message>
+    <message>
+        <source>Layer data provider is not available.</source>
+        <translation>O provedor de dados da camada nao esta disponivel.</translation>
+    </message>
+    <message>
+        <source>Visible area is too small to render.</source>
+        <translation>A area visivel e muito pequena para renderizar.</translation>
+    </message>
+    <message>
+        <source>The visible area is too large ({w}x{h} pixels). Zoom in to reduce the area below {max}x{max} pixels.</source>
+        <translation>A area visivel e muito grande ({w}x{h} pixels). Aproxime o zoom para reduzir a area abaixo de {max}x{max} pixels.</translation>
+    </message>
+    <message>
+        <source>Failed to fetch tiles from the online layer. Check your network connection.</source>
+        <translation>Falha ao buscar tiles da camada online. Verifique sua conexao de rede.</translation>
+    </message>
+    <message>
+        <source>Online layer returned empty data. The area may not have coverage.</source>
+        <translation>A camada online retornou dados vazios. A area pode nao ter cobertura.</translation>
+    </message>
+    <message>
+        <source>Processing tiles...</source>
+        <translation>Processando tiles...</translation>
+    </message>
+    <message>
+        <source>Unexpected data format from online layer (dataType={dt}, {size} bytes for {w}x{h}).</source>
+        <translation>Formato de dados inesperado da camada online (dataType={dt}, {size} bytes para {w}x{h}).</translation>
+    </message>
+    <message>
+        <source>Online layer returned blank tiles for this area. Try panning to an area with data coverage.</source>
+        <translation>A camada online retornou tiles em branco para esta area. Tente mover o mapa para uma area com cobertura de dados.</translation>
+    </message>
+    <message>
+        <source>Writing GeoTIFF...</source>
+        <translation>Escrevendo GeoTIFF...</translation>
+    </message>
+    <message>
+        <source>GDAL GTiff driver is not available.</source>
+        <translation>O driver GDAL GTiff nao esta disponivel.</translation>
+    </message>
+    <message>
+        <source>Failed to create GeoTIFF file.</source>
+        <translation>Falha ao criar arquivo GeoTIFF.</translation>
+    </message>
+    <message>
+        <source>GeoTIFF ready for encoding.</source>
+        <translation>GeoTIFF pronto para codificacao.</translation>
+    </message>
+    <message>
+        <source>Failed to write rendered GeoTIFF.</source>
+        <translation>Falha ao escrever GeoTIFF renderizado.</translation>
+    </message>
+    <message>
+        <source>Failed to render online layer: {error}</source>
+        <translation>Falha ao renderizar camada online: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot Segment</source>
+        <translation>Nao e possivel segmentar</translation>
+    </message>
+    <message>
+        <source>Could not determine visible area for the online layer. Make sure the layer is visible on the map.</source>
+        <translation>Nao foi possivel determinar a area visivel para a camada online. Verifique se a camada esta visivel no mapa.</translation>
+    </message>
+    <message>
+        <source>Online Layer Error</source>
+        <translation>Erro na camada online</translation>
+    </message>
+    <message>
+        <source>Crop Error</source>
+        <translation>Erro de recorte</translation>
+    </message>
+    <message>
+        <source>No raster file path available. Please restart segmentation.</source>
+        <translation>Nenhum caminho de arquivo raster disponivel. Reinicie a segmentacao.</translation>
+    </message>
+    <message>
+        <source>Encoding Error</source>
+        <translation>Erro de codificacao</translation>
+    </message>
+    <message>
+        <source>Report a Bug</source>
+        <translation>Reportar um Bug</translation>
+    </message>
+    <message>
+        <source>Share Your Ideas</source>
+        <translation>Compartilhe suas ideias</translation>
+    </message>
+    <message>
+        <source>Disconnected parts detected in your polygon.</source>
+        <translation>Partes desconectadas detectadas no seu poligono.</translation>
+    </message>
+    <message>
+        <source>For best accuracy, segment one element at a time.</source>
+        <translation>Para melhor precisao, segmente um elemento de cada vez.</translation>
     </message>
 </context>
 </TS>

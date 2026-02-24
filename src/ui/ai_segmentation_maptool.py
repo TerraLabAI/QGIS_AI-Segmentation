@@ -16,7 +16,6 @@ class AISegmentationMapTool(QgsMapTool):
     - Ctrl+Z: Undo last point
     - S: Save mask (Batch mode only)
     - Enter: Export to layer
-    - Escape: Clear current mask
     """
 
     positive_click = pyqtSignal(QgsPointXY)
@@ -25,7 +24,7 @@ class AISegmentationMapTool(QgsMapTool):
     undo_requested = pyqtSignal()
     save_polygon_requested = pyqtSignal()
     export_layer_requested = pyqtSignal()
-    clear_requested = pyqtSignal()
+    stop_segmentation_requested = pyqtSignal()
 
     POSITIVE_COLOR = QColor(0, 200, 0)    # Green for include
     NEGATIVE_COLOR = QColor(220, 0, 0)    # Red for exclude
@@ -118,10 +117,10 @@ class AISegmentationMapTool(QgsMapTool):
             self.add_marker(point, is_positive=False)
             self.negative_click.emit(point)
 
-    def canvasMoveEvent(self, event):
+    def canvasReleaseEvent(self, event):
         pass
 
-    def canvasReleaseEvent(self, event):
+    def canvasMoveEvent(self, event):
         pass
 
     def wheelEvent(self, event):
@@ -137,28 +136,10 @@ class AISegmentationMapTool(QgsMapTool):
         return False
 
     def keyPressEvent(self, event):
-        key = event.key()
-        modifiers = event.modifiers()
-
-        if key == Qt.Key_Z and modifiers & Qt.ControlModifier:
-            # Ctrl+Z: Undo last point
-            self.undo_requested.emit()
-            event.accept()
-        elif key == Qt.Key_S and not (modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier)):
-            # Bare S only: Save polygon (add to collection)
-            # With modifiers (Ctrl+S, etc.) let QGIS handle it
-            self.save_polygon_requested.emit()
-            event.accept()
-        elif key == Qt.Key_Return or key == Qt.Key_Enter:
-            # Enter: Export to layer
-            self.export_layer_requested.emit()
-            event.accept()
-        elif key == Qt.Key_Escape:
-            # Escape: Clear current polygon
-            self.clear_requested.emit()
-            event.accept()
-        else:
-            event.ignore()
+        # Keyboard shortcuts are handled by the plugin's eventFilter on the
+        # main window (works regardless of focus).  This method only exists
+        # to prevent unhandled keys from propagating to QGIS defaults.
+        event.ignore()
 
     def isActive(self) -> bool:
         return self._active

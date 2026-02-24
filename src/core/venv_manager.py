@@ -11,6 +11,8 @@ from typing import Tuple, Optional, Callable, List
 
 from qgis.core import QgsMessageLog, Qgis
 
+from .model_config import SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN, USE_SAM2
+
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = PLUGIN_ROOT_DIR  # src/ directory
@@ -21,9 +23,9 @@ LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, 'libs')
 
 REQUIRED_PACKAGES = [
     ("numpy", ">=1.26.0,<2.0.0"),
-    ("torch", ">=2.0.0"),
-    ("torchvision", ">=0.15.0"),
-    ("segment-anything", ">=1.0"),
+    ("torch", TORCH_MIN),
+    ("torchvision", TORCHVISION_MIN),
+    SAM_PACKAGE,
     ("pandas", ">=1.3.0"),
     ("rasterio", ">=1.3.0"),
 ]
@@ -35,7 +37,7 @@ CUDA_FLAG_FILE = os.path.join(VENV_DIR, "cuda_installed.txt")
 # new retry strategies) to force a dependency re-install on plugin update.
 # This invalidates the deps hash so users with stale cuda_fallback flags
 # get a clean retry with the improved install logic.
-_INSTALL_LOGIC_VERSION = "2"
+_INSTALL_LOGIC_VERSION = "3"
 
 # Bumped independently of _INSTALL_LOGIC_VERSION so only users with a stale
 # cuda_fallback flag get a targeted CUDA retry — without forcing a full
@@ -104,47 +106,8 @@ def _read_cuda_fallback_version() -> Optional[str]:
 
 
 def needs_cuda_upgrade() -> bool:
-    """Check if an existing CPU install should be upgraded to CUDA.
-
-    Returns True only if:
-    - An NVIDIA GPU is present with a sufficient driver, AND
-    - torch was installed as CPU-only ('cpu' flag or no flag file), OR
-    - a previous CUDA install fell back but the install logic has since
-      been updated (_CUDA_LOGIC_VERSION differs from what was recorded).
-
-    This second condition lets users who were incorrectly stuck on CPU
-    due to a now-fixed pip bug get a GPU upgrade after a plugin update,
-    without triggering any reinstall for users whose setup already works.
-    """
-    if sys.platform == "darwin":
-        return False
-
-    flag = _read_cuda_flag()
-    # Old install without flag file -> treat as CPU (eligible for upgrade)
-    if flag is None:
-        flag = "cpu"
-    # Already on CUDA -> nothing to do
-    if flag == "cuda":
-        return False
-    # cuda_fallback: allow retry only if install logic has been updated
-    if flag == "cuda_fallback":
-        stored_version = _read_cuda_fallback_version()
-        if stored_version == _CUDA_LOGIC_VERSION:
-            return False  # Same logic version, GPU genuinely unsupported
-        # Logic version differs (or flag was written by older plugin without
-        # version tracking) -> a fix may resolve the failure, allow one retry
-
-    # Check if NVIDIA GPU is available with sufficient driver
-    try:
-        has_gpu, gpu_info = detect_nvidia_gpu()
-        if not has_gpu:
-            return False
-        cuda_index = _select_cuda_index(gpu_info)
-        if cuda_index is None:
-            return False  # Driver too old
-        return True
-    except Exception:
-        return False
+    """GPU install disabled (CPU-only mode). Kept for future reactivation."""
+    return False
 
 
 def _compute_deps_hash() -> str:
@@ -380,7 +343,9 @@ def cleanup_old_venv_directories() -> List[str]:
             if not os.path.exists(scan_dir):
                 continue
             for entry in os.listdir(scan_dir):
-                if entry.startswith("venv_py") and entry != current_venv_name:
+                entry_cmp = os.path.normcase(entry)
+                current_cmp = os.path.normcase(current_venv_name)
+                if entry_cmp.startswith(os.path.normcase("venv_py")) and entry_cmp != current_cmp:
                     old_path = os.path.join(scan_dir, entry)
                     if os.path.isdir(old_path):
                         try:
@@ -447,8 +412,9 @@ def _is_ssl_error(stderr: str) -> bool:
 def _is_hash_mismatch(output: str) -> bool:
     """Detect pip hash mismatch errors (corrupted cache from interrupted download)."""
     output_lower = output.lower()
-    return ("do not match the hashes" in output_lower
-            or "hash mismatch" in output_lower)
+    has_mismatch = "do not match the hashes" in output_lower
+    has_hash_err = "hash mismatch" in output_lower
+    return has_mismatch or has_hash_err
 
 
 def _get_pip_ssl_flags() -> List[str]:
@@ -523,22 +489,37 @@ def _is_antivirus_error(stderr: str) -> bool:
         "operation did not complete successfully because the file contains a virus",
         "blocked by your administrator",
         "blocked by group policy",
+        "application control policy",
+        "control de aplicaciones",
+        "applocker",
+        "blocked by your organization",
     ]
     return any(p in stderr_lower for p in patterns)
 
 
 def _get_pip_antivirus_help(venv_dir: str) -> str:
     """Get actionable help message for antivirus blocking pip."""
-    return (
+    steps = (
         "Installation was blocked, likely by antivirus software "
         "or security policy.\n\n"
         "Please try:\n"
         "  1. Temporarily disable real-time antivirus scanning\n"
         "  2. Add an exclusion for the plugin folder:\n"
-        "     {}\n"
-        "  3. Run QGIS as administrator (right-click > Run as administrator)\n"
-        "  4. Try the installation again"
-    ).format(venv_dir)
+        "     {}\n".format(venv_dir)
+    )
+    if sys.platform == "win32":
+        steps += (
+            "  3. Run QGIS as administrator "
+            "(right-click > Run as administrator)\n"
+            "  4. Try the installation again"
+        )
+    else:
+        steps += (
+            "  3. Check folder permissions: "
+            "chmod -R u+rwX \"{}\"\n"
+            "  4. Try the installation again".format(venv_dir)
+        )
+    return steps
 
 
 # Windows NTSTATUS crash codes (both signed and unsigned representations)
@@ -638,50 +619,93 @@ def ensure_venv_packages_available():
         except Exception:
             _log("Failed to reload typing_extensions, torch may fail", Qgis.Warning)
 
-    # SAFE FIX for old QGIS versions (< 3.28) with numpy/pandas compatibility issue
-    # QGIS 3.26-3.27 ships with numpy 1.20.x which is incompatible with pandas >= 2.0
-    # We safely reload numpy from venv ONLY for these old versions
-    if "numpy" in sys.modules:
-        try:
-            # Check QGIS version - only apply fix for QGIS < 3.28
-            qgis_version = Qgis.QGIS_VERSION.split("-")[0]
-            version_parts = [int(x) for x in qgis_version.split(".")]
-            is_old_qgis = version_parts[0] < 3 or (version_parts[0] == 3 and version_parts[1] < 28)
+    # FIX for QGIS bundling old numpy (< 1.22.4) incompatible with pandas >= 2.0
+    # Check numpy version directly instead of gating on QGIS version, because
+    # multiple QGIS releases (3.26-3.28.x) can ship old numpy. (issues #130/#133/#138)
+    needs_numpy_fix = False
+    old_version = "unknown"
+    try:
+        if "numpy" in sys.modules:
+            old_np = sys.modules["numpy"]
+            old_version = getattr(old_np, "__version__", "0.0.0")
+        else:
+            # numpy not loaded yet; check if QGIS Python path has an old one
+            # by probing before we import (which would lock in the wrong one)
+            old_version = "not_loaded"
 
-            if not is_old_qgis:
-                return True
+        if old_version == "not_loaded":
+            # numpy not yet imported; ensure venv path is first so the
+            # first import picks up the venv copy
+            needs_numpy_fix = True
+        else:
+            vn = [int(x) for x in old_version.split(".")[:3]]
+            np_old = (vn[0] < 1) or (vn[0] == 1 and vn[1] < 22)
+            np_old = np_old or (vn[0] == 1 and vn[1] == 22 and vn[2] < 4)
+            needs_numpy_fix = np_old
+    except Exception:
+        needs_numpy_fix = False
 
-            import numpy as old_numpy
-            old_version = old_numpy.__version__
-            version_nums = [int(x) for x in old_version.split(".")[:3]]
+    if not needs_numpy_fix:
+        return True
 
-            # Check if version is < 1.22.4 (incompatible with pandas >= 2.0)
-            needs_upgrade = False
-            if version_nums[0] < 1:
-                needs_upgrade = True
-            elif version_nums[0] == 1 and version_nums[1] < 22:
-                needs_upgrade = True
-            elif version_nums[0] == 1 and version_nums[1] == 22 and version_nums[2] < 4:
-                needs_upgrade = True
+    qgis_ver = Qgis.QGIS_VERSION.split("-")[0]
+    _log(
+        "QGIS {} with old numpy {} detected. "
+        "Forcing venv numpy/pandas...".format(qgis_ver, old_version),
+        Qgis.Info)
 
-            if needs_upgrade:
-                _log(
-                    "Detected QGIS {} with numpy {} (incompatible with pandas >= 2.0). "
-                    "Reloading numpy from venv...".format(qgis_version, old_version),
-                    Qgis.Info
-                )
+    try:
+        import importlib
 
-                # Remove numpy and related modules from cache
-                modules_to_remove = [key for key in sys.modules.keys() if key.startswith("numpy")]
-                for mod in modules_to_remove:
-                    del sys.modules[mod]
+        # 1. Remove ALL numpy and pandas modules from cache
+        mods_to_clear = [
+            k for k in list(sys.modules.keys())
+            if k.startswith("numpy") or k.startswith("pandas")
+        ]
+        for mod in mods_to_clear:
+            del sys.modules[mod]
 
-                # Reimport numpy from venv
-                import numpy as new_numpy
-                _log("Successfully reloaded numpy {} from venv".format(new_numpy.__version__), Qgis.Info)
+        # 2. Temporarily remove QGIS Python paths that contain numpy
+        #    so the reimport finds the venv copy first
+        removed_paths = []
+        for p in sys.path[:]:
+            if p == site_packages:
+                continue
+            np_init = os.path.join(p, "numpy", "__init__.py")
+            if os.path.exists(np_init):
+                removed_paths.append(p)
+                sys.path.remove(p)
 
-        except Exception as e:
-            _log("Failed to reload numpy: {}. Plugin may not work on this QGIS version.".format(e), Qgis.Warning)
+        # 3. Invalidate import caches so Python re-scans directories
+        importlib.invalidate_caches()
+
+        # 4. Reimport numpy from venv
+        import numpy as new_numpy  # noqa: E402
+
+        # 5. Restore removed paths (after venv so venv stays first)
+        for p in removed_paths:
+            if p not in sys.path:
+                sys.path.append(p)
+
+        # 6. Verify the reload actually worked
+        new_ver = new_numpy.__version__
+        if new_ver == old_version and old_version != "not_loaded":
+            _log(
+                "WARNING: numpy reload did not change version "
+                "(still {}). pandas may fail on this QGIS.".format(
+                    old_version),
+                Qgis.Warning)
+        else:
+            _log(
+                "Reloaded numpy {} -> {} from venv".format(
+                    old_version, new_ver),
+                Qgis.Info)
+
+    except Exception as e:
+        _log(
+            "Failed to reload numpy: {}. "
+            "Plugin may not work on this QGIS version.".format(e),
+            Qgis.Warning)
 
     return True
 
@@ -820,8 +844,9 @@ def create_venv(
     cmd = [system_python, "-m", "venv", venv_dir]
 
     try:
-        env = os.environ.copy()
-        env["PYTHONIOENCODING"] = "utf-8"
+        # Use clean env to prevent QGIS PYTHONPATH/PYTHONHOME from leaking
+        # into the standalone Python subprocess (issue #131)
+        env = _get_clean_env_for_venv()
 
         if sys.platform == "win32":
             startupinfo = subprocess.STARTUPINFO()
@@ -1073,7 +1098,7 @@ def _get_verification_timeout(package_name: str) -> int:
     elif package_name in ("torchvision", "pandas"):
         # pandas loads many .pyd C extensions on first import;
         # antivirus (Windows Defender) scans each one, easily exceeding 30s
-        return 60
+        return 120
     else:
         return 30
 
@@ -1230,21 +1255,24 @@ def _run_pip_install(
             except Exception:
                 pass
 
+            # Format elapsed time nicely
+            if elapsed >= 60:
+                elapsed_str = "{}m {}s".format(elapsed // 60, elapsed % 60)
+            else:
+                elapsed_str = "{}s".format(elapsed)
+
             # Build progress message
             if last_download_status:
-                msg = "{}... {}s elapsed ({}/{})".format(
-                    last_download_status, elapsed,
-                    package_index + 1, total_packages)
+                msg = "{}... {}".format(last_download_status, elapsed_str)
             elif is_cuda and package_name == "torch":
-                msg = "Installing GPU dependencies... {}s ({}/{})".format(
-                    elapsed, package_index + 1, total_packages)
+                msg = "Installing GPU PyTorch (~2.5 GB)... {}".format(
+                    elapsed_str)
             elif package_name == "torch":
-                msg = "Downloading PyTorch (~600MB)... {}s elapsed ({}/{})".format(
-                    elapsed, package_index + 1, total_packages)
+                msg = "Downloading PyTorch (~600 MB)... {}".format(
+                    elapsed_str)
             else:
-                msg = "Installing {}... {}s elapsed ({}/{})".format(
-                    package_name, elapsed,
-                    package_index + 1, total_packages)
+                msg = "Installing {}... {}".format(
+                    package_name, elapsed_str)
 
             # Interpolate progress within the package's range
             # Use logarithmic-ish curve: fast at start, slows down
@@ -1493,7 +1521,7 @@ def install_dependencies(
 
             # CUDA wheels are ~2.5GB, need more time than standard packages
             if is_cuda_package and package_name in ("torch", "torchvision"):
-                pkg_timeout = 1800  # 30 min for CUDA wheels
+                pkg_timeout = 2400  # 40 min for CUDA wheels
             else:
                 pkg_timeout = 600  # 10 min for standard packages
 
@@ -1922,8 +1950,10 @@ def _get_verification_code(package_name: str) -> str:
     elif package_name == "rasterio":
         # Just import - rasterio needs a file to test fully
         return "import rasterio; print(rasterio.__version__)"
+    elif package_name == "sam2":
+        return "from sam2.build_sam import build_sam2; print('ok')"
     elif package_name == "segment-anything":
-        return "import segment_anything; print('ok')"
+        return "from segment_anything import sam_model_registry; print('ok')"
     elif package_name == "torchvision":
         return "import torchvision; print(torchvision.__version__)"
     else:
@@ -1976,11 +2006,14 @@ def verify_venv(
                 )
 
                 # Detect broken C extensions (antivirus may have quarantined .pyd files)
+                error_lower = error_detail.lower()
                 broken_markers = [
-                    "No module named", "_libs",
-                    "DLL load failed", "ImportError",
+                    "no module named", "_libs",
+                    "dll load failed", "importerror",
+                    "applocker", "application control",
+                    "blocked by your organization",
                 ]
-                is_broken = any(m in error_detail for m in broken_markers)
+                is_broken = any(m in error_lower for m in broken_markers)
 
                 if is_broken:
                     _log(
@@ -2032,15 +2065,62 @@ def verify_venv(
                             continue  # Move to next package
                     except Exception:
                         pass
-                    # Still broken after reinstall
+                    # Still broken after reinstall - check for AppLocker
+                    detail_lower = error_detail.lower()
+                    applocker_markers = [
+                        "applocker", "application control",
+                        "blocked by your organization",
+                    ]
+                    if any(m in detail_lower for m in applocker_markers):
+                        return False, (
+                            "Package {} is blocked by AppLocker or "
+                            "application control policy.\n\n"
+                            "Ask your IT administrator to whitelist "
+                            "this folder:\n  {}\n\n"
+                            "Then restart QGIS and reinstall "
+                            "dependencies.".format(
+                                package_name, venv_dir)
+                        )
                     return False, (
                         "Package {} is broken (antivirus may be "
                         "interfering): {}".format(
-                            package_name, error_detail[:100])
+                            package_name, error_detail[:200])
                     )
 
-                return False, "Package {} is broken: {}".format(
-                    package_name, error_detail[:100])
+                if sys.platform == "win32":
+                    vcpp_url = (
+                        "https://aka.ms/vs/17/release/"
+                        "vc_redist.x64.exe"
+                    )
+                    if package_name == "torch":
+                        hint = (
+                            "\n\nPlease try:\n"
+                            "  1. Install Visual C++ "
+                            "Redistributable:\n"
+                            "     {}\n"
+                            "  2. Add an antivirus exclusion for "
+                            "the plugin folder\n"
+                            "  3. Restart QGIS".format(vcpp_url)
+                        )
+                    else:
+                        hint = (
+                            "\n\nPlease try:\n"
+                            "  1. Install Visual C++ "
+                            "Redistributable:\n"
+                            "     {}\n"
+                            "  2. Click 'Reinstall dependencies' "
+                            "in the plugin panel\n"
+                            "  3. Restart QGIS".format(vcpp_url)
+                        )
+                else:
+                    hint = (
+                        "\n\nPlease try:\n"
+                        "  1. Click 'Reinstall dependencies' "
+                        "in the plugin panel\n"
+                        "  2. Restart QGIS"
+                    )
+                return False, "Package {} is broken: {}{}".format(
+                    package_name, error_detail[:200], hint)
 
         except subprocess.TimeoutExpired:
             # Retry once - antivirus scanning .pyd files on first import
@@ -2069,8 +2149,24 @@ def verify_venv(
                             package_name, error_detail),
                         Qgis.Warning
                     )
+                    # Check for AppLocker on retry too
+                    retry_lower = error_detail.lower()
+                    applocker_kw = [
+                        "applocker", "application control",
+                        "blocked by your organization",
+                    ]
+                    if any(m in retry_lower for m in applocker_kw):
+                        return False, (
+                            "Package {} is blocked by AppLocker "
+                            "or application control policy.\n\n"
+                            "Ask your IT administrator to "
+                            "whitelist this folder:\n"
+                            "  {}\n\nThen restart QGIS and "
+                            "reinstall dependencies.".format(
+                                package_name, venv_dir)
+                        )
                     return False, "Package {} is broken: {}".format(
-                        package_name, error_detail[:100])
+                        package_name, error_detail[:200])
             except subprocess.TimeoutExpired:
                 _log(
                     "Verification of {} timed out twice".format(package_name),
@@ -2145,10 +2241,6 @@ def create_venv_and_install(
     rosetta_warning = _check_rosetta_warning()
     if rosetta_warning:
         _log(rosetta_warning, Qgis.Warning)
-        return False, (
-            "QGIS is running under Rosetta (x86_64 emulation) on Apple Silicon. "
-            "Please install the native ARM64 version of QGIS for best compatibility."
-        )
 
     # Clean up old venv directories from previous Python versions
     removed_venvs = cleanup_old_venv_directories()
@@ -2273,10 +2365,21 @@ def create_venv_and_install(
         _cuda_fell_back = True
 
     # Step 4b: CUDA smoke test — verify torch.cuda actually works in the venv
-    if is_valid and cuda_enabled and not _cuda_fell_back:
+    # Always run when CUDA was requested, even after fallback: a later package
+    # install (e.g. torchvision CUDA) may have pulled in CUDA torch as a
+    # dependency, resolving the earlier failure (issue #132).
+    if is_valid and cuda_enabled:
         if progress_callback:
             progress_callback(99, "Verifying CUDA functionality...")
-        if not _verify_cuda_in_venv(VENV_DIR):
+        cuda_works = _verify_cuda_in_venv(VENV_DIR)
+        if cuda_works and _cuda_fell_back:
+            # CUDA actually works despite earlier fallback — clear the flag
+            _log(
+                "CUDA smoke test passed after earlier fallback. "
+                "GPU acceleration is available.",
+                Qgis.Info)
+            _cuda_fell_back = False
+        elif not cuda_works and not _cuda_fell_back:
             _log(
                 "CUDA smoke test failed, falling back to CPU torch",
                 Qgis.Warning
@@ -2326,11 +2429,12 @@ def _quick_check_packages(venv_dir: str = None) -> Tuple[bool, str]:
         return False, "site-packages directory not found"
 
     # Map package names to their expected directory names in site-packages
+    sam_marker = ("sam2", "sam2") if USE_SAM2 else ("segment-anything", "segment_anything")
     package_markers = {
         "numpy": "numpy",
         "torch": "torch",
         "torchvision": "torchvision",
-        "segment-anything": "segment_anything",
+        sam_marker[0]: sam_marker[1],
         "pandas": "pandas",
         "rasterio": "rasterio",
     }
@@ -2390,11 +2494,6 @@ def get_venv_status() -> Tuple[bool, str]:
                 Qgis.Info
             )
             _write_deps_hash()
-        # Check if CPU torch should be upgraded to CUDA
-        if needs_cuda_upgrade():
-            _log("CPU torch detected but GPU available, upgrade needed",
-                 Qgis.Info)
-            return False, "GPU acceleration available - upgrading"
         python_version = get_python_full_version()
         _log("get_venv_status: ready (quick check passed)", Qgis.Success)
         return True, "Ready (Python {})".format(python_version)
