@@ -279,8 +279,8 @@
         <translation>No se encontro capa raster. Agregue un GeoTIFF, archivo de imagen o capa en linea (WMS, XYZ) a su proyecto.</translation>
     </message>
     <message>
-        <source>No image found. Please add an image file to your project (GeoTIFF, PNG, JPG, etc.).</source>
-        <translation>No se encontro imagen. Agregue un archivo de imagen a su proyecto (GeoTIFF, PNG, JPG, etc.).</translation>
+        <source>No layer found. Add a raster or online layer to your project.</source>
+        <translation>No se encontro capa. Agregue una capa raster o en linea a su proyecto.</translation>
     </message>
     <message>
         <source>Shortcuts: S (save polygon) · Enter (export to layer) · Ctrl+Z (undo)</source>
@@ -379,8 +379,12 @@
         <translation>Guarde al menos un poligono primero</translation>
     </message>
     <message>
-        <source>Select one element at a time using left/right clicks. Use Refine to adjust, then Save. Repeat for each element, then Export all to a layer.</source>
-        <translation>Seleccione un elemento a la vez usando clics izquierdo/derecho. Use Refinar para ajustar, luego Guardar. Repita para cada elemento, luego Exporte todo a una capa.</translation>
+        <source>The AI model works best on one element at a time.</source>
+        <translation>El modelo IA funciona mejor con un elemento a la vez.</translation>
+    </message>
+    <message>
+        <source>Save your polygon before selecting the next element.</source>
+        <translation>Guarda tu poligono antes de seleccionar el siguiente.</translation>
     </message>
     <message>
         <source>Export polygon to layer</source>
@@ -389,6 +393,14 @@
     <message>
         <source>Export polygon(s) to layer</source>
         <translation>Exportar polígono(s) a capa</translation>
+    </message>
+    <message>
+        <source>Export polygon to a layer</source>
+        <translation>Exportar poligono a una capa</translation>
+    </message>
+    <message>
+        <source>Export {count} polygons to a layer</source>
+        <translation>Exportar {count} poligonos a una capa</translation>
     </message>
     <message>
         <source>Export polygon as a new vector layer (Enter)</source>
@@ -589,6 +601,14 @@
     <message>
         <source>Discard and exit segmentation?</source>
         <translation>¿Descartar y salir de segmentación?</translation>
+    </message>
+    <message>
+        <source>Changing layer will discard your current segmentation. Continue?</source>
+        <translation>Cambiar de capa descartará tu segmentación actual. ¿Continuar?</translation>
+    </message>
+    <message>
+        <source>Change Layer?</source>
+        <translation>¿Cambiar de capa?</translation>
     </message>
     <message>
         <source>You have an unsaved selection.</source>
@@ -1014,6 +1034,10 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Error de recorte</translation>
     </message>
     <message>
+        <source>No raster file path available. Please restart segmentation.</source>
+        <translation>No hay ruta de archivo raster disponible. Reinicie la segmentacion.</translation>
+    </message>
+    <message>
         <source>Encoding Error</source>
         <translation>Error de codificacion</translation>
     </message>
@@ -1024,6 +1048,14 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     <message>
         <source>Share Your Ideas</source>
         <translation>Comparte tus ideas</translation>
+    </message>
+    <message>
+        <source>Disconnected parts detected in your polygon.</source>
+        <translation>Partes desconectadas detectadas en tu poligono.</translation>
+    </message>
+    <message>
+        <source>For best accuracy, segment one element at a time.</source>
+        <translation>Para mejor precision, segmenta un elemento a la vez.</translation>
     </message>
 </context>
 </TS>

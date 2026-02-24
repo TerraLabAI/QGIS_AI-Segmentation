@@ -232,6 +232,7 @@ class AISegmentationPlugin:
         self._shortcut_filter = None  # Event filter for keyboard shortcuts
         self._current_crop_canvas_mupp = None  # canvas mupp at encode time (zoom detection)
         self._current_crop_actual_mupp = None  # actual mupp used for the crop (may differ if zoomed out)
+        self._current_crop_scale_factor = None  # scale_factor used for file-based crop
 
         self.deps_install_worker = None
         self.download_worker = None
@@ -1054,11 +1055,36 @@ class AISegmentationPlugin:
             return
 
         if new_layer_id == current_layer_id:
-            # Same layer selected, do nothing
             return
 
-        # Different layer selected while segmenting - stop segmentation silently
+        # Different layer selected while segmenting
         if self.iface.mapCanvas().mapTool() == self.map_tool:
+            has_unsaved_mask = self.current_mask is not None
+            has_saved_polygons = len(self.saved_polygons) > 0
+
+            if has_unsaved_mask or has_saved_polygons:
+                polygon_count = len(self.saved_polygons)
+                if has_unsaved_mask:
+                    polygon_count += 1
+                message = "{}\n\n{}".format(
+                    tr("You have {count} unsaved polygon(s).").format(
+                        count=polygon_count),
+                    tr("Changing layer will discard your current segmentation. Continue?"))
+
+                reply = QMessageBox.warning(
+                    self.iface.mainWindow(),
+                    tr("Change Layer?"),
+                    message,
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+
+                if reply != QMessageBox.Yes:
+                    self.dock_widget.layer_combo.blockSignals(True)
+                    self.dock_widget.layer_combo.setLayer(self._current_layer)
+                    self.dock_widget.layer_combo.blockSignals(False)
+                    return
+
             self._stopping_segmentation = True
             self.iface.mapCanvas().unsetMapTool(self.map_tool)
             self._restore_previous_map_tool()
@@ -1146,6 +1172,9 @@ class AISegmentationPlugin:
         self.current_low_res_mask = None
         self.dock_widget.set_point_count(0, 0)
 
+        # Keep crop info so clicks in the same area reuse the encoding
+        # (re-encode only happens when point falls outside current crop bounds)
+
     def _on_export_layer(self):
         """Export all saved polygons + current unsaved mask to a new layer."""
         from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
@@ -1187,9 +1216,9 @@ class AISegmentationPlugin:
         self._restore_previous_map_tool()
         self._stopping_segmentation = False
 
-        # Generate layer name: segment_{number}
+        # Generate layer name: mask_{number}
         mask_num = self._get_next_mask_counter()
-        layer_name = f"segment_{mask_num}"
+        layer_name = f"mask_{mask_num}"
 
         # Determine CRS
         # For non-georeferenced images, use a local pixel-based CRS
@@ -1416,87 +1445,15 @@ class AISegmentationPlugin:
         except (RuntimeError, AttributeError):
             pass
 
-        # If we're stopping programmatically (via Stop/Export), just update UI
         if self._stopping_segmentation:
             if self.dock_widget:
                 self.dock_widget.set_segmentation_active(False)
             return
 
-        # Check if QGIS is closing - don't show popup in that case
-        # When QGIS closes, the main window is being destroyed or hidden
-        main_window = self.iface.mainWindow()
-        if main_window is None or not main_window.isVisible():
-            # QGIS is closing, just cleanup silently
-            self._reset_session()
-            if self.dock_widget:
-                self.dock_widget.set_segmentation_active(False)
-            return
-
-        # Check if there's unsaved work
-        has_unsaved_mask = self.current_mask is not None
-        has_saved_polygons = len(self.saved_polygons) > 0
-
-        if has_unsaved_mask or has_saved_polygons:
-            # Defer dialog out of signal handler to avoid re-entrant event loop
-            from qgis.PyQt.QtCore import QTimer
-            QTimer.singleShot(0, self._show_deactivation_dialog)
-            return
-
-        if self.dock_widget:
-            self.dock_widget.set_segmentation_active(False)
-        self._previous_map_tool = None
-
-    def _show_deactivation_dialog(self):
-        """Deferred dialog for tool deactivation (called outside signal handler)."""
-        if not self.dock_widget:
-            return
-        # Re-check state: it may have changed since the deferred call was scheduled
-        main_window = self.iface.mainWindow()
-        if main_window is None or not main_window.isVisible():
-            self._reset_session()
-            if self.dock_widget:
-                self.dock_widget.set_segmentation_active(False)
-            return
-
-        has_unsaved_mask = self.current_mask is not None
-        has_saved_polygons = len(self.saved_polygons) > 0
-
-        if not has_unsaved_mask and not has_saved_polygons:
-            # Nothing to warn about anymore
-            if self.dock_widget:
-                self.dock_widget.set_segmentation_active(False)
-            self._previous_map_tool = None
-            return
-
-        # Show warning popup
-        polygon_count = len(self.saved_polygons)
-        if has_unsaved_mask:
-            polygon_count += 1
-        message = "{}\n\n{}".format(
-            tr("You have {count} unsaved polygon(s).").format(count=polygon_count),
-            tr("Discard and exit segmentation?"))
-
-        reply = QMessageBox.warning(
-            main_window,
-            tr("Exit Segmentation?"),
-            message,
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-
-        if reply != QMessageBox.Yes:
-            # User wants to continue - re-activate the segmentation tool
-            from qgis.PyQt.QtCore import QTimer
-            QTimer.singleShot(0, lambda: self.iface.mapCanvas().setMapTool(self.map_tool))
-            return
-
-        # User confirmed exit - reset session
+        # Silently reset session and deactivate
         self._reset_session()
         if self.dock_widget:
             self.dock_widget.reset_session()
-
-        if self.dock_widget:
-            self.dock_widget.set_segmentation_active(False)
         self._previous_map_tool = None
 
     def _restore_previous_map_tool(self):
@@ -1595,36 +1552,126 @@ class AISegmentationPlugin:
         except RuntimeError:
             return False
 
-    def _is_point_in_current_crop(self, point):
-        """Check if a point (in raster CRS) falls within the current crop.
+    def _check_crop_status(self, point):
+        """Check if a point (in raster CRS) is usable in the current crop.
 
-        For online layers, also checks if the zoom level has changed
-        significantly since the crop was encoded. A large zoom change means
-        the tile resolution no longer matches the encoding, so a re-encode
-        is needed even if the point is geographically inside the old crop.
+        Returns a reason code:
+        - "ok": point is inside the crop
+        - "no_crop": no crop has been encoded yet
+        - "outside_bounds": point is geographically outside the crop
+        - "zoom_changed": user zoomed in significantly, crop should be re-encoded
         """
         if self._current_crop_info is None:
-            return False
+            return "no_crop"
         bounds = self._current_crop_info['bounds']
-        # bounds = (minx, miny, maxx, maxy)
         in_x = bounds[0] <= point.x() <= bounds[2]
         in_y = bounds[1] <= point.y() <= bounds[3]
         if not (in_x and in_y):
-            return False
+            return "outside_bounds"
 
-        # For online layers, force re-encode when zoom changed
-        if self._is_online_layer and self._current_crop_canvas_mupp is not None:
-            current_mupp = self.iface.mapCanvas().mapUnitsPerPixel()
-            if self._current_crop_canvas_mupp > 0 and current_mupp > 0:
-                ratio = current_mupp / self._current_crop_canvas_mupp
-                # Zoom-in (ratio < 1): tight threshold so the user can
-                # refine details at higher resolution after a broad selection.
-                # Zoom-out (ratio > 1): looser threshold to avoid
-                # unnecessary re-encodes when panning slightly.
-                if ratio < 0.8 or ratio > 1.3:
-                    return False
+        # Detect significant zoom-in requiring higher resolution
+        if self._is_online_layer:
+            canvas = self.iface.mapCanvas()
+            current_mupp = canvas.mapUnitsPerPixel()
+            if self._current_crop_actual_mupp and current_mupp > 0:
+                if current_mupp < 0.7 * self._current_crop_actual_mupp:
+                    return "zoom_changed"
+        else:
+            sf = self._current_crop_scale_factor
+            if sf is not None and sf > 1.0:
+                return "zoom_changed"
 
-        return True
+        return "ok"
+
+    def _is_point_in_current_crop(self, point):
+        """Check if a point is usable in the current crop (backward compat)."""
+        return self._check_crop_status(point) == "ok"
+
+    @staticmethod
+    def _resize_nearest(arr, target_h, target_w):
+        """Resize a 2D numpy array using nearest-neighbor interpolation."""
+        import numpy as np
+        src_h, src_w = arr.shape
+        row_idx = (np.arange(target_h) * src_h / target_h).astype(int)
+        col_idx = (np.arange(target_w) * src_w / target_w).astype(int)
+        np.clip(row_idx, 0, src_h - 1, out=row_idx)
+        np.clip(col_idx, 0, src_w - 1, out=col_idx)
+        return arr[row_idx[:, None], col_idx[None, :]]
+
+    def _build_mask_input_from_previous(
+        self, old_mask, old_bounds, old_shape, new_bounds, new_shape
+    ):
+        """Transfer a binary mask from old crop space to new crop as SAM logits.
+
+        Computes geographic overlap between old and new crops, maps the
+        overlapping region, converts to logits, and resizes to (1, 256, 256).
+        Returns None if there is no overlap.
+        """
+        import numpy as np
+
+        old_minx, old_miny, old_maxx, old_maxy = old_bounds
+        new_minx, new_miny, new_maxx, new_maxy = new_bounds
+
+        # Geographic overlap
+        ovlp_minx = max(old_minx, new_minx)
+        ovlp_miny = max(old_miny, new_miny)
+        ovlp_maxx = min(old_maxx, new_maxx)
+        ovlp_maxy = min(old_maxy, new_maxy)
+        if ovlp_minx >= ovlp_maxx or ovlp_miny >= ovlp_maxy:
+            return None
+
+        old_h, old_w = old_shape
+        new_h, new_w = new_shape
+
+        def geo_to_pixel(gx, gy, bminx, bminy, bmaxx, bmaxy, pw, ph):
+            col = (gx - bminx) / (bmaxx - bminx) * pw
+            row = (bmaxy - gy) / (bmaxy - bminy) * ph
+            return int(round(col)), int(round(row))
+
+        # Overlap region in old pixel coords
+        o_c0, o_r0 = geo_to_pixel(
+            ovlp_minx, ovlp_maxy, old_minx, old_miny, old_maxx, old_maxy,
+            old_w, old_h)
+        o_c1, o_r1 = geo_to_pixel(
+            ovlp_maxx, ovlp_miny, old_minx, old_miny, old_maxx, old_maxy,
+            old_w, old_h)
+        o_r0 = max(0, min(o_r0, old_h))
+        o_r1 = max(0, min(o_r1, old_h))
+        o_c0 = max(0, min(o_c0, old_w))
+        o_c1 = max(0, min(o_c1, old_w))
+        if o_r0 >= o_r1 or o_c0 >= o_c1:
+            return None
+
+        patch = old_mask[o_r0:o_r1, o_c0:o_c1]
+
+        # Overlap region in new pixel coords
+        n_c0, n_r0 = geo_to_pixel(
+            ovlp_minx, ovlp_maxy, new_minx, new_miny, new_maxx, new_maxy,
+            new_w, new_h)
+        n_c1, n_r1 = geo_to_pixel(
+            ovlp_maxx, ovlp_miny, new_minx, new_miny, new_maxx, new_maxy,
+            new_w, new_h)
+        n_r0 = max(0, min(n_r0, new_h))
+        n_r1 = max(0, min(n_r1, new_h))
+        n_c0 = max(0, min(n_c0, new_w))
+        n_c1 = max(0, min(n_c1, new_w))
+        target_h = n_r1 - n_r0
+        target_w = n_c1 - n_c0
+        if target_h < 1 or target_w < 1:
+            return None
+
+        resized_patch = self._resize_nearest(patch, target_h, target_w)
+
+        # Place patch into full-size new crop mask
+        new_mask = np.zeros((new_h, new_w), dtype=np.float32)
+        new_mask[n_r0:n_r1, n_c0:n_c1] = resized_patch
+
+        # Convert binary mask to logits: foreground=+4, background=-4
+        logits = (new_mask * 2.0 - 1.0) * 4.0
+
+        # Resize to SAM's low-res mask size (256x256), shape (1, 1, 256, 256)
+        logits_256 = self._resize_nearest(logits, 256, 256)
+        return logits_256[None, None, :, :]
 
     def _compute_crop_center_and_mupp(self, all_points_geo, crop_size=1024):
         """Compute optimal crop center and mupp to fit all points.
@@ -1712,6 +1759,14 @@ class AISegmentationPlugin:
                 self._current_layer, raster_pt_x, raster_pt_y,
                 actual_mupp, crop_size=1024
             )
+        elif not self._current_raster_path:
+            self._encoding_in_progress = False
+            show_error_report(
+                self.iface.mainWindow(),
+                tr("Crop Error"),
+                tr("No raster file path available. Please restart segmentation.")
+            )
+            return False
         else:
             layer_crs_wkt = None
             layer_extent = None
@@ -1726,6 +1781,7 @@ class AISegmentationPlugin:
                 pass
 
             scale_factor = mupp_override if mupp_override else 1.0
+            self._current_crop_scale_factor = scale_factor
             image_np, crop_info, error = extract_crop_from_raster(
                 self._current_raster_path, raster_pt_x, raster_pt_y,
                 crop_size=1024,
@@ -1764,8 +1820,6 @@ class AISegmentationPlugin:
             return False
 
         self._current_crop_info = crop_info
-        # Reset low_res_mask since we have a new encoding
-        self.current_low_res_mask = None
         self._encoding_in_progress = False
 
         QgsMessageLog.logMessage(
@@ -1773,6 +1827,46 @@ class AISegmentationPlugin:
                 crop_info['bounds'], crop_info['img_shape']),
             "AI Segmentation", level=Qgis.Info
         )
+        return True
+
+    def _handle_reencode(self, crop_status, raster_pt):
+        """Handle re-encoding based on crop status. Returns True on success."""
+        if crop_status in ("no_crop", "zoom_changed"):
+            self.current_low_res_mask = None
+            return self._extract_and_encode_crop(raster_pt)
+
+        # outside_bounds: save old state, re-encode to fit all points
+        old_crop_info = self._current_crop_info
+        old_mask = self.current_mask
+
+        all_pts = [
+            (p[0], p[1]) for p in
+            self.prompts.positive_points + self.prompts.negative_points
+        ]
+        if len(all_pts) > 1:
+            center_x, center_y, mupp_or_scale = (
+                self._compute_crop_center_and_mupp(all_pts))
+            new_center = QgsPointXY(center_x, center_y)
+        else:
+            new_center = raster_pt
+            mupp_or_scale = None
+        self.current_low_res_mask = None
+        if not self._extract_and_encode_crop(
+                new_center, mupp_override=mupp_or_scale):
+            return False
+
+        # Transfer previous mask as context to the new crop
+        if old_mask is not None and old_crop_info is not None:
+            transferred = self._build_mask_input_from_previous(
+                old_mask.astype(float),
+                old_crop_info['bounds'],
+                old_crop_info['img_shape'],
+                self._current_crop_info['bounds'],
+                self._current_crop_info['img_shape'],
+            )
+            if transferred is not None:
+                self.current_low_res_mask = transferred
+
         return True
 
     def _on_positive_click(self, point):
@@ -1785,7 +1879,7 @@ class AISegmentationPlugin:
         # Transform click from canvas CRS to raster CRS for all downstream use
         raster_pt = self._transform_to_raster_crs(point)
 
-        if not self._is_online_layer and not self._is_point_in_raster_extent(raster_pt):
+        if not self._is_point_in_raster_extent(raster_pt):
             if self.map_tool:
                 self.map_tool.remove_last_marker()
             self.iface.messageBar().pushMessage(
@@ -1808,39 +1902,15 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
 
-        # On-demand encoding: encode crop if point is outside current crop
-        if not self._is_point_in_current_crop(raster_pt):
-            if self._current_crop_info is not None:
-                # Keep all existing points, re-center to include all
-                all_pts = [(p[0], p[1]) for p in
-                           self.prompts.positive_points + self.prompts.negative_points]
+        # On-demand encoding: encode crop if needed
+        crop_status = self._check_crop_status(raster_pt)
 
-                if len(all_pts) > 1:
-                    center_x, center_y, mupp_or_scale = (
-                        self._compute_crop_center_and_mupp(all_pts))
-                    new_center = QgsPointXY(center_x, center_y)
-                    self.current_low_res_mask = None
-                else:
-                    new_center = raster_pt
-                    mupp_or_scale = None
-
-                # Don't clear mask visualization here - keep the blue
-                # rubber band visible during re-encoding so the user
-                # sees no flicker. _run_prediction will replace it.
-
-                if not self._extract_and_encode_crop(
-                        new_center, mupp_override=mupp_or_scale):
-                    self.prompts.undo()
-                    if self.map_tool:
-                        self.map_tool.remove_last_marker()
-                    return
-            else:
-                # First click ever, just encode at click point
-                if not self._extract_and_encode_crop(raster_pt):
-                    self.prompts.undo()
-                    if self.map_tool:
-                        self.map_tool.remove_last_marker()
-                    return
+        if crop_status != "ok":
+            if not self._handle_reencode(crop_status, raster_pt):
+                self.prompts.undo()
+                if self.map_tool:
+                    self.map_tool.remove_last_marker()
+                return
 
         self._run_prediction()
 
@@ -1865,7 +1935,7 @@ class AISegmentationPlugin:
         # Transform click from canvas CRS to raster CRS for all downstream use
         raster_pt = self._transform_to_raster_crs(point)
 
-        if not self._is_online_layer and not self._is_point_in_raster_extent(raster_pt):
+        if not self._is_point_in_raster_extent(raster_pt):
             if self.map_tool:
                 self.map_tool.remove_last_marker()
             self.iface.messageBar().pushMessage(
@@ -1886,18 +1956,11 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
 
-        # If negative point falls outside current crop, re-center to fit all points
-        if not self._is_point_in_current_crop(raster_pt):
-            all_pts = [(p[0], p[1]) for p in
-                       self.prompts.positive_points + self.prompts.negative_points]
+        # Re-encode if needed (zoom changed or point outside crop)
+        crop_status = self._check_crop_status(raster_pt)
 
-            center_x, center_y, mupp_or_scale = (
-                self._compute_crop_center_and_mupp(all_pts))
-            new_center = QgsPointXY(center_x, center_y)
-            self.current_low_res_mask = None
-
-            if not self._extract_and_encode_crop(
-                    new_center, mupp_override=mupp_or_scale):
+        if crop_status != "ok":
+            if not self._handle_reencode(crop_status, raster_pt):
                 self.prompts.undo()
                 if self.map_tool:
                     self.map_tool.remove_last_marker()
@@ -1934,20 +1997,28 @@ class AISegmentationPlugin:
         if point_coords is None:
             return
 
-        # Use previous low_res_mask for iterative refinement on all subsequent
-        # clicks (not just negatives). This gives SAM context about the
-        # user's intent from previous interactions.
+        # Use previous low_res_mask for iterative refinement (includes
+        # transferred mask context after zoom re-encode)
         mask_input = None
-        total_points = len(self.prompts.positive_points) + len(self.prompts.negative_points)
-        if total_points > 1 and self.current_low_res_mask is not None:
+        if self.current_low_res_mask is not None:
             mask_input = self.current_low_res_mask
+
+        # Use multimask only on the very first point of a new polygon
+        # (more accurate initial selection). For subsequent points or
+        # re-encoded crops with transferred mask, use single mask.
+        is_first_point = (
+            len(self.prompts.positive_points) == 1
+            and len(self.prompts.negative_points) == 0
+            and mask_input is None
+        )
+        use_multimask = is_first_point
 
         try:
             masks, scores, low_res_masks = self.predictor.predict(
                 point_coords=point_coords,
                 point_labels=point_labels,
                 mask_input=mask_input,
-                multimask_output=False,
+                multimask_output=use_multimask,
             )
         except RuntimeError as e:
             error_str = str(e)
@@ -1973,9 +2044,37 @@ class AISegmentationPlugin:
             )
             return
 
-        self.current_mask = masks[0]
-        self.current_score = float(scores[0])
-        self.current_low_res_mask = low_res_masks
+        if use_multimask:
+            import numpy as np
+            total_pixels = masks[0].shape[0] * masks[0].shape[1]
+            mask_areas = [int(m.sum()) for m in masks]
+
+            # Avoid selecting the whole crop when clicking on small elements
+            # in repetitive patterns (e.g. trees in an orchard). SAM's highest
+            # score often goes to the "all similar elements" interpretation.
+            small_enough = [
+                i for i in range(len(scores))
+                if mask_areas[i] < 0.8 * total_pixels
+            ]
+            if small_enough:
+                best_idx = max(small_enough, key=lambda i: scores[i])
+            else:
+                best_idx = min(range(len(scores)), key=lambda i: mask_areas[i])
+
+            QgsMessageLog.logMessage(
+                "Multimask: areas={}, scores={}, picked={}".format(
+                    mask_areas,
+                    [round(float(s), 3) for s in scores],
+                    best_idx),
+                "AI Segmentation", level=Qgis.Info
+            )
+            self.current_mask = masks[best_idx]
+            self.current_score = float(scores[best_idx])
+            self.current_low_res_mask = low_res_masks[best_idx:best_idx + 1]
+        else:
+            self.current_mask = masks[0]
+            self.current_score = float(scores[0])
+            self.current_low_res_mask = low_res_masks
 
         # Get CRS from layer
         crs_value = None
@@ -2014,7 +2113,9 @@ class AISegmentationPlugin:
             return
 
         try:
-            from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
+            from ..core.polygon_exporter import (
+                mask_to_polygons, apply_mask_refinement, count_significant_regions
+            )
 
             # Apply refinement to preview in both modes (refine affects current mask only)
             mask_to_display = self.current_mask
@@ -2026,6 +2127,10 @@ class AISegmentationPlugin:
                     fill_holes=self._refine_fill_holes,
                     min_area=self._refine_min_area
                 )
+
+            # Detect disjoint regions and show/hide warning
+            region_count = count_significant_regions(mask_to_display)
+            self.dock_widget.set_disjoint_warning(region_count > 1)
 
             geometries = mask_to_polygons(mask_to_display, self.current_transform_info)
 
@@ -2068,6 +2173,8 @@ class AISegmentationPlugin:
     def _clear_mask_visualization(self):
         if self.mask_rubber_band:
             self.mask_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
+        if self.dock_widget:
+            self.dock_widget.set_disjoint_warning(False)
 
     @staticmethod
     def _make_qgs_rectangle(minx, miny, maxx, maxy):
@@ -2241,6 +2348,7 @@ class AISegmentationPlugin:
         self._current_raster_path = None
         self._current_crop_canvas_mupp = None
         self._current_crop_actual_mupp = None
+        self._current_crop_scale_factor = None
 
         # Reset online layer state
         self._is_online_layer = False
