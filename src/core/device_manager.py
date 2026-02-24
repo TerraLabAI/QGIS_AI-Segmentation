@@ -36,6 +36,30 @@ def get_optimal_device():  # -> torch.device
         QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
         raise
 
+    if sys.platform == "darwin":
+        try:
+            if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+                test = torch.zeros(1, device="mps")
+                _ = test + 1
+                torch.mps.synchronize()
+                del test
+
+                _cached_device = torch.device("mps")
+                _device_info = "Apple Silicon GPU (MPS)"
+                _configure_mps_optimizations()
+                QgsMessageLog.logMessage(
+                    "Using MPS acceleration (Apple Silicon GPU)",
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+                return _cached_device
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                "MPS check failed: {}, falling back to CPU".format(e),
+                "AI Segmentation",
+                level=Qgis.Warning
+            )
+
     _cached_device = torch.device("cpu")
     _device_info = "CPU ({} cores)".format(os.cpu_count())
     _configure_cpu_optimizations()

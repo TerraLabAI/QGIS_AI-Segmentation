@@ -11,7 +11,6 @@ from qgis.PyQt.QtWidgets import (
     QPushButton,
     QProgressBar,
     QFrame,
-    QMessageBox,
     QLineEdit,
     QSpinBox,
     QCheckBox,
@@ -28,13 +27,13 @@ from qgis.gui import QgsMapLayerComboBox
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
 
-from ..core.activation_manager import (
+from ..core.activation_manager import (  # noqa: E402
     is_plugin_activated,
     activate_plugin,
     get_newsletter_url,
 )
-from ..core.i18n import tr
-from ..core.model_config import CHECKPOINT_SIZE_LABEL, USE_SAM2
+from ..core.i18n import tr  # noqa: E402
+from ..core.model_config import CHECKPOINT_SIZE_LABEL, USE_SAM2  # noqa: E402
 
 
 class AISegmentationDockWidget(QDockWidget):
@@ -630,7 +629,11 @@ class AISegmentationDockWidget(QDockWidget):
         # 4. Remove small artifacts: SpinBox - minimum area threshold
         min_area_layout = QHBoxLayout()
         min_area_label = QLabel(tr("Min. region size:"))
-        min_area_label.setToolTip(tr("Remove disconnected regions smaller than this area (in pixels²).") + "\n" + tr("Example: 100 = ~10x10 pixel regions, 900 = ~30x30.") + "\n" + tr("0 = keep all."))
+        min_area_label.setToolTip(
+            "{}\n{}\n{}".format(
+                tr("Remove disconnected regions smaller than this area (in pixels²)."),
+                tr("Example: 100 = ~10x10 pixel regions, 900 = ~30x30."),
+                tr("0 = keep all.")))
         self.min_area_spinbox = QSpinBox()
         self.min_area_spinbox.setRange(0, 100000)
         self.min_area_spinbox.setValue(100)  # Default: remove small artifacts

@@ -61,6 +61,18 @@ def build_sam1_model(checkpoint, device):
 
 
 def get_optimal_device():
+    if sys.platform == "darwin":
+        try:
+            if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+                test = torch.zeros(1, device="mps")
+                _ = test + 1
+                torch.mps.synchronize()
+                del test
+                os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
+                return torch.device("mps")
+        except Exception:
+            pass
+
     num_cores = os.cpu_count() or 4
     optimal_threads = max(4, num_cores // 2) if sys.platform == "darwin" else num_cores
     torch.set_num_threads(optimal_threads)
@@ -137,10 +149,12 @@ def main():
             predictor = Sam1Predictor(sam_model)
             model_label = "SAM1-ViT-B"
 
-        num_threads = torch.get_num_threads()
+        device_label = str(device)
+        if device.type == "cpu":
+            device_label = "cpu ({}t)".format(torch.get_num_threads())
         sys.stderr.write(
-            "[prediction_worker] {}, PyTorch={}, device=cpu ({}t), Python={}.{}.{}\n".format(
-                model_label, torch.__version__, num_threads,
+            "[prediction_worker] {}, PyTorch={}, device={}, Python={}.{}.{}\n".format(
+                model_label, torch.__version__, device_label,
                 sys.version_info.major, sys.version_info.minor,
                 sys.version_info.micro
             )
