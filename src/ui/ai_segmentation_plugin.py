@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 if TYPE_CHECKING:
     import numpy
 
-from qgis.PyQt.QtWidgets import QAction, QMessageBox
+from qgis.PyQt.QtWidgets import (
+    QAction, QApplication, QDoubleSpinBox, QLineEdit, QMessageBox,
+    QPlainTextEdit, QSpinBox, QTextEdit,
+)
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import Qt, QThread, QObject, pyqtSignal, QVariant, QSettings, QEvent
 from qgis.core import (
@@ -102,6 +105,11 @@ class _ShortcutFilter(QObject):
             return False
         plugin = self._plugin
         if not plugin.map_tool or not plugin.map_tool.isActive():
+            return False
+
+        focused = QApplication.instance().focusWidget()
+        if isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit,
+                                QSpinBox, QDoubleSpinBox)):
             return False
 
         key = event.key()
@@ -443,7 +451,7 @@ class AISegmentationPlugin:
         # 0. Remove keyboard shortcut filter
         try:
             if self._shortcut_filter is not None:
-                self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+                QApplication.instance().removeEventFilter(self._shortcut_filter)
                 self._shortcut_filter = None
         except (RuntimeError, AttributeError):
             pass
@@ -1001,7 +1009,7 @@ class AISegmentationPlugin:
         # after encoding/prediction because dock widget updates steal it).
         if self._shortcut_filter is None:
             self._shortcut_filter = _ShortcutFilter(self)
-        self.iface.mainWindow().installEventFilter(self._shortcut_filter)
+        QApplication.instance().installEventFilter(self._shortcut_filter)
 
         # Show tutorial notification for first-time users
         self._show_tutorial_notification()
@@ -1441,7 +1449,7 @@ class AISegmentationPlugin:
         # Remove keyboard shortcut filter
         try:
             if self._shortcut_filter is not None:
-                self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+                QApplication.instance().removeEventFilter(self._shortcut_filter)
         except (RuntimeError, AttributeError):
             pass
 
@@ -1486,7 +1494,7 @@ class AISegmentationPlugin:
                 return
 
         if self._shortcut_filter is not None:
-            self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+            QApplication.instance().removeEventFilter(self._shortcut_filter)
         self._stopping_segmentation = True
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
         self._restore_previous_map_tool()
