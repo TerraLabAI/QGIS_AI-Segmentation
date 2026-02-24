@@ -49,6 +49,7 @@ class SamPredictor:
         self.is_image_set = False
         self.original_size = None
         self.input_size = None  # Only set by SAM1 path
+        self._cleanup_lock = threading.Lock()
 
         QgsMessageLog.logMessage(
             "SAM Predictor initialized (subprocess mode)",
@@ -244,43 +245,48 @@ class SamPredictor:
         return True
 
     def cleanup(self) -> None:
-        if self.process is not None:
-            try:
-                if self.process.poll() is None:
-                    try:
-                        self.process.stdin.write(json.dumps({"action": "quit"}) + '\n')
-                        self.process.stdin.flush()
-                        self.process.wait(timeout=2)
-                    except (subprocess.TimeoutExpired, BrokenPipeError, OSError):
-                        # Close stdout to unblock any daemon thread stuck on readline()
+        with self._cleanup_lock:
+            if self.process is not None:
+                proc = self.process
+                self.process = None  # Prevent re-entrant access
+                try:
+                    if proc.poll() is None:
                         try:
-                            if self.process.stdout:
-                                self.process.stdout.close()
+                            proc.stdin.write(json.dumps({"action": "quit"}) + '\n')
+                            proc.stdin.flush()
+                            proc.wait(timeout=2)
+                        except (subprocess.TimeoutExpired, BrokenPipeError, OSError):
+                            # Close stdout to unblock any daemon thread stuck on readline()
+                            try:
+                                if proc.stdout:
+                                    proc.stdout.close()
+                            except Exception:
+                                pass
+                            proc.terminate()
+                            try:
+                                proc.wait(timeout=2)
+                            except subprocess.TimeoutExpired:
+                                proc.kill()
+                                try:
+                                    proc.wait(timeout=1)
+                                except Exception:
+                                    pass
+                except Exception as e:
+                    QgsMessageLog.logMessage(
+                        "Warning during predictor cleanup: {}".format(str(e)),
+                        "AI Segmentation",
+                        level=Qgis.Warning
+                    )
+                finally:
+                    if self._stderr_file is not None:
+                        try:
+                            self._stderr_file.close()
                         except Exception:
                             pass
-                        self.process.terminate()
-                        try:
-                            self.process.wait(timeout=2)
-                        except subprocess.TimeoutExpired:
-                            self.process.kill()
-                            self.process.wait(timeout=1)
-            except Exception as e:
-                QgsMessageLog.logMessage(
-                    f"Warning during predictor cleanup: {str(e)}",
-                    "AI Segmentation",
-                    level=Qgis.Warning
-                )
-            finally:
-                self.process = None
-                if self._stderr_file is not None:
-                    try:
-                        self._stderr_file.close()
-                    except Exception:
-                        pass
-                    self._stderr_file = None
+                        self._stderr_file = None
 
-        self._warming_up = False
-        self.is_image_set = False
+            self._warming_up = False
+            self.is_image_set = False
 
     def reset_image(self) -> None:
         if self.process is not None and self.process.poll() is None:

@@ -129,15 +129,35 @@ def decode_numpy_array(b64_string, shape, dtype):
     return arr.reshape(shape)
 
 
+MAX_LINE_LENGTH = 50 * 1024 * 1024  # 50 MB max JSON line
+
+
+def _safe_readline():
+    """Read a line from stdin with size limit to prevent memory exhaustion."""
+    line = sys.stdin.readline()
+    if len(line) > MAX_LINE_LENGTH:
+        raise ValueError(
+            "Input line exceeds maximum length ({} bytes)".format(
+                MAX_LINE_LENGTH))
+    return line
+
+
 def main():
     try:
-        init_request = json.loads(sys.stdin.readline())
+        init_request = json.loads(_safe_readline())
 
         if init_request.get("action") != "init":
             send_error("First request must be 'init'")
             sys.exit(1)
 
         checkpoint_path = init_request.get("checkpoint_path")
+        if not checkpoint_path or not isinstance(checkpoint_path, str):
+            send_error("Invalid or missing checkpoint_path")
+            sys.exit(1)
+        checkpoint_path = os.path.normpath(os.path.abspath(checkpoint_path))
+        if not os.path.isfile(checkpoint_path):
+            send_error("Checkpoint file not found: {}".format(checkpoint_path))
+            sys.exit(1)
 
         device = get_optimal_device()
 
@@ -181,7 +201,7 @@ def main():
         send_ready()
 
         while True:
-            line = sys.stdin.readline()
+            line = _safe_readline()
             if not line:
                 break
 
@@ -247,11 +267,17 @@ def main():
                             request["mask_input_dtype"]
                         )
 
+                    # Auto-select best mask: when caller requests single mask
+                    # and no mask_input (first click), use multimask internally
+                    # and pick the highest-scoring one for better accuracy.
+                    auto_best = (not multimask_output and mask_input is None)
+                    effective_multimask = True if auto_best else multimask_output
+
                     predict_kwargs = dict(
                         point_coords=point_coords,
                         point_labels=point_labels,
                         mask_input=mask_input,
-                        multimask_output=multimask_output,
+                        multimask_output=effective_multimask,
                     )
                     if _USE_SAM2:
                         predict_kwargs["normalize_coords"] = True
@@ -278,6 +304,19 @@ def main():
                                 continue
                         else:
                             raise
+
+                    # When auto-selecting best mask, pick the highest score
+                    if auto_best and masks.shape[0] > 1:
+                        best_idx = int(np.argmax(scores))
+                        masks = masks[best_idx:best_idx + 1]
+                        scores = scores[best_idx:best_idx + 1]
+                        low_res_masks = low_res_masks[best_idx:best_idx + 1]
+
+                    # Discard empty masks (all zeros with misleading scores)
+                    if masks.shape[0] == 1 and masks[0].sum() == 0:
+                        send_error("Segmentation produced an empty mask. "
+                                   "Try clicking closer to the target.")
+                        continue
 
                     send_response("prediction", {
                         "masks": encode_numpy_array(masks),

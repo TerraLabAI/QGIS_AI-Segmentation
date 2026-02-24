@@ -25,6 +25,9 @@ from qgis.core import QgsMapLayerProxyModel, QgsProject
 
 from qgis.gui import QgsMapLayerComboBox
 
+# Collapsed height for refine panel title (just enough to show the arrow + label)
+_REFINE_COLLAPSED_HEIGHT = 25
+
 from ..core.activation_manager import (
     is_plugin_activated,
     activate_plugin,
@@ -620,7 +623,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.refine_content_widget.setVisible(self._refine_expanded)
         # Set initial max height constraint (collapsed by default)
         if not self._refine_expanded:
-            self.refine_group.setMaximumHeight(25)
+            self.refine_group.setMaximumHeight(_REFINE_COLLAPSED_HEIGHT)
 
         # Connect signals
         self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
@@ -632,9 +635,9 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _on_refine_group_clicked(self, event):
         """Toggle the refine panel expanded/collapsed state (only when clicking on title)."""
-        # Only toggle if click is in the title area (top ~25 pixels)
+        # Only toggle if click is in the title area
         # This prevents collapsing when clicking spinbox arrows at min/max values
-        if event.pos().y() > 25:
+        if event.pos().y() > _REFINE_COLLAPSED_HEIGHT:
             return  # Click was on content, not title - ignore
 
         self._refine_expanded = not self._refine_expanded
@@ -643,9 +646,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.refine_group.setTitle(f"{arrow} " + tr("Refine selection"))
         # Adjust size constraints to eliminate empty rectangle when collapsed
         if self._refine_expanded:
-            self.refine_group.setMaximumHeight(16777215)  # Reset to default
+            self.refine_group.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX  # Reset to default
         else:
-            self.refine_group.setMaximumHeight(25)  # Just enough for the title
+            self.refine_group.setMaximumHeight(_REFINE_COLLAPSED_HEIGHT)  # Just enough for the title
 
     def _on_refine_changed(self, value=None):
         """Handle refine control changes with debounce."""

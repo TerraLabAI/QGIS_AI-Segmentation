@@ -1,5 +1,4 @@
 import os
-import tempfile
 import time
 
 import numpy as np
@@ -8,8 +7,11 @@ from qgis.core import QgsMessageLog, Qgis
 
 from .i18n import tr
 
-# Raster formats that require GDAL conversion (not supported by pip-installed rasterio)
-_GDAL_ONLY_FORMATS = {'.ecw', '.sid', '.jp2', '.j2k', '.j2c'}
+# Raster formats known to require GDAL conversion (not supported by pip-installed rasterio)
+_GDAL_ONLY_FORMATS = {
+    '.ecw', '.sid', '.jp2', '.j2k', '.j2c',
+    '.nitf', '.ntf', '.img', '.hdf', '.hdf5', '.he5', '.nc',
+}
 
 # Online/remote raster providers that need rendering before encoding
 ONLINE_PROVIDERS = frozenset(['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs'])
@@ -96,8 +98,6 @@ def _convert_with_gdal(raster_path, output_dir, progress_callback=None):
         ).format(ext=ext, error=str(e))
 
 
-
-
 def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
                              layer_crs_wkt=None, layer_extent=None):
     """Extract a crop_size x crop_size RGB crop centered on (center_x, center_y).
@@ -123,12 +123,14 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
 
     # Handle GDAL-only formats
     converted_path = None
+    tmpdir_obj = None
     encoding_raster_path = raster_path
     if _needs_gdal_conversion(raster_path):
         import tempfile
-        tmpdir = tempfile.mkdtemp(prefix="ai_seg_crop_")
-        converted_path, conv_error = _convert_with_gdal(raster_path, tmpdir)
+        tmpdir_obj = tempfile.TemporaryDirectory(prefix="ai_seg_crop_")
+        converted_path, conv_error = _convert_with_gdal(raster_path, tmpdir_obj.name)
         if conv_error:
+            tmpdir_obj.cleanup()
             return None, None, conv_error
         encoding_raster_path = converted_path
 
@@ -192,17 +194,44 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
                 tile_data = tile_data[:3, :, :]
 
             if tile_data.dtype != np.uint8:
-                tile_min = tile_data.min()
-                tile_max = tile_data.max()
-                if tile_max > tile_min:
+                # Percentile stretch: clip outliers for better contrast
+                flat = tile_data.astype(np.float64).ravel()
+                p2, p98 = np.percentile(flat, [2, 98])
+                if p98 > p2:
+                    tile_data = np.clip(tile_data.astype(np.float64), p2, p98)
                     tile_data = (
-                        (tile_data - tile_min) / (tile_max - tile_min) * 255
+                        (tile_data - p2) / (p98 - p2) * 255
                     ).astype(np.uint8)
                 else:
                     tile_data = np.zeros_like(tile_data, dtype=np.uint8)
+            else:
+                # Percentile stretch on uint8 for under/over-exposed images
+                flat = tile_data.ravel()
+                p2, p98 = np.percentile(flat, [2, 98])
+                if p98 - p2 < 220:
+                    # Only stretch if histogram is compressed (not already full range)
+                    p2_f, p98_f = float(p2), float(p98)
+                    if p98_f > p2_f:
+                        tile_data = np.clip(
+                            tile_data.astype(np.float64), p2_f, p98_f)
+                        tile_data = (
+                            (tile_data - p2_f) / (p98_f - p2_f) * 255
+                        ).astype(np.uint8)
 
             # CHW -> HWC
             image_np = np.transpose(tile_data, (1, 2, 0))
+
+            # Pad to full crop_size if crop was clipped at raster edge.
+            # Uses reflect padding instead of black borders for better
+            # SAM context at image boundaries.
+            if actual_height < crop_size or actual_width < crop_size:
+                pad_bottom = crop_size - actual_height
+                pad_right = crop_size - actual_width
+                image_np = np.pad(
+                    image_np,
+                    ((0, pad_bottom), (0, pad_right), (0, 0)),
+                    mode='reflect'
+                )
 
             # Compute geo bounds for this crop
             crop_minx = bounds_left + col_off * pixel_size_x
@@ -223,9 +252,9 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
         return None, None, str(e)
 
     finally:
-        if converted_path and os.path.exists(converted_path):
+        if tmpdir_obj is not None:
             try:
-                os.remove(converted_path)
+                tmpdir_obj.cleanup()
             except Exception:
                 pass
 
@@ -319,10 +348,11 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
 
         if dt == Qgis.DataType.ARGB32 or dt == Qgis.DataType.ARGB32_Premultiplied:
             arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
-                height, width, 4)
-            red = arr[:, :, 2].copy()
-            green = arr[:, :, 1].copy()
-            blue = arr[:, :, 0].copy()
+                height, width, 4).copy()
+            # Qt uses BGRA byte order (ARGB32 in big-endian notation)
+            red = arr[:, :, 2]
+            green = arr[:, :, 1]
+            blue = arr[:, :, 0]
         elif dt == Qgis.DataType.Byte:
             band_count = provider.bandCount()
             red = np.frombuffer(raw_data, dtype=np.uint8).reshape(
@@ -354,10 +384,10 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
         else:
             if len(raw_data) == width * height * 4:
                 arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
-                    height, width, 4)
-                red = arr[:, :, 2].copy()
-                green = arr[:, :, 1].copy()
-                blue = arr[:, :, 0].copy()
+                    height, width, 4).copy()
+                red = arr[:, :, 2]
+                green = arr[:, :, 1]
+                blue = arr[:, :, 0]
             else:
                 return None, None, tr(
                     "Unexpected data format from online layer "
@@ -384,7 +414,4 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
 
     except Exception as e:
         return None, None, str(e)
-
-
-
 
