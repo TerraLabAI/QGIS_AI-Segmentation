@@ -52,7 +52,7 @@ class AISegmentationDockWidget(QDockWidget):
     batch_mode_changed = pyqtSignal(bool)  # Batch mode is always on
 
     def __init__(self, parent=None):
-        super().__init__("", parent)
+        super().__init__(tr("AI Segmentation by TerraLab"), parent)
 
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
