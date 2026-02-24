@@ -65,52 +65,8 @@ def build_sam1_model(checkpoint, device):
 
 
 def get_optimal_device():
-    try:
-        if torch.cuda.is_available():
-            best_idx = -1
-            best_mem = 0
-            count = torch.cuda.device_count()
-            for i in range(count):
-                try:
-                    mem = torch.cuda.get_device_properties(i).total_memory
-                    if mem >= 2 * 1024 ** 3 and mem > best_mem:
-                        best_mem = mem
-                        best_idx = i
-                except Exception:
-                    continue
-            if best_idx < 0:
-                return torch.device("cpu")
-            # Verify CUDA kernels actually work
-            cuda_dev = "cuda:{}".format(best_idx)
-            t = torch.zeros(1, device=cuda_dev)
-            _ = t + 1
-            torch.cuda.synchronize(best_idx)
-            del t
-            torch.cuda.empty_cache()
-            # Enable CUDA performance optimizations for inference
-            torch.backends.cudnn.enabled = True
-            torch.backends.cudnn.benchmark = True
-            if hasattr(torch.backends.cudnn, 'allow_tf32'):
-                torch.backends.cudnn.allow_tf32 = True
-            if hasattr(torch, 'set_float32_matmul_precision'):
-                torch.set_float32_matmul_precision('high')
-            return torch.device(cuda_dev)
-        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            # Prevent MPS OOM by disabling memory pool upper limit
-            os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
-            # Verify MPS actually works
-            try:
-                t = torch.zeros(1, device="mps")
-                _ = t + 1
-                torch.mps.synchronize()
-                del t
-            except Exception:
-                return torch.device("cpu")
-            return torch.device("mps")
-        else:
-            return torch.device("cpu")
-    except Exception:
-        return torch.device("cpu")
+    # TEMP: Force CPU for testing
+    return torch.device("cpu")
 
 
 def send_response(response_type, data):
