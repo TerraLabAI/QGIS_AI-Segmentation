@@ -1464,6 +1464,12 @@ def install_dependencies(
                 "--disable-pip-version-check",
                 "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
             ]
+            # sam2/segment-anything list torch as a build dependency.
+            # Without --no-build-isolation pip creates a separate env and
+            # re-downloads torch (~2.5 GB), which often fails. Since torch
+            # is already installed in the venv at this point, skip isolation.
+            if package_name in ("sam2", "segment-anything"):
+                pip_args.append("--no-build-isolation")
             # Add SSL bypass flags upfront for corporate proxies (not just as retry)
             pip_args.extend(_get_pip_ssl_flags())
             if constraints_path:
