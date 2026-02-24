@@ -1840,7 +1840,7 @@ class AISegmentationPlugin:
 
     def _handle_reencode(self, crop_status, raster_pt):
         """Handle re-encoding based on crop status. Returns True on success."""
-        if crop_status in ("no_crop", "zoom_changed"):
+        if crop_status == "no_crop":
             self.current_low_res_mask = None
             return self._extract_and_encode_crop(raster_pt)
 
