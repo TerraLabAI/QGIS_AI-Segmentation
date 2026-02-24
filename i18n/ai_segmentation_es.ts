@@ -373,8 +373,8 @@
         <translation>Guarde al menos un poligono primero</translation>
     </message>
     <message>
-        <source>Segment one element at a time. You must save your polygon before selecting a new element. Export all saved polygons to a layer when finished.</source>
-        <translation>Segmente un elemento a la vez. Debe guardar su poligono antes de seleccionar un nuevo elemento. Exporte todos los poligonos guardados a una capa cuando termine.</translation>
+        <source>Select one element at a time using left/right clicks. Use Refine to adjust, then Save. Repeat for each element, then Export all to a layer.</source>
+        <translation>Seleccione un elemento a la vez usando clics izquierdo/derecho. Use Refinar para ajustar, luego Guardar. Repita para cada elemento, luego Exporte todo a una capa.</translation>
     </message>
     <message>
         <source>Export polygon to layer</source>
@@ -665,12 +665,12 @@
         <translation>Sugerir funcionalidad</translation>
     </message>
     <message>
-        <source>We're building AI Segmentation for real-world geospatial workflows.</source>
-        <translation>Estamos desarrollando AI Segmentation para flujos geoespaciales reales.</translation>
+        <source>Share your ideas with us! :)</source>
+        <translation>Comparte tus ideas con nosotros! :)</translation>
     </message>
     <message>
-        <source>We'd love to understand your use case and make the plugin more useful for you :)</source>
-        <translation>Nos encantaría entender tu caso de uso y hacer el plugin más útil para ti :)</translation>
+        <source>Tell us how AI Segmentation could work better for your projects. Every suggestion helps us build a more useful tool.</source>
+        <translation>Cuentanos como AI Segmentation podria funcionar mejor para tus proyectos. Cada sugerencia nos ayuda a construir una herramienta mas util.</translation>
     </message>
     <message>
         <source>Take a call</source>
@@ -1010,6 +1010,14 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     <message>
         <source>Encoding Error</source>
         <translation>Error de codificacion</translation>
+    </message>
+    <message>
+        <source>Report a Bug</source>
+        <translation>Reportar un Bug</translation>
+    </message>
+    <message>
+        <source>Share Your Ideas</source>
+        <translation>Comparte tus ideas</translation>
     </message>
 </context>
 </TS>
