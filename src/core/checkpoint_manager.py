@@ -6,15 +6,19 @@ from qgis.core import QgsMessageLog, Qgis
 from qgis.PyQt.QtCore import QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
+from .model_config import (
+    CHECKPOINT_URL, CHECKPOINT_FILENAME, CHECKPOINT_SHA256,
+    USE_SAM2,
+)
 
 CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
 CHECKPOINTS_DIR = os.path.join(CACHE_DIR, "checkpoints")
 FEATURES_DIR = os.path.join(CACHE_DIR, "features")
 
-SAM_CHECKPOINT_URL = "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth"
-SAM_CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
-# SHA256 hash for checkpoint verification (not a secret - this is a public checksum)
-SAM_CHECKPOINT_SHA256 = "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"  # noqa: S105  # pragma: allowlist secret
+SAM_CHECKPOINT_URL = CHECKPOINT_URL
+SAM_CHECKPOINT_FILENAME = CHECKPOINT_FILENAME
+SAM_CHECKPOINT_SHA256 = CHECKPOINT_SHA256
+OLD_CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
 
 
 def get_checkpoints_dir() -> str:
@@ -135,6 +139,9 @@ def checkpoint_exists() -> bool:
 
 
 def verify_checkpoint_hash(filepath: str) -> bool:
+    if not SAM_CHECKPOINT_SHA256:
+        # Hash not yet computed, skip verification
+        return True
     sha256_hash = hashlib.sha256()
     with open(filepath, "rb") as f:
         for byte_block in iter(lambda: f.read(4096), b""):
@@ -358,6 +365,20 @@ def download_checkpoint(
 
             os.replace(temp_path, checkpoint_path)
 
+            # Clean up old SAM1 checkpoint if present (only on SAM2 path)
+            if USE_SAM2:
+                old_checkpoint = os.path.join(
+                    get_checkpoints_dir(), OLD_CHECKPOINT_FILENAME)
+                if os.path.exists(old_checkpoint):
+                    try:
+                        os.remove(old_checkpoint)
+                        QgsMessageLog.logMessage(
+                            "Removed old checkpoint: {}".format(
+                                OLD_CHECKPOINT_FILENAME),
+                            "AI Segmentation", level=Qgis.Info)
+                    except OSError:
+                        pass
+
             if progress_callback:
                 progress_callback(100, "Checkpoint downloaded successfully!")
 
@@ -393,6 +414,45 @@ def download_checkpoint(
         ).format(max_retries, last_error, partial_mb)
     return False, "Download failed after {} attempts: {}".format(
         max_retries, last_error)
+
+
+def cleanup_legacy_sam1_data():
+    """Remove legacy SAM1 data: old checkpoint and features cache.
+
+    Called once at plugin startup. Errors are logged silently
+    to avoid disturbing the user.
+
+    On Python 3.9 (USE_SAM2=False), the SAM1 checkpoint is still needed,
+    so only features cache is cleaned up.
+    """
+    import shutil
+
+    # Remove old SAM1 checkpoint only when using SAM2 (Python 3.10+)
+    if USE_SAM2:
+        old_checkpoint = os.path.join(CHECKPOINTS_DIR, OLD_CHECKPOINT_FILENAME)
+        if os.path.exists(old_checkpoint):
+            try:
+                os.remove(old_checkpoint)
+                QgsMessageLog.logMessage(
+                    "Removed old SAM1 checkpoint: {}".format(
+                        OLD_CHECKPOINT_FILENAME),
+                    "AI Segmentation", level=Qgis.Info)
+            except OSError as e:
+                QgsMessageLog.logMessage(
+                    "Could not remove old checkpoint: {}".format(e),
+                    "AI Segmentation", level=Qgis.Warning)
+
+    # Remove old features cache (SAM2 does on-demand encoding, no cache needed)
+    if os.path.exists(FEATURES_DIR):
+        try:
+            shutil.rmtree(FEATURES_DIR)
+            QgsMessageLog.logMessage(
+                "Removed legacy features cache",
+                "AI Segmentation", level=Qgis.Info)
+        except OSError as e:
+            QgsMessageLog.logMessage(
+                "Could not remove features cache: {}".format(e),
+                "AI Segmentation", level=Qgis.Warning)
 
 
 def has_features_for_raster(raster_path: str, visible_extent: tuple = None) -> bool:

@@ -63,7 +63,10 @@
       "WebFetch(domain:discuss.pytorch.org)",
       "WebFetch(domain:dev-discuss.pytorch.org)",
       "WebFetch(domain:arxiv.org)",
-      "WebFetch(domain:dev.to)"
+      "WebFetch(domain:dev.to)",
+      "WebFetch(domain:pypi.org)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs"
     ]
   }
 }

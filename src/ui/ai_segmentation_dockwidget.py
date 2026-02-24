@@ -31,6 +31,7 @@ from ..core.activation_manager import (
     get_newsletter_url,
 )
 from ..core.i18n import tr
+from ..core.model_config import CHECKPOINT_SIZE_LABEL, USE_SAM2
 
 
 class AISegmentationDockWidget(QDockWidget):
@@ -237,11 +238,17 @@ class AISegmentationDockWidget(QDockWidget):
         self.checkpoint_progress_label.setVisible(False)
         layout.addWidget(self.checkpoint_progress_label)
 
-        self.download_button = QPushButton(tr("Download AI Segmentation Model (~375MB)"))
+        self.download_button = QPushButton(
+            tr("Download AI Segmentation Model ({size})").format(size=CHECKPOINT_SIZE_LABEL))
         self.download_button.clicked.connect(self._on_download_clicked)
         self.download_button.setVisible(False)
         self.download_button.setToolTip(tr("Download the SAM checkpoint for segmentation"))
         layout.addWidget(self.download_button)
+
+        if not USE_SAM2:
+            sam1_info = QLabel(tr("Update QGIS to 3.34+ for the latest AI model"))
+            sam1_info.setStyleSheet("color: palette(text); font-size: 10px;")
+            layout.addWidget(sam1_info)
 
         self.main_layout.addWidget(self.checkpoint_group)
 
@@ -497,7 +504,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Info text - explanation with example
         batch_info_text = QLabel(
-            tr("Segment elements one by one, save them, then export all polygons to one layer.")
+            tr("Segment one element at a time. You must save your polygon before selecting a new element. Export all saved polygons to a layer when finished.")
         )
         batch_info_text.setWordWrap(True)
         batch_info_text.setStyleSheet("font-size: 11px; color: palette(text);")
@@ -578,7 +585,7 @@ class AISegmentationDockWidget(QDockWidget):
         simplify_label.setToolTip(tr("Reduce small variations in the outline (0 = no change)"))
         self.simplify_spinbox = QSpinBox()
         self.simplify_spinbox.setRange(0, 1000)
-        self.simplify_spinbox.setValue(4)  # Default to 4 for smoother outlines
+        self.simplify_spinbox.setValue(3)  # Default to 3 for smoother outlines
         self.simplify_spinbox.setMinimumWidth(80)
         simplify_layout.addWidget(simplify_label)
         simplify_layout.addStretch()
@@ -661,7 +668,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.min_area_spinbox.blockSignals(True)
 
         self.expand_spinbox.setValue(0)
-        self.simplify_spinbox.setValue(4)  # Default to 4
+        self.simplify_spinbox.setValue(3)  # Default to 3
         self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
         self.min_area_spinbox.setValue(100)  # Default: remove small artifacts
 
@@ -755,13 +762,11 @@ class AISegmentationDockWidget(QDockWidget):
             "G : {start}\n"
             "S : {save}\n"
             "Enter : {export}\n"
-            "Ctrl+Z : {undo}\n"
-            "Escape : {stop}".format(
+            "Ctrl+Z : {undo}".format(
                 start=tr("Start AI Segmentation"),
                 save=tr("Save polygon"),
                 export=tr("Export polygon(s) to layer"),
-                undo=tr("Undo last point"),
-                stop=tr("Stop segmentation"))
+                undo=tr("Undo last point"))
         )
         self._shortcuts_content.setStyleSheet(
             "font-size: 11px; color: palette(text); "
@@ -1170,7 +1175,8 @@ class AISegmentationDockWidget(QDockWidget):
             self.checkpoint_progress.setVisible(False)
             self.checkpoint_progress_label.setVisible(False)
             self.download_button.setEnabled(True)
-            self.download_button.setText(tr("Download AI Segmentation Model (~375MB)"))
+            self.download_button.setText(
+                tr("Download AI Segmentation Model ({size})").format(size=CHECKPOINT_SIZE_LABEL))
 
     def set_segmentation_active(self, active: bool):
         self._segmentation_active = active

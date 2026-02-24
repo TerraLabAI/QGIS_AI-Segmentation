@@ -175,7 +175,7 @@ class AISegmentationPlugin:
 
         # Refinement settings
         self._refine_expand = 0
-        self._refine_simplify = 4  # Default: matches dockwidget spinbox
+        self._refine_simplify = 3  # Default: matches dockwidget spinbox
         self._refine_fill_holes = False  # Default: matches dockwidget checkbox
         self._refine_min_area = 100  # Default: matches dockwidget spinbox
 
@@ -354,7 +354,6 @@ class AISegmentationPlugin:
         self.map_tool.undo_requested.connect(self._on_undo)
         self.map_tool.save_polygon_requested.connect(self._on_save_polygon)
         self.map_tool.export_layer_requested.connect(self._on_export_layer)
-        self.map_tool.clear_requested.connect(self._on_clear_points)
 
         self.mask_rubber_band = QgsRubberBand(
             self.iface.mapCanvas(),
@@ -423,7 +422,6 @@ class AISegmentationPlugin:
                 self.map_tool.undo_requested.disconnect(self._on_undo)
                 self.map_tool.save_polygon_requested.disconnect(self._on_save_polygon)
                 self.map_tool.export_layer_requested.disconnect(self._on_export_layer)
-                self.map_tool.clear_requested.disconnect(self._on_clear_points)
         except (TypeError, RuntimeError, AttributeError):
             pass
 
@@ -510,6 +508,13 @@ class AISegmentationPlugin:
 
         # Show GPU info in dependencies section (uses cached result, no extra overhead)
         self.dock_widget.update_gpu_info()
+
+        # Clean up legacy SAM1 data (old checkpoint + features cache)
+        try:
+            from ..core.checkpoint_manager import cleanup_legacy_sam1_data
+            cleanup_legacy_sam1_data()
+        except Exception:
+            pass  # Logged internally, never block startup
 
         try:
             from ..core.venv_manager import get_venv_status, cleanup_old_libs
@@ -916,6 +921,10 @@ class AISegmentationPlugin:
                     "AI Segmentation",
                     level=Qgis.Info
                 )
+
+        # Pre-warm the worker subprocess so SAM model loads while the
+        # user positions their first click (reduces first-click latency)
+        self.predictor.warm_up()
 
         # Activate segmentation tool immediately (no pre-encoding)
         self._activate_segmentation_tool()
@@ -1989,7 +1998,7 @@ class AISegmentationPlugin:
 
         # Restore refine settings
         self._refine_expand = last_polygon.get('refine_expand', 0)
-        self._refine_simplify = last_polygon.get('refine_simplify', 4)
+        self._refine_simplify = last_polygon.get('refine_simplify', 3)
         self._refine_fill_holes = last_polygon.get('refine_fill_holes', False)
         self._refine_min_area = last_polygon.get('refine_min_area', 100)
 
@@ -2044,7 +2053,7 @@ class AISegmentationPlugin:
 
         # Reset refinement settings to defaults
         self._refine_expand = 0
-        self._refine_simplify = 4   # Default: matches dockwidget spinbox
+        self._refine_simplify = 3   # Default: matches dockwidget spinbox
         self._refine_fill_holes = False  # Default: matches dockwidget checkbox
         self._refine_min_area = 100  # Default: matches dockwidget spinbox
 

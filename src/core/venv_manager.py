@@ -11,6 +11,8 @@ from typing import Tuple, Optional, Callable, List
 
 from qgis.core import QgsMessageLog, Qgis
 
+from .model_config import SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN, USE_SAM2
+
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = PLUGIN_ROOT_DIR  # src/ directory
@@ -21,9 +23,9 @@ LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, 'libs')
 
 REQUIRED_PACKAGES = [
     ("numpy", ">=1.26.0,<2.0.0"),
-    ("torch", ">=2.0.0"),
-    ("torchvision", ">=0.15.0"),
-    ("segment-anything", ">=1.0"),
+    ("torch", TORCH_MIN),
+    ("torchvision", TORCHVISION_MIN),
+    SAM_PACKAGE,
     ("pandas", ">=1.3.0"),
     ("rasterio", ">=1.3.0"),
 ]
@@ -35,7 +37,7 @@ CUDA_FLAG_FILE = os.path.join(VENV_DIR, "cuda_installed.txt")
 # new retry strategies) to force a dependency re-install on plugin update.
 # This invalidates the deps hash so users with stale cuda_fallback flags
 # get a clean retry with the improved install logic.
-_INSTALL_LOGIC_VERSION = "2"
+_INSTALL_LOGIC_VERSION = "3"
 
 # Bumped independently of _INSTALL_LOGIC_VERSION so only users with a stale
 # cuda_fallback flag get a targeted CUDA retry — without forcing a full
@@ -1985,8 +1987,10 @@ def _get_verification_code(package_name: str) -> str:
     elif package_name == "rasterio":
         # Just import - rasterio needs a file to test fully
         return "import rasterio; print(rasterio.__version__)"
+    elif package_name == "sam2":
+        return "from sam2.build_sam import build_sam2; print('ok')"
     elif package_name == "segment-anything":
-        return "import segment_anything; print('ok')"
+        return "from segment_anything import sam_model_registry; print('ok')"
     elif package_name == "torchvision":
         return "import torchvision; print(torchvision.__version__)"
     else:
@@ -2462,11 +2466,12 @@ def _quick_check_packages(venv_dir: str = None) -> Tuple[bool, str]:
         return False, "site-packages directory not found"
 
     # Map package names to their expected directory names in site-packages
+    sam_marker = ("sam2", "sam2") if USE_SAM2 else ("segment-anything", "segment_anything")
     package_markers = {
         "numpy": "numpy",
         "torch": "torch",
         "torchvision": "torchvision",
-        "segment-anything": "segment_anything",
+        sam_marker[0]: sam_marker[1],
         "pandas": "pandas",
         "rasterio": "rasterio",
     }

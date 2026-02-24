@@ -6,9 +6,18 @@ A QGIS plugin for AI-powered image segmentation using Meta's Segment Anything Mo
 
 ### Core Components
 
+- **`src/core/model_config.py`**: Central version-dependent constants (SAM1 vs SAM2, checkpoint URLs, package versions). Uses `sys.version_info >= (3, 10)` to select SAM2 or SAM1 fallback.
 - **`src/ui/ai_segmentation_plugin.py`**: Main plugin class, handles QGIS integration, tool management, and segmentation workflow coordination
 - **`src/ui/ai_segmentation_dockwidget.py`**: Qt dock widget with all UI elements (dependency management, model download, segmentation controls, mode switching)
 - **`src/ui/ai_segmentation_maptool.py`**: Custom QgsMapTool for handling map clicks (positive/negative points) and keyboard shortcuts
+
+### Dual SAM Model Support
+
+The plugin supports two SAM models depending on Python version:
+- **Python 3.10+** (QGIS 3.34+): SAM 2.1 Base Plus via `sam2` package (~323MB checkpoint)
+- **Python 3.9** (QGIS 3.22/3.28): SAM ViT-B via `segment-anything` package (~375MB checkpoint)
+
+All version branching is centralized in `src/core/model_config.py`. The `prediction_worker.py` detects at runtime which package is available. The parent-process wrapper (`sam_predictor.py`) handles the optional `input_size` field returned only by SAM1.
 
 ### Segmentation Workflow
 
@@ -16,7 +25,7 @@ The plugin uses a single workflow (batch mode is always on):
 - Segment elements one by one using positive/negative clicks
 - "Save polygon" button to add current selection to collection
 - Export all saved polygons together in one layer
-- Blue info box: "Segment elements one by one, save them, then export all polygons to one layer."
+- Blue info box: "Segment one element at a time. You must save your polygon before selecting a new element. Export all saved polygons to a layer when finished."
 
 ### Terminology
 
@@ -63,15 +72,17 @@ Settings applied in real-time to preview and export.
 
 ### Dependencies
 
-- PyTorch >= 2.0
-- segment-anything
-- rasterio, pandas, numpy
-- Installed in isolated venv at `src/venv_py3.12/`
+Version-dependent (see `src/core/model_config.py`):
+- **Python 3.10+**: PyTorch >= 2.5.1, torchvision >= 0.20.1, sam2 >= 1.0
+- **Python 3.9**: PyTorch >= 2.0.0, torchvision >= 0.15.0, segment-anything >= 1.0
+- Common: rasterio, pandas, numpy
+- Installed in isolated venv at `~/.qgis_ai_segmentation/venv_py3.*/`
 
 ### Model
 
-- SAM ViT-B checkpoint (~375MB)
-- Stored in `src/checkpoints/sam_vit_b_01ec64.pth`
+- **Python 3.10+**: SAM 2.1 Base Plus checkpoint (~323MB), config `configs/sam2.1/sam2.1_hiera_b+.yaml`
+- **Python 3.9**: SAM ViT-B checkpoint (~375MB), uses `sam_model_registry["vit_b"]`
+- Stored in `~/.qgis_ai_segmentation/checkpoints/`
 - Auto-detects GPU (CUDA/MPS) or falls back to CPU
 
 ## Development Notes
@@ -84,7 +95,7 @@ Settings applied in real-time to preview and export.
 
 ## Refine Panel Defaults (KEEP IN SYNC)
 
-Current defaults: `expand=0, simplify=4, fill_holes=False, min_area=100`
+Current defaults: `expand=0, simplify=3, fill_holes=False, min_area=100`
 
 5 locations must match: plugin `__init__`, `_reset_session()`, `_restore_last_saved_mask` fallbacks, dockwidget `_setup_refine_panel`, `reset_refine_sliders`.
 
