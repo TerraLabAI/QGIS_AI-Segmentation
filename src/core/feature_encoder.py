@@ -17,6 +17,218 @@ _GDAL_ONLY_FORMATS = {
 ONLINE_PROVIDERS = frozenset(['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs'])
 
 
+def _normalize_to_uint8(bands, nodata_value=None):
+    """Normalize a multi-band array to (H, W, 3) uint8 using per-band percentile stretch.
+
+    Args:
+        bands: numpy array of shape (C, H, W), any numeric dtype
+        nodata_value: optional nodata value to mask before computing percentiles
+
+    Returns:
+        numpy array of shape (H, W, 3) uint8
+    """
+    num_bands = bands.shape[0]
+    if num_bands == 1:
+        bands = np.repeat(bands, 3, axis=0)
+    elif num_bands == 2:
+        bands = np.stack([bands[0], bands[1], bands[0]], axis=0)
+    elif num_bands > 3:
+        bands = bands[:3, :, :]
+
+    # Build nodata mask: True where pixel is valid
+    if nodata_value is not None:
+        valid_mask = bands[0] != nodata_value
+    else:
+        valid_mask = np.ones(bands.shape[1:], dtype=bool)
+
+    # Also mask NaN for float types
+    if np.issubdtype(bands.dtype, np.floating):
+        for b in range(bands.shape[0]):
+            valid_mask = valid_mask & ~np.isnan(bands[b])
+
+    is_uint8 = (bands.dtype == np.uint8)
+    result = np.zeros((3, bands.shape[1], bands.shape[2]), dtype=np.uint8)
+
+    for b in range(3):
+        band = bands[b].astype(np.float64)
+        valid_pixels = band[valid_mask]
+
+        if valid_pixels.size == 0:
+            continue
+
+        p2, p98 = np.percentile(valid_pixels, [2, 98])
+
+        if is_uint8:
+            # Only stretch if histogram is compressed
+            if p98 - p2 < 220:
+                if p98 > p2:
+                    stretched = np.clip(band, p2, p98)
+                    stretched = (stretched - p2) / (p98 - p2) * 255
+                    result[b] = stretched.astype(np.uint8)
+                else:
+                    result[b] = band.astype(np.uint8)
+            else:
+                result[b] = bands[b]
+        else:
+            if p98 > p2:
+                stretched = np.clip(band, p2, p98)
+                stretched = (stretched - p2) / (p98 - p2) * 255
+                result[b] = stretched.astype(np.uint8)
+            # else: stays zeros
+
+    # Zero out nodata pixels
+    if nodata_value is not None or np.issubdtype(bands.dtype, np.floating):
+        nodata_mask = ~valid_mask
+        if np.any(nodata_mask):
+            for b in range(3):
+                result[b][nodata_mask] = 0
+
+    # CHW -> HWC
+    return np.transpose(result, (1, 2, 0))
+
+
+def _fetch_online_bands(provider, extent, width, height):
+    """Fetch raw band data from an online raster provider.
+
+    Handles ARGB32 formats directly and fetches individual bands for
+    all other data types (Byte, UInt16, Int16, UInt32, Int32, Float32, Float64).
+
+    Args:
+        provider: QgsRasterDataProvider
+        extent: QgsRectangle for the area to fetch
+        width: pixel width to request
+        height: pixel height to request
+
+    Returns:
+        (bands_array, is_argb, error) where:
+        - bands_array: numpy array (C, H, W) or (H, W, 3) uint8 if ARGB
+        - is_argb: True if result is already RGB uint8 (H, W, 3)
+        - error: error string or None
+    """
+    block = provider.block(1, extent, width, height)
+    if block is None or not block.isValid():
+        return None, False, "Provider block fetch failed"
+
+    block_w = block.width()
+    block_h = block.height()
+    if block_w == 0 or block_h == 0:
+        return None, False, "Provider returned empty block"
+
+    raw_bytes = block.data()
+    if raw_bytes is None or len(raw_bytes) == 0:
+        return None, False, "Provider returned empty data"
+
+    raw_data = bytes(raw_bytes)
+    dt = block.dataType()
+
+    # ARGB32 formats: direct extraction
+    is_argb = (
+        dt == Qgis.DataType.ARGB32
+        or dt == Qgis.DataType.ARGB32_Premultiplied
+    )
+    if is_argb:
+        arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
+            block_h, block_w, 4).copy()
+        # Qt BGRA byte order -> RGB
+        image_np = np.stack(
+            [arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
+        return image_np, True, None
+
+    # Map Qgis data types to numpy dtypes
+    dtype_map = {
+        Qgis.DataType.Byte: np.uint8,
+        Qgis.DataType.UInt16: np.uint16,
+        Qgis.DataType.Int16: np.int16,
+        Qgis.DataType.UInt32: np.uint32,
+        Qgis.DataType.Int32: np.int32,
+        Qgis.DataType.Float32: np.float32,
+        Qgis.DataType.Float64: np.float64,
+    }
+
+    np_dtype = dtype_map.get(dt)
+    if np_dtype is None:
+        # Unknown type: try ARGB32 interpretation as fallback
+        if len(raw_data) == block_w * block_h * 4:
+            arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
+                block_h, block_w, 4).copy()
+            image_np = np.stack(
+                [arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
+            return image_np, True, None
+        return None, False, "Unsupported data type: {}".format(dt)
+
+    band_count = min(provider.bandCount(), 3)
+    bands = []
+
+    # First band already fetched
+    band1 = np.frombuffer(raw_data, dtype=np_dtype).reshape(
+        block_h, block_w).copy()
+    bands.append(band1)
+
+    # Fetch remaining bands
+    for band_idx in range(2, band_count + 1):
+        b = provider.block(band_idx, extent, block_w, block_h)
+        if b is not None and b.isValid():
+            b_data = bytes(b.data())
+            if len(b_data) > 0:
+                band_arr = np.frombuffer(
+                    b_data, dtype=np_dtype
+                ).reshape(block_h, block_w).copy()
+                bands.append(band_arr)
+
+    bands_array = np.stack(bands, axis=0)
+    return bands_array, False, None
+
+
+def _render_layer_to_image(layer, extent, width, height):
+    """Render a layer to an RGB image using QGIS map renderer (fallback).
+
+    Works with any layer type (WMS, WMTS, XYZ, WCS, vector tiles, etc.)
+
+    Args:
+        layer: QgsMapLayer to render
+        extent: QgsRectangle for the area
+        width: pixel width
+        height: pixel height
+
+    Returns:
+        (image_np, error) where image_np is (H, W, 3) uint8 or None
+    """
+    try:
+        from qgis.core import QgsMapSettings, QgsMapRendererCustomPainterJob
+        from qgis.PyQt.QtGui import QImage, QPainter
+        from qgis.PyQt.QtCore import QSize
+
+        img = QImage(QSize(width, height), QImage.Format_RGB32)
+        img.fill(0)
+
+        settings = QgsMapSettings()
+        settings.setOutputSize(QSize(width, height))
+        settings.setExtent(extent)
+        settings.setLayers([layer])
+        settings.setDestinationCrs(layer.crs())
+        settings.setBackgroundColor(img.pixelColor(0, 0))
+
+        painter = QPainter(img)
+        job = QgsMapRendererCustomPainterJob(settings, painter)
+        job.start()
+        job.waitForFinished()
+        painter.end()
+
+        # QImage -> numpy
+        img = img.convertToFormat(QImage.Format_RGB32)
+        ptr = img.bits()
+        ptr.setsize(height * width * 4)
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(
+            height, width, 4).copy()
+        # BGRA -> RGB
+        image_np = np.stack(
+            [arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
+        return image_np, None
+
+    except Exception as e:
+        return None, "Renderer fallback failed: {}".format(str(e))
+
+
 def _needs_gdal_conversion(raster_path):
     """Check if raster format requires GDAL conversion for rasterio."""
     ext = os.path.splitext(raster_path)[1].lower()
@@ -99,7 +311,8 @@ def _convert_with_gdal(raster_path, output_dir, progress_callback=None):
 
 
 def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
-                             layer_crs_wkt=None, layer_extent=None):
+                             layer_crs_wkt=None, layer_extent=None,
+                             scale_factor=1.0):
     """Extract a crop_size x crop_size RGB crop centered on (center_x, center_y).
 
     Args:
@@ -108,6 +321,9 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
         crop_size: Size of the crop in pixels (default 1024)
         layer_crs_wkt: Optional CRS WKT for non-georeferenced rasters
         layer_extent: Optional (xmin, ymin, xmax, ymax) for non-georeferenced rasters
+        scale_factor: Read a larger window and downsample to crop_size.
+            When > 1.0, reads crop_size * scale_factor native pixels and
+            resamples down to crop_size using bilinear interpolation.
 
     Returns:
         (image_np, crop_info, error) where:
@@ -117,6 +333,7 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
     """
     try:
         import rasterio
+        from rasterio.enums import Resampling
         from rasterio.windows import Window
     except ImportError:
         return None, None, "rasterio is not available"
@@ -171,69 +388,52 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
             col_center = (center_x - bounds_left) / pixel_size_x
             row_center = (bounds_top - center_y) / pixel_size_y
 
-            # Compute window clamped to raster bounds
-            half = crop_size // 2
+            # When scale_factor > 1, read a larger native window
+            read_size = int(crop_size * scale_factor)
+            half = read_size // 2
             col_off = max(0, int(round(col_center - half)))
             row_off = max(0, int(round(row_center - half)))
 
-            actual_width = min(crop_size, raster_width - col_off)
-            actual_height = min(crop_size, raster_height - row_off)
+            actual_width = min(read_size, raster_width - col_off)
+            actual_height = min(read_size, raster_height - row_off)
 
             if actual_width <= 0 or actual_height <= 0:
                 return None, None, "Click is outside the raster bounds"
 
             window = Window(col_off, row_off, actual_width, actual_height)
-            tile_data = src.read(window=window)
 
-            # Handle bands: 1->RGB, 4->RGB, normalize non-uint8
-            if tile_data.shape[0] == 1:
-                tile_data = np.repeat(tile_data, 3, axis=0)
-            elif tile_data.shape[0] >= 4:
-                tile_data = tile_data[:3, :, :]
-            elif tile_data.shape[0] > 3:
-                tile_data = tile_data[:3, :, :]
-
-            if tile_data.dtype != np.uint8:
-                # Percentile stretch: clip outliers for better contrast
-                flat = tile_data.astype(np.float64).ravel()
-                p2, p98 = np.percentile(flat, [2, 98])
-                if p98 > p2:
-                    tile_data = np.clip(tile_data.astype(np.float64), p2, p98)
-                    tile_data = (
-                        (tile_data - p2) / (p98 - p2) * 255
-                    ).astype(np.uint8)
-                else:
-                    tile_data = np.zeros_like(tile_data, dtype=np.uint8)
+            if scale_factor > 1.0:
+                # Downsample to crop_size using rasterio resampling
+                out_h = min(crop_size, int(actual_height / scale_factor))
+                out_w = min(crop_size, int(actual_width / scale_factor))
+                out_h = max(1, out_h)
+                out_w = max(1, out_w)
+                tile_data = src.read(
+                    window=window,
+                    out_shape=(src.count, out_h, out_w),
+                    resampling=Resampling.bilinear
+                )
             else:
-                # Percentile stretch on uint8 for under/over-exposed images
-                flat = tile_data.ravel()
-                p2, p98 = np.percentile(flat, [2, 98])
-                if p98 - p2 < 220:
-                    # Only stretch if histogram is compressed (not already full range)
-                    p2_f, p98_f = float(p2), float(p98)
-                    if p98_f > p2_f:
-                        tile_data = np.clip(
-                            tile_data.astype(np.float64), p2_f, p98_f)
-                        tile_data = (
-                            (tile_data - p2_f) / (p98_f - p2_f) * 255
-                        ).astype(np.uint8)
+                tile_data = src.read(window=window)
+                out_h = actual_height
+                out_w = actual_width
 
-            # CHW -> HWC
-            image_np = np.transpose(tile_data, (1, 2, 0))
+            nodata = src.nodata
+            image_np = _normalize_to_uint8(tile_data, nodata_value=nodata)
 
             # Pad to full crop_size if crop was clipped at raster edge.
             # Uses reflect padding instead of black borders for better
             # SAM context at image boundaries.
-            if actual_height < crop_size or actual_width < crop_size:
-                pad_bottom = crop_size - actual_height
-                pad_right = crop_size - actual_width
+            if out_h < crop_size or out_w < crop_size:
+                pad_bottom = crop_size - out_h
+                pad_right = crop_size - out_w
                 image_np = np.pad(
                     image_np,
                     ((0, pad_bottom), (0, pad_right), (0, 0)),
                     mode='reflect'
                 )
 
-            # Compute geo bounds for this crop
+            # Compute geo bounds for this crop (covers the full read area)
             crop_minx = bounds_left + col_off * pixel_size_x
             crop_maxx = bounds_left + (col_off + actual_width) * pixel_size_x
             crop_maxy = bounds_top - row_off * pixel_size_y
@@ -241,7 +441,7 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
 
             crop_info = {
                 'bounds': (crop_minx, crop_miny, crop_maxx, crop_maxy),
-                'img_shape': (actual_height, actual_width),
+                'img_shape': (out_h, out_w),
                 'col_off': col_off,
                 'row_off': row_off,
             }
@@ -272,7 +472,7 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
     Returns:
         (image_np, crop_info, error) - same format as extract_crop_from_raster
     """
-    from qgis.core import QgsRectangle, Qgis
+    from qgis.core import QgsRectangle
 
     provider = layer.dataProvider()
     if provider is None:
@@ -334,90 +534,47 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
 
         provider.setZoomedInResamplingMethod(original_method)
 
-        if block is None or not block.isValid():
-            return None, None, tr(
-                "Failed to fetch tiles from the online layer. "
-                "Check your network connection."
+        # Fetch bands using unified helper
+        bands_result, is_argb, fetch_err = _fetch_online_bands(
+            provider, extent, crop_size, crop_size)
+
+        # If provider fetch failed, try canvas renderer fallback
+        if fetch_err is not None:
+            QgsMessageLog.logMessage(
+                "Provider fetch failed ({}), trying renderer "
+                "fallback...".format(fetch_err),
+                "AI Segmentation", level=Qgis.Warning
             )
-
-        block_w = block.width()
-        block_h = block.height()
-        if block_w == 0 or block_h == 0:
-            return None, None, tr(
-                "Online layer returned empty data. "
-                "The area may not have coverage."
-            )
-        width = block_w
-        height = block_h
-
-        raw_bytes = block.data()
-        if raw_bytes is None or len(raw_bytes) == 0:
-            return None, None, tr(
-                "Online layer returned empty data. "
-                "The area may not have coverage."
-            )
-
-        raw_data = bytes(raw_bytes)
-        dt = block.dataType()
-
-        if dt == Qgis.DataType.ARGB32 or dt == Qgis.DataType.ARGB32_Premultiplied:
-            arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
-                height, width, 4).copy()
-            # Qt uses BGRA byte order (ARGB32 in big-endian notation)
-            red = arr[:, :, 2]
-            green = arr[:, :, 1]
-            blue = arr[:, :, 0]
-        elif dt == Qgis.DataType.Byte:
-            band_count = provider.bandCount()
-            red = np.frombuffer(raw_data, dtype=np.uint8).reshape(
-                height, width)
-            if band_count >= 3:
-                b2 = provider.block(2, extent, width, height)
-                b3 = provider.block(3, extent, width, height)
-                green = np.frombuffer(
-                    bytes(b2.data()), dtype=np.uint8
-                ).reshape(height, width)
-                blue = np.frombuffer(
-                    bytes(b3.data()), dtype=np.uint8
-                ).reshape(height, width)
-            else:
-                green = blue = red
-        elif dt == Qgis.DataType.UInt16:
-            band_arr = np.frombuffer(raw_data, dtype=np.uint16)
-            red = (band_arr / 256).astype(np.uint8).reshape(height, width)
-            green = blue = red
-        elif dt == Qgis.DataType.Float32:
-            band_arr = np.frombuffer(raw_data, dtype=np.float32)
-            bmin, bmax = band_arr.min(), band_arr.max()
-            if bmax > bmin:
-                scaled = ((band_arr - bmin) / (bmax - bmin) * 255)
-                red = scaled.astype(np.uint8).reshape(height, width)
-            else:
-                red = np.zeros((height, width), dtype=np.uint8)
-            green = blue = red
-        else:
-            if len(raw_data) == width * height * 4:
-                arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
-                    height, width, 4).copy()
-                red = arr[:, :, 2]
-                green = arr[:, :, 1]
-                blue = arr[:, :, 0]
-            else:
+            image_np, render_err = _render_layer_to_image(
+                layer, extent, crop_size, crop_size)
+            if render_err is not None:
                 return None, None, tr(
-                    "Unexpected data format from online layer "
-                    "(dataType={dt}, {size} bytes for {w}x{h})."
-                ).format(dt=dt, size=len(raw_data), w=width, h=height)
+                    "Failed to fetch tiles from the online layer. "
+                    "Check your network connection."
+                )
+        elif is_argb:
+            # Already RGB uint8 (H, W, 3) from ARGB32 path
+            image_np = bands_result
+        else:
+            # Raw bands (C, H, W) - normalize with nodata
+            nodata = None
+            try:
+                nodata = provider.sourceNoDataValue(1)
+            except Exception:
+                pass
+            image_np = _normalize_to_uint8(bands_result, nodata_value=nodata)
 
-        total_sum = int(red.sum()) + int(green.sum()) + int(blue.sum())
+        height = image_np.shape[0]
+        width = image_np.shape[1]
+
+        # Check for blank tiles
+        total_sum = int(image_np.sum())
         if total_sum == 0:
             return None, None, tr(
                 "Online layer returned blank tiles for this area. "
                 "Try panning to an area with data coverage."
             )
 
-        image_np = np.stack([red, green, blue], axis=-1)
-
-        # Compute actual geo bounds from provider extent
         crop_info = {
             'bounds': (extent.xMinimum(), extent.yMinimum(),
                        extent.xMaximum(), extent.yMaximum()),

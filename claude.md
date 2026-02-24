@@ -266,3 +266,5 @@ Always output a short line and bullet points resuming the changes that you made 
 
 
 never put this character when you write : "—" ca fait trop ia evite les em dashes surtout dans les issues github
+
+don't put too much comments in the code, stay concis clear in english, be minimalist
