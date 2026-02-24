@@ -356,6 +356,7 @@ class AISegmentationPlugin:
         self.map_tool.undo_requested.connect(self._on_undo)
         self.map_tool.save_polygon_requested.connect(self._on_save_polygon)
         self.map_tool.export_layer_requested.connect(self._on_export_layer)
+        self.map_tool.stop_segmentation_requested.connect(self._on_stop_segmentation)
 
         self.mask_rubber_band = QgsRubberBand(
             self.iface.mapCanvas(),
@@ -424,6 +425,7 @@ class AISegmentationPlugin:
                 self.map_tool.undo_requested.disconnect(self._on_undo)
                 self.map_tool.save_polygon_requested.disconnect(self._on_save_polygon)
                 self.map_tool.export_layer_requested.disconnect(self._on_export_layer)
+                self.map_tool.stop_segmentation_requested.disconnect(self._on_stop_segmentation)
         except (TypeError, RuntimeError, AttributeError):
             pass
 
@@ -1126,9 +1128,9 @@ class AISegmentationPlugin:
         self._restore_previous_map_tool()
         self._stopping_segmentation = False
 
-        # Generate layer name: {RasterName}_mask_{number} (same for both modes)
+        # Generate layer name: segment_{number}
         mask_num = self._get_next_mask_counter()
-        layer_name = f"{self._current_layer_name}_mask_{mask_num}"
+        layer_name = f"segment_{mask_num}"
 
         # Determine CRS
         # For non-georeferenced images, use a local pixel-based CRS

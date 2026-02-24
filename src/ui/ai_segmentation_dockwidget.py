@@ -422,7 +422,6 @@ class AISegmentationDockWidget(QDockWidget):
             "QPushButton { background-color: #2e7d32; padding: 8px 16px; }"
             "QPushButton:disabled { background-color: #c8e6c9; }"
         )
-        self.start_button.setToolTip(tr("Start segmentation"))
         start_layout.addWidget(self.start_button)
 
         # Keyboard shortcut G to start segmentation
@@ -469,7 +468,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.undo_button.clicked.connect(self._on_undo_clicked)
         self.undo_button.setVisible(False)  # Hidden until segmentation starts
         self.undo_button.setStyleSheet("QPushButton { padding: 4px 8px; }")
-        self.undo_button.setToolTip(tr("Remove last point"))
         secondary_layout.addWidget(self.undo_button, 1)  # stretch factor 1
 
         self.stop_button = QPushButton(tr("Stop segmentation"))
@@ -478,7 +476,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.stop_button.setStyleSheet(
             "QPushButton { background-color: #757575; padding: 4px 8px; }"
         )
-        self.stop_button.setToolTip(tr("Exit segmentation without saving"))
         secondary_layout.addWidget(self.stop_button, 1)  # stretch factor 1 for same width
 
         self.secondary_buttons_widget = QWidget()
@@ -506,9 +503,11 @@ class AISegmentationDockWidget(QDockWidget):
         batch_info_layout.addWidget(batch_info_icon, 0, Qt.AlignTop)
 
         # Info text - explanation with example
-        batch_info_text = QLabel(
-            tr("Segment one element at a time. You must save your polygon before selecting a new element. Export all saved polygons to a layer when finished.")
-        )
+        info_msg = tr(
+            "Select one element at a time using left/right clicks."
+            " Use Refine to adjust, then Save."
+            " Repeat for each element, then Export all to a layer.")
+        batch_info_text = QLabel(info_msg)
         batch_info_text.setWordWrap(True)
         batch_info_text.setStyleSheet("font-size: 11px; color: palette(text);")
         batch_info_layout.addWidget(batch_info_text, 1)
@@ -761,15 +760,19 @@ class AISegmentationDockWidget(QDockWidget):
         self._shortcuts_toggle.linkActivated.connect(self._on_shortcuts_toggle)
         parent_layout.addWidget(self._shortcuts_toggle)
 
+        undo_key = "Cmd+Z" if sys.platform == "darwin" else "Ctrl+Z"
         self._shortcuts_content = QLabel(
             "G : {start}\n"
             "S : {save}\n"
             "Enter : {export}\n"
-            "Ctrl+Z : {undo}".format(
+            "{undo_key} : {undo}\n"
+            "Esc : {stop}".format(
                 start=tr("Start AI Segmentation"),
                 save=tr("Save polygon"),
                 export=tr("Export polygon(s) to layer"),
-                undo=tr("Undo last point"))
+                undo_key=undo_key,
+                undo=tr("Undo last point"),
+                stop=tr("Stop segmentation"))
         )
         self._shortcuts_content.setStyleSheet(
             "font-size: 11px; color: palette(text); "

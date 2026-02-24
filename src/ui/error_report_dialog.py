@@ -332,7 +332,7 @@ class BugReportDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("AI Segmentation")
+        self.setWindowTitle(tr("Report a Bug"))
         self.setModal(True)
         self.setMinimumWidth(400)
         self.setMaximumWidth(500)
@@ -417,7 +417,7 @@ class SuggestFeatureDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("AI Segmentation")
+        self.setWindowTitle(tr("Share Your Ideas"))
         self.setModal(True)
         self.setMinimumWidth(400)
         self.setMaximumWidth(500)
@@ -428,10 +428,13 @@ class SuggestFeatureDialog(QDialog):
         layout.setSpacing(10)
         layout.setContentsMargins(16, 16, 16, 16)
 
+        desc = tr(
+            "Tell us how AI Segmentation could work better"
+            " for your projects. Every suggestion helps us"
+            " build a more useful tool.")
         msg_label = QLabel(
             "{}\n\n{}".format(
-                tr("We're building AI Segmentation for real-world geospatial workflows."),
-                tr("We'd love to understand your use case and make the plugin more useful for you :)"))
+                tr("Share your ideas with us! :)"), desc)
         )
         msg_label.setWordWrap(True)
         layout.addWidget(msg_label)
@@ -439,20 +442,14 @@ class SuggestFeatureDialog(QDialog):
         action_layout = QHBoxLayout()
         action_layout.setSpacing(8)
 
-        # Email button (blue)
+        # Email button
         self._email_btn = QPushButton(SUPPORT_EMAIL)
         self._email_btn.setToolTip(tr("Copy email address"))
-        self._email_btn.setStyleSheet(
-            "background-color: #1976d2; color: white; padding: 6px 12px;"
-        )
         self._email_btn.clicked.connect(self._on_copy_email)
         action_layout.addWidget(self._email_btn)
 
-        # Take a call button (green)
+        # Take a call button
         call_btn = QPushButton(tr("Take a call"))
-        call_btn.setStyleSheet(
-            "background-color: #2e7d32; color: white; padding: 6px 12px;"
-        )
         call_btn.clicked.connect(self._on_take_call)
         action_layout.addWidget(call_btn)
 

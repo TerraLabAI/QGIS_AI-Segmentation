@@ -67,7 +67,9 @@
       "WebFetch(domain:pypi.org)",
       "mcp__plugin_context7_context7__resolve-library-id",
       "mcp__plugin_context7_context7__query-docs",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(cd:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
     ]
   }
 }

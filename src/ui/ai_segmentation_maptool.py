@@ -24,6 +24,7 @@ class AISegmentationMapTool(QgsMapTool):
     undo_requested = pyqtSignal()
     save_polygon_requested = pyqtSignal()
     export_layer_requested = pyqtSignal()
+    stop_segmentation_requested = pyqtSignal()
 
     POSITIVE_COLOR = QColor(0, 200, 0)    # Green for include
     NEGATIVE_COLOR = QColor(220, 0, 0)    # Red for exclude
@@ -150,6 +151,10 @@ class AISegmentationMapTool(QgsMapTool):
         elif key == Qt.Key_Return or key == Qt.Key_Enter:
             # Enter: Export to layer
             self.export_layer_requested.emit()
+            event.accept()
+        elif key == Qt.Key_Escape:
+            # Esc: Stop segmentation
+            self.stop_segmentation_requested.emit()
             event.accept()
         else:
             event.ignore()

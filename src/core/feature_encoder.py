@@ -295,27 +295,41 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
         # Retry fetching tiles: when the user pans to a new area, the
         # provider cache may not have the tiles yet.  A short delay
         # between attempts gives QGIS time to download them.
-        max_retries = 3
-        retry_delay = 1.0
+        # We also re-fetch after getting a valid block to detect
+        # mixed-resolution tiles (stale cache from different zoom).
+        from qgis.core import QgsApplication
+        max_retries = 5
+        retry_delay = 0.8
         block = None
+        prev_data = None
         for attempt in range(max_retries):
             block = provider.block(1, extent, crop_size, crop_size)
             if block is not None and block.isValid():
-                break
+                cur_data = bytes(block.data())
+                if prev_data is not None and cur_data == prev_data:
+                    # Image stabilized - tiles are consistent
+                    break
+                prev_data = cur_data
+                if attempt == 0:
+                    # First valid fetch - always re-fetch once to
+                    # check if tiles are still loading/updating
+                    provider.reloadData()
+                    deadline = time.monotonic() + 0.5
+                    while time.monotonic() < deadline:
+                        QgsApplication.processEvents()
+                        time.sleep(0.05)
+                    continue
             if attempt < max_retries - 1:
                 QgsMessageLog.logMessage(
-                    "Online tile fetch attempt {} failed, "
+                    "Online tile fetch attempt {} - "
                     "retrying in {:.1f}s...".format(
                         attempt + 1, retry_delay),
                     "AI Segmentation", level=Qgis.Warning
                 )
-                # Sleep while keeping UI responsive
-                from qgis.core import QgsApplication
                 deadline = time.monotonic() + retry_delay
                 while time.monotonic() < deadline:
                     QgsApplication.processEvents()
                     time.sleep(0.05)
-                # Refresh the provider to trigger a new tile request
                 provider.reloadData()
 
         provider.setZoomedInResamplingMethod(original_method)
@@ -414,4 +428,3 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
 
     except Exception as e:
         return None, None, str(e)
-
