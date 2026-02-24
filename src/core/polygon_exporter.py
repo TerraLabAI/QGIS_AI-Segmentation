@@ -485,6 +485,67 @@ def _remove_small_regions(mask: np.ndarray, min_area: int) -> np.ndarray:
     return mask.copy()
 
 
+def count_significant_regions(mask: np.ndarray, min_ratio: float = 0.05) -> int:
+    """Count connected regions, ignoring small artifacts.
+
+    Only counts regions whose area is at least min_ratio * largest_region_area.
+    Uses a dilated mask to bridge tiny gaps (1px) before labeling,
+    so near-touching parts of the same element are not counted separately.
+    """
+    if mask is None or mask.sum() == 0:
+        return 0
+
+    # Dilate by 2px to bridge small gaps before counting
+    bridged = _numpy_dilate(mask.astype(np.uint8), 2)
+
+    sizes = _label_region_sizes(bridged)
+    if len(sizes) == 0:
+        return 0
+
+    largest = max(sizes)
+    threshold = largest * min_ratio
+    return sum(1 for s in sizes if s >= threshold)
+
+
+def _label_region_sizes(mask: np.ndarray) -> list:
+    """Return list of region sizes (pixel counts) for each connected component."""
+    try:
+        from scipy import ndimage
+        labeled, num_features = ndimage.label(mask)
+        if num_features == 0:
+            return []
+        return list(np.bincount(labeled.ravel())[1:])
+    except ImportError:
+        pass
+
+    # Numpy fallback
+    h, w = mask.shape
+    labels = np.zeros((h, w), dtype=np.int32)
+    mask_bool = mask.astype(bool)
+    sizes = []
+
+    for start_y in range(h):
+        for start_x in range(w):
+            if mask_bool[start_y, start_x] and labels[start_y, start_x] == 0:
+                label = len(sizes) + 1
+                stack = [(start_y, start_x)]
+                labels[start_y, start_x] = label
+                count = 1
+
+                while stack:
+                    y, x = stack.pop()
+                    for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                        if 0 <= ny < h and 0 <= nx < w:
+                            if mask_bool[ny, nx] and labels[ny, nx] == 0:
+                                labels[ny, nx] = label
+                                stack.append((ny, nx))
+                                count += 1
+
+                sizes.append(count)
+
+    return sizes
+
+
 def _numpy_dilate(mask: np.ndarray, iterations: int) -> np.ndarray:
     """Dilate mask using numpy (expand the mask).
 

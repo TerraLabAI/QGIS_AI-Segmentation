@@ -447,15 +447,12 @@ class AISegmentationDockWidget(QDockWidget):
         )
         layout.addWidget(self.save_mask_button)
 
-        self.export_button = QPushButton(tr("Export polygon to layer"))
+        self.export_button = QPushButton(tr("Export polygon to a layer"))
         self.export_button.clicked.connect(self._on_export_clicked)
         self.export_button.setVisible(False)
         self.export_button.setEnabled(False)
         self.export_button.setStyleSheet(
             "QPushButton { background-color: #b0bec5; padding: 6px 12px; }"
-        )
-        self.export_button.setToolTip(
-            tr("Export polygon as a new vector layer")
         )
         layout.addWidget(self.export_button)
 
@@ -502,11 +499,10 @@ class AISegmentationDockWidget(QDockWidget):
         batch_info_icon.setFixedSize(14, 14)
         batch_info_layout.addWidget(batch_info_icon, 0, Qt.AlignTop)
 
-        # Info text - explanation with example
-        info_msg = tr(
-            "Select one element at a time using left/right clicks."
-            " Use Refine to adjust, then Save."
-            " Repeat for each element, then Export all to a layer.")
+        # Info text
+        info_msg = "{}\n{}".format(
+            tr("The AI model works best on one element at a time."),
+            tr("Save your polygon before selecting the next element."))
         batch_info_text = QLabel(info_msg)
         batch_info_text.setWordWrap(True)
         batch_info_text.setStyleSheet("font-size: 11px; color: palette(text);")
@@ -514,6 +510,34 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.batch_info_widget.setVisible(False)
         layout.addWidget(self.batch_info_widget)
+
+        # Warning box for disjoint regions (yellow/orange style)
+        self.disjoint_warning_widget = QWidget()
+        self.disjoint_warning_widget.setStyleSheet(
+            "QWidget { background-color: rgba(255, 180, 50, 0.20); "
+            "border: 1px solid rgba(255, 180, 50, 0.4); border-radius: 4px; }"
+            "QLabel { background: transparent; border: none; }"
+        )
+        disjoint_layout = QHBoxLayout(self.disjoint_warning_widget)
+        disjoint_layout.setContentsMargins(8, 6, 8, 6)
+        disjoint_layout.setSpacing(8)
+
+        disjoint_icon = QLabel()
+        warn_icon = style.standardIcon(style.SP_MessageBoxWarning)
+        disjoint_icon.setPixmap(warn_icon.pixmap(14, 14))
+        disjoint_icon.setFixedSize(14, 14)
+        disjoint_layout.addWidget(disjoint_icon, 0, Qt.AlignTop)
+
+        disjoint_msg = "{}\n{}".format(
+            tr("Disconnected parts detected in your polygon."),
+            tr("For best accuracy, segment one element at a time."))
+        disjoint_text = QLabel(disjoint_msg)
+        disjoint_text.setWordWrap(True)
+        disjoint_text.setStyleSheet("font-size: 11px; color: palette(text);")
+        disjoint_layout.addWidget(disjoint_text, 1)
+
+        self.disjoint_warning_widget.setVisible(False)
+        layout.addWidget(self.disjoint_warning_widget)
 
         # Collapsible shortcuts section
         self._setup_shortcuts_section(layout)
@@ -769,7 +793,7 @@ class AISegmentationDockWidget(QDockWidget):
             "Esc : {stop}".format(
                 start=tr("Start AI Segmentation"),
                 save=tr("Save polygon"),
-                export=tr("Export polygon(s) to layer"),
+                export=tr("Export polygon to a layer"),
                 undo_key=undo_key,
                 undo=tr("Undo last point"),
                 stop=tr("Stop segmentation"))
@@ -1248,22 +1272,25 @@ class AISegmentationDockWidget(QDockWidget):
         self.refine_group.setVisible(self._has_mask)
 
     def _update_export_button_style(self):
-        self.export_button.setText(tr("Export polygon(s) to layer"))
-        if self._saved_polygon_count > 0:
+        count = self._saved_polygon_count
+        if count > 1:
+            self.export_button.setText(
+                tr("Export {count} polygons to a layer").format(count=count)
+            )
+        elif count == 1:
+            self.export_button.setText(tr("Export polygon to a layer"))
+        else:
+            self.export_button.setText(tr("Export polygon to a layer"))
+
+        if count > 0:
             self.export_button.setEnabled(True)
             self.export_button.setStyleSheet(
                 "QPushButton { background-color: #4CAF50; padding: 6px 12px; }"
-            )
-            self.export_button.setToolTip(
-                tr("Export {count} polygon(s) as a new layer").format(count=self._saved_polygon_count)
             )
         else:
             self.export_button.setEnabled(False)
             self.export_button.setStyleSheet(
                 "QPushButton { background-color: #b0bec5; padding: 6px 12px; }"
-            )
-            self.export_button.setToolTip(
-                tr("Save at least one polygon first")
             )
 
     def set_point_count(self, positive: int, negative: int):
@@ -1290,29 +1317,22 @@ class AISegmentationDockWidget(QDockWidget):
         total = self._positive_count + self._negative_count
 
         if total == 0:
-            # No points yet - only show green option
             text = (
                 tr("Click on the element you want to segment:") + "\n\n"
                 "🟢 " + tr("Left-click to select")
             )
-        elif self._positive_count > 0 and self._negative_count == 0:
-            # Has green points but no red yet - show both options
-            counts = "🟢 " + tr("{count} point(s)").format(count=self._positive_count)
+        else:
             text = (
-                f"{counts}\n\n"
                 "🟢 " + tr("Left-click to add more") + "\n"
                 "❌ " + tr("Right-click to exclude from selection")
             )
-        else:
-            # Has both types of points
-            counts = "🟢 " + tr("{count} point(s)").format(count=self._positive_count) + " · ❌ " + tr("{count} adjustment(s)").format(count=self._negative_count)
-            if self._saved_polygon_count > 0:
-                state = tr("{count} polygon(s) saved").format(count=self._saved_polygon_count)
-            else:
-                state = tr("Refine selection or save polygon")
-            text = f"{counts}\n{state}"
 
         self.instructions_label.setText(text)
+
+    def set_disjoint_warning(self, visible: bool):
+        self.disjoint_warning_widget.setVisible(visible)
+        if self._segmentation_active:
+            self.batch_info_widget.setVisible(not visible)
 
     def reset_session(self):
         self._has_mask = False
@@ -1321,6 +1341,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._saved_polygon_count = 0
         self._positive_count = 0
         self._negative_count = 0
+        self.disjoint_warning_widget.setVisible(False)
         self.reset_refine_sliders()
         self._update_button_visibility()
         self._update_ui_state()
@@ -1388,7 +1409,7 @@ class AISegmentationDockWidget(QDockWidget):
         # Update warning message
         if all_raster_count == 0:
             self.no_rasters_label.setText(
-                tr("No image found. Please add an image file to your project (GeoTIFF, PNG, JPG, etc.).")
+                tr("No layer found. Add a raster or online layer to your project.")
             )
 
     def _update_ui_state(self):
