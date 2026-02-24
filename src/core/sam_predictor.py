@@ -36,7 +36,6 @@ class SamPredictor:
     # Per-operation timeouts (seconds)
     _TIMEOUT_INIT = 120       # Model loading
     _TIMEOUT_RESET = 30
-    _TIMEOUT_SET_FEATURES = 60
     _TIMEOUT_SET_IMAGE = 180  # Encoding 1 crop on slow CPU can take ~60s
     _TIMEOUT_PREDICT = 120
 
@@ -46,16 +45,10 @@ class SamPredictor:
         self.checkpoint = sam_config['checkpoint']
         self.process = None
         self._stderr_file = None
+        self._warming_up = False  # True when init sent but not yet confirmed
         self.is_image_set = False
         self.original_size = None
-        self.input_size = None
-
-        class FakeModel:
-            class FakeEncoder:
-                img_size = 1024
-            image_encoder = FakeEncoder()
-
-        self.model = FakeModel()
+        self.input_size = None  # Only set by SAM1 path
 
         QgsMessageLog.logMessage(
             "SAM Predictor initialized (subprocess mode)",
@@ -125,10 +118,8 @@ class SamPredictor:
         """Ensure subprocess is cleaned up on garbage collection."""
         self.cleanup()
 
-    def _start_worker(self) -> bool:
-        if self.process is not None:
-            return True
-
+    def _launch_process(self) -> bool:
+        """Launch the subprocess and send init, but do NOT wait for response."""
         try:
             QgsMessageLog.logMessage(
                 f"Starting prediction worker: {self.venv_python}",
@@ -170,7 +161,19 @@ class SamPredictor:
 
             self.process.stdin.write(json.dumps(init_request) + '\n')
             self.process.stdin.flush()
+            return True
 
+        except Exception as e:
+            import traceback
+            error_msg = "Failed to launch prediction worker: {}\n{}".format(
+                str(e), traceback.format_exc())
+            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
+            self.cleanup()
+            return False
+
+    def _wait_for_ready(self) -> bool:
+        """Wait for the worker to finish model loading (the 'ready' response)."""
+        try:
             response_line = self._read_response(self._TIMEOUT_INIT)
             response = json.loads(response_line.strip())
 
@@ -201,10 +204,44 @@ class SamPredictor:
 
         except Exception as e:
             import traceback
-            error_msg = f"Failed to start prediction worker: {str(e)}\n{traceback.format_exc()}"
+            error_msg = "Failed waiting for worker ready: {}\n{}".format(
+                str(e), traceback.format_exc())
             QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
             self.cleanup()
             return False
+
+    def _start_worker(self) -> bool:
+        # If warm_up() already launched the process, just wait for ready
+        if self._warming_up:
+            self._warming_up = False
+            if self.process is not None and self.process.poll() is None:
+                return self._wait_for_ready()
+            # Process died during warm-up, fall through to full start
+            self.cleanup()
+
+        if self.process is not None:
+            return True
+
+        if not self._launch_process():
+            return False
+        return self._wait_for_ready()
+
+    def warm_up(self) -> bool:
+        """Pre-start the worker subprocess and begin loading the SAM model.
+
+        Call this when the user clicks 'Start AI Segmentation'.
+        Launches the subprocess and sends the init command, but returns
+        immediately without waiting for model loading to finish.
+        The model loads in the background while the user positions their
+        first click. The next call to set_image() will wait for ready
+        if needed.
+        """
+        if self.process is not None:
+            return True
+        if not self._launch_process():
+            return False
+        self._warming_up = True
+        return True
 
     def cleanup(self) -> None:
         if self.process is not None:
@@ -242,6 +279,7 @@ class SamPredictor:
                         pass
                     self._stderr_file = None
 
+        self._warming_up = False
         self.is_image_set = False
 
     def reset_image(self) -> None:
@@ -274,8 +312,8 @@ class SamPredictor:
     def set_image(self, image_np: np.ndarray) -> None:
         """Send a raw image crop (H,W,3 uint8) to the worker for encoding.
 
-        The worker runs ResizeLongestSide + preprocess + image_encoder,
-        then stores the features internally for subsequent predict() calls.
+        The worker calls SAM2ImagePredictor.set_image() which computes
+        image embeddings for subsequent predict() calls.
         """
         if not self._start_worker():
             raise RuntimeError("Failed to start prediction worker")
@@ -299,12 +337,15 @@ class SamPredictor:
 
             if response.get("type") == "image_set":
                 self.original_size = tuple(response["original_size"])
-                self.input_size = tuple(response["input_size"])
+                if "input_size" in response:
+                    self.input_size = tuple(response["input_size"])
+                else:
+                    self.input_size = None
                 self.is_image_set = True
 
                 QgsMessageLog.logMessage(
-                    "Set image: original_size={}, input_size={}".format(
-                        self.original_size, self.input_size),
+                    "Set image: original_size={}".format(
+                        self.original_size),
                     "AI Segmentation",
                     level=Qgis.Info
                 )
@@ -325,57 +366,6 @@ class SamPredictor:
             self.cleanup()
             raise
 
-    def set_image_feature(
-        self,
-        img_features: np.ndarray,
-        img_size: Tuple[int, int],
-        input_size: Optional[Tuple[int, int]] = None
-    ) -> None:
-        if not self._start_worker():
-            raise RuntimeError("Failed to start prediction worker")
-
-        try:
-            features_b64 = base64.b64encode(img_features.tobytes()).decode('utf-8')
-
-            request = {
-                "action": "set_features",
-                "features": features_b64,
-                "features_shape": list(img_features.shape),
-                "features_dtype": str(img_features.dtype),
-                "img_size": list(img_size),
-                "input_size": list(input_size) if input_size else None
-            }
-
-            self.process.stdin.write(json.dumps(request) + '\n')
-            self.process.stdin.flush()
-
-            response_line = self._read_response(self._TIMEOUT_SET_FEATURES)
-            response = json.loads(response_line.strip())
-
-            if response.get("type") == "features_set":
-                self.original_size = img_size
-                self.input_size = input_size if input_size else img_size
-                self.is_image_set = True
-
-                QgsMessageLog.logMessage(
-                    f"Set image features: shape={img_features.shape}, "
-                    f"original_size={self.original_size}, input_size={self.input_size}",
-                    "AI Segmentation",
-                    level=Qgis.Info
-                )
-            elif response.get("type") == "error":
-                error_msg = response.get("message", "Unknown error")
-                raise RuntimeError(f"Worker error setting features: {error_msg}")
-            else:
-                raise RuntimeError(f"Unexpected response: {response}")
-
-        except Exception as e:
-            import traceback
-            error_msg = f"Failed to set image features: {str(e)}\n{traceback.format_exc()}"
-            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
-            self.cleanup()
-            raise
-
     def predict(
         self,
         point_coords: Optional[np.ndarray] = None,
@@ -386,7 +376,7 @@ class SamPredictor:
         return_logits: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if not self.is_image_set:
-            raise RuntimeError("Features have not been set. Call set_image_feature first.")
+            raise RuntimeError("Image has not been set. Call set_image first.")
 
         if self.process is None or self.process.poll() is not None:
             raise RuntimeError("Prediction worker is not running")

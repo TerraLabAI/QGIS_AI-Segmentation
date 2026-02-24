@@ -153,8 +153,12 @@
         <translation>Vérification du modèle...</translation>
     </message>
     <message>
-        <source>Download AI Segmentation Model (~375MB)</source>
-        <translation>Télécharger le modèle AI Segmentation (~375 Mo)</translation>
+        <source>Download AI Segmentation Model ({size})</source>
+        <translation>Télécharger le modèle AI Segmentation ({size})</translation>
+    </message>
+    <message>
+        <source>Update QGIS to 3.34+ for the latest AI model</source>
+        <translation>Mettez QGIS a jour vers 3.34+ pour le dernier modele IA</translation>
     </message>
     <message>
         <source>Download the SAM checkpoint for segmentation</source>
@@ -273,8 +277,8 @@
         <translation>Aucune image trouvée. Ajoutez un fichier image à votre projet (GeoTIFF, PNG, JPG, etc.).</translation>
     </message>
     <message>
-        <source>Shortcuts: S (save polygon) · Enter (export to layer) · Ctrl+Z (undo) · Escape (clear)</source>
-        <translation>Raccourcis : S (sauvegarder polygone) · Entrée (exporter vers couche) · Ctrl+Z (annuler) · Échap (effacer)</translation>
+        <source>Shortcuts: S (save polygon) · Enter (export to layer) · Ctrl+Z (undo)</source>
+        <translation>Raccourcis : S (sauvegarder polygone) · Entrée (exporter vers couche) · Ctrl+Z (annuler)</translation>
     </message>
     <message>
         <source>Start AI Segmentation</source>
@@ -333,8 +337,8 @@
         <translation>Arrêter la segmentation</translation>
     </message>
     <message>
-        <source>Exit segmentation without saving (Escape)</source>
-        <translation>Quitter sans sauvegarder (Échap)</translation>
+        <source>Exit segmentation without saving</source>
+        <translation>Quitter sans sauvegarder</translation>
     </message>
     <message>
         <source>Shortcuts</source>
@@ -369,8 +373,8 @@
         <translation>Sauvegardez au moins un polygone d'abord</translation>
     </message>
     <message>
-        <source>Segment elements one by one, save them, then export all polygons to one layer.</source>
-        <translation>Segmentez les elements un par un, sauvegardez-les, puis exportez tous les polygones dans une couche.</translation>
+        <source>Segment one element at a time. You must save your polygon before selecting a new element. Export all saved polygons to a layer when finished.</source>
+        <translation>Segmentez un element a la fois. Vous devez sauvegarder votre polygone avant de selectionner un nouvel element. Exportez tous les polygones dans une couche une fois termine.</translation>
     </message>
     <message>
         <source>Export polygon to layer</source>

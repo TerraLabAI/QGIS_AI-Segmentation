@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 
 import numpy as np
 
@@ -262,7 +263,31 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
         provider.setZoomedOutResamplingMethod(
             provider.ResamplingMethod.Bilinear)
 
-        block = provider.block(1, extent, crop_size, crop_size)
+        # Retry fetching tiles: when the user pans to a new area, the
+        # provider cache may not have the tiles yet.  A short delay
+        # between attempts gives QGIS time to download them.
+        max_retries = 3
+        retry_delay = 1.0
+        block = None
+        for attempt in range(max_retries):
+            block = provider.block(1, extent, crop_size, crop_size)
+            if block is not None and block.isValid():
+                break
+            if attempt < max_retries - 1:
+                QgsMessageLog.logMessage(
+                    "Online tile fetch attempt {} failed, "
+                    "retrying in {:.1f}s...".format(
+                        attempt + 1, retry_delay),
+                    "AI Segmentation", level=Qgis.Warning
+                )
+                # Sleep while keeping UI responsive
+                from qgis.core import QgsApplication
+                deadline = time.monotonic() + retry_delay
+                while time.monotonic() < deadline:
+                    QgsApplication.processEvents()
+                    time.sleep(0.05)
+                # Refresh the provider to trigger a new tile request
+                provider.reloadData()
 
         provider.setZoomedInResamplingMethod(original_method)
 
