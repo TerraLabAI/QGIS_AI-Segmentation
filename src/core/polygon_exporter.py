@@ -486,10 +486,22 @@ def _remove_small_regions(mask: np.ndarray, min_area: int) -> np.ndarray:
 
 
 def _numpy_dilate(mask: np.ndarray, iterations: int) -> np.ndarray:
-    """Dilate mask using numpy (expand the mask)."""
+    """Dilate mask using numpy (expand the mask).
+
+    Uses scipy binary_dilation when available for better performance,
+    falls back to iterative numpy implementation.
+    """
+    try:
+        from scipy.ndimage import binary_dilation
+        struct = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
+        return binary_dilation(
+            mask, structure=struct, iterations=iterations
+        ).astype(np.uint8)
+    except ImportError:
+        pass
+
     result = mask.copy()
     for _ in range(iterations):
-        # Shift in all 4 directions and combine (4-connectivity)
         padded = np.pad(result, 1, mode='constant', constant_values=0)
         center = padded[1:-1, 1:-1]
         up = padded[:-2, 1:-1]
@@ -502,10 +514,22 @@ def _numpy_dilate(mask: np.ndarray, iterations: int) -> np.ndarray:
 
 
 def _numpy_erode(mask: np.ndarray, iterations: int) -> np.ndarray:
-    """Erode mask using numpy (shrink the mask)."""
+    """Erode mask using numpy (shrink the mask).
+
+    Uses scipy binary_erosion when available for better performance,
+    falls back to iterative numpy implementation.
+    """
+    try:
+        from scipy.ndimage import binary_erosion
+        struct = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
+        return binary_erosion(
+            mask, structure=struct, iterations=iterations
+        ).astype(np.uint8)
+    except ImportError:
+        pass
+
     result = mask.copy()
     for _ in range(iterations):
-        # Shift in all 4 directions and combine (4-connectivity)
         padded = np.pad(result, 1, mode='constant', constant_values=0)
         center = padded[1:-1, 1:-1]
         up = padded[:-2, 1:-1]

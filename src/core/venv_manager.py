@@ -382,7 +382,9 @@ def cleanup_old_venv_directories() -> List[str]:
             if not os.path.exists(scan_dir):
                 continue
             for entry in os.listdir(scan_dir):
-                if entry.startswith("venv_py") and entry != current_venv_name:
+                entry_cmp = os.path.normcase(entry)
+                current_cmp = os.path.normcase(current_venv_name)
+                if entry_cmp.startswith(os.path.normcase("venv_py")) and entry_cmp != current_cmp:
                     old_path = os.path.join(scan_dir, entry)
                     if os.path.isdir(old_path):
                         try:

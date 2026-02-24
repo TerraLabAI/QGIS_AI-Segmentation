@@ -58,6 +58,18 @@ def get_optimal_device():  # -> torch.device
                 try:
                     props = torch.cuda.get_device_properties(i)
                     mem_gb = props.total_memory / (1024**3)
+                    # Check available (free) memory, not just total
+                    try:
+                        free_mem, total_mem = torch.cuda.mem_get_info(i)
+                        free_gb = free_mem / (1024**3)
+                        if free_gb < 1.0:
+                            QgsMessageLog.logMessage(
+                                "GPU {} ({}) has only {:.1f}GB free of {:.1f}GB total, skipping".format(
+                                    i, props.name, free_gb, mem_gb),
+                                "AI Segmentation", level=Qgis.Warning)
+                            continue
+                    except (AttributeError, RuntimeError):
+                        pass  # mem_get_info not available, use total memory
                     if mem_gb >= 1.5 and mem_gb > best_mem:
                         best_mem = mem_gb
                         best_idx = i

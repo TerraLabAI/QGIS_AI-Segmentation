@@ -188,6 +188,8 @@ class AISegmentationPlugin:
         # On-demand encoding state
         self._current_crop_info = None  # dict with 'bounds', 'img_shape'
         self._current_raster_path = None
+        self._encoding_in_progress = False  # Guard against concurrent clicks
+        self._current_crop_mupp = None  # canvas mupp when crop was encoded (online layers)
 
         self.deps_install_worker = None
         self.download_worker = None
@@ -458,6 +460,8 @@ class AISegmentationPlugin:
                         )
                 except RuntimeError:
                     pass
+        self.deps_install_worker = None
+        self.download_worker = None
 
         # 5. Remove menu/toolbar
         plugins_menu = self.iface.pluginMenu()
@@ -1144,23 +1148,23 @@ class AISegmentationPlugin:
                 ti = pg.get('transform_info')
                 if ti:
                     crs_str = ti.get('crs', None)
-                    if crs_str and not (isinstance(crs_str, float) and str(crs_str) == 'nan'):
+                    if isinstance(crs_str, str) and crs_str.strip():
                         break
-            if crs_str is None or (isinstance(crs_str, float) and str(crs_str) == 'nan'):
-                if self.current_transform_info:
-                    crs_str = self.current_transform_info.get('crs', None)
-            if crs_str is None or (isinstance(crs_str, float) and str(crs_str) == 'nan'):
+                    crs_str = None
+            if crs_str is None and self.current_transform_info:
+                val = self.current_transform_info.get('crs', None)
+                if isinstance(val, str) and val.strip():
+                    crs_str = val
+            if crs_str is None:
                 try:
-                    crs_str = self._current_layer.crs().authid() if self._is_layer_valid() and self._current_layer.crs().isValid() else 'EPSG:4326'
+                    if self._is_layer_valid() and self._current_layer.crs().isValid():
+                        crs_str = self._current_layer.crs().authid()
                 except RuntimeError:
-                    crs_str = 'EPSG:4326'
+                    pass
             if isinstance(crs_str, str) and crs_str.strip():
                 crs = QgsCoordinateReferenceSystem(crs_str)
             else:
-                try:
-                    crs = self._current_layer.crs() if self._is_layer_valid() else QgsCoordinateReferenceSystem('EPSG:4326')
-                except RuntimeError:
-                    crs = QgsCoordinateReferenceSystem('EPSG:4326')
+                crs = QgsCoordinateReferenceSystem('EPSG:4326')
 
         # Determine output directory for GeoPackage file
         # Priority: 1) Project directory (if project is saved), 2) Raster source directory
@@ -1522,20 +1526,44 @@ class AISegmentationPlugin:
             return False
 
     def _is_point_in_current_crop(self, point):
-        """Check if a point (in raster CRS) falls within the current crop."""
+        """Check if a point (in raster CRS) falls within the current crop.
+
+        For online layers, also checks if the zoom level has changed
+        significantly since the crop was encoded. A large zoom change means
+        the tile resolution no longer matches the encoding, so a re-encode
+        is needed even if the point is geographically inside the old crop.
+        """
         if self._current_crop_info is None:
             return False
         bounds = self._current_crop_info['bounds']
         # bounds = (minx, miny, maxx, maxy)
         in_x = bounds[0] <= point.x() <= bounds[2]
         in_y = bounds[1] <= point.y() <= bounds[3]
-        return in_x and in_y
+        if not (in_x and in_y):
+            return False
+
+        # For online layers, force re-encode when zoom changed significantly
+        if self._is_online_layer and self._current_crop_mupp is not None:
+            current_mupp = self.iface.mapCanvas().mapUnitsPerPixel()
+            if self._current_crop_mupp > 0 and current_mupp > 0:
+                ratio = current_mupp / self._current_crop_mupp
+                # Re-encode when zoom changed by more than ~1.5x.
+                # XYZ/WMTS tile servers use 2x zoom steps, so 1.5x
+                # catches single-level zoom changes reliably.
+                if ratio < 0.67 or ratio > 1.5:
+                    return False
+
+        return True
 
     def _extract_and_encode_crop(self, center_point):
         """Extract a crop centered on the point and encode it with SAM.
 
         Returns True on success, False on error.
         """
+        if self._encoding_in_progress:
+            return False
+        self._encoding_in_progress = True
+
         from ..core.feature_encoder import (
             extract_crop_from_raster, extract_crop_from_online_layer
         )
@@ -1546,6 +1574,7 @@ class AISegmentationPlugin:
         if self._is_online_layer:
             canvas = self.iface.mapCanvas()
             canvas_mupp = canvas.mapUnitsPerPixel()
+            self._current_crop_mupp = canvas_mupp
             image_np, crop_info, error = extract_crop_from_online_layer(
                 self._current_layer, raster_pt_x, raster_pt_y,
                 canvas_mupp, crop_size=1024
@@ -1571,6 +1600,7 @@ class AISegmentationPlugin:
             )
 
         if error:
+            self._encoding_in_progress = False
             QgsMessageLog.logMessage(
                 "Crop extraction failed: {}".format(error),
                 "AI Segmentation", level=Qgis.Critical
@@ -1586,6 +1616,7 @@ class AISegmentationPlugin:
         try:
             self.predictor.set_image(image_np)
         except Exception as e:
+            self._encoding_in_progress = False
             QgsMessageLog.logMessage(
                 "Image encoding failed: {}".format(str(e)),
                 "AI Segmentation", level=Qgis.Critical
@@ -1600,6 +1631,7 @@ class AISegmentationPlugin:
         self._current_crop_info = crop_info
         # Reset low_res_mask since we have a new encoding
         self.current_low_res_mask = None
+        self._encoding_in_progress = False
 
         QgsMessageLog.logMessage(
             "Encoded crop: bounds={}, shape={}".format(
@@ -1745,9 +1777,12 @@ class AISegmentationPlugin:
         if point_coords is None:
             return
 
-        # Use previous low_res_mask for iterative refinement when we have negative points
+        # Use previous low_res_mask for iterative refinement on all subsequent
+        # clicks (not just negatives). This gives SAM context about the
+        # user's intent from previous interactions.
         mask_input = None
-        if len(self.prompts.negative_points) > 0 and self.current_low_res_mask is not None:
+        total_points = len(self.prompts.positive_points) + len(self.prompts.negative_points)
+        if total_points > 1 and self.current_low_res_mask is not None:
             mask_input = self.current_low_res_mask
 
         try:
@@ -2047,9 +2082,21 @@ class AISegmentationPlugin:
         # Reset on-demand encoding state
         self._current_crop_info = None
         self._current_raster_path = None
+        self._current_crop_mupp = None
 
         # Reset online layer state
         self._is_online_layer = False
+
+        # Prune mask counters for layers no longer in the project
+        try:
+            project_layer_names = {
+                layer.name() for layer in QgsProject.instance().mapLayers().values()
+            }
+            stale_keys = [k for k in self._mask_counters if k not in project_layer_names]
+            for k in stale_keys:
+                del self._mask_counters[k]
+        except Exception:
+            pass
 
         # Reset refinement settings to defaults
         self._refine_expand = 0

@@ -1,5 +1,6 @@
 import os
 import hashlib
+import threading
 from typing import Tuple, Optional, Callable
 
 from qgis.core import QgsMessageLog, Qgis
@@ -75,6 +76,7 @@ def _migrate_old_cache_layout():
 
 
 _cache_migrated = False
+_cache_migration_lock = threading.Lock()
 
 
 def _get_raster_base_dir(raster_path: str) -> str:
@@ -110,8 +112,10 @@ def get_raster_features_dir(raster_path: str, visible_extent: tuple = None) -> s
     """
     global _cache_migrated
     if not _cache_migrated:
-        _migrate_old_cache_layout()
-        _cache_migrated = True
+        with _cache_migration_lock:
+            if not _cache_migrated:
+                _migrate_old_cache_layout()
+                _cache_migrated = True
 
     base_dir = _get_raster_base_dir(raster_path)
 
@@ -142,11 +146,22 @@ def verify_checkpoint_hash(filepath: str) -> bool:
     if not SAM_CHECKPOINT_SHA256:
         # Hash not yet computed, skip verification
         return True
-    sha256_hash = hashlib.sha256()
-    with open(filepath, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
-    return sha256_hash.hexdigest() == SAM_CHECKPOINT_SHA256
+    if not os.path.isfile(filepath):
+        QgsMessageLog.logMessage(
+            "Checkpoint file not found for hash verification: {}".format(filepath),
+            "AI Segmentation", level=Qgis.Warning)
+        return False
+    try:
+        sha256_hash = hashlib.sha256()
+        with open(filepath, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest() == SAM_CHECKPOINT_SHA256
+    except (OSError, IOError) as e:
+        QgsMessageLog.logMessage(
+            "Failed to verify checkpoint hash: {}".format(e),
+            "AI Segmentation", level=Qgis.Warning)
+        return False
 
 
 def download_checkpoint(
@@ -248,10 +263,19 @@ def download_checkpoint(
                     QByteArray(range_header.encode("ascii")))
 
             # Open temp file in append mode for resume, write mode for fresh
-            if resume_offset > 0:
-                download_state['file'] = open(temp_path, 'ab')
-            else:
-                download_state['file'] = open(temp_path, 'wb')
+            try:
+                if resume_offset > 0:
+                    download_state['file'] = open(temp_path, 'ab')
+                else:
+                    download_state['file'] = open(temp_path, 'wb')
+            except (OSError, IOError) as file_err:
+                last_error = "Cannot open download file: {}".format(file_err)
+                QgsMessageLog.logMessage(
+                    last_error, "AI Segmentation", level=Qgis.Warning)
+                if attempt < max_retries:
+                    import time
+                    time.sleep(2 * attempt)
+                continue
 
             reply = manager.get(request)
 
