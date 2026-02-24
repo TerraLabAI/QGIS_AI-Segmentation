@@ -1,7 +1,6 @@
 import math
 import os
 import sys
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
@@ -226,7 +225,6 @@ class AISegmentationPlugin:
         self._refine_simplify = 3  # Default: matches dockwidget spinbox
         self._refine_fill_holes = False  # Default: matches dockwidget checkbox
         self._refine_min_area = 100  # Default: matches dockwidget spinbox
-
 
         self._is_non_georeferenced_mode = False  # Track if current layer is non-georeferenced
         self._is_online_layer = False  # Track if current layer is online (WMS, XYZ, etc.)
@@ -1030,7 +1028,8 @@ class AISegmentationPlugin:
             return
         settings.setValue(SETTINGS_KEY_TUTORIAL_SHOWN, True)
 
-        tutorial_url = "https://www.youtube.com/playlist?list=PL4hCF043nAUW2iIxALNUzy1fKHcCWwDsv&jct=GTA3Fx8pJzuTLPPivC9RRQ"
+        tutorial_url = ("https://www.youtube.com/playlist"
+                        "?list=PL4hCF043nAUW2iIxALNUzy1fKHcCWwDsv&jct=GTA3Fx8pJzuTLPPivC9RRQ")
         message = '{} <a href="{}">{}</a>'.format(
             tr('New to AI Segmentation?'),
             tutorial_url,
@@ -1506,7 +1505,8 @@ class AISegmentationPlugin:
     def _on_refine_settings_changed(self, expand: int, simplify: int, fill_holes: bool, min_area: int):
         """Handle refinement control changes."""
         QgsMessageLog.logMessage(
-            f"Refine settings changed: expand={expand}, simplify={simplify}, fill_holes={fill_holes}, min_area={min_area}",
+            "Refine settings: expand={}, simplify={}, fill_holes={}, min_area={}".format(
+                expand, simplify, fill_holes, min_area),
             "AI Segmentation",
             level=Qgis.Info
         )
@@ -2054,7 +2054,6 @@ class AISegmentationPlugin:
             return
 
         if use_multimask:
-            import numpy as np
             total_pixels = masks[0].shape[0] * masks[0].shape[1]
             mask_areas = [int(m.sum()) for m in masks]
 
@@ -2361,7 +2360,6 @@ class AISegmentationPlugin:
 
         # Reset online layer state
         self._is_online_layer = False
-
 
         # Reset refinement settings to defaults
         self._refine_expand = 0
