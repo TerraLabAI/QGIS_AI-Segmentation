@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 from qgis.PyQt.QtWidgets import QAction, QMessageBox
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QVariant, QSettings
+from qgis.PyQt.QtCore import Qt, QThread, QObject, pyqtSignal, QVariant, QSettings, QEvent
 from qgis.core import (
     QgsProject,
     QgsRasterLayer,
@@ -82,6 +82,46 @@ class DownloadWorker(QThread):
             self.finished.emit(success, message)
         except Exception as e:
             self.finished.emit(False, str(e))
+
+
+class _ShortcutFilter(QObject):
+    """Event filter that intercepts keyboard shortcuts on the main window.
+
+    QgsMapTool.keyPressEvent only fires when the canvas has keyboard
+    focus, which is unreliable after encoding/prediction (dock widget
+    updates steal focus).  This filter catches shortcuts regardless of
+    which widget has focus.
+    """
+
+    def __init__(self, plugin, parent=None):
+        super().__init__(parent)
+        self._plugin = plugin
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.KeyPress:
+            return False
+        plugin = self._plugin
+        if not plugin.map_tool or not plugin.map_tool.isActive():
+            return False
+
+        key = event.key()
+        modifiers = event.modifiers()
+
+        if key == Qt.Key_Z and modifiers & Qt.ControlModifier:
+            plugin._on_undo()
+            return True
+        elif key == Qt.Key_S and not (modifiers & (
+                Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier)):
+            plugin._on_save_polygon()
+            return True
+        elif key in (Qt.Key_Return, Qt.Key_Enter):
+            plugin._on_export_layer()
+            return True
+        elif key == Qt.Key_Escape:
+            plugin._on_stop_segmentation()
+            return True
+
+        return False
 
 
 class PromptManager:
@@ -189,7 +229,9 @@ class AISegmentationPlugin:
         self._current_crop_info = None  # dict with 'bounds', 'img_shape'
         self._current_raster_path = None
         self._encoding_in_progress = False  # Guard against concurrent clicks
-        self._current_crop_mupp = None  # canvas mupp when crop was encoded (online layers)
+        self._shortcut_filter = None  # Event filter for keyboard shortcuts
+        self._current_crop_canvas_mupp = None  # canvas mupp at encode time (zoom detection)
+        self._current_crop_actual_mupp = None  # actual mupp used for the crop (may differ if zoomed out)
 
         self.deps_install_worker = None
         self.download_worker = None
@@ -397,6 +439,14 @@ class AISegmentationPlugin:
             )
 
     def unload(self):
+        # 0. Remove keyboard shortcut filter
+        try:
+            if self._shortcut_filter is not None:
+                self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+                self._shortcut_filter = None
+        except (RuntimeError, AttributeError):
+            pass
+
         # 1. Disconnect ALL signals FIRST to prevent callbacks on partially-cleaned state
         if self.dock_widget:
             try:
@@ -945,6 +995,13 @@ class AISegmentationPlugin:
         self.dock_widget.set_segmentation_active(True)
         # Status bar hint will be set by _update_status_hint via set_point_count
 
+        # Install keyboard shortcut filter on the main window so shortcuts
+        # work regardless of which widget has focus (the canvas loses focus
+        # after encoding/prediction because dock widget updates steal it).
+        if self._shortcut_filter is None:
+            self._shortcut_filter = _ShortcutFilter(self)
+        self.iface.mainWindow().installEventFilter(self._shortcut_filter)
+
         # Show tutorial notification for first-time users
         self._show_tutorial_notification()
 
@@ -1011,6 +1068,8 @@ class AISegmentationPlugin:
 
     def _on_save_polygon(self):
         """Save current mask as polygon."""
+        if self._encoding_in_progress:
+            return
         if self.current_mask is None or self.current_transform_info is None:
             return
 
@@ -1350,6 +1409,13 @@ class AISegmentationPlugin:
         group.addLayer(layer)
 
     def _on_tool_deactivated(self):
+        # Remove keyboard shortcut filter
+        try:
+            if self._shortcut_filter is not None:
+                self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+        except (RuntimeError, AttributeError):
+            pass
+
         # If we're stopping programmatically (via Stop/Export), just update UI
         if self._stopping_segmentation:
             if self.dock_widget:
@@ -1462,6 +1528,8 @@ class AISegmentationPlugin:
             if reply != QMessageBox.Yes:
                 return
 
+        if self._shortcut_filter is not None:
+            self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
         self._stopping_segmentation = True
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
         self._restore_previous_map_tool()
@@ -1544,21 +1612,82 @@ class AISegmentationPlugin:
         if not (in_x and in_y):
             return False
 
-        # For online layers, force re-encode when zoom changed significantly
-        if self._is_online_layer and self._current_crop_mupp is not None:
+        # For online layers, force re-encode when zoom changed
+        if self._is_online_layer and self._current_crop_canvas_mupp is not None:
             current_mupp = self.iface.mapCanvas().mapUnitsPerPixel()
-            if self._current_crop_mupp > 0 and current_mupp > 0:
-                ratio = current_mupp / self._current_crop_mupp
-                # Re-encode when zoom changed by more than ~1.5x.
-                # XYZ/WMTS tile servers use 2x zoom steps, so 1.5x
-                # catches single-level zoom changes reliably.
-                if ratio < 0.67 or ratio > 1.5:
+            if self._current_crop_canvas_mupp > 0 and current_mupp > 0:
+                ratio = current_mupp / self._current_crop_canvas_mupp
+                # Zoom-in (ratio < 1): tight threshold so the user can
+                # refine details at higher resolution after a broad selection.
+                # Zoom-out (ratio > 1): looser threshold to avoid
+                # unnecessary re-encodes when panning slightly.
+                if ratio < 0.8 or ratio > 1.3:
                     return False
 
         return True
 
-    def _extract_and_encode_crop(self, center_point):
+    def _compute_crop_center_and_mupp(self, all_points_geo, crop_size=1024):
+        """Compute optimal crop center and mupp to fit all points.
+
+        When points span more than crop_size pixels at the current resolution,
+        this zooms out (increases mupp) so all points fit in one image.
+
+        Args:
+            all_points_geo: list of (x, y) tuples in raster CRS
+            crop_size: target image size in pixels (1024)
+
+        Returns:
+            (center_x, center_y, mupp_or_scale) where the third value is:
+            - For online layers: the mupp needed (at least canvas mupp)
+            - For file-based layers: the scale_factor (>= 1.0)
+        """
+        xs = [p[0] for p in all_points_geo]
+        ys = [p[1] for p in all_points_geo]
+        bbox_width = max(xs) - min(xs)
+        bbox_height = max(ys) - min(ys)
+        center_x = (min(xs) + max(xs)) / 2.0
+        center_y = (min(ys) + max(ys)) / 2.0
+
+        # Add 20% margin on each side (1.4x total)
+        needed_geo_size = max(bbox_width, bbox_height) * 1.4
+
+        if self._is_online_layer:
+            canvas_mupp = self.iface.mapCanvas().mapUnitsPerPixel()
+            # mupp must cover at least the needed area, but not less than canvas
+            needed_mupp = needed_geo_size / crop_size
+            mupp = max(canvas_mupp, needed_mupp)
+            return center_x, center_y, mupp
+        else:
+            # For file-based layers, compute scale_factor from native pixel size
+            native_pixel_size = self._get_native_pixel_size()
+            if native_pixel_size > 0:
+                needed_mupp = needed_geo_size / crop_size
+                scale_factor = max(1.0, needed_mupp / native_pixel_size)
+            else:
+                scale_factor = 1.0
+            return center_x, center_y, scale_factor
+
+    def _get_native_pixel_size(self):
+        """Get the native pixel size of the current file-based raster layer."""
+        try:
+            ext = self._current_layer.extent()
+            w = self._current_layer.width()
+            h = self._current_layer.height()
+            if w > 0 and h > 0:
+                px = (ext.xMaximum() - ext.xMinimum()) / w
+                py = (ext.yMaximum() - ext.yMinimum()) / h
+                return max(px, py)
+        except (RuntimeError, AttributeError):
+            pass
+        return 0.0
+
+    def _extract_and_encode_crop(self, center_point, mupp_override=None):
         """Extract a crop centered on the point and encode it with SAM.
+
+        Args:
+            center_point: QgsPointXY center in raster CRS
+            mupp_override: For online layers, override mupp (zoom-out).
+                For file-based layers, this is the scale_factor (>= 1.0).
 
         Returns True on success, False on error.
         """
@@ -1576,10 +1705,12 @@ class AISegmentationPlugin:
         if self._is_online_layer:
             canvas = self.iface.mapCanvas()
             canvas_mupp = canvas.mapUnitsPerPixel()
-            self._current_crop_mupp = canvas_mupp
+            self._current_crop_canvas_mupp = canvas_mupp
+            actual_mupp = mupp_override if mupp_override else canvas_mupp
+            self._current_crop_actual_mupp = actual_mupp
             image_np, crop_info, error = extract_crop_from_online_layer(
                 self._current_layer, raster_pt_x, raster_pt_y,
-                canvas_mupp, crop_size=1024
+                actual_mupp, crop_size=1024
             )
         else:
             layer_crs_wkt = None
@@ -1594,11 +1725,13 @@ class AISegmentationPlugin:
             except RuntimeError:
                 pass
 
+            scale_factor = mupp_override if mupp_override else 1.0
             image_np, crop_info, error = extract_crop_from_raster(
                 self._current_raster_path, raster_pt_x, raster_pt_y,
                 crop_size=1024,
                 layer_crs_wkt=layer_crs_wkt,
                 layer_extent=layer_extent,
+                scale_factor=scale_factor,
             )
 
         if error:
@@ -1663,23 +1796,10 @@ class AISegmentationPlugin:
             )
             return
 
-        # On-demand encoding: encode crop if point is outside current crop
-        if not self._is_point_in_current_crop(raster_pt):
-            # Clear previous points and mask since we're re-encoding a new area
-            if self._current_crop_info is not None:
-                self.prompts.clear()
-                if self.map_tool:
-                    self.map_tool.clear_markers()
-                self._clear_mask_visualization()
-                self.current_mask = None
-                self.current_low_res_mask = None
-                # Re-add the marker that was cleared
-                self.map_tool.add_marker(point, is_positive=True)
-
-            if not self._extract_and_encode_crop(raster_pt):
-                if self.map_tool:
-                    self.map_tool.remove_last_marker()
-                return
+        # Register point in prompts immediately so it stays in sync with
+        # the marker already added by canvasPressEvent.  This lets Cmd+Z
+        # work at any time, even during the (blocking) encoding below.
+        self.prompts.add_positive_point(raster_pt.x(), raster_pt.y())
 
         QgsMessageLog.logMessage(
             "POSITIVE POINT at ({:.6f}, {:.6f})".format(
@@ -1688,7 +1808,40 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
 
-        self.prompts.add_positive_point(raster_pt.x(), raster_pt.y())
+        # On-demand encoding: encode crop if point is outside current crop
+        if not self._is_point_in_current_crop(raster_pt):
+            if self._current_crop_info is not None:
+                # Keep all existing points, re-center to include all
+                all_pts = [(p[0], p[1]) for p in
+                           self.prompts.positive_points + self.prompts.negative_points]
+
+                if len(all_pts) > 1:
+                    center_x, center_y, mupp_or_scale = (
+                        self._compute_crop_center_and_mupp(all_pts))
+                    new_center = QgsPointXY(center_x, center_y)
+                    self.current_low_res_mask = None
+                else:
+                    new_center = raster_pt
+                    mupp_or_scale = None
+
+                # Don't clear mask visualization here - keep the blue
+                # rubber band visible during re-encoding so the user
+                # sees no flicker. _run_prediction will replace it.
+
+                if not self._extract_and_encode_crop(
+                        new_center, mupp_override=mupp_or_scale):
+                    self.prompts.undo()
+                    if self.map_tool:
+                        self.map_tool.remove_last_marker()
+                    return
+            else:
+                # First click ever, just encode at click point
+                if not self._extract_and_encode_crop(raster_pt):
+                    self.prompts.undo()
+                    if self.map_tool:
+                        self.map_tool.remove_last_marker()
+                    return
+
         self._run_prediction()
 
     def _on_negative_click(self, point):
@@ -1723,22 +1876,8 @@ class AISegmentationPlugin:
             )
             return
 
-        # If negative point falls outside current crop, re-encode with new center
-        if not self._is_point_in_current_crop(raster_pt):
-            # Recalculate center as midpoint of all points including this one
-            all_xs = [p[0] for p in self.prompts.positive_points + self.prompts.negative_points]
-            all_ys = [p[1] for p in self.prompts.positive_points + self.prompts.negative_points]
-            all_xs.append(raster_pt.x())
-            all_ys.append(raster_pt.y())
-            new_center = QgsPointXY(
-                (min(all_xs) + max(all_xs)) / 2,
-                (min(all_ys) + max(all_ys)) / 2
-            )
-
-            if not self._extract_and_encode_crop(new_center):
-                if self.map_tool:
-                    self.map_tool.remove_last_marker()
-                return
+        # Register point in prompts immediately (sync with marker)
+        self.prompts.add_negative_point(raster_pt.x(), raster_pt.y())
 
         QgsMessageLog.logMessage(
             "NEGATIVE POINT at ({:.6f}, {:.6f})".format(
@@ -1747,7 +1886,23 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
 
-        self.prompts.add_negative_point(raster_pt.x(), raster_pt.y())
+        # If negative point falls outside current crop, re-center to fit all points
+        if not self._is_point_in_current_crop(raster_pt):
+            all_pts = [(p[0], p[1]) for p in
+                       self.prompts.positive_points + self.prompts.negative_points]
+
+            center_x, center_y, mupp_or_scale = (
+                self._compute_crop_center_and_mupp(all_pts))
+            new_center = QgsPointXY(center_x, center_y)
+            self.current_low_res_mask = None
+
+            if not self._extract_and_encode_crop(
+                    new_center, mupp_override=mupp_or_scale):
+                self.prompts.undo()
+                if self.map_tool:
+                    self.map_tool.remove_last_marker()
+                return
+
         self._run_prediction()
 
     def _run_prediction(self):
@@ -2084,7 +2239,8 @@ class AISegmentationPlugin:
         # Reset on-demand encoding state
         self._current_crop_info = None
         self._current_raster_path = None
-        self._current_crop_mupp = None
+        self._current_crop_canvas_mupp = None
+        self._current_crop_actual_mupp = None
 
         # Reset online layer state
         self._is_online_layer = False
