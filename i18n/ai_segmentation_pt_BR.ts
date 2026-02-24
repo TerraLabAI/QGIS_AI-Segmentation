@@ -189,6 +189,12 @@
         <translation>Verifique sua conexão com a internet e tente novamente.</translation>
     </message>
 
+    <!-- Panel Title -->
+    <message>
+        <source>AI Segmentation by TerraLab</source>
+        <translation>AI Segmentation por TerraLab</translation>
+    </message>
+
     <!-- Activation Section -->
     <message>
         <source>Setup AI Segmentation by TerraLab</source>
