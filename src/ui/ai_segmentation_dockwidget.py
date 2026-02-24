@@ -1010,33 +1010,12 @@ class AISegmentationDockWidget(QDockWidget):
         self.stop_segmentation_requested.emit()
 
     def update_gpu_info(self):
-        """Show GPU info box in dependencies section if NVIDIA GPU detected."""
-        if sys.platform == "darwin":
-            return
-        try:
-            from ..core.venv_manager import detect_nvidia_gpu
-            has_gpu, gpu_info = detect_nvidia_gpu()
-            if has_gpu:
-                gpu_name = gpu_info.get("name", "NVIDIA GPU")
-                self.gpu_info_box.setText(
-                    tr("GPU detected: {gpu_name}. Segmentation will be "
-                       "5-10x faster! Installation takes a few extra "
-                       "minutes.").format(gpu_name=gpu_name)
-                )
-                self.gpu_info_box.setVisible(True)
-        except Exception:
-            pass
+        """GPU info display disabled (CPU-only mode)."""
+        return
 
     def get_cuda_enabled(self) -> bool:
-        """Auto-detect NVIDIA GPU and return whether CUDA should be used."""
-        if sys.platform == "darwin":
-            return False
-        try:
-            from ..core.venv_manager import detect_nvidia_gpu
-            has_gpu, _ = detect_nvidia_gpu()
-            return has_gpu
-        except Exception:
-            return False
+        """Always CPU-only. GPU code kept for future reactivation."""
+        return False
 
     def set_dependency_status(self, ok: bool, message: str):
         self._dependencies_ok = ok
@@ -1119,7 +1098,7 @@ class AISegmentationDockWidget(QDockWidget):
             self._last_percent = 0
             self._last_percent_time = None
             self._creep_counter = 0
-            self._is_cuda_install = self.get_cuda_enabled()
+            self._is_cuda_install = False
             self.deps_progress.setValue(0)
             self.deps_progress.setVisible(True)
             self.deps_progress_label.setVisible(True)

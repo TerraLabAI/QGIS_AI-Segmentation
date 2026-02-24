@@ -16,9 +16,8 @@ def get_optimal_device():  # -> torch.device
         return _cached_device
 
     try:
-        import torch
+        import torch  # noqa: F811
     except OSError as e:
-        # Windows DLL loading error (shm.dll, etc.)
         if "shm.dll" in str(e) or "DLL" in str(e).upper():
             error_msg = (
                 "PyTorch DLL loading failed on Windows. "
@@ -37,124 +36,11 @@ def get_optimal_device():  # -> torch.device
         QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
         raise
 
-    try:
-        cuda_available = torch.cuda.is_available()
-    except Exception as e:
-        QgsMessageLog.logMessage(
-            "torch.cuda.is_available() failed ({}), skipping CUDA".format(e),
-            "AI Segmentation",
-            level=Qgis.Warning
-        )
-        cuda_available = False
-
-    if cuda_available:
-        best_idx = -1
-        best_mem = 0.0
-        best_name = None
-
-        try:
-            count = torch.cuda.device_count()
-            for i in range(count):
-                try:
-                    props = torch.cuda.get_device_properties(i)
-                    mem_gb = props.total_memory / (1024**3)
-                    # Check available (free) memory, not just total
-                    try:
-                        free_mem, total_mem = torch.cuda.mem_get_info(i)
-                        free_gb = free_mem / (1024**3)
-                        if free_gb < 1.0:
-                            QgsMessageLog.logMessage(
-                                "GPU {} ({}) has only {:.1f}GB free of {:.1f}GB total, skipping".format(
-                                    i, props.name, free_gb, mem_gb),
-                                "AI Segmentation", level=Qgis.Warning)
-                            continue
-                    except (AttributeError, RuntimeError):
-                        pass  # mem_get_info not available, use total memory
-                    if mem_gb >= 1.5 and mem_gb > best_mem:
-                        best_mem = mem_gb
-                        best_idx = i
-                        best_name = props.name
-                except Exception:
-                    continue
-        except Exception as e:
-            QgsMessageLog.logMessage(
-                "Cannot query CUDA device info ({}), falling back to CPU".format(e),
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
-
-        if best_idx < 0:
-            if best_mem > 0:
-                QgsMessageLog.logMessage(
-                    "No GPU with >=1.5GB memory found, falling back to CPU",
-                    "AI Segmentation",
-                    level=Qgis.Warning
-                )
-        else:
-            # Test that GPU kernels actually work with a small allocation
-            cuda_dev = "cuda:{}".format(best_idx)
-            try:
-                test = torch.zeros(1, device=cuda_dev)
-                _ = test + 1
-                torch.cuda.synchronize(best_idx)
-                del test
-                torch.cuda.empty_cache()
-
-                _cached_device = torch.device(cuda_dev)
-                _device_info = "NVIDIA GPU ({}, {:.1f}GB)".format(
-                    best_name, best_mem)
-                _configure_cuda_optimizations()
-                QgsMessageLog.logMessage(
-                    "Using CUDA acceleration: {} (device {})".format(
-                        best_name, best_idx),
-                    "AI Segmentation",
-                    level=Qgis.Info
-                )
-                return _cached_device
-            except RuntimeError as e:
-                QgsMessageLog.logMessage(
-                    "CUDA test failed ({}), falling back to CPU".format(str(e)),
-                    "AI Segmentation",
-                    level=Qgis.Warning
-                )
-                try:
-                    torch.cuda.empty_cache()
-                except Exception:
-                    pass
-
-    if sys.platform == "darwin":
-        try:
-            if torch.backends.mps.is_available() and torch.backends.mps.is_built():
-                # Verify MPS actually works with a test allocation
-                test = torch.zeros(1, device="mps")
-                _ = test + 1
-                torch.mps.synchronize()
-                del test
-
-                _cached_device = torch.device("mps")
-                _device_info = "Apple Silicon GPU (MPS)"
-                _configure_mps_optimizations()
-                QgsMessageLog.logMessage(
-                    "Using MPS acceleration (Apple Silicon GPU)",
-                    "AI Segmentation",
-                    level=Qgis.Info
-                )
-                return _cached_device
-        except Exception as e:
-            QgsMessageLog.logMessage(
-                f"MPS check failed: {e}",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
-
     _cached_device = torch.device("cpu")
-    _device_info = f"CPU ({os.cpu_count()} cores)"
+    _device_info = "CPU ({} cores)".format(os.cpu_count())
     _configure_cpu_optimizations()
     QgsMessageLog.logMessage(
-        "Using CPU (no GPU acceleration available)",
-        "AI Segmentation",
-        level=Qgis.Info
-    )
+        "Using CPU inference", "AI Segmentation", level=Qgis.Info)
     return _cached_device
 
 

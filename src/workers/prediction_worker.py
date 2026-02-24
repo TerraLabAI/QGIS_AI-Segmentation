@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 import sys
 import os
-import gc
 import json
 import base64
-
-# Ensure consistent GPU ordering on multi-GPU systems
-os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 
 try:
     import numpy as np  # noqa: E402
@@ -65,7 +61,14 @@ def build_sam1_model(checkpoint, device):
 
 
 def get_optimal_device():
-    # TEMP: Force CPU for testing
+    num_cores = os.cpu_count() or 4
+    optimal_threads = max(4, num_cores // 2) if sys.platform == "darwin" else num_cores
+    torch.set_num_threads(optimal_threads)
+    if hasattr(torch, 'set_num_interop_threads'):
+        try:
+            torch.set_num_interop_threads(max(2, optimal_threads // 2))
+        except RuntimeError:
+            pass
     return torch.device("cpu")
 
 
@@ -124,14 +127,6 @@ def main():
 
         device = get_optimal_device()
 
-        # Free memory before loading model
-        if device.type == "cuda":
-            gc.collect()
-            torch.cuda.empty_cache()
-        elif device.type == "mps" and hasattr(torch.mps, 'empty_cache'):
-            gc.collect()
-            torch.mps.empty_cache()
-
         if _USE_SAM2:
             sam_model = build_sam2_model(checkpoint_path, device)
             predictor = SAM2ImagePredictor(sam_model)
@@ -142,19 +137,10 @@ def main():
             predictor = Sam1Predictor(sam_model)
             model_label = "SAM1-ViT-B"
 
-        # Log environment info for diagnostics (no personal paths)
-        device_name = str(device)
-        if device.type == "cuda":
-            try:
-                gpu_name = torch.cuda.get_device_name(device)
-                gpu_mem = torch.cuda.get_device_properties(
-                    device).total_memory / (1024**3)
-                device_name = "cuda ({}, {:.1f}GB)".format(gpu_name, gpu_mem)
-            except Exception:
-                pass
+        num_threads = torch.get_num_threads()
         sys.stderr.write(
-            "[prediction_worker] {}, PyTorch={}, device={}, Python={}.{}.{}\n".format(
-                model_label, torch.__version__, device_name,
+            "[prediction_worker] {}, PyTorch={}, device=cpu ({}t), Python={}.{}.{}\n".format(
+                model_label, torch.__version__, num_threads,
                 sys.version_info.major, sys.version_info.minor,
                 sys.version_info.micro
             )
@@ -180,30 +166,9 @@ def main():
                     image_np = decode_numpy_array(
                         image_b64, image_shape, image_dtype)
 
-                    try:
-                        with torch.inference_mode():
-                            predictor.set_image(image_np)
-                        original_size = image_np.shape[:2]
-                    except RuntimeError:
-                        if device.type != "cpu":
-                            # GPU error - fall back to CPU and retry
-                            try:
-                                if device.type == "cuda":
-                                    torch.cuda.empty_cache()
-                            except Exception:
-                                pass
-                            predictor.model.to(torch.device("cpu"))
-                            try:
-                                with torch.inference_mode():
-                                    predictor.set_image(image_np)
-                                original_size = image_np.shape[:2]
-                            except Exception as cpu_err:
-                                send_error(
-                                    "CPU retry also failed: {}".format(
-                                        cpu_err))
-                                continue
-                        else:
-                            raise
+                    with torch.inference_mode():
+                        predictor.set_image(image_np)
+                    original_size = image_np.shape[:2]
 
                     response_data = {
                         "original_size": list(original_size),
@@ -245,28 +210,9 @@ def main():
                     if _USE_SAM2:
                         predict_kwargs["normalize_coords"] = True
 
-                    try:
-                        with torch.inference_mode():
-                            masks, scores, low_res_masks = predictor.predict(
-                                **predict_kwargs)
-                    except RuntimeError:
-                        if device.type != "cpu":
-                            try:
-                                if device.type == "cuda":
-                                    torch.cuda.empty_cache()
-                            except Exception:
-                                pass
-                            predictor.model.to(torch.device("cpu"))
-                            try:
-                                with torch.inference_mode():
-                                    masks, scores, low_res_masks = predictor.predict(
-                                        **predict_kwargs)
-                            except Exception as cpu_err:
-                                send_error(
-                                    "CPU retry also failed: {}".format(cpu_err))
-                                continue
-                        else:
-                            raise
+                    with torch.inference_mode():
+                        masks, scores, low_res_masks = predictor.predict(
+                            **predict_kwargs)
 
                     # When auto-selecting best mask, pick the highest score
                     if auto_best and masks.shape[0] > 1:
