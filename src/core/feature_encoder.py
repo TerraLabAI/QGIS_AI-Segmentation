@@ -122,10 +122,9 @@ def _fetch_online_bands(provider, extent, width, height):
     dt = block.dataType()
 
     # ARGB32 formats: direct extraction
-    is_argb = (
-        dt == Qgis.DataType.ARGB32
-        or dt == Qgis.DataType.ARGB32_Premultiplied
-    )
+    is_argb32 = dt == Qgis.DataType.ARGB32
+    is_argb32_pre = dt == Qgis.DataType.ARGB32_Premultiplied
+    is_argb = is_argb32 or is_argb32_pre
     if is_argb:
         arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
             block_h, block_w, 4).copy()

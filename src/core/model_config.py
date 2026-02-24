@@ -30,8 +30,6 @@ else:
     )
     CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
     # SHA256 hash for checkpoint verification (not a secret)
-    CHECKPOINT_SHA256 = (  # noqa: S105  # pragma: allowlist secret
-        "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"
-    )
+    CHECKPOINT_SHA256 = "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"  # noqa: S105, E501  # pragma: allowlist secret
     CHECKPOINT_SIZE_LABEL = "~375MB"
     MODEL_CFG = None  # SAM1 uses registry, no config file

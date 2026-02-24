@@ -2015,11 +2015,9 @@ class AISegmentationPlugin:
         # Use multimask only on the very first point of a new polygon
         # (more accurate initial selection). For subsequent points or
         # re-encoded crops with transferred mask, use single mask.
-        is_first_point = (
-            len(self.prompts.positive_points) == 1
-            and len(self.prompts.negative_points) == 0
-            and mask_input is None
-        )
+        one_positive = len(self.prompts.positive_points) == 1
+        no_negatives = len(self.prompts.negative_points) == 0
+        is_first_point = one_positive and no_negatives and mask_input is None
         use_multimask = is_first_point
 
         try:
