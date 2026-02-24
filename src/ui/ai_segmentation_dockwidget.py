@@ -38,7 +38,6 @@ class AISegmentationDockWidget(QDockWidget):
     install_dependencies_requested = pyqtSignal()
     cancel_deps_install_requested = pyqtSignal()
     download_checkpoint_requested = pyqtSignal()
-    cancel_preparation_requested = pyqtSignal()
     start_segmentation_requested = pyqtSignal(object)
     clear_points_requested = pyqtSignal()
     undo_requested = pyqtSignal()
@@ -47,7 +46,6 @@ class AISegmentationDockWidget(QDockWidget):
     stop_segmentation_requested = pyqtSignal()
     refine_settings_changed = pyqtSignal(int, int, bool, int)  # expand, simplify, fill_holes, min_area
     batch_mode_changed = pyqtSignal(bool)  # Batch mode is always on
-    visible_area_changed = pyqtSignal(bool)  # True = encode visible area only
 
     def __init__(self, parent=None):
         super().__init__("", parent)
@@ -73,15 +71,11 @@ class AISegmentationDockWidget(QDockWidget):
         self._segmentation_active = False
         self._has_mask = False
         self._saved_polygon_count = 0
-        self._encoding_start_time = None
-        self._slow_encoding_warned = False
         self._positive_count = 0
         self._negative_count = 0
         self._plugin_activated = is_plugin_activated()
         self._activation_popup_shown = False  # Track if popup was shown
         self._batch_mode = True  # Batch mode is now the only mode
-        self._raster_fully_encoded = False  # Track if raster is fully encoded
-        self._visible_area_mode = False  # Encode full raster by default
         self._segmentation_layer_id = None  # Track which layer we're segmenting
         # Note: _refine_expanded is initialized before _setup_ui() call
 
@@ -405,72 +399,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.instructions_label.setVisible(False)
         layout.addWidget(self.instructions_label)
 
-        # Encoding progress section - green background with theme-compatible text
-        self.encoding_info_label = QLabel("")
-        self.encoding_info_label.setStyleSheet(
-            "background-color: rgba(46, 125, 50, 0.15); padding: 8px; "
-            "border-radius: 4px; font-size: 11px; border: 1px solid rgba(46, 125, 50, 0.3); "
-            "color: palette(text);"
-        )
-        self.encoding_info_label.setWordWrap(True)
-        self.encoding_info_label.setVisible(False)
-        layout.addWidget(self.encoding_info_label)
-
-        self.prep_progress = QProgressBar()
-        self.prep_progress.setRange(0, 100)
-        self.prep_progress.setVisible(False)
-        layout.addWidget(self.prep_progress)
-
-        self.prep_status_label = QLabel("")
-        self.prep_status_label.setStyleSheet("color: palette(text); font-size: 11px;")
-        self.prep_status_label.setVisible(False)
-        layout.addWidget(self.prep_status_label)
-
-        self.cancel_prep_button = QPushButton(tr("Cancel"))
-        self.cancel_prep_button.clicked.connect(self._on_cancel_prep_clicked)
-        self.cancel_prep_button.setVisible(False)
-        self.cancel_prep_button.setMaximumHeight(26)
-        self.cancel_prep_button.setStyleSheet(
-            "QPushButton { background-color: #d32f2f; font-size: 10px; }"
-        )
-        layout.addWidget(self.cancel_prep_button)
-
-        # Cloud processing waitlist banner (shown during long encodings)
-        self._cloud_banner = QWidget()
-        cloud_layout = QVBoxLayout(self._cloud_banner)
-        cloud_layout.setContentsMargins(8, 8, 8, 8)
-        cloud_layout.setSpacing(4)
-        self._cloud_banner.setStyleSheet(
-            "background-color: rgba(33, 150, 243, 0.12); "
-            "border-radius: 4px; border: 1px solid rgba(33, 150, 243, 0.3);"
-        )
-        cloud_text = QLabel("{}\n\n{}".format(
-            tr("Large rasters can take time locally."),
-            tr("Cloud processing is coming soon for faster encoding, "
-               "more precise and automated segmentation!")
-        ))
-        cloud_text.setWordWrap(True)
-        cloud_text.setStyleSheet(
-            "font-size: 11px; color: palette(text); "
-            "border: none; background: transparent;"
-        )
-        cloud_layout.addWidget(cloud_text)
-        cloud_btn = QPushButton(tr("Join waitlist"))
-        cloud_btn.setMaximumHeight(24)
-        cloud_btn.setStyleSheet(
-            "QPushButton { background-color: rgba(33, 150, 243, 0.25); "
-            "font-size: 10px; padding: 2px 12px; border: 1px solid rgba(33, 150, 243, 0.4); "
-            "border-radius: 3px; color: palette(text); }"
-            "QPushButton:hover { background-color: rgba(33, 150, 243, 0.4); }"
-        )
-        cloud_btn.setCursor(Qt.PointingHandCursor)
-        cloud_btn.clicked.connect(self._on_cloud_waitlist_clicked)
-        cloud_layout.addWidget(cloud_btn, alignment=Qt.AlignLeft)
-        self._cloud_banner.setVisible(False)
-        self._cloud_banner_shown = False
-        layout.addWidget(self._cloud_banner)
-
-        # Container for start button and visible area checkbox
+        # Container for start button
         self.start_container = QWidget()
         start_layout = QVBoxLayout(self.start_container)
         start_layout.setContentsMargins(0, 0, 0, 0)
@@ -489,31 +418,6 @@ class AISegmentationDockWidget(QDockWidget):
         # Keyboard shortcut G to start segmentation
         self.start_shortcut = QShortcut(QKeySequence("G"), self)
         self.start_shortcut.activated.connect(self._on_start_shortcut)
-
-        # Visible area option - small checkbox below start button
-        self.visible_area_widget = QWidget()
-        visible_area_layout = QHBoxLayout(self.visible_area_widget)
-        visible_area_layout.setContentsMargins(0, 0, 0, 0)
-        visible_area_layout.setSpacing(0)
-        visible_area_layout.addStretch()
-
-        self.visible_area_checkbox = QCheckBox(
-            tr("Segment only in the visible area") + " (beta)")
-        self.visible_area_checkbox.setChecked(False)
-        self.visible_area_checkbox.setStyleSheet(
-            "QCheckBox { font-size: 11px; color: palette(text); }"
-            "QCheckBox:disabled { color: palette(dark); }"
-            "QCheckBox::indicator { width: 14px; height: 14px; }"
-        )
-        self.visible_area_checkbox.setToolTip(
-            "{}\n{}".format(
-                tr("When checked, only the area currently visible on your map will be encoded."),
-                tr("Useful for large rasters that take too long to encode entirely."))
-        )
-        self.visible_area_checkbox.stateChanged.connect(self._on_visible_area_checkbox_changed)
-        visible_area_layout.addWidget(self.visible_area_checkbox)
-
-        start_layout.addWidget(self.visible_area_widget)
 
         layout.addWidget(self.start_container)
 
@@ -936,16 +840,6 @@ class AISegmentationDockWidget(QDockWidget):
         from .error_report_dialog import show_suggest_feature
         show_suggest_feature(self)
 
-    def _on_visible_area_checkbox_changed(self, state: int):
-        """Handle visible area checkbox change."""
-        checked = state == Qt.Checked
-        self._visible_area_mode = checked
-        self.visible_area_changed.emit(checked)
-
-    def is_visible_area_mode(self) -> bool:
-        """Return whether visible area encoding mode is active."""
-        return self._visible_area_mode
-
     def is_batch_mode(self) -> bool:
         """Return whether batch mode is active (always True)."""
         return True
@@ -953,16 +847,6 @@ class AISegmentationDockWidget(QDockWidget):
     def set_batch_mode(self, batch: bool):
         """Set batch mode programmatically. Batch is always on."""
         pass
-
-    def set_raster_fully_encoded(self, encoded: bool):
-        """Set whether the full raster is already encoded (cached)."""
-        self._raster_fully_encoded = encoded
-        # Hide visible area option when raster is fully encoded and not in visible mode
-        if not self._segmentation_active:
-            if encoded and not self._visible_area_mode:
-                self.visible_area_widget.setVisible(False)
-            else:
-                self.visible_area_widget.setVisible(True)
 
     def _on_get_code_clicked(self):
         """Open the newsletter signup page in the default browser."""
@@ -1041,23 +925,6 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_download_clicked(self):
         self.download_button.setEnabled(False)
         self.download_checkpoint_requested.emit()
-
-    def _on_cloud_waitlist_clicked(self):
-        QDesktopServices.openUrl(QUrl("https://terra-lab.ai/ai-segmentation-waitlist"))
-
-    def _on_cancel_prep_clicked(self):
-        reply = QMessageBox.question(
-            self,
-            tr("Cancel Encoding?"),
-            "{}\n\n{}\n{}".format(
-                tr("Are you sure you want to cancel?"),
-                tr("Once encoding is complete, it's cached permanently."),
-                tr("You'll never need to wait for this image again.")),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            self.cancel_preparation_requested.emit()
 
     def _on_layer_changed(self, layer):
         # Just update UI state - layer change handling is done by the plugin
@@ -1305,95 +1172,6 @@ class AISegmentationDockWidget(QDockWidget):
             self.download_button.setEnabled(True)
             self.download_button.setText(tr("Download AI Segmentation Model (~375MB)"))
 
-    def set_preparation_progress(self, percent: int, message: str, cache_path: str = None):
-        import time
-
-        self.prep_progress.setValue(percent)
-
-        time_info = ""
-        if percent > 5 and percent < 100 and self._encoding_start_time:
-            elapsed = time.time() - self._encoding_start_time
-            if elapsed > 2 and percent > 0:
-                estimated_total = elapsed / (percent / 100)
-                remaining = estimated_total - elapsed
-                if remaining > 60:
-                    time_info = f" (~{int(remaining / 60)} min left)"
-                elif remaining > 10:
-                    time_info = f" (~{int(remaining)} sec left)"
-
-        self.prep_status_label.setText(f"{message}{time_info}")
-
-        # Show cloud waitlist banner after 45 seconds of encoding
-        is_encoding = self._encoding_start_time and 0 < percent < 100
-        if not self._cloud_banner_shown and is_encoding:
-            elapsed = time.time() - self._encoding_start_time
-            if elapsed > 45:
-                self._cloud_banner_shown = True
-                self._cloud_banner.setVisible(True)
-
-        # Show warning after 10 minutes of encoding (once)
-        if not self._slow_encoding_warned and is_encoding:
-            elapsed = time.time() - self._encoding_start_time
-            if elapsed > 600:
-                self._slow_encoding_warned = True
-                self.encoding_info_label.setText(
-                    "⚠️ {}\n{}".format(
-                        tr("Encoding is taking a long time."),
-                        tr("To speed up, reduce the image size or resolution before importing."))
-                )
-                self.encoding_info_label.setStyleSheet(
-                    "background-color: rgba(230, 160, 0, 0.18); padding: 8px; "
-                    "border-radius: 4px; font-size: 11px; "
-                    "border: 1px solid rgba(230, 160, 0, 0.4); "
-                    "color: palette(text);"
-                )
-
-        if percent == 0:
-            self._encoding_start_time = time.time()
-            self._slow_encoding_warned = False
-            self._cloud_banner_shown = False
-            self._cloud_banner.setVisible(False)
-            self.prep_progress.setVisible(True)
-            self.prep_status_label.setVisible(True)
-            self.start_container.setVisible(False)
-            self.cancel_prep_button.setVisible(True)
-            if self._visible_area_mode:
-                self.encoding_info_label.setText(
-                    "⏳ {}\n{}".format(
-                        tr("Encoding visible area for AI segmentation..."),
-                        tr("Only the visible map extent will be processed."))
-                )
-            else:
-                self.encoding_info_label.setText(
-                    "⏳ {}\n{}".format(
-                        tr("Encoding this image for AI segmentation..."),
-                        tr("This is stored permanently, no waiting next time :)"))
-                )
-            self.encoding_info_label.setStyleSheet(
-                "background-color: rgba(46, 125, 50, 0.15); padding: 8px; "
-                "border-radius: 4px; font-size: 11px; "
-                "border: 1px solid rgba(46, 125, 50, 0.3); "
-                "color: palette(text);"
-            )
-            self.encoding_info_label.setVisible(True)
-        elif percent >= 100 or "cancel" in message.lower():
-            self.prep_progress.setVisible(False)
-            self.prep_status_label.setVisible(False)
-            self.cancel_prep_button.setVisible(False)
-            self.encoding_info_label.setVisible(False)
-            self._cloud_banner.setVisible(False)
-            # Restore green style for next time
-            self.encoding_info_label.setStyleSheet(
-                "background-color: rgba(46, 125, 50, 0.15); padding: 8px; "
-                "border-radius: 4px; font-size: 11px; "
-                "border: 1px solid rgba(46, 125, 50, 0.3); "
-                "color: palette(text);"
-            )
-            self.start_container.setVisible(True)
-            self._encoding_start_time = None
-            self._slow_encoding_warned = False
-            self._update_ui_state()
-
     def set_segmentation_active(self, active: bool):
         self._segmentation_active = active
 
@@ -1411,8 +1189,7 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _update_button_visibility(self):
         if self._segmentation_active:
-            self.start_container.setVisible(False)  # Also hides visible_area_widget inside it
-            self.encoding_info_label.setVisible(False)
+            self.start_container.setVisible(False)
             self.instructions_label.setVisible(True)
             self._update_instructions()
 
@@ -1441,31 +1218,6 @@ class AISegmentationDockWidget(QDockWidget):
         else:
             # Not segmenting - hide all segmentation buttons, show start controls
             self.start_container.setVisible(True)
-            # Show visible area unless raster is fully encoded
-            if self._raster_fully_encoded and not self._visible_area_mode:
-                self.visible_area_widget.setVisible(False)
-            else:
-                self.visible_area_widget.setVisible(True)
-
-            # Force visible area mode ON for online layers (infinite extent)
-            layer = self.layer_combo.currentLayer()
-            if self._is_online_layer(layer):
-                self.visible_area_checkbox.blockSignals(True)
-                self.visible_area_checkbox.setChecked(True)
-                self.visible_area_checkbox.blockSignals(False)
-                self._visible_area_mode = True
-                self.visible_area_checkbox.setEnabled(False)
-                self.visible_area_checkbox.setToolTip(
-                    tr("Online layers always use visible area mode.")
-                )
-                self.visible_area_widget.setVisible(True)
-            else:
-                self.visible_area_checkbox.setEnabled(True)
-                self.visible_area_checkbox.setToolTip(
-                    "{}\n{}".format(
-                        tr("When checked, only the area currently visible on your map will be encoded."),
-                        tr("Useful for large rasters that take too long to encode entirely."))
-                )
             self.instructions_label.setVisible(False)
             self.refine_group.setVisible(False)
             self.save_mask_button.setVisible(False)

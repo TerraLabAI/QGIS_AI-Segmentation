@@ -11,7 +11,6 @@ os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 try:
     import numpy as np  # noqa: E402
     import torch  # noqa: E402
-    import torch.nn as nn  # noqa: E402
     from typing import Tuple, Optional  # noqa: E402
 except ImportError as e:
     error_msg = {
@@ -39,54 +38,12 @@ except OSError as e:
     sys.exit(1)
 
 
-class FakeImageEncoderViT(nn.Module):
-    def __init__(self, img_size: int = 1024) -> None:
-        super().__init__()
-        self.img_size = img_size
+def build_sam_vit_b(checkpoint: Optional[str] = None):
+    """Build full SAM ViT-B model with real image encoder."""
+    from segment_anything import sam_model_registry
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x
-
-
-def build_sam_vit_b_no_encoder(checkpoint: Optional[str] = None):
-    from segment_anything.modeling import MaskDecoder, PromptEncoder, Sam, TwoWayTransformer
-
-    prompt_embed_dim = 256
-    image_size = 1024
-    vit_patch_size = 16
-    image_embedding_size = image_size // vit_patch_size
-
-    sam = Sam(
-        image_encoder=FakeImageEncoderViT(img_size=image_size),
-        prompt_encoder=PromptEncoder(
-            embed_dim=prompt_embed_dim,
-            image_embedding_size=(image_embedding_size, image_embedding_size),
-            input_image_size=(image_size, image_size),
-            mask_in_chans=16,
-        ),
-        mask_decoder=MaskDecoder(
-            num_multimask_outputs=3,
-            transformer=TwoWayTransformer(
-                depth=2,
-                embedding_dim=prompt_embed_dim,
-                mlp_dim=2048,
-                num_heads=8,
-            ),
-            transformer_dim=prompt_embed_dim,
-            iou_head_depth=3,
-            iou_head_hidden_dim=256,
-        ),
-        pixel_mean=[123.675, 116.28, 103.53],
-        pixel_std=[58.395, 57.12, 57.375],
-    )
-
+    sam = sam_model_registry["vit_b"](checkpoint=checkpoint)
     sam.eval()
-
-    if checkpoint is not None:
-        with open(checkpoint, "rb") as f:
-            state_dict = torch.load(f, map_location=torch.device('cpu'), weights_only=True)
-        sam.load_state_dict(state_dict, strict=False)
-
     return sam
 
 
@@ -132,7 +89,7 @@ def get_optimal_device():
         return torch.device("cpu")
 
 
-class SamPredictorNoImgEncoder:
+class SamPredictor:
     def __init__(self, sam_model, device: Optional[torch.device] = None) -> None:
         self.model = sam_model
         self.device = device if device is not None else get_optimal_device()
@@ -188,6 +145,40 @@ class SamPredictorNoImgEncoder:
         self.original_size = img_size
         self.input_size = input_size if input_size else img_size
         self.is_image_set = True
+
+    @torch.no_grad()
+    def set_image(self, image_np: np.ndarray) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+        """Run full SAM encoding on an image crop (H, W, 3 uint8).
+
+        Returns (original_size, input_size) tuple.
+        """
+        from segment_anything.utils.transforms import ResizeLongestSide
+
+        original_h, original_w = image_np.shape[:2]
+        transform_obj = ResizeLongestSide(self.model.image_encoder.img_size)
+        resized = transform_obj.apply_image(image_np)
+        input_h, input_w = resized.shape[:2]
+
+        # Convert HWC -> CHW, add batch dim, preprocess
+        tensor = torch.as_tensor(
+            resized.transpose(2, 0, 1), dtype=torch.float32, device=self.device
+        ).unsqueeze(0)
+        tensor = self.model.preprocess(tensor)
+
+        features = self.model.image_encoder(tensor)
+        self.features = features
+        self.original_size = (original_h, original_w)
+        self.input_size = (input_h, input_w)
+        self.is_image_set = True
+
+        # Free intermediate tensors
+        del tensor
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
+        elif self.device.type == "mps" and hasattr(torch.mps, 'empty_cache'):
+            torch.mps.empty_cache()
+
+        return self.original_size, self.input_size
 
     def predict(
         self,
@@ -318,8 +309,8 @@ def main():
 
         checkpoint_path = init_request.get("checkpoint_path")
 
-        sam = build_sam_vit_b_no_encoder(checkpoint=checkpoint_path)
-        predictor = SamPredictorNoImgEncoder(sam)
+        sam = build_sam_vit_b(checkpoint=checkpoint_path)
+        predictor = SamPredictor(sam)
 
         # Log environment info for diagnostics (no personal paths)
         device_name = str(predictor.device)
@@ -351,7 +342,43 @@ def main():
                 request = json.loads(line)
                 action = request.get("action")
 
-                if action == "set_features":
+                if action == "set_image":
+                    image_b64 = request["image"]
+                    image_shape = request["image_shape"]
+                    image_dtype = request["image_dtype"]
+
+                    image_np = decode_numpy_array(
+                        image_b64, image_shape, image_dtype)
+
+                    try:
+                        orig_size, inp_size = predictor.set_image(image_np)
+                    except RuntimeError:
+                        if predictor.device.type != "cpu":
+                            # GPU error - fall back to CPU and retry
+                            try:
+                                if predictor.device.type == "cuda":
+                                    torch.cuda.empty_cache()
+                            except Exception:
+                                pass
+                            predictor.device = torch.device("cpu")
+                            predictor.model.to(predictor.device)
+                            try:
+                                orig_size, inp_size = predictor.set_image(
+                                    image_np)
+                            except Exception as cpu_err:
+                                send_error(
+                                    "CPU retry also failed: {}".format(
+                                        cpu_err))
+                                continue
+                        else:
+                            raise
+
+                    send_response("image_set", {
+                        "original_size": list(orig_size),
+                        "input_size": list(inp_size),
+                    })
+
+                elif action == "set_features":
                     features_b64 = request["features"]
                     features_shape = request["features_shape"]
                     features_dtype = request["features_dtype"]
