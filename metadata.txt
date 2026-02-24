@@ -2,7 +2,7 @@
 name=AI Segmentation by TerraLab
 description=Segment buildings, vegetation, or any object in your raster using AI & export as vector polygons
 qgisMinimumVersion=3.0
-version=0.5.0
+version=0.6.0
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -13,13 +13,15 @@ about=
 
     • Fully automatic: AI model and dependencies install themselves
 
+    • Works on any layer: local rasters (GeoTIFF, JPG, PNG) & online layers (WMS, XYZ tiles)
+
     • Precise: positive and negative click points control boundaries
 
     • Flexible: save multiple polygons and export them all in one layer
 
     • Refinable: expand, contract, simplify, fill holes, remove small regions
 
-    • Fast: auto GPU detection (CUDA, Apple Metal) or CPU
+    • Fast: Real-time segmentation & optimized for your hardware
 
     • Universal: Windows, macOS, Linux
 
