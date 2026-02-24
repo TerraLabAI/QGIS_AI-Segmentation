@@ -87,6 +87,13 @@ def get_optimal_device():
             torch.cuda.synchronize(best_idx)
             del t
             torch.cuda.empty_cache()
+            # Enable CUDA performance optimizations for inference
+            torch.backends.cudnn.enabled = True
+            torch.backends.cudnn.benchmark = True
+            if hasattr(torch.backends.cudnn, 'allow_tf32'):
+                torch.backends.cudnn.allow_tf32 = True
+            if hasattr(torch, 'set_float32_matmul_precision'):
+                torch.set_float32_matmul_precision('high')
             return torch.device(cuda_dev)
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             # Prevent MPS OOM by disabling memory pool upper limit

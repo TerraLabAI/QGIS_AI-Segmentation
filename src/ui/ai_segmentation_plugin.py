@@ -227,8 +227,6 @@ class AISegmentationPlugin:
         self._refine_fill_holes = False  # Default: matches dockwidget checkbox
         self._refine_min_area = 100  # Default: matches dockwidget spinbox
 
-        # Per-raster mask counters
-        self._mask_counters = {}  # {raster_name: counter}
 
         self._is_non_georeferenced_mode = False  # Track if current layer is non-georeferenced
         self._is_online_layer = False  # Track if current layer is online (WMS, XYZ, etc.)
@@ -1015,12 +1013,19 @@ class AISegmentationPlugin:
         self._show_tutorial_notification()
 
     def _get_next_mask_counter(self) -> int:
-        """Increment and return the mask counter for the current raster."""
-        name = self._current_layer_name
-        if name not in self._mask_counters:
-            self._mask_counters[name] = 0
-        self._mask_counters[name] += 1
-        return self._mask_counters[name]
+        """Return the next available mask number, checking existing project layers."""
+        existing_numbers = set()
+        for layer in QgsProject.instance().mapLayers().values():
+            lname = layer.name()
+            if lname.startswith("mask_"):
+                try:
+                    existing_numbers.add(int(lname.split("_", 1)[1]))
+                except (ValueError, IndexError):
+                    pass
+        counter = 1
+        while counter in existing_numbers:
+            counter += 1
+        return counter
 
     def _show_tutorial_notification(self):
         """Show YouTube tutorial notification (once ever, persisted in QSettings)."""
@@ -2361,16 +2366,6 @@ class AISegmentationPlugin:
         # Reset online layer state
         self._is_online_layer = False
 
-        # Prune mask counters for layers no longer in the project
-        try:
-            project_layer_names = {
-                layer.name() for layer in QgsProject.instance().mapLayers().values()
-            }
-            stale_keys = [k for k in self._mask_counters if k not in project_layer_names]
-            for k in stale_keys:
-                del self._mask_counters[k]
-        except Exception:
-            pass
 
         # Reset refinement settings to defaults
         self._refine_expand = 0
