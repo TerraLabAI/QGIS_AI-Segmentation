@@ -12,7 +12,7 @@ from qgis.core import QgsMessageLog, Qgis
 from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
 
 
-def build_sam_vit_b_no_encoder(checkpoint: Optional[str] = None):
+def build_sam_predictor_config(checkpoint: Optional[str] = None):
     from .venv_manager import get_venv_python_path, get_venv_dir
 
     plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,11 +32,12 @@ def build_sam_vit_b_no_encoder(checkpoint: Optional[str] = None):
     }
 
 
-class SamPredictorNoImgEncoder:
+class SamPredictor:
     # Per-operation timeouts (seconds)
     _TIMEOUT_INIT = 120       # Model loading
     _TIMEOUT_RESET = 30
     _TIMEOUT_SET_FEATURES = 60
+    _TIMEOUT_SET_IMAGE = 180  # Encoding 1 crop on slow CPU can take ~60s
     _TIMEOUT_PREDICT = 120
 
     def __init__(self, sam_config: dict, device: Optional[str] = None) -> None:
@@ -269,6 +270,60 @@ class SamPredictorNoImgEncoder:
         self.is_image_set = False
         self.original_size = None
         self.input_size = None
+
+    def set_image(self, image_np: np.ndarray) -> None:
+        """Send a raw image crop (H,W,3 uint8) to the worker for encoding.
+
+        The worker runs ResizeLongestSide + preprocess + image_encoder,
+        then stores the features internally for subsequent predict() calls.
+        """
+        if not self._start_worker():
+            raise RuntimeError("Failed to start prediction worker")
+
+        try:
+            image_b64 = base64.b64encode(
+                image_np.tobytes()).decode('utf-8')
+
+            request = {
+                "action": "set_image",
+                "image": image_b64,
+                "image_shape": list(image_np.shape),
+                "image_dtype": str(image_np.dtype),
+            }
+
+            self.process.stdin.write(json.dumps(request) + '\n')
+            self.process.stdin.flush()
+
+            response_line = self._read_response(self._TIMEOUT_SET_IMAGE)
+            response = json.loads(response_line.strip())
+
+            if response.get("type") == "image_set":
+                self.original_size = tuple(response["original_size"])
+                self.input_size = tuple(response["input_size"])
+                self.is_image_set = True
+
+                QgsMessageLog.logMessage(
+                    "Set image: original_size={}, input_size={}".format(
+                        self.original_size, self.input_size),
+                    "AI Segmentation",
+                    level=Qgis.Info
+                )
+            elif response.get("type") == "error":
+                error_msg = response.get("message", "Unknown error")
+                raise RuntimeError(
+                    "Worker error encoding image: {}".format(error_msg))
+            else:
+                raise RuntimeError(
+                    "Unexpected response: {}".format(response))
+
+        except Exception as e:
+            import traceback
+            error_msg = "Failed to encode image: {}\n{}".format(
+                str(e), traceback.format_exc())
+            QgsMessageLog.logMessage(
+                error_msg, "AI Segmentation", level=Qgis.Critical)
+            self.cleanup()
+            raise
 
     def set_image_feature(
         self,

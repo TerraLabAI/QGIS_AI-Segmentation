@@ -769,8 +769,8 @@
         <translation>GPU no compatible con la versión CUDA instalada, usando CPU...</translation>
     </message>
     <message>
-        <source>Point is outside the encoded image. Click inside the raster.</source>
-        <translation>El punto está fuera de la imagen codificada. Haga clic dentro del ráster.</translation>
+        <source>Point is outside the raster image. Click inside the raster.</source>
+        <translation>El punto está fuera de la imagen ráster. Haga clic dentro del ráster.</translation>
     </message>
 
     <!-- Update notification -->
@@ -998,6 +998,14 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     <message>
         <source>Online Layer Error</source>
         <translation>Error de capa en linea</translation>
+    </message>
+    <message>
+        <source>Crop Error</source>
+        <translation>Error de recorte</translation>
+    </message>
+    <message>
+        <source>Encoding Error</source>
+        <translation>Error de codificacion</translation>
     </message>
 </context>
 </TS>
