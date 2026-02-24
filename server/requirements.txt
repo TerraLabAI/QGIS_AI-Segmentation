@@ -1,0 +1,7 @@
+torch>=2.5.1
+torchvision>=0.20.1
+sam2>=1.0
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+numpy>=1.24.0
+python-multipart>=0.0.6
