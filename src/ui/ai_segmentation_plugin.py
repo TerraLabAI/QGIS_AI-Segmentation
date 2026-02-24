@@ -569,9 +569,6 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
 
-        # Show GPU info in dependencies section (uses cached result, no extra overhead)
-        self.dock_widget.update_gpu_info()
-
         # Clean up legacy SAM1 data (old checkpoint + features cache)
         try:
             from ..core.checkpoint_manager import cleanup_legacy_sam1_data
@@ -764,8 +761,7 @@ class AISegmentationPlugin:
 
         self.dock_widget.set_deps_install_progress(0, "Preparing installation...")
 
-        cuda_enabled = self.dock_widget.get_cuda_enabled()
-        self.deps_install_worker = DepsInstallWorker(cuda_enabled=cuda_enabled)
+        self.deps_install_worker = DepsInstallWorker(cuda_enabled=False)
         self.deps_install_worker.progress.connect(self._on_deps_install_progress)
         self.deps_install_worker.finished.connect(self._on_deps_install_finished)
         self.deps_install_worker.start()

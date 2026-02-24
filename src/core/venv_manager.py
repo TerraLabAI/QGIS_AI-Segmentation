@@ -106,47 +106,8 @@ def _read_cuda_fallback_version() -> Optional[str]:
 
 
 def needs_cuda_upgrade() -> bool:
-    """Check if an existing CPU install should be upgraded to CUDA.
-
-    Returns True only if:
-    - An NVIDIA GPU is present with a sufficient driver, AND
-    - torch was installed as CPU-only ('cpu' flag or no flag file), OR
-    - a previous CUDA install fell back but the install logic has since
-      been updated (_CUDA_LOGIC_VERSION differs from what was recorded).
-
-    This second condition lets users who were incorrectly stuck on CPU
-    due to a now-fixed pip bug get a GPU upgrade after a plugin update,
-    without triggering any reinstall for users whose setup already works.
-    """
-    if sys.platform == "darwin":
-        return False
-
-    flag = _read_cuda_flag()
-    # Old install without flag file -> treat as CPU (eligible for upgrade)
-    if flag is None:
-        flag = "cpu"
-    # Already on CUDA -> nothing to do
-    if flag == "cuda":
-        return False
-    # cuda_fallback: allow retry only if install logic has been updated
-    if flag == "cuda_fallback":
-        stored_version = _read_cuda_fallback_version()
-        if stored_version == _CUDA_LOGIC_VERSION:
-            return False  # Same logic version, GPU genuinely unsupported
-        # Logic version differs (or flag was written by older plugin without
-        # version tracking) -> a fix may resolve the failure, allow one retry
-
-    # Check if NVIDIA GPU is available with sufficient driver
-    try:
-        has_gpu, gpu_info = detect_nvidia_gpu()
-        if not has_gpu:
-            return False
-        cuda_index = _select_cuda_index(gpu_info)
-        if cuda_index is None:
-            return False  # Driver too old
-        return True
-    except Exception:
-        return False
+    """GPU install disabled (CPU-only mode). Kept for future reactivation."""
+    return False
 
 
 def _compute_deps_hash() -> str:
@@ -2533,11 +2494,6 @@ def get_venv_status() -> Tuple[bool, str]:
                 Qgis.Info
             )
             _write_deps_hash()
-        # Check if CPU torch should be upgraded to CUDA
-        if needs_cuda_upgrade():
-            _log("CPU torch detected but GPU available, upgrade needed",
-                 Qgis.Info)
-            return False, "GPU acceleration available - upgrading"
         python_version = get_python_full_version()
         _log("get_venv_status: ready (quick check passed)", Qgis.Success)
         return True, "Ready (Python {})".format(python_version)
