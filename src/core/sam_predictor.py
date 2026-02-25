@@ -46,6 +46,7 @@ class SamPredictor:
         self.process = None
         self._stderr_file = None
         self._warming_up = False  # True when init sent but not yet confirmed
+        self._last_worker_error = None  # Store error from worker for propagation
         self.is_image_set = False
         self.original_size = None
         self.input_size = None  # Only set by SAM1 path
@@ -187,6 +188,7 @@ class SamPredictor:
                 return True
             elif response.get("type") == "error":
                 error_msg = response.get("message", "Unknown error")
+                self._last_worker_error = error_msg
                 QgsMessageLog.logMessage(
                     f"Worker initialization error: {error_msg}",
                     "AI Segmentation",
@@ -322,7 +324,9 @@ class SamPredictor:
         image embeddings for subsequent predict() calls.
         """
         if not self._start_worker():
-            raise RuntimeError("Failed to start prediction worker")
+            error = self._last_worker_error or "Failed to start prediction worker"
+            self._last_worker_error = None
+            raise RuntimeError(error)
 
         try:
             image_b64 = base64.b64encode(
