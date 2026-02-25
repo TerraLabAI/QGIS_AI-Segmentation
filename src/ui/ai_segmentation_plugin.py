@@ -34,7 +34,7 @@ from qgis.PyQt.QtGui import QColor
 
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
-from .error_report_dialog import show_error_report, start_log_collector
+from .error_report_dialog import show_error_report, start_log_collector, stop_log_collector
 from ..core.i18n import tr
 
 # QSettings keys for tutorial flags
@@ -246,6 +246,7 @@ class AISegmentationPlugin:
 
         self._previous_map_tool = None  # Store the tool active before segmentation
         self._stopping_segmentation = False  # Flag to track if we're stopping programmatically
+        self._exporting_in_progress = False  # Guard against double-click on export
 
         # CRS transforms (canvas CRS <-> raster CRS), created when features load.
         # None when both CRS are the same (no transform needed).
@@ -466,6 +467,25 @@ class AISegmentationPlugin:
                 self.dock_widget.layer_combo.layerChanged.disconnect(self._on_layer_combo_changed)
             except (TypeError, RuntimeError, AttributeError):
                 pass
+            # Disconnect all dock widget signals connected in initGui()
+            _dock_signals = [
+                (self.dock_widget.install_dependencies_requested, self._on_install_requested),
+                (self.dock_widget.cancel_deps_install_requested, self._on_cancel_deps_install),
+                (self.dock_widget.download_checkpoint_requested, self._on_download_checkpoint_requested),
+                (self.dock_widget.start_segmentation_requested, self._on_start_segmentation),
+                (self.dock_widget.save_polygon_requested, self._on_save_polygon),
+                (self.dock_widget.export_layer_requested, self._on_export_layer),
+                (self.dock_widget.clear_points_requested, self._on_clear_points),
+                (self.dock_widget.undo_requested, self._on_undo),
+                (self.dock_widget.stop_segmentation_requested, self._on_stop_segmentation),
+                (self.dock_widget.refine_settings_changed, self._on_refine_settings_changed),
+                (self.dock_widget.batch_mode_changed, self._on_batch_mode_changed),
+            ]
+            for sig, slot in _dock_signals:
+                try:
+                    sig.disconnect(slot)
+                except (TypeError, RuntimeError, AttributeError):
+                    pass
             # Stop timers before disconnection
             try:
                 self.dock_widget._progress_timer.stop()
@@ -520,7 +540,11 @@ class AISegmentationPlugin:
         self.deps_install_worker = None
         self.download_worker = None
 
-        # 5. Remove menu/toolbar
+        # 5. Disconnect action signal and remove menu/toolbar
+        try:
+            self.action.triggered.disconnect(self.toggle_dock_widget)
+        except (TypeError, RuntimeError, AttributeError):
+            pass
         plugins_menu = self.iface.pluginMenu()
         plugins_menu.removeAction(self.action)
         self.iface.removeToolBarIcon(self.action)
@@ -547,6 +571,9 @@ class AISegmentationPlugin:
         for rb in self.saved_rubber_bands:
             self._safe_remove_rubber_band(rb)
         self.saved_rubber_bands = []
+
+        # 9. Disconnect log collector signal
+        stop_log_collector()
 
     def toggle_dock_widget(self, checked: bool):
         if self.dock_widget:
@@ -899,24 +926,26 @@ class AISegmentationPlugin:
             )
             return
 
-        self._reset_session()
-
-        # Validate layer is still alive before accessing C++ properties
+        # Validate layer BEFORE resetting session to avoid leaving broken state
         if not self._is_layer_valid(layer):
             QgsMessageLog.logMessage(
                 "Layer was deleted before segmentation could start",
                 "AI Segmentation", level=Qgis.Warning)
             return
 
-        self._current_layer = layer
         try:
-            self._current_layer_name = layer.name().replace(" ", "_")
+            layer_name = layer.name().replace(" ", "_")
             raster_path = os.path.normcase(layer.source())
         except RuntimeError:
             QgsMessageLog.logMessage(
                 "Layer deleted during segmentation start",
                 "AI Segmentation", level=Qgis.Warning)
             return
+
+        self._reset_session()
+
+        self._current_layer = layer
+        self._current_layer_name = layer_name
 
         # Detect online layer (WMS, XYZ, WMTS, WCS, ArcGIS)
         self._is_online_layer = self._is_online_provider(layer)
@@ -1123,10 +1152,11 @@ class AISegmentationPlugin:
 
         geometries = mask_to_polygons(mask_for_display, self.current_transform_info)
 
-        if not geometries:
-            return
+        if geometries:
+            combined = QgsGeometry.unaryUnion(geometries)
+        else:
+            combined = None
 
-        combined = QgsGeometry.unaryUnion(geometries)
         if combined and not combined.isEmpty():
             # Apply simplification if enabled
             tolerance = self._compute_simplification_tolerance(
@@ -1185,6 +1215,16 @@ class AISegmentationPlugin:
 
     def _on_export_layer(self):
         """Export all saved polygons + current unsaved mask to a new layer."""
+        if self._exporting_in_progress:
+            return
+        self._exporting_in_progress = True
+        try:
+            self._on_export_layer_impl()
+        finally:
+            self._exporting_in_progress = False
+
+    def _on_export_layer_impl(self):
+        """Internal export implementation."""
         from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
 
         self._ensure_polygon_rubberband_sync()
@@ -1586,9 +1626,12 @@ class AISegmentationPlugin:
                 if current_mupp < 0.7 * self._current_crop_actual_mupp:
                     return "zoom_changed"
         else:
-            sf = self._current_crop_scale_factor
-            if sf is not None and sf > 1.0:
-                return "zoom_changed"
+            if self._current_crop_canvas_mupp is not None:
+                canvas = self.iface.mapCanvas()
+                current_mupp = canvas.mapUnitsPerPixel()
+                if current_mupp > 0:
+                    if current_mupp < 0.7 * self._current_crop_canvas_mupp:
+                        return "zoom_changed"
 
         return "ok"
 
@@ -1737,6 +1780,43 @@ class AISegmentationPlugin:
             pass
         return 0.0
 
+    def _compute_initial_scale_factor(self):
+        """Compute initial scale_factor from canvas zoom for file-based rasters.
+
+        For high-res imagery where the user is zoomed out, the crop should cover
+        a proportionally larger geographic area instead of just 1024 native pixels.
+
+        Uses canvas extent in raster CRS to avoid unit mismatches (e.g. canvas
+        in meters vs raster in degrees).
+        """
+        if self._is_online_layer:
+            return None
+        native_pixel_size = self._get_native_pixel_size()
+        if native_pixel_size <= 0:
+            return None
+
+        canvas = self.iface.mapCanvas()
+        canvas_extent = canvas.extent()
+        # Transform canvas extent to raster CRS if needed
+        if self._canvas_to_raster_xform is not None:
+            try:
+                canvas_extent = self._canvas_to_raster_xform.transformBoundingBox(
+                    canvas_extent)
+            except Exception:
+                return None
+
+        # Compute canvas mupp in raster CRS units
+        canvas_width_px = canvas.width()
+        if canvas_width_px <= 0:
+            return None
+        canvas_geo_width = canvas_extent.xMaximum() - canvas_extent.xMinimum()
+        canvas_mupp_raster_crs = canvas_geo_width / canvas_width_px
+
+        ratio = canvas_mupp_raster_crs / native_pixel_size
+        if ratio <= 1.0:
+            return None
+        return min(ratio, 8.0)
+
     def _extract_and_encode_crop(self, center_point, mupp_override=None):
         """Extract a crop centered on the point and encode it with SAM.
 
@@ -1791,6 +1871,7 @@ class AISegmentationPlugin:
 
             scale_factor = mupp_override if mupp_override else 1.0
             self._current_crop_scale_factor = scale_factor
+            self._current_crop_canvas_mupp = self.iface.mapCanvas().mapUnitsPerPixel()
             image_np, crop_info, error = extract_crop_from_raster(
                 self._current_raster_path, raster_pt_x, raster_pt_y,
                 crop_size=1024,
@@ -1842,7 +1923,8 @@ class AISegmentationPlugin:
         """Handle re-encoding based on crop status. Returns True on success."""
         if crop_status == "no_crop":
             self.current_low_res_mask = None
-            return self._extract_and_encode_crop(raster_pt)
+            initial_scale = self._compute_initial_scale_factor()
+            return self._extract_and_encode_crop(raster_pt, mupp_override=initial_scale)
 
         # outside_bounds: save old state, re-encode to fit all points
         old_crop_info = self._current_crop_info
@@ -2084,8 +2166,11 @@ class AISegmentationPlugin:
 
         # Get CRS from layer
         crs_value = None
-        if self._current_layer and self._current_layer.crs().isValid():
-            crs_value = self._current_layer.crs().authid()
+        try:
+            if self._current_layer and self._current_layer.crs().isValid():
+                crs_value = self._current_layer.crs().authid()
+        except RuntimeError:
+            pass
 
         self.current_transform_info = {
             "bbox": (minx, maxx, miny, maxy),
@@ -2096,6 +2181,8 @@ class AISegmentationPlugin:
         self._update_ui_after_prediction()
 
     def _update_ui_after_prediction(self):
+        if not self.dock_widget:
+            return
         pos_count, neg_count = self.prompts.point_count
         self.dock_widget.set_point_count(pos_count, neg_count)
 
@@ -2178,7 +2265,10 @@ class AISegmentationPlugin:
 
     def _clear_mask_visualization(self):
         if self.mask_rubber_band:
-            self.mask_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
+            try:
+                self.mask_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
+            except RuntimeError:
+                self.mask_rubber_band = None
         if self.dock_widget:
             self.dock_widget.set_disjoint_warning(False)
 

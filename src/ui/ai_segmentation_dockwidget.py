@@ -373,7 +373,7 @@ class AISegmentationDockWidget(QDockWidget):
         # Warning container with icon and text - yellow background with dark text
         self.no_rasters_widget = QWidget()
         self.no_rasters_widget.setStyleSheet(
-            "QWidget { background-color: rgba(255, 193, 7, 0.4); "
+            "QWidget { background-color: rgb(255, 230, 150); "
             "border: 1px solid rgba(255, 152, 0, 0.6); border-radius: 4px; }"
             "QLabel { background: transparent; border: none; color: #333333; }"
         )
@@ -1441,7 +1441,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._update_full_ui()
 
     def cleanup_signals(self):
-        """Disconnect project signals to prevent accumulation on plugin reload."""
+        """Disconnect project signals and clean up shortcuts/timers on plugin reload."""
         try:
             QgsProject.instance().layersAdded.disconnect(self._on_layers_added)
         except (TypeError, RuntimeError):
@@ -1449,6 +1449,25 @@ class AISegmentationDockWidget(QDockWidget):
         try:
             QgsProject.instance().layersRemoved.disconnect(self._on_layers_removed)
         except (TypeError, RuntimeError):
+            pass
+        # Clean up QShortcut to prevent stale callbacks
+        try:
+            self.start_shortcut.activated.disconnect()
+            self.start_shortcut.deleteLater()
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        # Stop timers first, then disconnect to avoid race conditions
+        try:
+            self._progress_timer.blockSignals(True)
+            self._progress_timer.stop()
+            self._progress_timer.timeout.disconnect()
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        try:
+            self._refine_debounce_timer.blockSignals(True)
+            self._refine_debounce_timer.stop()
+            self._refine_debounce_timer.timeout.disconnect()
+        except (TypeError, RuntimeError, AttributeError):
             pass
 
     def is_activated(self) -> bool:

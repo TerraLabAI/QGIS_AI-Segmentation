@@ -72,6 +72,19 @@ def start_log_collector():
         pass
 
 
+def stop_log_collector():
+    """Disconnect from QgsMessageLog. Call on plugin unload."""
+    global _log_collector_connected
+    if not _log_collector_connected:
+        return
+    try:
+        from qgis.core import QgsApplication
+        QgsApplication.messageLog().messageReceived.disconnect(_on_log_message)
+    except (TypeError, RuntimeError):
+        pass
+    _log_collector_connected = False
+
+
 def _on_log_message(message, tag, level):
     """Callback for QgsMessageLog.messageReceived signal."""
     if tag == "AI Segmentation":
