@@ -7,10 +7,12 @@ from qgis.core import QgsMessageLog, Qgis
 
 from .i18n import tr
 
-# Raster formats known to require GDAL conversion (not supported by pip-installed rasterio)
+# Raster formats that pip-installed rasterio may not support reliably.
+# These go through GDAL windowed read instead.
 _GDAL_ONLY_FORMATS = {
     '.ecw', '.sid', '.jp2', '.j2k', '.j2c',
     '.nitf', '.ntf', '.img', '.hdf', '.hdf5', '.he5', '.nc',
+    '.gpkg',
 }
 
 # Online/remote raster providers that need rendering before encoding
@@ -234,77 +236,139 @@ def _needs_gdal_conversion(raster_path):
     return ext in _GDAL_ONLY_FORMATS
 
 
-def _convert_with_gdal(raster_path, output_dir, progress_callback=None):
-    """Convert raster to GeoTIFF using QGIS's GDAL.
+def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
+                         scale_factor, layer_extent):
+    """Read a windowed crop directly from a GDAL-supported raster (JP2, ECW, etc.).
 
-    Returns (converted_path, error_message). On success error_message is None.
+    Instead of converting the entire file to GeoTIFF, reads only the needed
+    pixels using GDAL windowed access.
+
+    Returns (image_np, crop_info, error).
     """
     ext = os.path.splitext(raster_path)[1].upper()
 
     try:
         from osgeo import gdal
     except ImportError:
-        return None, tr(
+        return None, None, tr(
             "{ext} format is not directly supported. "
-            "GDAL is not available for automatic conversion.\n"
+            "GDAL is not available.\n"
             "Please convert your raster to GeoTIFF (.tif) before using "
             "AI Segmentation."
         ).format(ext=ext)
 
-    if progress_callback:
-        progress_callback(0, tr("Converting {ext} to GeoTIFF...").format(ext=ext))
-
     try:
         ds = gdal.Open(raster_path)
         if ds is None:
-            return None, tr(
+            return None, None, tr(
                 "Cannot open {ext} file. The format may not be supported "
                 "by your QGIS installation.\n"
                 "Please convert your raster to GeoTIFF (.tif) before using "
                 "AI Segmentation."
             ).format(ext=ext)
 
-        # Use .tmp extension so FeatureDataset's *.tif glob never picks it up
-        converted_path = os.path.join(output_dir, '_converted_source.tmp')
+        raster_width = ds.RasterXSize
+        raster_height = ds.RasterYSize
+        gt = ds.GetGeoTransform()
 
-        def gdal_progress(complete, message, data):
-            if progress_callback:
-                pct = int(complete * 5)
-                progress_callback(
-                    pct,
-                    tr("Converting {ext} to GeoTIFF ({pct}%)...").format(
-                        ext=ext, pct=int(complete * 100))
-                )
-            return 1
+        use_layer_extent = False
+        if layer_extent:
+            xmin_le, ymin_le, xmax_le, ymax_le = layer_extent
+            if gt is None or gt == (0, 1, 0, 0, 0, 1):
+                use_layer_extent = True
+            else:
+                left_near = abs(gt[0]) < 10
+                top_near = abs(gt[3]) < 10
+                right_near = abs(gt[0] + gt[1] * raster_width) < 10
+                bottom_near = abs(gt[3] + gt[5] * raster_height) < 10
+                if left_near and top_near and right_near and bottom_near:
+                    use_layer_extent = True
 
-        result = gdal.Translate(
-            converted_path, ds,
-            format='GTiff',
-            creationOptions=['COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=IF_SAFER'],
-            callback=gdal_progress
-        )
+        if use_layer_extent and layer_extent:
+            xmin_le, ymin_le, xmax_le, ymax_le = layer_extent
+            pixel_size_x = (xmax_le - xmin_le) / raster_width
+            pixel_size_y = (ymax_le - ymin_le) / raster_height
+            bounds_left = xmin_le
+            bounds_top = ymax_le
+        else:
+            pixel_size_x = abs(gt[1])
+            pixel_size_y = abs(gt[5])
+            bounds_left = gt[0]
+            bounds_top = gt[3]
+
+        col_center = (center_x - bounds_left) / pixel_size_x
+        row_center = (bounds_top - center_y) / pixel_size_y
+
+        read_size = int(crop_size * scale_factor)
+        half = read_size // 2
+        col_off = max(0, int(round(col_center - half)))
+        row_off = max(0, int(round(row_center - half)))
+
+        actual_width = min(read_size, raster_width - col_off)
+        actual_height = min(read_size, raster_height - row_off)
+
+        if actual_width <= 0 or actual_height <= 0:
+            ds = None
+            return None, None, "Click is outside the raster bounds"
+
+        num_bands = min(ds.RasterCount, 3)
+        if num_bands == 0:
+            ds = None
+            return None, None, "Raster has no bands"
+
+        if scale_factor > 1.0:
+            out_h = max(1, min(crop_size, int(actual_height / scale_factor)))
+            out_w = max(1, min(crop_size, int(actual_width / scale_factor)))
+        else:
+            out_h = actual_height
+            out_w = actual_width
+
+        bands = []
+        for b_idx in range(1, num_bands + 1):
+            band = ds.GetRasterBand(b_idx)
+            data = band.ReadAsArray(
+                col_off, row_off, actual_width, actual_height,
+                buf_xsize=out_w, buf_ysize=out_h
+            )
+            bands.append(data)
+
+        nodata = ds.GetRasterBand(1).GetNoDataValue()
         ds = None
-        if result is None:
-            return None, tr(
-                "Failed to convert {ext} file to GeoTIFF."
-            ).format(ext=ext)
-        result = None
 
-        if not os.path.exists(converted_path):
-            return None, tr(
-                "Failed to convert {ext} file to GeoTIFF."
-            ).format(ext=ext)
+        tile_data = np.stack(bands, axis=0)
+        image_np = _normalize_to_uint8(tile_data, nodata_value=nodata)
+
+        if out_h < crop_size or out_w < crop_size:
+            pad_bottom = crop_size - out_h
+            pad_right = crop_size - out_w
+            image_np = np.pad(
+                image_np,
+                ((0, pad_bottom), (0, pad_right), (0, 0)),
+                mode='reflect'
+            )
+
+        crop_minx = bounds_left + col_off * pixel_size_x
+        crop_maxx = bounds_left + (col_off + actual_width) * pixel_size_x
+        crop_maxy = bounds_top - row_off * pixel_size_y
+        crop_miny = bounds_top - (row_off + actual_height) * pixel_size_y
+
+        crop_info = {
+            'bounds': (crop_minx, crop_miny, crop_maxx, crop_maxy),
+            'img_shape': (out_h, out_w),
+            'col_off': col_off,
+            'row_off': row_off,
+        }
 
         QgsMessageLog.logMessage(
-            "Converted {} to GeoTIFF for encoding: {}".format(ext, converted_path),
-            "AI Segmentation",
-            level=Qgis.Info
+            "Read {} crop directly via GDAL: {}x{} at ({}, {})".format(
+                ext, out_w, out_h, col_off, row_off),
+            "AI Segmentation", level=Qgis.Info
         )
-        return converted_path, None
+        return image_np, crop_info, None
 
     except Exception as e:
-        return None, tr(
-            "Failed to convert {ext} file to GeoTIFF: {error}\n"
+        return None, None, tr(
+            "Failed to read {ext} file: {error}\n"
             "Please convert your raster to GeoTIFF (.tif) manually."
         ).format(ext=ext, error=str(e))
 
@@ -337,21 +401,15 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
     except ImportError:
         return None, None, "rasterio is not available"
 
-    # Handle GDAL-only formats
-    converted_path = None
-    tmpdir_obj = None
-    encoding_raster_path = raster_path
+    # Handle GDAL-only formats (JP2, ECW, etc.) with direct windowed read
     if _needs_gdal_conversion(raster_path):
-        import tempfile
-        tmpdir_obj = tempfile.TemporaryDirectory(prefix="ai_seg_crop_")
-        converted_path, conv_error = _convert_with_gdal(raster_path, tmpdir_obj.name)
-        if conv_error:
-            tmpdir_obj.cleanup()
-            return None, None, conv_error
-        encoding_raster_path = converted_path
+        return _read_crop_with_gdal(
+            raster_path, center_x, center_y, crop_size,
+            scale_factor, layer_extent
+        )
 
     try:
-        with rasterio.open(encoding_raster_path) as src:
+        with rasterio.open(raster_path) as src:
             raster_width = src.width
             raster_height = src.height
             raster_transform = src.transform
@@ -448,14 +506,15 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
             return image_np, crop_info, None
 
     except Exception as e:
-        return None, None, str(e)
-
-    finally:
-        if tmpdir_obj is not None:
-            try:
-                tmpdir_obj.cleanup()
-            except Exception:
-                pass
+        # Fallback to GDAL if rasterio fails (unsupported driver, etc.)
+        QgsMessageLog.logMessage(
+            "rasterio failed ({}), trying GDAL fallback...".format(str(e)),
+            "AI Segmentation", level=Qgis.Warning
+        )
+        return _read_crop_with_gdal(
+            raster_path, center_x, center_y, crop_size,
+            scale_factor, layer_extent
+        )
 
 
 def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,

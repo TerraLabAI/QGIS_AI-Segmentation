@@ -815,14 +815,10 @@
 
     <!-- Format conversion -->
     <message>
-        <source>{ext} format is not directly supported. GDAL is not available for automatic conversion.
+        <source>{ext} format is not directly supported. GDAL is not available.
 Please convert your raster to GeoTIFF (.tif) before using AI Segmentation.</source>
-        <translation>O formato {ext} não é diretamente suportado. GDAL não está disponível para conversão automática.
+        <translation>O formato {ext} não é diretamente suportado. GDAL não está disponível.
 Por favor, converta seu raster para GeoTIFF (.tif) antes de usar AI Segmentation.</translation>
-    </message>
-    <message>
-        <source>Converting {ext} to GeoTIFF...</source>
-        <translation>Convertendo {ext} para GeoTIFF...</translation>
     </message>
     <message>
         <source>Cannot open {ext} file. The format may not be supported by your QGIS installation.
@@ -831,17 +827,9 @@ Please convert your raster to GeoTIFF (.tif) before using AI Segmentation.</sour
 Por favor, converta seu raster para GeoTIFF (.tif) antes de usar AI Segmentation.</translation>
     </message>
     <message>
-        <source>Converting {ext} to GeoTIFF ({pct}%)...</source>
-        <translation>Convertendo {ext} para GeoTIFF ({pct}%)...</translation>
-    </message>
-    <message>
-        <source>Failed to convert {ext} file to GeoTIFF.</source>
-        <translation>Falha ao converter o arquivo {ext} para GeoTIFF.</translation>
-    </message>
-    <message>
-        <source>Failed to convert {ext} file to GeoTIFF: {error}
+        <source>Failed to read {ext} file: {error}
 Please convert your raster to GeoTIFF (.tif) manually.</source>
-        <translation>Falha ao converter o arquivo {ext} para GeoTIFF: {error}
+        <translation>Falha ao ler o arquivo {ext}: {error}
 Por favor, converta seu raster para GeoTIFF (.tif) manualmente.</translation>
     </message>
 

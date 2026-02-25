@@ -16,6 +16,8 @@ from qgis.PyQt.QtWidgets import (
     QCheckBox,
     QToolButton,
     QStyle,
+    QSizePolicy,
+    QScrollArea,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
 from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
@@ -67,7 +69,11 @@ class AISegmentationDockWidget(QDockWidget):
 
         self._setup_ui()
 
-        self.setWidget(self.main_widget)
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(self.main_widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        self.setWidget(scroll_area)
 
         self._dependencies_ok = False
         self._checkpoint_ok = False
@@ -395,6 +401,9 @@ class AISegmentationDockWidget(QDockWidget):
         # Dynamic instruction label - styled as a card (slightly darker gray than refine panel)
         self.instructions_label = QLabel("")
         self.instructions_label.setWordWrap(True)
+        self.instructions_label.setMinimumHeight(0)
+        self.instructions_label.setSizePolicy(
+            QSizePolicy.Preferred, QSizePolicy.Minimum)
         self.instructions_label.setStyleSheet("""
             QLabel {
                 background-color: rgba(128, 128, 128, 0.12);
