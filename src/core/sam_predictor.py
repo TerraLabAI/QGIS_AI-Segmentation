@@ -279,13 +279,14 @@ class SamPredictor:
                         "AI Segmentation",
                         level=Qgis.Warning
                     )
-                finally:
-                    if self._stderr_file is not None:
-                        try:
-                            self._stderr_file.close()
-                        except Exception:
-                            pass
-                        self._stderr_file = None
+
+            # Always close stderr file, even if process was already None
+            if self._stderr_file is not None:
+                try:
+                    self._stderr_file.close()
+                except Exception:
+                    pass
+                self._stderr_file = None
 
             self._warming_up = False
             self.is_image_set = False

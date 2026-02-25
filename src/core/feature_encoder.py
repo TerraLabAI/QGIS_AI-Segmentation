@@ -257,6 +257,7 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
             "AI Segmentation."
         ).format(ext=ext)
 
+    ds = None
     try:
         ds = gdal.Open(raster_path)
         if ds is None:
@@ -308,12 +309,10 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
         actual_height = min(read_size, raster_height - row_off)
 
         if actual_width <= 0 or actual_height <= 0:
-            ds = None
             return None, None, "Click is outside the raster bounds"
 
         num_bands = min(ds.RasterCount, 3)
         if num_bands == 0:
-            ds = None
             return None, None, "Raster has no bands"
 
         if scale_factor > 1.0:
@@ -371,6 +370,9 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
             "Failed to read {ext} file: {error}\n"
             "Please convert your raster to GeoTIFF (.tif) manually."
         ).format(ext=ext, error=str(e))
+
+    finally:
+        ds = None
 
 
 def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,

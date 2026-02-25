@@ -638,7 +638,8 @@ def ensure_venv_packages_available():
             # first import picks up the venv copy
             needs_numpy_fix = True
         else:
-            vn = [int(x) for x in old_version.split(".")[:3]]
+            parts = old_version.split(".")[:3]
+            vn = [int(x) for x in parts] + [0] * (3 - len(parts))
             np_old = (vn[0] < 1) or (vn[0] == 1 and vn[1] < 22)
             np_old = np_old or (vn[0] == 1 and vn[1] == 22 and vn[2] < 4)
             needs_numpy_fix = np_old
@@ -654,6 +655,7 @@ def ensure_venv_packages_available():
         "Forcing venv numpy/pandas...".format(qgis_ver, old_version),
         Qgis.Info)
 
+    removed_paths = []
     try:
         import importlib
 
@@ -667,7 +669,6 @@ def ensure_venv_packages_available():
 
         # 2. Temporarily remove QGIS Python paths that contain numpy
         #    so the reimport finds the venv copy first
-        removed_paths = []
         for p in sys.path[:]:
             if p == site_packages:
                 continue
@@ -686,6 +687,7 @@ def ensure_venv_packages_available():
         for p in removed_paths:
             if p not in sys.path:
                 sys.path.append(p)
+        removed_paths = []
 
         # 6. Verify the reload actually worked
         new_ver = new_numpy.__version__
@@ -706,6 +708,12 @@ def ensure_venv_packages_available():
             "Failed to reload numpy: {}. "
             "Plugin may not work on this QGIS version.".format(e),
             Qgis.Warning)
+
+    finally:
+        # Always restore paths even on exception
+        for p in removed_paths:
+            if p not in sys.path:
+                sys.path.append(p)
 
     return True
 
