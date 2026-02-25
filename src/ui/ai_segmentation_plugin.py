@@ -1625,12 +1625,16 @@ class AISegmentationPlugin:
             if self._current_crop_actual_mupp and current_mupp > 0:
                 if current_mupp < 0.7 * self._current_crop_actual_mupp:
                     return "zoom_changed"
+                if current_mupp > 1.5 * self._current_crop_actual_mupp:
+                    return "zoom_changed"
         else:
             if self._current_crop_canvas_mupp is not None:
                 canvas = self.iface.mapCanvas()
                 current_mupp = canvas.mapUnitsPerPixel()
                 if current_mupp > 0:
                     if current_mupp < 0.7 * self._current_crop_canvas_mupp:
+                        return "zoom_changed"
+                    if current_mupp > 1.5 * self._current_crop_canvas_mupp:
                         return "zoom_changed"
 
         return "ok"
@@ -1813,9 +1817,7 @@ class AISegmentationPlugin:
         canvas_mupp_raster_crs = canvas_geo_width / canvas_width_px
 
         ratio = canvas_mupp_raster_crs / native_pixel_size
-        if ratio <= 1.0:
-            return None
-        return min(ratio, 8.0)
+        return max(0.25, min(ratio, 8.0))
 
     def _extract_and_encode_crop(self, center_point, mupp_override=None):
         """Extract a crop centered on the point and encode it with SAM.
@@ -1823,7 +1825,7 @@ class AISegmentationPlugin:
         Args:
             center_point: QgsPointXY center in raster CRS
             mupp_override: For online layers, override mupp (zoom-out).
-                For file-based layers, this is the scale_factor (>= 1.0).
+                For file-based layers, this is the scale_factor [0.25, 8.0].
 
         Returns True on success, False on error.
         """
