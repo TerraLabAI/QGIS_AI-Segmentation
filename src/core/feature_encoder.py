@@ -318,6 +318,9 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
         if scale_factor > 1.0:
             out_h = max(1, min(crop_size, int(actual_height / scale_factor)))
             out_w = max(1, min(crop_size, int(actual_width / scale_factor)))
+        elif scale_factor < 1.0:
+            out_h = min(crop_size, max(1, int(actual_height / scale_factor)))
+            out_w = min(crop_size, max(1, int(actual_width / scale_factor)))
         else:
             out_h = actual_height
             out_w = actual_width
@@ -386,9 +389,10 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
         crop_size: Size of the crop in pixels (default 1024)
         layer_crs_wkt: Optional CRS WKT for non-georeferenced rasters
         layer_extent: Optional (xmin, ymin, xmax, ymax) for non-georeferenced rasters
-        scale_factor: Read a larger window and downsample to crop_size.
-            When > 1.0, reads crop_size * scale_factor native pixels and
-            resamples down to crop_size using bilinear interpolation.
+        scale_factor: Controls native read size relative to crop_size.
+            When > 1.0, reads more native pixels and downsamples to crop_size.
+            When < 1.0, reads fewer native pixels and upsamples to crop_size.
+            Clamped to [0.25, 8.0] by the caller.
 
     Returns:
         (image_np, crop_info, error) where:
@@ -462,11 +466,18 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
             window = Window(col_off, row_off, actual_width, actual_height)
 
             if scale_factor > 1.0:
-                # Downsample to crop_size using rasterio resampling
                 out_h = min(crop_size, int(actual_height / scale_factor))
                 out_w = min(crop_size, int(actual_width / scale_factor))
                 out_h = max(1, out_h)
                 out_w = max(1, out_w)
+                tile_data = src.read(
+                    window=window,
+                    out_shape=(src.count, out_h, out_w),
+                    resampling=Resampling.bilinear
+                )
+            elif scale_factor < 1.0:
+                out_h = min(crop_size, max(1, int(actual_height / scale_factor)))
+                out_w = min(crop_size, max(1, int(actual_width / scale_factor)))
                 tile_data = src.read(
                     window=window,
                     out_shape=(src.count, out_h, out_w),
