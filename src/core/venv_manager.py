@@ -1359,6 +1359,37 @@ def install_dependencies(
     if cuda_enabled:
         _log("CUDA mode enabled - will install GPU-accelerated PyTorch", Qgis.Info)
 
+    # Upgrade pip before installing packages. The standalone Python bundles
+    # pip 24.3.1 which can crash with internal exceptions on large packages
+    # like torch (see issue #145).
+    python_path_pre = get_venv_python_path(venv_dir)
+    if progress_callback:
+        progress_callback(20, "Upgrading pip...")
+    try:
+        _log("Upgrading pip to latest version...", Qgis.Info)
+        upgrade_cmd = [
+            python_path_pre, "-m", "pip", "install",
+            "--upgrade", "pip",
+            "--disable-pip-version-check",
+            "--no-warn-script-location",
+        ]
+        upgrade_cmd.extend(_get_pip_ssl_flags())
+        upgrade_result = subprocess.run(
+            upgrade_cmd,
+            capture_output=True, text=True, timeout=120,
+            env=_get_clean_env_for_venv(),
+            **_get_subprocess_kwargs(),
+        )
+        if upgrade_result.returncode == 0:
+            _log("pip upgraded successfully", Qgis.Success)
+        else:
+            _log("pip upgrade failed (non-critical): {}".format(
+                (upgrade_result.stderr or upgrade_result.stdout or "")[:200]),
+                Qgis.Warning)
+    except Exception as e:
+        _log("pip upgrade failed (non-critical): {}".format(str(e)[:200]),
+             Qgis.Warning)
+
     _cuda_fell_back = False  # Track if CUDA install fell back to CPU
     _driver_too_old = False  # Track if GPU driver was too old (not an error)
 
