@@ -581,6 +581,59 @@ def get_venv_site_packages(venv_dir: str = None) -> str:
         return os.path.join(venv_dir, "lib", py_version, "site-packages")
 
 
+def _add_windows_dll_directories(site_packages: str) -> None:
+    """Register torch/torchvision DLL directories on Windows.
+
+    Without this, importing torch from a foreign venv inside QGIS fails
+    with 'DLL load failed' (WinError 126/127).
+    """
+    dll_dirs = [
+        os.path.join(site_packages, "torch", "lib"),
+        os.path.join(site_packages, "torch", "bin"),
+        os.path.join(site_packages, "torchvision"),
+    ]
+    path_parts = os.environ.get("PATH", "").split(os.pathsep)
+    for dll_dir in dll_dirs:
+        if os.path.isdir(dll_dir):
+            try:
+                os.add_dll_directory(dll_dir)
+            except OSError as exc:
+                _log("add_dll_directory({}) failed: {}".format(
+                    dll_dir, exc), Qgis.Warning)
+            if dll_dir not in path_parts:
+                path_parts.insert(0, dll_dir)
+    os.environ["PATH"] = os.pathsep.join(path_parts)
+
+
+def _fix_proj_gdal_data(site_packages: str) -> None:
+    """Point PROJ_DATA and GDAL_DATA to venv's bundled data files.
+
+    QGIS sets PROJ_LIB to its own PROJ data, but the venv's pyproj/rasterio
+    may bundle a different version of proj.db. Without this fix, rasterio
+    CRS operations can fail or crash.
+    """
+    proj_candidates = [
+        os.path.join(site_packages, "pyproj", "proj_dir", "share", "proj"),
+        os.path.join(site_packages, "rasterio", "proj_data"),
+    ]
+    for candidate in proj_candidates:
+        proj_db = os.path.join(candidate, "proj.db")
+        if os.path.exists(proj_db):
+            os.environ["PROJ_DATA"] = candidate
+            os.environ["PROJ_LIB"] = candidate
+            _log("Set PROJ_DATA to venv: {}".format(candidate), Qgis.Info)
+            break
+
+    gdal_candidates = [
+        os.path.join(site_packages, "rasterio", "gdal_data"),
+    ]
+    for candidate in gdal_candidates:
+        if os.path.isdir(candidate):
+            os.environ["GDAL_DATA"] = candidate
+            _log("Set GDAL_DATA to venv: {}".format(candidate), Qgis.Info)
+            break
+
+
 def ensure_venv_packages_available():
     if not venv_exists():
         _log("Venv does not exist, cannot load packages", Qgis.Warning)
@@ -600,6 +653,14 @@ def ensure_venv_packages_available():
     if site_packages not in sys.path:
         sys.path.insert(0, site_packages)
         _log(f"Added venv site-packages to sys.path: {site_packages}", Qgis.Info)
+
+    # On Windows, register DLL directories for torch/torchvision so the OS
+    # loader can find their native libraries when importing from a foreign venv.
+    if sys.platform == "win32":
+        _add_windows_dll_directories(site_packages)
+
+    # Fix PROJ_DATA/GDAL_DATA to point to venv's pyproj/rasterio data files.
+    _fix_proj_gdal_data(site_packages)
 
     # SAFE FIX for old QGIS with stale typing_extensions (missing TypeIs)
     # QGIS may load an old typing_extensions at startup that lacks TypeIs,
@@ -1406,11 +1467,17 @@ def install_dependencies(
     progress_range = 80  # from 20% to 100%
 
     # Weighted progress allocation proportional to download size.
-    # CUDA: torch=45%, torchvision=15%; CPU: torch=30%, torchvision=15%.
-    if cuda_enabled:
-        _weights = [5, 45, 15, 5, 5, 5]
-    else:
-        _weights = [5, 30, 15, 10, 10, 10]
+    # Name-based map so weights stay correct if REQUIRED_PACKAGES order changes.
+    _weight_map_cuda = {
+        "numpy": 5, "torch": 45, "torchvision": 15,
+        "pandas": 5, "rasterio": 5,
+    }
+    _weight_map_cpu = {
+        "numpy": 5, "torch": 30, "torchvision": 15,
+        "pandas": 10, "rasterio": 10,
+    }
+    _wmap = _weight_map_cuda if cuda_enabled else _weight_map_cpu
+    _weights = [_wmap.get(name, 10) for name, _ in REQUIRED_PACKAGES]
     weight_total = sum(_weights)
     # Cumulative start offsets for each package
     _cumulative = [0]
@@ -1957,6 +2024,24 @@ def _get_clean_env_for_venv() -> dict:
 
     env["PYTHONIOENCODING"] = "utf-8"
 
+    # On Linux, QGIS desktop launchers often don't inherit LD_LIBRARY_PATH,
+    # so CUDA libraries may not be discoverable. Probe standard locations.
+    if sys.platform == "linux":
+        cuda_lib_dirs = []
+        cuda_path = env.get("CUDA_PATH", "")
+        if cuda_path:
+            cuda_lib_dirs.append(os.path.join(cuda_path, "lib64"))
+        for candidate in ("/usr/local/cuda/lib64", "/opt/cuda/lib64"):
+            if os.path.isdir(candidate) and candidate not in cuda_lib_dirs:
+                cuda_lib_dirs.append(candidate)
+        if cuda_lib_dirs:
+            existing = env.get("LD_LIBRARY_PATH", "")
+            parts = [p for p in existing.split(":") if p]
+            for d in cuda_lib_dirs:
+                if d not in parts:
+                    parts.append(d)
+            env["LD_LIBRARY_PATH"] = ":".join(parts)
+
     # Propagate QGIS proxy settings to environment for pip/network calls
     proxy_url = _get_qgis_proxy_settings()
     if proxy_url:
@@ -1967,7 +2052,10 @@ def _get_clean_env_for_venv() -> dict:
 
 
 def _get_subprocess_kwargs() -> dict:
-    kwargs = {}
+    # Set cwd to CACHE_DIR so the subprocess cannot accidentally discover
+    # the plugin package if launched from the plugin directory.
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    kwargs = {"cwd": CACHE_DIR}
     if sys.platform == "win32":
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
