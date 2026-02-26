@@ -70,7 +70,18 @@
       "Bash(git stash:*)",
       "Bash(cd:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(az group:*)",
+      "Bash(az rest:*)",
+      "Bash(brew install:*)",
+      "Bash(which pdftoppm:*)",
+      "Bash(pdftoppm:*)",
+      "Bash(az containerapp:)",
+      "Bash(az acr:*)",
+      "Bash(az containerapp:*)",
+      "Bash(cd \"/Users/lilien/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Segmentation-Pro/server\" && docker buildx build --platform linux/amd64 -t terralabsam.azurecr.io/sam-api:latest --load . 2>&1)",
+      "Bash(docker push:*)",
+      "Bash(curl:*)"
     ]
   }
 }

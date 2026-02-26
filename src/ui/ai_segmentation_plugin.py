@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 from qgis.PyQt.QtWidgets import (
     QAction, QApplication, QDoubleSpinBox, QLineEdit, QMessageBox,
-    QPlainTextEdit, QSpinBox, QTextEdit,
+    QPlainTextEdit, QProgressDialog, QSpinBox, QTextEdit,
 )
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import Qt, QThread, QObject, pyqtSignal, QVariant, QSettings, QEvent
@@ -195,6 +195,19 @@ class PromptManager:
             point_labels.append(0)
 
         return np.array(point_coords), np.array(point_labels)
+
+
+class _CloudWarmupWorker(QObject):
+    finished = pyqtSignal()
+
+    def __init__(self, cloud):
+        super().__init__()
+        self.cloud = cloud
+        self.result = False
+
+    def run(self):
+        self.result = self.cloud.warm_up()
+        self.finished.emit()
 
 
 class AISegmentationPlugin:
@@ -891,7 +904,55 @@ class AISegmentationPlugin:
             )
 
     def _on_start_segmentation(self, layer: QgsRasterLayer):
-        if self.predictor is None:
+        if self.dock_widget.is_cloud_mode():
+            from ..core.cloud_predictor import CloudPredictor
+            cloud = CloudPredictor()
+
+            progress = QProgressDialog(
+                tr("Connecting to cloud server..."),
+                tr("Cancel"), 0, 0, self.iface.mainWindow()
+            )
+            progress.setWindowTitle(tr("Cloud Connection"))
+            progress.setMinimumDuration(0)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.show()
+            QApplication.processEvents()
+
+            thread = QThread()
+            worker = _CloudWarmupWorker(cloud)
+            worker.moveToThread(thread)
+            thread.started.connect(worker.run)
+            worker.finished.connect(thread.quit)
+            thread.start()
+
+            while thread.isRunning():
+                QApplication.processEvents()
+                if progress.wasCanceled():
+                    thread.quit()
+                    thread.wait(2000)
+                    self.dock_widget.set_cloud_status(False)
+                    return
+                thread.wait(100)
+
+            progress.close()
+
+            if not worker.result:
+                self.dock_widget.set_cloud_status(False)
+                QMessageBox.warning(
+                    self.iface.mainWindow(),
+                    tr("Cloud Error"),
+                    tr("Could not connect to the cloud server. "
+                       "Check your internet connection or disable cloud mode.")
+                )
+                return
+            self.dock_widget.set_cloud_status(True)
+            if self.predictor:
+                try:
+                    self.predictor.cleanup()
+                except Exception:
+                    pass
+            self.predictor = cloud
+        elif self.predictor is None:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Not Ready"),

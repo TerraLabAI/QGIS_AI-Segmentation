@@ -1057,5 +1057,43 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <source>For best accuracy, segment one element at a time.</source>
         <translation>Para mejor precision, segmenta un elemento a la vez.</translation>
     </message>
+
+    <!-- Cloud Mode -->
+    <message>
+        <source>Use cloud inference</source>
+        <translation>Usar inferencia en la nube</translation>
+    </message>
+    <message>
+        <source>Run segmentation on a remote GPU server instead of locally</source>
+        <translation>Ejecutar segmentacion en un servidor GPU remoto en lugar de localmente</translation>
+    </message>
+    <message>
+        <source>Checking cloud server...</source>
+        <translation>Verificando servidor en la nube...</translation>
+    </message>
+    <message>
+        <source>Cloud server: connected</source>
+        <translation>Servidor en la nube: conectado</translation>
+    </message>
+    <message>
+        <source>Cloud server: unreachable</source>
+        <translation>Servidor en la nube: inaccesible</translation>
+    </message>
+    <message>
+        <source>Cloud Error</source>
+        <translation>Error en la nube</translation>
+    </message>
+    <message>
+        <source>Could not connect to the cloud server. Check your internet connection or disable cloud mode.</source>
+        <translation>No se pudo conectar al servidor en la nube. Verifique su conexion a internet o desactive el modo nube.</translation>
+    </message>
+    <message>
+        <source>Connecting to cloud server...</source>
+        <translation>Conectando al servidor en la nube...</translation>
+    </message>
+    <message>
+        <source>Cloud Connection</source>
+        <translation>Conexion en la nube</translation>
+    </message>
 </context>
 </TS>
