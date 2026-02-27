@@ -37,7 +37,7 @@ CUDA_FLAG_FILE = os.path.join(VENV_DIR, "cuda_installed.txt")
 # new retry strategies) to force a dependency re-install on plugin update.
 # This invalidates the deps hash so users with stale cuda_fallback flags
 # get a clean retry with the improved install logic.
-_INSTALL_LOGIC_VERSION = "3"
+_INSTALL_LOGIC_VERSION = "4"
 
 # Bumped independently of _INSTALL_LOGIC_VERSION so only users with a stale
 # cuda_fallback flag get a targeted CUDA retry — without forcing a full
@@ -393,6 +393,7 @@ def _check_gdal_available() -> Tuple[bool, str]:
 
 _SSL_ERROR_PATTERNS = [
     "ssl",
+    "ssl module",
     "certificate verify failed",
     "CERTIFICATE_VERIFY_FAILED",
     "SSLError",
@@ -426,8 +427,29 @@ def _get_pip_ssl_flags() -> List[str]:
     ]
 
 
-def _get_ssl_error_help() -> str:
-    """Get actionable help message for persistent SSL errors."""
+def _is_ssl_module_missing(error_text: str) -> bool:
+    """Check if the error is about a missing SSL module (not a certificate issue)."""
+    lower = error_text.lower()
+    patterns = ["ssl module is not available", "no module named '_ssl'",
+                "ssl module", "importerror: _ssl"]
+    return any(p in lower for p in patterns)
+
+
+def _get_ssl_error_help(error_text: str = "") -> str:
+    """Get actionable help message for SSL errors.
+
+    Differentiates between SSL module missing (broken Python) and
+    SSL certificate errors (network/proxy).
+    """
+    if _is_ssl_module_missing(error_text):
+        return (
+            "Installation failed: Python's SSL module is not available.\n\n"
+            "This usually means the Python installation is incomplete or corrupted.\n"
+            "Please try:\n"
+            "  1. Delete the folder: {}\n"
+            "  2. Restart QGIS and try again\n"
+            "  3. If the issue persists, reinstall QGIS".format(CACHE_DIR)
+        )
     return (
         "Installation failed due to network restrictions.\n\n"
         "Please contact your IT department to allow access to:\n"
@@ -476,6 +498,33 @@ def _is_proxy_auth_error(output: str) -> bool:
         "proxyerror",
     ]
     return any(p in output_lower for p in patterns)
+
+
+def _is_unable_to_create_process(output: str) -> bool:
+    """Detect 'unable to create process' errors on Windows (broken pip.exe shim)."""
+    return "unable to create process" in output.lower()
+
+
+def _is_dll_init_error(output: str) -> bool:
+    """Detect DLL initialization failures (missing VC++ Redistributables)."""
+    lower = output.lower()
+    patterns = [
+        "winerror 1114",
+        "dll initialization routine failed",
+        "dll load failed",
+    ]
+    return any(p in lower for p in patterns)
+
+
+def _get_vcpp_help() -> str:
+    """Get actionable help for DLL init errors (missing VC++ Redistributables)."""
+    return (
+        "A required DLL failed to initialize. This is usually caused by "
+        "missing Visual C++ Redistributables.\n\n"
+        "Please install the latest VC++ Redistributable:\n"
+        "  https://aka.ms/vs/17/release/vc_redist.x64.exe\n\n"
+        "Then restart your computer and try again."
+    )
 
 
 def _is_antivirus_error(stderr: str) -> bool:
@@ -1631,9 +1680,13 @@ def install_dependencies(
                     _log("Failed to uninstall CPU {}: {}".format(
                         package_name, exc), Qgis.Warning)
 
-            # CUDA wheels are ~2.5GB, need more time than standard packages
+            # Large packages need more time than standard packages
             if is_cuda_package and package_name in ("torch", "torchvision"):
-                pkg_timeout = 2400  # 40 min for CUDA wheels
+                pkg_timeout = 2400  # 40 min for CUDA wheels (~2.5GB)
+            elif package_name == "torch":
+                pkg_timeout = 1800  # 30 min for CPU torch (~600MB)
+            elif package_name == "torchvision":
+                pkg_timeout = 1200  # 20 min for CPU torchvision
             else:
                 pkg_timeout = 600  # 10 min for standard packages
 
@@ -1696,6 +1749,37 @@ def install_dependencies(
                         cancel_check=cancel_check,
                         is_cuda=is_cuda_package,
                     )
+
+                # If "unable to create process" (broken pip shim), retry with pip.exe
+                if result.returncode != 0:
+                    error_output = result.stderr or result.stdout or ""
+                    if _is_unable_to_create_process(error_output):
+                        _log(
+                            "Unable to create process detected, "
+                            "retrying with pip.exe...",
+                            Qgis.Warning
+                        )
+                        if progress_callback:
+                            progress_callback(
+                                pkg_start,
+                                "Retrying {}... ({}/{})".format(
+                                    package_name, i + 1, total_packages)
+                            )
+                        fallback_cmd = [pip_path] + pip_args
+                        result = _run_pip_install(
+                            cmd=fallback_cmd,
+                            timeout=pkg_timeout,
+                            env=env,
+                            subprocess_kwargs=subprocess_kwargs,
+                            package_name=package_name,
+                            package_index=i,
+                            total_packages=total_packages,
+                            progress_start=pkg_start,
+                            progress_end=pkg_end,
+                            progress_callback=progress_callback,
+                            cancel_check=cancel_check,
+                            is_cuda=is_cuda_package,
+                        )
 
                 # If failed, check for SSL errors and retry with --trusted-host
                 if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
@@ -1799,6 +1883,31 @@ def install_dependencies(
                             if result.returncode == 0:
                                 break
 
+                # If "no matching distribution" for torch, retry with --no-cache-dir
+                if result.returncode != 0 and package_name in ("torch", "torchvision"):
+                    error_output = result.stderr or result.stdout or ""
+                    if "no matching distribution" in error_output.lower():
+                        _log(
+                            "No matching distribution for {}, "
+                            "retrying with --no-cache-dir...".format(package_name),
+                            Qgis.Warning
+                        )
+                        nocache_cmd = base_cmd + ["--no-cache-dir"]
+                        result = _run_pip_install(
+                            cmd=nocache_cmd,
+                            timeout=pkg_timeout,
+                            env=env,
+                            subprocess_kwargs=subprocess_kwargs,
+                            package_name=package_name,
+                            package_index=i,
+                            total_packages=total_packages,
+                            progress_start=pkg_start,
+                            progress_end=pkg_end,
+                            progress_callback=progress_callback,
+                            cancel_check=cancel_check,
+                            is_cuda=is_cuda_package,
+                        )
+
                 if result.returncode == 0:
                     _log(f"✓ Successfully installed {package_spec}", Qgis.Success)
                     if progress_callback:
@@ -1887,8 +1996,8 @@ def install_dependencies(
 
                 # Check for SSL errors
                 if _is_ssl_error(install_error_msg):
-                    _log(_get_ssl_error_help(), Qgis.Warning)
-                    return False, "Failed to install {}: SSL certificate error".format(
+                    _log(_get_ssl_error_help(install_error_msg), Qgis.Warning)
+                    return False, "Failed to install {}: SSL error".format(
                         package_name)
 
                 # Check for proxy authentication errors (407)
@@ -1919,6 +2028,16 @@ def install_dependencies(
                     _log(_get_pip_antivirus_help(venv_dir), Qgis.Warning)
                     return False, "Failed to install {}: blocked by antivirus or security policy".format(
                         package_name)
+
+                # Check for "unable to create process" (broken pip shim)
+                if _is_unable_to_create_process(install_error_msg):
+                    return False, (
+                        "Failed to install {}: unable to create process.\n\n"
+                        "Please try:\n"
+                        "  1. Delete the folder: {}\n"
+                        "  2. Restart QGIS and reinstall dependencies".format(
+                            package_name, CACHE_DIR)
+                    )
 
                 # Check for GDAL issues on Linux when rasterio fails
                 if package_name == "rasterio":
@@ -2137,6 +2256,14 @@ def verify_venv(
                         package_name, error_detail),
                     Qgis.Warning
                 )
+
+                # DLL init error (WinError 1114) = missing VC++ Redistributables
+                if _is_dll_init_error(error_detail):
+                    _log(_get_vcpp_help(), Qgis.Warning)
+                    return False, (
+                        "Package {} failed: {}".format(
+                            package_name, _get_vcpp_help())
+                    )
 
                 # Detect broken C extensions (antivirus may have quarantined .pyd files)
                 error_lower = error_detail.lower()
@@ -2363,9 +2490,22 @@ def create_venv_and_install(
     """
     from .python_manager import (
         standalone_python_exists,
+        standalone_python_is_current,
         download_python_standalone,
-        get_python_full_version
+        get_python_full_version,
+        remove_standalone_python,
     )
+
+    # Early Python version check (Issue #148)
+    if sys.version_info < (3, 9):
+        py_ver = "{}.{}.{}".format(
+            sys.version_info.major,
+            sys.version_info.minor,
+            sys.version_info.micro)
+        return False, (
+            "Python {} is too old. AI Segmentation requires "
+            "Python 3.9+.\nPlease upgrade to QGIS 3.22 or later.".format(py_ver)
+        )
 
     # Log system info for debugging
     _log_system_info()
@@ -2381,6 +2521,20 @@ def create_venv_and_install(
         _log(f"Removed {len(removed_venvs)} old venv directories", Qgis.Info)
 
     cleanup_old_libs()
+
+    # If standalone Python exists but version doesn't match QGIS, delete and re-download
+    if standalone_python_exists() and not standalone_python_is_current():
+        _log(
+            "Standalone Python version mismatch, re-downloading...",
+            Qgis.Warning)
+        remove_standalone_python()
+        # Also remove the venv since it was built with the wrong Python
+        if venv_exists():
+            try:
+                shutil.rmtree(VENV_DIR)
+                _log("Removed stale venv after Python version mismatch", Qgis.Info)
+            except Exception as e:
+                _log("Failed to remove stale venv: {}".format(e), Qgis.Warning)
 
     # Step 1: Download Python standalone if needed
     if not standalone_python_exists():

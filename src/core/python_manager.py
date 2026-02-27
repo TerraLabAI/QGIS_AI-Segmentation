@@ -54,15 +54,16 @@ def _safe_extract_zip(zip_file: zipfile.ZipFile, dest_dir: str) -> None:
 
 # Release tag from python-build-standalone
 # Update this periodically to get newer Python builds
-RELEASE_TAG = "20241219"
+RELEASE_TAG = "20251014"
 
 # Mapping of Python minor versions to their latest patch versions in the release
 PYTHON_VERSIONS = {
-    (3, 9): "3.9.21",
-    (3, 10): "3.10.16",
-    (3, 11): "3.11.11",
-    (3, 12): "3.12.8",
-    (3, 13): "3.13.1",
+    (3, 9): "3.9.24",
+    (3, 10): "3.10.19",
+    (3, 11): "3.11.14",
+    (3, 12): "3.12.12",
+    (3, 13): "3.13.9",
+    (3, 14): "3.14.0",
 }
 
 
@@ -90,12 +91,17 @@ def get_qgis_python_version() -> Tuple[int, int]:
 
 
 def get_python_full_version() -> str:
-    """Get the full Python version string for download (e.g., '3.12.8')."""
+    """Get the full Python version string for download (e.g., '3.12.12')."""
     version_tuple = get_qgis_python_version()
     if version_tuple in PYTHON_VERSIONS:
         return PYTHON_VERSIONS[version_tuple]
-    # Fallback: construct version string (may not exist in release)
-    return f"{version_tuple[0]}.{version_tuple[1]}.0"
+    # Fallback: use 3.13 (newest well-tested version) instead of X.Y.0
+    # which likely doesn't exist in the release assets
+    _log(
+        "Python {}.{} not in PYTHON_VERSIONS, falling back to 3.13".format(
+            version_tuple[0], version_tuple[1]),
+        Qgis.Warning)
+    return PYTHON_VERSIONS[(3, 13)]
 
 
 def get_standalone_dir() -> str:
@@ -117,6 +123,50 @@ def standalone_python_exists() -> bool:
     """Check if standalone Python is already installed."""
     python_path = get_standalone_python_path()
     return os.path.exists(python_path)
+
+
+def standalone_python_is_current() -> bool:
+    """Check if installed standalone Python matches QGIS Python major.minor.
+
+    Returns False if standalone doesn't exist or version doesn't match.
+    """
+    python_path = get_standalone_python_path()
+    if not os.path.exists(python_path):
+        return False
+
+    try:
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env.pop("PYTHONHOME", None)
+        env["PYTHONIOENCODING"] = "utf-8"
+
+        kwargs = {}
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs["startupinfo"] = startupinfo
+
+        result = subprocess.run(
+            [python_path, "-c", "import sys; print(sys.version_info.major, sys.version_info.minor)"],
+            capture_output=True, text=True, timeout=15, env=env, **kwargs,
+        )
+        if result.returncode == 0:
+            parts = result.stdout.strip().split()
+            if len(parts) == 2:
+                installed = (int(parts[0]), int(parts[1]))
+                expected = get_qgis_python_version()
+                if installed != expected:
+                    _log(
+                        "Standalone Python {}.{} doesn't match QGIS {}.{}".format(
+                            installed[0], installed[1], expected[0], expected[1]),
+                        Qgis.Warning)
+                    return False
+                return True
+    except Exception as e:
+        _log("Failed to check standalone Python version: {}".format(e), Qgis.Warning)
+
+    return False
 
 
 def _get_platform_info() -> Tuple[str, str]:
