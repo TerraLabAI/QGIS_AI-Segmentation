@@ -37,7 +37,7 @@ CUDA_FLAG_FILE = os.path.join(VENV_DIR, "cuda_installed.txt")
 # new retry strategies) to force a dependency re-install on plugin update.
 # This invalidates the deps hash so users with stale cuda_fallback flags
 # get a clean retry with the improved install logic.
-_INSTALL_LOGIC_VERSION = "4"
+_INSTALL_LOGIC_VERSION = "3"
 
 # Bumped independently of _INSTALL_LOGIC_VERSION so only users with a stale
 # cuda_fallback flag get a targeted CUDA retry — without forcing a full
