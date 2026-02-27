@@ -393,7 +393,6 @@ def _check_gdal_available() -> Tuple[bool, str]:
 
 _SSL_ERROR_PATTERNS = [
     "ssl",
-    "ssl module",
     "certificate verify failed",
     "CERTIFICATE_VERIFY_FAILED",
     "SSLError",
@@ -1116,15 +1115,20 @@ def _reinstall_cpu_torch(
     except Exception as e:
         _log("torch uninstall error (continuing): {}".format(e), Qgis.Warning)
 
-    # Install CPU versions from default PyPI
-    for pkg in ("torch>=2.0.0", "torchvision>=0.15.0"):
+    # Install CPU versions from default PyPI (use same specs as REQUIRED_PACKAGES)
+    cpu_packages = [
+        "torch{}".format(TORCH_MIN),
+        "torchvision{}".format(TORCHVISION_MIN),
+    ]
+    for pkg in cpu_packages:
+        pkg_timeout = 1800 if pkg.startswith("torch>=") else 1200
         try:
             cmd = [python_path, "-m", "pip", "install",
                    "--no-warn-script-location", "--disable-pip-version-check",
                    "--prefer-binary"] + _get_pip_ssl_flags() + [pkg]
             result = subprocess.run(
                 cmd,
-                capture_output=True, text=True, timeout=600,
+                capture_output=True, text=True, timeout=pkg_timeout,
                 env=env, **subprocess_kwargs,
             )
             if result.returncode == 0:
@@ -1950,10 +1954,11 @@ def install_dependencies(
                 if constraints_path:
                     cpu_pip_args.extend(["--constraint", constraints_path])
                 cpu_cmd = [python_path, "-m", "pip"] + cpu_pip_args
+                cpu_timeout = 1800 if package_name == "torch" else 1200
                 try:
                     cpu_result = _run_pip_install(
                         cmd=cpu_cmd,
-                        timeout=600,
+                        timeout=cpu_timeout,
                         env=env,
                         subprocess_kwargs=subprocess_kwargs,
                         package_name=package_name,
@@ -2556,21 +2561,6 @@ def create_venv_and_install(
             if sys.platform == "win32":
                 qgis_python = _get_qgis_python()
                 if qgis_python:
-                    # Check minimum Python version for dependencies
-                    if sys.version_info < (3, 9):
-                        py_ver = "{}.{}.{}".format(
-                            sys.version_info.major,
-                            sys.version_info.minor,
-                            sys.version_info.micro)
-                        _log(
-                            "Python {} is too old. AI Segmentation requires "
-                            "Python 3.9 or later (numpy >= 1.26 and "
-                            "PyTorch >= 2.0 need it). "
-                            "Please upgrade to QGIS 3.22 or later.".format(py_ver),
-                            Qgis.Critical
-                        )
-                        return False, "Python {} is too old. Please upgrade to QGIS 3.22 or later.".format(
-                            py_ver)
                     _log(
                         "Standalone Python download failed, "
                         "falling back to QGIS Python: {}".format(msg),
