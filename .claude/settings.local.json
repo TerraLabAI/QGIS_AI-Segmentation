@@ -70,7 +70,9 @@
       "Bash(git stash:*)",
       "Bash(cd:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(do echo:*)",
+      "Bash(curl:*)"
     ]
   }
 }
