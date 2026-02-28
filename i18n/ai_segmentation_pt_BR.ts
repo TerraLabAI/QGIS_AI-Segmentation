@@ -5,30 +5,50 @@
     <name>AISegmentation</name>
     <!-- Welcome Section -->
     <message>
-        <source>Welcome! Two quick steps to get started:</source>
-        <translation>Bem-vindo! Duas etapas rápidas para começar:</translation>
-    </message>
-    <message>
-        <source>Install AI dependencies</source>
-        <translation>Instalar dependências de IA</translation>
-    </message>
-    <message>
-        <source>Download the segmentation model</source>
-        <translation>Baixar o modelo de segmentação</translation>
+        <source>Click Install to set up AI Segmentation</source>
+        <translation>Clique em Instalar para configurar AI Segmentation</translation>
     </message>
     <message>
         <source>GPU detected: {gpu_name}. Segmentation will be 5-10x faster! Installation takes a few extra minutes.</source>
         <translation>GPU detectada: {gpu_name}. A segmentacao sera 5-10x mais rapida! A instalacao leva alguns minutos extras.</translation>
     </message>
 
-    <!-- Dependencies Section -->
+    <!-- Setup Section -->
     <message>
-        <source>Step 1: AI Dependencies</source>
-        <translation>Etapa 1: Dependências de IA</translation>
+        <source>Setup</source>
+        <translation>Configuracao</translation>
     </message>
     <message>
-        <source>Checking if dependencies are installed...</source>
-        <translation>Verificando se as dependências estão instaladas...</translation>
+        <source>Checking...</source>
+        <translation>Verificando...</translation>
+    </message>
+    <message>
+        <source>Install</source>
+        <translation>Instalar</translation>
+    </message>
+    <message>
+        <source>Update</source>
+        <translation>Atualizar</translation>
+    </message>
+    <message>
+        <source>Dependencies ready</source>
+        <translation>Dependencias prontas</translation>
+    </message>
+    <message>
+        <source>Downloading AI model...</source>
+        <translation>Baixando modelo IA...</translation>
+    </message>
+    <message>
+        <source>Dependencies ready, model not downloaded</source>
+        <translation>Dependencias prontas, modelo nao baixado</translation>
+    </message>
+    <message>
+        <source>Dependencies ready, model download failed</source>
+        <translation>Dependencias prontas, falha no download do modelo</translation>
+    </message>
+    <message>
+        <source>Download Model</source>
+        <translation>Baixar modelo</translation>
     </message>
     <message>
         <source>Not installed yet</source>
@@ -43,24 +63,8 @@
         <translation>Verificando dependências...</translation>
     </message>
     <message>
-        <source>Install Dependencies</source>
-        <translation>Instalar dependências</translation>
-    </message>
-    <message>
         <source>Dependencies need updating</source>
-        <translation>As dependências precisam ser atualizadas</translation>
-    </message>
-    <message>
-        <source>Update Dependencies</source>
-        <translation>Atualizar dependências</translation>
-    </message>
-    <message>
-        <source>Updating...</source>
-        <translation>Atualizando...</translation>
-    </message>
-    <message>
-        <source>Updating dependencies...</source>
-        <translation>Atualizando dependências...</translation>
+        <translation>As dependencias precisam ser atualizadas</translation>
     </message>
     <message>
         <source>Create isolated virtual environment and install required packages</source>
@@ -73,10 +77,6 @@
     <message>
         <source>Installing...</source>
         <translation>Instalando...</translation>
-    </message>
-    <message>
-        <source>Installing dependencies...</source>
-        <translation>Instalando dependências...</translation>
     </message>
     <message>
         <source>Installation cancelled</source>
@@ -131,46 +131,14 @@
         <translation>Isso leva alguns minutos.</translation>
     </message>
 
-    <!-- Checkpoint/Model Section -->
-    <message>
-        <source>Step 2: Segmentation Model</source>
-        <translation>Etapa 2: Modelo de segmentação</translation>
-    </message>
-    <message>
-        <source>Waiting for Step 1...</source>
-        <translation>Aguardando a etapa 1...</translation>
-    </message>
-    <message>
-        <source>Checking if model is installed...</source>
-        <translation>Verificando se o modelo está instalado...</translation>
-    </message>
-    <message>
-        <source>AI Segmentation Model</source>
-        <translation>Modelo AI Segmentation</translation>
-    </message>
-    <message>
-        <source>Checking model...</source>
-        <translation>Verificando modelo...</translation>
-    </message>
-    <message>
-        <source>Download AI Segmentation Model ({size})</source>
-        <translation>Baixar modelo AI Segmentation ({size})</translation>
-    </message>
+    <!-- Model Section -->
     <message>
         <source>Update QGIS to 3.34+ for the latest AI model</source>
         <translation>Atualize o QGIS para 3.34+ para o modelo de IA mais recente</translation>
     </message>
     <message>
-        <source>Download the SAM checkpoint for segmentation</source>
-        <translation>Baixar o checkpoint SAM para segmentação</translation>
-    </message>
-    <message>
         <source>Downloading...</source>
         <translation>Baixando...</translation>
-    </message>
-    <message>
-        <source>Model downloading...</source>
-        <translation>Baixando modelo...</translation>
     </message>
     <message>
         <source>Download cancelled</source>

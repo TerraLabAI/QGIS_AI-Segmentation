@@ -1136,6 +1136,8 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
                 continue
             elif arg == "--no-warn-script-location":
                 continue
+            elif arg == "--prefer-binary":
+                continue
             elif arg == "--no-cache-dir":
                 cmd.append("--no-cache")
                 continue

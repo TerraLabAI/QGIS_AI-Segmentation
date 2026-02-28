@@ -106,6 +106,20 @@ def get_python_full_version() -> str:
     return PYTHON_VERSIONS[(3, 13)]
 
 
+def _create_python_symlinks(python_dir: str) -> None:
+    """Create python3 symlink if only versioned binary exists (e.g. python3.12)."""
+    bin_dir = os.path.join(python_dir, "bin")
+    python3_path = os.path.join(bin_dir, "python3")
+    if os.path.exists(python3_path):
+        return
+    # Find versioned binary like python3.12
+    major, minor = get_qgis_python_version()
+    versioned = os.path.join(bin_dir, "python{}.{}".format(major, minor))
+    if os.path.exists(versioned):
+        os.symlink("python{}.{}".format(major, minor), python3_path)
+        _log("Created python3 symlink -> python{}.{}".format(major, minor))
+
+
 def get_standalone_dir() -> str:
     """Get the directory where Python standalone is installed."""
     return STANDALONE_DIR
@@ -301,6 +315,10 @@ def download_python_standalone(
         else:
             with zipfile.ZipFile(temp_path, "r") as z:
                 _safe_extract_zip(z, STANDALONE_DIR)
+
+        # Create python3 symlink if missing (archive symlinks skipped for safety)
+        if sys.platform != "win32":
+            _create_python_symlinks(os.path.join(STANDALONE_DIR, "python"))
 
         if progress_callback:
             progress_callback(80, "Verifying Python installation...")

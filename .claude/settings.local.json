@@ -73,7 +73,9 @@
       "Bash(tail:*)",
       "Bash(do echo:*)",
       "Bash(curl:*)",
-      "Bash(gh pr:*)"
+      "Bash(gh pr:*)",
+      "Bash(ln:*)",
+      "Bash(~/.qgis_ai_segmentation/uv/uv pip:*)"
     ]
   }
 }
