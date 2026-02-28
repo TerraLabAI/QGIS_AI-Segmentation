@@ -113,6 +113,14 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Annuler</translation>
     </message>
     <message>
+        <source>Cancel installation</source>
+        <translation>Annuler l'installation</translation>
+    </message>
+    <message>
+        <source>Are you sure you want to cancel the installation?</source>
+        <translation>Voulez-vous vraiment annuler l'installation ?</translation>
+    </message>
+    <message>
         <source>Installing...</source>
         <translation>Installation...</translation>
     </message>

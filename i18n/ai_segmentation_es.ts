@@ -113,6 +113,14 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Cancelar</translation>
     </message>
     <message>
+        <source>Cancel installation</source>
+        <translation>Cancelar instalacion</translation>
+    </message>
+    <message>
+        <source>Are you sure you want to cancel the installation?</source>
+        <translation>Esta seguro de que desea cancelar la instalacion?</translation>
+    </message>
+    <message>
         <source>Installing...</source>
         <translation>Instalando...</translation>
     </message>
