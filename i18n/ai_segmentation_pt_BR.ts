@@ -15,8 +15,16 @@
 
     <!-- Setup Section -->
     <message>
-        <source>Setup</source>
-        <translation>Configuracao</translation>
+        <source>Installing AI Segmentation...</source>
+        <translation>Instalando AI Segmentation...</translation>
+    </message>
+    <message>
+        <source>Verifying installation...</source>
+        <translation>Verificando instalacao...</translation>
+    </message>
+    <message>
+        <source>Encoding image...</source>
+        <translation>Codificando imagem...</translation>
     </message>
     <message>
         <source>Checking...</source>
@@ -49,10 +57,6 @@
     <message>
         <source>Download Model</source>
         <translation>Baixar modelo</translation>
-    </message>
-    <message>
-        <source>Not installed yet</source>
-        <translation>Ainda não instalado</translation>
     </message>
     <message>
         <source>Dependencies</source>
@@ -1012,10 +1016,6 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
     <message>
         <source>For best accuracy, segment one element at a time.</source>
         <translation>Para melhor precisao, segmente um elemento de cada vez.</translation>
-    </message>
-    <message>
-        <source>Install path: {}</source>
-        <translation>Caminho de instalacao: {}</translation>
     </message>
 </context>
 </TS>

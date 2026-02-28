@@ -167,15 +167,18 @@ class AISegmentationDockWidget(QDockWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(4)
 
-        welcome_title = QLabel(tr("Click Install to set up AI Segmentation"))
-        welcome_title.setStyleSheet("font-weight: bold; font-size: 12px; color: palette(text);")
-        layout.addWidget(welcome_title)
+        self.welcome_title = QLabel(tr("Click Install to set up AI Segmentation"))
+        self.welcome_title.setStyleSheet("font-weight: bold; font-size: 12px; color: palette(text);")
+        layout.addWidget(self.welcome_title)
 
         self.main_layout.addWidget(self.welcome_widget)
 
     def _setup_setup_section(self):
         """Unified setup section: deps install + model download in one flow."""
-        self.setup_group = QGroupBox(tr("Setup"))
+        self.setup_group = QGroupBox("")
+        self.setup_group.setStyleSheet(
+            "QGroupBox { border: none; margin: 0; padding: 0; }"
+        )
         layout = QVBoxLayout(self.setup_group)
 
         self.setup_status_label = QLabel(tr("Checking..."))
@@ -196,15 +199,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_button.clicked.connect(self._on_install_clicked)
         self.install_button.setVisible(False)
         layout.addWidget(self.install_button)
-
-        from ..core.venv_manager import CACHE_DIR
-        self.install_path_label = QLabel(
-            tr("Install path: {}").format(CACHE_DIR))
-        self.install_path_label.setStyleSheet(
-            "color: palette(text); font-size: 10px;")
-        self.install_path_label.setWordWrap(True)
-        self.install_path_label.setVisible(False)
-        layout.addWidget(self.install_path_label)
 
         self.cancel_button = QPushButton(tr("Cancel"))
         self.cancel_button.clicked.connect(self._on_cancel_clicked)
@@ -987,22 +981,19 @@ class AISegmentationDockWidget(QDockWidget):
 
     def set_dependency_status(self, ok: bool, message: str):
         self._dependencies_ok = ok
-        if not ok and message == tr("Dependencies not installed"):
-            message = tr("Not installed yet")
-        self.setup_status_label.setText(message)
 
         if ok:
+            self.setup_status_label.setText(message)
+            self.setup_status_label.setVisible(True)
             self.setup_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
             self.install_button.setVisible(False)
-            self.install_path_label.setVisible(False)
             self.cancel_button.setVisible(False)
             self.setup_progress.setVisible(False)
             self.setup_progress_label.setVisible(False)
             self.gpu_info_box.setVisible(False)
         else:
-            self.setup_status_label.setStyleSheet("color: palette(text);")
+            self.setup_status_label.setVisible(False)
             self.install_button.setVisible(True)
-            self.install_path_label.setVisible(True)
             self.install_button.setEnabled(True)
             is_update = "updating" in message.lower() or "upgrading" in message.lower()
             if is_update:
@@ -1067,13 +1058,9 @@ class AISegmentationDockWidget(QDockWidget):
             self.setup_progress.setVisible(True)
             self.setup_progress_label.setVisible(True)
             self.cancel_button.setVisible(True)
-            self.install_button.setEnabled(False)
-            if is_update:
-                self.install_button.setText(tr("Updating..."))
-                self.setup_status_label.setText(tr("Updating..."))
-            else:
-                self.install_button.setText(tr("Installing..."))
-                self.setup_status_label.setText(tr("Installing..."))
+            self.install_button.setVisible(False)
+            self.setup_status_label.setVisible(False)
+            self.welcome_title.setText(tr("Installing AI Segmentation..."))
             self._progress_timer.start(500)
         elif percent >= 100 or "cancel" in message.lower() or "failed" in message.lower():
             self._progress_timer.stop()
@@ -1082,15 +1069,20 @@ class AISegmentationDockWidget(QDockWidget):
             self.setup_progress.setVisible(False)
             self.setup_progress_label.setVisible(False)
             self.cancel_button.setVisible(False)
+            self.install_button.setVisible(True)
             self.install_button.setEnabled(True)
             if is_update:
                 self.install_button.setText(tr("Update"))
             else:
                 self.install_button.setText(tr("Install"))
             if "cancel" in message.lower():
+                self.setup_status_label.setVisible(True)
                 self.setup_status_label.setText(tr("Installation cancelled"))
+                self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
             elif "failed" in message.lower():
+                self.setup_status_label.setVisible(True)
                 self.setup_status_label.setText(tr("Installation failed"))
+                self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
         else:
             if self._current_progress < percent:
                 self._current_progress = percent
