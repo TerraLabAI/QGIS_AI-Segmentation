@@ -1871,16 +1871,11 @@ class AISegmentationPlugin:
         self._encoding_in_progress = True
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        self.iface.messageBar().pushMessage(
-            "AI Segmentation", tr("Encoding image..."),
-            level=Qgis.Info, duration=0)
-        QApplication.processEvents()
 
         try:
             return self._do_extract_and_encode(center_point, mupp_override)
         finally:
             QApplication.restoreOverrideCursor()
-            self.iface.messageBar().clearWidgets()
 
     def _do_extract_and_encode(self, center_point, mupp_override):
         """Internal: does the actual crop extraction + SAM encoding."""

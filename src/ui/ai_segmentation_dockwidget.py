@@ -36,6 +36,7 @@ from ..core.activation_manager import (  # noqa: E402
 )
 from ..core.i18n import tr  # noqa: E402
 from ..core.model_config import USE_SAM2  # noqa: E402
+from ..core.venv_manager import CACHE_DIR  # noqa: E402
 
 
 class AISegmentationDockWidget(QDockWidget):
@@ -218,6 +219,13 @@ class AISegmentationDockWidget(QDockWidget):
         )
         self.gpu_info_box.setVisible(False)
         layout.addWidget(self.gpu_info_box)
+
+        self.install_path_label = QLabel(
+            tr("Install path: {}").format(CACHE_DIR))
+        self.install_path_label.setWordWrap(True)
+        self.install_path_label.setStyleSheet(
+            "color: palette(text); font-size: 10px;")
+        layout.addWidget(self.install_path_label)
 
         if not USE_SAM2:
             sam1_info = QLabel(tr("Update QGIS to 3.34+ for the latest AI model"))
