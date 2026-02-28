@@ -1045,5 +1045,9 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <source>For best accuracy, segment one element at a time.</source>
         <translation>Para melhor precisao, segmente um elemento de cada vez.</translation>
     </message>
+    <message>
+        <source>Install path: {}</source>
+        <translation>Caminho de instalacao: {}</translation>
+    </message>
 </context>
 </TS>

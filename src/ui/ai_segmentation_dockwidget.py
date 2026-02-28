@@ -207,6 +207,15 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_button.setToolTip("")
         layout.addWidget(self.install_button)
 
+        from ..core.venv_manager import CACHE_DIR
+        self.install_path_label = QLabel(
+            tr("Install path: {}").format(CACHE_DIR))
+        self.install_path_label.setStyleSheet(
+            "color: palette(text); font-size: 10px;")
+        self.install_path_label.setWordWrap(True)
+        self.install_path_label.setVisible(False)
+        layout.addWidget(self.install_path_label)
+
         self.cancel_deps_button = QPushButton(tr("Cancel"))
         self.cancel_deps_button.clicked.connect(self._on_cancel_deps_clicked)
         self.cancel_deps_button.setVisible(False)
@@ -1039,6 +1048,7 @@ class AISegmentationDockWidget(QDockWidget):
         if ok:
             self.deps_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
             self.install_button.setVisible(False)
+            self.install_path_label.setVisible(False)
             self.cancel_deps_button.setVisible(False)
             self.deps_progress.setVisible(False)
             self.deps_progress_label.setVisible(False)
@@ -1047,6 +1057,7 @@ class AISegmentationDockWidget(QDockWidget):
         else:
             self.deps_status_label.setStyleSheet("color: palette(text);")
             self.install_button.setVisible(True)
+            self.install_path_label.setVisible(True)
             self.install_button.setEnabled(True)
             # Detect update mode (deps exist but specs changed)
             is_update = "updating" in message.lower() or "upgrading" in message.lower()
