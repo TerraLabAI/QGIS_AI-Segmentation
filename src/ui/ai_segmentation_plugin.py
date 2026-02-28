@@ -41,6 +41,34 @@ from ..core.i18n import tr
 SETTINGS_KEY_TUTORIAL_SHOWN = "AI_Segmentation/tutorial_simple_shown"
 
 
+def _get_change_path_instructions():
+    """Return platform-specific instructions for changing the install path."""
+    if sys.platform == "win32":
+        steps = tr(
+            "1. Open Windows Settings > System > Advanced system settings\n"
+            "2. Click 'Environment Variables'\n"
+            "3. Under 'User variables', click 'New'\n"
+            "4. Variable name: AI_SEGMENTATION_CACHE_DIR\n"
+            "5. Variable value: the folder path you want to use\n"
+            "6. Click OK and restart QGIS"
+        )
+    elif sys.platform == "darwin":
+        steps = tr(
+            "Run this command in Terminal, then restart QGIS:\n\n"
+            "launchctl setenv AI_SEGMENTATION_CACHE_DIR /your/path"
+        )
+    else:
+        steps = tr(
+            "Add this line to your ~/.bashrc or ~/.profile, "
+            "then restart QGIS:\n\n"
+            "export AI_SEGMENTATION_CACHE_DIR=/your/path"
+        )
+    return "{}\n\n{}".format(
+        tr("To install in a different folder, set the environment "
+           "variable AI_SEGMENTATION_CACHE_DIR:"),
+        steps)
+
+
 class DepsInstallWorker(QThread):
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(bool, str)
@@ -863,8 +891,12 @@ class AISegmentationPlugin:
             elif any(p in msg_lower for p in [
                 "access is denied", "winerror 5", "winerror 225",
                 "permission denied", "blocked",
+                "cannot write to install",
             ]):
                 error_title = tr("Installation Blocked")
+                error_msg = "{}\n\n{}".format(
+                    error_msg,
+                    _get_change_path_instructions())
 
             show_error_report(
                 self.iface.mainWindow(),

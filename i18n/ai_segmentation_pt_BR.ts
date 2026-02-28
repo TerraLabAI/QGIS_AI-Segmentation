@@ -27,6 +27,40 @@
         <translation>Caminho de instalacao: {}</translation>
     </message>
     <message>
+        <source>To install in a different folder, set the environment variable AI_SEGMENTATION_CACHE_DIR:</source>
+        <translation>Para instalar em outra pasta, defina a variavel de ambiente AI_SEGMENTATION_CACHE_DIR:</translation>
+    </message>
+    <message>
+        <source>1. Open Windows Settings &gt; System &gt; Advanced system settings
+2. Click 'Environment Variables'
+3. Under 'User variables', click 'New'
+4. Variable name: AI_SEGMENTATION_CACHE_DIR
+5. Variable value: the folder path you want to use
+6. Click OK and restart QGIS</source>
+        <translation>1. Abrir Configuracoes do Windows &gt; Sistema &gt; Configuracoes avancadas do sistema
+2. Clicar em 'Variaveis de Ambiente'
+3. Em 'Variaveis do usuario', clicar em 'Novo'
+4. Nome da variavel: AI_SEGMENTATION_CACHE_DIR
+5. Valor da variavel: o caminho da pasta desejada
+6. Clicar OK e reiniciar o QGIS</translation>
+    </message>
+    <message>
+        <source>Run this command in Terminal, then restart QGIS:
+
+launchctl setenv AI_SEGMENTATION_CACHE_DIR /your/path</source>
+        <translation>Execute este comando no Terminal e reinicie o QGIS:
+
+launchctl setenv AI_SEGMENTATION_CACHE_DIR /seu/caminho</translation>
+    </message>
+    <message>
+        <source>Add this line to your ~/.bashrc or ~/.profile, then restart QGIS:
+
+export AI_SEGMENTATION_CACHE_DIR=/your/path</source>
+        <translation>Adicione esta linha ao seu ~/.bashrc ou ~/.profile e reinicie o QGIS:
+
+export AI_SEGMENTATION_CACHE_DIR=/seu/caminho</translation>
+    </message>
+    <message>
         <source>Checking...</source>
         <translation>Verificando...</translation>
     </message>
