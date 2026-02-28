@@ -83,7 +83,7 @@ Version-dependent (see `src/core/model_config.py`):
 - **Python 3.10+**: SAM 2.1 Base Plus checkpoint (~323MB), config `configs/sam2.1/sam2.1_hiera_b+.yaml`
 - **Python 3.9**: SAM ViT-B checkpoint (~375MB), uses `sam_model_registry["vit_b"]`
 - Stored in `~/.qgis_ai_segmentation/checkpoints/`
-- Auto-detects GPU (CUDA/MPS) or falls back to CPU
+- Runs on CPU by default. GPU/CUDA code exists in the codebase but is not actively managed or exposed to users. Never mention GPU/CUDA in user-facing UI, issues, or descriptions.
 
 ## Development Notes
 
