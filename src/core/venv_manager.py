@@ -12,7 +12,14 @@ from typing import Tuple, Optional, Callable, List
 from qgis.core import QgsMessageLog, Qgis
 
 from .model_config import SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN, USE_SAM2
+from .uv_manager import (
+    uv_exists, get_uv_path, download_uv, verify_uv, remove_uv,
+)
 
+
+# Module-level uv state (set during create_venv_and_install)
+_uv_available = False
+_uv_path = None  # type: Optional[str]
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = PLUGIN_ROOT_DIR  # src/ directory
@@ -958,13 +965,55 @@ def create_venv(
     system_python = _get_system_python()
     _log(f"Using Python: {system_python}", Qgis.Info)
 
+    # Use clean env to prevent QGIS PYTHONPATH/PYTHONHOME from leaking
+    # into the standalone Python subprocess (issue #131)
+    env = _get_clean_env_for_venv()
+
+    global _uv_available, _uv_path
+
+    # Try uv venv creation first (faster, no ensurepip needed)
+    if _uv_available and _uv_path:
+        _log("Creating venv with uv...", Qgis.Info)
+        uv_cmd = [_uv_path, "venv", "--python", system_python, venv_dir]
+        try:
+            subprocess_kwargs = {}
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                subprocess_kwargs["startupinfo"] = startupinfo
+
+            result = subprocess.run(
+                uv_cmd,
+                capture_output=True, text=True, timeout=120,
+                env=env, **subprocess_kwargs,
+            )
+            if result.returncode == 0:
+                _log("Virtual environment created with uv", Qgis.Success)
+                if progress_callback:
+                    progress_callback(20, "Virtual environment created (uv)")
+                return True, "Virtual environment created"
+            else:
+                error_msg = result.stderr or result.stdout or ""
+                _log("uv venv creation failed: {}".format(
+                    error_msg[:200]), Qgis.Warning)
+                _cleanup_partial_venv(venv_dir)
+                # Fall through to standard venv creation
+                remove_uv()
+                _uv_available = False
+                _uv_path = None
+                _log("Falling back to python -m venv", Qgis.Warning)
+        except Exception as e:
+            _log("uv venv exception: {}, falling back to python -m venv".format(
+                e), Qgis.Warning)
+            _cleanup_partial_venv(venv_dir)
+            remove_uv()
+            _uv_available = False
+            _uv_path = None
+
+    # Standard venv creation with python -m venv
     cmd = [system_python, "-m", "venv", venv_dir]
-
     try:
-        # Use clean env to prevent QGIS PYTHONPATH/PYTHONHOME from leaking
-        # into the standalone Python subprocess (issue #131)
-        env = _get_clean_env_for_venv()
-
         if sys.platform == "win32":
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -1037,6 +1086,48 @@ def create_venv(
         return False, f"Error: {str(e)[:200]}"
 
 
+def _build_install_cmd(python_path: str, pip_args: list) -> list:
+    """Build an install command using uv (if available) or pip.
+
+    Translates pip flags to uv equivalents when _uv_available is True.
+    """
+    if _uv_available and _uv_path:
+        cmd = [_uv_path, "pip"]
+        skip_next = False
+        for i, arg in enumerate(pip_args):
+            if skip_next:
+                skip_next = False
+                continue
+            if arg == "--disable-pip-version-check":
+                continue
+            elif arg == "--no-warn-script-location":
+                continue
+            elif arg == "--no-cache-dir":
+                cmd.append("--no-cache")
+                continue
+            elif arg == "--force-reinstall":
+                cmd.append("--reinstall")
+                continue
+            elif arg == "--trusted-host":
+                cmd.append("--allow-insecure-host")
+                continue
+            elif arg == "--proxy":
+                # uv uses HTTP_PROXY/HTTPS_PROXY env vars (already set)
+                skip_next = True
+                continue
+            cmd.append(arg)
+        cmd.extend(["--python", python_path])
+        return cmd
+    return [python_path, "-m", "pip"] + pip_args
+
+
+def _build_uninstall_cmd(python_path: str, packages: list) -> list:
+    """Build an uninstall command using uv (if available) or pip."""
+    if _uv_available and _uv_path:
+        return [_uv_path, "pip", "uninstall", "--python", python_path] + packages
+    return [python_path, "-m", "pip", "uninstall", "-y"] + packages
+
+
 def _repin_numpy(venv_dir: str):
     """
     Check numpy version in the venv and force-downgrade if >= 2.0.
@@ -1065,13 +1156,13 @@ def _repin_numpy(venv_dir: str):
                 "numpy {} detected (>=2.0), forcing downgrade to <2.0.0...".format(version_str),
                 Qgis.Warning
             )
-            downgrade_cmd = [
-                python_path, "-m", "pip", "install",
-                "--force-reinstall", "--no-deps",
+            downgrade_args = [
+                "install", "--force-reinstall", "--no-deps",
                 "--disable-pip-version-check",
             ] + _get_pip_ssl_flags() + [
                 "numpy>=1.26.0,<2.0.0",
             ]
+            downgrade_cmd = _build_install_cmd(python_path, downgrade_args)
             downgrade_result = subprocess.run(
                 downgrade_cmd,
                 capture_output=True, text=True, timeout=120,
@@ -1106,9 +1197,10 @@ def _reinstall_cpu_torch(
 
     # Uninstall existing torch and torchvision
     try:
+        uninstall_cmd = _build_uninstall_cmd(
+            python_path, ["torch", "torchvision"])
         subprocess.run(
-            [python_path, "-m", "pip", "uninstall", "-y",
-             "torch", "torchvision"],
+            uninstall_cmd,
             capture_output=True, text=True, timeout=120,
             env=env, **subprocess_kwargs,
         )
@@ -1123,9 +1215,12 @@ def _reinstall_cpu_torch(
     for pkg in cpu_packages:
         pkg_timeout = 1800 if pkg.startswith("torch>=") else 1200
         try:
-            cmd = [python_path, "-m", "pip", "install",
-                   "--no-warn-script-location", "--disable-pip-version-check",
-                   "--prefer-binary"] + _get_pip_ssl_flags() + [pkg]
+            install_args = [
+                "install", "--no-warn-script-location",
+                "--disable-pip-version-check",
+                "--prefer-binary",
+            ] + _get_pip_ssl_flags() + [pkg]
+            cmd = _build_install_cmd(python_path, install_args)
             result = subprocess.run(
                 cmd,
                 capture_output=True, text=True, timeout=pkg_timeout,
@@ -1483,34 +1578,39 @@ def install_dependencies(
 
     # Upgrade pip before installing packages. The standalone Python bundles
     # pip 24.3.1 which can crash with internal exceptions on large packages
-    # like torch (see issue #145).
+    # like torch (see issue #145). Skip when using uv.
     python_path_pre = get_venv_python_path(venv_dir)
-    if progress_callback:
-        progress_callback(20, "Upgrading pip...")
-    try:
-        _log("Upgrading pip to latest version...", Qgis.Info)
-        upgrade_cmd = [
-            python_path_pre, "-m", "pip", "install",
-            "--upgrade", "pip",
-            "--disable-pip-version-check",
-            "--no-warn-script-location",
-        ]
-        upgrade_cmd.extend(_get_pip_ssl_flags())
-        upgrade_result = subprocess.run(
-            upgrade_cmd,
-            capture_output=True, text=True, timeout=120,
-            env=_get_clean_env_for_venv(),
-            **_get_subprocess_kwargs(),
-        )
-        if upgrade_result.returncode == 0:
-            _log("pip upgraded successfully", Qgis.Success)
-        else:
-            _log("pip upgrade failed (non-critical): {}".format(
-                (upgrade_result.stderr or upgrade_result.stdout or "")[:200]),
-                Qgis.Warning)
-    except Exception as e:
-        _log("pip upgrade failed (non-critical): {}".format(str(e)[:200]),
-             Qgis.Warning)
+    if _uv_available:
+        _log("Using uv for installation, skipping pip upgrade", Qgis.Info)
+        if progress_callback:
+            progress_callback(20, "Using uv package installer...")
+    else:
+        if progress_callback:
+            progress_callback(20, "Upgrading pip...")
+        try:
+            _log("Upgrading pip to latest version...", Qgis.Info)
+            upgrade_cmd = [
+                python_path_pre, "-m", "pip", "install",
+                "--upgrade", "pip",
+                "--disable-pip-version-check",
+                "--no-warn-script-location",
+            ]
+            upgrade_cmd.extend(_get_pip_ssl_flags())
+            upgrade_result = subprocess.run(
+                upgrade_cmd,
+                capture_output=True, text=True, timeout=120,
+                env=_get_clean_env_for_venv(),
+                **_get_subprocess_kwargs(),
+            )
+            if upgrade_result.returncode == 0:
+                _log("pip upgraded successfully", Qgis.Success)
+            else:
+                _log("pip upgrade failed (non-critical): {}".format(
+                    (upgrade_result.stderr or upgrade_result.stdout or "")[:200]),
+                    Qgis.Warning)
+        except Exception as e:
+            _log("pip upgrade failed (non-critical): {}".format(str(e)[:200]),
+                 Qgis.Warning)
 
     _cuda_fell_back = False  # Track if CUDA install fell back to CPU
     _driver_too_old = False  # Track if GPU driver was too old (not an error)
@@ -1674,9 +1774,10 @@ def install_dependencies(
                 _log("Uninstalling CPU {} before CUDA install".format(
                     package_name), Qgis.Info)
                 try:
+                    uninstall_cmd = _build_uninstall_cmd(
+                        python_path, [package_name])
                     subprocess.run(
-                        [python_path, "-m", "pip", "uninstall", "-y",
-                         package_name],
+                        uninstall_cmd,
                         capture_output=True, text=True, timeout=120,
                         env=env, **subprocess_kwargs
                     )
@@ -1699,9 +1800,8 @@ def install_dependencies(
             last_returncode = None
 
             try:
-                # Use python -m pip (more reliable than pip.exe on Windows
-                # where antivirus may block the standalone pip executable)
-                base_cmd = [python_path, "-m", "pip"] + pip_args
+                # Build install command (uv or pip depending on availability)
+                base_cmd = _build_install_cmd(python_path, pip_args)
 
                 # First attempt: pip install with real-time progress
                 result = _run_pip_install(
@@ -1725,7 +1825,8 @@ def install_dependencies(
                     return False, "Installation cancelled"
 
                 # If Windows process crash, retry with pip.exe as fallback
-                if _is_windows_process_crash(result.returncode):
+                # (skip when using uv - it doesn't have this issue)
+                if not _uv_available and _is_windows_process_crash(result.returncode):
                     _log(
                         "Process crash detected (code {}), "
                         "retrying with pip.exe...".format(result.returncode),
@@ -1755,7 +1856,8 @@ def install_dependencies(
                     )
 
                 # If "unable to create process" (broken pip shim), retry with pip.exe
-                if result.returncode != 0:
+                # (skip when using uv - it doesn't have this issue)
+                if not _uv_available and result.returncode != 0:
                     error_output = result.stderr or result.stdout or ""
                     if _is_unable_to_create_process(error_output):
                         _log(
@@ -1801,7 +1903,9 @@ def install_dependencies(
                                     package_name, i + 1, total_packages)
                             )
 
-                        ssl_cmd = base_cmd[:3] + _get_pip_ssl_flags() + base_cmd[3:]
+                        # Re-run with SSL flags (already present but retry in case)
+                        ssl_flags = _get_pip_ssl_flags()
+                        ssl_cmd = base_cmd + ssl_flags
                         result = _run_pip_install(
                             cmd=ssl_cmd,
                             timeout=pkg_timeout,
@@ -1834,7 +1938,8 @@ def install_dependencies(
                                     package_name, i + 1, total_packages)
                             )
 
-                        nocache_cmd = base_cmd + ["--no-cache-dir"]
+                        nocache_flag = "--no-cache" if _uv_available else "--no-cache-dir"
+                        nocache_cmd = base_cmd + [nocache_flag]
                         result = _run_pip_install(
                             cmd=nocache_cmd,
                             timeout=pkg_timeout,
@@ -1896,7 +2001,8 @@ def install_dependencies(
                             "retrying with --no-cache-dir...".format(package_name),
                             Qgis.Warning
                         )
-                        nocache_cmd = base_cmd + ["--no-cache-dir"]
+                        nocache2 = "--no-cache" if _uv_available else "--no-cache-dir"
+                        nocache_cmd = base_cmd + [nocache2]
                         result = _run_pip_install(
                             cmd=nocache_cmd,
                             timeout=pkg_timeout,
@@ -1953,7 +2059,7 @@ def install_dependencies(
                 cpu_pip_args.append(package_spec)
                 if constraints_path:
                     cpu_pip_args.extend(["--constraint", constraints_path])
-                cpu_cmd = [python_path, "-m", "pip"] + cpu_pip_args
+                cpu_cmd = _build_install_cmd(python_path, cpu_pip_args)
                 cpu_timeout = 1800 if package_name == "torch" else 1200
                 try:
                     cpu_result = _run_pip_install(
@@ -2485,12 +2591,13 @@ def create_venv_and_install(
     cuda_enabled: bool = False
 ) -> Tuple[bool, str]:
     """
-    Complete installation: download Python standalone + create venv + install packages.
+    Complete installation: download Python standalone + download uv + create venv + install packages.
 
     Progress breakdown:
-    - 0-10%: Download Python standalone (~50MB)
-    - 10-15%: Create virtual environment
-    - 15-95%: Install packages (~800MB, or ~2.5GB with CUDA)
+    - 0-10%:   Download Python standalone (~50MB)
+    - 10-13%:  Download uv package installer (non-fatal if fails)
+    - 13-18%:  Create virtual environment
+    - 18-95%:  Install packages (~800MB, or ~2.5GB with CUDA)
     - 95-100%: Verify installation
     """
     from .python_manager import (
@@ -2580,16 +2687,56 @@ def create_venv_and_install(
         if progress_callback:
             progress_callback(10, "Python standalone ready")
 
+    # Step 1b: Download uv package installer (non-fatal if fails)
+    global _uv_available, _uv_path
+    if uv_exists() and verify_uv():
+        _uv_available = True
+        _uv_path = get_uv_path()
+        _log("uv already installed, using for package management", Qgis.Info)
+        if progress_callback:
+            progress_callback(13, "uv package installer ready")
+    else:
+        if progress_callback:
+            progress_callback(10, "Downloading uv package installer...")
+        try:
+            def uv_progress(percent, uv_msg):
+                if progress_callback:
+                    progress_callback(10 + int(percent * 0.03), uv_msg)
+
+            uv_ok, uv_msg = download_uv(
+                progress_callback=uv_progress,
+                cancel_check=cancel_check,
+            )
+            if uv_ok:
+                _uv_available = True
+                _uv_path = get_uv_path()
+                _log("uv downloaded, using for package management", Qgis.Info)
+            else:
+                _uv_available = False
+                _uv_path = None
+                _log("uv download failed (non-fatal), using pip: {}".format(
+                    uv_msg), Qgis.Warning)
+        except Exception as e:
+            _uv_available = False
+            _uv_path = None
+            _log("uv download failed (non-fatal): {}".format(e), Qgis.Warning)
+        if progress_callback:
+            progress_callback(13, "uv: {}".format(
+                "ready" if _uv_available else "unavailable, using pip"))
+
+    if cancel_check and cancel_check():
+        return False, "Installation cancelled"
+
     # Step 2: Create virtual environment if needed
     if venv_exists():
         _log("Virtual environment already exists", Qgis.Info)
         if progress_callback:
-            progress_callback(15, "Virtual environment ready")
+            progress_callback(18, "Virtual environment ready")
     else:
         def venv_progress(percent, msg):
-            # Map 10-20 to 10-15
+            # Map 0-100 to 13-18
             if progress_callback:
-                progress_callback(10 + int(percent * 0.05), msg)
+                progress_callback(13 + int(percent * 0.05), msg)
 
         success, msg = create_venv(progress_callback=venv_progress)
         if not success:
@@ -2600,9 +2747,9 @@ def create_venv_and_install(
 
     # Step 3: Install dependencies
     def deps_progress(percent, msg):
-        # Map 20-100 to 15-95
+        # Map 20-100 to 18-95
         if progress_callback:
-            mapped = 15 + int((percent - 20) * 0.80 / 0.80)
+            mapped = 18 + int((percent - 20) * (95 - 18) / 80)
             progress_callback(min(mapped, 95), msg)
 
     success, msg = install_dependencies(
