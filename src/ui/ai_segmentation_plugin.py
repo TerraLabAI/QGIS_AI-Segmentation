@@ -86,6 +86,32 @@ class DownloadWorker(QThread):
             self.finished.emit(False, str(e))
 
 
+
+class VerifyWorker(QThread):
+    """Runs venv verification + device detection off the main thread."""
+    finished = pyqtSignal(bool, str)  # (is_valid, message)
+
+    def run(self):
+        try:
+            from ..core.venv_manager import verify_venv
+            is_valid, msg = verify_venv()
+            if not is_valid:
+                self.finished.emit(False, msg)
+                return
+            # Device detection (imports torch, checks CUDA)
+            try:
+                from ..core.venv_manager import ensure_venv_packages_available
+                ensure_venv_packages_available()
+                from ..core.device_manager import get_device_info
+                info = get_device_info()
+                self.finished.emit(True, info or "")
+            except Exception as e:
+                # Verification passed but device info failed - still ok
+                self.finished.emit(True, "device_error: {}".format(str(e)))
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+
 class _ShortcutFilter(QObject):
     """Event filter that intercepts keyboard shortcuts on the main window.
 
@@ -240,6 +266,7 @@ class AISegmentationPlugin:
 
         self.deps_install_worker = None
         self.download_worker = None
+        self._verify_worker = None
 
         self.mask_rubber_band: Optional[QgsRubberBand] = None
         self.saved_rubber_bands: List[QgsRubberBand] = []
@@ -511,10 +538,11 @@ class AISegmentationPlugin:
             self.predictor = None
 
         # 3. Disconnect worker signals before termination to prevent callbacks on deleted UI
-        for worker in [self.deps_install_worker, self.download_worker]:
+        for worker in [self.deps_install_worker, self.download_worker, self._verify_worker]:
             if worker:
                 try:
-                    worker.progress.disconnect()
+                    if hasattr(worker, 'progress'):
+                        worker.progress.disconnect()
                 except (TypeError, RuntimeError):
                     pass
                 try:
@@ -523,7 +551,7 @@ class AISegmentationPlugin:
                     pass
 
         # 4. Terminate workers with timeout
-        for worker in [self.deps_install_worker, self.download_worker]:
+        for worker in [self.deps_install_worker, self.download_worker, self._verify_worker]:
             if worker and worker.isRunning():
                 try:
                     worker.terminate()
@@ -537,6 +565,7 @@ class AISegmentationPlugin:
                     pass
         self.deps_install_worker = None
         self.download_worker = None
+        self._verify_worker = None
 
         # 5. Disconnect action signal and remove menu/toolbar
         try:
@@ -689,30 +718,7 @@ class AISegmentationPlugin:
                 level=Qgis.Warning
             )
 
-    def _verify_venv(self):
-        """Verify virtual environment status."""
-        try:
-            from ..core.venv_manager import verify_venv
-            is_valid, message = verify_venv()
 
-            if is_valid:
-                QgsMessageLog.logMessage(
-                    "✓ Virtual environment verified successfully",
-                    "AI Segmentation",
-                    level=Qgis.Success
-                )
-            else:
-                QgsMessageLog.logMessage(
-                    f"⚠ Virtual environment verification failed: {message}",
-                    "AI Segmentation",
-                    level=Qgis.Warning
-                )
-        except Exception as e:
-            QgsMessageLog.logMessage(
-                f"Isolation verification error: {e}",
-                "AI Segmentation",
-                level=Qgis.Warning
-            )
 
     def _show_device_info(self):
         """Detect and display which compute device will be used."""
@@ -837,26 +843,11 @@ class AISegmentationPlugin:
                     fallback_msg
                 )
 
-            from ..core.venv_manager import verify_venv
-            is_valid, verify_msg = verify_venv()
-
-            if is_valid:
-                self.dock_widget.set_dependency_status(True, "✓ " + tr("Dependencies ready"))
-                self._show_device_info()
-                self._verify_venv()
-                # Auto-download model if not already present
-                self._auto_download_checkpoint()
-            else:
-                self.dock_widget.set_install_progress(100, "Failed")
-                self.dock_widget.set_dependency_status(False, tr("Verification failed:") + f" {verify_msg}")
-
-                show_error_report(
-                    self.iface.mainWindow(),
-                    tr("Verification Failed"),
-                    "{}\n{}".format(
-                        tr("Virtual environment was created but verification failed:"),
-                        verify_msg)
-                )
+            # Run verification + device detection off main thread
+            self.dock_widget.set_install_progress(80, tr("Verifying installation..."))
+            self._verify_worker = VerifyWorker()
+            self._verify_worker.finished.connect(self._on_verify_finished)
+            self._verify_worker.start()
         else:
             self.dock_widget.set_install_progress(100, "Failed")
             error_msg = message[:300] if message else tr("Unknown error")
@@ -880,6 +871,32 @@ class AISegmentationPlugin:
                 error_title,
                 error_msg
             )
+
+    def _on_verify_finished(self, is_valid: bool, message: str):
+        if not self.dock_widget:
+            return
+        if is_valid:
+            self.dock_widget.set_dependency_status(True, "✓ " + tr("Dependencies ready"))
+            if message and not message.startswith("device_error"):
+                QgsMessageLog.logMessage(
+                    "Device info: {}".format(message),
+                    "AI Segmentation", level=Qgis.Info)
+            elif message.startswith("device_error"):
+                QgsMessageLog.logMessage(
+                    "Could not determine device info: {}".format(
+                        message.replace("device_error: ", "")),
+                    "AI Segmentation", level=Qgis.Warning)
+            self._auto_download_checkpoint()
+        else:
+            self.dock_widget.set_install_progress(100, "Failed")
+            self.dock_widget.set_dependency_status(
+                False, "{} {}".format(tr("Verification failed:"), message))
+            show_error_report(
+                self.iface.mainWindow(),
+                tr("Verification Failed"),
+                "{}\n{}".format(
+                    tr("Virtual environment was created but verification failed:"),
+                    message))
 
     def _on_cancel_install(self):
         if self.deps_install_worker and self.deps_install_worker.isRunning():
@@ -1853,6 +1870,20 @@ class AISegmentationPlugin:
             return False
         self._encoding_in_progress = True
 
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        self.iface.messageBar().pushMessage(
+            "AI Segmentation", tr("Encoding image..."),
+            level=Qgis.Info, duration=0)
+        QApplication.processEvents()
+
+        try:
+            return self._do_extract_and_encode(center_point, mupp_override)
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.iface.messageBar().clearWidgets()
+
+    def _do_extract_and_encode(self, center_point, mupp_override):
+        """Internal: does the actual crop extraction + SAM encoding."""
         from ..core.feature_encoder import (
             extract_crop_from_raster, extract_crop_from_online_layer
         )
