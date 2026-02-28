@@ -12,7 +12,7 @@ from .model_config import (
     USE_SAM2,
 )
 
-CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
+CACHE_DIR = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser("~/.qgis_ai_segmentation")
 CHECKPOINTS_DIR = os.path.join(CACHE_DIR, "checkpoints")
 FEATURES_DIR = os.path.join(CACHE_DIR, "features")
 
@@ -274,7 +274,7 @@ def download_checkpoint(
                     last_error, "AI Segmentation", level=Qgis.Warning)
                 if attempt < max_retries:
                     import time
-                    time.sleep(2 * attempt)
+                    time.sleep(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
             reply = manager.get(request)
@@ -315,7 +315,7 @@ def download_checkpoint(
                 last_error = "Download timed out after 20 minutes"
                 if attempt < max_retries:
                     import time
-                    time.sleep(2 * attempt)
+                    time.sleep(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
             # Check if server returned 416 (range not satisfiable)
@@ -349,7 +349,12 @@ def download_checkpoint(
                 download_state['file'] = None
                 if attempt < max_retries:
                     import time
-                    time.sleep(2 * attempt)
+                    wait = min(5 * (2 ** (attempt - 1)), 120)
+                    if progress_callback:
+                        progress_callback(
+                            5, "Retry {}/{} in {}s...".format(
+                                attempt + 1, max_retries, wait))
+                    time.sleep(wait)
                 continue
 
             # Flush remaining data
@@ -366,7 +371,7 @@ def download_checkpoint(
                 last_error = "Download failed: empty file"
                 if attempt < max_retries:
                     import time
-                    time.sleep(2 * attempt)
+                    time.sleep(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
             if progress_callback:
@@ -384,7 +389,7 @@ def download_checkpoint(
                 last_error = "Download verification failed - hash mismatch"
                 if attempt < max_retries:
                     import time
-                    time.sleep(2 * attempt)
+                    time.sleep(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
             os.replace(temp_path, checkpoint_path)
@@ -425,19 +430,23 @@ def download_checkpoint(
                 download_state['file'] = None
             if attempt < max_retries:
                 import time
-                time.sleep(2 * attempt)
+                time.sleep(min(5 * (2 ** (attempt - 1)), 120))
 
     # All retries exhausted - keep partial file for next resume attempt
     partial_mb = 0
     if os.path.exists(temp_path):
         partial_mb = os.path.getsize(temp_path) / (1024 * 1024)
+    firewall_hint = (
+        " A firewall or proxy may be blocking the download. "
+        "Check your network settings in QGIS (Settings > Options > Network)."
+    )
     if partial_mb > 0:
         return False, (
             "Download failed after {} attempts: {}. "
-            "Partial file ({:.1f} MB) saved, will resume on next try."
-        ).format(max_retries, last_error, partial_mb)
-    return False, "Download failed after {} attempts: {}".format(
-        max_retries, last_error)
+            "Partial file ({:.1f} MB) saved, will resume on next try.{}"
+        ).format(max_retries, last_error, partial_mb, firewall_hint)
+    return False, "Download failed after {} attempts: {}{}".format(
+        max_retries, last_error, firewall_hint)
 
 
 def cleanup_legacy_sam1_data():

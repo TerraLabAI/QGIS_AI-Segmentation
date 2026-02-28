@@ -23,7 +23,7 @@ from qgis.PyQt.QtNetwork import QNetworkRequest
 
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
+CACHE_DIR = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser("~/.qgis_ai_segmentation")
 STANDALONE_DIR = os.path.join(CACHE_DIR, "python_standalone")
 
 
@@ -262,15 +262,28 @@ def download_python_standalone(
         reply = request.reply()
         content = reply.content()
 
+        content_size = len(content)
+        if content_size == 0:
+            return False, "Download failed: received empty file (0 bytes)"
+        min_expected = 10 * 1024 * 1024  # 10 MB
+        if content_size < min_expected:
+            _log(
+                "Download suspiciously small: {} bytes (expected >10 MB)".format(
+                    content_size), Qgis.Warning)
+            return False, (
+                "Download failed: file too small ({:.1f} MB). "
+                "A firewall or proxy may be blocking the download."
+            ).format(content_size / (1024 * 1024))
+
         if progress_callback:
-            total_mb = len(content) / (1024 * 1024)
+            total_mb = content_size / (1024 * 1024)
             progress_callback(50, f"Downloaded {total_mb:.1f} MB, saving...")
 
         # Write content to temp file
         with open(temp_path, 'wb') as f:
             f.write(content.data())
 
-        _log(f"Download complete ({len(content)} bytes), extracting...", Qgis.Info)
+        _log(f"Download complete ({content_size} bytes), extracting...", Qgis.Info)
 
         if progress_callback:
             progress_callback(55, "Extracting Python...")

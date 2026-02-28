@@ -24,7 +24,7 @@ _uv_path = None  # type: Optional[str]
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = PLUGIN_ROOT_DIR  # src/ directory
 PYTHON_VERSION = f"py{sys.version_info.major}.{sys.version_info.minor}"
-CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
+CACHE_DIR = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser("~/.qgis_ai_segmentation")
 VENV_DIR = os.path.join(CACHE_DIR, f'venv_{PYTHON_VERSION}')
 LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, 'libs')
 
@@ -158,6 +158,7 @@ def _log_system_info():
     except Exception:
         qgis_version = "Unknown"
 
+    custom_cache = os.environ.get("AI_SEGMENTATION_CACHE_DIR")
     info_lines = [
         "=" * 50,
         "Installation Environment:",
@@ -165,8 +166,11 @@ def _log_system_info():
         f"  Architecture: {platform.machine()}",
         f"  Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         f"  QGIS: {qgis_version}",
-        "=" * 50,
+        f"  Install dir: {CACHE_DIR}",
     ]
+    if custom_cache:
+        info_lines.append("  (via AI_SEGMENTATION_CACHE_DIR)")
+    info_lines.append("=" * 50)
     for line in info_lines:
         _log(line, Qgis.Info)
 
@@ -518,6 +522,7 @@ def _is_dll_init_error(output: str) -> bool:
         "winerror 1114",
         "dll initialization routine failed",
         "dll load failed",
+        "_load_dll_libraries",
     ]
     return any(p in lower for p in patterns)
 
@@ -706,7 +711,7 @@ def ensure_venv_packages_available():
         return False
 
     if site_packages not in sys.path:
-        sys.path.insert(0, site_packages)
+        sys.path.append(site_packages)
         _log(f"Added venv site-packages to sys.path: {site_packages}", Qgis.Info)
 
     # On Windows, register DLL directories for torch/torchvision so the OS
@@ -1014,27 +1019,21 @@ def create_venv(
     # Standard venv creation with python -m venv
     cmd = [system_python, "-m", "venv", venv_dir]
     try:
+        subprocess_kwargs = {}
         if sys.platform == "win32":
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = subprocess.SW_HIDE
+            subprocess_kwargs["startupinfo"] = startupinfo
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=120,
-                env=env,
-                startupinfo=startupinfo,
-            )
-        else:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=120,
-                env=env,
-            )
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=env,
+            **subprocess_kwargs,
+        )
 
         if result.returncode == 0:
             _log("Virtual environment created successfully", Qgis.Success)
@@ -1074,9 +1073,44 @@ def create_venv(
             return False, f"Failed to create venv: {error_msg[:200]}"
 
     except subprocess.TimeoutExpired:
-        _log("Virtual environment creation timed out", Qgis.Critical)
+        _log("Venv creation timed out, retrying with --without-pip...", Qgis.Warning)
         _cleanup_partial_venv(venv_dir)
-        return False, "Virtual environment creation timed out"
+        # Retry with --without-pip (faster, avoids pip setup that AV scans)
+        try:
+            nopip_cmd = [system_python, "-m", "venv", "--without-pip", venv_dir]
+            result2 = subprocess.run(
+                nopip_cmd,
+                capture_output=True, text=True, timeout=300,
+                env=env, **subprocess_kwargs,
+            )
+            if result2.returncode == 0:
+                _log("Venv created (--without-pip), bootstrapping pip...", Qgis.Info)
+                python_in_venv = get_venv_python_path(venv_dir)
+                ensurepip_cmd = [python_in_venv, "-m", "ensurepip", "--upgrade"]
+                ep_result = subprocess.run(
+                    ensurepip_cmd,
+                    capture_output=True, text=True, timeout=120,
+                    env=env, **subprocess_kwargs,
+                )
+                if ep_result.returncode == 0:
+                    _log("pip bootstrapped via ensurepip", Qgis.Success)
+                    if progress_callback:
+                        progress_callback(20, "Virtual environment created")
+                    return True, "Virtual environment created"
+                else:
+                    err = ep_result.stderr or ep_result.stdout or ""
+                    _log("ensurepip failed: {}".format(err[:200]), Qgis.Warning)
+                    _cleanup_partial_venv(venv_dir)
+                    return False, "Failed to bootstrap pip: {}".format(err[:200])
+            else:
+                err = result2.stderr or result2.stdout or ""
+                _log("Retry --without-pip failed: {}".format(err[:200]), Qgis.Critical)
+                _cleanup_partial_venv(venv_dir)
+                return False, "Virtual environment creation timed out"
+        except Exception as e2:
+            _log("Retry --without-pip exception: {}".format(e2), Qgis.Critical)
+            _cleanup_partial_venv(venv_dir)
+            return False, "Virtual environment creation timed out"
     except FileNotFoundError:
         _log(f"Python executable not found: {system_python}", Qgis.Critical)
         return False, f"Python not found: {system_python}"
@@ -1789,7 +1823,7 @@ def install_dependencies(
             if is_cuda_package and package_name in ("torch", "torchvision"):
                 pkg_timeout = 2400  # 40 min for CUDA wheels (~2.5GB)
             elif package_name == "torch":
-                pkg_timeout = 1800  # 30 min for CPU torch (~600MB)
+                pkg_timeout = 3600  # 60 min for CPU torch on slow connections
             elif package_name == "torchvision":
                 pkg_timeout = 1200  # 20 min for CPU torchvision
             else:
@@ -1960,19 +1994,20 @@ def install_dependencies(
                     error_output = result.stderr or result.stdout or ""
 
                     if _is_network_error(error_output):
-                        for attempt in range(1, 3):  # up to 2 retries
+                        for attempt in range(1, 5):  # up to 4 retries
+                            wait = 5 * (2 ** (attempt - 1))  # 5, 10, 20, 40s
                             _log(
-                                "Network error detected, retrying in 5s "
-                                "(attempt {}/2)...".format(attempt),
+                                "Network error detected, retrying in {}s "
+                                "(attempt {}/4)...".format(wait, attempt),
                                 Qgis.Warning
                             )
                             if progress_callback:
                                 progress_callback(
                                     pkg_start,
-                                    "Network error, retrying {}... ({}/{})".format(
-                                        package_name, i + 1, total_packages)
+                                    "Network error, retry {}/4 in {}s...".format(
+                                        attempt, wait)
                                 )
-                            time.sleep(5)
+                            time.sleep(wait)
                             if cancel_check and cancel_check():
                                 return False, "Installation cancelled"
                             result = _run_pip_install(
@@ -2104,6 +2139,13 @@ def install_dependencies(
                     _log(_get_crash_help(venv_dir), Qgis.Warning)
                     return False, "Failed to install {}: process crashed (code {})".format(
                         package_name, last_returncode)
+
+                # Check for DLL load failure (missing system libraries)
+                is_dll_err = sys.platform == "win32" and _is_dll_init_error(install_error_msg)
+                if is_dll_err and package_name in ("torch", "torchvision"):
+                    _log(_get_vcpp_help(), Qgis.Warning)
+                    return False, "Failed to install {}: {}".format(
+                        package_name, _get_vcpp_help())
 
                 # Check for SSL errors
                 if _is_ssl_error(install_error_msg):
@@ -2253,6 +2295,9 @@ def _get_clean_env_for_venv() -> dict:
         env.pop(var, None)
 
     env["PYTHONIOENCODING"] = "utf-8"
+
+    # Skip sam2 CUDA extension compilation (Python fallback works fine)
+    env["SAM2_BUILD_CUDA"] = "0"
 
     # On Linux, QGIS desktop launchers often don't inherit LD_LIBRARY_PATH,
     # so CUDA libraries may not be discoverable. Probe standard locations.
@@ -2621,6 +2666,23 @@ def create_venv_and_install(
 
     # Log system info for debugging
     _log_system_info()
+
+    # Early writability check on CACHE_DIR
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        test_file = os.path.join(CACHE_DIR, ".write_test")
+        with open(test_file, "w", encoding="utf-8") as f:
+            f.write("ok")
+        os.remove(test_file)
+    except (OSError, IOError) as e:
+        hint = (
+            "Cannot write to install directory: {}\n"
+            "Error: {}\n\n"
+            "Set the AI_SEGMENTATION_CACHE_DIR environment variable "
+            "to a writable directory, then restart QGIS."
+        ).format(CACHE_DIR, e)
+        _log(hint, Qgis.Critical)
+        return False, hint
 
     # Check for Rosetta emulation on macOS (warning only, don't block)
     rosetta_warning = _check_rosetta_warning()
