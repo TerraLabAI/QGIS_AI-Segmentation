@@ -33,6 +33,8 @@ def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: str) -> None:
     # Python 3.12+ supports the filter parameter (suppresses DeprecationWarning)
     use_filter = sys.version_info >= (3, 12)
     for member in tar.getmembers():
+        if member.issym() or member.islnk():
+            continue
         member_path = os.path.realpath(os.path.join(dest_dir, member.name))
         if not member_path.startswith(dest_dir + os.sep) and member_path != dest_dir:
             raise ValueError(f"Attempted path traversal in tar archive: {member.name}")
