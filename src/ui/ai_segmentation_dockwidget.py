@@ -201,22 +201,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_button.setVisible(False)
         layout.addWidget(self.install_button)
 
-        self.cancel_toggle = QToolButton()
-        self.cancel_toggle.setText(tr("Cancel installation"))
-        self.cancel_toggle.setArrowType(Qt.RightArrow)
-        self.cancel_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.cancel_toggle.setStyleSheet(
-            "color: palette(text); font-size: 10px; border: none;")
-        self.cancel_toggle.setVisible(False)
-        self.cancel_toggle.clicked.connect(self._toggle_cancel_button)
-        layout.addWidget(self.cancel_toggle)
-
-        self.cancel_button = QPushButton(tr("Cancel"))
-        self.cancel_button.clicked.connect(self._on_cancel_clicked)
-        self.cancel_button.setVisible(False)
-        self.cancel_button.setStyleSheet("background-color: #d32f2f;")
-        layout.addWidget(self.cancel_button)
-
         self.gpu_info_box = QLabel("")
         self.gpu_info_box.setWordWrap(True)
         self.gpu_info_box.setStyleSheet(
@@ -242,6 +226,22 @@ class AISegmentationDockWidget(QDockWidget):
             "border-radius: 3px;"
         )
         layout.addWidget(self.install_path_label)
+
+        self.cancel_toggle = QToolButton()
+        self.cancel_toggle.setText(tr("Cancel installation"))
+        self.cancel_toggle.setArrowType(Qt.RightArrow)
+        self.cancel_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.cancel_toggle.setStyleSheet(
+            "color: palette(text); font-size: 10px; border: none;")
+        self.cancel_toggle.setVisible(False)
+        self.cancel_toggle.clicked.connect(self._toggle_cancel_button)
+        layout.addWidget(self.cancel_toggle)
+
+        self.cancel_button = QPushButton(tr("Cancel"))
+        self.cancel_button.clicked.connect(self._on_cancel_clicked)
+        self.cancel_button.setVisible(False)
+        self.cancel_button.setStyleSheet("background-color: #d32f2f;")
+        layout.addWidget(self.cancel_button)
 
         if not USE_SAM2:
             sam1_info = QLabel(tr("Update QGIS to 3.34+ for the latest AI model"))
