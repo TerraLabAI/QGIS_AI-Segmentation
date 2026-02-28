@@ -23,8 +23,8 @@
         <translation>Verification de l'installation...</translation>
     </message>
     <message>
-        <source>Encoding image...</source>
-        <translation>Encodage de l'image...</translation>
+        <source>Install path: {}</source>
+        <translation>Dossier d'installation : {}</translation>
     </message>
     <message>
         <source>Checking...</source>

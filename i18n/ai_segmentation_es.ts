@@ -23,8 +23,8 @@
         <translation>Verificando instalacion...</translation>
     </message>
     <message>
-        <source>Encoding image...</source>
-        <translation>Codificando imagen...</translation>
+        <source>Install path: {}</source>
+        <translation>Ruta de instalacion: {}</translation>
     </message>
     <message>
         <source>Checking...</source>
