@@ -201,18 +201,20 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_button.setVisible(False)
         layout.addWidget(self.install_button)
 
+        self.cancel_toggle = QToolButton()
+        self.cancel_toggle.setText(tr("Cancel installation"))
+        self.cancel_toggle.setArrowType(Qt.RightArrow)
+        self.cancel_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.cancel_toggle.setStyleSheet(
+            "color: palette(text); font-size: 10px; border: none;")
+        self.cancel_toggle.setVisible(False)
+        self.cancel_toggle.clicked.connect(self._toggle_cancel_button)
+        layout.addWidget(self.cancel_toggle)
+
         self.cancel_button = QPushButton(tr("Cancel"))
         self.cancel_button.clicked.connect(self._on_cancel_clicked)
         self.cancel_button.setVisible(False)
-        self.cancel_button.setStyleSheet(
-            "background-color: transparent;"
-            "color: #d32f2f;"
-            "border: 1px solid #d32f2f;"
-            "border-radius: 3px;"
-            "padding: 2px 8px;"
-            "font-size: 11px;"
-        )
-        self.cancel_button.setFixedHeight(24)
+        self.cancel_button.setStyleSheet("background-color: #d32f2f;")
         layout.addWidget(self.cancel_button)
 
         self.gpu_info_box = QLabel("")
@@ -942,6 +944,12 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_button.setEnabled(False)
         self.install_requested.emit()
 
+    def _toggle_cancel_button(self):
+        visible = not self.cancel_button.isVisible()
+        self.cancel_button.setVisible(visible)
+        arrow = Qt.DownArrow if visible else Qt.RightArrow
+        self.cancel_toggle.setArrowType(arrow)
+
     def _on_cancel_clicked(self):
         from qgis.PyQt.QtWidgets import QMessageBox
         reply = QMessageBox.question(
@@ -1017,6 +1025,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.setup_status_label.setVisible(True)
             self.setup_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
             self.install_button.setVisible(False)
+            self.cancel_toggle.setVisible(False)
             self.cancel_button.setVisible(False)
             self.setup_progress.setVisible(False)
             self.setup_progress_label.setVisible(False)
@@ -1087,7 +1096,9 @@ class AISegmentationDockWidget(QDockWidget):
             self.setup_progress.setValue(0)
             self.setup_progress.setVisible(True)
             self.setup_progress_label.setVisible(True)
-            self.cancel_button.setVisible(True)
+            self.cancel_toggle.setVisible(True)
+            self.cancel_toggle.setArrowType(Qt.RightArrow)
+            self.cancel_button.setVisible(False)
             self.install_button.setVisible(False)
             self.setup_status_label.setVisible(False)
             self.welcome_title.setText(tr("Installing AI Segmentation..."))
@@ -1098,6 +1109,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.setup_progress.setValue(percent)
             self.setup_progress.setVisible(False)
             self.setup_progress_label.setVisible(False)
+            self.cancel_toggle.setVisible(False)
             self.cancel_button.setVisible(False)
             self.install_button.setVisible(True)
             self.install_button.setEnabled(True)
