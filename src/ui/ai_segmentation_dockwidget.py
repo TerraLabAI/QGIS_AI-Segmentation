@@ -204,7 +204,15 @@ class AISegmentationDockWidget(QDockWidget):
         self.cancel_button = QPushButton(tr("Cancel"))
         self.cancel_button.clicked.connect(self._on_cancel_clicked)
         self.cancel_button.setVisible(False)
-        self.cancel_button.setStyleSheet("background-color: #d32f2f;")
+        self.cancel_button.setStyleSheet(
+            "background-color: transparent;"
+            "color: #d32f2f;"
+            "border: 1px solid #d32f2f;"
+            "border-radius: 3px;"
+            "padding: 2px 8px;"
+            "font-size: 11px;"
+        )
+        self.cancel_button.setFixedHeight(24)
         layout.addWidget(self.cancel_button)
 
         self.gpu_info_box = QLabel("")
@@ -224,7 +232,13 @@ class AISegmentationDockWidget(QDockWidget):
             tr("Install path: {}").format(CACHE_DIR))
         self.install_path_label.setWordWrap(True)
         self.install_path_label.setStyleSheet(
-            "color: palette(text); font-size: 10px;")
+            "color: palette(text);"
+            "font-size: 10px;"
+            "padding: 4px 6px;"
+            "background-color: palette(base);"
+            "border: 1px solid palette(mid);"
+            "border-radius: 3px;"
+        )
         layout.addWidget(self.install_path_label)
 
         if not USE_SAM2:
@@ -929,7 +943,15 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_requested.emit()
 
     def _on_cancel_clicked(self):
-        self.cancel_install_requested.emit()
+        from qgis.PyQt.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self,
+            tr("Cancel installation"),
+            tr("Are you sure you want to cancel the installation?"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.cancel_install_requested.emit()
 
     def _on_layer_changed(self, layer):
         # Just update UI state - layer change handling is done by the plugin
