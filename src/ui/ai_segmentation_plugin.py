@@ -382,9 +382,8 @@ class AISegmentationPlugin:
         self.dock_widget.setVisible(False)
         self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
 
-        self.dock_widget.install_dependencies_requested.connect(self._on_install_requested)
-        self.dock_widget.cancel_deps_install_requested.connect(self._on_cancel_deps_install)
-        self.dock_widget.download_checkpoint_requested.connect(self._on_download_checkpoint_requested)
+        self.dock_widget.install_requested.connect(self._on_install_requested)
+        self.dock_widget.cancel_install_requested.connect(self._on_cancel_install)
         self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
         self.dock_widget.save_polygon_requested.connect(self._on_save_polygon)
         self.dock_widget.export_layer_requested.connect(self._on_export_layer)
@@ -469,9 +468,8 @@ class AISegmentationPlugin:
                 pass
             # Disconnect all dock widget signals connected in initGui()
             _dock_signals = [
-                (self.dock_widget.install_dependencies_requested, self._on_install_requested),
-                (self.dock_widget.cancel_deps_install_requested, self._on_cancel_deps_install),
-                (self.dock_widget.download_checkpoint_requested, self._on_download_checkpoint_requested),
+                (self.dock_widget.install_requested, self._on_install_requested),
+                (self.dock_widget.cancel_install_requested, self._on_cancel_install),
                 (self.dock_widget.start_segmentation_requested, self._on_start_segmentation),
                 (self.dock_widget.save_polygon_requested, self._on_save_polygon),
                 (self.dock_widget.export_layer_requested, self._on_export_layer),
@@ -609,7 +607,7 @@ class AISegmentationPlugin:
             is_ready, message = get_venv_status()
 
             if is_ready:
-                self.dock_widget.set_dependency_status(True, "✓ Virtual environment ready")
+                self.dock_widget.set_dependency_status(True, "✓ " + tr("Dependencies ready"))
                 self._show_device_info()
                 QgsMessageLog.logMessage(
                     "✓ Virtual environment verified successfully",
@@ -652,7 +650,13 @@ class AISegmentationPlugin:
                 self._load_predictor()
                 self._show_activation_popup_if_needed()
             else:
-                self.dock_widget.set_checkpoint_status(False, "Model not downloaded")
+                # Model missing but deps ok: show install button for model download
+                self.dock_widget.set_dependency_status(
+                    True, tr("Dependencies ready, model not downloaded"))
+                self.dock_widget.install_button.setVisible(True)
+                self.dock_widget.install_button.setEnabled(True)
+                self.dock_widget.install_button.setText(tr("Download Model"))
+                self.dock_widget.setup_group.setVisible(True)
 
         except Exception as e:
             QgsMessageLog.logMessage(
@@ -660,7 +664,6 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Warning
             )
-            self.dock_widget.set_checkpoint_status(False, f"Error: {str(e)[:50]}")
 
     def _load_predictor(self):
         try:
@@ -769,8 +772,9 @@ class AISegmentationPlugin:
 
         is_ready, message = get_venv_status()
         if is_ready:
-            self.dock_widget.set_dependency_status(True, "✓ Virtual environment ready")
-            self._check_checkpoint()
+            # Deps already installed, just need model download
+            self.dock_widget.set_dependency_status(True, "✓ " + tr("Dependencies ready"))
+            self._auto_download_checkpoint()
             return
 
         QgsMessageLog.logMessage(
@@ -784,7 +788,7 @@ class AISegmentationPlugin:
             level=Qgis.Info
         )
 
-        self.dock_widget.set_deps_install_progress(0, "Preparing installation...")
+        self.dock_widget.set_install_progress(0, "Preparing installation...")
 
         self.deps_install_worker = DepsInstallWorker(cuda_enabled=False)
         self.deps_install_worker.progress.connect(self._on_deps_install_progress)
@@ -804,12 +808,13 @@ class AISegmentationPlugin:
     def _on_deps_install_progress(self, percent: int, message: str):
         if not self.dock_widget:
             return
-        self.dock_widget.set_deps_install_progress(percent, message)
+        # Scale deps progress to 0-80% (model download gets 80-100%)
+        scaled = int(percent * 0.8)
+        self.dock_widget.set_install_progress(scaled, message)
 
     def _on_deps_install_finished(self, success: bool, message: str):
         if not self.dock_widget:
             return
-        self.dock_widget.set_deps_install_progress(100, "Done")
 
         if success:
             # GPU driver too old: just show a simple message bar, no error dialog
@@ -820,9 +825,7 @@ class AISegmentationPlugin:
                     level=Qgis.Info,
                     duration=10,
                 )
-            # CUDA install actually failed: show error dialog with log option
             elif "CUDA_FALLBACK" in message:
-                # Disable install button during dialog to prevent re-entrant installs
                 self.dock_widget.install_button.setEnabled(False)
                 fallback_msg = "{}\n\n{}".format(
                     tr("Your GPU was detected but CUDA installation didn't work."),
@@ -838,11 +841,13 @@ class AISegmentationPlugin:
             is_valid, verify_msg = verify_venv()
 
             if is_valid:
-                self.dock_widget.set_dependency_status(True, "✓ " + tr("Virtual environment ready"))
+                self.dock_widget.set_dependency_status(True, "✓ " + tr("Dependencies ready"))
                 self._show_device_info()
                 self._verify_venv()
-                self._check_checkpoint()
+                # Auto-download model if not already present
+                self._auto_download_checkpoint()
             else:
+                self.dock_widget.set_install_progress(100, "Failed")
                 self.dock_widget.set_dependency_status(False, tr("Verification failed:") + f" {verify_msg}")
 
                 show_error_report(
@@ -853,10 +858,10 @@ class AISegmentationPlugin:
                         verify_msg)
                 )
         else:
+            self.dock_widget.set_install_progress(100, "Failed")
             error_msg = message[:300] if message else tr("Unknown error")
             self.dock_widget.set_dependency_status(False, tr("Installation failed"))
 
-            # Determine specific error title based on failure type
             error_title = tr("Installation Failed")
             msg_lower = message.lower() if message else ""
             if any(p in msg_lower for p in [
@@ -876,18 +881,29 @@ class AISegmentationPlugin:
                 error_msg
             )
 
-    def _on_cancel_deps_install(self):
+    def _on_cancel_install(self):
         if self.deps_install_worker and self.deps_install_worker.isRunning():
             self.deps_install_worker.cancel()
             QgsMessageLog.logMessage(
-                "Dependency installation cancelled by user",
+                "Installation cancelled by user",
                 "AI Segmentation",
                 level=Qgis.Warning
             )
 
-    def _on_download_checkpoint_requested(self):
-        self.dock_widget.set_download_progress(0, "Downloading SAM checkpoint...")
+    def _auto_download_checkpoint(self):
+        """Auto-download model after deps install if not already present."""
+        from ..core.checkpoint_manager import checkpoint_exists
+        try:
+            if checkpoint_exists():
+                self.dock_widget.set_install_progress(100, "Done")
+                self.dock_widget.set_checkpoint_status(True, "SAM model ready")
+                self._load_predictor()
+                self._show_activation_popup_if_needed()
+                return
+        except Exception:
+            pass
 
+        self.dock_widget.set_install_progress(80, tr("Downloading AI model..."))
         self.download_worker = DownloadWorker()
         self.download_worker.progress.connect(self._on_download_progress)
         self.download_worker.finished.connect(self._on_download_finished)
@@ -896,18 +912,22 @@ class AISegmentationPlugin:
     def _on_download_progress(self, percent: int, message: str):
         if not self.dock_widget:
             return
-        self.dock_widget.set_download_progress(percent, message)
+        # Scale model download to 80-100% of the unified progress
+        scaled = 80 + int(percent * 0.2)
+        self.dock_widget.set_install_progress(scaled, message)
 
     def _on_download_finished(self, success: bool, message: str):
         if not self.dock_widget:
             return
         if success:
-            self.dock_widget.set_download_progress(100, "Download complete!")
+            self.dock_widget.set_install_progress(100, "Done")
             self.dock_widget.set_checkpoint_status(True, "SAM model ready")
             self._load_predictor()
             self._show_activation_popup_if_needed()
         else:
-            self.dock_widget.set_download_progress(0, "")
+            self.dock_widget.set_install_progress(100, "Failed")
+            self.dock_widget.set_dependency_status(
+                True, tr("Dependencies ready, model download failed"))
 
             show_error_report(
                 self.iface.mainWindow(),
