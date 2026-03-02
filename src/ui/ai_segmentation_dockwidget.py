@@ -1223,8 +1223,6 @@ class AISegmentationDockWidget(QDockWidget):
             self.export_button.setText(
                 tr("Export {count} polygons to a layer").format(count=count)
             )
-        elif count == 1:
-            self.export_button.setText(tr("Export polygon to a layer"))
         else:
             self.export_button.setText(tr("Export polygon to a layer"))
 

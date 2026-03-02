@@ -8,10 +8,6 @@
         <source>Click Install to set up AI Segmentation</source>
         <translation>Cliquez sur Installer pour configurer AI Segmentation</translation>
     </message>
-    <message>
-        <source>GPU detected: {gpu_name}. Segmentation will be 5-10x faster! Installation takes a few extra minutes.</source>
-        <translation>GPU detecte : {gpu_name}. La segmentation sera 5-10x plus rapide ! L'installation prend quelques minutes de plus.</translation>
-    </message>
 
     <!-- Setup Section -->
     <message>
@@ -93,22 +89,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Telecharger le modele</translation>
     </message>
     <message>
-        <source>Dependencies</source>
-        <translation>Dépendances</translation>
-    </message>
-    <message>
-        <source>Checking dependencies...</source>
-        <translation>Vérification des dépendances...</translation>
-    </message>
-    <message>
-        <source>Dependencies need updating</source>
-        <translation>Les dependances doivent etre mises a jour</translation>
-    </message>
-    <message>
-        <source>Create isolated virtual environment and install required packages</source>
-        <translation>Créer un environnement virtuel isolé et installer les packages requis</translation>
-    </message>
-    <message>
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
@@ -121,20 +101,12 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Voulez-vous vraiment annuler l'installation ?</translation>
     </message>
     <message>
-        <source>Installing...</source>
-        <translation>Installation...</translation>
-    </message>
-    <message>
         <source>Installation cancelled</source>
         <translation>Installation annulée</translation>
     </message>
     <message>
         <source>Installation failed</source>
         <translation>Échec de l'installation</translation>
-    </message>
-    <message>
-        <source>Virtual environment ready</source>
-        <translation>Environnement virtuel prêt</translation>
     </message>
     <message>
         <source>Verification failed:</source>
@@ -149,32 +121,12 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>L'environnement virtuel a été créé mais la vérification a échoué :</translation>
     </message>
     <message>
-        <source>Please check the logs or try reinstalling.</source>
-        <translation>Vérifiez les logs ou réessayez l'installation.</translation>
-    </message>
-    <message>
         <source>Unknown error</source>
         <translation>Erreur inconnue</translation>
     </message>
     <message>
         <source>Installation Failed</source>
         <translation>Échec de l'installation</translation>
-    </message>
-    <message>
-        <source>Failed to install dependencies:</source>
-        <translation>Impossible d'installer les dépendances :</translation>
-    </message>
-    <message>
-        <source>Check the QGIS log panel (View → Panels → Log Messages) for detailed error information.</source>
-        <translation>Consultez le panneau de logs QGIS (Vue → Panneaux → Messages) pour plus de détails.</translation>
-    </message>
-    <message>
-        <source>Download ~800MB of AI dependencies?</source>
-        <translation>Télécharger ~800 Mo de dépendances IA ?</translation>
-    </message>
-    <message>
-        <source>This takes a few minutes.</source>
-        <translation>Cela prend quelques minutes.</translation>
     </message>
 
     <!-- Model Section -->
@@ -183,24 +135,12 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Mettez QGIS a jour vers 3.34+ pour le dernier modele IA</translation>
     </message>
     <message>
-        <source>Downloading...</source>
-        <translation>Telechargement...</translation>
-    </message>
-    <message>
-        <source>Download cancelled</source>
-        <translation>Téléchargement annulé</translation>
-    </message>
-    <message>
         <source>Download Failed</source>
         <translation>Échec du téléchargement</translation>
     </message>
     <message>
         <source>Failed to download model:</source>
         <translation>Impossible de télécharger le modèle :</translation>
-    </message>
-    <message>
-        <source>Please check your internet connection and try again.</source>
-        <translation>Vérifiez votre connexion internet et réessayez.</translation>
     </message>
 
     <!-- Panel Title -->
@@ -217,10 +157,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
     <message>
         <source>Unlock Plugin</source>
         <translation>Activer le plugin</translation>
-    </message>
-    <message>
-        <source>Enter your email to receive updates and get a verification code.</source>
-        <translation>Entrez votre email pour recevoir les mises à jour et obtenir un code.</translation>
     </message>
     <message>
         <source>Get my verification code</source>
@@ -297,100 +233,28 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Aucune couche trouvée. Ajoutez une couche raster ou en ligne à votre projet.</translation>
     </message>
     <message>
-        <source>Shortcuts: S (save polygon) · Enter (export to layer) · Ctrl+Z (undo)</source>
-        <translation>Raccourcis : S (sauvegarder polygone) · Entrée (exporter vers couche) · Ctrl+Z (annuler)</translation>
-    </message>
-    <message>
         <source>Start AI Segmentation</source>
         <translation>Démarrer AI Segmentation</translation>
-    </message>
-    <message>
-        <source>Start segmentation (G)</source>
-        <translation>Démarrer la segmentation (G)</translation>
-    </message>
-    <message>
-        <source>Batch mode</source>
-        <translation>Mode Batch</translation>
     </message>
     <message>
         <source>Save polygon</source>
         <translation>Sauvegarder le polygone</translation>
     </message>
     <message>
-        <source>Save current polygon to your session (S)</source>
-        <translation>Sauvegarder le polygone actuel dans votre session (S)</translation>
-    </message>
-    <message>
-        <source>Export to layer</source>
-        <translation>Exporter en couche</translation>
-    </message>
-    <message>
-        <source>Export all saved polygons as a new vector layer (Enter)</source>
-        <translation>Exporter tous les polygones sauvegardés comme nouvelle couche vectorielle (Entrée)</translation>
-    </message>
-    <message>
-        <source>Export {count} polygon(s) as a new layer (Enter)</source>
-        <translation>Exporter {count} polygone(s) comme nouvelle couche (Entrée)</translation>
-    </message>
-    <message>
-        <source>Save at least one polygon first (S)</source>
-        <translation>Sauvegardez au moins un polygone d'abord (S)</translation>
-    </message>
-    <message>
-        <source>Export polygon to layer (Enter)</source>
-        <translation>Exporter le polygone vers la couche (Entrée)</translation>
-    </message>
-    <message>
-        <source>Place points to create a selection first</source>
-        <translation>Placez des points pour créer une sélection</translation>
-    </message>
-    <message>
         <source>Undo last point</source>
         <translation>Annuler le dernier point</translation>
-    </message>
-    <message>
-        <source>Remove last point (Ctrl+Z)</source>
-        <translation>Supprimer le dernier point (Ctrl+Z)</translation>
     </message>
     <message>
         <source>Stop segmentation</source>
         <translation>Arrêter la segmentation</translation>
     </message>
     <message>
-        <source>Exit segmentation without saving</source>
-        <translation>Quitter sans sauvegarder</translation>
-    </message>
-    <message>
         <source>Shortcuts</source>
         <translation>Raccourcis</translation>
     </message>
     <message>
-        <source>Start segmentation</source>
-        <translation>Lancer la segmentation</translation>
-    </message>
-    <message>
         <source>Save current polygon to your session</source>
         <translation>Sauvegarder le polygone actuel dans votre session</translation>
-    </message>
-    <message>
-        <source>Export polygon as a new vector layer</source>
-        <translation>Exporter le polygone comme nouvelle couche vectorielle</translation>
-    </message>
-    <message>
-        <source>Remove last point</source>
-        <translation>Supprimer le dernier point</translation>
-    </message>
-    <message>
-        <source>Exit segmentation without saving</source>
-        <translation>Quitter sans sauvegarder</translation>
-    </message>
-    <message>
-        <source>Export {count} polygon(s) as a new layer</source>
-        <translation>Exporter {count} polygone(s) comme nouvelle couche</translation>
-    </message>
-    <message>
-        <source>Save at least one polygon first</source>
-        <translation>Sauvegardez au moins un polygone d'abord</translation>
     </message>
     <message>
         <source>The AI model works best on one element at a time.</source>
@@ -401,24 +265,12 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Sauvegardez votre polygone avant de selectionner le suivant.</translation>
     </message>
     <message>
-        <source>Export polygon to layer</source>
-        <translation>Exporter le polygone en couche</translation>
-    </message>
-    <message>
-        <source>Export polygon(s) to layer</source>
-        <translation>Exporter le(s) polygone(s) en couche</translation>
-    </message>
-    <message>
         <source>Export polygon to a layer</source>
         <translation>Exporter le polygone vers une couche</translation>
     </message>
     <message>
         <source>Export {count} polygons to a layer</source>
         <translation>Exporter {count} polygones vers une couche</translation>
-    </message>
-    <message>
-        <source>Export polygon as a new vector layer (Enter)</source>
-        <translation>Exporter le polygone comme nouvelle couche vectorielle (Entrée)</translation>
     </message>
 
     <!-- Refine Section -->
@@ -477,74 +329,12 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Clic gauche pour sélectionner</translation>
     </message>
     <message>
-        <source>{count} point(s)</source>
-        <translation>{count} point(s)</translation>
-    </message>
-    <message>
         <source>Left-click to add more</source>
         <translation>Clic gauche pour en ajouter</translation>
     </message>
     <message>
         <source>Right-click to exclude from selection</source>
         <translation>Clic droit pour exclure de la sélection</translation>
-    </message>
-    <message>
-        <source>{count} adjustment(s)</source>
-        <translation>{count} ajustement(s)</translation>
-    </message>
-    <message>
-        <source>{count} polygon(s) saved</source>
-        <translation>{count} polygone(s) sauvegardé(s)</translation>
-    </message>
-    <message>
-        <source>Refine selection or save polygon</source>
-        <translation>Affiner la sélection ou sauvegarder le polygone</translation>
-    </message>
-    <message>
-        <source>Refine selection or export polygon</source>
-        <translation>Affiner la sélection ou exporter le polygone</translation>
-    </message>
-
-    <!-- Encoding -->
-    <message>
-        <source>Cancel Encoding?</source>
-        <translation>Annuler l'encodage ?</translation>
-    </message>
-    <message>
-        <source>Are you sure you want to cancel?</source>
-        <translation>Êtes-vous sûr de vouloir annuler ?</translation>
-    </message>
-    <message>
-        <source>Once encoding is complete, it's cached permanently.</source>
-        <translation>Une fois l'encodage terminé, il est mis en cache définitivement.</translation>
-    </message>
-    <message>
-        <source>You'll never need to wait for this image again.</source>
-        <translation>Vous n'aurez plus jamais à attendre pour cette image.</translation>
-    </message>
-    <message>
-        <source>Encoding this image for AI segmentation...</source>
-        <translation>Encodage de cette image pour AI Segmentation...</translation>
-    </message>
-    <message>
-        <source>This is stored permanently, no waiting next time :)</source>
-        <translation>Stocké définitivement, plus d'attente la prochaine fois :)</translation>
-    </message>
-    <message>
-        <source>Encoding is taking a long time.</source>
-        <translation>L'encodage prend beaucoup de temps.</translation>
-    </message>
-    <message>
-        <source>To speed up, reduce the image size or resolution before importing.</source>
-        <translation>Pour accélérer, réduisez la taille ou la résolution de l'image avant de l'importer.</translation>
-    </message>
-    <message>
-        <source>Encoding Failed</source>
-        <translation>Échec de l'encodage</translation>
-    </message>
-    <message>
-        <source>Failed to encode raster:</source>
-        <translation>Impossible d'encoder le raster :</translation>
     </message>
     <message>
         <source>Invalid Layer</source>
@@ -569,10 +359,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Échec du chargement</translation>
     </message>
     <message>
-        <source>Failed to load feature data:</source>
-        <translation>Impossible de charger les données :</translation>
-    </message>
-    <message>
         <source>Layer Creation Failed</source>
         <translation>Échec de création de la couche</translation>
     </message>
@@ -593,28 +379,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>La couche a été sauvegardée mais n'a pas pu être chargée :</translation>
     </message>
     <message>
-        <source>Exit Segmentation</source>
-        <translation>Quitter la segmentation</translation>
-    </message>
-    <message>
-        <source>Exit segmentation?</source>
-        <translation>Quitter la segmentation ?</translation>
-    </message>
-    <message>
-        <source>The current selection will be lost.</source>
-        <translation>La sélection actuelle sera perdue.</translation>
-    </message>
-    <message>
-        <source>Exit Segmentation?</source>
-        <translation>Quitter la segmentation ?</translation>
-    </message>
-    <message>
         <source>You have {count} unsaved polygon(s).</source>
         <translation>Vous avez {count} polygone(s) non exporté(s).</translation>
-    </message>
-    <message>
-        <source>Discard and exit segmentation?</source>
-        <translation>Abandonner et quitter la segmentation ?</translation>
     </message>
     <message>
         <source>Changing layer will discard your current segmentation. Continue?</source>
@@ -623,10 +389,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
     <message>
         <source>Change Layer?</source>
         <translation>Changer de couche ?</translation>
-    </message>
-    <message>
-        <source>You have an unsaved selection.</source>
-        <translation>Vous avez une sélection non sauvegardée.</translation>
     </message>
     <message>
         <source>Stop Segmentation?</source>
@@ -641,14 +403,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Utilisez « Exporter en couche » pour les conserver.</translation>
     </message>
     <message>
-        <source>Unsaved Polygons</source>
-        <translation>Polygones non exportés</translation>
-    </message>
-    <message>
-        <source>Export before changing mode?</source>
-        <translation>Exporter avant de changer de mode ?</translation>
-    </message>
-    <message>
         <source>Delete all saved polygons?</source>
         <translation>Supprimer tous les polygones sauvegardés ?</translation>
     </message>
@@ -661,30 +415,12 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Voulez-vous continuer ?</translation>
     </message>
     <message>
-        <source>You have {count} saved polygon(s).</source>
-        <translation>Vous avez {count} polygone(s) sauvegardé(s).</translation>
-    </message>
-    <message>
         <source>Edit saved polygon</source>
         <translation>Modifier un polygone sauvegardé</translation>
     </message>
     <message>
         <source>Warning: you are about to edit an already saved polygon.</source>
         <translation>Attention : vous allez modifier un polygone déjà sauvegardé.</translation>
-    </message>
-
-    <!-- Tutorial -->
-    <message>
-        <source>Batch mode activated.</source>
-        <translation>Mode Batch activé.</translation>
-    </message>
-    <message>
-        <source>Watch the tutorial</source>
-        <translation>Voir le tutoriel</translation>
-    </message>
-    <message>
-        <source>to learn how to use it.</source>
-        <translation>pour apprendre à l'utiliser.</translation>
     </message>
     <message>
         <source>New to AI Segmentation?</source>
@@ -719,14 +455,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
     <message>
         <source>Tutorial</source>
         <translation>Tutoriel</translation>
-    </message>
-    <message>
-        <source>Tutorials</source>
-        <translation>Tutoriels</translation>
-    </message>
-    <message>
-        <source>Documentation</source>
-        <translation>Documentation</translation>
     </message>
     <message>
         <source>About us</source>
@@ -801,18 +529,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Pas de souci, le plugin utilise maintenant le mode CPU et tout fonctionne :) Si vous souhaitez qu'on corrige le support GPU pour votre config, envoyez-nous vos logs !</translation>
     </message>
     <message>
-        <source>GPU acceleration available - upgrading</source>
-        <translation>Accélération GPU disponible - mise à jour</translation>
-    </message>
-    <message>
-        <source>Switching to CPU mode...</source>
-        <translation>Passage en mode CPU...</translation>
-    </message>
-    <message>
-        <source>GPU not compatible with installed CUDA version, using CPU...</source>
-        <translation>GPU non compatible avec la version CUDA installée, utilisation du CPU...</translation>
-    </message>
-    <message>
         <source>Point is outside the raster image. Click inside the raster.</source>
         <translation>Le point est en dehors de l'image raster. Cliquez à l'intérieur du raster.</translation>
     </message>
@@ -878,158 +594,17 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <source>Segmentation failed</source>
         <translation>Échec de la segmentation</translation>
     </message>
-    <!-- Cloud waitlist banner -->
-    <message>
-        <source>Large rasters can take time locally.</source>
-        <translation>Les gros rasters prennent du temps en local.</translation>
-    </message>
-    <message>
-        <source>Cloud processing is coming soon for faster encoding, more precise and automated segmentation!</source>
-        <translation>Le traitement cloud arrive bientot pour un encodage plus rapide, une segmentation plus precise et automatisee !</translation>
-    </message>
-    <message>
-        <source>Join waitlist</source>
-        <translation>Rejoindre la liste d'attente</translation>
-    </message>
-
-    <!-- Encoding error messages -->
-    <message>
-        <source>Encoding timed out after 45 minutes. Try reducing the image size or closing other applications.</source>
-        <translation>L'encodage a expiré après 45 minutes. Essayez de réduire la taille de l'image ou de fermer d'autres applications.</translation>
-    </message>
-    <message>
-        <source>Encoding stalled (no progress for 5 minutes). Try restarting QGIS and running again.</source>
-        <translation>L'encodage est bloqué (aucun progrès depuis 5 minutes). Essayez de redémarrer QGIS et de relancer.</translation>
-    </message>
-    <message>
-        <source>Out of memory: your raster is too large for available RAM. Try a smaller area or close other applications.</source>
-        <translation>Mémoire insuffisante : votre raster est trop volumineux pour la RAM disponible. Essayez une zone plus petite ou fermez d'autres applications.</translation>
-    </message>
-    <message>
-        <source>PROJ library conflict detected. Try updating QGIS to the latest version.</source>
-        <translation>Conflit de bibliothèque PROJ détecté. Essayez de mettre à jour QGIS vers la dernière version.</translation>
-    </message>
-    <message>
-        <source>Windows DLL error detected. Please install Visual C++ Redistributables: https://aka.ms/vs/17/release/vc_redist.x64.exe</source>
-        <translation>Erreur DLL Windows détectée. Veuillez installer Visual C++ Redistributables : https://aka.ms/vs/17/release/vc_redist.x64.exe</translation>
-    </message>
-    <message>
-        <source>The encoding process crashed. Try closing other applications, reinstalling dependencies, or running QGIS as administrator.</source>
-        <translation>Le processus d'encodage a planté. Essayez de fermer d'autres applications, de réinstaller les dépendances ou de lancer QGIS en administrateur.</translation>
-    </message>
-
-    <!-- Visible Area Mode -->
-    <message>
-        <source>Segment only in the visible area</source>
-        <translation>Segmenter uniquement dans la zone visible</translation>
-    </message>
-    <message>
-        <source>When checked, only the area currently visible on your map will be encoded.</source>
-        <translation>Si coché, seule la zone actuellement visible sur votre carte sera encodée.</translation>
-    </message>
-    <message>
-        <source>Useful for large rasters that take too long to encode entirely.</source>
-        <translation>Utile pour les gros rasters dont l'encodage complet prend trop de temps.</translation>
-    </message>
-    <message>
-        <source>Faster encoding for large rasters. Only the visible map area will be processed.</source>
-        <translation>Encodage plus rapide pour les gros rasters. Seule la zone visible de la carte sera traitée.</translation>
-    </message>
-    <message>
-        <source>Encoding visible area for AI segmentation...</source>
-        <translation>Encodage de la zone visible pour la segmentation IA...</translation>
-    </message>
-    <message>
-        <source>Only the visible map extent will be processed.</source>
-        <translation>Seule l'étendue visible de la carte sera traitée.</translation>
-    </message>
-    <message>
-        <source>Could not determine visible area. Encoding full raster instead.</source>
-        <translation>Impossible de déterminer la zone visible. Encodage du raster complet.</translation>
-    </message>
-    <message>
-        <source>Click is outside the encoded visible area. Restart segmentation to encode a different area.</source>
-        <translation>Le clic est en dehors de la zone visible encodée. Relancez la segmentation pour encoder une autre zone.</translation>
-    </message>
-    <message>
-        <source>Online layers always use visible area mode.</source>
-        <translation>Les couches en ligne utilisent toujours le mode zone visible.</translation>
-    </message>
-    <message>
-        <source>Rendering online layer...</source>
-        <translation>Rendu de la couche en ligne...</translation>
-    </message>
-    <message>
-        <source>GDAL is not available. Cannot render online layer to GeoTIFF.</source>
-        <translation>GDAL n'est pas disponible. Impossible de convertir la couche en ligne en GeoTIFF.</translation>
-    </message>
     <message>
         <source>Layer data provider is not available.</source>
         <translation>Le fournisseur de données de la couche n'est pas disponible.</translation>
-    </message>
-    <message>
-        <source>Visible area is too small to render.</source>
-        <translation>La zone visible est trop petite pour le rendu.</translation>
-    </message>
-    <message>
-        <source>The visible area is too large ({w}x{h} pixels). Zoom in to reduce the area below {max}x{max} pixels.</source>
-        <translation>La zone visible est trop grande ({w}x{h} pixels). Zoomez pour reduire la zone en dessous de {max}x{max} pixels.</translation>
     </message>
     <message>
         <source>Failed to fetch tiles from the online layer. Check your network connection.</source>
         <translation>Impossible de recuperer les tuiles de la couche en ligne. Verifiez votre connexion reseau.</translation>
     </message>
     <message>
-        <source>Online layer returned empty data. The area may not have coverage.</source>
-        <translation>La couche en ligne a retourne des donnees vides. La zone n'a peut-etre pas de couverture.</translation>
-    </message>
-    <message>
-        <source>Processing tiles...</source>
-        <translation>Traitement des tuiles...</translation>
-    </message>
-    <message>
-        <source>Unexpected data format from online layer (dataType={dt}, {size} bytes for {w}x{h}).</source>
-        <translation>Format de donnees inattendu de la couche en ligne (dataType={dt}, {size} octets pour {w}x{h}).</translation>
-    </message>
-    <message>
         <source>Online layer returned blank tiles for this area. Try panning to an area with data coverage.</source>
         <translation>La couche en ligne a retourne des tuiles vides pour cette zone. Essayez de deplacer la carte vers une zone avec des donnees.</translation>
-    </message>
-    <message>
-        <source>Writing GeoTIFF...</source>
-        <translation>Ecriture du GeoTIFF...</translation>
-    </message>
-    <message>
-        <source>GDAL GTiff driver is not available.</source>
-        <translation>Le pilote GDAL GTiff n'est pas disponible.</translation>
-    </message>
-    <message>
-        <source>Failed to create GeoTIFF file.</source>
-        <translation>Impossible de creer le fichier GeoTIFF.</translation>
-    </message>
-    <message>
-        <source>GeoTIFF ready for encoding.</source>
-        <translation>GeoTIFF pret pour l'encodage.</translation>
-    </message>
-    <message>
-        <source>Failed to write rendered GeoTIFF.</source>
-        <translation>Impossible d'ecrire le GeoTIFF rendu.</translation>
-    </message>
-    <message>
-        <source>Failed to render online layer: {error}</source>
-        <translation>Impossible de convertir la couche en ligne : {error}</translation>
-    </message>
-    <message>
-        <source>Cannot Segment</source>
-        <translation>Segmentation impossible</translation>
-    </message>
-    <message>
-        <source>Could not determine visible area for the online layer. Make sure the layer is visible on the map.</source>
-        <translation>Impossible de determiner la zone visible pour la couche en ligne. Verifiez que la couche est visible sur la carte.</translation>
-    </message>
-    <message>
-        <source>Online Layer Error</source>
-        <translation>Erreur de couche en ligne</translation>
     </message>
     <message>
         <source>Crop Error</source>
@@ -1058,6 +633,11 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <source>For best accuracy, segment one element at a time.</source>
         <translation>Pour une meilleure precision, segmentez un element a la fois.</translation>
+    </message>
+
+    <message>
+        <source>Updating...</source>
+        <translation>Mise a jour...</translation>
     </message>
 </context>
 </TS>

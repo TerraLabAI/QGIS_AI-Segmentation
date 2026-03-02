@@ -114,7 +114,6 @@ class DownloadWorker(QThread):
             self.finished.emit(False, str(e))
 
 
-
 class VerifyWorker(QThread):
     """Runs venv verification + device detection off the main thread."""
     finished = pyqtSignal(bool, str)  # (is_valid, message)
@@ -745,8 +744,6 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.Warning
             )
-
-
 
     def _show_device_info(self):
         """Detect and display which compute device will be used."""
