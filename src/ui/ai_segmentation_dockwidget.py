@@ -35,7 +35,7 @@ from ..core.activation_manager import (  # noqa: E402
     get_newsletter_url,
 )
 from ..core.i18n import tr  # noqa: E402
-from ..core.model_config import USE_SAM2  # noqa: E402
+from ..core.model_config import USE_SAM2, _IS_MACOS_X86  # noqa: E402
 from ..core.venv_manager import CACHE_DIR  # noqa: E402
 
 
@@ -244,7 +244,11 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.cancel_button)
 
         if not USE_SAM2:
-            sam1_info = QLabel(tr("Update QGIS to 3.34+ for the latest AI model"))
+            if _IS_MACOS_X86:
+                sam1_text = tr("Intel Mac: using SAM1 (compatible with PyTorch 2.2)")
+            else:
+                sam1_text = tr("Update QGIS to 3.34+ for the latest AI model")
+            sam1_info = QLabel(sam1_text)
             sam1_info.setStyleSheet("color: palette(text); font-size: 10px;")
             layout.addWidget(sam1_info)
 

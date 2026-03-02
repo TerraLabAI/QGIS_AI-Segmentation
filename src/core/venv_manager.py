@@ -196,8 +196,8 @@ def _check_rosetta_warning() -> Optional[str]:
             if "Apple" in result.stdout:
                 return (
                     "Warning: QGIS is running under Rosetta (x86_64 emulation) "
-                    "on Apple Silicon. This may cause compatibility issues. "
-                    "Consider using the native ARM64 version of QGIS for best performance."
+                    "on Apple Silicon. SAM1 will be used instead of SAM2. "
+                    "For the latest model, use the native ARM64 version of QGIS."
                 )
         except Exception:
             pass
@@ -205,34 +205,6 @@ def _check_rosetta_warning() -> Optional[str]:
     return None
 
 
-def _check_intel_mac_unsupported():
-    """
-    Detect native Intel Mac (x86_64) where PyTorch >= 2.5.1 has no wheels.
-    Returns error message if Intel Mac detected, None otherwise.
-    """
-    if sys.platform != "darwin":
-        return None
-
-    if platform.machine() != "x86_64":
-        return None
-
-    # Distinguish real Intel from Rosetta (Apple Silicon emulating x86_64)
-    try:
-        result = subprocess.run(
-            ["sysctl", "-n", "machdep.cpu.brand_string"],
-            capture_output=True, text=True, timeout=5
-        )
-        if "Apple" in result.stdout:
-            return None  # Rosetta, not real Intel
-    except Exception:
-        pass
-
-    return (
-        "macOS Intel (x86_64) is not supported. "
-        "PyTorch dropped macOS x86_64 support after version 2.2, "
-        "so torch>=2.5.1 cannot be installed on this machine. "
-        "Please use an Apple Silicon Mac with native ARM64 QGIS."
-    )
 
 
 # Minimum NVIDIA driver versions for each CUDA toolkit version.
@@ -2062,15 +2034,8 @@ def install_dependencies(
                 # If "no matching distribution" for torch, retry with --no-cache-dir
                 if result.returncode != 0 and package_name in ("torch", "torchvision"):
                     error_output = result.stderr or result.stdout or ""
-                    # On Intel Mac, skip pointless retry
                     err_lower = error_output.lower()
                     no_dist = "no matching distribution" in err_lower
-                    no_platform = "no matching platform tag" in err_lower
-                    if (no_dist or no_platform):
-                        intel_msg = _check_intel_mac_unsupported()
-                        if intel_msg:
-                            _log(intel_msg, Qgis.Critical)
-                            return False, intel_msg
                     if no_dist:
                         _log(
                             "No matching distribution for {}, "
@@ -2217,12 +2182,8 @@ def install_dependencies(
                     return False, "Failed to install {}: network error".format(
                         package_name)
 
-                # Check for platform-unsupported wheels (e.g. Intel Mac)
+                # Check for platform-unsupported wheels
                 if "no matching platform tag" in install_error_msg.lower():
-                    intel_msg = _check_intel_mac_unsupported()
-                    if intel_msg:
-                        _log(intel_msg, Qgis.Critical)
-                        return False, intel_msg
                     return False, (
                         "Failed to install {}: no wheels with a matching "
                         "platform tag for this OS/architecture."
@@ -2735,12 +2696,6 @@ def create_venv_and_install(
         ).format(CACHE_DIR, e)
         _log(hint, Qgis.Critical)
         return False, hint
-
-    # Block installation on native Intel Mac (no PyTorch wheels available)
-    intel_mac_err = _check_intel_mac_unsupported()
-    if intel_mac_err:
-        _log(intel_mac_err, Qgis.Critical)
-        return False, intel_mac_err
 
     # Check for Rosetta emulation on macOS (warning only, don't block)
     rosetta_warning = _check_rosetta_warning()

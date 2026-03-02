@@ -135,6 +135,10 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Mettez QGIS a jour vers 3.34+ pour le dernier modele IA</translation>
     </message>
     <message>
+        <source>Intel Mac: using SAM1 (compatible with PyTorch 2.2)</source>
+        <translation>Mac Intel : utilisation de SAM1 (compatible avec PyTorch 2.2)</translation>
+    </message>
+    <message>
         <source>Download Failed</source>
         <translation>Échec du téléchargement</translation>
     </message>
