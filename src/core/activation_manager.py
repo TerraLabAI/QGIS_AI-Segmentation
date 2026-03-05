@@ -7,7 +7,7 @@ from typing import Tuple
 from qgis.core import QgsSettings
 
 # The unlock code
-UNLOCK_CODE = "baguette"
+UNLOCK_CODE = "fromage"
 
 # QSettings keys
 SETTINGS_PREFIX = "AISegmentation"
@@ -31,7 +31,7 @@ def activate_plugin(code: str) -> Tuple[bool, str]:
     Returns:
         (success, message) tuple
     """
-    if code.strip().lower() == UNLOCK_CODE.lower():
+    if code.strip().lower() == UNLOCK_CODE:
         settings = QgsSettings()
         settings.setValue(ACTIVATION_KEY, True)
         return True, "Plugin activated successfully!"
