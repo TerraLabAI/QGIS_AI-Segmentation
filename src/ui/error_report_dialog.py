@@ -132,7 +132,11 @@ def _collect_diagnostic_info(error_message: str) -> str:
     # System info
     lines.append("--- System ---")
     lines.append("OS: {} ({} {})".format(sys.platform, platform.system(), platform.release()))
-    lines.append("Architecture: {}".format(platform.machine()))
+    from ..core.model_config import IS_ROSETTA
+    arch_str = platform.machine()
+    if IS_ROSETTA:
+        arch_str += " (Rosetta on Apple Silicon)"
+    lines.append("Architecture: {}".format(arch_str))
     lines.append("Python: {}.{}.{}".format(
         sys.version_info.major, sys.version_info.minor, sys.version_info.micro))
 

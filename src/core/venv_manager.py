@@ -11,7 +11,7 @@ from typing import Tuple, Optional, Callable, List
 
 from qgis.core import QgsMessageLog, Qgis
 
-from .model_config import SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN, USE_SAM2
+from .model_config import SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN, USE_SAM2, IS_ROSETTA
 from .uv_manager import (
     uv_exists, get_uv_path, download_uv, verify_uv, remove_uv,
 )
@@ -163,7 +163,10 @@ def _log_system_info():
         "=" * 50,
         "Installation Environment:",
         f"  OS: {sys.platform} ({platform.system()} {platform.release()})",
-        f"  Architecture: {platform.machine()}",
+        "  Architecture: {}{}".format(
+            platform.machine(),
+            " (Rosetta on Apple Silicon)" if IS_ROSETTA else ""
+        ),
         f"  Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         f"  QGIS: {qgis_version}",
         f"  Install dir: {CACHE_DIR}",
@@ -178,31 +181,15 @@ def _log_system_info():
 def _check_rosetta_warning() -> Optional[str]:
     """
     On macOS ARM, detect if running under Rosetta (x86_64 emulation).
-    Returns warning message if Rosetta detected, None otherwise.
+    Returns info message if Rosetta detected, None otherwise.
     """
-    if sys.platform != "darwin":
+    if not IS_ROSETTA:
         return None
 
-    machine = platform.machine()
-
-    # On Apple Silicon running native: machine = "arm64"
-    # If running under Rosetta: machine = "x86_64" but CPU is Apple Silicon
-    if machine == "x86_64":
-        try:
-            result = subprocess.run(
-                ["sysctl", "-n", "machdep.cpu.brand_string"],
-                capture_output=True, text=True, timeout=5
-            )
-            if "Apple" in result.stdout:
-                return (
-                    "Warning: QGIS is running under Rosetta (x86_64 emulation) "
-                    "on Apple Silicon. SAM1 will be used instead of SAM2. "
-                    "For the latest model, use the native ARM64 version of QGIS."
-                )
-        except Exception:
-            pass
-
-    return None
+    return (
+        "Rosetta detected: QGIS is running as x86_64 on Apple Silicon. "
+        "Installing native ARM64 Python 3.10+ for SAM2 support."
+    )
 
 
 # Minimum NVIDIA driver versions for each CUDA toolkit version.
