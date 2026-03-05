@@ -1035,14 +1035,25 @@ class AISegmentationDockWidget(QDockWidget):
             self.setup_progress_label.setVisible(False)
             self.gpu_info_box.setVisible(False)
         else:
-            self.setup_status_label.setVisible(False)
+            is_update = "updating" in message.lower() or "upgrading" in message.lower()
+            is_dll_error = "dll" in message.lower() and "failed" in message.lower()
+            if is_dll_error:
+                short_msg = tr(
+                    "Missing Visual C++ Redistributable. "
+                    "Install it, restart your computer, then click Retry.")
+                self.setup_status_label.setText(short_msg)
+                self.setup_status_label.setStyleSheet(
+                    "font-weight: bold; color: #c62828;")
+                self.setup_status_label.setVisible(True)
+                self.install_button.setText(tr("Retry"))
+            else:
+                self.setup_status_label.setVisible(False)
+                if is_update:
+                    self.install_button.setText(tr("Update"))
+                else:
+                    self.install_button.setText(tr("Install"))
             self.install_button.setVisible(True)
             self.install_button.setEnabled(True)
-            is_update = "updating" in message.lower() or "upgrading" in message.lower()
-            if is_update:
-                self.install_button.setText(tr("Update"))
-            else:
-                self.install_button.setText(tr("Install"))
             self.setup_group.setVisible(True)
 
         self._update_full_ui()

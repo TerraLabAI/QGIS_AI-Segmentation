@@ -427,7 +427,9 @@ class SamPredictor:
                 low_res_masks_dtype = response["low_res_masks_dtype"]
 
                 low_res_masks_bytes = base64.b64decode(low_res_masks_b64.encode('utf-8'))
-                low_res_masks = np.frombuffer(low_res_masks_bytes, dtype=low_res_masks_dtype).reshape(low_res_masks_shape)
+                low_res_masks = np.frombuffer(
+                    low_res_masks_bytes, dtype=low_res_masks_dtype
+                ).reshape(low_res_masks_shape)
 
                 return masks, scores, low_res_masks
 

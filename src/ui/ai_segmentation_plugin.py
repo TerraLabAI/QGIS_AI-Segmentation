@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     import numpy
 
 from qgis.PyQt.QtWidgets import (
-    QAction, QApplication, QDoubleSpinBox, QLineEdit, QMessageBox,
+    QAction, QApplication, QDoubleSpinBox, QLineEdit, QMenu, QMessageBox,
     QPlainTextEdit, QSpinBox, QTextEdit,
 )
 from qgis.PyQt.QtGui import QIcon
@@ -259,6 +259,9 @@ class AISegmentationPlugin:
         self.dock_widget: Optional[AISegmentationDockWidget] = None
         self.map_tool: Optional[AISegmentationMapTool] = None
         self.action: Optional[QAction] = None
+        self.terralab_menu: Optional[QMenu] = None
+        self.check_update_action: Optional[QAction] = None
+        self.website_action: Optional[QAction] = None
 
         self.predictor = None
         self.prompts = PromptManager()
@@ -416,7 +419,7 @@ class AISegmentationPlugin:
 
         self.action = QAction(
             icon,
-            "AI Segmentation by TerraLab",
+            "AI Segmentation",
             self.iface.mainWindow()
         )
         self.action.setCheckable(True)
@@ -428,9 +431,30 @@ class AISegmentationPlugin:
 
         self.iface.addToolBarIcon(self.action)
 
-        # Add directly to Plugins menu (no submenu)
-        plugins_menu = self.iface.pluginMenu()
-        plugins_menu.addAction(self.action)
+        # Create TerraLab top-level menu in the menu bar
+        self.terralab_menu = QMenu("TerraLab", self.iface.mainWindow())
+        self.iface.mainWindow().menuBar().addMenu(self.terralab_menu)
+        self.terralab_menu.addAction(self.action)
+        self.terralab_menu.addSeparator()
+
+        update_icon = QIcon(":/images/themes/default/mActionRefresh.svg")
+        self.check_update_action = QAction(
+            update_icon,
+            tr("Check for Updates"),
+            self.iface.mainWindow()
+        )
+        self.check_update_action.triggered.connect(self._open_plugin_manager_update)
+        self.terralab_menu.addAction(self.check_update_action)
+
+        terralab_logo = str(self.plugin_dir / "resources" / "icons" / "terralab-logo.png")
+        website_icon = QIcon(terralab_logo) if os.path.exists(terralab_logo) else QIcon()
+        self.website_action = QAction(
+            website_icon,
+            tr("More from TerraLab..."),
+            self.iface.mainWindow()
+        )
+        self.website_action.triggered.connect(self._open_terralab_website)
+        self.terralab_menu.addAction(self.website_action)
 
         self.dock_widget = AISegmentationDockWidget(self.iface.mainWindow())
         self.dock_widget.setVisible(False)
@@ -599,8 +623,25 @@ class AISegmentationPlugin:
             self.action.triggered.disconnect(self.toggle_dock_widget)
         except (TypeError, RuntimeError, AttributeError):
             pass
-        plugins_menu = self.iface.pluginMenu()
-        plugins_menu.removeAction(self.action)
+        try:
+            if self.check_update_action:
+                self.check_update_action.triggered.disconnect(
+                    self._open_plugin_manager_update)
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        try:
+            if self.website_action:
+                self.website_action.triggered.disconnect(
+                    self._open_terralab_website)
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        if self.terralab_menu:
+            self.iface.mainWindow().menuBar().removeAction(
+                self.terralab_menu.menuAction())
+            self.terralab_menu.deleteLater()
+            self.terralab_menu = None
+        self.check_update_action = None
+        self.website_action = None
         self.iface.removeToolBarIcon(self.action)
 
         # 6. Remove dock widget
@@ -696,6 +737,19 @@ class AISegmentationPlugin:
         """Trigger the update check on the dock widget."""
         if self.dock_widget:
             self.dock_widget.check_for_updates()
+
+    def _open_plugin_manager_update(self):
+        """Open the QGIS Plugin Manager on the Upgradeable tab."""
+        try:
+            self.iface.pluginManagerInterface().showPluginManager(3)
+        except Exception:
+            pass
+
+    def _open_terralab_website(self):
+        """Open the TerraLab website in the default browser."""
+        from qgis.PyQt.QtCore import QUrl
+        from qgis.PyQt.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl("https://terra-lab.ai"))
 
     def _check_checkpoint(self):
         try:
@@ -1687,11 +1741,11 @@ class AISegmentationPlugin:
         # Detect significant zoom-in requiring higher resolution
         if self._is_online_layer:
             canvas = self.iface.mapCanvas()
-            current_mupp = canvas.mapUnitsPerPixel()
-            if self._current_crop_actual_mupp and current_mupp > 0:
-                if current_mupp < 0.7 * self._current_crop_actual_mupp:
+            current_canvas_mupp = canvas.mapUnitsPerPixel()
+            if self._current_crop_canvas_mupp and current_canvas_mupp > 0:
+                if current_canvas_mupp < 0.7 * self._current_crop_canvas_mupp:
                     return "zoom_changed"
-                if current_mupp > 1.5 * self._current_crop_actual_mupp:
+                if current_canvas_mupp > 1.5 * self._current_crop_canvas_mupp:
                     return "zoom_changed"
         else:
             if self._current_crop_canvas_mupp is not None:
@@ -1918,8 +1972,22 @@ class AISegmentationPlugin:
         if self._is_online_layer:
             canvas = self.iface.mapCanvas()
             canvas_mupp = canvas.mapUnitsPerPixel()
+            # When canvas CRS != raster CRS, the MUPP is in canvas units
+            # (e.g. degrees) but crop is in raster units (e.g. meters).
+            # Convert by measuring a small canvas-pixel offset in raster CRS.
+            if self._canvas_to_raster_xform is not None:
+                canvas_center = canvas.center()
+                cx, cy = canvas_center.x(), canvas_center.y()
+                p1 = self._canvas_to_raster_xform.transform(
+                    QgsPointXY(cx, cy))
+                p2 = self._canvas_to_raster_xform.transform(
+                    QgsPointXY(cx + canvas_mupp, cy))
+                raster_mupp = math.sqrt(
+                    (p2.x() - p1.x()) ** 2 + (p2.y() - p1.y()) ** 2)
+            else:
+                raster_mupp = canvas_mupp
             self._current_crop_canvas_mupp = canvas_mupp
-            actual_mupp = mupp_override if mupp_override else canvas_mupp
+            actual_mupp = mupp_override if mupp_override else raster_mupp
             self._current_crop_actual_mupp = actual_mupp
             image_np, crop_info, error = extract_crop_from_online_layer(
                 self._current_layer, raster_pt_x, raster_pt_y,

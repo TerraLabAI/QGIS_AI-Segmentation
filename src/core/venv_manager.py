@@ -205,8 +205,6 @@ def _check_rosetta_warning() -> Optional[str]:
     return None
 
 
-
-
 # Minimum NVIDIA driver versions for each CUDA toolkit version.
 # cu128 (Blackwell) needs driver >= 570, cu121 needs >= 530.
 _CUDA_DRIVER_REQUIREMENTS = {
