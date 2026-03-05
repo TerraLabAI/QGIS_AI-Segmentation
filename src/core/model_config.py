@@ -3,13 +3,39 @@
 SAM2 (sam2 package) requires Python >= 3.10 and is unavailable on macOS
 x86_64 (PyTorch dropped Intel Mac wheels after 2.2.2). On unsupported
 platforms or Python 3.9, we fall back to SAM1 (segment-anything / ViT-B).
+
+Exception: under Rosetta (x86_64 QGIS on Apple Silicon), the standalone
+Python is downloaded as ARM64 3.10+, so SAM2 is available.
 """
 import platform
+import subprocess
 import sys
 
-_IS_MACOS_X86 = (sys.platform == "darwin" and platform.machine() == "x86_64")
 
-USE_SAM2 = sys.version_info >= (3, 10) and not _IS_MACOS_X86
+def _is_rosetta() -> bool:
+    """Detect Rosetta 2 emulation (x86_64 process on Apple Silicon)."""
+    if sys.platform != "darwin" or platform.machine() != "x86_64":
+        return False
+    try:
+        result = subprocess.run(
+            ["sysctl", "-n", "sysctl.proc_translated"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() == "1"
+    except Exception:
+        return False
+
+
+IS_ROSETTA = _is_rosetta()
+
+_IS_MACOS_X86 = (
+    sys.platform == "darwin"
+    and platform.machine() == "x86_64"
+    and not IS_ROSETTA
+)
+
+# Under Rosetta, standalone Python will be ARM64 3.10+ -> SAM2
+USE_SAM2 = (sys.version_info >= (3, 10) or IS_ROSETTA) and not _IS_MACOS_X86
 
 if USE_SAM2:
     SAM_PACKAGE = ("sam2", ">=1.0")

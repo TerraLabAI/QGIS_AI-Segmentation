@@ -21,6 +21,8 @@ from qgis.core import QgsMessageLog, Qgis, QgsBlockingNetworkRequest
 from qgis.PyQt.QtCore import QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
+from .model_config import IS_ROSETTA
+
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_DIR = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser("~/.qgis_ai_segmentation")
@@ -88,7 +90,13 @@ def _get_windows_antivirus_help(plugin_path: str) -> str:
 
 
 def get_qgis_python_version() -> Tuple[int, int]:
-    """Get the Python version used by QGIS."""
+    """Get the target Python version for the standalone interpreter.
+
+    Under Rosetta, returns (3, 10) so we download ARM64 Python 3.10+
+    for SAM2 support instead of matching QGIS's x86_64 Python 3.9.
+    """
+    if IS_ROSETTA:
+        return (3, 10)
     return (sys.version_info.major, sys.version_info.minor)
 
 
@@ -191,7 +199,7 @@ def _get_platform_info() -> Tuple[str, str]:
     machine = platform.machine().lower()
 
     if system == "darwin":
-        if machine in ("arm64", "aarch64"):
+        if machine in ("arm64", "aarch64") or IS_ROSETTA:
             return ("aarch64-apple-darwin", ".tar.gz")
         else:
             return ("x86_64-apple-darwin", ".tar.gz")
