@@ -2,15 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(nvidia-smi:*)",
-      "Bash(\"C:\\\\Users\\\\yvann_416voxb\\\\AppData\\\\Roaming\\\\QGIS\\\\QGIS3\\\\profiles\\\\default\\\\python\\\\plugins\\\\QGIS_AI-Segmentation\\\\src\\\\venv_py3.12\\\\Scripts\\\\python.exe\" -c \"import torch; print\\(''Torch version:'', torch.__version__\\); print\\(''CUDA available:'', torch.cuda.is_available\\(\\)\\); print\\(''CUDA version:'', torch.version.cuda if torch.version.cuda else ''None''\\)\")",
-      "Bash(\"C:\\\\Users\\\\yvann_416voxb\\\\AppData\\\\Roaming\\\\QGIS\\\\QGIS3\\\\profiles\\\\default\\\\python\\\\plugins\\\\QGIS_AI-Segmentation\\\\src\\\\venv_py3.12\\\\Scripts\\\\python.exe\" -c \"import torch; print\\(''CUDA device:'', torch.cuda.get_device_name\\(0\\)\\); t = torch.zeros\\(1, device=''cuda''\\); r = t + 1; torch.cuda.synchronize\\(\\); print\\(''Kernel test PASSED:'', r.item\\(\\)\\); print\\(''Arch list:'', torch.cuda.get_arch_list\\(\\)\\)\")",
-      "Bash(\"C:\\\\Users\\\\yvann_416voxb\\\\AppData\\\\Roaming\\\\QGIS\\\\QGIS3\\\\profiles\\\\default\\\\python\\\\plugins\\\\QGIS_AI-Segmentation\\\\src\\\\venv_py3.12\\\\Scripts\\\\pip.exe\" index versions torch --index-url https://download.pytorch.org/whl/cu128)",
-      "Bash(\"C:\\\\Users\\\\yvann_416voxb\\\\AppData\\\\Roaming\\\\QGIS\\\\QGIS3\\\\profiles\\\\default\\\\python\\\\plugins\\\\QGIS_AI-Segmentation\\\\src\\\\venv_py3.12\\\\Scripts\\\\pip.exe\" install --upgrade torch==2.10.0+cu128 torchvision --index-url https://download.pytorch.org/whl/cu128 --no-warn-script-location --disable-pip-version-check)",
-      "Bash(\"C:\\\\Users\\\\yvann_416voxb\\\\AppData\\\\Roaming\\\\QGIS\\\\QGIS3\\\\profiles\\\\default\\\\python\\\\plugins\\\\QGIS_AI-Segmentation\\\\src\\\\venv_py3.12\\\\Scripts\\\\python.exe\" -c \"import torch; print\\(''Torch:'', torch.__version__\\); print\\(''CUDA:'', torch.version.cuda\\); t = torch.zeros\\(1, device=''cuda''\\); r = t + 1; torch.cuda.synchronize\\(\\); print\\(''Kernel test PASSED:'', r.item\\(\\)\\); print\\(''Arch list:'', torch.cuda.get_arch_list\\(\\)\\)\")",
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(python:*)",
-      "Bash(\"/Users/yvann/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Segmentation/src/venv_py3.12/bin/python3\" -c \"import torch; t = torch.tensor\\([1, 2, 3]\\); print\\(t.sum\\(\\)\\)\")",
       "Bash(git status:*)",
       "Bash(python3 -m pyflakes:*)",
       "Bash(python3:*)",
@@ -52,7 +46,6 @@
       "Bash(git push:*)",
       "mcp__plugin_github_github__get_latest_release",
       "Bash(gh release:*)",
-      "Bash(raster\" errors when the QGIS project uses a different CRS than the\n   raster \\(e.g. EPSG:2948 canvas vs EPSG:32619 raster\\). Now all click\n   coordinates are transformed to raster CRS before bounds checks, tile\n   lookup, and point-to-pixel conversion. Mask geometries are transformed\n   back to canvas CRS for rubberband display.\n\n2. CUDA upgrade: pip silently skipped CUDA torch installation when a\n   higher-versioned CPU torch was already in the venv \\(e.g. 2.10.0+cpu\n   vs 2.5.1+cu121 on the CUDA index\\). Now detects CPU torch and\n   uninstalls it before installing from the CUDA index. Also adds\n   versioned cuda_fallback tracking so users stuck on CPU due to this\n   bug get an automatic retry on plugin update, without affecting users\n   whose setup already works.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
       "mcp__github__issue_write",
       "mcp__github__add_issue_comment",
       "Bash(flake8:*)",
@@ -78,5 +71,9 @@
       "Bash(~/.qgis_ai_segmentation/uv/uv pip:*)",
       "Bash(comm:*)"
     ]
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
   }
 }
