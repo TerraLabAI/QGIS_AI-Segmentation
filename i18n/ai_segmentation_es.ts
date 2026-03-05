@@ -643,5 +643,25 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <source>Updating...</source>
         <translation>Actualizando...</translation>
     </message>
+
+    <message>
+        <source>Check for Updates</source>
+        <translation>Buscar actualizaciones</translation>
+    </message>
+
+    <message>
+        <source>More from TerraLab...</source>
+        <translation>Mas sobre TerraLab...</translation>
+    </message>
+
+    <message>
+        <source>Missing Visual C++ Redistributable. Install it, restart your computer, then click Retry.</source>
+        <translation>Falta Visual C++ Redistributable. Instalelo, reinicie su computadora y haga clic en Reintentar.</translation>
+    </message>
+
+    <message>
+        <source>Retry</source>
+        <translation>Reintentar</translation>
+    </message>
 </context>
 </TS>
