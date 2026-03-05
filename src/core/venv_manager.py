@@ -29,6 +29,7 @@ VENV_DIR = os.path.join(CACHE_DIR, f'venv_{PYTHON_VERSION}')
 LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, 'libs')
 
 REQUIRED_PACKAGES = [
+    ("setuptools", ">=70.0"),
     ("numpy", ">=1.26.0,<2.0.0"),
     ("torch", TORCH_MIN),
     ("torchvision", TORCHVISION_MIN),

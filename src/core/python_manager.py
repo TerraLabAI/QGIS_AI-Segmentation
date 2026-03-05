@@ -432,8 +432,9 @@ def verify_standalone_python() -> Tuple[bool, str]:
             version_output = result.stdout.strip().split()[0]
             expected_version = get_python_full_version()
 
-            # Verify major.minor matches
-            if not version_output.startswith(f"{sys.version_info.major}.{sys.version_info.minor}"):
+            # Verify major.minor matches (use target version, not QGIS's)
+            major, minor = get_qgis_python_version()
+            if not version_output.startswith(f"{major}.{minor}"):
                 _log(f"Python version mismatch: got {version_output}, expected {expected_version}", Qgis.Warning)
                 return False, f"Version mismatch: downloaded {version_output}, expected {expected_version}"
 
