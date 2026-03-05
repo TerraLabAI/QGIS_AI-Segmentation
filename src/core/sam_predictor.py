@@ -63,6 +63,11 @@ class SamPredictor:
         if self._stderr_file is None:
             return ""
         try:
+            if self.process is not None:
+                try:
+                    self.process.wait(timeout=2)
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
             self._stderr_file.seek(0)
             return self._stderr_file.read()
         except Exception:
@@ -91,9 +96,9 @@ class SamPredictor:
         reader_thread.join(timeout=timeout_seconds)
 
         if reader_thread.is_alive():
-            # Thread is still blocking - worker is hung
+            self.cleanup()
             raise TimeoutError(
-                f"Worker did not respond within {timeout_seconds}s"
+                "Worker did not respond within {}s".format(timeout_seconds)
             )
 
         if error[0] is not None:
@@ -441,6 +446,8 @@ class SamPredictor:
 
         except Exception as e:
             import traceback
-            error_msg = f"Prediction failed: {str(e)}\n{traceback.format_exc()}"
+            error_msg = "Prediction failed: {}\n{}".format(
+                str(e), traceback.format_exc())
             QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
+            self.cleanup()
             raise

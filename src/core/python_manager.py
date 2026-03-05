@@ -305,6 +305,23 @@ def download_python_standalone(
         with open(temp_path, 'wb') as f:
             f.write(content.data())
 
+        # Validate archive magic bytes (catch proxy/firewall HTML pages)
+        with open(temp_path, 'rb') as f:
+            magic = f.read(4)
+        is_gzip = magic[:2] == b'\x1f\x8b'
+        is_zip = magic[:2] == b'PK'
+        if not is_gzip and not is_zip:
+            try:
+                preview_text = bytes(content.data()[:200]).decode(
+                    'utf-8', errors='replace')[:150]
+            except Exception:
+                preview_text = "(binary data)"
+            return False, (
+                "Download failed: file is not a valid archive. "
+                "A firewall or proxy may have returned an error page. "
+                "Preview: {}".format(preview_text)
+            )
+
         _log(f"Download complete ({content_size} bytes), extracting...", Qgis.Info)
 
         if progress_callback:

@@ -159,7 +159,10 @@ class _ShortcutFilter(QObject):
         if not plugin.map_tool or not plugin.map_tool.isActive():
             return False
 
-        focused = QApplication.instance().focusWidget()
+        app = QApplication.instance()
+        if not app:
+            return False
+        focused = app.focusWidget()
         if isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit,
                                 QSpinBox, QDoubleSpinBox)):
             return False
@@ -380,16 +383,21 @@ class AISegmentationPlugin:
             return False
 
     def _ensure_polygon_rubberband_sync(self):
-        """Check polygon/rubber band list consistency. Log and preserve on mismatch."""
+        """Check polygon/rubber band list consistency. Repair on mismatch."""
         n_polygons = len(self.saved_polygons)
         n_bands = len(self.saved_rubber_bands)
         if n_polygons != n_bands:
             QgsMessageLog.logMessage(
                 "BUG: polygon/rubber band mismatch: {} vs {}. "
-                "Data preserved, please report.".format(n_polygons, n_bands),
+                "Truncating to min. Please report.".format(n_polygons, n_bands),
                 "AI Segmentation",
                 level=Qgis.Critical
             )
+            min_len = min(n_polygons, n_bands)
+            while len(self.saved_rubber_bands) > min_len:
+                rb = self.saved_rubber_bands.pop()
+                self._safe_remove_rubber_band(rb)
+            self.saved_polygons = self.saved_polygons[:min_len]
 
     @staticmethod
     def _compute_simplification_tolerance(transform_info, simplify_value):
@@ -525,7 +533,9 @@ class AISegmentationPlugin:
         # 0. Remove keyboard shortcut filter
         try:
             if self._shortcut_filter is not None:
-                QApplication.instance().removeEventFilter(self._shortcut_filter)
+                app = QApplication.instance()
+                if app:
+                    app.removeEventFilter(self._shortcut_filter)
                 self._shortcut_filter = None
         except (RuntimeError, AttributeError):
             pass
@@ -1150,7 +1160,9 @@ class AISegmentationPlugin:
         # after encoding/prediction because dock widget updates steal it).
         if self._shortcut_filter is None:
             self._shortcut_filter = _ShortcutFilter(self)
-        QApplication.instance().installEventFilter(self._shortcut_filter)
+        app = QApplication.instance()
+        if app:
+            app.installEventFilter(self._shortcut_filter)
 
         # Show tutorial notification for first-time users
         self._show_tutorial_notification()
@@ -1609,7 +1621,9 @@ class AISegmentationPlugin:
         # Remove keyboard shortcut filter
         try:
             if self._shortcut_filter is not None:
-                QApplication.instance().removeEventFilter(self._shortcut_filter)
+                app = QApplication.instance()
+                if app:
+                    app.removeEventFilter(self._shortcut_filter)
         except (RuntimeError, AttributeError):
             pass
 
@@ -1654,7 +1668,9 @@ class AISegmentationPlugin:
                 return
 
         if self._shortcut_filter is not None:
-            QApplication.instance().removeEventFilter(self._shortcut_filter)
+            app = QApplication.instance()
+            if app:
+                app.removeEventFilter(self._shortcut_filter)
         self._stopping_segmentation = True
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
         self._restore_previous_map_tool()
@@ -1842,8 +1858,8 @@ class AISegmentationPlugin:
         new_mask = np.zeros((new_h, new_w), dtype=np.float32)
         new_mask[n_r0:n_r1, n_c0:n_c1] = resized_patch
 
-        # Convert binary mask to logits: foreground=+4, background=-4
-        logits = (new_mask * 2.0 - 1.0) * 4.0
+        # Convert binary mask to logits: foreground=+6, background=-6
+        logits = (new_mask * 2.0 - 1.0) * 6.0
 
         # Resize to SAM's low-res mask size (256x256), shape (1, 1, 256, 256)
         logits_256 = self._resize_nearest(logits, 256, 256)
@@ -2471,6 +2487,9 @@ class AISegmentationPlugin:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
 
+            # Clear prior mask logits so SAM predicts fresh from remaining points
+            self.current_low_res_mask = None
+
             # Re-run prediction with remaining points
             if self.prompts.point_count[0] + self.prompts.point_count[1] > 0:
                 self._run_prediction()
@@ -2496,6 +2515,8 @@ class AISegmentationPlugin:
 
     def _restore_last_saved_mask(self):
         """Restore the last saved mask for editing in batch mode."""
+        if not self.dock_widget:
+            return
         self._ensure_polygon_rubberband_sync()
 
         if not self.saved_polygons or not self.saved_rubber_bands:

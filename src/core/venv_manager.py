@@ -138,11 +138,14 @@ def _read_deps_hash() -> Optional[str]:
 
 
 def _write_deps_hash():
-    """Write the current deps hash to the venv directory."""
+    """Write the current deps hash to the venv directory (atomic via tmp + replace)."""
     try:
-        os.makedirs(os.path.dirname(DEPS_HASH_FILE), exist_ok=True)
-        with open(DEPS_HASH_FILE, "w", encoding="utf-8") as f:
+        hash_dir = os.path.dirname(DEPS_HASH_FILE)
+        os.makedirs(hash_dir, exist_ok=True)
+        tmp_path = DEPS_HASH_FILE + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(_compute_deps_hash())
+        os.replace(tmp_path, DEPS_HASH_FILE)
     except (OSError, IOError) as e:
         _log("Failed to write deps hash: {}".format(e), Qgis.Warning)
 
