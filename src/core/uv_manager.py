@@ -17,6 +17,7 @@ import tempfile
 import shutil
 import stat
 from typing import Tuple, Optional, Callable
+from .model_config import IS_ROSETTA
 
 from qgis.core import QgsMessageLog, Qgis, QgsBlockingNetworkRequest
 from qgis.PyQt.QtCore import QUrl
@@ -50,7 +51,7 @@ def _get_uv_platform_info() -> Tuple[str, str]:
     machine = platform.machine().lower()
 
     if system == "darwin":
-        if machine in ("arm64", "aarch64"):
+        if machine in ("arm64", "aarch64") or IS_ROSETTA:
             return ("aarch64-apple-darwin", ".tar.gz")
         return ("x86_64-apple-darwin", ".tar.gz")
     elif system == "win32":
