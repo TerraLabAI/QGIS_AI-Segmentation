@@ -1,4 +1,8 @@
 {
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "permissions": {
     "allow": [
       "Bash(nvidia-smi:*)",
@@ -69,11 +73,8 @@
       "Bash(gh pr:*)",
       "Bash(ln:*)",
       "Bash(~/.qgis_ai_segmentation/uv/uv pip:*)",
-      "Bash(comm:*)"
+      "Bash(comm:*)",
+      "Bash(ffmpeg:*)"
     ]
-  },
-  "attribution": {
-    "commit": "",
-    "pr": ""
   }
 }
