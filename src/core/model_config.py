@@ -47,7 +47,7 @@ if USE_SAM2:
     )
     CHECKPOINT_FILENAME = "sam2.1_hiera_base_plus.pt"
     # SHA256 hash for checkpoint verification (not a secret)
-    CHECKPOINT_SHA256 = ""  # noqa: S105  # pragma: allowlist secret
+    CHECKPOINT_SHA256 = "a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5"  # noqa: S105, E501  # pragma: allowlist secret
     CHECKPOINT_SIZE_LABEL = "~323MB"
     MODEL_CFG = "configs/sam2.1/sam2.1_hiera_b+.yaml"
 else:

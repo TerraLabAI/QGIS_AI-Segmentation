@@ -237,7 +237,7 @@ def detect_nvidia_gpu() -> Tuple[bool, dict]:
             ["nvidia-smi",
              "--query-gpu=name,compute_cap,driver_version,memory.total",
              "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, encoding="utf-8", timeout=5,
             **subprocess_kwargs,
         )
         if result.returncode == 0 and result.stdout.strip():
@@ -376,7 +376,7 @@ def _check_gdal_available() -> Tuple[bool, str]:
     try:
         result = subprocess.run(
             ["gdal-config", "--version"],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, encoding="utf-8", timeout=5
         )
         if result.returncode == 0:
             return True, f"GDAL {result.stdout.strip()} found"
@@ -882,7 +882,7 @@ def _get_qgis_python() -> Optional[str]:
 
         result = subprocess.run(
             [python_path, "-c", "import sys; print(sys.version)"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, encoding="utf-8", timeout=15,
             env=env, startupinfo=startupinfo,
         )
         if result.returncode == 0:
@@ -981,7 +981,7 @@ def create_venv(
 
             result = subprocess.run(
                 uv_cmd,
-                capture_output=True, text=True, timeout=120,
+                capture_output=True, text=True, encoding="utf-8", timeout=120,
                 env=env, **subprocess_kwargs,
             )
             if result.returncode == 0:
@@ -1021,6 +1021,7 @@ def create_venv(
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=300,
             env=env,
             **subprocess_kwargs,
@@ -1038,7 +1039,7 @@ def create_venv(
                 try:
                     ensurepip_result = subprocess.run(
                         ensurepip_cmd,
-                        capture_output=True, text=True, timeout=120,
+                        capture_output=True, text=True, encoding="utf-8", timeout=120,
                         env=env,
                         **({"startupinfo": startupinfo} if sys.platform == "win32" else {}),
                     )
@@ -1071,7 +1072,7 @@ def create_venv(
             nopip_cmd = [system_python, "-m", "venv", "--without-pip", venv_dir]
             result2 = subprocess.run(
                 nopip_cmd,
-                capture_output=True, text=True, timeout=300,
+                capture_output=True, text=True, encoding="utf-8", timeout=300,
                 env=env, **subprocess_kwargs,
             )
             if result2.returncode == 0:
@@ -1080,7 +1081,7 @@ def create_venv(
                 ensurepip_cmd = [python_in_venv, "-m", "ensurepip", "--upgrade"]
                 ep_result = subprocess.run(
                     ensurepip_cmd,
-                    capture_output=True, text=True, timeout=120,
+                    capture_output=True, text=True, encoding="utf-8", timeout=120,
                     env=env, **subprocess_kwargs,
                 )
                 if ep_result.returncode == 0:
@@ -1109,6 +1110,24 @@ def create_venv(
         _log(f"Exception during venv creation: {str(e)}", Qgis.Critical)
         _cleanup_partial_venv(venv_dir)
         return False, f"Error: {str(e)[:200]}"
+
+
+def _win_short_path(path: str) -> str:
+    """Convert a Windows path to 8.3 short form if it contains spaces.
+
+    Returns the original path on non-Windows or if conversion fails.
+    """
+    if sys.platform != "win32" or " " not in path:
+        return path
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(512)
+        ret = ctypes.windll.kernel32.GetShortPathNameW(path, buf, 512)
+        if ret and ret < 512:
+            return buf.value
+    except Exception:
+        pass
+    return path
 
 
 def _build_install_cmd(python_path: str, pip_args: list) -> list:
@@ -1142,8 +1161,13 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
                 # uv uses HTTP_PROXY/HTTPS_PROXY env vars (already set)
                 skip_next = True
                 continue
+            if arg == "--constraint" and i + 1 < len(pip_args):
+                cmd.append(arg)
+                cmd.append(_win_short_path(pip_args[i + 1]))
+                skip_next = True
+                continue
             cmd.append(arg)
-        cmd.extend(["--python", python_path])
+        cmd.extend(["--python", _win_short_path(python_path)])
         return cmd
     return [python_path, "-m", "pip"] + pip_args
 
@@ -1151,7 +1175,7 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
 def _build_uninstall_cmd(python_path: str, packages: list) -> list:
     """Build an uninstall command using uv (if available) or pip."""
     if _uv_available and _uv_path:
-        return [_uv_path, "pip", "uninstall", "--python", python_path] + packages
+        return [_uv_path, "pip", "uninstall", "--python", _win_short_path(python_path)] + packages
     return [python_path, "-m", "pip", "uninstall", "-y"] + packages
 
 
@@ -1170,7 +1194,7 @@ def _repin_numpy(venv_dir: str):
         result = subprocess.run(
             [python_path, "-c",
              "import numpy; print(numpy.__version__)"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, encoding="utf-8", timeout=30,
             env=env, **subprocess_kwargs,
         )
         if result.returncode != 0:
@@ -1192,7 +1216,7 @@ def _repin_numpy(venv_dir: str):
             downgrade_cmd = _build_install_cmd(python_path, downgrade_args)
             downgrade_result = subprocess.run(
                 downgrade_cmd,
-                capture_output=True, text=True, timeout=120,
+                capture_output=True, text=True, encoding="utf-8", timeout=120,
                 env=env, **subprocess_kwargs,
             )
             if downgrade_result.returncode == 0:
@@ -1228,7 +1252,7 @@ def _reinstall_cpu_torch(
             python_path, ["torch", "torchvision"])
         subprocess.run(
             uninstall_cmd,
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, encoding="utf-8", timeout=120,
             env=env, **subprocess_kwargs,
         )
     except Exception as e:
@@ -1250,7 +1274,7 @@ def _reinstall_cpu_torch(
             cmd = _build_install_cmd(python_path, install_args)
             result = subprocess.run(
                 cmd,
-                capture_output=True, text=True, timeout=pkg_timeout,
+                capture_output=True, text=True, encoding="utf-8", timeout=pkg_timeout,
                 env=env, **subprocess_kwargs,
             )
             if result.returncode == 0:
@@ -1292,7 +1316,7 @@ def _verify_cuda_in_venv(venv_dir: str) -> bool:
     try:
         result = subprocess.run(
             [python_path, "-c", cuda_test_code],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, encoding="utf-8", timeout=120,
             env=env, **subprocess_kwargs,
         )
         if result.returncode == 0 and "CUDA OK" in result.stdout:
@@ -1320,7 +1344,7 @@ def _is_cpu_torch_installed(python_path: str, env: dict, subprocess_kwargs: dict
     try:
         result = subprocess.run(
             [python_path, "-c", "import torch; print(torch.version.cuda)"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, encoding="utf-8", timeout=30,
             env=env, **subprocess_kwargs
         )
         if result.returncode == 0:
@@ -1443,6 +1467,7 @@ def _run_pip_install(
             stdout=stdout_file,
             stderr=stderr_file,
             text=True,
+            encoding="utf-8",
             env=env,
             **subprocess_kwargs,
         )
@@ -1625,7 +1650,7 @@ def install_dependencies(
             upgrade_cmd.extend(_get_pip_ssl_flags())
             upgrade_result = subprocess.run(
                 upgrade_cmd,
-                capture_output=True, text=True, timeout=120,
+                capture_output=True, text=True, encoding="utf-8", timeout=120,
                 env=_get_clean_env_for_venv(),
                 **_get_subprocess_kwargs(),
             )
@@ -1676,8 +1701,9 @@ def install_dependencies(
     # When pip resolves torch from the CUDA index, it may pull numpy>=2.0
     # as a dependency, ignoring our version spec. The constraints file
     # forces pip to honour the upper bound on every install command.
+    os.makedirs(CACHE_DIR, exist_ok=True)
     constraints_fd, constraints_path = tempfile.mkstemp(
-        suffix=".txt", prefix="pip_constraints_"
+        suffix=".txt", prefix="pip_constraints_", dir=CACHE_DIR
     )
     try:
         with os.fdopen(constraints_fd, "w", encoding="utf-8") as f:
@@ -1805,7 +1831,7 @@ def install_dependencies(
                         python_path, [package_name])
                     subprocess.run(
                         uninstall_cmd,
-                        capture_output=True, text=True, timeout=120,
+                        capture_output=True, text=True, encoding="utf-8", timeout=120,
                         env=env, **subprocess_kwargs
                     )
                 except Exception as exc:
@@ -1920,7 +1946,7 @@ def install_dependencies(
 
                     if _is_ssl_error(error_output):
                         _log(
-                            "SSL error detected, retrying with --trusted-host flags...",
+                            "SSL error detected, retrying...",
                             Qgis.Warning
                         )
                         if progress_callback:
@@ -1930,11 +1956,9 @@ def install_dependencies(
                                     package_name, i + 1, total_packages)
                             )
 
-                        # Re-run with SSL flags (already present but retry in case)
-                        ssl_flags = _get_pip_ssl_flags()
-                        ssl_cmd = base_cmd + ssl_flags
+                        # Retry (SSL flags already in base_cmd)
                         result = _run_pip_install(
-                            cmd=ssl_cmd,
+                            cmd=base_cmd,
                             timeout=pkg_timeout,
                             env=env,
                             subprocess_kwargs=subprocess_kwargs,
@@ -2227,10 +2251,14 @@ def install_dependencies(
     finally:
         # Always clean up the constraints temp file
         if constraints_path:
-            try:
-                os.unlink(constraints_path)
-            except Exception:
-                pass
+            for _attempt in range(3):
+                try:
+                    os.unlink(constraints_path)
+                    break
+                except PermissionError:
+                    time.sleep(0.5)
+                except Exception:
+                    break
 
 
 def _get_qgis_proxy_settings() -> Optional[str]:
@@ -2402,6 +2430,7 @@ def verify_venv(
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=pkg_timeout,
                 env=env,
                 **subprocess_kwargs
@@ -2458,6 +2487,7 @@ def verify_venv(
                             reinstall_cmd,
                             capture_output=True,
                             text=True,
+                            encoding="utf-8",
                             timeout=300,
                             env=env,
                             **subprocess_kwargs
@@ -2470,6 +2500,7 @@ def verify_venv(
                             cmd,
                             capture_output=True,
                             text=True,
+                            encoding="utf-8",
                             timeout=pkg_timeout,
                             env=env,
                             **subprocess_kwargs
@@ -2553,6 +2584,7 @@ def verify_venv(
                     cmd,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
                     timeout=pkg_timeout,
                     env=env,
                     **subprocess_kwargs
@@ -3097,6 +3129,7 @@ def prepare_for_uninstall() -> bool:
                     ["xattr", "-r", "-c", dir_path],
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
                     timeout=60
                 )
                 if result.returncode == 0:

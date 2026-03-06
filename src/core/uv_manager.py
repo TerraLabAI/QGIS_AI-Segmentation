@@ -176,11 +176,14 @@ def download_uv(
                 return False, "uv binary not found in archive"
 
             dest = get_uv_path()
-            shutil.copy2(found, dest)
+            tmp_dest = dest + ".tmp"
+            shutil.copy2(found, tmp_dest)
 
             # Set executable on Unix
             if sys.platform != "win32":
-                os.chmod(dest, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+                os.chmod(tmp_dest, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+
+            os.replace(tmp_dest, dest)
 
         finally:
             shutil.rmtree(extract_dir, ignore_errors=True)
@@ -226,7 +229,7 @@ def verify_uv() -> bool:
 
         result = subprocess.run(
             [uv_path, "--version"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, encoding="utf-8", timeout=15,
             **kwargs,
         )
         if result.returncode == 0:

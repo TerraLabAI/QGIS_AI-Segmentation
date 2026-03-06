@@ -1,5 +1,6 @@
 import os
 import hashlib
+import time
 import threading
 from typing import Tuple, Optional, Callable
 
@@ -273,7 +274,6 @@ def download_checkpoint(
                 QgsMessageLog.logMessage(
                     last_error, "AI Segmentation", level=Qgis.Warning)
                 if attempt < max_retries:
-                    import time
                     time.sleep(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
@@ -314,7 +314,6 @@ def download_checkpoint(
                 download_state['file'] = None
                 last_error = "Download timed out after 20 minutes"
                 if attempt < max_retries:
-                    import time
                     time.sleep(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
@@ -333,7 +332,6 @@ def download_checkpoint(
                 except OSError:
                     pass
                 if attempt < max_retries:
-                    import time
                     time.sleep(1)
                 continue
 
@@ -348,7 +346,6 @@ def download_checkpoint(
                 download_state['file'].close()
                 download_state['file'] = None
                 if attempt < max_retries:
-                    import time
                     wait = min(5 * (2 ** (attempt - 1)), 120)
                     if progress_callback:
                         progress_callback(
@@ -370,7 +367,6 @@ def download_checkpoint(
             if file_size == 0:
                 last_error = "Download failed: empty file"
                 if attempt < max_retries:
-                    import time
                     time.sleep(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
@@ -388,7 +384,6 @@ def download_checkpoint(
                 os.remove(temp_path)
                 last_error = "Download verification failed - hash mismatch"
                 if attempt < max_retries:
-                    import time
                     time.sleep(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
@@ -429,7 +424,6 @@ def download_checkpoint(
                     pass
                 download_state['file'] = None
             if attempt < max_retries:
-                import time
                 time.sleep(min(5 * (2 ** (attempt - 1)), 120))
 
     # All retries exhausted - keep partial file for next resume attempt
