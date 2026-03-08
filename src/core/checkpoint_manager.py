@@ -165,6 +165,24 @@ def verify_checkpoint_hash(filepath: str) -> bool:
         return False
 
 
+def _replace_with_retry(src: str, dst: str, max_attempts: int = 5, delay: float = 2.0):
+    """Rename src to dst, retrying on PermissionError (Windows antivirus lock)."""
+    import gc
+    gc.collect()
+    for attempt in range(1, max_attempts + 1):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == max_attempts:
+                raise
+            QgsMessageLog.logMessage(
+                "File locked, retry {}/{} in {}s...".format(
+                    attempt, max_attempts, delay),
+                "AI Segmentation", level=Qgis.Warning)
+            time.sleep(delay)
+
+
 def download_checkpoint(
     progress_callback: Optional[Callable[[int, str], None]] = None
 ) -> Tuple[bool, str]:
@@ -387,7 +405,7 @@ def download_checkpoint(
                     time.sleep(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
-            os.replace(temp_path, checkpoint_path)
+            _replace_with_retry(temp_path, checkpoint_path)
 
             # Clean up old SAM1 checkpoint if present (only on SAM2 path)
             if USE_SAM2:

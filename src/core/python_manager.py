@@ -71,6 +71,14 @@ PYTHON_VERSIONS = {
 }
 
 
+def is_nixos() -> bool:
+    """Detect NixOS where standalone Python binaries cannot run."""
+    if sys.platform != "linux":
+        return False
+    nix_env = os.environ.get("NIX_PROFILES")
+    return os.path.exists("/etc/NIXOS") or bool(nix_env)
+
+
 def _log(message: str, level=Qgis.Info):
     QgsMessageLog.logMessage(message, "AI Segmentation", level=level)
 

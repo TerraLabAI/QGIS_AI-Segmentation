@@ -911,6 +911,14 @@ def _get_system_python() -> str:
         _log(f"Using standalone Python: {python_path}", Qgis.Info)
         return python_path
 
+    # On NixOS, use system Python (standalone binaries can't run)
+    from .python_manager import is_nixos
+    if is_nixos():
+        python3 = shutil.which("python3")
+        if python3:
+            _log("NixOS: using system Python: {}".format(python3), Qgis.Info)
+            return python3
+
     # On Windows, try QGIS's bundled Python as fallback
     if sys.platform == "win32":
         qgis_python = _get_qgis_python()
@@ -2745,36 +2753,42 @@ def create_venv_and_install(
                 _log("Failed to remove stale venv: {}".format(e), Qgis.Warning)
 
     # Step 1: Download Python standalone if needed
+    from .python_manager import is_nixos
     if not standalone_python_exists():
-        python_version = get_python_full_version()
-        _log(f"Downloading Python {python_version} standalone...", Qgis.Info)
-
-        def python_progress(percent, msg):
-            # Map 0-100 to 0-10
+        if is_nixos():
+            _log("NixOS detected, using system Python", Qgis.Info)
             if progress_callback:
-                progress_callback(int(percent * 0.10), msg)
+                progress_callback(10, "Using system Python (NixOS)...")
+        else:
+            python_version = get_python_full_version()
+            _log(f"Downloading Python {python_version} standalone...", Qgis.Info)
 
-        success, msg = download_python_standalone(
-            progress_callback=python_progress,
-            cancel_check=cancel_check
-        )
+            def python_progress(percent, msg):
+                # Map 0-100 to 0-10
+                if progress_callback:
+                    progress_callback(int(percent * 0.10), msg)
 
-        if not success:
-            # On Windows, try QGIS Python fallback before giving up
-            if sys.platform == "win32":
-                qgis_python = _get_qgis_python()
-                if qgis_python:
-                    _log(
-                        "Standalone Python download failed, "
-                        "falling back to QGIS Python: {}".format(msg),
-                        Qgis.Warning
-                    )
-                    if progress_callback:
-                        progress_callback(10, "Using QGIS Python (fallback)...")
+            success, msg = download_python_standalone(
+                progress_callback=python_progress,
+                cancel_check=cancel_check
+            )
+
+            if not success:
+                # On Windows, try QGIS Python fallback before giving up
+                if sys.platform == "win32":
+                    qgis_python = _get_qgis_python()
+                    if qgis_python:
+                        _log(
+                            "Standalone Python download failed, "
+                            "falling back to QGIS Python: {}".format(msg),
+                            Qgis.Warning
+                        )
+                        if progress_callback:
+                            progress_callback(10, "Using QGIS Python (fallback)...")
+                    else:
+                        return False, f"Failed to download Python: {msg}"
                 else:
                     return False, f"Failed to download Python: {msg}"
-            else:
-                return False, f"Failed to download Python: {msg}"
 
         if cancel_check and cancel_check():
             return False, "Installation cancelled"
@@ -2981,8 +2995,9 @@ def get_venv_status() -> Tuple[bool, str]:
              Qgis.Warning)
         return False, "Old installation detected. Migration required."
 
-    # Check Python standalone
-    if not standalone_python_exists():
+    # Check Python standalone (skip on NixOS where system Python is used)
+    from .python_manager import is_nixos
+    if not standalone_python_exists() and not is_nixos():
         _log("get_venv_status: standalone Python not found", Qgis.Info)
         return False, "Dependencies not installed"
 
