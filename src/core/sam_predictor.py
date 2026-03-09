@@ -55,7 +55,7 @@ class SamPredictor:
         QgsMessageLog.logMessage(
             "SAM Predictor initialized (subprocess mode)",
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
 
     def _read_stderr(self) -> str:
@@ -115,7 +115,7 @@ class SamPredictor:
                     "Prediction worker stderr:\n{}".format(
                         stderr_output[:1000]),
                     "AI Segmentation",
-                    level=Qgis.Critical
+                    level=Qgis.MessageLevel.Critical
                 )
             raise RuntimeError(msg)
 
@@ -131,7 +131,7 @@ class SamPredictor:
             QgsMessageLog.logMessage(
                 f"Starting prediction worker: {self.venv_python}",
                 "AI Segmentation",
-                level=Qgis.Info
+                level=Qgis.MessageLevel.Info
             )
 
             cmd = [self.venv_python, self.worker_script]
@@ -174,7 +174,7 @@ class SamPredictor:
             import traceback
             error_msg = "Failed to launch prediction worker: {}\n{}".format(
                 str(e), traceback.format_exc())
-            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
+            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical)
             self.cleanup()
             return False
 
@@ -188,7 +188,7 @@ class SamPredictor:
                 QgsMessageLog.logMessage(
                     "Prediction worker ready",
                     "AI Segmentation",
-                    level=Qgis.Success
+                    level=Qgis.MessageLevel.Success
                 )
                 return True
             elif response.get("type") == "error":
@@ -197,7 +197,7 @@ class SamPredictor:
                 QgsMessageLog.logMessage(
                     f"Worker initialization error: {error_msg}",
                     "AI Segmentation",
-                    level=Qgis.Critical
+                    level=Qgis.MessageLevel.Critical
                 )
                 self.cleanup()
                 return False
@@ -205,7 +205,7 @@ class SamPredictor:
                 QgsMessageLog.logMessage(
                     f"Unexpected response from worker: {response}",
                     "AI Segmentation",
-                    level=Qgis.Critical
+                    level=Qgis.MessageLevel.Critical
                 )
                 self.cleanup()
                 return False
@@ -214,7 +214,7 @@ class SamPredictor:
             import traceback
             error_msg = "Failed waiting for worker ready: {}\n{}".format(
                 str(e), traceback.format_exc())
-            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
+            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical)
             self.cleanup()
             return False
 
@@ -282,7 +282,7 @@ class SamPredictor:
                     QgsMessageLog.logMessage(
                         "Warning during predictor cleanup: {}".format(str(e)),
                         "AI Segmentation",
-                        level=Qgis.Warning
+                        level=Qgis.MessageLevel.Warning
                     )
 
             # Always close stderr file, even if process was already None
@@ -310,13 +310,13 @@ class SamPredictor:
                     QgsMessageLog.logMessage(
                         f"Unexpected reset response: {response}",
                         "AI Segmentation",
-                        level=Qgis.Warning
+                        level=Qgis.MessageLevel.Warning
                     )
             except Exception as e:
                 QgsMessageLog.logMessage(
                     f"Error resetting image: {str(e)}",
                     "AI Segmentation",
-                    level=Qgis.Warning
+                    level=Qgis.MessageLevel.Warning
                 )
 
         self.is_image_set = False
@@ -363,7 +363,7 @@ class SamPredictor:
                     "Set image: original_size={}".format(
                         self.original_size),
                     "AI Segmentation",
-                    level=Qgis.Info
+                    level=Qgis.MessageLevel.Info
                 )
             elif response.get("type") == "error":
                 error_msg = response.get("message", "Unknown error")
@@ -378,7 +378,7 @@ class SamPredictor:
             error_msg = "Failed to encode image: {}\n{}".format(
                 str(e), traceback.format_exc())
             QgsMessageLog.logMessage(
-                error_msg, "AI Segmentation", level=Qgis.Critical)
+                error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical)
             self.cleanup()
             raise
 
@@ -448,6 +448,6 @@ class SamPredictor:
             import traceback
             error_msg = "Prediction failed: {}\n{}".format(
                 str(e), traceback.format_exc())
-            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
+            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical)
             self.cleanup()
             raise

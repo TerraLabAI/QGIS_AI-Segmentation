@@ -29,7 +29,7 @@ UV_DIR = os.path.join(CACHE_DIR, "uv")
 UV_VERSION = "0.6.6"
 
 
-def _log(message: str, level=Qgis.Info):
+def _log(message: str, level=Qgis.MessageLevel.Info):
     QgsMessageLog.logMessage(message, "AI Segmentation", level=level)
 
 
@@ -131,7 +131,7 @@ def download_uv(
 
     if err != QgsBlockingNetworkRequest.NoError:
         error_msg = request.errorMessage()
-        _log("uv download failed: {}".format(error_msg), Qgis.Warning)
+        _log("uv download failed: {}".format(error_msg), Qgis.MessageLevel.Warning)
         return False, "uv download failed: {}".format(error_msg)
 
     if cancel_check and cancel_check():
@@ -192,7 +192,7 @@ def download_uv(
             progress_callback(80, "Verifying uv...")
 
         if verify_uv():
-            _log("uv {} installed successfully".format(UV_VERSION), Qgis.Success)
+            _log("uv {} installed successfully".format(UV_VERSION), Qgis.MessageLevel.Success)
             if progress_callback:
                 progress_callback(100, "uv ready")
             return True, "uv {} installed".format(UV_VERSION)
@@ -202,7 +202,7 @@ def download_uv(
             return False, "uv verification failed after download"
 
     except Exception as e:
-        _log("uv installation failed: {}".format(e), Qgis.Warning)
+        _log("uv installation failed: {}".format(e), Qgis.MessageLevel.Warning)
         shutil.rmtree(UV_DIR, ignore_errors=True)
         return False, "uv installation failed: {}".format(str(e)[:200])
     finally:
@@ -238,9 +238,9 @@ def verify_uv() -> bool:
             return True
         else:
             _log("uv --version failed: {}".format(
-                result.stderr or result.stdout), Qgis.Warning)
+                result.stderr or result.stdout), Qgis.MessageLevel.Warning)
     except Exception as e:
-        _log("uv verification failed: {}".format(e), Qgis.Warning)
+        _log("uv verification failed: {}".format(e), Qgis.MessageLevel.Warning)
 
     # Cleanup on failure
     shutil.rmtree(UV_DIR, ignore_errors=True)
@@ -253,8 +253,8 @@ def remove_uv() -> Tuple[bool, str]:
         return True, "uv not installed"
     try:
         shutil.rmtree(UV_DIR)
-        _log("Removed uv installation", Qgis.Success)
+        _log("Removed uv installation", Qgis.MessageLevel.Success)
         return True, "uv removed"
     except Exception as e:
-        _log("Failed to remove uv: {}".format(e), Qgis.Warning)
+        _log("Failed to remove uv: {}".format(e), Qgis.MessageLevel.Warning)
         return False, "Failed to remove uv: {}".format(str(e)[:200])

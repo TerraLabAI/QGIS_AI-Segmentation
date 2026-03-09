@@ -122,7 +122,7 @@ def _load_translations():
             QgsMessageLog.logMessage(
                 "Failed to load translations from {}: {}".format(ts_path, e),
                 "AI Segmentation",
-                level=Qgis.Warning
+                level=Qgis.MessageLevel.Warning
             )
         except Exception:
             pass

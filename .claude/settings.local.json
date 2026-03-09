@@ -75,7 +75,14 @@
       "Bash(~/.qgis_ai_segmentation/uv/uv pip:*)",
       "Bash(comm:*)",
       "Bash(ffmpeg:*)",
-      "Bash(ffprobe:*)"
+      "Bash(ffprobe:*)",
+      "WebFetch(domain:changelog.qgis.org)",
+      "WebFetch(domain:blog.qgis.org)",
+      "WebFetch(domain:www.pythonguis.com)",
+      "Bash(gh search:*)",
+      "WebFetch(domain:www.riverbankcomputing.com)",
+      "WebFetch(domain:api.qgis.org)",
+      "WebFetch(domain:www.mail-archive.com)"
     ]
   }
 }

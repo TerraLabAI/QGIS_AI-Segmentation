@@ -286,7 +286,7 @@ class ErrorReportDialog(QDialog):
         # Error message
         error_label = QLabel(self._error_message[:500])
         error_label.setWordWrap(True)
-        error_label.setTextFormat(Qt.PlainText)
+        error_label.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(error_label)
 
         # Help text
@@ -321,7 +321,7 @@ class ErrorReportDialog(QDialog):
             '<a href="{}" style="color: palette(link);">terra-lab.ai</a>'.format(TERRALAB_URL)
         )
         link_label.setOpenExternalLinks(True)
-        link_label.setAlignment(Qt.AlignCenter)
+        link_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(link_label)
 
     def _on_copy(self):
@@ -394,7 +394,7 @@ class BugReportDialog(QDialog):
             '<a href="{}" style="color: palette(link);">terra-lab.ai</a>'.format(TERRALAB_URL)
         )
         link_label.setOpenExternalLinks(True)
-        link_label.setAlignment(Qt.AlignCenter)
+        link_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(link_label)
 
     def _on_copy(self):
@@ -417,13 +417,13 @@ class BugReportDialog(QDialog):
 def show_error_report(parent, error_title: str, error_message: str):
     """Convenience function to show the error report dialog."""
     dialog = ErrorReportDialog(error_title, error_message, parent)
-    dialog.exec_()
+    dialog.exec()
 
 
 def show_bug_report(parent):
     """Convenience function to show the bug report dialog."""
     dialog = BugReportDialog(parent)
-    dialog.exec_()
+    dialog.exec()
 
 
 CALENDLY_URL = "https://calendly.com/barbot-yvann/30min"
@@ -478,7 +478,7 @@ class SuggestFeatureDialog(QDialog):
                 TERRALAB_URL)
         )
         link_label.setOpenExternalLinks(True)
-        link_label.setAlignment(Qt.AlignCenter)
+        link_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(link_label)
 
     def _on_copy_email(self):
@@ -500,4 +500,4 @@ class SuggestFeatureDialog(QDialog):
 def show_suggest_feature(parent):
     """Convenience function to show the suggest feature dialog."""
     dialog = SuggestFeatureDialog(parent)
-    dialog.exec_()
+    dialog.exec()

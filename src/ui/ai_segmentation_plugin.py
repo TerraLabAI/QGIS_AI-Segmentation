@@ -153,7 +153,7 @@ class _ShortcutFilter(QObject):
         self._plugin = plugin
 
     def eventFilter(self, obj, event):
-        if event.type() != QEvent.KeyPress:
+        if event.type() != QEvent.Type.KeyPress:
             return False
         plugin = self._plugin
         if not plugin.map_tool or not plugin.map_tool.isActive():
@@ -170,17 +170,19 @@ class _ShortcutFilter(QObject):
         key = event.key()
         modifiers = event.modifiers()
 
-        if key == Qt.Key_Z and modifiers & Qt.ControlModifier:
+        if key == Qt.Key.Key_Z and modifiers & Qt.KeyboardModifier.ControlModifier:
             plugin._on_undo()
             return True
-        elif key == Qt.Key_S and not (modifiers & (
-                Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier)):
+        elif key == Qt.Key.Key_S and not (modifiers & (
+                Qt.KeyboardModifier.ControlModifier
+                | Qt.KeyboardModifier.AltModifier
+                | Qt.KeyboardModifier.ShiftModifier)):
             plugin._on_save_polygon()
             return True
-        elif key in (Qt.Key_Return, Qt.Key_Enter):
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             plugin._on_export_layer()
             return True
-        elif key == Qt.Key_Escape:
+        elif key == Qt.Key.Key_Escape:
             plugin._on_stop_segmentation()
             return True
 
@@ -391,7 +393,7 @@ class AISegmentationPlugin:
                 "BUG: polygon/rubber band mismatch: {} vs {}. "
                 "Truncating to min. Please report.".format(n_polygons, n_bands),
                 "AI Segmentation",
-                level=Qgis.Critical
+                level=Qgis.MessageLevel.Critical
             )
             min_len = min(n_polygons, n_bands)
             while len(self.saved_rubber_bands) > min_len:
@@ -480,7 +482,7 @@ class AISegmentationPlugin:
         self.dock_widget.batch_mode_changed.connect(self._on_batch_mode_changed)
         self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
 
-        self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock_widget)
+        self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
 
         self.map_tool = AISegmentationMapTool(self.iface.mapCanvas())
         self.map_tool.positive_click.connect(self._on_positive_click)
@@ -520,13 +522,13 @@ class AISegmentationPlugin:
                     sys.version_info.micro, sys.platform
                 ),
                 "AI Segmentation",
-                level=Qgis.Info
+                level=Qgis.MessageLevel.Info
             )
         except Exception:
             QgsMessageLog.logMessage(
                 "AI Segmentation plugin loaded",
                 "AI Segmentation",
-                level=Qgis.Info
+                level=Qgis.MessageLevel.Info
             )
 
     def unload(self):
@@ -620,7 +622,7 @@ class AISegmentationPlugin:
                         QgsMessageLog.logMessage(
                             "Worker did not terminate within 5s",
                             "AI Segmentation",
-                            level=Qgis.Warning
+                            level=Qgis.MessageLevel.Warning
                         )
                 except RuntimeError:
                     pass
@@ -696,7 +698,7 @@ class AISegmentationPlugin:
         QgsMessageLog.logMessage(
             "Panel opened - checking dependencies...",
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
 
         # Clean up legacy SAM1 data (old checkpoint + features cache)
@@ -719,7 +721,7 @@ class AISegmentationPlugin:
                 QgsMessageLog.logMessage(
                     "✓ Virtual environment verified successfully",
                     "AI Segmentation",
-                    level=Qgis.Success
+                    level=Qgis.MessageLevel.Success
                 )
                 self._check_checkpoint()
             else:
@@ -727,7 +729,7 @@ class AISegmentationPlugin:
                 QgsMessageLog.logMessage(
                     f"Virtual environment status: {message}",
                     "AI Segmentation",
-                    level=Qgis.Info
+                    level=Qgis.MessageLevel.Info
                 )
                 # Auto-trigger install for upgrades and CUDA upgrades
                 if "GPU acceleration" in message or "need updating" in message:
@@ -736,7 +738,7 @@ class AISegmentationPlugin:
         except Exception as e:
             import traceback
             error_msg = f"Dependency check error: {str(e)}\n{traceback.format_exc()}"
-            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Warning)
+            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.MessageLevel.Warning)
             self.dock_widget.set_dependency_status(False, f"Error: {str(e)[:50]}")
 
         # Check for plugin updates after a delay (gives QGIS time to fetch repo metadata)
@@ -782,7 +784,7 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 f"Checkpoint check error: {str(e)}",
                 "AI Segmentation",
-                level=Qgis.Warning
+                level=Qgis.MessageLevel.Warning
             )
 
     def _load_predictor(self):
@@ -797,7 +799,7 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 "SAM predictor initialized (subprocess mode)",
                 "AI Segmentation",
-                level=Qgis.Info
+                level=Qgis.MessageLevel.Info
             )
             self.dock_widget.set_checkpoint_status(True, "SAM ready (subprocess)")
 
@@ -806,7 +808,7 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 f"Failed to initialize predictor: {str(e)}\n{traceback.format_exc()}",
                 "AI Segmentation",
-                level=Qgis.Warning
+                level=Qgis.MessageLevel.Warning
             )
 
     def _show_device_info(self):
@@ -820,7 +822,7 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 f"Device info: {info}",
                 "AI Segmentation",
-                level=Qgis.Info
+                level=Qgis.MessageLevel.Info
             )
         except RuntimeError as e:
             error_str = str(e)
@@ -829,12 +831,12 @@ class AISegmentationPlugin:
                 QgsMessageLog.logMessage(
                     f"PyTorch DLL error: {error_str}",
                     "AI Segmentation",
-                    level=Qgis.Critical
+                    level=Qgis.MessageLevel.Critical
                 )
                 # Show user-friendly error dialog
                 from qgis.PyQt.QtWidgets import QMessageBox
                 msg_box = QMessageBox(self.iface.mainWindow())
-                msg_box.setIcon(QMessageBox.Critical)
+                msg_box.setIcon(QMessageBox.Icon.Critical)
                 msg_box.setWindowTitle(tr("PyTorch Error"))
                 msg_box.setText(tr("PyTorch cannot load on Windows"))
                 msg_box.setInformativeText(
@@ -842,15 +844,15 @@ class AISegmentationPlugin:
                        "Please download and install:\n"
                        "https://aka.ms/vs/17/release/vc_redist.x64.exe\n\n"
                        "After installation, restart QGIS and try again."))
-                msg_box.setStandardButtons(QMessageBox.Ok)
-                msg_box.exec_()
+                msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg_box.exec()
             else:
                 raise
         except Exception as e:
             QgsMessageLog.logMessage(
                 f"Could not determine device info: {e}",
                 "AI Segmentation",
-                level=Qgis.Warning
+                level=Qgis.MessageLevel.Warning
             )
 
     def _on_install_requested(self):
@@ -859,7 +861,7 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 "Install already in progress, ignoring duplicate request",
                 "AI Segmentation",
-                level=Qgis.Warning
+                level=Qgis.MessageLevel.Warning
             )
             return
 
@@ -875,12 +877,12 @@ class AISegmentationPlugin:
         QgsMessageLog.logMessage(
             "Starting virtual environment creation and dependency installation...",
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
         QgsMessageLog.logMessage(
             f"Platform: {sys.platform}, Python: {sys.version}",
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
 
         self.dock_widget.set_install_progress(0, "Preparing installation...")
@@ -917,7 +919,7 @@ class AISegmentationPlugin:
                 self.iface.messageBar().pushMessage(
                     "AI Segmentation",
                     tr("Using CPU mode (GPU driver needs update)."),
-                    level=Qgis.Info,
+                    level=Qgis.MessageLevel.Info,
                     duration=10,
                 )
             elif "CUDA_FALLBACK" in message:
@@ -973,12 +975,12 @@ class AISegmentationPlugin:
             if message and not message.startswith("device_error"):
                 QgsMessageLog.logMessage(
                     "Device info: {}".format(message),
-                    "AI Segmentation", level=Qgis.Info)
+                    "AI Segmentation", level=Qgis.MessageLevel.Info)
             elif message.startswith("device_error"):
                 QgsMessageLog.logMessage(
                     "Could not determine device info: {}".format(
                         message.replace("device_error: ", "")),
-                    "AI Segmentation", level=Qgis.Warning)
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning)
             self._auto_download_checkpoint()
         else:
             self.dock_widget.set_install_progress(100, "Failed")
@@ -997,7 +999,7 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 "Installation cancelled by user",
                 "AI Segmentation",
-                level=Qgis.Warning
+                level=Qgis.MessageLevel.Warning
             )
 
     def _auto_download_checkpoint(self):
@@ -1060,7 +1062,7 @@ class AISegmentationPlugin:
         if not self._is_layer_valid(layer):
             QgsMessageLog.logMessage(
                 "Layer was deleted before segmentation could start",
-                "AI Segmentation", level=Qgis.Warning)
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
             return
 
         try:
@@ -1069,7 +1071,7 @@ class AISegmentationPlugin:
         except RuntimeError:
             QgsMessageLog.logMessage(
                 "Layer deleted during segmentation start",
-                "AI Segmentation", level=Qgis.Warning)
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
             return
 
         self._reset_session()
@@ -1089,14 +1091,14 @@ class AISegmentationPlugin:
                 "Non-georeferenced image detected - using pixel coordinate mode. "
                 "Polygons will be created in pixel coordinates.",
                 "AI Segmentation",
-                level=Qgis.Info
+                level=Qgis.MessageLevel.Info
             )
 
         if self._is_online_layer:
             QgsMessageLog.logMessage(
                 "Online layer detected ({})".format(
                     layer.dataProvider().name()),
-                "AI Segmentation", level=Qgis.Info
+                "AI Segmentation", level=Qgis.MessageLevel.Info
             )
 
         # Validate layer extent
@@ -1135,7 +1137,7 @@ class AISegmentationPlugin:
                     "CRS transform enabled: {} -> {}".format(
                         canvas_crs.authid(), raster_crs.authid()),
                     "AI Segmentation",
-                    level=Qgis.Info
+                    level=Qgis.MessageLevel.Info
                 )
 
         # Pre-warm the worker subprocess so SAM model loads while the
@@ -1199,7 +1201,7 @@ class AISegmentationPlugin:
         self.iface.messageBar().pushMessage(
             "AI Segmentation",
             message,
-            level=Qgis.Info,
+            level=Qgis.MessageLevel.Info,
             duration=10
         )
 
@@ -1244,11 +1246,11 @@ class AISegmentationPlugin:
                     self.iface.mainWindow(),
                     tr("Change Layer?"),
                     message,
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
                 )
 
-                if reply != QMessageBox.Yes:
+                if reply != QMessageBox.StandardButton.Yes:
                     self.dock_widget.layer_combo.blockSignals(True)
                     self.dock_widget.layer_combo.setLayer(self._current_layer)
                     self.dock_widget.layer_combo.blockSignals(False)
@@ -1324,7 +1326,7 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 f"Saved mask #{len(self.saved_polygons)}",
                 "AI Segmentation",
-                level=Qgis.Info
+                level=Qgis.MessageLevel.Info
             )
 
             self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
@@ -1409,7 +1411,7 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 "Non-georeferenced mode: Using EPSG:3857 with pixel coordinates",
                 "AI Segmentation",
-                level=Qgis.Info
+                level=Qgis.MessageLevel.Info
             )
         else:
             # Normal georeferenced mode
@@ -1493,7 +1495,7 @@ class AISegmentationPlugin:
                 QgsMessageLog.logMessage(
                     f"Polygon {i + 1} has no WKT data",
                     "AI Segmentation",
-                    level=Qgis.Warning
+                    level=Qgis.MessageLevel.Warning
                 )
                 continue
 
@@ -1533,7 +1535,7 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 f"Failed to save GeoPackage: {error[1]}",
                 "AI Segmentation",
-                level=Qgis.Warning
+                level=Qgis.MessageLevel.Warning
             )
             show_error_report(
                 self.iface.mainWindow(),
@@ -1548,7 +1550,7 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 f"Failed to load saved GeoPackage: {gpkg_path}",
                 "AI Segmentation",
-                level=Qgis.Warning
+                level=Qgis.MessageLevel.Warning
             )
             show_error_report(
                 self.iface.mainWindow(),
@@ -1566,17 +1568,17 @@ class AISegmentationPlugin:
             f"Exported layer extent: xmin={layer_extent.xMinimum():.2f}, ymin={layer_extent.yMinimum():.2f}, "
             f"xmax={layer_extent.xMaximum():.2f}, ymax={layer_extent.yMaximum():.2f}",
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
         QgsMessageLog.logMessage(
             f"Layer CRS: {result_layer.crs().authid()}",
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
         QgsMessageLog.logMessage(
             f"Saved to: {gpkg_path}",
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
 
         # Set renderer - red thin outline, transparent fill
@@ -1593,7 +1595,7 @@ class AISegmentationPlugin:
         QgsMessageLog.logMessage(
             f"Created segmentation layer: {layer_name} with {len(features_to_add)} polygons",
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
 
         self._reset_session()
@@ -1661,10 +1663,10 @@ class AISegmentationPlugin:
                 "{}\n\n{}".format(
                     tr("This will discard {count} polygon(s).").format(count=polygon_count),
                     tr("Use 'Export to layer' to keep them.")),
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
             )
-            if reply != QMessageBox.Yes:
+            if reply != QMessageBox.StandardButton.Yes:
                 return
 
         if self._shortcut_filter is not None:
@@ -1684,7 +1686,7 @@ class AISegmentationPlugin:
             "Refine settings: expand={}, simplify={}, fill_holes={}, min_area={}".format(
                 expand, simplify, fill_holes, min_area),
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
         self._refine_expand = expand
         self._refine_simplify = simplify
@@ -1969,7 +1971,7 @@ class AISegmentationPlugin:
             return False
         self._encoding_in_progress = True
 
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
 
         try:
             return self._do_extract_and_encode(center_point, mupp_override)
@@ -2045,7 +2047,7 @@ class AISegmentationPlugin:
             self._encoding_in_progress = False
             QgsMessageLog.logMessage(
                 "Crop extraction failed: {}".format(error),
-                "AI Segmentation", level=Qgis.Critical
+                "AI Segmentation", level=Qgis.MessageLevel.Critical
             )
             show_error_report(
                 self.iface.mainWindow(),
@@ -2061,7 +2063,7 @@ class AISegmentationPlugin:
             self._encoding_in_progress = False
             QgsMessageLog.logMessage(
                 "Image encoding failed: {}".format(str(e)),
-                "AI Segmentation", level=Qgis.Critical
+                "AI Segmentation", level=Qgis.MessageLevel.Critical
             )
             show_error_report(
                 self.iface.mainWindow(),
@@ -2076,7 +2078,7 @@ class AISegmentationPlugin:
         QgsMessageLog.logMessage(
             "Encoded crop: bounds={}, shape={}".format(
                 crop_info['bounds'], crop_info['img_shape']),
-            "AI Segmentation", level=Qgis.Info
+            "AI Segmentation", level=Qgis.MessageLevel.Info
         )
         return True
 
@@ -2137,7 +2139,7 @@ class AISegmentationPlugin:
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
                 tr("Point is outside the raster image. Click inside the raster."),
-                level=Qgis.Warning,
+                level=Qgis.MessageLevel.Warning,
                 duration=4
             )
             return
@@ -2151,7 +2153,7 @@ class AISegmentationPlugin:
             "POSITIVE POINT at ({:.6f}, {:.6f})".format(
                 raster_pt.x(), raster_pt.y()),
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
 
         # On-demand encoding: encode crop if needed
@@ -2180,7 +2182,7 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 "Negative point ignored - need at least one positive point first",
                 "AI Segmentation",
-                level=Qgis.Info
+                level=Qgis.MessageLevel.Info
             )
             return
 
@@ -2193,7 +2195,7 @@ class AISegmentationPlugin:
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
                 tr("Point is outside the raster image. Click inside the raster."),
-                level=Qgis.Warning,
+                level=Qgis.MessageLevel.Warning,
                 duration=4
             )
             return
@@ -2205,7 +2207,7 @@ class AISegmentationPlugin:
             "NEGATIVE POINT at ({:.6f}, {:.6f})".format(
                 raster_pt.x(), raster_pt.y()),
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
 
         # Re-encode if needed (zoom changed or point outside crop)
@@ -2231,7 +2233,7 @@ class AISegmentationPlugin:
         if self._current_crop_info is None:
             QgsMessageLog.logMessage(
                 "No crop encoded yet - cannot predict",
-                "AI Segmentation", level=Qgis.Warning
+                "AI Segmentation", level=Qgis.MessageLevel.Warning
             )
             return
 
@@ -2275,22 +2277,22 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 "Prediction failed: {}".format(error_str),
                 "AI Segmentation",
-                level=Qgis.Critical
+                level=Qgis.MessageLevel.Critical
             )
             if "DLL" in error_str or "Visual C++" in error_str:
                 msg_box = QMessageBox(self.iface.mainWindow())
-                msg_box.setIcon(QMessageBox.Critical)
+                msg_box.setIcon(QMessageBox.Icon.Critical)
                 msg_box.setWindowTitle(tr("Prediction Error"))
                 msg_box.setText(tr("Segmentation failed"))
                 msg_box.setInformativeText(error_str)
-                msg_box.setStandardButtons(QMessageBox.Ok)
-                msg_box.exec_()
+                msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg_box.exec()
             return
         except Exception as e:
             QgsMessageLog.logMessage(
                 "Unexpected prediction error: {}".format(str(e)),
                 "AI Segmentation",
-                level=Qgis.Critical
+                level=Qgis.MessageLevel.Critical
             )
             return
 
@@ -2315,7 +2317,7 @@ class AISegmentationPlugin:
                     mask_areas,
                     [round(float(s), 3) for s in scores],
                     best_idx),
-                "AI Segmentation", level=Qgis.Info
+                "AI Segmentation", level=Qgis.MessageLevel.Info
             )
             self.current_mask = masks[best_idx]
             self.current_score = float(scores[best_idx])
@@ -2352,7 +2354,7 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(
                 f"Segmentation result: score={self.current_score:.3f}, mask_pixels={mask_pixels}",
                 "AI Segmentation",
-                level=Qgis.Info
+                level=Qgis.MessageLevel.Info
             )
             self._update_mask_visualization()
         else:
@@ -2411,7 +2413,7 @@ class AISegmentationPlugin:
                 "Mask visualization error ({}): {}".format(
                     type(e).__name__, str(e)),
                 "AI Segmentation",
-                level=Qgis.Warning
+                level=Qgis.MessageLevel.Warning
             )
             self._clear_mask_visualization()
         except Exception as e:
@@ -2420,7 +2422,7 @@ class AISegmentationPlugin:
                 "Unexpected mask visualization error ({}): {}\n{}".format(
                     type(e).__name__, str(e), traceback.format_exc()),
                 "AI Segmentation",
-                level=Qgis.Critical
+                level=Qgis.MessageLevel.Critical
             )
             self._clear_mask_visualization()
 
@@ -2449,10 +2451,10 @@ class AISegmentationPlugin:
                 "{}\n{}".format(
                     tr("This will delete all saved polygons."),
                     tr("Do you want to continue?")),
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
             )
-            if reply != QMessageBox.Yes:
+            if reply != QMessageBox.StandardButton.Yes:
                 return
             # User confirmed: reset entire session
             self._reset_session()
@@ -2507,10 +2509,10 @@ class AISegmentationPlugin:
                 "{}\n{}".format(
                     tr("Warning: you are about to edit an already saved polygon."),
                     tr("Do you want to continue?")),
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
             )
-            if reply == QMessageBox.Yes:
+            if reply == QMessageBox.StandardButton.Yes:
                 self._restore_last_saved_mask()
 
     def _restore_last_saved_mask(self):
@@ -2584,7 +2586,7 @@ class AISegmentationPlugin:
             f"Refine: expand={self._refine_expand}, simplify={self._refine_simplify}, "
             f"fill_holes={self._refine_fill_holes}, min_area={self._refine_min_area}",
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
 
     def _reset_session(self):
