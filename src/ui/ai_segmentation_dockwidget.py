@@ -126,17 +126,17 @@ class AISegmentationDockWidget(QDockWidget):
         title_layout.addWidget(title_label)
         title_layout.addStretch()
 
-        icon_size = self.style().pixelMetric(QStyle.PM_SmallIconSize)
+        icon_size = self.style().pixelMetric(QStyle.PixelMetric.PM_SmallIconSize)
 
         float_btn = QToolButton()
-        float_btn.setIcon(self.style().standardIcon(QStyle.SP_TitleBarNormalButton))
+        float_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarNormalButton))
         float_btn.setFixedSize(icon_size + 4, icon_size + 4)
         float_btn.setAutoRaise(True)
         float_btn.clicked.connect(lambda: self.setFloating(not self.isFloating()))
         title_layout.addWidget(float_btn)
 
         close_btn = QToolButton()
-        close_btn.setIcon(self.style().standardIcon(QStyle.SP_TitleBarCloseButton))
+        close_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton))
         close_btn.setFixedSize(icon_size + 4, icon_size + 4)
         close_btn.setAutoRaise(True)
         close_btn.clicked.connect(self.close)
