@@ -199,7 +199,7 @@ def _render_layer_to_image(layer, extent, width, height):
         from qgis.PyQt.QtGui import QImage, QPainter
         from qgis.PyQt.QtCore import QSize
 
-        img = QImage(QSize(width, height), QImage.Format_RGB32)
+        img = QImage(QSize(width, height), QImage.Format.Format_RGB32)
         img.fill(0)
 
         settings = QgsMapSettings()
@@ -216,7 +216,7 @@ def _render_layer_to_image(layer, extent, width, height):
         painter.end()
 
         # QImage -> numpy
-        img = img.convertToFormat(QImage.Format_RGB32)
+        img = img.convertToFormat(QImage.Format.Format_RGB32)
         ptr = img.bits()
         ptr.setsize(height * width * 4)
         arr = np.frombuffer(ptr, dtype=np.uint8).reshape(
@@ -364,7 +364,7 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
         QgsMessageLog.logMessage(
             "Read {} crop directly via GDAL: {}x{} at ({}, {})".format(
                 ext, out_w, out_h, col_off, row_off),
-            "AI Segmentation", level=Qgis.Info
+            "AI Segmentation", level=Qgis.MessageLevel.Info
         )
         return image_np, crop_info, None
 
@@ -522,7 +522,7 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
         # Fallback to GDAL if rasterio fails (unsupported driver, etc.)
         QgsMessageLog.logMessage(
             "rasterio failed ({}), trying GDAL fallback...".format(str(e)),
-            "AI Segmentation", level=Qgis.Warning
+            "AI Segmentation", level=Qgis.MessageLevel.Warning
         )
         return _read_crop_with_gdal(
             raster_path, center_x, center_y, crop_size,
@@ -595,7 +595,7 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
                     "Online tile fetch attempt {} - "
                     "retrying in {:.1f}s...".format(
                         attempt + 1, retry_delay),
-                    "AI Segmentation", level=Qgis.Warning
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning
                 )
                 deadline = time.monotonic() + retry_delay
                 while time.monotonic() < deadline:
@@ -614,7 +614,7 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
             QgsMessageLog.logMessage(
                 "Provider fetch failed ({}), trying renderer "
                 "fallback...".format(fetch_err),
-                "AI Segmentation", level=Qgis.Warning
+                "AI Segmentation", level=Qgis.MessageLevel.Warning
             )
             image_np, render_err = _render_layer_to_image(
                 layer, extent, crop_size, crop_size)

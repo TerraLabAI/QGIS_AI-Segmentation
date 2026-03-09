@@ -55,7 +55,7 @@ class AISegmentationDockWidget(QDockWidget):
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation by TerraLab"), parent)
 
-        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
 
         self._setup_title_bar()
 
@@ -72,7 +72,7 @@ class AISegmentationDockWidget(QDockWidget):
         scroll_area = QScrollArea()
         scroll_area.setWidget(self.main_widget)
         scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
         self.setWidget(scroll_area)
 
         self._dependencies_ok = False
@@ -229,8 +229,8 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.cancel_toggle = QToolButton()
         self.cancel_toggle.setText(tr("Cancel installation"))
-        self.cancel_toggle.setArrowType(Qt.RightArrow)
-        self.cancel_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.cancel_toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self.cancel_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.cancel_toggle.setStyleSheet(
             "color: palette(text); font-size: 10px; border: none;")
         self.cancel_toggle.setVisible(False)
@@ -273,26 +273,26 @@ class AISegmentationDockWidget(QDockWidget):
         if os.path.exists(banner_path):
             from qgis.PyQt.QtGui import QPixmap
             pixmap = QPixmap(banner_path)
-            scaled = pixmap.scaledToWidth(280, Qt.SmoothTransformation)
+            scaled = pixmap.scaledToWidth(280, Qt.TransformationMode.SmoothTransformation)
             banner_label.setPixmap(scaled)
         else:
             banner_label.setText("TerraLab")
             banner_label.setStyleSheet(
                 "font-size: 16px; font-weight: bold; color: palette(text);")
-        banner_label.setAlignment(Qt.AlignCenter)
+        banner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(banner_label)
 
         # Title
         title_label = QLabel(tr("Unlock Plugin"))
         title_label.setStyleSheet(
             "font-size: 13px; font-weight: bold; color: palette(text);")
-        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
         # Get code button
         get_code_button = QPushButton(tr("Get my verification code"))
         get_code_button.setMinimumHeight(30)
-        get_code_button.setCursor(Qt.PointingHandCursor)
+        get_code_button.setCursor(Qt.CursorShape.PointingHandCursor)
         get_code_button.setStyleSheet(
             "QPushButton { background-color: #2e7d32; color: white; "
             "font-weight: bold; border-radius: 4px; }"
@@ -331,7 +331,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Error message label
         self.activation_message_label = QLabel("")
-        self.activation_message_label.setAlignment(Qt.AlignCenter)
+        self.activation_message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.activation_message_label.setWordWrap(True)
         self.activation_message_label.setVisible(False)
         self.activation_message_label.setStyleSheet("font-size: 11px;")
@@ -343,8 +343,8 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _setup_segmentation_section(self):
         self.seg_separator = QFrame()
-        self.seg_separator.setFrameShape(QFrame.HLine)
-        self.seg_separator.setFrameShadow(QFrame.Sunken)
+        self.seg_separator.setFrameShape(QFrame.Shape.HLine)
+        self.seg_separator.setFrameShadow(QFrame.Shadow.Sunken)
         self.main_layout.addWidget(self.seg_separator)
 
         self.seg_widget = QWidget()
@@ -381,7 +381,7 @@ class AISegmentationDockWidget(QDockWidget):
         warning_icon = style.standardIcon(style.SP_MessageBoxWarning)
         warning_icon_label.setPixmap(warning_icon.pixmap(16, 16))
         warning_icon_label.setFixedSize(16, 16)
-        no_rasters_layout.addWidget(warning_icon_label, 0, Qt.AlignTop)
+        no_rasters_layout.addWidget(warning_icon_label, 0, Qt.AlignmentFlag.AlignTop)
 
         self.no_rasters_label = QLabel(
             tr("No raster layer found. Add a GeoTIFF, image file, "
@@ -397,7 +397,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.instructions_label.setWordWrap(True)
         self.instructions_label.setMinimumHeight(0)
         self.instructions_label.setSizePolicy(
-            QSizePolicy.Preferred, QSizePolicy.Minimum)
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         self.instructions_label.setStyleSheet("""
             QLabel {
                 background-color: rgba(128, 128, 128, 0.12);
@@ -499,7 +499,7 @@ class AISegmentationDockWidget(QDockWidget):
         batch_icon = style.standardIcon(style.SP_MessageBoxInformation)
         batch_info_icon.setPixmap(batch_icon.pixmap(14, 14))
         batch_info_icon.setFixedSize(14, 14)
-        batch_info_layout.addWidget(batch_info_icon, 0, Qt.AlignTop)
+        batch_info_layout.addWidget(batch_info_icon, 0, Qt.AlignmentFlag.AlignTop)
 
         # Info text
         info_msg = "{}\n{}".format(
@@ -528,7 +528,7 @@ class AISegmentationDockWidget(QDockWidget):
         warn_icon = style.standardIcon(style.SP_MessageBoxWarning)
         disjoint_icon.setPixmap(warn_icon.pixmap(14, 14))
         disjoint_icon.setFixedSize(14, 14)
-        disjoint_layout.addWidget(disjoint_icon, 0, Qt.AlignTop)
+        disjoint_layout.addWidget(disjoint_icon, 0, Qt.AlignmentFlag.AlignTop)
 
         disjoint_msg = "{}\n{}".format(
             tr("Disconnected parts detected in your polygon."),
@@ -551,7 +551,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.refine_group = QGroupBox("▶ " + tr("Refine selection"))
         self.refine_group.setCheckable(False)  # No checkbox, just clickable title
         self.refine_group.setVisible(False)  # Hidden until segmentation active
-        self.refine_group.setCursor(Qt.PointingHandCursor)
+        self.refine_group.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refine_group.mousePressEvent = self._on_refine_group_clicked
         # Remove all QGroupBox styling - make it look like a simple collapsible section
         self.refine_group.setStyleSheet("""
@@ -785,8 +785,8 @@ class AISegmentationDockWidget(QDockWidget):
             'text-decoration: none; font-size: 11px;">'
             '&#9654; ' + tr("Shortcuts") + '</a>'
         )
-        self._shortcuts_toggle.setAlignment(Qt.AlignRight)
-        self._shortcuts_toggle.setCursor(Qt.PointingHandCursor)
+        self._shortcuts_toggle.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._shortcuts_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
         self._shortcuts_toggle.linkActivated.connect(self._on_shortcuts_toggle)
         parent_layout.addWidget(self._shortcuts_toggle)
 
@@ -808,7 +808,7 @@ class AISegmentationDockWidget(QDockWidget):
             "font-size: 11px; color: palette(text); "
             "padding: 4px 8px; margin: 0;"
         )
-        self._shortcuts_content.setAlignment(Qt.AlignRight)
+        self._shortcuts_content.setAlignment(Qt.AlignmentFlag.AlignRight)
         self._shortcuts_content.setVisible(False)
         parent_layout.addWidget(self._shortcuts_content)
 
@@ -838,7 +838,7 @@ class AISegmentationDockWidget(QDockWidget):
             '<a href="#" style="color: #1976d2;">' + tr("Report a bug") + '</a>'
         )
         report_link.setStyleSheet("font-size: 13px;")
-        report_link.setCursor(Qt.PointingHandCursor)
+        report_link.setCursor(Qt.CursorShape.PointingHandCursor)
         report_link.linkActivated.connect(self._on_report_bug)
         links_layout.addWidget(report_link)
 
@@ -847,7 +847,7 @@ class AISegmentationDockWidget(QDockWidget):
             '<a href="#" style="color: #1976d2;">' + tr("Suggest feature") + '</a>'
         )
         suggest_link.setStyleSheet("font-size: 13px;")
-        suggest_link.setCursor(Qt.PointingHandCursor)
+        suggest_link.setCursor(Qt.CursorShape.PointingHandCursor)
         suggest_link.linkActivated.connect(self._on_suggest_feature)
         links_layout.addWidget(suggest_link)
 
@@ -857,7 +857,7 @@ class AISegmentationDockWidget(QDockWidget):
         )
         docs_link.setStyleSheet("font-size: 13px;")
         docs_link.setOpenExternalLinks(True)
-        docs_link.setCursor(Qt.PointingHandCursor)
+        docs_link.setCursor(Qt.CursorShape.PointingHandCursor)
         links_layout.addWidget(docs_link)
 
         # About link
@@ -866,7 +866,7 @@ class AISegmentationDockWidget(QDockWidget):
         )
         about_link.setStyleSheet("font-size: 13px;")
         about_link.setOpenExternalLinks(True)
-        about_link.setCursor(Qt.PointingHandCursor)
+        about_link.setCursor(Qt.CursorShape.PointingHandCursor)
         links_layout.addWidget(about_link)
 
         self.main_layout.addWidget(links_widget)
@@ -951,7 +951,7 @@ class AISegmentationDockWidget(QDockWidget):
     def _toggle_cancel_button(self):
         visible = not self.cancel_button.isVisible()
         self.cancel_button.setVisible(visible)
-        arrow = Qt.DownArrow if visible else Qt.RightArrow
+        arrow = Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow
         self.cancel_toggle.setArrowType(arrow)
 
     def _on_cancel_clicked(self):
@@ -960,9 +960,9 @@ class AISegmentationDockWidget(QDockWidget):
             self,
             tr("Cancel installation"),
             tr("Are you sure you want to cancel the installation?"),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No)
-        if reply == QMessageBox.Yes:
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
             self.cancel_install_requested.emit()
 
     def _on_layer_changed(self, layer):
@@ -1112,7 +1112,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.setup_progress.setVisible(True)
             self.setup_progress_label.setVisible(True)
             self.cancel_toggle.setVisible(True)
-            self.cancel_toggle.setArrowType(Qt.RightArrow)
+            self.cancel_toggle.setArrowType(Qt.ArrowType.RightArrow)
             self.cancel_button.setVisible(False)
             self.install_button.setVisible(False)
             self.setup_status_label.setVisible(False)
@@ -1397,7 +1397,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._activation_popup_shown = True
         dialog = ActivationDialog(self)
         dialog.activated.connect(self._on_dialog_activated)
-        dialog.exec_()
+        dialog.exec()
 
         # If dialog was closed without activation, show the panel section
         if not self._plugin_activated:

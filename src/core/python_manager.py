@@ -79,7 +79,7 @@ def is_nixos() -> bool:
     return os.path.exists("/etc/NIXOS") or bool(nix_env)
 
 
-def _log(message: str, level=Qgis.Info):
+def _log(message: str, level=Qgis.MessageLevel.Info):
     QgsMessageLog.logMessage(message, "AI Segmentation", level=level)
 
 
@@ -118,7 +118,7 @@ def get_python_full_version() -> str:
     _log(
         "Python {}.{} not in PYTHON_VERSIONS, falling back to 3.13".format(
             version_tuple[0], version_tuple[1]),
-        Qgis.Warning)
+        Qgis.MessageLevel.Warning)
     return PYTHON_VERSIONS[(3, 13)]
 
 
@@ -192,11 +192,11 @@ def standalone_python_is_current() -> bool:
                     _log(
                         "Standalone Python {}.{} doesn't match QGIS {}.{}".format(
                             installed[0], installed[1], expected[0], expected[1]),
-                        Qgis.Warning)
+                        Qgis.MessageLevel.Warning)
                     return False
                 return True
     except Exception as e:
-        _log("Failed to check standalone Python version: {}".format(e), Qgis.Warning)
+        _log("Failed to check standalone Python version: {}".format(e), Qgis.MessageLevel.Warning)
 
     return False
 
@@ -248,13 +248,13 @@ def download_python_standalone(
         Tuple of (success: bool, message: str)
     """
     if standalone_python_exists():
-        _log("Python standalone already exists", Qgis.Info)
+        _log("Python standalone already exists", Qgis.MessageLevel.Info)
         return True, "Python standalone already installed"
 
     url = get_download_url()
     python_version = get_python_full_version()
 
-    _log(f"Downloading Python {python_version} from: {url}", Qgis.Info)
+    _log(f"Downloading Python {python_version} from: {url}", Qgis.MessageLevel.Info)
 
     if progress_callback:
         progress_callback(0, f"Downloading Python {python_version}...")
@@ -283,7 +283,7 @@ def download_python_standalone(
                 error_msg = f"Python {python_version} not available for this platform. URL: {url}"
             else:
                 error_msg = f"Download failed: {error_msg}"
-            _log(error_msg, Qgis.Critical)
+            _log(error_msg, Qgis.MessageLevel.Critical)
             return False, error_msg
 
         if cancel_check and cancel_check():
@@ -299,7 +299,7 @@ def download_python_standalone(
         if content_size < min_expected:
             _log(
                 "Download suspiciously small: {} bytes (expected >10 MB)".format(
-                    content_size), Qgis.Warning)
+                    content_size), Qgis.MessageLevel.Warning)
             return False, (
                 "Download failed: file too small ({:.1f} MB). "
                 "A firewall or proxy may be blocking the download."
@@ -330,7 +330,7 @@ def download_python_standalone(
                 "Preview: {}".format(preview_text)
             )
 
-        _log(f"Download complete ({content_size} bytes), extracting...", Qgis.Info)
+        _log(f"Download complete ({content_size} bytes), extracting...", Qgis.MessageLevel.Info)
 
         if progress_callback:
             progress_callback(55, "Extracting Python...")
@@ -362,7 +362,7 @@ def download_python_standalone(
         if success:
             if progress_callback:
                 progress_callback(100, f"✓ Python {python_version} installed")
-            _log("Python standalone installed successfully", Qgis.Success)
+            _log("Python standalone installed successfully", Qgis.MessageLevel.Success)
             return True, f"Python {python_version} installed successfully"
         else:
             return False, f"Verification failed: {verify_msg}"
@@ -371,14 +371,14 @@ def download_python_standalone(
         return False, "Download cancelled"
     except Exception as e:
         error_msg = f"Installation failed: {str(e)}"
-        _log(error_msg, Qgis.Critical)
+        _log(error_msg, Qgis.MessageLevel.Critical)
 
         # On Windows, check for antivirus blocking (permission/access errors)
         if sys.platform == "win32":
             error_lower = str(e).lower()
             if "denied" in error_lower or "access" in error_lower or "permission" in error_lower:
                 antivirus_help = _get_windows_antivirus_help(STANDALONE_DIR)
-                _log(antivirus_help, Qgis.Warning)
+                _log(antivirus_help, Qgis.MessageLevel.Warning)
                 error_msg = "{}\n\n{}".format(error_msg, antivirus_help)
 
         return False, error_msg
@@ -443,14 +443,15 @@ def verify_standalone_python() -> Tuple[bool, str]:
             # Verify major.minor matches (use target version, not QGIS's)
             major, minor = get_qgis_python_version()
             if not version_output.startswith(f"{major}.{minor}"):
-                _log(f"Python version mismatch: got {version_output}, expected {expected_version}", Qgis.Warning)
+                msg = f"Python version mismatch: got {version_output}, expected {expected_version}"
+                _log(msg, Qgis.MessageLevel.Warning)
                 return False, f"Version mismatch: downloaded {version_output}, expected {expected_version}"
 
-            _log(f"Verified Python standalone: {version_output}", Qgis.Success)
+            _log(f"Verified Python standalone: {version_output}", Qgis.MessageLevel.Success)
             return True, f"Python {version_output} verified"
         else:
             error = result.stderr or "Unknown error"
-            _log(f"Python verification failed: {error}", Qgis.Warning)
+            _log(f"Python verification failed: {error}", Qgis.MessageLevel.Warning)
             return False, f"Verification failed: {error[:100]}"
 
     except subprocess.TimeoutExpired:
@@ -466,11 +467,11 @@ def remove_standalone_python() -> Tuple[bool, str]:
 
     try:
         shutil.rmtree(STANDALONE_DIR)
-        _log("Removed standalone Python installation", Qgis.Success)
+        _log("Removed standalone Python installation", Qgis.MessageLevel.Success)
         return True, "Standalone Python removed"
     except Exception as e:
         error_msg = f"Failed to remove: {str(e)}"
-        _log(error_msg, Qgis.Warning)
+        _log(error_msg, Qgis.MessageLevel.Warning)
         return False, error_msg
 
 
