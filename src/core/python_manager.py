@@ -41,7 +41,12 @@ def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: str) -> None:
         if not member_path.startswith(dest_dir + os.sep) and member_path != dest_dir:
             raise ValueError(f"Attempted path traversal in tar archive: {member.name}")
         if use_filter:
-            tar.extract(member, dest_dir, filter='data')
+            try:
+                tar.extract(member, dest_dir, filter='data')
+            except (AttributeError, TypeError):
+                # Anaconda-patched Python may break filter='data' internally
+                # (e.g. ntpath.ALLOW_MISSING missing). Fall back to plain extract.
+                tar.extract(member, dest_dir)
         else:
             tar.extract(member, dest_dir)
 
