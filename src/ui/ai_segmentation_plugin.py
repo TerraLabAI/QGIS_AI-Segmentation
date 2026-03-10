@@ -174,10 +174,10 @@ class _ShortcutFilter(QObject):
         if key == Qt.Key.Key_Z and modifiers & Qt.KeyboardModifier.ControlModifier:
             plugin._on_undo()
             return True
-        elif (key == Qt.Key.Key_S
-              and not (modifiers & (Qt.KeyboardModifier.ControlModifier
-                                    | Qt.KeyboardModifier.AltModifier
-                                    | Qt.KeyboardModifier.ShiftModifier))):
+        elif (key == Qt.Key.Key_S and
+              not (modifiers & (Qt.KeyboardModifier.ControlModifier |
+                                Qt.KeyboardModifier.AltModifier |
+                                Qt.KeyboardModifier.ShiftModifier))):
             plugin._on_save_polygon()
             return True
         elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -757,8 +757,8 @@ class AISegmentationPlugin:
         self.dock_widget.check_for_updates()
 
         # If notification is still hidden and we have retries left, schedule next
-        if (not self.dock_widget.update_notification_widget.isVisible()
-                and hasattr(self, '_update_check_delays')):
+        if (not self.dock_widget.update_notification_widget.isVisible() and
+                hasattr(self, '_update_check_delays')):
             self._update_check_index += 1
             if self._update_check_index < len(self._update_check_delays):
                 from qgis.PyQt.QtCore import QTimer
