@@ -117,15 +117,17 @@ class DownloadWorker(QThread):
 class VerifyWorker(QThread):
     """Runs venv verification + device detection off the main thread."""
     finished = pyqtSignal(bool, str)  # (is_valid, message)
+    progress = pyqtSignal(int, str)   # (percent, message)
 
     def run(self):
         try:
             from ..core.venv_manager import verify_venv
-            is_valid, msg = verify_venv()
+            is_valid, msg = verify_venv(
+                progress_callback=lambda pct, m: self.progress.emit(pct, m))
             if not is_valid:
                 self.finished.emit(False, msg)
                 return
-            # Device detection (imports torch, checks CUDA)
+            self.progress.emit(100, tr("Detecting device..."))
             try:
                 from ..core.venv_manager import ensure_venv_packages_available
                 ensure_venv_packages_available()
@@ -133,7 +135,6 @@ class VerifyWorker(QThread):
                 info = get_device_info()
                 self.finished.emit(True, info or "")
             except Exception as e:
-                # Verification passed but device info failed - still ok
                 self.finished.emit(True, "device_error: {}".format(str(e)))
         except Exception as e:
             self.finished.emit(False, str(e))
@@ -467,8 +468,6 @@ class AISegmentationPlugin:
         self.terralab_menu.addAction(self.website_action)
 
         self.dock_widget = AISegmentationDockWidget(self.iface.mainWindow())
-        self.dock_widget.setVisible(False)
-        self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
 
         self.dock_widget.install_requested.connect(self._on_install_requested)
         self.dock_widget.cancel_install_requested.connect(self._on_cancel_install)
@@ -483,6 +482,8 @@ class AISegmentationPlugin:
         self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
 
         self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
+        self.dock_widget.setVisible(False)
+        self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
 
         self.map_tool = AISegmentationMapTool(self.iface.mapCanvas())
         self.map_tool.positive_click.connect(self._on_positive_click)
@@ -951,6 +952,7 @@ class AISegmentationPlugin:
             # Run verification + device detection off main thread
             self.dock_widget.set_install_progress(80, tr("Verifying installation..."))
             self._verify_worker = VerifyWorker()
+            self._verify_worker.progress.connect(self._on_verify_progress)
             self._verify_worker.finished.connect(self._on_verify_finished)
             self._verify_worker.start()
         else:
@@ -981,6 +983,13 @@ class AISegmentationPlugin:
                 error_msg
             )
 
+    def _on_verify_progress(self, percent: int, message: str):
+        if not self.dock_widget:
+            return
+        # Scale verify progress (0-100%) into the 80-95% range
+        scaled = 80 + int(percent * 0.15)
+        self.dock_widget.set_install_progress(scaled, message)
+
     def _on_verify_finished(self, is_valid: bool, message: str):
         if not self.dock_widget:
             return
@@ -995,7 +1004,15 @@ class AISegmentationPlugin:
                     "Could not determine device info: {}".format(
                         message.replace("device_error: ", "")),
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
-            self._auto_download_checkpoint()
+            try:
+                self._auto_download_checkpoint()
+            except Exception as e:
+                QgsMessageLog.logMessage(
+                    "Auto-download checkpoint failed: {}".format(e),
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning)
+                self.dock_widget.set_install_progress(100, "Failed")
+                self.dock_widget.set_dependency_status(
+                    True, tr("Dependencies ready, model download failed"))
         else:
             self.dock_widget.set_install_progress(100, "Failed")
             self.dock_widget.set_dependency_status(
@@ -1030,10 +1047,18 @@ class AISegmentationPlugin:
             pass
 
         self.dock_widget.set_install_progress(80, tr("Downloading AI model..."))
-        self.download_worker = DownloadWorker()
-        self.download_worker.progress.connect(self._on_download_progress)
-        self.download_worker.finished.connect(self._on_download_finished)
-        self.download_worker.start()
+        try:
+            self.download_worker = DownloadWorker()
+            self.download_worker.progress.connect(self._on_download_progress)
+            self.download_worker.finished.connect(self._on_download_finished)
+            self.download_worker.start()
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                "Failed to start model download: {}".format(e),
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            self.dock_widget.set_install_progress(100, "Failed")
+            self.dock_widget.set_dependency_status(
+                True, tr("Dependencies ready, model download failed"))
 
     def _on_download_progress(self, percent: int, message: str):
         if not self.dock_widget:

@@ -19,6 +19,10 @@
         <translation>Verification de l'installation...</translation>
     </message>
     <message>
+        <source>Detecting device...</source>
+        <translation>Detection de l'appareil...</translation>
+    </message>
+    <message>
         <source>Install path: {}</source>
         <translation>Dossier d'installation : {}</translation>
     </message>
