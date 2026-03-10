@@ -173,10 +173,10 @@ class _ShortcutFilter(QObject):
         if key == Qt.Key.Key_Z and modifiers & Qt.KeyboardModifier.ControlModifier:
             plugin._on_undo()
             return True
-        elif key == Qt.Key.Key_S and not (modifiers & (
-                Qt.KeyboardModifier.ControlModifier |
-                Qt.KeyboardModifier.AltModifier |
-                Qt.KeyboardModifier.ShiftModifier)):
+        elif (key == Qt.Key.Key_S
+              and not (modifiers & (Qt.KeyboardModifier.ControlModifier
+                                    | Qt.KeyboardModifier.AltModifier
+                                    | Qt.KeyboardModifier.ShiftModifier))):
             plugin._on_save_polygon()
             return True
         elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
