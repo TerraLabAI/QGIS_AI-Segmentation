@@ -520,13 +520,18 @@ def _is_dll_init_error(output: str) -> bool:
 
 def _get_vcpp_help() -> str:
     """Get actionable help for DLL init errors (missing VC++ Redistributables)."""
-    return (
-        "A required DLL failed to initialize. This is usually caused by "
-        "missing Visual C++ Redistributables.\n\n"
-        "Please install the latest VC++ Redistributable:\n"
-        "  https://aka.ms/vs/17/release/vc_redist.x64.exe\n\n"
-        "Then restart your computer and try again."
+    msg = (
+        "A required DLL failed to initialize.\n\n"
+        "Try these steps in order:\n"
+        "  1. Install the latest VC++ Redistributable (x64):\n"
+        "     https://aka.ms/vs/17/release/vc_redist.x64.exe\n"
+        "  2. Restart your computer after installing\n"
+        "  3. If the error persists after reboot, click 'Reinstall Dependencies'\n"
+        "     to force a clean reinstall of PyTorch\n"
+        "  4. Check that no other Python/Anaconda installation puts conflicting\n"
+        "     torch DLLs on your system PATH"
     )
+    return msg
 
 
 def _is_antivirus_error(stderr: str) -> bool:
@@ -589,6 +594,13 @@ def _is_windows_process_crash(returncode: int) -> bool:
     if sys.platform != "win32":
         return False
     return returncode in _WINDOWS_CRASH_CODES
+
+
+def _is_rename_or_record_error(output: str) -> bool:
+    """Detect dist-info rename/RECORD errors during torch upgrade on Windows."""
+    lower = output.lower()
+    return ("rename" in lower and "dist-info" in lower) or \
+           ("record" in lower and "dist-info" in lower)
 
 
 def _get_crash_help(venv_dir: str) -> str:
@@ -978,7 +990,9 @@ def create_venv(
     # Try uv venv creation first (faster, no ensurepip needed)
     if _uv_available and _uv_path:
         _log("Creating venv with uv...", Qgis.MessageLevel.Info)
-        uv_cmd = [_uv_path, "venv", "--python", system_python, venv_dir]
+        # Resolve 8.3 short paths (e.g. PROGRA~1) - uv can't inspect them
+        uv_python = _win_long_path(system_python)
+        uv_cmd = [_uv_path, "venv", "--python", uv_python, venv_dir]
         try:
             subprocess_kwargs = {}
             if sys.platform == "win32":
@@ -1044,6 +1058,7 @@ def create_venv(
                 _log("pip not found in venv, bootstrapping with ensurepip...", Qgis.MessageLevel.Info)
                 python_in_venv = get_venv_python_path(venv_dir)
                 ensurepip_cmd = [python_in_venv, "-m", "ensurepip", "--upgrade"]
+                ensurepip_ok = False
                 try:
                     ensurepip_result = subprocess.run(
                         ensurepip_cmd,
@@ -1053,15 +1068,29 @@ def create_venv(
                     )
                     if ensurepip_result.returncode == 0:
                         _log("pip bootstrapped via ensurepip", Qgis.MessageLevel.Success)
+                        ensurepip_ok = True
                     else:
-                        err = ensurepip_result.stderr or ensurepip_result.stdout
-                        _log(f"ensurepip failed: {err[:200]}", Qgis.MessageLevel.Warning)
-                        _cleanup_partial_venv(venv_dir)
-                        return False, f"Failed to bootstrap pip: {err[:200]}"
+                        err = ensurepip_result.stderr or ensurepip_result.stdout or ""
+                        _log("ensurepip failed: {}".format(err[:200]),
+                             Qgis.MessageLevel.Warning)
                 except Exception as e:
-                    _log(f"ensurepip exception: {e}", Qgis.MessageLevel.Warning)
-                    _cleanup_partial_venv(venv_dir)
-                    return False, f"Failed to bootstrap pip: {str(e)[:200]}"
+                    _log("ensurepip exception: {}".format(e),
+                         Qgis.MessageLevel.Warning)
+
+                if not ensurepip_ok:
+                    # Anaconda and some managed Pythons strip ensurepip.
+                    # If uv is available it can manage packages without pip.
+                    if _uv_available and _uv_path:
+                        _log(
+                            "ensurepip unavailable but uv is present, "
+                            "continuing without pip",
+                            Qgis.MessageLevel.Warning)
+                    else:
+                        _cleanup_partial_venv(venv_dir)
+                        return False, (
+                            "Failed to bootstrap pip (ensurepip unavailable). "
+                            "This often happens with Anaconda Python."
+                        )
 
             if progress_callback:
                 progress_callback(20, "Virtual environment created")
@@ -1100,6 +1129,14 @@ def create_venv(
                 else:
                     err = ep_result.stderr or ep_result.stdout or ""
                     _log("ensurepip failed: {}".format(err[:200]), Qgis.MessageLevel.Warning)
+                    if _uv_available and _uv_path:
+                        _log(
+                            "ensurepip unavailable but uv present, "
+                            "continuing without pip",
+                            Qgis.MessageLevel.Warning)
+                        if progress_callback:
+                            progress_callback(20, "Virtual environment created")
+                        return True, "Virtual environment created"
                     _cleanup_partial_venv(venv_dir)
                     return False, "Failed to bootstrap pip: {}".format(err[:200])
             else:
@@ -1131,6 +1168,26 @@ def _win_short_path(path: str) -> str:
         import ctypes
         buf = ctypes.create_unicode_buffer(512)
         ret = ctypes.windll.kernel32.GetShortPathNameW(path, buf, 512)
+        if ret and ret < 512:
+            return buf.value
+    except Exception:
+        pass
+    return path
+
+
+def _win_long_path(path: str) -> str:
+    """Convert a Windows 8.3 short path to its long form.
+
+    uv cannot inspect Python behind short path aliases like
+    C:\\PROGRA~1\\QGIS34~1.8\\..., so we resolve them first.
+    Returns the original path on non-Windows or if conversion fails.
+    """
+    if sys.platform != "win32" or "~" not in path:
+        return path
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(512)
+        ret = ctypes.windll.kernel32.GetLongPathNameW(path, buf, 512)
         if ret and ret < 512:
             return buf.value
     except Exception:
@@ -1850,7 +1907,7 @@ def install_dependencies(
             if is_cuda_package and package_name in ("torch", "torchvision"):
                 pkg_timeout = 2400  # 40 min for CUDA wheels (~2.5GB)
             elif package_name == "torch":
-                pkg_timeout = 3600  # 60 min for CPU torch on slow connections
+                pkg_timeout = 5400  # 90 min for CPU torch on slow connections
             elif package_name == "torchvision":
                 pkg_timeout = 1200  # 20 min for CPU torchvision
             else:
@@ -2067,6 +2124,52 @@ def install_dependencies(
                         nocache_cmd = base_cmd + [nocache2]
                         result = _run_pip_install(
                             cmd=nocache_cmd,
+                            timeout=pkg_timeout,
+                            env=env,
+                            subprocess_kwargs=subprocess_kwargs,
+                            package_name=package_name,
+                            package_index=i,
+                            total_packages=total_packages,
+                            progress_start=pkg_start,
+                            progress_end=pkg_end,
+                            progress_callback=progress_callback,
+                            cancel_check=cancel_check,
+                            is_cuda=is_cuda_package,
+                        )
+
+                # If rename/RECORD error (stale dist-info on Windows), clean and force-reinstall
+                if result.returncode != 0 and package_name in ("torch", "torchvision"):
+                    error_output = result.stderr or result.stdout or ""
+                    if _is_rename_or_record_error(error_output):
+                        _log(
+                            "Stale dist-info detected for {}, cleaning and "
+                            "retrying with --force-reinstall...".format(package_name),
+                            Qgis.MessageLevel.Warning
+                        )
+                        try:
+                            site_pkgs = get_venv_site_packages()
+                            if os.path.isdir(site_pkgs):
+                                import glob as _glob
+                                import shutil as _shutil
+                                pattern = os.path.join(
+                                    site_pkgs,
+                                    "{}-*.dist-info".format(package_name))
+                                for dist_dir in _glob.glob(pattern):
+                                    _shutil.rmtree(dist_dir, ignore_errors=True)
+                                    _log("Removed stale {}".format(dist_dir),
+                                         Qgis.MessageLevel.Warning)
+                        except Exception as exc:
+                            _log("Failed to clean dist-info: {}".format(exc),
+                                 Qgis.MessageLevel.Warning)
+
+                        if progress_callback:
+                            progress_callback(
+                                pkg_start,
+                                "Retrying {}... ({}/{})".format(
+                                    package_name, i + 1, total_packages))
+                        reinstall_cmd = base_cmd + ["--force-reinstall"]
+                        result = _run_pip_install(
+                            cmd=reinstall_cmd,
                             timeout=pkg_timeout,
                             env=env,
                             subprocess_kwargs=subprocess_kwargs,
@@ -2453,8 +2556,43 @@ def verify_venv(
                     Qgis.MessageLevel.Warning
                 )
 
-                # DLL init error (WinError 1114) = missing VC++ Redistributables
+                # DLL init error (WinError 1114) - try force-reinstall first,
+                # as a conflicting DLL from another Python install may be the cause
                 if _is_dll_init_error(error_detail):
+                    _log(
+                        "DLL init error for {}, attempting "
+                        "force-reinstall...".format(package_name),
+                        Qgis.MessageLevel.Warning
+                    )
+                    pkg_spec = package_name
+                    for name, spec in REQUIRED_PACKAGES:
+                        if name == package_name:
+                            pkg_spec = "{}{}".format(name, spec)
+                            break
+                    reinstall_cmd = _build_install_cmd(
+                        python_path,
+                        ["install", "--force-reinstall", "--no-deps",
+                         "--prefer-binary", pkg_spec])
+                    try:
+                        subprocess.run(
+                            reinstall_cmd,
+                            capture_output=True, text=True,
+                            encoding="utf-8", timeout=600,
+                            env=env, **subprocess_kwargs
+                        )
+                        result2 = subprocess.run(
+                            cmd, capture_output=True, text=True,
+                            encoding="utf-8", timeout=pkg_timeout,
+                            env=env, **subprocess_kwargs
+                        )
+                        if result2.returncode == 0:
+                            _log(
+                                "Package {} fixed after "
+                                "force-reinstall".format(package_name),
+                                Qgis.MessageLevel.Success)
+                            continue
+                    except Exception:
+                        pass
                     _log(_get_vcpp_help(), Qgis.MessageLevel.Warning)
                     return False, (
                         "Package {} failed: {}".format(

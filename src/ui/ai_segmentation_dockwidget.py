@@ -378,7 +378,7 @@ class AISegmentationDockWidget(QDockWidget):
         # Warning icon from Qt standard icons
         warning_icon_label = QLabel()
         style = self.no_rasters_widget.style()
-        warning_icon = style.standardIcon(style.SP_MessageBoxWarning)
+        warning_icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
         warning_icon_label.setPixmap(warning_icon.pixmap(16, 16))
         warning_icon_label.setFixedSize(16, 16)
         no_rasters_layout.addWidget(warning_icon_label, 0, Qt.AlignmentFlag.AlignTop)
@@ -496,7 +496,7 @@ class AISegmentationDockWidget(QDockWidget):
         # Info icon
         batch_info_icon = QLabel()
         style = self.batch_info_widget.style()
-        batch_icon = style.standardIcon(style.SP_MessageBoxInformation)
+        batch_icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation)
         batch_info_icon.setPixmap(batch_icon.pixmap(14, 14))
         batch_info_icon.setFixedSize(14, 14)
         batch_info_layout.addWidget(batch_info_icon, 0, Qt.AlignmentFlag.AlignTop)
@@ -525,7 +525,7 @@ class AISegmentationDockWidget(QDockWidget):
         disjoint_layout.setSpacing(8)
 
         disjoint_icon = QLabel()
-        warn_icon = style.standardIcon(style.SP_MessageBoxWarning)
+        warn_icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
         disjoint_icon.setPixmap(warn_icon.pixmap(14, 14))
         disjoint_icon.setFixedSize(14, 14)
         disjoint_layout.addWidget(disjoint_icon, 0, Qt.AlignmentFlag.AlignTop)

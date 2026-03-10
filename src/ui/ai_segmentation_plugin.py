@@ -741,14 +741,28 @@ class AISegmentationPlugin:
             QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.MessageLevel.Warning)
             self.dock_widget.set_dependency_status(False, f"Error: {str(e)[:50]}")
 
-        # Check for plugin updates after a delay (gives QGIS time to fetch repo metadata)
+        # Check for plugin updates with retries - QGIS repo metadata may not
+        # be ready after just a few seconds, especially on slower connections.
         from qgis.PyQt.QtCore import QTimer
-        QTimer.singleShot(5000, self._check_for_plugin_update)
+        self._update_check_delays = [5000, 30000, 60000, 120000]
+        self._update_check_index = 0
+        QTimer.singleShot(
+            self._update_check_delays[0], self._check_for_plugin_update)
 
     def _check_for_plugin_update(self):
-        """Trigger the update check on the dock widget."""
-        if self.dock_widget:
-            self.dock_widget.check_for_updates()
+        """Trigger the update check on the dock widget, retrying if needed."""
+        if not self.dock_widget:
+            return
+        self.dock_widget.check_for_updates()
+
+        # If notification is still hidden and we have retries left, schedule next
+        if (not self.dock_widget.update_notification_widget.isVisible()
+                and hasattr(self, '_update_check_delays')):
+            self._update_check_index += 1
+            if self._update_check_index < len(self._update_check_delays):
+                from qgis.PyQt.QtCore import QTimer
+                delay = self._update_check_delays[self._update_check_index]
+                QTimer.singleShot(delay, self._check_for_plugin_update)
 
     def _open_plugin_manager_update(self):
         """Open the QGIS Plugin Manager on the Upgradeable tab."""
