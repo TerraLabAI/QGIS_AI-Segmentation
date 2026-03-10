@@ -1140,6 +1140,8 @@ class AISegmentationDockWidget(QDockWidget):
                 self.setup_status_label.setVisible(True)
                 self.setup_status_label.setText(tr("Installation failed"))
                 self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
+            else:
+                self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
         else:
             if self._current_progress < percent:
                 self._current_progress = percent

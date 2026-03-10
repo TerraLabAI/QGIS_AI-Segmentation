@@ -19,6 +19,10 @@
         <translation>Verificando instalacion...</translation>
     </message>
     <message>
+        <source>Detecting device...</source>
+        <translation>Detectando dispositivo...</translation>
+    </message>
+    <message>
         <source>Install path: {}</source>
         <translation>Ruta de instalacion: {}</translation>
     </message>
