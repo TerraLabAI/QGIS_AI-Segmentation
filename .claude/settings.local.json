@@ -82,7 +82,8 @@
       "Bash(gh search:*)",
       "WebFetch(domain:www.riverbankcomputing.com)",
       "WebFetch(domain:api.qgis.org)",
-      "WebFetch(domain:www.mail-archive.com)"
+      "WebFetch(domain:www.mail-archive.com)",
+      "Bash(awk 'NR>=650 && NR<=750' \"C:\\\\Users\\\\yvann_416voxb\\\\AppData\\\\Roaming\\\\QGIS\\\\QGIS3\\\\profiles\\\\default\\\\python\\\\plugins\\\\QGIS_AI-Segmentation/src/ui/ai_segmentation_plugin.py\" | grep -n \"def \" | head -3)"
     ]
   }
 }
