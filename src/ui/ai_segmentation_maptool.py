@@ -40,7 +40,7 @@ class AISegmentationMapTool(QgsMapTool):
     def activate(self):
         super().activate()
         self._active = True
-        self.canvas.setCursor(QCursor(Qt.CrossCursor))
+        self.canvas.setCursor(QCursor(Qt.CursorShape.CrossCursor))
 
     def deactivate(self):
         super().deactivate()
@@ -108,11 +108,11 @@ class AISegmentationMapTool(QgsMapTool):
 
         point = self.toMapCoordinates(event.pos())
 
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             # Positive point - include this area
             self.add_marker(point, is_positive=True)
             self.positive_click.emit(point)
-        elif event.button() == Qt.RightButton:
+        elif event.button() == Qt.MouseButton.RightButton:
             # Negative point - exclude this area
             self.add_marker(point, is_positive=False)
             self.negative_click.emit(point)

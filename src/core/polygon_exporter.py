@@ -28,7 +28,7 @@ def mask_to_polygons_rasterio(
         QgsMessageLog.logMessage(
             "mask_to_polygons: Empty or None mask",
             "AI Segmentation",
-            level=Qgis.Warning
+            level=Qgis.MessageLevel.Warning
         )
         return []
 
@@ -58,7 +58,7 @@ def mask_to_polygons_rasterio(
         QgsMessageLog.logMessage(
             f"mask_to_polygons: Created {len(geometries)} polygons",
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
 
         return geometries
@@ -68,7 +68,7 @@ def mask_to_polygons_rasterio(
         QgsMessageLog.logMessage(
             f"Failed to convert mask to polygons: {str(e)}\n{traceback.format_exc()}",
             "AI Segmentation",
-            level=Qgis.Warning
+            level=Qgis.MessageLevel.Warning
         )
         return []
 
@@ -106,7 +106,7 @@ def mask_to_polygons(
         QgsMessageLog.logMessage(
             f"mask_to_polygons: Empty or None mask (sum={mask.sum() if mask is not None else 'None'})",
             "AI Segmentation",
-            level=Qgis.Warning
+            level=Qgis.MessageLevel.Warning
         )
         return []
 
@@ -150,7 +150,7 @@ def mask_to_polygons(
         QgsMessageLog.logMessage(
             f"mask_to_polygons error: {str(e)}\n{traceback.format_exc()}",
             "AI Segmentation",
-            level=Qgis.Warning
+            level=Qgis.MessageLevel.Warning
         )
         return mask_to_polygons_fallback(mask, transform_info, simplify_tolerance)
 
@@ -198,7 +198,7 @@ def mask_to_polygons_fallback(
         QgsMessageLog.logMessage(
             f"Fallback polygon conversion failed: {str(e)}\n{traceback.format_exc()}",
             "AI Segmentation",
-            level=Qgis.Warning
+            level=Qgis.MessageLevel.Warning
         )
         return []
 
