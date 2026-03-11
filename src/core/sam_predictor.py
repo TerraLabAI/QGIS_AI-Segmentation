@@ -5,6 +5,7 @@ import json
 import subprocess
 import threading
 import tempfile
+import time
 import base64
 
 from qgis.core import QgsMessageLog, Qgis
@@ -46,6 +47,7 @@ class SamPredictor:
         self.process = None
         self._stderr_file = None
         self._warming_up = False  # True when init sent but not yet confirmed
+        self._last_worker_error = None  # Store error from worker for propagation
         self.is_image_set = False
         self.original_size = None
         self.input_size = None  # Only set by SAM1 path
@@ -54,7 +56,7 @@ class SamPredictor:
         QgsMessageLog.logMessage(
             "SAM Predictor initialized (subprocess mode)",
             "AI Segmentation",
-            level=Qgis.Info
+            level=Qgis.MessageLevel.Info
         )
 
     def _read_stderr(self) -> str:
@@ -62,6 +64,11 @@ class SamPredictor:
         if self._stderr_file is None:
             return ""
         try:
+            if self.process is not None:
+                try:
+                    self.process.wait(timeout=2)
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
             self._stderr_file.seek(0)
             return self._stderr_file.read()
         except Exception:
@@ -90,9 +97,9 @@ class SamPredictor:
         reader_thread.join(timeout=timeout_seconds)
 
         if reader_thread.is_alive():
-            # Thread is still blocking - worker is hung
+            self.cleanup()
             raise TimeoutError(
-                f"Worker did not respond within {timeout_seconds}s"
+                "Worker did not respond within {}s".format(timeout_seconds)
             )
 
         if error[0] is not None:
@@ -100,8 +107,11 @@ class SamPredictor:
 
         line = result[0]
         if not line:
+            exit_code = self.process.poll() if self.process else None
             stderr_output = self._read_stderr()
             msg = "Worker process closed stdout unexpectedly"
+            if exit_code is not None:
+                msg = "{} (exit code {})".format(msg, exit_code)
             if stderr_output:
                 msg = "{}\nWorker stderr: {}".format(
                     msg, stderr_output[:500])
@@ -109,7 +119,7 @@ class SamPredictor:
                     "Prediction worker stderr:\n{}".format(
                         stderr_output[:1000]),
                     "AI Segmentation",
-                    level=Qgis.Critical
+                    level=Qgis.MessageLevel.Critical
                 )
             raise RuntimeError(msg)
 
@@ -125,7 +135,7 @@ class SamPredictor:
             QgsMessageLog.logMessage(
                 f"Starting prediction worker: {self.venv_python}",
                 "AI Segmentation",
-                level=Qgis.Info
+                level=Qgis.MessageLevel.Info
             )
 
             cmd = [self.venv_python, self.worker_script]
@@ -168,46 +178,88 @@ class SamPredictor:
             import traceback
             error_msg = "Failed to launch prediction worker: {}\n{}".format(
                 str(e), traceback.format_exc())
-            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
+            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical)
             self.cleanup()
             return False
 
     def _wait_for_ready(self) -> bool:
-        """Wait for the worker to finish model loading (the 'ready' response)."""
-        try:
-            response_line = self._read_response(self._TIMEOUT_INIT)
-            response = json.loads(response_line.strip())
+        """Wait for the worker to finish model loading (the 'ready' response).
 
-            if response.get("type") == "ready":
-                QgsMessageLog.logMessage(
-                    "Prediction worker ready",
-                    "AI Segmentation",
-                    level=Qgis.Success
-                )
-                return True
-            elif response.get("type") == "error":
-                error_msg = response.get("message", "Unknown error")
-                QgsMessageLog.logMessage(
-                    f"Worker initialization error: {error_msg}",
-                    "AI Segmentation",
-                    level=Qgis.Critical
-                )
-                self.cleanup()
-                return False
-            else:
-                QgsMessageLog.logMessage(
-                    f"Unexpected response from worker: {response}",
-                    "AI Segmentation",
-                    level=Qgis.Critical
-                )
-                self.cleanup()
-                return False
+        Skips non-JSON lines that may leak from library imports to stdout.
+        """
+        try:
+            deadline = time.monotonic() + self._TIMEOUT_INIT
+            skipped = 0
+            max_skipped = 50
+
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        "Worker did not send ready within {}s".format(
+                            self._TIMEOUT_INIT))
+
+                response_line = self._read_response(
+                    max(1, int(remaining)))
+                stripped = response_line.strip()
+
+                if not stripped:
+                    skipped += 1
+                    if skipped >= max_skipped:
+                        raise RuntimeError(
+                            "Skipped {} blank lines without valid JSON".format(
+                                max_skipped))
+                    continue
+
+                try:
+                    response = json.loads(stripped)
+                except (json.JSONDecodeError, ValueError):
+                    skipped += 1
+                    QgsMessageLog.logMessage(
+                        "Skipping non-JSON worker output: {}".format(
+                            stripped[:200]),
+                        "AI Segmentation",
+                        level=Qgis.MessageLevel.Warning
+                    )
+                    if skipped >= max_skipped:
+                        raise RuntimeError(
+                            "Skipped {} non-JSON lines without valid response".format(
+                                max_skipped))
+                    continue
+
+                if response.get("type") == "ready":
+                    QgsMessageLog.logMessage(
+                        "Prediction worker ready",
+                        "AI Segmentation",
+                        level=Qgis.MessageLevel.Success
+                    )
+                    return True
+                elif response.get("type") == "error":
+                    error_msg = response.get("message", "Unknown error")
+                    self._last_worker_error = error_msg
+                    QgsMessageLog.logMessage(
+                        "Worker initialization error: {}".format(error_msg),
+                        "AI Segmentation",
+                        level=Qgis.MessageLevel.Critical
+                    )
+                    self.cleanup()
+                    return False
+                else:
+                    QgsMessageLog.logMessage(
+                        "Unexpected response from worker: {}".format(response),
+                        "AI Segmentation",
+                        level=Qgis.MessageLevel.Critical
+                    )
+                    self.cleanup()
+                    return False
 
         except Exception as e:
             import traceback
             error_msg = "Failed waiting for worker ready: {}\n{}".format(
                 str(e), traceback.format_exc())
-            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
+            QgsMessageLog.logMessage(
+                error_msg, "AI Segmentation",
+                level=Qgis.MessageLevel.Critical)
             self.cleanup()
             return False
 
@@ -275,15 +327,16 @@ class SamPredictor:
                     QgsMessageLog.logMessage(
                         "Warning during predictor cleanup: {}".format(str(e)),
                         "AI Segmentation",
-                        level=Qgis.Warning
+                        level=Qgis.MessageLevel.Warning
                     )
-                finally:
-                    if self._stderr_file is not None:
-                        try:
-                            self._stderr_file.close()
-                        except Exception:
-                            pass
-                        self._stderr_file = None
+
+            # Always close stderr file, even if process was already None
+            if self._stderr_file is not None:
+                try:
+                    self._stderr_file.close()
+                except Exception:
+                    pass
+                self._stderr_file = None
 
             self._warming_up = False
             self.is_image_set = False
@@ -302,13 +355,13 @@ class SamPredictor:
                     QgsMessageLog.logMessage(
                         f"Unexpected reset response: {response}",
                         "AI Segmentation",
-                        level=Qgis.Warning
+                        level=Qgis.MessageLevel.Warning
                     )
             except Exception as e:
                 QgsMessageLog.logMessage(
                     f"Error resetting image: {str(e)}",
                     "AI Segmentation",
-                    level=Qgis.Warning
+                    level=Qgis.MessageLevel.Warning
                 )
 
         self.is_image_set = False
@@ -322,7 +375,9 @@ class SamPredictor:
         image embeddings for subsequent predict() calls.
         """
         if not self._start_worker():
-            raise RuntimeError("Failed to start prediction worker")
+            error = self._last_worker_error or "Failed to start prediction worker"
+            self._last_worker_error = None
+            raise RuntimeError(error)
 
         try:
             image_b64 = base64.b64encode(
@@ -353,7 +408,7 @@ class SamPredictor:
                     "Set image: original_size={}".format(
                         self.original_size),
                     "AI Segmentation",
-                    level=Qgis.Info
+                    level=Qgis.MessageLevel.Info
                 )
             elif response.get("type") == "error":
                 error_msg = response.get("message", "Unknown error")
@@ -368,7 +423,7 @@ class SamPredictor:
             error_msg = "Failed to encode image: {}\n{}".format(
                 str(e), traceback.format_exc())
             QgsMessageLog.logMessage(
-                error_msg, "AI Segmentation", level=Qgis.Critical)
+                error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical)
             self.cleanup()
             raise
 
@@ -422,7 +477,9 @@ class SamPredictor:
                 low_res_masks_dtype = response["low_res_masks_dtype"]
 
                 low_res_masks_bytes = base64.b64decode(low_res_masks_b64.encode('utf-8'))
-                low_res_masks = np.frombuffer(low_res_masks_bytes, dtype=low_res_masks_dtype).reshape(low_res_masks_shape)
+                low_res_masks = np.frombuffer(
+                    low_res_masks_bytes, dtype=low_res_masks_dtype
+                ).reshape(low_res_masks_shape)
 
                 return masks, scores, low_res_masks
 
@@ -434,6 +491,8 @@ class SamPredictor:
 
         except Exception as e:
             import traceback
-            error_msg = f"Prediction failed: {str(e)}\n{traceback.format_exc()}"
-            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.Critical)
+            error_msg = "Prediction failed: {}\n{}".format(
+                str(e), traceback.format_exc())
+            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical)
+            self.cleanup()
             raise

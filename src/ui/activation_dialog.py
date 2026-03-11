@@ -51,7 +51,7 @@ class ActivationDialog(QDialog):
         banner_path = Path(__file__).parent.parent.parent / "resources" / "icons" / "terralab-banner.png"
         if banner_path.exists():
             pixmap = QPixmap(str(banner_path))
-            scaled_pixmap = pixmap.scaledToWidth(380, Qt.SmoothTransformation)
+            scaled_pixmap = pixmap.scaledToWidth(380, Qt.TransformationMode.SmoothTransformation)
             banner_label.setPixmap(scaled_pixmap)
         else:
             banner_label.setText("TerraLab")
@@ -59,7 +59,7 @@ class ActivationDialog(QDialog):
             font.setPointSize(18)
             font.setBold(True)
             banner_label.setFont(font)
-        banner_label.setAlignment(Qt.AlignCenter)
+        banner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(banner_label)
 
         # Title - friendly (uses palette for theme compatibility)
@@ -68,7 +68,7 @@ class ActivationDialog(QDialog):
         title_font.setPointSize(14)
         title_font.setBold(True)
         title_label.setFont(title_font)
-        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label.setStyleSheet("color: palette(text);")
         layout.addWidget(title_label)
 
@@ -77,7 +77,7 @@ class ActivationDialog(QDialog):
             tr("This plugin is in beta. We'd love to keep you updated when we release new versions and features.")
         )
         desc_label.setWordWrap(True)
-        desc_label.setAlignment(Qt.AlignCenter)
+        desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         desc_font = QFont()
         desc_font.setPointSize(12)
         desc_label.setFont(desc_font)
@@ -90,7 +90,7 @@ class ActivationDialog(QDialog):
             "<b>" + tr("Verification Code") + "</b> " + tr("to paste below.")
         )
         flow_label.setWordWrap(True)
-        flow_label.setAlignment(Qt.AlignCenter)
+        flow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         flow_font = QFont()
         flow_font.setPointSize(12)
         flow_label.setFont(flow_font)
@@ -100,7 +100,7 @@ class ActivationDialog(QDialog):
         # Get code button - clearer label
         get_code_button = QPushButton(tr("Get my verification code"))
         get_code_button.setMinimumHeight(40)
-        get_code_button.setCursor(Qt.PointingHandCursor)
+        get_code_button.setCursor(Qt.CursorShape.PointingHandCursor)
         get_code_button.setStyleSheet(
             "QPushButton { background-color: #2e7d32; color: white; "
             "font-weight: bold; font-size: 13px; border-radius: 4px; }"
@@ -111,13 +111,13 @@ class ActivationDialog(QDialog):
 
         # Separator
         sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setFrameShadow(QFrame.Sunken)
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
         layout.addWidget(sep)
 
         # Code input label (uses palette for theme compatibility)
         code_label = QLabel(tr("Paste your verification code:"))
-        code_label.setAlignment(Qt.AlignLeft)
+        code_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         code_font = QFont()
         code_font.setPointSize(11)
         code_label.setFont(code_font)
@@ -150,7 +150,7 @@ class ActivationDialog(QDialog):
 
         # Error/success message label
         self.message_label = QLabel("")
-        self.message_label.setAlignment(Qt.AlignCenter)
+        self.message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.message_label.setWordWrap(True)
         self.message_label.setVisible(False)
         layout.addWidget(self.message_label)

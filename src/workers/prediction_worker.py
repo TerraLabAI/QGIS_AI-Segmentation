@@ -4,10 +4,16 @@ import os
 import json
 import base64
 
+# Redirect stdout to stderr during library imports to prevent
+# torch/sam2 print() calls from corrupting the JSON protocol.
+_real_stdout = sys.stdout
+sys.stdout = sys.stderr
+
 try:
     import numpy as np  # noqa: E402
     import torch  # noqa: E402
 except ImportError as e:
+    sys.stdout = _real_stdout
     error_msg = {
         "type": "error",
         "message": "Failed to import dependencies: {}. "
@@ -16,6 +22,7 @@ except ImportError as e:
     print(json.dumps(error_msg), flush=True)
     sys.exit(1)
 except OSError as e:
+    sys.stdout = _real_stdout
     # Catch Windows DLL loading errors (shm.dll, etc.)
     if "shm.dll" in str(e) or "DLL" in str(e).upper():
         error_msg = {
@@ -38,6 +45,9 @@ try:
     _USE_SAM2 = True
 except ImportError:
     _USE_SAM2 = False
+
+# Restore real stdout now that imports are done
+sys.stdout = _real_stdout
 
 SAM2_MODEL_CFG = "configs/sam2.1/sam2.1_hiera_b+.yaml"
 
@@ -86,7 +96,8 @@ def get_optimal_device():
 
 def send_response(response_type, data):
     response = {"type": response_type, **data}
-    print(json.dumps(response), flush=True)
+    _real_stdout.write(json.dumps(response) + '\n')
+    _real_stdout.flush()
 
 
 def send_error(error_message):

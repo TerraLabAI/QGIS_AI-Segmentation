@@ -1,270 +1,120 @@
 # QGIS AI Segmentation Plugin
 
-A QGIS plugin for AI-powered image segmentation using Meta's Segment Anything Model (SAM).
+## Workflow Orchestration
 
-## Architecture Overview
+### 1. Plan Mode Default
+- Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
+- If something goes sideways, STOP and re-plan immediately - don't keep pushing
+- Use plan mode for verification steps, not just building
+- Write detailed specs upfront to reduce ambiguity
 
-### Core Components
+### 2. Subagent Strategy
+- Use subagents liberally to keep main context window clean
+- Offload research, exploration, and parallel analysis to subagents
+- For complex problems, throw more compute at it via subagents
+- One task per subagent for focused execution
 
-- **`src/core/model_config.py`**: Central version-dependent constants (SAM1 vs SAM2, checkpoint URLs, package versions). Uses `sys.version_info >= (3, 10)` to select SAM2 or SAM1 fallback.
-- **`src/ui/ai_segmentation_plugin.py`**: Main plugin class, handles QGIS integration, tool management, and segmentation workflow coordination
-- **`src/ui/ai_segmentation_dockwidget.py`**: Qt dock widget with all UI elements (dependency management, model download, segmentation controls, mode switching)
-- **`src/ui/ai_segmentation_maptool.py`**: Custom QgsMapTool for handling map clicks (positive/negative points) and keyboard shortcuts
+### 3. Self-Improvement Loop
+- After ANY correction from the user: update memory/MEMORY.md with the pattern
+- Write rules for yourself that prevent the same mistake
+- Ruthlessly iterate on these lessons until mistake rate drops
+- Review lessons at session start for relevant project
 
-### Dual SAM Model Support
+### 4. Verification Before Done
+- Never mark a task complete without proving it works
+- Diff behavior between main and your changes when relevant
+- Ask yourself: "Would a staff engineer approve this?"
+- Run tests, check logs, demonstrate correctness
 
-The plugin supports two SAM models depending on Python version:
-- **Python 3.10+** (QGIS 3.34+): SAM 2.1 Base Plus via `sam2` package (~323MB checkpoint)
-- **Python 3.9** (QGIS 3.22/3.28): SAM ViT-B via `segment-anything` package (~375MB checkpoint)
+### 5. Demand Elegance (Balanced)
+- For non-trivial changes: pause and ask "is there a more elegant way?"
+- If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
+- Skip this for simple, obvious fixes - don't over-engineer
+- Challenge your own work before presenting it
 
-All version branching is centralized in `src/core/model_config.py`. The `prediction_worker.py` detects at runtime which package is available. The parent-process wrapper (`sam_predictor.py`) handles the optional `input_size` field returned only by SAM1.
+### 6. Autonomous Bug Fixing
+- When given a bug report: just fix it. Don't ask for hand-holding
+- Point at logs, errors, failing tests - then resolve them
+- Zero context switching required from the user
+- Go fix failing CI tests without being told how
 
-### Segmentation Workflow
+### Task Management
+1. Plan First: Write plan to tasks/todo.md with checkable items
+2. Verify Plan: Check in before starting implementation
+3. Track Progress: Mark items complete as you go
+4. Explain Changes: High-level summary at each step
+5. Document Results: Add review section to tasks/todo.md
+6. Capture Lessons: Update memory/MEMORY.md after corrections
 
-The plugin uses a single workflow (batch mode is always on):
-- Segment elements one by one using positive/negative clicks
-- "Save polygon" button to add current selection to collection
-- Export all saved polygons together in one layer
-- Blue info box: "Segment one element at a time. You must save your polygon before selecting a new element. Export all saved polygons to a layer when finished."
+### Core Principles
+- Simplicity First: Make every change as simple as possible. Impact minimal code.
+- No Laziness: Find root causes. No temporary fixes. Senior developer standards.
+- Minimal Impact: Changes should only touch what's necessary. Avoid introducing bugs.
+- After big changes: output a short summary with bullet points of what changed.
 
-### Terminology
+## Writing Style
 
-The plugin uses specific terminology for clarity:
-- **Selection** = temporary working state (the current AI-generated mask before saving)
-- **Polygon** = saved items (after clicking "Save polygon" or exporting)
+- Never use em dashes "--" in text output or GitHub issues
+- Minimal comments in code, concise and in English only
+- All UI text in English in source code, never in French
 
-UI strings follow this pattern:
-- "Refine selection" (temporary state)
-- "Save polygon" (action to save)
-- "Export polygon(s) to layer" (final export)
+## Architecture (what you can't infer from code)
 
-### Key Classes
+- `src/core/model_config.py`: ALL version-dependent constants (SAM1 vs SAM2). Single source of truth.
+- SAM2 (Python 3.10+, QGIS 3.34+) / SAM1 fallback (Python 3.9, QGIS 3.22/3.28)
+- Dependencies installed in isolated venv at `~/.qgis_ai_segmentation/venv_py3.*/`
+- GPU/CUDA code exists but is NOT user-facing. Never mention GPU/CUDA in UI, issues, or descriptions.
+- Plugin key in code must be `'AI_Segmentation'` (not the repo name `QGIS_AI-Segmentation`)
+- Buttons hidden when not in segmentation mode (not disabled-but-visible), use `_update_button_visibility()`
 
-- `AISegmentationPlugin`: Main plugin entry point
-- `AISegmentationDockWidget`: UI widget with signals for all user actions
-- `AISegmentationMapTool`: Map interaction tool with point markers
+## Terminology
 
-### Signal Flow
-
-1. User clicks "Start AI Segmentation" -> `start_segmentation_requested` signal
-2. User clicks on map -> `positive_click` or `negative_click` signal
-3. Plugin runs SAM inference -> mask displayed as QgsRubberBand
-4. User clicks "Save polygon" -> `save_polygon_requested` signal (adds to collection)
-5. User clicks "Export to layer" -> `export_layer_requested` signal (exports all saved polygons)
-
-### State Variables (DockWidget)
-
-- `_segmentation_active`: Whether segmentation session is active
-- `_has_mask`: Whether current mask/selection exists
-- `_saved_polygon_count`: Number of saved polygons (Batch mode)
-- `_refine_expanded`: Collapsed state of refine panel
-- `_positive_count`, `_negative_count`: Point counts for UI
-
-### Refine Panel
-
-Collapsible "Refine selection" panel with parameters displayed in a bordered box:
-- **Expand/Contract**: Dilate/erode selection boundaries (-30 to +30 pixels)
-- **Simplify outline**: Douglas-Peucker simplification tolerance (0-20)
-- **Fill holes**: Checkbox to fill interior holes
-- **Min. region size**: Remove small disconnected regions (0-10000 px²)
-
-Settings applied in real-time to preview and export.
-
-### Dependencies
-
-Version-dependent (see `src/core/model_config.py`):
-- **Python 3.10+**: PyTorch >= 2.5.1, torchvision >= 0.20.1, sam2 >= 1.0
-- **Python 3.9**: PyTorch >= 2.0.0, torchvision >= 0.15.0, segment-anything >= 1.0
-- Common: rasterio, pandas, numpy
-- Installed in isolated venv at `~/.qgis_ai_segmentation/venv_py3.*/`
-
-### Model
-
-- **Python 3.10+**: SAM 2.1 Base Plus checkpoint (~323MB), config `configs/sam2.1/sam2.1_hiera_b+.yaml`
-- **Python 3.9**: SAM ViT-B checkpoint (~375MB), uses `sam_model_registry["vit_b"]`
-- Stored in `~/.qgis_ai_segmentation/checkpoints/`
-- Auto-detects GPU (CUDA/MPS) or falls back to CPU
-
-## Development Notes
-
-- All UI text must be in English in the source code
-- Buttons hidden when not in segmentation mode (not disabled-but-visible)
-- Use `_update_button_visibility()` to manage button states based on mode and session state
-- QSettings used for persisting tutorial flag: `AI_Segmentation/tutorial_simple_shown`
-- Never write comments in french, only write in english
+- **Selection** = temporary AI-generated mask (before saving)
+- **Polygon** = saved items (after "Save polygon" or export)
 
 ## Refine Panel Defaults (KEEP IN SYNC)
 
-Current defaults: `expand=0, simplify=3, fill_holes=False, min_area=100`
+`expand=0, simplify=3, fill_holes=False, min_area=100`
 
 5 locations must match: plugin `__init__`, `_reset_session()`, `_restore_last_saved_mask` fallbacks, dockwidget `_setup_refine_panel`, `reset_refine_sliders`.
 
+## i18n - IMPORTANT
+
+Languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
+
+**When modifying ANY UI string, you MUST update code AND all 3 .ts files.**
+
+1. Wrap string with `tr()` from `..core.i18n`
+2. Add `<message>` block in ALL .ts files (`fr.ts`, `pt_BR.ts`, `es.ts`) inside `<context><name>AISegmentation</name>`
+3. Use `.format()` for dynamic strings: `tr("Export {count} polygon(s)").format(count=5)`
+4. Keep in English: "AI Segmentation", "SAM", "TerraLab", "Batch mode", "Export", "Checkpoint", package names
+
+## Dark Theme
+
+- **NEVER** use `palette(mid)` for text -- invisible on dark backgrounds. Use `palette(text)`.
+- Secondary text: `palette(text)` with smaller `font-size` (11px).
+- Hardcoded colors OK only on elements with their own hardcoded background.
+
 ## Common Pitfalls
 
-- **Subprocess stderr**: Never use `stderr=subprocess.PIPE` without draining it -- use `DEVNULL` or a temp file to avoid deadlocks
-- **`os.replace()` not `os.rename()`**: rename fails on Windows if dest exists
-- **`os.path.normcase()`** before comparing paths (Windows case-insensitive)
-- **`encoding='utf-8'`** on all `open()` calls
-- **`Tuple[bool, str]`** from typing, not `tuple[bool, str]` (needs Python 3.9+)
-- **`blockSignals(True/False)`** when setting widget values programmatically (including `reset_refine_sliders`)
-- **Disconnect `QgsProject.instance()` signals** in `unload()`
+- `stderr=subprocess.PIPE` without draining it = deadlock. Use `DEVNULL` or temp file.
+- `os.replace()` not `os.rename()` (Windows fails if dest exists)
+- `os.path.normcase()` before comparing paths (Windows case-insensitive)
+- `encoding='utf-8'` on all `open()` calls
+- `Tuple[bool, str]` from typing, not `tuple[bool, str]` (Python 3.9 compat)
+- `blockSignals(True/False)` when setting widget values programmatically
+- Disconnect `QgsProject.instance()` signals in `unload()`
 
-## Dark Theme Compatibility - IMPORTANT
+## Code Quality (Flake8)
 
-QGIS supports light and dark themes. All UI styling MUST work in both.
+- Max line length: 120 characters
+- No unused imports (F401), no unused variables (F841)
+- Import order: stdlib, third-party, local. Use `# noqa: E402` when import must follow runtime setup.
+- W503/W504 (line breaks with operators): use `.format()` or intermediate variables instead
+- `global` only needed when reassigning a module-level variable, not when modifying a dict/list
 
-- **NEVER use `palette(mid)` for text color** -- it is invisible on dark backgrounds. Use `palette(text)` instead for readable text in both themes.
-- **For secondary/muted text**: use `palette(text)` with a smaller `font-size` (e.g. 11px). The size alone communicates secondary importance.
-- **For disabled elements**: rely on Qt's native `setEnabled(False)` dimming, or use `palette(dark)` for disabled-state overrides.
-- **Hardcoded colors** (e.g. `#333333`) are OK for text on elements with their own hardcoded background (e.g. a yellow warning box), but never for text on the default window background.
-- **Always test new UI changes in both light and dark theme** before committing.
+## Security (Bandit)
 
-## Internationalization (i18n) - IMPORTANT
-
-The plugin supports multiple languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
-
-**When modifying any UI string, you MUST update both the code AND all translation files.**
-
-### Architecture
-
-- `src/core/i18n.py`: Contains the `tr()` function - parses `.ts` XML directly at runtime (no binary needed)
-- `i18n/ai_segmentation_fr.ts`: French translation file
-- `i18n/ai_segmentation_pt_BR.ts`: Portuguese (Brazil) translation file
-- `i18n/ai_segmentation_es.ts`: Spanish translation file
-
-### How to add/modify a UI string
-
-1. **In the Python code**, wrap the string with `tr()`:
-   ```python
-   from ..core.i18n import tr
-
-   # Instead of:
-   button.setText("My button text")
-
-   # Write:
-   button.setText(tr("My button text"))
-   ```
-
-2. **In ALL translation files** (`fr.ts`, `pt_BR.ts`, `es.ts`), add a new `<message>` block inside `<context><name>AISegmentation</name>`:
-   ```xml
-   <message>
-       <source>My button text</source>
-       <translation>Mon texte de bouton</translation>
-   </message>
-   ```
-
-3. **Commit all .ts files** - no compilation needed, XML is parsed at runtime
-
-### Terms to keep in English (do NOT translate)
-
-- "AI Segmentation" (product name)
-- "SAM" (technical term)
-- "TerraLab" (company name)
-- "Batch mode" (feature name - keep "Batch" in English)
-- "Export" (keep as-is, commonly understood)
-- "Checkpoint" (technical term)
-- Package names: PyTorch, rasterio, pandas, etc.
-
-### String formatting with variables
-
-Use `.format()` for dynamic strings:
-```python
-# Code:
-tr("Export {count} polygon(s)").format(count=5)
-
-# Translation file:
-<source>Export {count} polygon(s)</source>
-<translation>Exporter {count} polygone(s)</translation>
-```
-
-### User experience
-
-- **No binaries**: Complies with QGIS plugin repository rules
-- **Automatic language detection**: Plugin reads QGIS locale settings
-- **Fallback**: If translation is missing, English text is shown
-- **Works on all OS**: Pure Python XML parsing, no Qt tools needed
-
-## Plugin Naming Convention
-
-- The GitHub repo is `QGIS_AI-Segmentation` but the QGIS plugin folder is `AI_Segmentation`
-- Users only see `AI_Segmentation` - the `QGIS_` prefix is only in the repo name
-- Code referencing the plugin key (update check, plugin manager) must use `'AI_Segmentation'`
-
-## Code Quality Rules (PEP8/Flake8)
-
-- **No unused imports (F401)**: Remove any imported modules/classes that are not used in the file. Always verify `sys`, `os`, etc. are actually referenced before importing.
-- **No unused variables (F841)**: Don't assign variables that are never referenced; delete them or use `_` prefix only if needed for unpacking. In `except` clauses, if you don't use the exception variable, omit it: write `except RuntimeError:` not `except RuntimeError as e:`
-- **Too many blank lines (E303)**: Maximum 2 blank lines between top-level definitions, 1 blank line between methods inside a class
-- **Trailing whitespace on blank lines (W291/W293)**: Blank lines must be completely empty — no spaces or tabs. This includes blank lines inside docstrings, between code blocks, etc. Always strip trailing whitespace.
-- **Whitespace around operators (E226)**: Always use spaces around arithmetic operators: `y - 1` not `y-1`
-- **Import order**: Standard library first, then third-party, then local imports. When an import must come after runtime setup (e.g. `os.environ.setdefault()` before `import numpy`), add `# noqa: E402` to suppress the linter warning
-- **Line length**: Keep lines under 120 characters
-- **Line breaks with binary operators (W503/W504)**: The linter flags both W503 (break before operator) and W504 (break after operator). Use `.format()` or parentheses instead of line-continuation with operators:
-  ```python
-  # WRONG (W503 - break before operator):
-  message = tr("Line one") + "\n"
-      + tr("Line two")
-
-  # WRONG (W504 - break after operator):
-  message = tr("Line one") + "\n" +
-      tr("Line two")
-
-  # CORRECT (use .format() to avoid line-continuation):
-  message = "{}\n{}".format(
-      tr("Line one"),
-      tr("Line two"))
-
-  # CORRECT (for boolean expressions, use intermediate variables):
-  # WRONG (W503):
-  return (bounds[0] <= x <= bounds[1]
-          and bounds[2] <= y <= bounds[3])
-  # CORRECT:
-  in_x = bounds[0] <= x <= bounds[1]
-  in_y = bounds[2] <= y <= bounds[3]
-  return in_x and in_y
-  ```
-- **Undefined names (F821)**: Never reference a variable before it is defined. Build lists/dicts incrementally using the correct name at each stage:
-  ```python
-- **Global keyword (F824)**: Only use `global` when reassigning a module-level variable. Not needed when just modifying a dict/list:
-  ```python
-  # WRONG (F824 - global not needed for dict modification):
-  _translations = {}
-  def foo():
-      global _translations  # NOT needed
-      _translations["key"] = "value"  # This modifies, not reassigns
-
-  # CORRECT:
-  _loaded = False
-  def foo():
-      global _loaded  # Needed because we reassign
-      _loaded = True
-  ```
-
-## Security Rules (Bandit)
-
-- **XML Parsing (B314)**: Never use `xml.etree.ElementTree.parse()` without protection. Use `defusedxml.defuse_stdlib()` to patch the standard library:
-  ```python
-  # WRONG (vulnerable to XML attacks - Bandit flags this):
-  import xml.etree.ElementTree as ET
-  tree = ET.parse(file_path)
-
-  # CORRECT (secure - patch stdlib then use normally):
-  try:
-      import defusedxml
-      defusedxml.defuse_stdlib()
-  except ImportError:
-      pass  # Only acceptable for local trusted plugin files
-  import xml.etree.ElementTree as ET  # noqa: E402
-  tree = ET.parse(file_path)
-  ```
-- **Hardcoded credentials**: Never hardcode passwords, API keys, or secrets in code. Also avoid credential-like patterns in docstrings/comments (e.g. `user:pass@host`) — use generic descriptions instead.
-- **Shell injection**: Use subprocess with list arguments, not shell=True with string interpolation
-
-
-
-Always output a short line and bullet points resuming the changes that you made when you made a big change like from a plan
-
-
-never put this character when you write : "—" ca fait trop ia evite les em dashes surtout dans les issues github
-
-don't put too much comments in the code, stay concis clear in english, be minimalist
+- XML parsing: use `defusedxml.defuse_stdlib()` before `ET.parse()` (B314)
+- Subprocess: list arguments, never `shell=True` with string interpolation
+- No hardcoded credentials or credential-like patterns in code/comments

@@ -116,9 +116,16 @@ def _load_translations():
                 if translation_text and translation.get("type") != "unfinished":
                     _translations[source_text] = translation_text
 
-    except Exception:
-        # Silently fail - fall back to English
-        pass
+    except Exception as e:
+        try:
+            from qgis.core import QgsMessageLog, Qgis
+            QgsMessageLog.logMessage(
+                "Failed to load translations from {}: {}".format(ts_path, e),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Warning
+            )
+        except Exception:
+            pass
 
 
 def tr(message: str) -> str:
