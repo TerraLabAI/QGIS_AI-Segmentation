@@ -599,6 +599,10 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <translation>Erro de predição</translation>
     </message>
     <message>
+        <source>Click on the map first to set an image before using text prediction.</source>
+        <translation>Clique no mapa primeiro para definir uma imagem antes de usar a predicao por texto.</translation>
+    </message>
+    <message>
         <source>Segmentation failed</source>
         <translation>Falha na segmentação</translation>
     </message>

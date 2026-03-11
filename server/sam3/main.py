@@ -3,7 +3,8 @@
 Exposes the same protocol as the SAM2 server but with SAM3 model.
 Endpoints: /health, /set_image, /predict, /reset
 
-Point-based prediction uses SAM3InteractiveImagePredictor (SAM1-style API).
+Point-based prediction uses SAM3InteractiveImagePredictor wrapping the
+internal Sam3TrackerPredictor (extracted from Sam3Image.inst_interactive_predictor).
 Text-based prediction uses Sam3Processor.set_text_prompt().
 """
 import os
@@ -34,6 +35,7 @@ app = FastAPI(title="SAM3 Inference API", version="1.0.0")
 _predictor_lock = threading.Lock()
 _sessions = {}
 _sam_model = None
+_tracker_model = None
 _processor = None
 _device = None
 
@@ -76,13 +78,18 @@ def cleanup_expired_sessions():
     ]
     for sid in expired:
         session = _sessions.pop(sid, None)
-        if session and session.get("predictor"):
-            session["predictor"].reset_predictor()
+        if session:
+            predictor = session.get("predictor")
+            if predictor:
+                try:
+                    predictor.reset_predictor()
+                except Exception:
+                    pass
 
 
 @app.on_event("startup")
 def startup():
-    global _sam_model, _processor, _device
+    global _sam_model, _tracker_model, _processor, _device
     _device = get_device()
     print("Loading SAM3 model on {}...".format(_device))
     _sam_model = build_sam3_image_model(
@@ -91,16 +98,28 @@ def startup():
         load_from_HF=False,
         enable_inst_interactivity=True,
     )
-    # Sam3Image lacks image_size attr that SAM3InteractiveImagePredictor needs
-    if not hasattr(_sam_model, "image_size"):
-        _sam_model.image_size = 1008
     _processor = Sam3Processor(_sam_model, device=str(_device))
-    print("SAM3 model loaded.")
 
-    # Self-test: verify predictor works with a small dummy image
+    # Extract the internal Sam3TrackerPredictor from the Sam3Image model.
+    # Sam3Image itself does NOT have forward_image(); only the tracker does.
+    inst_pred = getattr(_sam_model, "inst_interactive_predictor", None)
+    if inst_pred is None:
+        raise RuntimeError(
+            "Sam3Image has no inst_interactive_predictor. "
+            "Was enable_inst_interactivity=True passed to build?"
+        )
+    _tracker_model = inst_pred.model
+    # The tracker's backbone is None after build_tracker(); share it from
+    # the parent Sam3Image so forward_image() works.
+    if getattr(_tracker_model, "backbone", None) is None:
+        _tracker_model.backbone = _sam_model.backbone
+        print("Shared backbone from Sam3Image to tracker.")
+    print("SAM3 model loaded (tracker: {}).".format(type(_tracker_model).__name__))
+
+    # Self-test: verify point prediction works with a small dummy image
     print("Running startup self-test...")
     try:
-        test_predictor = SAM3InteractiveImagePredictor(_sam_model)
+        test_predictor = SAM3InteractiveImagePredictor(_tracker_model)
         test_img = np.zeros((64, 64, 3), dtype=np.uint8)
         with torch.inference_mode():
             test_predictor.set_image(test_img)
@@ -108,6 +127,17 @@ def startup():
         print("Self-test passed: predictor works.")
     except Exception as e:
         print("WARNING: Self-test failed: {}".format(e))
+        import traceback
+        traceback.print_exc()
+
+    # Self-test: verify text prediction pipeline
+    try:
+        test_pil = Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8))
+        with torch.inference_mode():
+            _processor.set_image(test_pil)
+        print("Self-test passed: processor.set_image works.")
+    except Exception as e:
+        print("WARNING: Processor self-test failed: {}".format(e))
         import traceback
         traceback.print_exc()
 
@@ -134,12 +164,11 @@ def set_image(req: SetImageRequest, x_api_key: Optional[str] = Header(None)):
         ).reshape(req.image_shape)
 
         session_id = str(uuid.uuid4())
-        predictor = SAM3InteractiveImagePredictor(_sam_model)
+        predictor = SAM3InteractiveImagePredictor(_tracker_model)
 
         with torch.inference_mode():
             predictor.set_image(image_np)
 
-        text_state = None
         with torch.inference_mode():
             pil_image = Image.fromarray(image_np)
             text_state = _processor.set_image(pil_image)
@@ -340,5 +369,10 @@ def reset(session_id: str, x_api_key: Optional[str] = Header(None)):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    session["predictor"].reset_predictor()
+    predictor = session.get("predictor")
+    if predictor:
+        try:
+            predictor.reset_predictor()
+        except Exception:
+            pass
     return {"status": "reset_done"}

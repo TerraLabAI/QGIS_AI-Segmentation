@@ -1360,6 +1360,13 @@ class AISegmentationPlugin:
                 "Text predict: no image set on predictor",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning
             )
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("Click on the map first to set an image before "
+                   "using text prediction."),
+                level=Qgis.MessageLevel.Warning,
+                duration=5
+            )
             return
 
         try:
