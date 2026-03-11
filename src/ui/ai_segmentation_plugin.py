@@ -485,6 +485,8 @@ class AISegmentationPlugin:
         self.dock_widget.install_requested.connect(self._on_install_requested)
         self.dock_widget.cancel_install_requested.connect(self._on_cancel_install)
         self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
+        self.dock_widget.start_pro_segmentation_requested.connect(self._on_start_pro_segmentation)
+        self.dock_widget.pro_text_predict_requested.connect(self._on_text_predict)
         self.dock_widget.save_polygon_requested.connect(self._on_save_polygon)
         self.dock_widget.export_layer_requested.connect(self._on_export_layer)
         self.dock_widget.clear_points_requested.connect(self._on_clear_points)
@@ -575,6 +577,8 @@ class AISegmentationPlugin:
                 (self.dock_widget.install_requested, self._on_install_requested),
                 (self.dock_widget.cancel_install_requested, self._on_cancel_install),
                 (self.dock_widget.start_segmentation_requested, self._on_start_segmentation),
+                (self.dock_widget.start_pro_segmentation_requested, self._on_start_pro_segmentation),
+                (self.dock_widget.pro_text_predict_requested, self._on_text_predict),
                 (self.dock_widget.save_polygon_requested, self._on_save_polygon),
                 (self.dock_widget.export_layer_requested, self._on_export_layer),
                 (self.dock_widget.clear_points_requested, self._on_clear_points),
@@ -1246,6 +1250,148 @@ class AISegmentationPlugin:
 
         # Activate segmentation tool immediately (no pre-encoding)
         self._activate_segmentation_tool()
+
+    def _on_start_pro_segmentation(self, layer: QgsRasterLayer):
+        """Start PRO (SAM 3) cloud segmentation."""
+        from ..core.cloud_sam3_predictor import CloudSam3Predictor
+        from ..core.activation_manager import get_hf_token
+
+        hf_token = get_hf_token()
+        if not hf_token:
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                tr("HF Token Required"),
+                tr("Please save your Hugging Face token first.")
+            )
+            return
+
+        sam3 = CloudSam3Predictor(hf_token=hf_token)
+
+        from qgis.PyQt.QtWidgets import QProgressDialog
+        progress = QProgressDialog(
+            tr("Connecting to SAM 3 server..."),
+            tr("Cancel"), 0, 0, self.iface.mainWindow()
+        )
+        progress.setWindowTitle(tr("SAM 3 Cloud"))
+        progress.setMinimumDuration(0)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.show()
+        QApplication.processEvents()
+
+        thread = QThread()
+        worker = _CloudWarmupWorker(sam3)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(thread.quit)
+        thread.start()
+
+        while thread.isRunning():
+            QApplication.processEvents()
+            if progress.wasCanceled():
+                thread.quit()
+                thread.wait(2000)
+                return
+            thread.wait(100)
+
+        progress.close()
+
+        if not worker.result:
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                tr("SAM 3 Cloud"),
+                tr("Could not connect to the SAM 3 server. "
+                   "Check your internet connection.")
+            )
+            return
+
+        # Clean up previous predictor
+        if self.predictor:
+            try:
+                self.predictor.cleanup()
+            except Exception:
+                pass
+        self.predictor = sam3
+
+        # Validate and set up layer (same as standard flow)
+        if not self._is_layer_valid(layer):
+            QgsMessageLog.logMessage(
+                "Layer was deleted before PRO segmentation could start",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            self.predictor.cleanup()
+            self.predictor = None
+            return
+
+        try:
+            layer_name = layer.name().replace(" ", "_")
+            raster_path = os.path.normcase(layer.source())
+        except RuntimeError:
+            self.predictor.cleanup()
+            self.predictor = None
+            return
+
+        self._reset_session()
+        self._current_layer = layer
+        self._current_layer_name = layer_name
+        self._is_online_layer = self._is_online_provider(layer)
+        self._is_non_georeferenced_mode = (
+            not self._is_online_layer
+            and not self._is_layer_georeferenced(layer)
+        )
+        self._current_raster_path = raster_path
+
+        # Set up CRS transforms
+        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        raster_crs = layer.crs() if layer else None
+        self._canvas_to_raster_xform = None
+        self._raster_to_canvas_xform = None
+        if raster_crs and canvas_crs.isValid() and raster_crs.isValid():
+            if canvas_crs != raster_crs:
+                self._canvas_to_raster_xform = QgsCoordinateTransform(
+                    canvas_crs, raster_crs, QgsProject.instance())
+                self._raster_to_canvas_xform = QgsCoordinateTransform(
+                    raster_crs, canvas_crs, QgsProject.instance())
+
+        self._activate_segmentation_tool()
+
+    def _on_text_predict(self, text: str):
+        """Handle text-only prediction from PRO mode."""
+        if not self.predictor or not self.predictor.is_image_set:
+            QgsMessageLog.logMessage(
+                "Text predict: no image set on predictor",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning
+            )
+            return
+
+        try:
+            masks, scores, low_res_masks = self.predictor.predict(
+                text_prompt=text
+            )
+        except RuntimeError as e:
+            QgsMessageLog.logMessage(
+                "Text prediction failed: {}".format(e),
+                "AI Segmentation", level=Qgis.MessageLevel.Critical
+            )
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                tr("Prediction Error"),
+                str(e)
+            )
+            return
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                "Unexpected text prediction error: {}".format(e),
+                "AI Segmentation", level=Qgis.MessageLevel.Critical
+            )
+            return
+
+        # Store result (same as point prediction flow)
+        self.current_mask = masks[0]
+        self.current_score = float(scores[0])
+        self.current_low_res_mask = low_res_masks
+
+        # Text predictions have 0 points, so set_point_count won't set _has_mask
+        self.dock_widget.set_mask_available(True)
+        self._update_ui_after_prediction()
 
     def _activate_segmentation_tool(self):
         # Save the current map tool to restore it later
@@ -2365,12 +2511,21 @@ class AISegmentationPlugin:
         is_first_point = one_positive and no_negatives and mask_input is None
         use_multimask = is_first_point
 
+        predict_kwargs = {
+            "point_coords": point_coords,
+            "point_labels": point_labels,
+            "mask_input": mask_input,
+            "multimask_output": use_multimask,
+        }
+        # In PRO mode, pass text_prompt for combined point+text predictions
+        if (self.dock_widget and self.dock_widget.is_pro_mode()):
+            text = self.dock_widget.get_text_prompt()
+            if text:
+                predict_kwargs["text_prompt"] = text
+
         try:
             masks, scores, low_res_masks = self.predictor.predict(
-                point_coords=point_coords,
-                point_labels=point_labels,
-                mask_input=mask_input,
-                multimask_output=use_multimask,
+                **predict_kwargs
             )
         except RuntimeError as e:
             error_str = str(e)

@@ -67,3 +67,7 @@ else:
     CHECKPOINT_SHA256 = "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"  # noqa: S105, E501  # pragma: allowlist secret
     CHECKPOINT_SIZE_LABEL = "~375MB"
     MODEL_CFG = None  # SAM1 uses registry, no config file
+
+# SAM3 cloud-only
+SAM3_MODEL_NAME = "SAM 3"
+SAM3_CLOUD_URL = "https://sam3-api.kindrock-9d62e9fa.francecentral.azurecontainerapps.io"

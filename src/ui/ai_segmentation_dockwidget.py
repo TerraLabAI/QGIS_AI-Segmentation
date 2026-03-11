@@ -33,6 +33,8 @@ from ..core.activation_manager import (  # noqa: E402
     is_plugin_activated,
     activate_plugin,
     get_newsletter_url,
+    get_hf_token,
+    save_hf_token,
 )
 from ..core.i18n import tr  # noqa: E402
 from ..core.model_config import USE_SAM2, _IS_MACOS_X86  # noqa: E402
@@ -44,6 +46,8 @@ class AISegmentationDockWidget(QDockWidget):
     install_requested = pyqtSignal()
     cancel_install_requested = pyqtSignal()
     start_segmentation_requested = pyqtSignal(object)
+    start_pro_segmentation_requested = pyqtSignal(object)  # layer
+    pro_text_predict_requested = pyqtSignal(str)  # text prompt
     clear_points_requested = pyqtSignal()
     undo_requested = pyqtSignal()
     save_polygon_requested = pyqtSignal()
@@ -61,6 +65,9 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Initialize state variables that are needed during UI setup
         self._refine_expanded = False  # Refine panel collapsed state persisted in session
+        self._pro_mode = QSettings().value(
+            "AI_Segmentation/pro_mode", False, type=bool
+        )
 
         self.main_widget = QWidget()
         self.main_layout = QVBoxLayout(self.main_widget)
@@ -86,7 +93,6 @@ class AISegmentationDockWidget(QDockWidget):
         self._activation_popup_shown = False  # Track if popup was shown
         self._batch_mode = True  # Batch mode is now the only mode
         self._segmentation_layer_id = None  # Track which layer we're segmenting
-        # Note: _refine_expanded is initialized before _setup_ui() call
 
         # Smooth progress animation timer for long-running installs
         self._progress_timer = QTimer(self)
@@ -410,6 +416,147 @@ class AISegmentationDockWidget(QDockWidget):
         """)
         self.instructions_label.setVisible(False)
         layout.addWidget(self.instructions_label)
+
+        # Mode toggle: Standard / PRO (SAM 3)
+        self.mode_toggle_container = QWidget()
+        mode_layout = QHBoxLayout(self.mode_toggle_container)
+        mode_layout.setContentsMargins(0, 4, 0, 4)
+        mode_layout.setSpacing(0)
+
+        self.mode_standard_btn = QPushButton(tr("Standard"))
+        self.mode_standard_btn.setCheckable(True)
+        self.mode_standard_btn.setChecked(not self._pro_mode)
+        self.mode_standard_btn.clicked.connect(
+            lambda: self._on_mode_toggle(False)
+        )
+        mode_layout.addWidget(self.mode_standard_btn)
+
+        self.mode_pro_btn = QPushButton("PRO (SAM 3)")
+        self.mode_pro_btn.setCheckable(True)
+        self.mode_pro_btn.setChecked(self._pro_mode)
+        self.mode_pro_btn.clicked.connect(
+            lambda: self._on_mode_toggle(True)
+        )
+        mode_layout.addWidget(self.mode_pro_btn)
+
+        self._update_mode_toggle_style()
+        layout.addWidget(self.mode_toggle_container)
+
+        # PRO container (visible when PRO mode)
+        self.pro_container = QWidget()
+        pro_layout = QVBoxLayout(self.pro_container)
+        pro_layout.setContentsMargins(0, 0, 0, 0)
+        pro_layout.setSpacing(8)
+
+        # Info box: blue background, explains HF token + SAM 3
+        self.pro_info_widget = QWidget()
+        self.pro_info_widget.setStyleSheet(
+            "QWidget { background-color: rgba(100, 149, 237, 0.15); "
+            "border: 1px solid rgba(100, 149, 237, 0.3); border-radius: 4px; }"
+            "QLabel { background: transparent; border: none; color: palette(text); }"
+        )
+        pro_info_layout = QVBoxLayout(self.pro_info_widget)
+        pro_info_layout.setContentsMargins(10, 10, 10, 10)
+        pro_info_layout.setSpacing(4)
+
+        pro_desc = QLabel(tr("Cloud-powered segmentation with SAM 3"))
+        pro_desc.setWordWrap(True)
+        pro_desc.setStyleSheet(
+            "font-weight: bold; font-size: 12px; color: palette(text);"
+        )
+        pro_info_layout.addWidget(pro_desc)
+
+        pro_token_info = QLabel(tr("SAM 3 requires a Hugging Face access token."))
+        pro_token_info.setWordWrap(True)
+        pro_token_info.setStyleSheet("font-size: 11px; color: palette(text);")
+        pro_info_layout.addWidget(pro_token_info)
+
+        step1_label = QLabel(
+            '{} <a href="https://huggingface.co/facebook/sam3">'
+            'facebook/sam3</a>'.format(
+                tr("1. Request access at the SAM 3 model page")
+            )
+        )
+        step1_label.setOpenExternalLinks(True)
+        step1_label.setWordWrap(True)
+        step1_label.setStyleSheet("font-size: 11px; color: palette(text);")
+        pro_info_layout.addWidget(step1_label)
+
+        step2_label = QLabel(
+            '{} <a href="https://huggingface.co/settings/tokens">'
+            'huggingface.co/settings/tokens</a>'.format(
+                tr("2. Create a token at huggingface.co/settings/tokens")
+            )
+        )
+        step2_label.setOpenExternalLinks(True)
+        step2_label.setWordWrap(True)
+        step2_label.setStyleSheet("font-size: 11px; color: palette(text);")
+        pro_info_layout.addWidget(step2_label)
+
+        step3_label = QLabel(tr("3. Paste your token below"))
+        step3_label.setStyleSheet("font-size: 11px; color: palette(text);")
+        pro_info_layout.addWidget(step3_label)
+
+        pro_layout.addWidget(self.pro_info_widget)
+
+        # HF token input row
+        token_row = QHBoxLayout()
+        token_row.setSpacing(6)
+        self.hf_token_input = QLineEdit()
+        self.hf_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.hf_token_input.setPlaceholderText("hf_...")
+        existing_token = get_hf_token()
+        if existing_token:
+            self.hf_token_input.setText(existing_token)
+        token_row.addWidget(self.hf_token_input, 1)
+
+        self.save_token_btn = QPushButton(tr("Save token"))
+        self.save_token_btn.clicked.connect(self._on_save_hf_token)
+        self.save_token_btn.setStyleSheet(
+            "QPushButton { padding: 4px 12px; }"
+        )
+        token_row.addWidget(self.save_token_btn)
+        pro_layout.addLayout(token_row)
+
+        # Token status label
+        self.token_status_label = QLabel("")
+        self.token_status_label.setStyleSheet(
+            "font-size: 11px; color: #2e7d32;"
+        )
+        self.token_status_label.setVisible(bool(existing_token))
+        if existing_token:
+            self.token_status_label.setText(tr("Token saved"))
+        pro_layout.addWidget(self.token_status_label)
+
+        # Start PRO Segmentation button
+        self.start_pro_button = QPushButton(tr("Start PRO Segmentation"))
+        self.start_pro_button.setEnabled(False)
+        self.start_pro_button.clicked.connect(self._on_start_pro_clicked)
+        self.start_pro_button.setStyleSheet(
+            "QPushButton { background-color: #2e7d32; padding: 8px 16px; }"
+            "QPushButton:disabled { background-color: #c8e6c9; }"
+        )
+        pro_layout.addWidget(self.start_pro_button)
+
+        self.pro_container.setVisible(self._pro_mode)
+        layout.addWidget(self.pro_container)
+
+        # Text prompt controls (outside pro_container so they stay visible
+        # during active segmentation when pro_container is hidden)
+        self.text_prompt_input = QLineEdit()
+        self.text_prompt_input.setPlaceholderText(
+            tr("Describe what to segment (e.g. building, tree, road)")
+        )
+        self.text_prompt_input.setVisible(False)
+        layout.addWidget(self.text_prompt_input)
+
+        self.text_segment_btn = QPushButton(tr("Segment by text"))
+        self.text_segment_btn.clicked.connect(self._on_text_segment_clicked)
+        self.text_segment_btn.setVisible(False)
+        self.text_segment_btn.setStyleSheet(
+            "QPushButton { background-color: #1565c0; padding: 6px 12px; }"
+        )
+        layout.addWidget(self.text_segment_btn)
 
         # Container for start button
         self.start_container = QWidget()
@@ -940,8 +1087,10 @@ class AISegmentationDockWidget(QDockWidget):
         """Update the full UI based on current state."""
         setup_complete = self._dependencies_ok and self._checkpoint_ok
 
-        # Segmentation section: only show if fully set up + activated
-        show_segmentation = setup_complete and self._plugin_activated
+        # Segmentation section: show if fully set up + activated, OR PRO mode + activated
+        show_segmentation = (
+            (setup_complete or self._pro_mode) and self._plugin_activated
+        )
         self.seg_widget.setVisible(show_segmentation)
         self.seg_separator.setVisible(show_segmentation)
 
@@ -1026,6 +1175,72 @@ class AISegmentationDockWidget(QDockWidget):
             self.cloud_status_label.setText(tr("Cloud server: unreachable"))
             self.cloud_status_label.setStyleSheet(
                 "font-size: 11px; margin-left: 20px; color: #c62828;")
+
+    def _on_mode_toggle(self, pro: bool):
+        if self._segmentation_active:
+            self.stop_segmentation_requested.emit()
+        self._pro_mode = pro
+        QSettings().setValue("AI_Segmentation/pro_mode", pro)
+        self.mode_standard_btn.setChecked(not pro)
+        self.mode_pro_btn.setChecked(pro)
+        self._update_mode_toggle_style()
+        self._update_mode_containers()
+        self._update_ui_state()
+
+    def _update_mode_toggle_style(self):
+        active = (
+            "QPushButton { background-color: #1565c0; color: white; "
+            "padding: 6px 12px; border: 1px solid #0d47a1; "
+            "font-weight: bold; }"
+        )
+        inactive = (
+            "QPushButton { background-color: rgba(128, 128, 128, 0.15); "
+            "color: palette(text); padding: 6px 12px; "
+            "border: 1px solid rgba(128, 128, 128, 0.3); }"
+        )
+        self.mode_standard_btn.setStyleSheet(
+            inactive if self._pro_mode else active
+        )
+        self.mode_pro_btn.setStyleSheet(
+            active if self._pro_mode else inactive
+        )
+
+    def _update_mode_containers(self):
+        if self._segmentation_active:
+            self.start_container.setVisible(False)
+            self.pro_container.setVisible(False)
+            return
+        self.start_container.setVisible(not self._pro_mode)
+        self.pro_container.setVisible(self._pro_mode)
+
+    def _on_save_hf_token(self):
+        token = self.hf_token_input.text().strip()
+        if token:
+            save_hf_token(token)
+            self.token_status_label.setText(tr("Token saved"))
+            self.token_status_label.setStyleSheet(
+                "font-size: 11px; color: #2e7d32;"
+            )
+            self.token_status_label.setVisible(True)
+            self._update_ui_state()
+
+    def _on_start_pro_clicked(self):
+        layer = self.layer_combo.currentLayer()
+        if layer:
+            self.start_pro_segmentation_requested.emit(layer)
+
+    def _on_text_segment_clicked(self):
+        text = self.text_prompt_input.text().strip()
+        if not text:
+            self.text_prompt_input.setFocus()
+            return
+        self.pro_text_predict_requested.emit(text)
+
+    def is_pro_mode(self) -> bool:
+        return self._pro_mode
+
+    def get_text_prompt(self) -> str:
+        return self.text_prompt_input.text().strip()
 
     def _on_start_clicked(self):
         layer = self.layer_combo.currentLayer()
@@ -1225,8 +1440,14 @@ class AISegmentationDockWidget(QDockWidget):
     def _update_button_visibility(self):
         if self._segmentation_active:
             self.start_container.setVisible(False)
+            self.pro_container.setVisible(False)
+            self.mode_toggle_container.setVisible(False)
             self.instructions_label.setVisible(True)
             self._update_instructions()
+
+            # Text prompt: visible only during PRO segmentation
+            self.text_prompt_input.setVisible(self._pro_mode)
+            self.text_segment_btn.setVisible(self._pro_mode)
 
             # Refine panel visibility
             self._update_refine_panel_visibility()
@@ -1252,8 +1473,11 @@ class AISegmentationDockWidget(QDockWidget):
             self.batch_info_widget.setVisible(True)
         else:
             # Not segmenting - hide all segmentation buttons, show start controls
-            self.start_container.setVisible(True)
+            self.mode_toggle_container.setVisible(True)
+            self._update_mode_containers()
             self.instructions_label.setVisible(False)
+            self.text_prompt_input.setVisible(False)
+            self.text_segment_btn.setVisible(False)
             self.refine_group.setVisible(False)
             self.save_mask_button.setVisible(False)
             self.export_button.setVisible(False)
@@ -1330,6 +1554,11 @@ class AISegmentationDockWidget(QDockWidget):
         self.disjoint_warning_widget.setVisible(visible)
         if self._segmentation_active:
             self.batch_info_widget.setVisible(not visible)
+
+    def set_mask_available(self, available: bool):
+        """Signal that a mask is available (e.g. from text-only prediction)."""
+        self._has_mask = available
+        self._update_button_visibility()
 
     def reset_session(self):
         self._has_mask = False
@@ -1417,14 +1646,25 @@ class AISegmentationDockWidget(QDockWidget):
         has_layer = layer is not None
 
         has_rasters_available = self.layer_combo.count() > 0
-        self.no_rasters_widget.setVisible(not has_rasters_available and not self._segmentation_active)
+        self.no_rasters_widget.setVisible(
+            not has_rasters_available and not self._segmentation_active
+        )
         self.layer_combo.setVisible(has_rasters_available)
 
         deps_ok = self._dependencies_ok
         checkpoint_ok = self._checkpoint_ok
         activated = self._plugin_activated
         can_start = deps_ok and checkpoint_ok and has_layer and activated
-        self.start_button.setEnabled(can_start and not self._segmentation_active)
+        self.start_button.setEnabled(
+            can_start and not self._segmentation_active
+        )
+
+        # PRO start: enabled when has_layer + activated + hf_token saved
+        hf_token = get_hf_token()
+        can_start_pro = has_layer and activated and bool(hf_token)
+        self.start_pro_button.setEnabled(
+            can_start_pro and not self._segmentation_active
+        )
 
     def show_activation_dialog(self):
         """Show the activation dialog (popup). Only shown once per session."""

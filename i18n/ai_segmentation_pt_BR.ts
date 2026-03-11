@@ -705,5 +705,75 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <source>Cloud Connection</source>
         <translation>Conexao na nuvem</translation>
     </message>
+
+    <!-- PRO (SAM 3) Section -->
+    <message>
+        <source>Standard</source>
+        <translation>Padrao</translation>
+    </message>
+    <message>
+        <source>Cloud-powered segmentation with SAM 3</source>
+        <translation>Segmentacao na nuvem com SAM 3</translation>
+    </message>
+    <message>
+        <source>SAM 3 requires a Hugging Face access token.</source>
+        <translation>O SAM 3 requer um token de acesso Hugging Face.</translation>
+    </message>
+    <message>
+        <source>1. Request access at the SAM 3 model page</source>
+        <translation>1. Solicite acesso na pagina do modelo SAM 3</translation>
+    </message>
+    <message>
+        <source>2. Create a token at huggingface.co/settings/tokens</source>
+        <translation>2. Crie um token em huggingface.co/settings/tokens</translation>
+    </message>
+    <message>
+        <source>3. Paste your token below</source>
+        <translation>3. Cole seu token abaixo</translation>
+    </message>
+    <message>
+        <source>Save token</source>
+        <translation>Salvar token</translation>
+    </message>
+    <message>
+        <source>Token saved</source>
+        <translation>Token salvo</translation>
+    </message>
+    <message>
+        <source>Describe what to segment (e.g. building, tree, road)</source>
+        <translation>Descreva o que segmentar (ex. edificio, arvore, estrada)</translation>
+    </message>
+    <message>
+        <source>Segment by text</source>
+        <translation>Segmentar por texto</translation>
+    </message>
+    <message>
+        <source>Start PRO Segmentation</source>
+        <translation>Iniciar segmentacao PRO</translation>
+    </message>
+    <message>
+        <source>Connecting to SAM 3 server...</source>
+        <translation>Conectando ao servidor SAM 3...</translation>
+    </message>
+    <message>
+        <source>SAM 3 Cloud</source>
+        <translation>SAM 3 Cloud</translation>
+    </message>
+    <message>
+        <source>Could not connect to the SAM 3 server. Check your internet connection.</source>
+        <translation>Nao foi possivel conectar ao servidor SAM 3. Verifique sua conexao com a internet.</translation>
+    </message>
+    <message>
+        <source>Text prompt cannot be empty</source>
+        <translation>O texto nao pode estar vazio</translation>
+    </message>
+    <message>
+        <source>HF Token Required</source>
+        <translation>Token HF necessario</translation>
+    </message>
+    <message>
+        <source>Please save your Hugging Face token first.</source>
+        <translation>Por favor, salve seu token Hugging Face primeiro.</translation>
+    </message>
 </context>
 </TS>

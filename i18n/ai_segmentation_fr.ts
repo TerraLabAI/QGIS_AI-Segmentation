@@ -667,5 +667,75 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <source>Retry</source>
         <translation>Reessayer</translation>
     </message>
+
+    <!-- PRO (SAM 3) Section -->
+    <message>
+        <source>Standard</source>
+        <translation>Standard</translation>
+    </message>
+    <message>
+        <source>Cloud-powered segmentation with SAM 3</source>
+        <translation>Segmentation cloud avec SAM 3</translation>
+    </message>
+    <message>
+        <source>SAM 3 requires a Hugging Face access token.</source>
+        <translation>SAM 3 necessite un jeton d'acces Hugging Face.</translation>
+    </message>
+    <message>
+        <source>1. Request access at the SAM 3 model page</source>
+        <translation>1. Demandez l'acces sur la page du modele SAM 3</translation>
+    </message>
+    <message>
+        <source>2. Create a token at huggingface.co/settings/tokens</source>
+        <translation>2. Creez un jeton sur huggingface.co/settings/tokens</translation>
+    </message>
+    <message>
+        <source>3. Paste your token below</source>
+        <translation>3. Collez votre jeton ci-dessous</translation>
+    </message>
+    <message>
+        <source>Save token</source>
+        <translation>Enregistrer le jeton</translation>
+    </message>
+    <message>
+        <source>Token saved</source>
+        <translation>Jeton enregistre</translation>
+    </message>
+    <message>
+        <source>Describe what to segment (e.g. building, tree, road)</source>
+        <translation>Decrivez l'element a segmenter (ex. batiment, arbre, route)</translation>
+    </message>
+    <message>
+        <source>Segment by text</source>
+        <translation>Segmenter par texte</translation>
+    </message>
+    <message>
+        <source>Start PRO Segmentation</source>
+        <translation>Demarrer la segmentation PRO</translation>
+    </message>
+    <message>
+        <source>Connecting to SAM 3 server...</source>
+        <translation>Connexion au serveur SAM 3...</translation>
+    </message>
+    <message>
+        <source>SAM 3 Cloud</source>
+        <translation>SAM 3 Cloud</translation>
+    </message>
+    <message>
+        <source>Could not connect to the SAM 3 server. Check your internet connection.</source>
+        <translation>Impossible de se connecter au serveur SAM 3. Verifiez votre connexion internet.</translation>
+    </message>
+    <message>
+        <source>Text prompt cannot be empty</source>
+        <translation>Le texte ne peut pas etre vide</translation>
+    </message>
+    <message>
+        <source>HF Token Required</source>
+        <translation>Jeton HF requis</translation>
+    </message>
+    <message>
+        <source>Please save your Hugging Face token first.</source>
+        <translation>Veuillez d'abord enregistrer votre jeton Hugging Face.</translation>
+    </message>
 </context>
 </TS>
