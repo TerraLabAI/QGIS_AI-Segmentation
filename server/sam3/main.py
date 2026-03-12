@@ -54,7 +54,9 @@ class PredictRequest(BaseModel):
     session_id: str
     point_coords: List[List[float]] = []
     point_labels: List[int] = []
+    box: Optional[List[float]] = None
     text_prompt: Optional[str] = None
+    auto_detect: bool = False
     multimask_output: bool = False
     mask_input: Optional[str] = None
     mask_input_shape: Optional[List[int]] = None
@@ -248,17 +250,23 @@ def predict(req: PredictRequest, x_api_key: Optional[str] = Header(None)):
 
     has_points = len(req.point_coords) > 0
     has_text = req.text_prompt is not None and req.text_prompt.strip() != ""
+    has_box = req.box is not None and len(req.box) == 4
 
-    if not has_points and not has_text:
+    if not has_points and not has_text and not has_box and not req.auto_detect:
         raise HTTPException(
             status_code=422,
-            detail="At least one of point_coords or text_prompt is required"
+            detail="At least one of point_coords, box, "
+                   "text_prompt, or auto_detect is required"
         )
 
     try:
-        if has_text and not has_points:
+        # auto_detect without text uses a generic prompt for multi-instance
+        if req.auto_detect and not has_text:
+            req.text_prompt = "objects"
             return _predict_text(req, session)
-        return _predict_points(req, session, has_points)
+        if has_text and not has_points and not has_box:
+            return _predict_text(req, session)
+        return _predict_interactive(req, session, has_points)
     except HTTPException:
         raise
     except Exception as e:
@@ -365,8 +373,8 @@ def _predict_text(req, session):
     }
 
 
-def _predict_points(req, session, has_points):
-    """Point-based prediction via SAM3InteractiveImagePredictor."""
+def _predict_interactive(req, session, has_points):
+    """Point/box-based prediction via SAM3InteractiveImagePredictor."""
     predictor = session["predictor"]
 
     point_coords = np.array(req.point_coords) if has_points else None
@@ -389,6 +397,8 @@ def _predict_points(req, session, has_points):
         predict_kwargs["point_coords"] = point_coords
         predict_kwargs["point_labels"] = point_labels
         predict_kwargs["normalize_coords"] = True
+    if req.box is not None:
+        predict_kwargs["box"] = np.array([req.box])
     if mask_input is not None:
         predict_kwargs["mask_input"] = mask_input
 

@@ -706,12 +706,20 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Jeton enregistre</translation>
     </message>
     <message>
-        <source>Describe what to segment (e.g. building, tree, road)</source>
-        <translation>Decrivez l'element a segmenter (ex. batiment, arbre, route)</translation>
+        <source>Max instances</source>
+        <translation>Nb max d'instances</translation>
     </message>
     <message>
-        <source>Segment by text</source>
-        <translation>Segmenter par texte</translation>
+        <source>Min. confidence</source>
+        <translation>Confiance min.</translation>
+    </message>
+    <message>
+        <source>Click on the area to detect and segment objects</source>
+        <translation>Cliquez sur la zone pour detecter et segmenter les objets</translation>
+    </message>
+    <message>
+        <source>Click another area to detect more objects</source>
+        <translation>Cliquez ailleurs pour detecter plus d'objets</translation>
     </message>
     <message>
         <source>Start PRO Segmentation</source>

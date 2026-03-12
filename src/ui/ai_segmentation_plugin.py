@@ -291,6 +291,10 @@ class AISegmentationPlugin:
         self.current_low_res_mask = None  # For iterative refinement with negative points
         self.saved_polygons = []
 
+        # PRO mode accumulation state
+        self._pro_pending_detections = []  # list of {mask, score, transform_info, rb}
+        self._pro_detection_batches = []   # list of int (size of each batch)
+
         self._initialized = False
         self._current_layer = None
         self._current_layer_name = ""
@@ -486,7 +490,6 @@ class AISegmentationPlugin:
         self.dock_widget.cancel_install_requested.connect(self._on_cancel_install)
         self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
         self.dock_widget.start_pro_segmentation_requested.connect(self._on_start_pro_segmentation)
-        self.dock_widget.pro_text_predict_requested.connect(self._on_text_predict)
         self.dock_widget.save_polygon_requested.connect(self._on_save_polygon)
         self.dock_widget.export_layer_requested.connect(self._on_export_layer)
         self.dock_widget.clear_points_requested.connect(self._on_clear_points)
@@ -578,7 +581,6 @@ class AISegmentationPlugin:
                 (self.dock_widget.cancel_install_requested, self._on_cancel_install),
                 (self.dock_widget.start_segmentation_requested, self._on_start_segmentation),
                 (self.dock_widget.start_pro_segmentation_requested, self._on_start_pro_segmentation),
-                (self.dock_widget.pro_text_predict_requested, self._on_text_predict),
                 (self.dock_widget.save_polygon_requested, self._on_save_polygon),
                 (self.dock_widget.export_layer_requested, self._on_export_layer),
                 (self.dock_widget.clear_points_requested, self._on_clear_points),
@@ -696,6 +698,10 @@ class AISegmentationPlugin:
         for rb in self.saved_rubber_bands:
             self._safe_remove_rubber_band(rb)
         self.saved_rubber_bands = []
+
+        for det in self._pro_pending_detections:
+            self._safe_remove_rubber_band(det.get('rb'))
+        self._pro_pending_detections = []
 
         # 9. Disconnect log collector signal
         stop_log_collector()
@@ -1353,92 +1359,192 @@ class AISegmentationPlugin:
 
         self._activate_segmentation_tool()
 
-    def _on_text_predict(self, text: str):
-        """Handle text-only prediction from PRO mode."""
+    def _run_pro_detection(self, point):
+        """Handle left-click in PRO mode: detect objects around click point."""
+        import numpy as np
+
         if not self.predictor:
             return
 
-        # Auto-capture canvas center if no image is set yet
-        if not self.predictor.is_image_set:
-            if not self._auto_capture_canvas_center():
+        raster_pt = self._transform_to_raster_crs(point)
+
+        if not self._is_point_in_raster_extent(raster_pt):
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("Point is outside the raster image. "
+                   "Click inside the raster."),
+                level=Qgis.MessageLevel.Warning,
+                duration=4
+            )
+            return
+
+        # Encode crop centered on click point
+        crop_status = self._check_crop_status(raster_pt)
+        if crop_status != "ok":
+            if not self._handle_reencode(crop_status, raster_pt):
+                if self.map_tool:
+                    self.map_tool.remove_last_marker()
                 return
 
+        if self._current_crop_info is None:
+            return
+
+        max_instances = 1
+        score_threshold = 0.3
+        if self.dock_widget:
+            max_instances = self.dock_widget.get_max_instances()
+            score_threshold = self.dock_widget.get_score_threshold()
+
+        crop_bounds = self._current_crop_info['bounds']
+        img_shape = self._current_crop_info['img_shape']
+        img_height, img_width = img_shape
+        minx, miny, maxx, maxy = crop_bounds
+
+        crs_value = None
         try:
-            masks, scores, low_res_masks = self.predictor.predict(
-                text_prompt=text, multimask_output=True
-            )
+            if (self._current_layer
+                    and self._current_layer.crs().isValid()):
+                crs_value = self._current_layer.crs().authid()
+        except RuntimeError:
+            pass
+
+        transform_info = {
+            "bbox": (minx, maxx, miny, maxy),
+            "img_shape": (img_height, img_width),
+            "crs": crs_value,
+        }
+        self.current_transform_info = transform_info
+
+        try:
+            if max_instances == 1:
+                # Interactive mode: single object at click point
+                from rasterio.transform import (
+                    from_bounds as transform_from_bounds,
+                    rowcol,
+                )
+                img_clip_transform = transform_from_bounds(
+                    minx, miny, maxx, maxy, img_width, img_height
+                )
+                row, col = rowcol(
+                    img_clip_transform, raster_pt.x(), raster_pt.y()
+                )
+                point_coords = np.array([[col, row]], dtype=np.float64)
+                point_labels = np.array([1])
+                masks, scores, _ = self.predictor.predict(
+                    point_coords=point_coords,
+                    point_labels=point_labels,
+                    multimask_output=True,
+                )
+            else:
+                # Auto-detect mode: multiple objects in the crop
+                masks, scores, _ = self.predictor.predict(
+                    auto_detect=True,
+                    multimask_output=True,
+                )
         except RuntimeError as e:
             QgsMessageLog.logMessage(
-                "Text prediction failed: {}".format(e),
-                "AI Segmentation", level=Qgis.MessageLevel.Critical
+                "PRO detection failed: {}".format(e),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Critical
             )
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Prediction Error"),
                 str(e)
             )
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
             return
         except Exception as e:
             QgsMessageLog.logMessage(
-                "Unexpected text prediction error: {}".format(e),
-                "AI Segmentation", level=Qgis.MessageLevel.Critical
+                "Unexpected PRO detection error: {}".format(e),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Critical
             )
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
             return
 
-        # Build transform_info from crop_info for mask export
-        crop_info = self._current_crop_info
-        transform_info = None
-        if crop_info:
-            bounds = crop_info['bounds']  # (minx, miny, maxx, maxy)
-            img_shape = crop_info['img_shape']  # (h, w)
-            crs_value = None
-            try:
-                if self._current_layer and self._current_layer.crs().isValid():
-                    crs_value = self._current_layer.crs().authid()
-            except RuntimeError:
-                pass
-            transform_info = {
-                "bbox": (bounds[0], bounds[2], bounds[1], bounds[3]),
-                "img_shape": img_shape,
-                "crs": crs_value,
-            }
-            self.current_transform_info = transform_info
+        # For interactive (max_instances==1), pick the best mask
+        if max_instances == 1:
+            total_pixels = masks[0].shape[0] * masks[0].shape[1]
+            mask_areas = [int(m.sum()) for m in masks]
+            small_enough = [
+                i for i in range(len(scores))
+                if mask_areas[i] < 0.8 * total_pixels
+            ]
+            if small_enough:
+                best_idx = max(small_enough, key=lambda i: scores[i])
+            else:
+                best_idx = min(
+                    range(len(scores)), key=lambda i: mask_areas[i]
+                )
+            masks = masks[best_idx:best_idx + 1]
+            scores = scores[best_idx:best_idx + 1]
 
-        self._ensure_polygon_rubberband_sync()
+        # Filter by score threshold and max instances
+        filtered = [
+            (masks[i], float(scores[i]))
+            for i in range(masks.shape[0])
+            if float(scores[i]) >= score_threshold
+        ]
+        filtered.sort(key=lambda x: x[1], reverse=True)
+        filtered = filtered[:max_instances]
 
-        # Auto-save each detected instance as a separate polygon
-        saved_count = 0
-        for i in range(masks.shape[0]):
-            if self._save_single_mask(
-                mask=masks[i],
-                score=float(scores[i]),
-                transform_info=transform_info,
-                points_positive=[],
-                points_negative=[],
-            ):
-                saved_count += 1
-
-        if saved_count > 0:
-            self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
+        if not filtered:
             QgsMessageLog.logMessage(
-                tr("Found {count} instance(s) for \"{text}\"").format(
-                    count=saved_count, text=text),
+                "PRO detection: no masks above threshold {:.0%}".format(
+                    score_threshold),
                 "AI Segmentation", level=Qgis.MessageLevel.Info
             )
-            self.iface.messageBar().pushMessage(
-                "AI Segmentation",
-                tr("Found {count} instance(s) for \"{text}\"").format(
-                    count=saved_count, text=text),
-                level=Qgis.MessageLevel.Info,
-                duration=5
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            return
+
+        # Create rubber bands for each detection
+        from ..core.polygon_exporter import mask_to_polygons
+        batch_count = 0
+        for mask, score in filtered:
+            geometries = mask_to_polygons(mask, transform_info)
+            if not geometries:
+                continue
+            combined = QgsGeometry.unaryUnion(geometries)
+            if not combined or combined.isEmpty():
+                continue
+
+            rb = QgsRubberBand(
+                self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry
+            )
+            rb.setColor(QColor(0, 200, 100, 120))
+            rb.setFillColor(QColor(0, 200, 100, 80))
+            rb.setWidth(2)
+            display_geom = QgsGeometry(combined)
+            self._transform_geometry_to_canvas_crs(display_geom)
+            rb.setToGeometry(display_geom, None)
+
+            self._pro_pending_detections.append({
+                'mask': mask,
+                'score': score,
+                'transform_info': transform_info.copy(),
+                'rb': rb,
+            })
+            batch_count += 1
+
+        if batch_count > 0:
+            self._pro_detection_batches.append(batch_count)
+            if self.dock_widget:
+                self.dock_widget.set_mask_available(True)
+                pos = len(self._pro_detection_batches)
+                self.dock_widget.set_point_count(pos, 0)
+            QgsMessageLog.logMessage(
+                "PRO detection: {} object(s) found".format(batch_count),
+                "AI Segmentation", level=Qgis.MessageLevel.Info
             )
         else:
-            self.iface.messageBar().pushMessage(
-                "AI Segmentation",
-                tr("No instances found for \"{text}\"").format(text=text),
-                level=Qgis.MessageLevel.Warning,
-                duration=5
-            )
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
 
     def _activate_segmentation_tool(self):
         # Save the current map tool to restore it later
@@ -1615,6 +1721,37 @@ class AISegmentationPlugin:
         """Save current mask as polygon."""
         if self._encoding_in_progress:
             return
+
+        # PRO mode: save all pending detections
+        if self._pro_pending_detections:
+            self._ensure_polygon_rubberband_sync()
+            for det in self._pro_pending_detections:
+                self._save_single_mask(
+                    mask=det['mask'],
+                    score=det['score'],
+                    transform_info=det['transform_info'],
+                    points_positive=[],
+                    points_negative=[],
+                )
+            # Rubber bands are already green; transfer them to saved list
+            for det in self._pro_pending_detections:
+                self.saved_rubber_bands.append(det['rb'])
+            self._pro_pending_detections = []
+            self._pro_detection_batches = []
+            if self.map_tool:
+                self.map_tool.clear_markers()
+            if self.dock_widget:
+                self.dock_widget.set_saved_polygon_count(
+                    len(self.saved_polygons))
+                self.dock_widget.set_point_count(0, 0)
+                self.dock_widget.set_mask_available(False)
+            QgsMessageLog.logMessage(
+                "PRO: saved {} detection(s)".format(
+                    len(self.saved_polygons)),
+                "AI Segmentation", level=Qgis.MessageLevel.Info
+            )
+            return
+
         if self.current_mask is None or self.current_transform_info is None:
             return
 
@@ -2439,6 +2576,10 @@ class AISegmentationPlugin:
 
     def _on_positive_click(self, point):
         """Handle left-click: add positive point (select this element)."""
+        if self.dock_widget and self.dock_widget.is_pro_mode():
+            self._run_pro_detection(point)
+            return
+
         if self.predictor is None:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
@@ -2484,6 +2625,11 @@ class AISegmentationPlugin:
 
     def _on_negative_click(self, point):
         """Handle right-click: add negative point (exclude this area)."""
+        if self.dock_widget and self.dock_widget.is_pro_mode():
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            return
+
         if self.predictor is None:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
@@ -2585,11 +2731,6 @@ class AISegmentationPlugin:
             "mask_input": mask_input,
             "multimask_output": use_multimask,
         }
-        # In PRO mode, pass text_prompt for combined point+text predictions
-        if (self.dock_widget and self.dock_widget.is_pro_mode()):
-            text = self.dock_widget.get_text_prompt()
-            if text:
-                predict_kwargs["text_prompt"] = text
 
         try:
             masks, scores, low_res_masks = self.predictor.predict(
@@ -2799,7 +2940,23 @@ class AISegmentationPlugin:
         self.dock_widget.set_point_count(0, 0)
 
     def _on_undo(self):
-        """Undo last point added, or restore last saved mask in batch mode."""
+        """Undo last point/batch, or restore last saved mask in batch mode."""
+        # PRO mode: undo removes the last detection batch
+        if self._pro_pending_detections and self._pro_detection_batches:
+            batch_size = self._pro_detection_batches.pop()
+            for _ in range(batch_size):
+                if self._pro_pending_detections:
+                    det = self._pro_pending_detections.pop()
+                    self._safe_remove_rubber_band(det.get('rb'))
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            if self.dock_widget:
+                has_detections = len(self._pro_pending_detections) > 0
+                self.dock_widget.set_mask_available(has_detections)
+                pos = len(self._pro_detection_batches)
+                self.dock_widget.set_point_count(pos, 0)
+            return
+
         # Check if we have points in current mask
         current_point_count = self.prompts.point_count[0] + self.prompts.point_count[1]
 
@@ -2919,6 +3076,12 @@ class AISegmentationPlugin:
         for rb in self.saved_rubber_bands:
             self._safe_remove_rubber_band(rb)
         self.saved_rubber_bands = []
+
+        # Clean up PRO pending detections
+        for det in self._pro_pending_detections:
+            self._safe_remove_rubber_band(det.get('rb'))
+        self._pro_pending_detections = []
+        self._pro_detection_batches = []
 
         if self.map_tool:
             self.map_tool.clear_markers()

@@ -706,12 +706,20 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Token guardado</translation>
     </message>
     <message>
-        <source>Describe what to segment (e.g. building, tree, road)</source>
-        <translation>Describa lo que desea segmentar (ej. edificio, arbol, carretera)</translation>
+        <source>Max instances</source>
+        <translation>Max instancias</translation>
     </message>
     <message>
-        <source>Segment by text</source>
-        <translation>Segmentar por texto</translation>
+        <source>Min. confidence</source>
+        <translation>Confianza min.</translation>
+    </message>
+    <message>
+        <source>Click on the area to detect and segment objects</source>
+        <translation>Haga clic en el area para detectar y segmentar objetos</translation>
+    </message>
+    <message>
+        <source>Click another area to detect more objects</source>
+        <translation>Haga clic en otra area para detectar mas objetos</translation>
     </message>
     <message>
         <source>Start PRO Segmentation</source>

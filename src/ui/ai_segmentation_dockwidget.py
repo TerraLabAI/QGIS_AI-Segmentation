@@ -47,7 +47,6 @@ class AISegmentationDockWidget(QDockWidget):
     cancel_install_requested = pyqtSignal()
     start_segmentation_requested = pyqtSignal(object)
     start_pro_segmentation_requested = pyqtSignal(object)  # layer
-    pro_text_predict_requested = pyqtSignal(str)  # text prompt
     clear_points_requested = pyqtSignal()
     undo_requested = pyqtSignal()
     save_polygon_requested = pyqtSignal()
@@ -541,24 +540,41 @@ class AISegmentationDockWidget(QDockWidget):
         self.pro_container.setVisible(self._pro_mode)
         layout.addWidget(self.pro_container)
 
-        # Text prompt controls (outside pro_container so they stay visible
-        # during active segmentation when pro_container is hidden)
-        self.text_prompt_input = QLineEdit()
-        self.text_prompt_input.setPlaceholderText(
-            tr("Describe what to segment (e.g. building, tree, road)")
-        )
-        self.text_prompt_input.setVisible(False)
-        self.text_prompt_input.returnPressed.connect(
-            self._on_text_segment_clicked)
-        layout.addWidget(self.text_prompt_input)
+        # PRO granularity controls (visible during PRO segmentation)
+        self.pro_controls_container = QWidget()
+        pro_ctrl_layout = QVBoxLayout(self.pro_controls_container)
+        pro_ctrl_layout.setContentsMargins(0, 4, 0, 4)
+        pro_ctrl_layout.setSpacing(6)
 
-        self.text_segment_btn = QPushButton(tr("Segment by text"))
-        self.text_segment_btn.clicked.connect(self._on_text_segment_clicked)
-        self.text_segment_btn.setVisible(False)
-        self.text_segment_btn.setStyleSheet(
-            "QPushButton { background-color: #1565c0; padding: 6px 12px; }"
-        )
-        layout.addWidget(self.text_segment_btn)
+        # Max instances
+        max_inst_layout = QHBoxLayout()
+        max_inst_label = QLabel(tr("Max instances"))
+        max_inst_label.setStyleSheet("font-size: 12px; color: palette(text);")
+        self.max_instances_spinbox = QSpinBox()
+        self.max_instances_spinbox.setRange(1, 100)
+        self.max_instances_spinbox.setValue(10)
+        self.max_instances_spinbox.setMinimumWidth(80)
+        max_inst_layout.addWidget(max_inst_label)
+        max_inst_layout.addStretch()
+        max_inst_layout.addWidget(self.max_instances_spinbox)
+        pro_ctrl_layout.addLayout(max_inst_layout)
+
+        # Score threshold (min confidence)
+        score_layout = QHBoxLayout()
+        score_label = QLabel(tr("Min. confidence"))
+        score_label.setStyleSheet("font-size: 12px; color: palette(text);")
+        self.score_threshold_spinbox = QSpinBox()
+        self.score_threshold_spinbox.setRange(0, 100)
+        self.score_threshold_spinbox.setValue(30)
+        self.score_threshold_spinbox.setSuffix(" %")
+        self.score_threshold_spinbox.setMinimumWidth(80)
+        score_layout.addWidget(score_label)
+        score_layout.addStretch()
+        score_layout.addWidget(self.score_threshold_spinbox)
+        pro_ctrl_layout.addLayout(score_layout)
+
+        self.pro_controls_container.setVisible(False)
+        layout.addWidget(self.pro_controls_container)
 
         # Container for start button
         self.start_container = QWidget()
@@ -1215,6 +1231,14 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_container.setVisible(not self._pro_mode)
         self.pro_container.setVisible(self._pro_mode)
 
+    def get_score_threshold(self) -> float:
+        """Return score threshold as a float (0.0 to 1.0)."""
+        return self.score_threshold_spinbox.value() / 100.0
+
+    def get_max_instances(self) -> int:
+        """Return maximum number of instances for PRO detection."""
+        return self.max_instances_spinbox.value()
+
     def _on_save_hf_token(self):
         token = self.hf_token_input.text().strip()
         if token:
@@ -1231,18 +1255,8 @@ class AISegmentationDockWidget(QDockWidget):
         if layer:
             self.start_pro_segmentation_requested.emit(layer)
 
-    def _on_text_segment_clicked(self):
-        text = self.text_prompt_input.text().strip()
-        if not text:
-            self.text_prompt_input.setFocus()
-            return
-        self.pro_text_predict_requested.emit(text)
-
     def is_pro_mode(self) -> bool:
         return self._pro_mode
-
-    def get_text_prompt(self) -> str:
-        return self.text_prompt_input.text().strip()
 
     def _on_start_clicked(self):
         layer = self.layer_combo.currentLayer()
@@ -1447,9 +1461,8 @@ class AISegmentationDockWidget(QDockWidget):
             self.instructions_label.setVisible(True)
             self._update_instructions()
 
-            # Text prompt: visible only during PRO segmentation
-            self.text_prompt_input.setVisible(self._pro_mode)
-            self.text_segment_btn.setVisible(self._pro_mode)
+            # PRO granularity controls: visible only during PRO segmentation
+            self.pro_controls_container.setVisible(self._pro_mode)
 
             # Refine panel visibility
             self._update_refine_panel_visibility()
@@ -1478,8 +1491,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.mode_toggle_container.setVisible(True)
             self._update_mode_containers()
             self.instructions_label.setVisible(False)
-            self.text_prompt_input.setVisible(False)
-            self.text_segment_btn.setVisible(False)
+            self.pro_controls_container.setVisible(False)
             self.refine_group.setVisible(False)
             self.save_mask_button.setVisible(False)
             self.export_button.setVisible(False)
@@ -1539,6 +1551,18 @@ class AISegmentationDockWidget(QDockWidget):
         """Update instruction text based on current segmentation state."""
         total = self._positive_count + self._negative_count
 
+        if self._pro_mode:
+            if total == 0:
+                text = tr(
+                    "Click on the area to detect and segment objects"
+                )
+            else:
+                text = tr(
+                    "Click another area to detect more objects"
+                )
+            self.instructions_label.setText(text)
+            return
+
         if total == 0:
             text = (
                 tr("Click on the element you want to segment:") + "\n\n"
@@ -1570,6 +1594,13 @@ class AISegmentationDockWidget(QDockWidget):
         self._positive_count = 0
         self._negative_count = 0
         self.disjoint_warning_widget.setVisible(False)
+        # Reset PRO controls
+        self.max_instances_spinbox.blockSignals(True)
+        self.score_threshold_spinbox.blockSignals(True)
+        self.max_instances_spinbox.setValue(10)
+        self.score_threshold_spinbox.setValue(30)
+        self.max_instances_spinbox.blockSignals(False)
+        self.score_threshold_spinbox.blockSignals(False)
         self.reset_refine_sliders()
         self._update_button_visibility()
         self._update_ui_state()
