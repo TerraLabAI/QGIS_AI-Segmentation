@@ -1,11 +1,14 @@
 """CloudSam3Predictor - same interface as CloudPredictor but calls SAM3 server."""
+import io
 import json
+import zlib
 import base64
 import urllib.request
 import urllib.error
 from typing import Tuple, Optional
 
 import numpy as np
+from PIL import Image as PILImage
 
 from qgis.core import QgsMessageLog, Qgis
 
@@ -14,7 +17,13 @@ from .model_config import SAM3_CLOUD_URL
 _TIMEOUT_HEALTH = 300
 _TIMEOUT_SET_IMAGE = 120
 _TIMEOUT_PREDICT = 60
+_TIMEOUT_PREDICT_TEXT = 120
 _TIMEOUT_RESET = 10
+
+
+class SessionExpiredError(RuntimeError):
+    """Raised when the server returns 404 for an expired session."""
+    pass
 
 
 class CloudSam3Predictor:
@@ -26,6 +35,7 @@ class CloudSam3Predictor:
         self._session_id = None
         self._hf_token = hf_token
         self._api_key = api_key
+        self._last_image_np = None
 
     def _request(self, method, path, data=None, timeout=30):
         url = "{}{}".format(SAM3_CLOUD_URL, path)
@@ -51,6 +61,8 @@ class CloudSam3Predictor:
                 detail = e.read().decode("utf-8")
             except Exception:
                 pass
+            if e.code == 404 and "Session not found" in detail:
+                raise SessionExpiredError(detail)
             raise RuntimeError(
                 "SAM 3 server error {}: {}".format(e.code, detail)
             )
@@ -80,11 +92,17 @@ class CloudSam3Predictor:
             return False
 
     def set_image(self, image_np: np.ndarray) -> None:
-        image_b64 = base64.b64encode(image_np.tobytes()).decode("utf-8")
+        self._last_image_np = image_np
+        # JPEG compress for faster upload (~4MB -> ~0.3-0.5MB)
+        pil_img = PILImage.fromarray(image_np)
+        buf = io.BytesIO()
+        pil_img.save(buf, format="JPEG", quality=90)
+        image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
         data = {
             "image_b64": image_b64,
             "image_shape": list(image_np.shape),
             "image_dtype": str(image_np.dtype),
+            "image_format": "jpeg",
         }
         resp = self._request(
             "POST", "/set_image", data, timeout=_TIMEOUT_SET_IMAGE
@@ -133,11 +151,29 @@ class CloudSam3Predictor:
             data["mask_input_shape"] = list(mask_input.shape)
             data["mask_input_dtype"] = str(mask_input.dtype)
 
-        resp = self._request(
-            "POST", "/predict", data, timeout=_TIMEOUT_PREDICT
-        )
+        timeout = _TIMEOUT_PREDICT_TEXT if text_prompt else _TIMEOUT_PREDICT
+        try:
+            resp = self._request(
+                "POST", "/predict", data, timeout=timeout
+            )
+        except SessionExpiredError:
+            if self._last_image_np is None:
+                raise RuntimeError(
+                    "Session expired and no image available for retry"
+                )
+            QgsMessageLog.logMessage(
+                "SAM 3 session expired, re-uploading image...",
+                "AI Segmentation", level=Qgis.Info
+            )
+            self.set_image(self._last_image_np)
+            data["session_id"] = self._session_id
+            resp = self._request(
+                "POST", "/predict", data, timeout=timeout
+            )
 
         masks_bytes = base64.b64decode(resp["masks"].encode("utf-8"))
+        if resp.get("masks_compressed"):
+            masks_bytes = zlib.decompress(masks_bytes)
         masks = np.frombuffer(
             masks_bytes, dtype=resp["masks_dtype"]
         ).reshape(resp["masks_shape"])
@@ -147,6 +183,8 @@ class CloudSam3Predictor:
         lr_bytes = base64.b64decode(
             resp["low_res_masks"].encode("utf-8")
         )
+        if resp.get("low_res_masks_compressed"):
+            lr_bytes = zlib.decompress(lr_bytes)
         low_res_masks = np.frombuffer(
             lr_bytes, dtype=resp["low_res_masks_dtype"]
         ).reshape(resp["low_res_masks_shape"])
@@ -176,6 +214,7 @@ class CloudSam3Predictor:
         self.is_image_set = False
         self.original_size = None
         self.input_size = None
+        self._last_image_np = None
 
     def cleanup(self) -> None:
         self.reset_image()

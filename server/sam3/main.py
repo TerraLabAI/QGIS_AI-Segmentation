@@ -11,12 +11,14 @@ import os
 import uuid
 import time
 import base64
+import zlib
 import threading
 
 import numpy as np
 import torch
 from PIL import Image
 from fastapi import FastAPI, HTTPException, Header
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -31,6 +33,7 @@ API_KEY = os.environ.get("API_KEY", "")
 SESSION_TTL = int(os.environ.get("SESSION_TTL", "600"))
 
 app = FastAPI(title="SAM3 Inference API", version="1.0.0")
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 _predictor_lock = threading.Lock()
 _sessions = {}
@@ -44,6 +47,7 @@ class SetImageRequest(BaseModel):
     image_b64: str
     image_shape: List[int]
     image_dtype: str = "uint8"
+    image_format: Optional[str] = None  # "jpeg" or None (raw numpy)
 
 
 class PredictRequest(BaseModel):
@@ -114,30 +118,58 @@ def startup():
     if getattr(_tracker_model, "backbone", None) is None:
         _tracker_model.backbone = _sam_model.backbone
         print("Shared backbone from Sam3Image to tracker.")
+
+    # Performance: enable cudnn autotuner
+    # fp16 is handled by torch.amp.autocast at inference time (not .half())
+    # to avoid dtype mismatches between model components (tracker vs text encoder)
+    torch.backends.cudnn.benchmark = True
+
+    # torch.compile for point prediction (fixed 1024x1024 input)
+    if hasattr(torch, "compile") and _device.type == "cuda":
+        try:
+            _tracker_model = torch.compile(
+                _tracker_model, mode="default"
+            )
+            print("Tracker model compiled with torch.compile.")
+        except Exception as e:
+            print("torch.compile failed, using eager mode: {}".format(e))
+
     print("SAM3 model loaded (tracker: {}).".format(type(_tracker_model).__name__))
 
-    # Self-test: verify point prediction works with a small dummy image
-    print("Running startup self-test...")
+    # Full warmup: run complete predict cycles so torch.compile traces
+    # all graphs before the first real request (avoids 10-30s penalty).
+    print("Running startup warmup (compiling graphs)...")
     try:
         test_predictor = SAM3InteractiveImagePredictor(_tracker_model)
-        test_img = np.zeros((64, 64, 3), dtype=np.uint8)
+        test_img = np.zeros((1024, 1024, 3), dtype=np.uint8)
         with torch.inference_mode():
-            test_predictor.set_image(test_img)
+            with torch.amp.autocast("cuda", dtype=torch.float16):
+                test_predictor.set_image(test_img)
+                test_predictor.predict(
+                    point_coords=np.array([[512.0, 512.0]]),
+                    point_labels=np.array([1]),
+                    multimask_output=True,
+                    normalize_coords=True,
+                )
         test_predictor.reset_predictor()
-        print("Self-test passed: predictor works.")
+        print("Warmup done: point prediction graph compiled.")
     except Exception as e:
-        print("WARNING: Self-test failed: {}".format(e))
+        print("WARNING: Warmup failed: {}".format(e))
         import traceback
         traceback.print_exc()
 
-    # Self-test: verify text prediction pipeline
+    # Text processor warmup
     try:
-        test_pil = Image.fromarray(np.zeros((64, 64, 3), dtype=np.uint8))
+        test_pil = Image.fromarray(
+            np.zeros((1024, 1024, 3), dtype=np.uint8)
+        )
         with torch.inference_mode():
-            _processor.set_image(test_pil)
-        print("Self-test passed: processor.set_image works.")
+            with torch.amp.autocast("cuda", dtype=torch.float16):
+                state = _processor.set_image(test_pil)
+                _processor.set_text_prompt(prompt="test", state=state)
+        print("Warmup done: text prediction graph compiled.")
     except Exception as e:
-        print("WARNING: Processor self-test failed: {}".format(e))
+        print("WARNING: Text warmup failed: {}".format(e))
         import traceback
         traceback.print_exc()
 
@@ -159,25 +191,30 @@ def set_image(req: SetImageRequest, x_api_key: Optional[str] = Header(None)):
 
     try:
         image_bytes = base64.b64decode(req.image_b64.encode("utf-8"))
-        image_np = np.frombuffer(
-            image_bytes, dtype=req.image_dtype
-        ).reshape(req.image_shape)
+        if req.image_format == "jpeg":
+            import io
+            pil_image = Image.open(io.BytesIO(image_bytes))
+            image_np = np.array(pil_image)
+        else:
+            image_np = np.frombuffer(
+                image_bytes, dtype=req.image_dtype
+            ).reshape(req.image_shape)
+            pil_image = Image.fromarray(image_np)
 
         session_id = str(uuid.uuid4())
         predictor = SAM3InteractiveImagePredictor(_tracker_model)
 
         with torch.inference_mode():
-            predictor.set_image(image_np)
+            with torch.amp.autocast("cuda", dtype=torch.float16):
+                predictor.set_image(image_np)
 
-        with torch.inference_mode():
-            pil_image = Image.fromarray(image_np)
-            text_state = _processor.set_image(pil_image)
-
+        # Defer text processor encoding to first text prediction
         original_size = list(image_np.shape[:2])
 
         _sessions[session_id] = {
             "predictor": predictor,
-            "text_state": text_state,
+            "text_state": None,
+            "pil_image": pil_image,
             "last_used": time.time(),
             "original_size": original_size,
         }
@@ -235,14 +272,29 @@ def predict(req: PredictRequest, x_api_key: Optional[str] = Header(None)):
 
 def _predict_text(req, session):
     """Text-only prediction via Sam3Processor."""
-    text_state = session["text_state"]
     original_size = session["original_size"]
 
+    # Lazy init: encode image for text processor on first text prediction
+    if session["text_state"] is None:
+        pil_image = session.get("pil_image")
+        if pil_image is None:
+            raise HTTPException(
+                status_code=500,
+                detail="No image available for text processor init"
+            )
+        with torch.inference_mode():
+            with torch.amp.autocast("cuda", dtype=torch.float16):
+                session["text_state"] = _processor.set_image(pil_image)
+        session["pil_image"] = None  # free memory
+
+    text_state = session["text_state"]
+
     with torch.inference_mode():
-        output = _processor.set_text_prompt(
-            prompt=req.text_prompt.strip(),
-            state=text_state,
-        )
+        with torch.amp.autocast("cuda", dtype=torch.float16):
+            output = _processor.set_text_prompt(
+                prompt=req.text_prompt.strip(),
+                state=text_state,
+            )
 
     out_masks = output.get("masks")
     out_scores = output.get("scores")
@@ -269,13 +321,16 @@ def _predict_text(req, session):
 
     h, w = original_size
     if out_masks.shape[-2:] != (h, w):
-        from PIL import Image as PILImage
-        resized = []
-        for m in out_masks:
-            img = PILImage.fromarray(m.astype(np.uint8) * 255)
-            img = img.resize((w, h), PILImage.NEAREST)
-            resized.append(np.array(img) > 127)
-        out_masks = np.stack(resized)
+        import torch.nn.functional as F
+        masks_tensor = torch.from_numpy(
+            out_masks.astype(np.float32)
+        ).unsqueeze(1).to(_device)
+        masks_resized = F.interpolate(
+            masks_tensor, size=(h, w), mode="nearest"
+        )
+        out_masks = (
+            masks_resized.squeeze(1).cpu().numpy() > 0.5
+        ).astype(bool)
 
     if not req.multimask_output and out_masks.shape[0] > 1:
         best_idx = int(np.argmax(out_scores))
@@ -292,16 +347,21 @@ def _predict_text(req, session):
     n = out_masks.shape[0]
     low_res_masks = np.zeros((n, 256, 256), dtype=np.float32)
 
+    masks_compressed = zlib.compress(out_masks.tobytes(), level=1)
+    lr_compressed = zlib.compress(low_res_masks.tobytes(), level=1)
+
     return {
-        "masks": base64.b64encode(out_masks.tobytes()).decode("utf-8"),
+        "masks": base64.b64encode(masks_compressed).decode("utf-8"),
         "masks_shape": list(out_masks.shape),
         "masks_dtype": str(out_masks.dtype),
+        "masks_compressed": True,
         "scores": out_scores.tolist(),
         "low_res_masks": base64.b64encode(
-            low_res_masks.tobytes()
+            lr_compressed
         ).decode("utf-8"),
         "low_res_masks_shape": list(low_res_masks.shape),
         "low_res_masks_dtype": str(low_res_masks.dtype),
+        "low_res_masks_compressed": True,
     }
 
 
@@ -333,7 +393,8 @@ def _predict_points(req, session, has_points):
         predict_kwargs["mask_input"] = mask_input
 
     with torch.inference_mode():
-        masks, scores, low_res_masks = predictor.predict(**predict_kwargs)
+        with torch.amp.autocast("cuda", dtype=torch.float16):
+            masks, scores, low_res_masks = predictor.predict(**predict_kwargs)
 
     if auto_best and masks.shape[0] > 1:
         best_idx = int(np.argmax(scores))
@@ -348,16 +409,21 @@ def _predict_points(req, session, has_points):
                    "Try a different prompt or click closer to the target."
         )
 
+    masks_compressed = zlib.compress(masks.tobytes(), level=1)
+    lr_compressed = zlib.compress(low_res_masks.tobytes(), level=1)
+
     return {
-        "masks": base64.b64encode(masks.tobytes()).decode("utf-8"),
+        "masks": base64.b64encode(masks_compressed).decode("utf-8"),
         "masks_shape": list(masks.shape),
         "masks_dtype": str(masks.dtype),
+        "masks_compressed": True,
         "scores": scores.tolist(),
         "low_res_masks": base64.b64encode(
-            low_res_masks.tobytes()
+            lr_compressed
         ).decode("utf-8"),
         "low_res_masks_shape": list(low_res_masks.shape),
         "low_res_masks_dtype": str(low_res_masks.dtype),
+        "low_res_masks_compressed": True,
     }
 
 

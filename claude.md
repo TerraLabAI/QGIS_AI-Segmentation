@@ -86,13 +86,15 @@
   - Response format: base64-encoded numpy arrays (masks, scores, low_res_masks)
 - **SAM3 Container App**: `sam3-api` (serves SAM3 cloud inference)
   - URL: `https://sam3-api.kindrock-9d62e9fa.francecentral.azurecontainerapps.io`
-  - Image: `terralabsamacr.azurecr.io/sam3-api:gpu-v1`
+  - Image: `terralabsamacr.azurecr.io/sam3-api:gpu-v2` (thin app layer)
+  - Base image: `terralabsamacr.azurecr.io/sam3-api-base:v1` (CUDA + deps + checkpoint, rebuild rarely)
   - Server code: `server/sam3/main.py`
-  - Docker: `server/sam3/Dockerfile` (CUDA 12.4 base)
-  - `HF_TOKEN` is a build-arg only (checkpoint downloaded at build time)
+  - Docker: `server/sam3/Dockerfile` (thin app), `server/sam3/Dockerfile.base` (heavy base)
+  - `HF_TOKEN` is a build-arg on the base image only (checkpoint downloaded at build time)
   - Adds `text_prompt` field to `/predict` endpoint
 
 ### Deployment Pattern
+- SAM3 uses two-stage Docker: `Dockerfile.base` (heavy, ~13min, deps+checkpoint) and `Dockerfile` (thin, ~10-30s, code only)
 - Docker images built via `az acr build`, pushed to `terralabsamacr`
 - Container Apps run on GPU workload profile (`gpu-t4`), scale 0-1 replicas
 - API keys stored as Azure secrets, passed as env vars
