@@ -1,0 +1,9 @@
+[flake8]
+max-line-length = 120
+extend-ignore = QGS105
+exclude =
+    __pycache__,
+    libs,
+    models,
+    .git,
+    *.egg-info
