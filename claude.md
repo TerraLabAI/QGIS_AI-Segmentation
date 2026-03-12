@@ -118,3 +118,11 @@ Languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
 - XML parsing: use `defusedxml.defuse_stdlib()` before `ET.parse()` (B314)
 - Subprocess: list arguments, never `shell=True` with string interpolation
 - No hardcoded credentials or credential-like patterns in code/comments
+
+## Release Process
+
+- **Never create GitHub releases or tags without explicit user confirmation**
+- Release flow: create a GitHub Release with tag `vX.Y.Z` to trigger `release.yml`
+- `release.yml` packages the plugin, attaches the zip to the GitHub Release, and publishes to plugins.qgis.org
+- Required repo secrets: `OSGEO_USERNAME` and `OSGEO_PASSWORD` (GitHub Settings > Secrets)
+- `.gitattributes` ensures dev files (tests, CI, CLAUDE.md, etc.) are excluded from the release zip
