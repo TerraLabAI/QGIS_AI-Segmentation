@@ -181,6 +181,22 @@ jobs:
       - name: Gitleaks
         run: gitleaks detect --source . -v
 
+  qgis-smoke:
+    name: QGIS smoke test (${{ matrix.qgis-image }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        qgis-image: ["qgis/qgis:ltr", "qgis/qgis:latest"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load plugin in QGIS
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/plugins/ai_seg" \
+            ${{ matrix.qgis-image }} \
+            xvfb-run python3 /plugins/ai_seg/tests/test_smoke.py
+
   package:
     name: Package plugin
     needs: [lint, security, syntax-check, i18n-check, metadata-check]
