@@ -1355,19 +1355,13 @@ class AISegmentationPlugin:
 
     def _on_text_predict(self, text: str):
         """Handle text-only prediction from PRO mode."""
-        if not self.predictor or not self.predictor.is_image_set:
-            QgsMessageLog.logMessage(
-                "Text predict: no image set on predictor",
-                "AI Segmentation", level=Qgis.MessageLevel.Warning
-            )
-            self.iface.messageBar().pushMessage(
-                "AI Segmentation",
-                tr("Click on the map first to set an image before "
-                   "using text prediction."),
-                level=Qgis.MessageLevel.Warning,
-                duration=5
-            )
+        if not self.predictor:
             return
+
+        # Auto-capture canvas center if no image is set yet
+        if not self.predictor.is_image_set:
+            if not self._auto_capture_canvas_center():
+                return
 
         try:
             masks, scores, low_res_masks = self.predictor.predict(
@@ -1391,14 +1385,31 @@ class AISegmentationPlugin:
             )
             return
 
-        # Store result (same as point prediction flow)
         self.current_mask = masks[0]
         self.current_score = float(scores[0])
         self.current_low_res_mask = low_res_masks
 
-        # Text predictions have 0 points, so set_point_count won't set _has_mask
-        self.dock_widget.set_mask_available(True)
+        # Build transform_info from crop_info for mask visualization/export
+        crop_info = self._current_crop_info
+        if crop_info:
+            bounds = crop_info['bounds']  # (minx, miny, maxx, maxy)
+            img_shape = crop_info['img_shape']  # (h, w)
+            crs_value = None
+            try:
+                if self._current_layer and self._current_layer.crs().isValid():
+                    crs_value = self._current_layer.crs().authid()
+            except RuntimeError:
+                pass
+            self.current_transform_info = {
+                "bbox": (bounds[0], bounds[2], bounds[1], bounds[3]),
+                "img_shape": img_shape,
+                "crs": crs_value,
+            }
+
+        # _update_ui_after_prediction calls set_point_count(0,0) which resets _has_mask=False,
+        # so set_mask_available(True) must come AFTER to correctly override it.
         self._update_ui_after_prediction()
+        self.dock_widget.set_mask_available(True)
 
     def _activate_segmentation_tool(self):
         # Save the current map tool to restore it later
@@ -2209,6 +2220,14 @@ class AISegmentationPlugin:
 
         ratio = canvas_mupp_raster_crs / native_pixel_size
         return max(0.25, min(ratio, 8.0))
+
+    def _auto_capture_canvas_center(self):
+        """Capture a crop centered on canvas center for text-only prediction."""
+        canvas = self.iface.mapCanvas()
+        canvas_center = canvas.center()
+        raster_pt = self._transform_to_raster_crs(canvas_center)
+        initial_scale = self._compute_initial_scale_factor()
+        return self._extract_and_encode_crop(raster_pt, mupp_override=initial_scale)
 
     def _extract_and_encode_crop(self, center_point, mupp_override=None):
         """Extract a crop centered on the point and encode it with SAM.

@@ -548,6 +548,8 @@ class AISegmentationDockWidget(QDockWidget):
             tr("Describe what to segment (e.g. building, tree, road)")
         )
         self.text_prompt_input.setVisible(False)
+        self.text_prompt_input.returnPressed.connect(
+            self._on_text_segment_clicked)
         layout.addWidget(self.text_prompt_input)
 
         self.text_segment_btn = QPushButton(tr("Segment by text"))
