@@ -1365,7 +1365,7 @@ class AISegmentationPlugin:
 
         try:
             masks, scores, low_res_masks = self.predictor.predict(
-                text_prompt=text
+                text_prompt=text, multimask_output=True
             )
         except RuntimeError as e:
             QgsMessageLog.logMessage(
@@ -1385,12 +1385,9 @@ class AISegmentationPlugin:
             )
             return
 
-        self.current_mask = masks[0]
-        self.current_score = float(scores[0])
-        self.current_low_res_mask = low_res_masks
-
-        # Build transform_info from crop_info for mask visualization/export
+        # Build transform_info from crop_info for mask export
         crop_info = self._current_crop_info
+        transform_info = None
         if crop_info:
             bounds = crop_info['bounds']  # (minx, miny, maxx, maxy)
             img_shape = crop_info['img_shape']  # (h, w)
@@ -1400,16 +1397,48 @@ class AISegmentationPlugin:
                     crs_value = self._current_layer.crs().authid()
             except RuntimeError:
                 pass
-            self.current_transform_info = {
+            transform_info = {
                 "bbox": (bounds[0], bounds[2], bounds[1], bounds[3]),
                 "img_shape": img_shape,
                 "crs": crs_value,
             }
+            self.current_transform_info = transform_info
 
-        # _update_ui_after_prediction calls set_point_count(0,0) which resets _has_mask=False,
-        # so set_mask_available(True) must come AFTER to correctly override it.
-        self._update_ui_after_prediction()
-        self.dock_widget.set_mask_available(True)
+        self._ensure_polygon_rubberband_sync()
+
+        # Auto-save each detected instance as a separate polygon
+        saved_count = 0
+        for i in range(masks.shape[0]):
+            if self._save_single_mask(
+                mask=masks[i],
+                score=float(scores[i]),
+                transform_info=transform_info,
+                points_positive=[],
+                points_negative=[],
+            ):
+                saved_count += 1
+
+        if saved_count > 0:
+            self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
+            QgsMessageLog.logMessage(
+                tr("Found {count} instance(s) for \"{text}\"").format(
+                    count=saved_count, text=text),
+                "AI Segmentation", level=Qgis.MessageLevel.Info
+            )
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("Found {count} instance(s) for \"{text}\"").format(
+                    count=saved_count, text=text),
+                level=Qgis.MessageLevel.Info,
+                duration=5
+            )
+        else:
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("No instances found for \"{text}\"").format(text=text),
+                level=Qgis.MessageLevel.Warning,
+                duration=5
+            )
 
     def _activate_segmentation_tool(self):
         # Save the current map tool to restore it later
@@ -1527,6 +1556,61 @@ class AISegmentationPlugin:
             self._reset_session()
             self.dock_widget.reset_session()
 
+    def _save_single_mask(self, mask, score, transform_info,
+                          points_positive=None, points_negative=None,
+                          expand=0, simplify=3, fill_holes=False, min_area=100):
+        """Save a single mask as a polygon entry. Returns True if saved."""
+        from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
+
+        mask_for_save = mask
+        if fill_holes or min_area > 0 or expand != 0:
+            mask_for_save = apply_mask_refinement(
+                mask,
+                expand_value=expand,
+                fill_holes=fill_holes,
+                min_area=min_area
+            )
+
+        geometries = mask_to_polygons(mask_for_save, transform_info)
+
+        if geometries:
+            combined = QgsGeometry.unaryUnion(geometries)
+        else:
+            combined = None
+
+        if not combined or combined.isEmpty():
+            return False
+
+        tolerance = self._compute_simplification_tolerance(
+            transform_info, simplify
+        )
+        if tolerance > 0:
+            combined = combined.simplify(tolerance)
+
+        self.saved_polygons.append({
+            'geometry_wkt': combined.asWkt(),
+            'score': score,
+            'transform_info': transform_info.copy() if transform_info else None,
+            'raw_mask': mask.copy(),
+            'points_positive': list(points_positive) if points_positive else [],
+            'points_negative': list(points_negative) if points_negative else [],
+            'refine_expand': expand,
+            'refine_simplify': simplify,
+            'refine_fill_holes': fill_holes,
+            'refine_min_area': min_area,
+        })
+
+        saved_rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
+        saved_rb.setColor(QColor(0, 200, 100, 120))
+        saved_rb.setFillColor(QColor(0, 200, 100, 80))
+        saved_rb.setWidth(2)
+        display_geom = QgsGeometry(combined)
+        self._transform_geometry_to_canvas_crs(display_geom)
+        saved_rb.setToGeometry(display_geom, None)
+        self.saved_rubber_bands.append(saved_rb)
+
+        return True
+
     def _on_save_polygon(self):
         """Save current mask as polygon."""
         if self._encoding_in_progress:
@@ -1536,67 +1620,25 @@ class AISegmentationPlugin:
 
         self._ensure_polygon_rubberband_sync()
 
-        from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
+        saved = self._save_single_mask(
+            mask=self.current_mask,
+            score=self.current_score,
+            transform_info=self.current_transform_info,
+            points_positive=list(self.prompts.positive_points),
+            points_negative=list(self.prompts.negative_points),
+            expand=self._refine_expand,
+            simplify=self._refine_simplify,
+            fill_holes=self._refine_fill_holes,
+            min_area=self._refine_min_area,
+        )
 
-        # Apply all mask-level refinements for display (green shows with effects)
-        mask_for_display = self.current_mask
-        if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
-            mask_for_display = apply_mask_refinement(
-                self.current_mask,
-                expand_value=self._refine_expand,
-                fill_holes=self._refine_fill_holes,
-                min_area=self._refine_min_area
-            )
-
-        geometries = mask_to_polygons(mask_for_display, self.current_transform_info)
-
-        if geometries:
-            combined = QgsGeometry.unaryUnion(geometries)
-        else:
-            combined = None
-
-        if combined and not combined.isEmpty():
-            # Apply simplification if enabled
-            tolerance = self._compute_simplification_tolerance(
-                self.current_transform_info, self._refine_simplify
-            )
-            if tolerance > 0:
-                combined = combined.simplify(tolerance)
-
-            # Store WKT (with effects), score, transform info, raw mask, points, and refine settings
-            self.saved_polygons.append({
-                'geometry_wkt': combined.asWkt(),
-                'score': self.current_score,
-                'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
-                'raw_mask': self.current_mask.copy(),  # Store RAW mask for re-applying different settings
-                'points_positive': list(self.prompts.positive_points),  # Points for undo restoration
-                'points_negative': list(self.prompts.negative_points),  # Points for undo restoration
-                'refine_expand': self._refine_expand,  # Refine settings at save time
-                'refine_simplify': self._refine_simplify,  # Refine settings at save time
-                'refine_fill_holes': self._refine_fill_holes,  # Refine settings at save time
-                'refine_min_area': self._refine_min_area,  # Refine settings at save time
-            })
-
-            saved_rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
-            saved_rb.setColor(QColor(0, 200, 100, 120))
-            saved_rb.setFillColor(QColor(0, 200, 100, 80))
-            saved_rb.setWidth(2)
-            # Geometry is in raster CRS; transform to canvas CRS for display
-            display_geom = QgsGeometry(combined)
-            self._transform_geometry_to_canvas_crs(display_geom)
-            saved_rb.setToGeometry(display_geom, None)
-            self.saved_rubber_bands.append(saved_rb)
-
+        if saved:
             QgsMessageLog.logMessage(
                 f"Saved mask #{len(self.saved_polygons)}",
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Info
             )
-
             self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
-
-            # Note: We keep refinement settings in batch mode so the user can
-            # apply the same expand/simplify to multiple masks
 
         # Clear current state for next polygon
         self.prompts.clear()

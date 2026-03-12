@@ -741,5 +741,13 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <source>Please save your Hugging Face token first.</source>
         <translation>Veuillez d'abord enregistrer votre jeton Hugging Face.</translation>
     </message>
+    <message>
+        <source>Found {count} instance(s) for "{text}"</source>
+        <translation>{count} instance(s) trouvee(s) pour "{text}"</translation>
+    </message>
+    <message>
+        <source>No instances found for "{text}"</source>
+        <translation>Aucune instance trouvee pour "{text}"</translation>
+    </message>
 </context>
 </TS>

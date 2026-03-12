@@ -779,5 +779,13 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <source>Please save your Hugging Face token first.</source>
         <translation>Por favor, salve seu token Hugging Face primeiro.</translation>
     </message>
+    <message>
+        <source>Found {count} instance(s) for "{text}"</source>
+        <translation>{count} instancia(s) encontrada(s) para "{text}"</translation>
+    </message>
+    <message>
+        <source>No instances found for "{text}"</source>
+        <translation>Nenhuma instancia encontrada para "{text}"</translation>
+    </message>
 </context>
 </TS>
