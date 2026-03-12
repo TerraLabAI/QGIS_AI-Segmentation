@@ -191,11 +191,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Load plugin in QGIS
+        timeout-minutes: 3
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/plugins/ai_seg" \
             ${{ matrix.qgis-image }} \
-            xvfb-run python3 /plugins/ai_seg/tests/test_smoke.py
+            xvfb-run --auto-servernum python3 /plugins/ai_seg/tests/test_smoke.py
 
   package:
     name: Package plugin
