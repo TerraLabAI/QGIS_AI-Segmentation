@@ -748,8 +748,20 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <translation>Token salvo</translation>
     </message>
     <message>
-        <source>Optional: describe objects (e.g. building, tree)</source>
-        <translation>Opcional: descreva os objetos (ex. edificio, arvore)</translation>
+        <source>e.g. roof, tree, car</source>
+        <translation>ex. telhado, arvore, carro</translation>
+    </message>
+    <message>
+        <source>Describe objects visible from above.
+For buildings: try 'roof' or 'building roof'.
+Zoom in for better results.</source>
+        <translation>Descreva objetos visiveis de cima.
+Para edificios: tente 'telhado' ou 'telhado de edificio'.
+Aproxime para melhores resultados.</translation>
+    </message>
+    <message>
+        <source>Detecting objects (tile {current}/{total})...</source>
+        <translation>Detectando objetos (azulejo {current}/{total})...</translation>
     </message>
     <message>
         <source>Min. confidence</source>

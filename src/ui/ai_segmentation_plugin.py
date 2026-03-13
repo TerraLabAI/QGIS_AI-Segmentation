@@ -1541,7 +1541,7 @@ class AISegmentationPlugin:
         return batch_count
 
     def _run_pro_text_detection(self):
-        """Detect all instances of the text prompt across the visible canvas extent."""
+        """Detect all instances of the text prompt across the visible canvas extent using 2x2 tiling."""
         if not self.dock_widget or not self.predictor:
             return
         text_prompt = self.dock_widget.get_pro_text_prompt()
@@ -1563,63 +1563,159 @@ class AISegmentationPlugin:
             )
             canvas_extent = transform.transformBoundingBox(canvas_extent)
 
-        corners = [
-            (canvas_extent.xMinimum(), canvas_extent.yMinimum()),
-            (canvas_extent.xMaximum(), canvas_extent.yMaximum()),
+        xmin = canvas_extent.xMinimum()
+        xmax = canvas_extent.xMaximum()
+        ymin = canvas_extent.yMinimum()
+        ymax = canvas_extent.yMaximum()
+
+        dx = (xmax - xmin) / 2.0
+        dy = (ymax - ymin) / 2.0
+        overlap = 0.15
+
+        tile_centers = [
+            (xmin + dx * 0.5, ymin + dy * 0.5),
+            (xmin + dx * 0.5, ymin + dy * 1.5),
+            (xmin + dx * 1.5, ymin + dy * 0.5),
+            (xmin + dx * 1.5, ymin + dy * 1.5),
         ]
-        center_x, center_y, mupp_or_scale = self._compute_crop_center_and_mupp(corners)
-        center_pt = QgsPointXY(center_x, center_y)
+        half_w = dx * (1.0 + overlap) / 2.0
+        half_h = dy * (1.0 + overlap) / 2.0
 
-        if not self._extract_and_encode_crop(center_pt, mupp_override=mupp_or_scale):
-            return
+        all_detections = []
+        first_error = None
 
-        if self._current_crop_info is None:
-            return
-
-        crop_bounds = self._current_crop_info['bounds']
-        img_shape = self._current_crop_info['img_shape']
-        img_height, img_width = img_shape
-        minx, miny, maxx, maxy = crop_bounds
-
-        crs_value = None
-        try:
-            if self._current_layer and self._current_layer.crs().isValid():
-                crs_value = self._current_layer.crs().authid()
-        except RuntimeError:
-            pass
-
-        transform_info = {
-            "bbox": (minx, maxx, miny, maxy),
-            "img_shape": (img_height, img_width),
-            "crs": crs_value,
-        }
-        self.current_transform_info = transform_info
-
-        try:
-            masks, scores, _ = self.predictor.predict(
-                text_prompt=text_prompt,
-                multimask_output=True,
+        for i, (cx, cy) in enumerate(tile_centers):
+            msg = tr("Detecting objects (tile {current}/{total})...").format(
+                current=i + 1, total=4
             )
-            self._apply_pro_detection_results(masks, scores, 0.0, transform_info)
-        except RuntimeError as e:
-            QgsMessageLog.logMessage(
-                "PRO text detection failed: {}".format(e),
-                "AI Segmentation", level=Qgis.MessageLevel.Warning
+            self.iface.messageBar().pushMessage(
+                tr("AI Segmentation"),
+                msg,
+                level=Qgis.MessageLevel.Info,
+                duration=0
             )
+
+            tile_corners = [
+                (cx - half_w, cy - half_h),
+                (cx + half_w, cy + half_h),
+            ]
+            _, _, mupp_or_scale = self._compute_crop_center_and_mupp(tile_corners)
+            center_pt = QgsPointXY(cx, cy)
+
+            if not self._extract_and_encode_crop(center_pt, mupp_override=mupp_or_scale):
+                QgsMessageLog.logMessage(
+                    "Tile {}/{} encode failed, skipping".format(i + 1, 4),
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning
+                )
+                continue
+
+            if self._current_crop_info is None:
+                continue
+
+            crop_bounds = self._current_crop_info['bounds']
+            img_shape = self._current_crop_info['img_shape']
+            img_height, img_width = img_shape
+            minx_tile, miny_tile, maxx_tile, maxy_tile = crop_bounds
+
+            crs_value = None
+            try:
+                if self._current_layer and self._current_layer.crs().isValid():
+                    crs_value = self._current_layer.crs().authid()
+            except RuntimeError:
+                pass
+
+            transform_info = {
+                "bbox": (minx_tile, maxx_tile, miny_tile, maxy_tile),
+                "img_shape": (img_height, img_width),
+                "crs": crs_value,
+            }
+
+            try:
+                masks, scores, _ = self.predictor.predict(
+                    text_prompt=text_prompt,
+                    multimask_output=True,
+                )
+                for j in range(masks.shape[0]):
+                    all_detections.append((masks[j], float(scores[j]), transform_info))
+            except RuntimeError as e:
+                if first_error is None:
+                    first_error = e
+                QgsMessageLog.logMessage(
+                    "Tile {}/{} detection failed: {}".format(i + 1, 4, e),
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning
+                )
+            except Exception as e:
+                if first_error is None:
+                    first_error = e
+                QgsMessageLog.logMessage(
+                    "Tile {}/{} unexpected error: {}".format(i + 1, 4, e),
+                    "AI Segmentation", level=Qgis.MessageLevel.Critical
+                )
+
+        self.iface.messageBar().clearWidgets()
+
+        if not all_detections and first_error:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Detection Error"),
-                str(e)
+                str(first_error)
             )
-        except Exception as e:
+            return
+
+        if not all_detections:
             QgsMessageLog.logMessage(
-                "Unexpected PRO text detection error: {}".format(e),
-                "AI Segmentation", level=Qgis.MessageLevel.Critical
+                "PRO text detection: no objects found in any tile",
+                "AI Segmentation", level=Qgis.MessageLevel.Info
             )
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                tr("Detection Error"),
-                str(e)
+            return
+
+        from ..core.polygon_exporter import mask_to_polygons
+        all_detections.sort(key=lambda x: x[1], reverse=True)
+
+        accepted_geoms = []
+        batch_count = 0
+
+        for mask, score, ti in all_detections:
+            polys = mask_to_polygons(mask, ti)
+            if not polys:
+                continue
+            geom = QgsGeometry.unaryUnion(polys)
+            if not geom or geom.isEmpty():
+                continue
+
+            centroid = geom.centroid()
+            if any(ag.contains(centroid) for ag in accepted_geoms):
+                continue
+
+            accepted_geoms.append(geom)
+
+            rb = QgsRubberBand(
+                self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry
+            )
+            rb.setColor(QColor(0, 200, 100, 120))
+            rb.setFillColor(QColor(0, 200, 100, 80))
+            rb.setWidth(2)
+            display_geom = QgsGeometry(geom)
+            self._transform_geometry_to_canvas_crs(display_geom)
+            rb.setToGeometry(display_geom, None)
+
+            self._pro_pending_detections.append({
+                'mask': mask,
+                'score': score,
+                'transform_info': ti.copy(),
+                'rb': rb,
+            })
+            batch_count += 1
+
+        if batch_count > 0:
+            self._pro_detection_batches.append(batch_count)
+            if self.dock_widget:
+                self.dock_widget.set_mask_available(True)
+                pos = len(self._pro_detection_batches)
+                self.dock_widget.set_point_count(pos, 0)
+            QgsMessageLog.logMessage(
+                "PRO text detection: {} object(s) found across 4 tiles".format(batch_count),
+                "AI Segmentation", level=Qgis.MessageLevel.Info
             )
 
     def _activate_segmentation_tool(self):

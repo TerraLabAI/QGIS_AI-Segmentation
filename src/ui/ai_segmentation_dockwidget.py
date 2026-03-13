@@ -550,7 +550,11 @@ class AISegmentationDockWidget(QDockWidget):
         # Text prompt (optional, triggers canvas-wide text detection)
         self.pro_text_prompt = QLineEdit()
         self.pro_text_prompt.setPlaceholderText(
-            tr("Optional: describe objects (e.g. building, tree)"))
+            tr("e.g. roof, tree, car"))
+        self.pro_text_prompt.setToolTip(
+            tr("Describe objects visible from above.\n"
+               "For buildings: try 'roof' or 'building roof'.\n"
+               "Zoom in for better results."))
         pro_ctrl_layout.addWidget(self.pro_text_prompt)
 
         self.pro_detect_button = QPushButton(tr("Detect objects"))

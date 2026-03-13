@@ -710,8 +710,20 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Jeton enregistre</translation>
     </message>
     <message>
-        <source>Optional: describe objects (e.g. building, tree)</source>
-        <translation>Optionnel : decrivez les objets (ex. batiment, arbre)</translation>
+        <source>e.g. roof, tree, car</source>
+        <translation>ex. toit, arbre, voiture</translation>
+    </message>
+    <message>
+        <source>Describe objects visible from above.
+For buildings: try 'roof' or 'building roof'.
+Zoom in for better results.</source>
+        <translation>Decrivez les objets visibles d'en haut.
+Pour les batiments : essayez 'toit' ou 'toit de batiment'.
+Zoomez pour de meilleurs resultats.</translation>
+    </message>
+    <message>
+        <source>Detecting objects (tile {current}/{total})...</source>
+        <translation>Detection d'objets (tuile {current}/{total})...</translation>
     </message>
     <message>
         <source>Min. confidence</source>
