@@ -63,6 +63,10 @@ class CloudSam3Predictor:
                 pass
             if e.code == 404 and "Session not found" in detail:
                 raise SessionExpiredError(detail)
+            try:
+                detail = json.loads(detail).get("detail", detail)
+            except Exception:
+                pass
             raise RuntimeError(
                 "SAM 3 server error {}: {}".format(e.code, detail)
             )

@@ -497,6 +497,7 @@ class AISegmentationPlugin:
         self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
         self.dock_widget.refine_settings_changed.connect(self._on_refine_settings_changed)
         self.dock_widget.batch_mode_changed.connect(self._on_batch_mode_changed)
+        self.dock_widget.pro_detect_requested.connect(self._run_pro_text_detection)
         self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
 
         self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
@@ -1391,12 +1392,8 @@ class AISegmentationPlugin:
         if self._current_crop_info is None:
             return
 
-        text_prompt = ""
-        max_instances = 10
         score_threshold = 0.3
         if self.dock_widget:
-            text_prompt = self.dock_widget.get_pro_text_prompt()
-            max_instances = self.dock_widget.get_max_instances()
             score_threshold = self.dock_widget.get_score_threshold()
 
         crop_bounds = self._current_crop_info['bounds']
@@ -1420,31 +1417,24 @@ class AISegmentationPlugin:
         self.current_transform_info = transform_info
 
         try:
-            if text_prompt:
-                # Text mode: multi-instance detection
-                masks, scores, _ = self.predictor.predict(
-                    text_prompt=text_prompt,
-                    multimask_output=True,
-                )
-            else:
-                # Interactive mode: single object at click point
-                from rasterio.transform import (
-                    from_bounds as transform_from_bounds,
-                    rowcol,
-                )
-                img_clip_transform = transform_from_bounds(
-                    minx, miny, maxx, maxy, img_width, img_height
-                )
-                row, col = rowcol(
-                    img_clip_transform, raster_pt.x(), raster_pt.y()
-                )
-                point_coords = np.array([[col, row]], dtype=np.float64)
-                point_labels = np.array([1])
-                masks, scores, _ = self.predictor.predict(
-                    point_coords=point_coords,
-                    point_labels=point_labels,
-                    multimask_output=True,
-                )
+            # Interactive mode: single object at click point
+            from rasterio.transform import (
+                from_bounds as transform_from_bounds,
+                rowcol,
+            )
+            img_clip_transform = transform_from_bounds(
+                minx, miny, maxx, maxy, img_width, img_height
+            )
+            row, col = rowcol(
+                img_clip_transform, raster_pt.x(), raster_pt.y()
+            )
+            point_coords = np.array([[col, row]], dtype=np.float64)
+            point_labels = np.array([1])
+            masks, scores, _ = self.predictor.predict(
+                point_coords=point_coords,
+                point_labels=point_labels,
+                multimask_output=True,
+            )
         except RuntimeError as e:
             QgsMessageLog.logMessage(
                 "PRO detection failed: {}".format(e),
@@ -1469,44 +1459,47 @@ class AISegmentationPlugin:
                 self.map_tool.remove_last_marker()
             return
 
-        # For interactive mode (no text prompt), pick the best mask
-        if not text_prompt:
-            total_pixels = masks[0].shape[0] * masks[0].shape[1]
-            mask_areas = [int(m.sum()) for m in masks]
-            small_enough = [
-                i for i in range(len(scores))
-                if mask_areas[i] < 0.8 * total_pixels
-            ]
-            if small_enough:
-                best_idx = max(small_enough, key=lambda i: scores[i])
-            else:
-                best_idx = min(
-                    range(len(scores)), key=lambda i: mask_areas[i]
-                )
-            masks = masks[best_idx:best_idx + 1]
-            scores = scores[best_idx:best_idx + 1]
+        # Pick the best single mask for interactive point mode
+        total_pixels = masks[0].shape[0] * masks[0].shape[1]
+        mask_areas = [int(m.sum()) for m in masks]
+        small_enough = [
+            i for i in range(len(scores))
+            if mask_areas[i] < 0.8 * total_pixels
+        ]
+        if small_enough:
+            best_idx = max(small_enough, key=lambda i: scores[i])
+        else:
+            best_idx = min(
+                range(len(scores)), key=lambda i: mask_areas[i]
+            )
+        masks = masks[best_idx:best_idx + 1]
+        scores = scores[best_idx:best_idx + 1]
 
-        # Filter by score threshold and max instances
+        batch_count = self._apply_pro_detection_results(
+            masks, scores, score_threshold, transform_info
+        )
+        if batch_count == 0:
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+
+    def _apply_pro_detection_results(self, masks, scores, score_threshold, transform_info):
+        """Filter masks by score and create rubber bands. Returns batch_count."""
+        from ..core.polygon_exporter import mask_to_polygons
+
         filtered = [
             (masks[i], float(scores[i]))
             for i in range(masks.shape[0])
             if float(scores[i]) >= score_threshold
         ]
         filtered.sort(key=lambda x: x[1], reverse=True)
-        filtered = filtered[:max_instances]
 
         if not filtered:
             QgsMessageLog.logMessage(
-                "PRO detection: no masks above threshold {:.0%}".format(
-                    score_threshold),
+                "PRO detection: no masks above threshold {:.0%}".format(score_threshold),
                 "AI Segmentation", level=Qgis.MessageLevel.Info
             )
-            if self.map_tool:
-                self.map_tool.remove_last_marker()
-            return
+            return 0
 
-        # Create rubber bands for each detection
-        from ..core.polygon_exporter import mask_to_polygons
         batch_count = 0
         for mask, score in filtered:
             geometries = mask_to_polygons(mask, transform_info)
@@ -1544,9 +1537,90 @@ class AISegmentationPlugin:
                 "PRO detection: {} object(s) found".format(batch_count),
                 "AI Segmentation", level=Qgis.MessageLevel.Info
             )
-        else:
-            if self.map_tool:
-                self.map_tool.remove_last_marker()
+
+        return batch_count
+
+    def _run_pro_text_detection(self):
+        """Detect all instances of the text prompt across the visible canvas extent."""
+        if not self.dock_widget or not self.predictor:
+            return
+        text_prompt = self.dock_widget.get_pro_text_prompt()
+        if not text_prompt:
+            return
+
+        raster_layer = self._current_layer
+        if raster_layer is None:
+            return
+
+        canvas = self.iface.mapCanvas()
+        canvas_crs = canvas.mapSettings().destinationCrs()
+        layer_crs = raster_layer.crs()
+
+        canvas_extent = canvas.extent()
+        if canvas_crs != layer_crs:
+            transform = QgsCoordinateTransform(
+                canvas_crs, layer_crs, QgsProject.instance()
+            )
+            canvas_extent = transform.transformBoundingBox(canvas_extent)
+
+        corners = [
+            (canvas_extent.xMinimum(), canvas_extent.yMinimum()),
+            (canvas_extent.xMaximum(), canvas_extent.yMaximum()),
+        ]
+        center_x, center_y, mupp_or_scale = self._compute_crop_center_and_mupp(corners)
+        center_pt = QgsPointXY(center_x, center_y)
+
+        if not self._extract_and_encode_crop(center_pt, mupp_override=mupp_or_scale):
+            return
+
+        if self._current_crop_info is None:
+            return
+
+        crop_bounds = self._current_crop_info['bounds']
+        img_shape = self._current_crop_info['img_shape']
+        img_height, img_width = img_shape
+        minx, miny, maxx, maxy = crop_bounds
+
+        crs_value = None
+        try:
+            if self._current_layer and self._current_layer.crs().isValid():
+                crs_value = self._current_layer.crs().authid()
+        except RuntimeError:
+            pass
+
+        transform_info = {
+            "bbox": (minx, maxx, miny, maxy),
+            "img_shape": (img_height, img_width),
+            "crs": crs_value,
+        }
+        self.current_transform_info = transform_info
+
+        try:
+            masks, scores, _ = self.predictor.predict(
+                text_prompt=text_prompt,
+                multimask_output=True,
+            )
+            self._apply_pro_detection_results(masks, scores, 0.0, transform_info)
+        except RuntimeError as e:
+            QgsMessageLog.logMessage(
+                "PRO text detection failed: {}".format(e),
+                "AI Segmentation", level=Qgis.MessageLevel.Warning
+            )
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                tr("Detection Error"),
+                str(e)
+            )
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                "Unexpected PRO text detection error: {}".format(e),
+                "AI Segmentation", level=Qgis.MessageLevel.Critical
+            )
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                tr("Detection Error"),
+                str(e)
+            )
 
     def _activate_segmentation_tool(self):
         # Save the current map tool to restore it later

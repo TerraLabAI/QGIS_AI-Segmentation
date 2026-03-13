@@ -54,6 +54,7 @@ class AISegmentationDockWidget(QDockWidget):
     stop_segmentation_requested = pyqtSignal()
     refine_settings_changed = pyqtSignal(int, int, bool, int)  # expand, simplify, fill_holes, min_area
     batch_mode_changed = pyqtSignal(bool)  # Batch mode is always on
+    pro_detect_requested = pyqtSignal()  # text-based detection over canvas extent
 
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation by TerraLab"), parent)
@@ -546,24 +547,20 @@ class AISegmentationDockWidget(QDockWidget):
         pro_ctrl_layout.setContentsMargins(0, 4, 0, 4)
         pro_ctrl_layout.setSpacing(6)
 
-        # Text prompt (optional, routes to text-detection when filled)
+        # Text prompt (optional, triggers canvas-wide text detection)
         self.pro_text_prompt = QLineEdit()
         self.pro_text_prompt.setPlaceholderText(
             tr("Optional: describe objects (e.g. building, tree)"))
         pro_ctrl_layout.addWidget(self.pro_text_prompt)
 
-        # Max instances
-        max_inst_layout = QHBoxLayout()
-        max_inst_label = QLabel(tr("Max instances"))
-        max_inst_label.setStyleSheet("font-size: 12px; color: palette(text);")
-        self.max_instances_spinbox = QSpinBox()
-        self.max_instances_spinbox.setRange(1, 100)
-        self.max_instances_spinbox.setValue(10)
-        self.max_instances_spinbox.setMinimumWidth(80)
-        max_inst_layout.addWidget(max_inst_label)
-        max_inst_layout.addStretch()
-        max_inst_layout.addWidget(self.max_instances_spinbox)
-        pro_ctrl_layout.addLayout(max_inst_layout)
+        self.pro_detect_button = QPushButton(tr("Detect objects"))
+        self.pro_detect_button.setVisible(False)
+        self.pro_detect_button.clicked.connect(self.pro_detect_requested)
+        pro_ctrl_layout.addWidget(self.pro_detect_button)
+
+        self.pro_text_prompt.textChanged.connect(
+            lambda t: self.pro_detect_button.setVisible(bool(t.strip()))
+        )
 
         # Score threshold (min confidence)
         score_layout = QHBoxLayout()
@@ -1241,10 +1238,6 @@ class AISegmentationDockWidget(QDockWidget):
         """Return score threshold as a float (0.0 to 1.0)."""
         return self.score_threshold_spinbox.value() / 100.0
 
-    def get_max_instances(self) -> int:
-        """Return maximum number of instances for PRO detection."""
-        return self.max_instances_spinbox.value()
-
     def get_pro_text_prompt(self) -> str:
         """Return text prompt for PRO mode (empty = interactive mode)."""
         return self.pro_text_prompt.text().strip()
@@ -1606,11 +1599,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.disjoint_warning_widget.setVisible(False)
         # Reset PRO controls
         self.pro_text_prompt.clear()
-        self.max_instances_spinbox.blockSignals(True)
+        self.pro_detect_button.setVisible(False)
         self.score_threshold_spinbox.blockSignals(True)
-        self.max_instances_spinbox.setValue(10)
         self.score_threshold_spinbox.setValue(30)
-        self.max_instances_spinbox.blockSignals(False)
         self.score_threshold_spinbox.blockSignals(False)
         self.reset_refine_sliders()
         self._update_button_visibility()

@@ -599,6 +599,10 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Erreur de prédiction</translation>
     </message>
     <message>
+        <source>Detection Error</source>
+        <translation>Erreur de détection</translation>
+    </message>
+    <message>
         <source>Click on the map first to set an image before using text prediction.</source>
         <translation>Cliquez d'abord sur la carte pour definir une image avant d'utiliser la prediction textuelle.</translation>
     </message>
@@ -710,10 +714,6 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Optionnel : decrivez les objets (ex. batiment, arbre)</translation>
     </message>
     <message>
-        <source>Max instances</source>
-        <translation>Nb max d'instances</translation>
-    </message>
-    <message>
         <source>Min. confidence</source>
         <translation>Confiance min.</translation>
     </message>
@@ -728,6 +728,10 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <source>Start PRO Segmentation</source>
         <translation>Demarrer la segmentation PRO</translation>
+    </message>
+    <message>
+        <source>Detect objects</source>
+        <translation>Detecter les objets</translation>
     </message>
     <message>
         <source>Connecting to SAM 3 server...</source>
