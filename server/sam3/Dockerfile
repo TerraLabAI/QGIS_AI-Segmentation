@@ -1,4 +1,4 @@
-FROM terralabsamacr.azurecr.io/sam3-api-base:v1
+FROM ghcr.io/lilien86/sam3-api-base:v1
 
 WORKDIR /app
 
