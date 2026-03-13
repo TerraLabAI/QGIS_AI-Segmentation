@@ -56,7 +56,6 @@ class PredictRequest(BaseModel):
     point_labels: List[int] = []
     box: Optional[List[float]] = None
     text_prompt: Optional[str] = None
-    auto_detect: bool = False
     multimask_output: bool = False
     mask_input: Optional[str] = None
     mask_input_shape: Optional[List[int]] = None
@@ -252,18 +251,14 @@ def predict(req: PredictRequest, x_api_key: Optional[str] = Header(None)):
     has_text = req.text_prompt is not None and req.text_prompt.strip() != ""
     has_box = req.box is not None and len(req.box) == 4
 
-    if not has_points and not has_text and not has_box and not req.auto_detect:
+    if not has_points and not has_text and not has_box:
         raise HTTPException(
             status_code=422,
             detail="At least one of point_coords, box, "
-                   "text_prompt, or auto_detect is required"
+                   "or text_prompt is required"
         )
 
     try:
-        # auto_detect without text uses a generic prompt for multi-instance
-        if req.auto_detect and not has_text:
-            req.text_prompt = "objects"
-            return _predict_text(req, session)
         if has_text and not has_points and not has_box:
             return _predict_text(req, session)
         return _predict_interactive(req, session, has_points)

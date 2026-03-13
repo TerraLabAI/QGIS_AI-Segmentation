@@ -546,6 +546,12 @@ class AISegmentationDockWidget(QDockWidget):
         pro_ctrl_layout.setContentsMargins(0, 4, 0, 4)
         pro_ctrl_layout.setSpacing(6)
 
+        # Text prompt (optional, routes to text-detection when filled)
+        self.pro_text_prompt = QLineEdit()
+        self.pro_text_prompt.setPlaceholderText(
+            tr("Optional: describe objects (e.g. building, tree)"))
+        pro_ctrl_layout.addWidget(self.pro_text_prompt)
+
         # Max instances
         max_inst_layout = QHBoxLayout()
         max_inst_label = QLabel(tr("Max instances"))
@@ -1239,6 +1245,10 @@ class AISegmentationDockWidget(QDockWidget):
         """Return maximum number of instances for PRO detection."""
         return self.max_instances_spinbox.value()
 
+    def get_pro_text_prompt(self) -> str:
+        """Return text prompt for PRO mode (empty = interactive mode)."""
+        return self.pro_text_prompt.text().strip()
+
     def _on_save_hf_token(self):
         token = self.hf_token_input.text().strip()
         if token:
@@ -1595,6 +1605,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._negative_count = 0
         self.disjoint_warning_widget.setVisible(False)
         # Reset PRO controls
+        self.pro_text_prompt.clear()
         self.max_instances_spinbox.blockSignals(True)
         self.score_threshold_spinbox.blockSignals(True)
         self.max_instances_spinbox.setValue(10)

@@ -706,6 +706,10 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Token guardado</translation>
     </message>
     <message>
+        <source>Optional: describe objects (e.g. building, tree)</source>
+        <translation>Opcional: describa los objetos (ej. edificio, arbol)</translation>
+    </message>
+    <message>
         <source>Max instances</source>
         <translation>Max instancias</translation>
     </message>

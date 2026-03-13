@@ -706,6 +706,10 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Jeton enregistre</translation>
     </message>
     <message>
+        <source>Optional: describe objects (e.g. building, tree)</source>
+        <translation>Optionnel : decrivez les objets (ex. batiment, arbre)</translation>
+    </message>
+    <message>
         <source>Max instances</source>
         <translation>Nb max d'instances</translation>
     </message>

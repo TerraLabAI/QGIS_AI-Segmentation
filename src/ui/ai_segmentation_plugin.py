@@ -1391,9 +1391,11 @@ class AISegmentationPlugin:
         if self._current_crop_info is None:
             return
 
-        max_instances = 1
+        text_prompt = ""
+        max_instances = 10
         score_threshold = 0.3
         if self.dock_widget:
+            text_prompt = self.dock_widget.get_pro_text_prompt()
             max_instances = self.dock_widget.get_max_instances()
             score_threshold = self.dock_widget.get_score_threshold()
 
@@ -1418,7 +1420,13 @@ class AISegmentationPlugin:
         self.current_transform_info = transform_info
 
         try:
-            if max_instances == 1:
+            if text_prompt:
+                # Text mode: multi-instance detection
+                masks, scores, _ = self.predictor.predict(
+                    text_prompt=text_prompt,
+                    multimask_output=True,
+                )
+            else:
                 # Interactive mode: single object at click point
                 from rasterio.transform import (
                     from_bounds as transform_from_bounds,
@@ -1435,12 +1443,6 @@ class AISegmentationPlugin:
                 masks, scores, _ = self.predictor.predict(
                     point_coords=point_coords,
                     point_labels=point_labels,
-                    multimask_output=True,
-                )
-            else:
-                # Auto-detect mode: multiple objects in the crop
-                masks, scores, _ = self.predictor.predict(
-                    auto_detect=True,
                     multimask_output=True,
                 )
         except RuntimeError as e:
@@ -1467,8 +1469,8 @@ class AISegmentationPlugin:
                 self.map_tool.remove_last_marker()
             return
 
-        # For interactive (max_instances==1), pick the best mask
-        if max_instances == 1:
+        # For interactive mode (no text prompt), pick the best mask
+        if not text_prompt:
             total_pixels = masks[0].shape[0] * masks[0].shape[1]
             mask_areas = [int(m.sum()) for m in masks]
             small_enough = [

@@ -126,7 +126,6 @@ class CloudSam3Predictor:
         multimask_output: bool = False,
         return_logits: bool = False,
         text_prompt: Optional[str] = None,
-        auto_detect: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if not self.is_image_set or self._session_id is None:
             raise RuntimeError(
@@ -147,8 +146,6 @@ class CloudSam3Predictor:
             data["box"] = box.tolist()
         if text_prompt:
             data["text_prompt"] = text_prompt
-        if auto_detect:
-            data["auto_detect"] = True
         if mask_input is not None:
             data["mask_input"] = base64.b64encode(
                 mask_input.tobytes()
@@ -157,7 +154,7 @@ class CloudSam3Predictor:
             data["mask_input_dtype"] = str(mask_input.dtype)
 
         timeout = (
-            _TIMEOUT_PREDICT_TEXT if (text_prompt or auto_detect)
+            _TIMEOUT_PREDICT_TEXT if text_prompt
             else _TIMEOUT_PREDICT
         )
         try:
