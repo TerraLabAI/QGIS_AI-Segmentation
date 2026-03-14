@@ -122,7 +122,5 @@ Languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
 ## Release Process
 
 - **Never create GitHub releases or tags without explicit user confirmation**
-- Release flow: create a GitHub Release with tag `vX.Y.Z` to trigger `release.yml`
-- `release.yml` packages the plugin, attaches the zip to the GitHub Release, and publishes to plugins.qgis.org
-- Required repo secrets: `OSGEO_USERNAME` and `OSGEO_PASSWORD` (GitHub Settings > Secrets)
+- Release flow: create a GitHub Release with tag `vX.Y.Z`, then upload zip manually to plugins.qgis.org
 - `.gitattributes` ensures dev files (tests, CI, CLAUDE.md, etc.) are excluded from the release zip

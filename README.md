@@ -13,12 +13,5 @@
 
 ## Release
 
-Releases are automated via GitHub Actions:
-
 1. Create a GitHub Release with a tag matching `vX.Y.Z` (e.g. `gh release create v0.8.0`)
-2. The `release.yml` workflow automatically:
-   - Packages the plugin (dev files excluded via `.gitattributes`)
-   - Attaches the zip to the GitHub Release
-   - Publishes to [plugins.qgis.org](https://plugins.qgis.org)
-
-**Prerequisites:** `OSGEO_USERNAME` and `OSGEO_PASSWORD` secrets must be configured in the repo's GitHub Settings > Secrets.
+2. Upload the plugin zip manually to [plugins.qgis.org](https://plugins.qgis.org)
