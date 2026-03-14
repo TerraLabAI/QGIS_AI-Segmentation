@@ -1,6 +1,6 @@
 [flake8]
 max-line-length = 120
-extend-ignore = QGS105
+extend-ignore = QGS105, W503
 exclude =
     __pycache__,
     libs,
