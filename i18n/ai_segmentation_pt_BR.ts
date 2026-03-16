@@ -788,6 +788,10 @@ Aproxime para melhores resultados.</translation>
         <translation>Conectando ao servidor SAM 3...</translation>
     </message>
     <message>
+        <source>Connecting to SAM 3 server... (attempt {}/{})</source>
+        <translation>Conectando ao servidor SAM 3... (tentativa {}/{})</translation>
+    </message>
+    <message>
         <source>SAM 3 Cloud</source>
         <translation>SAM 3 Cloud</translation>
     </message>

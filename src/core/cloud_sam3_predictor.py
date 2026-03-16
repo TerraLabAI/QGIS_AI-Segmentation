@@ -14,7 +14,7 @@ from qgis.core import QgsMessageLog, Qgis
 
 from .model_config import SAM3_CLOUD_URL
 
-_TIMEOUT_HEALTH = 300
+_TIMEOUT_HEALTH = 60
 _TIMEOUT_SET_IMAGE = 120
 _TIMEOUT_PREDICT = 60
 _TIMEOUT_PREDICT_TEXT = 120
@@ -36,6 +36,10 @@ class CloudSam3Predictor:
         self._hf_token = hf_token
         self._api_key = api_key
         self._last_image_np = None
+        self._stop_requested = False
+
+    def stop(self) -> None:
+        self._stop_requested = True
 
     def _request(self, method, path, data=None, timeout=30):
         url = "{}{}".format(SAM3_CLOUD_URL, path)
@@ -95,21 +99,27 @@ class CloudSam3Predictor:
             )
             return False
 
-    def warm_up_with_retry(self, max_attempts=3, initial_delay=10) -> Tuple[bool, str]:
+    def warm_up_with_retry(self, max_attempts=3, initial_delay=10, attempt_callback=None) -> Tuple[bool, str]:
         """
         Try to contact SAM 3 server with retry and exponential backoff.
 
         Args:
             max_attempts: Maximum number of attempts (default: 3)
             initial_delay: Initial delay in seconds between retries (default: 10s)
+            attempt_callback: Optional callable(attempt_num, max_attempts) called before each attempt
 
         Returns:
             Tuple of (success: bool, error_type: str)
-            error_type can be: 'none', 'timeout', 'network', 'unknown'
+            error_type can be: 'none', 'timeout', 'network', 'unknown', 'cancelled'
         """
         import time
 
         for attempt in range(1, max_attempts + 1):
+            if self._stop_requested:
+                return (False, "cancelled")
+            if attempt_callback:
+                attempt_callback(attempt, max_attempts)
+
             try:
                 QgsMessageLog.logMessage(
                     "SAM 3 warm_up: attempt {}/{}".format(attempt, max_attempts),
@@ -154,18 +164,17 @@ class CloudSam3Predictor:
                     else:
                         return (False, "unknown")
 
-                # Wait before retry (exponential backoff for timeouts)
+                # Wait before retry (exponential backoff for timeouts), interruptible
+                delay = initial_delay * (2 ** (attempt - 1)) if is_timeout else 2
                 if is_timeout:
-                    delay = initial_delay * (2 ** (attempt - 1))
                     QgsMessageLog.logMessage(
-                        "SAM 3 cold start detected, retrying in {}s...".format(
-                            delay),
+                        "SAM 3 cold start detected, retrying in {}s...".format(delay),
                         "AI Segmentation", level=Qgis.Info
                     )
-                    time.sleep(delay)
-                else:
-                    # Non-timeout error: quick retry
-                    time.sleep(2)
+                elapsed = 0
+                while elapsed < delay and not self._stop_requested:
+                    time.sleep(min(1, delay - elapsed))
+                    elapsed += 1
 
         return (False, "unknown")
 

@@ -618,6 +618,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_shortcut.activated.connect(self._on_start_shortcut)
 
         layout.addWidget(self.start_container)
+        self.start_container.setVisible(not self._pro_mode)
 
         # Collapsible Refine mask panel
         self._setup_refine_panel(layout)

@@ -259,6 +259,7 @@ class PromptManager:
 
 class _CloudWarmupWorker(QObject):
     finished = pyqtSignal()
+    attempt_started = pyqtSignal(int, int)  # (attempt_num, max_attempts)
 
     def __init__(self, cloud, use_retry=False):
         super().__init__()
@@ -268,8 +269,10 @@ class _CloudWarmupWorker(QObject):
         self.use_retry = use_retry
 
     def run(self):
+        def on_attempt(n, m):
+            self.attempt_started.emit(n, m)
         if self.use_retry and hasattr(self.cloud, 'warm_up_with_retry'):
-            self.result, self.error_type = self.cloud.warm_up_with_retry()
+            self.result, self.error_type = self.cloud.warm_up_with_retry(attempt_callback=on_attempt)
         else:
             self.result = self.cloud.warm_up()
             self.error_type = "unknown" if not self.result else "none"
@@ -327,6 +330,8 @@ class AISegmentationPlugin:
         self.deps_install_worker = None
         self.download_worker = None
         self._verify_worker = None
+        self._warmup_thread = None
+        self._warmup_worker = None
 
         self.mask_rubber_band: Optional[QgsRubberBand] = None
         self.saved_rubber_bands: List[QgsRubberBand] = []
@@ -437,7 +442,7 @@ class AISegmentationPlugin:
         bbox = transform_info.get("bbox", [0, 1, 0, 1])
         img_shape = transform_info.get("img_shape", (1024, 1024))
         width_pixels = max(img_shape[1], 1)
-        bbox_width = bbox[1] - bbox[0]
+        bbox_width = bbox[2] - bbox[0]
         if bbox_width == 0:
             return 0
         pixel_size = bbox_width / width_pixels
@@ -657,6 +662,15 @@ class AISegmentationPlugin:
         self.deps_install_worker = None
         self.download_worker = None
         self._verify_worker = None
+
+        # 5. Stop warmup thread if running
+        if self._warmup_thread and self._warmup_thread.isRunning():
+            if self._warmup_worker:
+                self._warmup_worker.cloud.stop()
+            self._warmup_thread.quit()
+            self._warmup_thread.wait(3000)
+        self._warmup_thread = None
+        self._warmup_worker = None
 
         # 5. Disconnect action signal and remove menu/toolbar
         try:
@@ -1279,6 +1293,9 @@ class AISegmentationPlugin:
             )
             return
 
+        if self._warmup_thread is not None and self._warmup_thread.isRunning():
+            return  # warmup already in progress
+
         sam3 = CloudSam3Predictor(hf_token=hf_token)
 
         from qgis.PyQt.QtWidgets import QProgressDialog
@@ -1297,16 +1314,28 @@ class AISegmentationPlugin:
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(thread.quit)
+        self._warmup_thread = thread
+        self._warmup_worker = worker
+        worker.attempt_started.connect(
+            lambda n, m: progress.setLabelText(
+                tr("Connecting to SAM 3 server... (attempt {}/{})").format(n, m)
+            )
+        )
         thread.start()
 
         while thread.isRunning():
             QApplication.processEvents()
             if progress.wasCanceled():
+                worker.cloud.stop()
                 thread.quit()
-                thread.wait(2000)
+                thread.wait(3000)
+                self._warmup_thread = None
+                self._warmup_worker = None
                 return
             thread.wait(100)
 
+        self._warmup_thread = None
+        self._warmup_worker = None
         progress.close()
 
         if not worker.result:
@@ -1597,6 +1626,11 @@ class AISegmentationPlugin:
                 canvas_crs, layer_crs, QgsProject.instance()
             )
             canvas_extent = transform.transformBoundingBox(canvas_extent)
+
+        layer_extent = raster_layer.extent()
+        if not canvas_extent.intersects(layer_extent):
+            return
+        canvas_extent = canvas_extent.intersect(layer_extent)
 
         xmin = canvas_extent.xMinimum()
         xmax = canvas_extent.xMaximum()

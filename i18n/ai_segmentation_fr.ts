@@ -750,6 +750,10 @@ Zoomez pour de meilleurs resultats.</translation>
         <translation>Connexion au serveur SAM 3...</translation>
     </message>
     <message>
+        <source>Connecting to SAM 3 server... (attempt {}/{})</source>
+        <translation>Connexion au serveur SAM 3... (tentative {}/{})</translation>
+    </message>
+    <message>
         <source>SAM 3 Cloud</source>
         <translation>SAM 3 Cloud</translation>
     </message>
