@@ -28,6 +28,7 @@ from qgis.core import (
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
     QgsPointXY,
+    QgsRectangle,
 )
 from qgis.gui import QgisInterface, QgsRubberBand
 from qgis.PyQt.QtGui import QColor
@@ -259,13 +260,19 @@ class PromptManager:
 class _CloudWarmupWorker(QObject):
     finished = pyqtSignal()
 
-    def __init__(self, cloud):
+    def __init__(self, cloud, use_retry=False):
         super().__init__()
         self.cloud = cloud
         self.result = False
+        self.error_type = "none"
+        self.use_retry = use_retry
 
     def run(self):
-        self.result = self.cloud.warm_up()
+        if self.use_retry and hasattr(self.cloud, 'warm_up_with_retry'):
+            self.result, self.error_type = self.cloud.warm_up_with_retry()
+        else:
+            self.result = self.cloud.warm_up()
+            self.error_type = "unknown" if not self.result else "none"
         self.finished.emit()
 
 
@@ -1286,7 +1293,7 @@ class AISegmentationPlugin:
         QApplication.processEvents()
 
         thread = QThread()
-        worker = _CloudWarmupWorker(sam3)
+        worker = _CloudWarmupWorker(sam3, use_retry=True)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(thread.quit)
@@ -1303,11 +1310,29 @@ class AISegmentationPlugin:
         progress.close()
 
         if not worker.result:
+            if worker.error_type == "timeout":
+                message = tr(
+                    "The SAM 3 server did not respond in time.\n\n"
+                    "This can happen during first startup (cold start) "
+                    "which takes 2-5 minutes.\n\n"
+                    "Please try again in a few minutes."
+                )
+            elif worker.error_type == "network":
+                message = tr(
+                    "Could not connect to the SAM 3 server.\n\n"
+                    "Check your internet connection and verify that the "
+                    "server URL is correct in model_config.py."
+                )
+            else:
+                message = tr(
+                    "SAM 3 server connection error.\n\n"
+                    "Check the QGIS logs for more details."
+                )
+
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("SAM 3 Cloud"),
-                tr("Could not connect to the SAM 3 server. "
-                   "Check your internet connection.")
+                message
             )
             return
 
@@ -1410,7 +1435,7 @@ class AISegmentationPlugin:
             pass
 
         transform_info = {
-            "bbox": (minx, maxx, miny, maxy),
+            "bbox": (minx, miny, maxx, maxy),
             "img_shape": (img_height, img_width),
             "crs": crs_value,
         }
@@ -1478,9 +1503,9 @@ class AISegmentationPlugin:
         batch_count = self._apply_pro_detection_results(
             masks, scores, score_threshold, transform_info
         )
-        if batch_count == 0:
-            if self.map_tool:
-                self.map_tool.remove_last_marker()
+        # Always remove marker after processing (success or failure)
+        if self.map_tool:
+            self.map_tool.remove_last_marker()
 
     def _apply_pro_detection_results(self, masks, scores, score_threshold, transform_info):
         """Filter masks by score and create rubber bands. Returns batch_count."""
@@ -1529,6 +1554,16 @@ class AISegmentationPlugin:
 
         if batch_count > 0:
             self._pro_detection_batches.append(batch_count)
+
+            # Store the last detected mask for UI/refine panel
+            last_detection = self._pro_pending_detections[-1]
+            self.current_mask = last_detection['mask']
+            self.current_score = last_detection['score']
+            self.current_transform_info = last_detection['transform_info'].copy()
+
+            # Update UI to show refine panel and statistics
+            self._update_ui_after_prediction()
+
             if self.dock_widget:
                 self.dock_widget.set_mask_available(True)
                 pos = len(self._pro_detection_batches)
@@ -1625,7 +1660,7 @@ class AISegmentationPlugin:
                 pass
 
             transform_info = {
-                "bbox": (minx_tile, maxx_tile, miny_tile, maxy_tile),
+                "bbox": (minx_tile, miny_tile, maxx_tile, maxy_tile),
                 "img_shape": (img_height, img_width),
                 "crs": crs_value,
             }
@@ -2972,7 +3007,7 @@ class AISegmentationPlugin:
             pass
 
         self.current_transform_info = {
-            "bbox": (minx, maxx, miny, maxy),
+            "bbox": (minx, miny, maxx, maxy),
             "img_shape": (img_height, img_width),
             "crs": crs_value,
         }

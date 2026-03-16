@@ -754,8 +754,32 @@ Zoomez pour de meilleurs resultats.</translation>
         <translation>SAM 3 Cloud</translation>
     </message>
     <message>
-        <source>Could not connect to the SAM 3 server. Check your internet connection.</source>
-        <translation>Impossible de se connecter au serveur SAM 3. Verifiez votre connexion internet.</translation>
+        <source>The SAM 3 server did not respond in time.
+
+This can happen during first startup (cold start) which takes 2-5 minutes.
+
+Please try again in a few minutes.</source>
+        <translation>Le serveur SAM 3 n'a pas répondu dans le délai imparti.
+
+Cela peut arriver lors du premier démarrage (cold start) qui prend 2-5 minutes.
+
+Veuillez réessayer dans quelques minutes.</translation>
+    </message>
+    <message>
+        <source>Could not connect to the SAM 3 server.
+
+Check your internet connection and verify that the server URL is correct in model_config.py.</source>
+        <translation>Impossible de se connecter au serveur SAM 3.
+
+Vérifiez votre connexion Internet et que l'URL du serveur est correcte dans model_config.py.</translation>
+    </message>
+    <message>
+        <source>SAM 3 server connection error.
+
+Check the QGIS logs for more details.</source>
+        <translation>Erreur de connexion au serveur SAM 3.
+
+Consultez les logs QGIS pour plus de détails.</translation>
     </message>
     <message>
         <source>Text prompt cannot be empty</source>

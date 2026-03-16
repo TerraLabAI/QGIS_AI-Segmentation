@@ -95,6 +95,80 @@ class CloudSam3Predictor:
             )
             return False
 
+    def warm_up_with_retry(self, max_attempts=3, initial_delay=10) -> Tuple[bool, str]:
+        """
+        Try to contact SAM 3 server with retry and exponential backoff.
+
+        Args:
+            max_attempts: Maximum number of attempts (default: 3)
+            initial_delay: Initial delay in seconds between retries (default: 10s)
+
+        Returns:
+            Tuple of (success: bool, error_type: str)
+            error_type can be: 'none', 'timeout', 'network', 'unknown'
+        """
+        import time
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                QgsMessageLog.logMessage(
+                    "SAM 3 warm_up: attempt {}/{}".format(attempt, max_attempts),
+                    "AI Segmentation", level=Qgis.Info
+                )
+
+                resp = self._request("GET", "/health", timeout=_TIMEOUT_HEALTH)
+                if resp.get("status") == "ok":
+                    device = resp.get("device", "unknown")
+                    sessions = resp.get("active_sessions", 0)
+                    QgsMessageLog.logMessage(
+                        "SAM 3 warm_up: success (device={}, sessions={})".format(
+                            device, sessions),
+                        "AI Segmentation", level=Qgis.Info
+                    )
+                    return (True, "none")
+                else:
+                    raise RuntimeError("Unexpected response: {}".format(resp))
+
+            except Exception as e:
+                error_msg = str(e)
+                is_timeout = "504" in error_msg or "timeout" in error_msg.lower()
+
+                QgsMessageLog.logMessage(
+                    "SAM 3 warm_up: attempt {} failed - {}".format(
+                        attempt, error_msg),
+                    "AI Segmentation",
+                    level=Qgis.Warning
+                )
+
+                # Last attempt: give up
+                if attempt == max_attempts:
+                    QgsMessageLog.logMessage(
+                        "SAM 3 warm_up: failed after {} attempts".format(
+                            max_attempts),
+                        "AI Segmentation", level=Qgis.Critical
+                    )
+                    if is_timeout:
+                        return (False, "timeout")
+                    elif "unreachable" in error_msg.lower():
+                        return (False, "network")
+                    else:
+                        return (False, "unknown")
+
+                # Wait before retry (exponential backoff for timeouts)
+                if is_timeout:
+                    delay = initial_delay * (2 ** (attempt - 1))
+                    QgsMessageLog.logMessage(
+                        "SAM 3 cold start detected, retrying in {}s...".format(
+                            delay),
+                        "AI Segmentation", level=Qgis.Info
+                    )
+                    time.sleep(delay)
+                else:
+                    # Non-timeout error: quick retry
+                    time.sleep(2)
+
+        return (False, "unknown")
+
     def set_image(self, image_np: np.ndarray) -> None:
         self._last_image_np = image_np
         # JPEG compress for faster upload (~4MB -> ~0.3-0.5MB)
