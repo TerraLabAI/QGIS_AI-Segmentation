@@ -3032,6 +3032,12 @@ class AISegmentationPlugin:
             self.current_score = float(scores[0])
             self.current_low_res_mask = low_res_masks
 
+        # Clip to valid region: SAM returns crop_size×crop_size but img_shape
+        # is pre-padding — pixels beyond (img_height, img_width) are padding
+        # artifacts that can produce blue rectangles and out-of-bounds polygons
+        if self.current_mask.shape[0] > img_height or self.current_mask.shape[1] > img_width:
+            self.current_mask = self.current_mask[:img_height, :img_width]
+
         # Get CRS from layer
         crs_value = None
         try:
