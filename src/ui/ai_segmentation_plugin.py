@@ -850,7 +850,7 @@ class AISegmentationPlugin:
     def _load_predictor(self):
         try:
             from ..core.checkpoint_manager import get_checkpoint_path
-            from ..core.sam_predictor import build_sam_predictor_config, SamPredictor
+            from ..core.local_predictor import build_sam_predictor_config, SamPredictor
 
             checkpoint_path = get_checkpoint_path()
             sam_config = build_sam_predictor_config(checkpoint=checkpoint_path)
@@ -1133,6 +1133,10 @@ class AISegmentationPlugin:
                     message)
             )
 
+    # ══════════════════════════════════════════════════════════════
+    # SEGMENTATION STANDARD  (local, SAM1/SAM2)
+    # ══════════════════════════════════════════════════════════════
+
     def _on_start_segmentation(self, layer: QgsRasterLayer):
         if self.predictor is None:
             QMessageBox.warning(
@@ -1231,9 +1235,13 @@ class AISegmentationPlugin:
         # Activate segmentation tool immediately (no pre-encoding)
         self._activate_segmentation_tool()
 
+    # ══════════════════════════════════════════════════════════════
+    # SEGMENTATION PRO  (cloud, SAM3)
+    # ══════════════════════════════════════════════════════════════
+
     def _on_start_pro_segmentation(self, layer: QgsRasterLayer):
         """Start PRO (SAM 3) cloud segmentation."""
-        from ..core.cloud_sam3_predictor import CloudSam3Predictor
+        from ..core.pro_predictor import CloudSam3Predictor
 
         if self._warmup_thread is not None and self._warmup_thread.isRunning():
             return  # warmup already in progress

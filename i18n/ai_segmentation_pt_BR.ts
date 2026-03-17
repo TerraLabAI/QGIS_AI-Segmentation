@@ -668,44 +668,6 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <translation>Tentar novamente</translation>
     </message>
 
-    <!-- Cloud Mode -->
-    <message>
-        <source>Use cloud inference</source>
-        <translation>Usar inferencia na nuvem</translation>
-    </message>
-    <message>
-        <source>Run segmentation on a remote GPU server instead of locally</source>
-        <translation>Executar segmentacao em um servidor GPU remoto em vez de localmente</translation>
-    </message>
-    <message>
-        <source>Checking cloud server...</source>
-        <translation>Verificando servidor na nuvem...</translation>
-    </message>
-    <message>
-        <source>Cloud server: connected</source>
-        <translation>Servidor na nuvem: conectado</translation>
-    </message>
-    <message>
-        <source>Cloud server: unreachable</source>
-        <translation>Servidor na nuvem: inacessivel</translation>
-    </message>
-    <message>
-        <source>Cloud Error</source>
-        <translation>Erro na nuvem</translation>
-    </message>
-    <message>
-        <source>Could not connect to the cloud server. Check your internet connection or disable cloud mode.</source>
-        <translation>Nao foi possivel conectar ao servidor na nuvem. Verifique sua conexao com a internet ou desative o modo nuvem.</translation>
-    </message>
-    <message>
-        <source>Connecting to cloud server...</source>
-        <translation>Conectando ao servidor na nuvem...</translation>
-    </message>
-    <message>
-        <source>Cloud Connection</source>
-        <translation>Conexao na nuvem</translation>
-    </message>
-
     <!-- PRO (SAM 3) Section -->
     <message>
         <source>Standard</source>
