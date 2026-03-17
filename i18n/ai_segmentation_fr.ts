@@ -265,14 +265,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Sauvegarder le polygone actuel dans votre session</translation>
     </message>
     <message>
-        <source>The AI model works best on one element at a time.</source>
-        <translation>Le modele IA fonctionne mieux sur un element a la fois.</translation>
-    </message>
-    <message>
-        <source>Save your polygon before selecting the next element.</source>
-        <translation>Sauvegardez votre polygone avant de selectionner le suivant.</translation>
-    </message>
-    <message>
         <source>Export polygon to a layer</source>
         <translation>Exporter le polygone vers une couche</translation>
     </message>
@@ -676,14 +668,14 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Reessayer</translation>
     </message>
 
-    <!-- PRO (SAM 3) Section -->
+    <!-- PRO Section -->
     <message>
         <source>Standard</source>
         <translation>Standard</translation>
     </message>
     <message>
-        <source>Cloud-powered segmentation with SAM 3</source>
-        <translation>Segmentation cloud avec SAM 3</translation>
+        <source>Cloud-powered AI segmentation</source>
+        <translation>Segmentation IA cloud</translation>
     </message>
     <message>
         <source>e.g. roof, tree, car</source>
@@ -714,8 +706,8 @@ Zoomez pour de meilleurs resultats.</translation>
         <translation>Cliquez ailleurs pour detecter plus d'objets</translation>
     </message>
     <message>
-        <source>Start PRO Segmentation</source>
-        <translation>Demarrer la segmentation PRO</translation>
+        <source>Start AI Segmentation PRO</source>
+        <translation>Demarrer la segmentation IA PRO</translation>
     </message>
     <message>
         <source>Detect objects</source>

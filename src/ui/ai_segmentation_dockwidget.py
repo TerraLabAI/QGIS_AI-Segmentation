@@ -429,7 +429,7 @@ class AISegmentationDockWidget(QDockWidget):
         )
         mode_layout.addWidget(self.mode_standard_btn)
 
-        self.mode_pro_btn = QPushButton("PRO (SAM 3)")
+        self.mode_pro_btn = QPushButton("PRO")
         self.mode_pro_btn.setCheckable(True)
         self.mode_pro_btn.setChecked(self._pro_mode)
         self.mode_pro_btn.clicked.connect(
@@ -457,7 +457,7 @@ class AISegmentationDockWidget(QDockWidget):
         pro_info_layout.setContentsMargins(10, 10, 10, 10)
         pro_info_layout.setSpacing(4)
 
-        pro_desc = QLabel(tr("Cloud-powered segmentation with SAM 3"))
+        pro_desc = QLabel(tr("Cloud-powered AI segmentation"))
         pro_desc.setWordWrap(True)
         pro_desc.setStyleSheet(
             "font-weight: bold; font-size: 12px; color: palette(text);"
@@ -467,7 +467,7 @@ class AISegmentationDockWidget(QDockWidget):
         pro_layout.addWidget(self.pro_info_widget)
 
         # Start PRO Segmentation button
-        self.start_pro_button = QPushButton(tr("Start PRO Segmentation"))
+        self.start_pro_button = QPushButton(tr("Start AI Segmentation PRO"))
         self.start_pro_button.setEnabled(False)
         self.start_pro_button.clicked.connect(self._on_start_pro_clicked)
         self.start_pro_button.setStyleSheet(
@@ -607,37 +607,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.secondary_buttons_widget.setLayout(secondary_layout)
         self.secondary_buttons_widget.setVisible(False)
         layout.addWidget(self.secondary_buttons_widget)
-
-        # Info box for segmentation mode (subtle blue style)
-        self.batch_info_widget = QWidget()
-        self.batch_info_widget.setStyleSheet(
-            "QWidget { background-color: rgba(100, 149, 237, 0.15); "
-            "border: 1px solid rgba(100, 149, 237, 0.3); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; }"
-        )
-        batch_info_layout = QHBoxLayout(self.batch_info_widget)
-        batch_info_layout.setContentsMargins(8, 6, 8, 6)
-        batch_info_layout.setSpacing(8)
-
-        # Info icon
-        batch_info_icon = QLabel()
-        style = self.batch_info_widget.style()
-        batch_icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation)
-        batch_info_icon.setPixmap(batch_icon.pixmap(14, 14))
-        batch_info_icon.setFixedSize(14, 14)
-        batch_info_layout.addWidget(batch_info_icon, 0, Qt.AlignmentFlag.AlignTop)
-
-        # Info text
-        info_msg = "{}\n{}".format(
-            tr("The AI model works best on one element at a time."),
-            tr("Save your polygon before selecting the next element."))
-        batch_info_text = QLabel(info_msg)
-        batch_info_text.setWordWrap(True)
-        batch_info_text.setStyleSheet("font-size: 11px; color: palette(text);")
-        batch_info_layout.addWidget(batch_info_text, 1)
-
-        self.batch_info_widget.setVisible(False)
-        layout.addWidget(self.batch_info_widget)
 
         # Warning box for disjoint regions (yellow/orange style)
         self.disjoint_warning_widget = QWidget()
@@ -1419,8 +1388,6 @@ class AISegmentationDockWidget(QDockWidget):
             self.stop_button.setVisible(True)
             self.stop_button.setEnabled(True)
 
-            # Info box
-            self.batch_info_widget.setVisible(True)
         else:
             # Not segmenting - hide all segmentation buttons, show start controls
             self.mode_toggle_container.setVisible(True)
@@ -1433,7 +1400,6 @@ class AISegmentationDockWidget(QDockWidget):
             self.undo_button.setVisible(False)
             self.stop_button.setVisible(False)
             self.secondary_buttons_widget.setVisible(False)
-            self.batch_info_widget.setVisible(False)
 
     def _update_refine_panel_visibility(self):
         """Update refine panel visibility based on mask state."""
@@ -1513,8 +1479,6 @@ class AISegmentationDockWidget(QDockWidget):
 
     def set_disjoint_warning(self, visible: bool):
         self.disjoint_warning_widget.setVisible(visible)
-        if self._segmentation_active:
-            self.batch_info_widget.setVisible(not visible)
 
     def set_mask_available(self, available: bool):
         """Signal that a mask is available (e.g. from text-only prediction)."""
