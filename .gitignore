@@ -14,6 +14,7 @@ __pycache__/
 python_standalone/
 .ai_segmentation_cache/
 
+.env
 .DS_Store
 libs/
 venv_py3.9/

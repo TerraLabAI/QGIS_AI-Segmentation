@@ -1235,6 +1235,11 @@ class AISegmentationPlugin:
         # Activate segmentation tool immediately (no pre-encoding)
         self._activate_segmentation_tool()
 
+
+
+
+
+
     # ══════════════════════════════════════════════════════════════
     # SEGMENTATION PRO  (cloud, SAM3)
     # ══════════════════════════════════════════════════════════════
@@ -1242,11 +1247,40 @@ class AISegmentationPlugin:
     def _on_start_pro_segmentation(self, layer: QgsRasterLayer):
         """Start PRO (SAM 3) cloud segmentation."""
         from ..core.pro_predictor import CloudSam3Predictor
+        import pathlib
 
         if self._warmup_thread is not None and self._warmup_thread.isRunning():
             return  # warmup already in progress
 
-        sam3 = CloudSam3Predictor()
+        env_path = pathlib.Path(__file__).parent.parent.parent / ".env"
+        api_key = ""
+        if env_path.exists():
+            with open(env_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("PRO_API_KEY="):
+                        api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+
+        sam3 = CloudSam3Predictor(api_key=api_key)
+
+        # Synchronous auth pre-check before showing any dialog.
+        # Server UP + bad key → 401 in < 1s → immediate error, no dialog shown.
+        # Server DOWN (cold start) → timeout after 5s → fall through to retry dialog.
+        try:
+            sam3._request("POST", "/reset?session_id=auth-check", timeout=5)
+        except Exception as pre_err:
+            if "401" in str(pre_err):
+                QMessageBox.warning(
+                    self.iface.mainWindow(),
+                    tr("SAM 3 Cloud"),
+                    tr(
+                        "Invalid PRO API key.\n\n"
+                        "Check the value of PRO_API_KEY in:\n"
+                        "{}"
+                    ).format(str(env_path))
+                )
+                return
 
         from qgis.PyQt.QtWidgets import QProgressDialog
         progress = QProgressDialog(
@@ -1289,7 +1323,13 @@ class AISegmentationPlugin:
         progress.close()
 
         if not worker.result:
-            if worker.error_type == "timeout":
+            if worker.error_type == "auth":
+                message = tr(
+                    "Invalid PRO API key.\n\n"
+                    "Check the value of PRO_API_KEY in:\n"
+                    "{}"
+                ).format(str(pathlib.Path(__file__).parent.parent.parent / ".env"))
+            elif worker.error_type == "timeout":
                 message = tr(
                     "The SAM 3 server did not respond in time.\n\n"
                     "This can happen during first startup (cold start) "

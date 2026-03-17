@@ -1119,6 +1119,33 @@ class AISegmentationDockWidget(QDockWidget):
         return self.pro_text_prompt.text().strip()
 
     def _on_start_pro_clicked(self):
+        import pathlib
+        from qgis.PyQt.QtWidgets import QMessageBox
+        from ..core.i18n import tr
+
+        env_path = pathlib.Path(__file__).parent.parent.parent / ".env"
+        api_key = ""
+        if env_path.exists():
+            with open(env_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("PRO_API_KEY="):
+                        api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+
+        if not api_key:
+            QMessageBox.warning(
+                self,
+                tr("PRO API Key Missing"),
+                tr(
+                    "PRO API key is not configured.\n\n"
+                    "Create the file .env at the root of the plugin directory\n"
+                    "with the content:\n"
+                    "PRO_API_KEY=your_key_here"
+                ),
+            )
+            return
+
         layer = self.layer_combo.currentLayer()
         if layer:
             self.start_pro_segmentation_requested.emit(layer)

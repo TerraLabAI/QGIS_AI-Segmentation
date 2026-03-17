@@ -765,5 +765,31 @@ Consultez les logs QGIS pour plus de détails.</translation>
         <source>No instances found for "{text}"</source>
         <translation>Aucune instance trouvee pour "{text}"</translation>
     </message>
+    <message>
+        <source>Invalid PRO API key.
+
+Check the value of PRO_API_KEY in:
+{}</source>
+        <translation>Clé API PRO invalide.
+
+Vérifiez la valeur de PRO_API_KEY dans :
+{}</translation>
+    </message>
+    <message>
+        <source>PRO API Key Missing</source>
+        <translation>Clé API PRO manquante</translation>
+    </message>
+    <message>
+        <source>PRO API key is not configured.
+
+Create the file .env at the root of the plugin directory
+with the content:
+PRO_API_KEY=your_key_here</source>
+        <translation>La clé API PRO n&apos;est pas configurée.
+
+Créez le fichier .env à la racine du répertoire du plugin
+avec le contenu :
+PRO_API_KEY=your_key_here</translation>
+    </message>
 </context>
 </TS>

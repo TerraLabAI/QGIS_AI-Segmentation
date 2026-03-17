@@ -132,6 +132,12 @@ class CloudSam3Predictor:
                             device, sessions),
                         "AI Segmentation", level=Qgis.Info
                     )
+                    # Validate API key against a protected endpoint
+                    try:
+                        self._request("POST", "/reset?session_id=auth-check", timeout=_TIMEOUT_RESET)
+                    except Exception as auth_err:
+                        if "401" in str(auth_err):
+                            return (False, "auth")
                     return (True, "none")
                 else:
                     raise RuntimeError("Unexpected response: {}".format(resp))
