@@ -1282,21 +1282,11 @@ class AISegmentationPlugin:
     def _on_start_pro_segmentation(self, layer: QgsRasterLayer):
         """Start PRO (SAM 3) cloud segmentation."""
         from ..core.cloud_sam3_predictor import CloudSam3Predictor
-        from ..core.activation_manager import get_hf_token
-
-        hf_token = get_hf_token()
-        if not hf_token:
-            QMessageBox.warning(
-                self.iface.mainWindow(),
-                tr("HF Token Required"),
-                tr("Please save your Hugging Face token first.")
-            )
-            return
 
         if self._warmup_thread is not None and self._warmup_thread.isRunning():
             return  # warmup already in progress
 
-        sam3 = CloudSam3Predictor(hf_token=hf_token)
+        sam3 = CloudSam3Predictor()
 
         from qgis.PyQt.QtWidgets import QProgressDialog
         progress = QProgressDialog(

@@ -686,30 +686,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Segmentacion en la nube con SAM 3</translation>
     </message>
     <message>
-        <source>SAM 3 requires a Hugging Face access token.</source>
-        <translation>SAM 3 requiere un token de acceso de Hugging Face.</translation>
-    </message>
-    <message>
-        <source>1. Request access at the SAM 3 model page</source>
-        <translation>1. Solicite acceso en la pagina del modelo SAM 3</translation>
-    </message>
-    <message>
-        <source>2. Create a token at huggingface.co/settings/tokens</source>
-        <translation>2. Cree un token en huggingface.co/settings/tokens</translation>
-    </message>
-    <message>
-        <source>3. Paste your token below</source>
-        <translation>3. Pegue su token a continuacion</translation>
-    </message>
-    <message>
-        <source>Save token</source>
-        <translation>Guardar token</translation>
-    </message>
-    <message>
-        <source>Token saved</source>
-        <translation>Token guardado</translation>
-    </message>
-    <message>
         <source>e.g. roof, tree, car</source>
         <translation>ej. techo, arbol, coche</translation>
     </message>
@@ -788,14 +764,6 @@ Consulte los registros de QGIS para más detalles.</translation>
     <message>
         <source>Text prompt cannot be empty</source>
         <translation>El texto no puede estar vacio</translation>
-    </message>
-    <message>
-        <source>HF Token Required</source>
-        <translation>Token HF requerido</translation>
-    </message>
-    <message>
-        <source>Please save your Hugging Face token first.</source>
-        <translation>Por favor, guarde su token de Hugging Face primero.</translation>
     </message>
     <message>
         <source>Found {count} instance(s) for "{text}"</source>

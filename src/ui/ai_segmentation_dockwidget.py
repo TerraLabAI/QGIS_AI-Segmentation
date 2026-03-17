@@ -33,8 +33,6 @@ from ..core.activation_manager import (  # noqa: E402
     is_plugin_activated,
     activate_plugin,
     get_newsletter_url,
-    get_hf_token,
-    save_hf_token,
 )
 from ..core.i18n import tr  # noqa: E402
 from ..core.model_config import USE_SAM2, _IS_MACOS_X86  # noqa: E402
@@ -448,7 +446,7 @@ class AISegmentationDockWidget(QDockWidget):
         pro_layout.setContentsMargins(0, 0, 0, 0)
         pro_layout.setSpacing(8)
 
-        # Info box: blue background, explains HF token + SAM 3
+        # Info box: blue background, describes SAM 3
         self.pro_info_widget = QWidget()
         self.pro_info_widget.setStyleSheet(
             "QWidget { background-color: rgba(100, 149, 237, 0.15); "
@@ -466,67 +464,7 @@ class AISegmentationDockWidget(QDockWidget):
         )
         pro_info_layout.addWidget(pro_desc)
 
-        pro_token_info = QLabel(tr("SAM 3 requires a Hugging Face access token."))
-        pro_token_info.setWordWrap(True)
-        pro_token_info.setStyleSheet("font-size: 11px; color: palette(text);")
-        pro_info_layout.addWidget(pro_token_info)
-
-        step1_label = QLabel(
-            '{} <a href="https://huggingface.co/facebook/sam3">'
-            'facebook/sam3</a>'.format(
-                tr("1. Request access at the SAM 3 model page")
-            )
-        )
-        step1_label.setOpenExternalLinks(True)
-        step1_label.setWordWrap(True)
-        step1_label.setStyleSheet("font-size: 11px; color: palette(text);")
-        pro_info_layout.addWidget(step1_label)
-
-        step2_label = QLabel(
-            '{} <a href="https://huggingface.co/settings/tokens">'
-            'huggingface.co/settings/tokens</a>'.format(
-                tr("2. Create a token at huggingface.co/settings/tokens")
-            )
-        )
-        step2_label.setOpenExternalLinks(True)
-        step2_label.setWordWrap(True)
-        step2_label.setStyleSheet("font-size: 11px; color: palette(text);")
-        pro_info_layout.addWidget(step2_label)
-
-        step3_label = QLabel(tr("3. Paste your token below"))
-        step3_label.setStyleSheet("font-size: 11px; color: palette(text);")
-        pro_info_layout.addWidget(step3_label)
-
         pro_layout.addWidget(self.pro_info_widget)
-
-        # HF token input row
-        token_row = QHBoxLayout()
-        token_row.setSpacing(6)
-        self.hf_token_input = QLineEdit()
-        self.hf_token_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.hf_token_input.setPlaceholderText("hf_...")
-        existing_token = get_hf_token()
-        if existing_token:
-            self.hf_token_input.setText(existing_token)
-        token_row.addWidget(self.hf_token_input, 1)
-
-        self.save_token_btn = QPushButton(tr("Save token"))
-        self.save_token_btn.clicked.connect(self._on_save_hf_token)
-        self.save_token_btn.setStyleSheet(
-            "QPushButton { padding: 4px 12px; }"
-        )
-        token_row.addWidget(self.save_token_btn)
-        pro_layout.addLayout(token_row)
-
-        # Token status label
-        self.token_status_label = QLabel("")
-        self.token_status_label.setStyleSheet(
-            "font-size: 11px; color: #2e7d32;"
-        )
-        self.token_status_label.setVisible(bool(existing_token))
-        if existing_token:
-            self.token_status_label.setText(tr("Token saved"))
-        pro_layout.addWidget(self.token_status_label)
 
         # Start PRO Segmentation button
         self.start_pro_button = QPushButton(tr("Start PRO Segmentation"))
@@ -1247,17 +1185,6 @@ class AISegmentationDockWidget(QDockWidget):
         """Return text prompt for PRO mode (empty = interactive mode)."""
         return self.pro_text_prompt.text().strip()
 
-    def _on_save_hf_token(self):
-        token = self.hf_token_input.text().strip()
-        if token:
-            save_hf_token(token)
-            self.token_status_label.setText(tr("Token saved"))
-            self.token_status_label.setStyleSheet(
-                "font-size: 11px; color: #2e7d32;"
-            )
-            self.token_status_label.setVisible(True)
-            self._update_ui_state()
-
     def _on_start_pro_clicked(self):
         layer = self.layer_combo.currentLayer()
         if layer:
@@ -1699,9 +1626,7 @@ class AISegmentationDockWidget(QDockWidget):
             can_start and not self._segmentation_active
         )
 
-        # PRO start: enabled when has_layer + activated + hf_token saved
-        hf_token = get_hf_token()
-        can_start_pro = has_layer and activated and bool(hf_token)
+        can_start_pro = has_layer and activated
         self.start_pro_button.setEnabled(
             can_start_pro and not self._segmentation_active
         )

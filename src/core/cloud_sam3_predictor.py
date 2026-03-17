@@ -28,12 +28,11 @@ class SessionExpiredError(RuntimeError):
 
 class CloudSam3Predictor:
 
-    def __init__(self, hf_token: str = "", api_key: str = "") -> None:
+    def __init__(self, api_key: str = "") -> None:
         self.is_image_set = False
         self.original_size = None
         self.input_size = None
         self._session_id = None
-        self._hf_token = hf_token
         self._api_key = api_key
         self._last_image_np = None
         self._stop_requested = False
@@ -51,8 +50,6 @@ class CloudSam3Predictor:
             headers["Content-Type"] = "application/json"
         if self._api_key:
             headers["X-Api-Key"] = self._api_key
-        if self._hf_token:
-            headers["X-HF-Token"] = self._hf_token
         req = urllib.request.Request(
             url, data=body, method=method, headers=headers
         )

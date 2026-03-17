@@ -686,30 +686,6 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Segmentation cloud avec SAM 3</translation>
     </message>
     <message>
-        <source>SAM 3 requires a Hugging Face access token.</source>
-        <translation>SAM 3 necessite un jeton d'acces Hugging Face.</translation>
-    </message>
-    <message>
-        <source>1. Request access at the SAM 3 model page</source>
-        <translation>1. Demandez l'acces sur la page du modele SAM 3</translation>
-    </message>
-    <message>
-        <source>2. Create a token at huggingface.co/settings/tokens</source>
-        <translation>2. Creez un jeton sur huggingface.co/settings/tokens</translation>
-    </message>
-    <message>
-        <source>3. Paste your token below</source>
-        <translation>3. Collez votre jeton ci-dessous</translation>
-    </message>
-    <message>
-        <source>Save token</source>
-        <translation>Enregistrer le jeton</translation>
-    </message>
-    <message>
-        <source>Token saved</source>
-        <translation>Jeton enregistre</translation>
-    </message>
-    <message>
         <source>e.g. roof, tree, car</source>
         <translation>ex. toit, arbre, voiture</translation>
     </message>
@@ -788,14 +764,6 @@ Consultez les logs QGIS pour plus de détails.</translation>
     <message>
         <source>Text prompt cannot be empty</source>
         <translation>Le texte ne peut pas etre vide</translation>
-    </message>
-    <message>
-        <source>HF Token Required</source>
-        <translation>Jeton HF requis</translation>
-    </message>
-    <message>
-        <source>Please save your Hugging Face token first.</source>
-        <translation>Veuillez d'abord enregistrer votre jeton Hugging Face.</translation>
     </message>
     <message>
         <source>Found {count} instance(s) for "{text}"</source>

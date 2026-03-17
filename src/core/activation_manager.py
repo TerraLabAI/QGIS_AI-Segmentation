@@ -55,13 +55,3 @@ def get_website_url() -> str:
     return TERRALAB_WEBSITE
 
 
-# HF token storage for SAM3 PRO mode
-HF_TOKEN_KEY = "AISegmentation/hf_token"
-
-
-def save_hf_token(token: str):
-    QgsSettings().setValue(HF_TOKEN_KEY, token)
-
-
-def get_hf_token() -> str:
-    return QgsSettings().value(HF_TOKEN_KEY, "", type=str)
