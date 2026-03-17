@@ -527,21 +527,6 @@ class AISegmentationDockWidget(QDockWidget):
         start_layout.setContentsMargins(0, 0, 0, 0)
         start_layout.setSpacing(6)
 
-        # Cloud inference toggle
-        self.cloud_mode_checkbox = QCheckBox(tr("Use cloud inference"))
-        self.cloud_mode_checkbox.setToolTip(
-            tr("Run segmentation on a remote GPU server instead of locally"))
-        cloud_saved = QSettings().value(
-            "AI_Segmentation/cloud_mode", False, type=bool)
-        self.cloud_mode_checkbox.setChecked(cloud_saved)
-        self.cloud_mode_checkbox.toggled.connect(self._on_cloud_mode_toggled)
-        start_layout.addWidget(self.cloud_mode_checkbox)
-
-        self.cloud_status_label = QLabel("")
-        self.cloud_status_label.setStyleSheet("font-size: 11px; margin-left: 20px;")
-        self.cloud_status_label.setVisible(cloud_saved)
-        start_layout.addWidget(self.cloud_status_label)
-
         self.start_button = QPushButton(tr("Start AI Segmentation"))
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._on_start_clicked)
@@ -1087,27 +1072,6 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_layers_removed(self, layer_ids):
         """Handle layers removed from project."""
         self._update_ui_state()
-
-    def _on_cloud_mode_toggled(self, checked):
-        QSettings().setValue("AI_Segmentation/cloud_mode", checked)
-        self.cloud_status_label.setVisible(checked)
-        if checked:
-            self.cloud_status_label.setText(tr("Checking cloud server..."))
-            self.cloud_status_label.setStyleSheet(
-                "font-size: 11px; margin-left: 20px; color: palette(text);")
-
-    def is_cloud_mode(self) -> bool:
-        return self.cloud_mode_checkbox.isChecked()
-
-    def set_cloud_status(self, reachable: bool):
-        if reachable:
-            self.cloud_status_label.setText(tr("Cloud server: connected"))
-            self.cloud_status_label.setStyleSheet(
-                "font-size: 11px; margin-left: 20px; color: #2e7d32;")
-        else:
-            self.cloud_status_label.setText(tr("Cloud server: unreachable"))
-            self.cloud_status_label.setStyleSheet(
-                "font-size: 11px; margin-left: 20px; color: #c62828;")
 
     def _on_mode_toggle(self, pro: bool):
         if self._segmentation_active:

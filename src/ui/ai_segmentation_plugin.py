@@ -1134,55 +1134,7 @@ class AISegmentationPlugin:
             )
 
     def _on_start_segmentation(self, layer: QgsRasterLayer):
-        if self.dock_widget.is_cloud_mode():
-            from ..core.cloud_predictor import CloudPredictor
-            cloud = CloudPredictor()
-
-            progress = QProgressDialog(
-                tr("Connecting to cloud server..."),
-                tr("Cancel"), 0, 0, self.iface.mainWindow()
-            )
-            progress.setWindowTitle(tr("Cloud Connection"))
-            progress.setMinimumDuration(0)
-            progress.setWindowModality(Qt.WindowModal)
-            progress.show()
-            QApplication.processEvents()
-
-            thread = QThread()
-            worker = _CloudWarmupWorker(cloud)
-            worker.moveToThread(thread)
-            thread.started.connect(worker.run)
-            worker.finished.connect(thread.quit)
-            thread.start()
-
-            while thread.isRunning():
-                QApplication.processEvents()
-                if progress.wasCanceled():
-                    thread.quit()
-                    thread.wait(2000)
-                    self.dock_widget.set_cloud_status(False)
-                    return
-                thread.wait(100)
-
-            progress.close()
-
-            if not worker.result:
-                self.dock_widget.set_cloud_status(False)
-                QMessageBox.warning(
-                    self.iface.mainWindow(),
-                    tr("Cloud Error"),
-                    tr("Could not connect to the cloud server. "
-                       "Check your internet connection or disable cloud mode.")
-                )
-                return
-            self.dock_widget.set_cloud_status(True)
-            if self.predictor:
-                try:
-                    self.predictor.cleanup()
-                except Exception:
-                    pass
-            self.predictor = cloud
-        elif self.predictor is None:
+        if self.predictor is None:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Not Ready"),
