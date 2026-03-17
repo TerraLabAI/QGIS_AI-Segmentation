@@ -1781,6 +1781,11 @@ class AISegmentationPlugin:
             })
             batch_count += 1
 
+        # Clear the blue rubber band — green pending detections take over
+        self._clear_mask_visualization()
+        self.current_mask = None
+        self.current_transform_info = None
+
         if batch_count > 0:
             self._pro_detection_batches.append(batch_count)
             if self.dock_widget:
