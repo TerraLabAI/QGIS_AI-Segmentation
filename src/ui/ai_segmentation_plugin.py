@@ -1556,6 +1556,11 @@ class AISegmentationPlugin:
 
         batch_count = 0
         for mask, score in filtered:
+            h, w = transform_info["img_shape"]
+            if mask.shape[0] > h or mask.shape[1] > w:
+                mask = mask[:h, :w]
+                if mask.sum() == 0:
+                    continue
             geometries = mask_to_polygons(mask, transform_info)
             if not geometries:
                 continue
@@ -1973,10 +1978,14 @@ class AISegmentationPlugin:
                     transform_info=det['transform_info'],
                     points_positive=[],
                     points_negative=[],
+                    expand=self._refine_expand,
+                    simplify=self._refine_simplify,
+                    fill_holes=self._refine_fill_holes,
+                    min_area=self._refine_min_area,
                 )
-            # Rubber bands are already green; transfer them to saved list
+            # Destroy old pending rubber bands (_save_single_mask created new saved ones)
             for det in self._pro_pending_detections:
-                self.saved_rubber_bands.append(det['rb'])
+                det['rb'].reset(QgsWkbTypes.PolygonGeometry)
             self._pro_pending_detections = []
             self._pro_detection_batches = []
             if self.map_tool:
@@ -2377,8 +2386,8 @@ class AISegmentationPlugin:
         self._refine_fill_holes = fill_holes
         self._refine_min_area = min_area
 
-        # In both modes: update current mask preview only
-        # Saved masks (green) keep their own refine settings from when they were saved
+        if self._pro_pending_detections:
+            self._update_pending_detections_visualization()
         self._update_mask_visualization()
 
     def _transform_to_raster_crs(self, point):
@@ -3070,6 +3079,33 @@ class AISegmentationPlugin:
             self._update_mask_visualization()
         else:
             self._clear_mask_visualization()
+
+    def _update_pending_detections_visualization(self):
+        """Re-render all pending detection rubber bands with current refine settings."""
+        from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
+        for det in self._pro_pending_detections:
+            mask = det['mask']
+            if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
+                mask = apply_mask_refinement(
+                    mask,
+                    expand_value=self._refine_expand,
+                    fill_holes=self._refine_fill_holes,
+                    min_area=self._refine_min_area,
+                )
+            geometries = mask_to_polygons(mask, det['transform_info'])
+            if not geometries:
+                continue
+            combined = QgsGeometry.unaryUnion(geometries)
+            if not combined or combined.isEmpty():
+                continue
+            tolerance = self._compute_simplification_tolerance(
+                det['transform_info'], self._refine_simplify
+            )
+            if tolerance > 0:
+                combined = combined.simplify(tolerance)
+            display_geom = QgsGeometry(combined)
+            self._transform_geometry_to_canvas_crs(display_geom)
+            det['rb'].setToGeometry(display_geom, None)
 
     def _update_mask_visualization(self):
         if self.mask_rubber_band is None:

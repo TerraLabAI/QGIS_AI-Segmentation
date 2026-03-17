@@ -99,13 +99,13 @@ class CloudSam3Predictor:
             )
             return False
 
-    def warm_up_with_retry(self, max_attempts=3, initial_delay=10, attempt_callback=None) -> Tuple[bool, str]:
+    def warm_up_with_retry(self, max_attempts=5, initial_delay=30, attempt_callback=None) -> Tuple[bool, str]:
         """
         Try to contact SAM 3 server with retry and exponential backoff.
 
         Args:
-            max_attempts: Maximum number of attempts (default: 3)
-            initial_delay: Initial delay in seconds between retries (default: 10s)
+            max_attempts: Maximum number of attempts (default: 5)
+            initial_delay: Initial delay in seconds between retries (default: 30s, capped at 60s)
             attempt_callback: Optional callable(attempt_num, max_attempts) called before each attempt
 
         Returns:
@@ -141,7 +141,10 @@ class CloudSam3Predictor:
 
             except Exception as e:
                 error_msg = str(e)
-                is_timeout = "504" in error_msg or "timeout" in error_msg.lower()
+                is_timeout = (
+                    "504" in error_msg or "503" in error_msg or "502" in error_msg
+                    or "timeout" in error_msg.lower()
+                )
 
                 QgsMessageLog.logMessage(
                     "SAM 3 warm_up: attempt {} failed - {}".format(
@@ -164,8 +167,8 @@ class CloudSam3Predictor:
                     else:
                         return (False, "unknown")
 
-                # Wait before retry (exponential backoff for timeouts), interruptible
-                delay = initial_delay * (2 ** (attempt - 1)) if is_timeout else 2
+                # Wait before retry (exponential backoff for cold starts, capped at 60s)
+                delay = min(initial_delay * (2 ** (attempt - 1)), 60) if is_timeout else 2
                 if is_timeout:
                     QgsMessageLog.logMessage(
                         "SAM 3 cold start detected, retrying in {}s...".format(delay),
