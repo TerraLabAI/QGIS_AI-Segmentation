@@ -926,12 +926,23 @@ def _get_system_python() -> str:
     On Windows, falls back to QGIS's bundled Python if standalone is unavailable
     (e.g. when anti-malware blocks the standalone download).
     """
-    from .python_manager import standalone_python_exists, get_standalone_python_path
+    from .python_manager import (
+        standalone_python_exists, get_standalone_python_path,
+        verify_standalone_python, remove_standalone_python
+    )
 
     if standalone_python_exists():
-        python_path = get_standalone_python_path()
-        _log(f"Using standalone Python: {python_path}", Qgis.MessageLevel.Info)
-        return python_path
+        ok, msg = verify_standalone_python()
+        if ok:
+            python_path = get_standalone_python_path()
+            _log(f"Using standalone Python: {python_path}", Qgis.MessageLevel.Info)
+            return python_path
+        else:
+            _log(
+                "Standalone Python broken ({}), removing...".format(msg),
+                Qgis.MessageLevel.Warning
+            )
+            remove_standalone_python()
 
     # On NixOS, use system Python (standalone binaries can't run)
     from .python_manager import is_nixos
