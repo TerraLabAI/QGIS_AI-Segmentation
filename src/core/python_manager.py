@@ -370,6 +370,8 @@ def download_python_standalone(
             _log("Python standalone installed successfully", Qgis.MessageLevel.Success)
             return True, f"Python {python_version} installed successfully"
         else:
+            # Clean up broken installation so _get_system_python() won't find it
+            remove_standalone_python()
             return False, f"Verification failed: {verify_msg}"
 
     except InterruptedError:
