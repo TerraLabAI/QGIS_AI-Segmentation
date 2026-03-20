@@ -5,10 +5,10 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
+    QGridLayout,
     QLabel,
     QPushButton,
     QFrame,
-    QLineEdit,
     QSpinBox,
     QToolButton,
     QStyle,
@@ -97,24 +97,6 @@ class AISegmentationProDockWidget(QDockWidget):
         self.setTitleBarWidget(title_widget)
 
     def _setup_ui(self):
-        # Cloud info banner
-        self.pro_info_widget = QWidget()
-        self.pro_info_widget.setStyleSheet(
-            "QWidget { background-color: rgba(100, 149, 237, 0.15); "
-            "border: 1px solid rgba(100, 149, 237, 0.3); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; color: palette(text); }"
-        )
-        pro_info_layout = QVBoxLayout(self.pro_info_widget)
-        pro_info_layout.setContentsMargins(10, 10, 10, 10)
-        pro_info_layout.setSpacing(4)
-
-        pro_desc = QLabel(tr("Cloud-powered AI segmentation with SAM 3"))
-        pro_desc.setWordWrap(True)
-        pro_desc.setStyleSheet("font-weight: bold; font-size: 12px; color: palette(text);")
-        pro_info_layout.addWidget(pro_desc)
-
-        self.main_layout.addWidget(self.pro_info_widget)
-
         # Layer combo
         self.layer_combo = QgsMapLayerComboBox()
         self.layer_combo.setFilters(QgsMapLayerProxyModel.Filter.RasterLayer)
@@ -176,22 +158,63 @@ class AISegmentationProDockWidget(QDockWidget):
         pro_ctrl_layout.setContentsMargins(0, 4, 0, 4)
         pro_ctrl_layout.setSpacing(6)
 
-        self.pro_text_prompt = QLineEdit()
-        self.pro_text_prompt.setPlaceholderText(tr("e.g. roof, tree, car"))
-        self.pro_text_prompt.setToolTip(
-            tr("Describe objects visible from above.\n"
-               "For buildings: try 'roof' or 'building roof'.\n"
-               "Zoom in for better results."))
-        pro_ctrl_layout.addWidget(self.pro_text_prompt)
+        # Tag grid
+        pro_tags_widget = QWidget()
+        tags_vbox = QVBoxLayout(pro_tags_widget)
+        tags_vbox.setContentsMargins(0, 0, 0, 0)
+        tags_vbox.setSpacing(4)
+
+        tags_label = QLabel(tr("Select object type:"))
+        tags_label.setStyleSheet("font-size: 11px; color: palette(text);")
+        tags_vbox.addWidget(tags_label)
+
+        tags_grid_widget = QWidget()
+        tags_grid = QGridLayout(tags_grid_widget)
+        tags_grid.setContentsMargins(0, 0, 0, 0)
+        tags_grid.setSpacing(3)
+
+        _tags = [
+            "Roof", "Building", "Warehouse",
+            "Solar panel", "Tree", "Bush",
+            "Grass", "Forest", "Car",
+            "Truck", "Road", "Parking",
+            "Railway", "Pool", "River",
+            "Field", "Crop", "Shadow",
+            "Greenhouse",
+        ]
+        self._tag_buttons = []
+        for i, tag in enumerate(_tags):
+            btn = QPushButton(tag)
+            btn.setCheckable(True)
+            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            btn.setStyleSheet(
+                "QPushButton {"
+                "  padding: 3px 8px;"
+                "  border-radius: 10px;"
+                "  font-size: 11px;"
+                "  border: 1px solid rgba(128,128,128,0.35);"
+                "  background-color: transparent;"
+                "}"
+                "QPushButton:checked {"
+                "  background-color: #2e7d32;"
+                "  color: white;"
+                "  border: 1px solid #2e7d32;"
+                "}"
+                "QPushButton:hover:!checked {"
+                "  background-color: rgba(128,128,128,0.12);"
+                "}"
+            )
+            btn.clicked.connect(lambda checked, b=btn: self._on_tag_clicked(b, checked))
+            tags_grid.addWidget(btn, i // 4, i % 4)
+            self._tag_buttons.append(btn)
+
+        tags_vbox.addWidget(tags_grid_widget)
+        pro_ctrl_layout.addWidget(pro_tags_widget)
 
         self.pro_detect_button = QPushButton(tr("Detect objects"))
         self.pro_detect_button.setVisible(False)
         self.pro_detect_button.clicked.connect(self.pro_detect_requested)
         pro_ctrl_layout.addWidget(self.pro_detect_button)
-
-        self.pro_text_prompt.textChanged.connect(
-            lambda t: self.pro_detect_button.setVisible(bool(t.strip()))
-        )
 
         # Min confidence (score threshold)
         score_layout = QHBoxLayout()
@@ -206,19 +229,6 @@ class AISegmentationProDockWidget(QDockWidget):
         score_layout.addStretch()
         score_layout.addWidget(self.score_threshold_spinbox)
         pro_ctrl_layout.addLayout(score_layout)
-
-        # Max instances
-        max_layout = QHBoxLayout()
-        max_label = QLabel(tr("Max. instances"))
-        max_label.setStyleSheet("font-size: 12px; color: palette(text);")
-        self.max_instances_spinbox = QSpinBox()
-        self.max_instances_spinbox.setRange(1, 100)
-        self.max_instances_spinbox.setValue(10)
-        self.max_instances_spinbox.setMinimumWidth(80)
-        max_layout.addWidget(max_label)
-        max_layout.addStretch()
-        max_layout.addWidget(self.max_instances_spinbox)
-        pro_ctrl_layout.addLayout(max_layout)
 
         self.pro_controls_container.setVisible(False)
         self.main_layout.addWidget(self.pro_controls_container)
@@ -337,24 +347,23 @@ class AISegmentationProDockWidget(QDockWidget):
         self._saved_polygon_count = 0
         self._positive_count = 0
         self.disjoint_warning_widget.setVisible(False)
-        self.pro_text_prompt.clear()  # triggers textChanged -> hides pro_detect_button
+        for btn in self._tag_buttons:
+            btn.setChecked(False)
+        self.pro_detect_button.setVisible(False)
         self.score_threshold_spinbox.blockSignals(True)
         self.score_threshold_spinbox.setValue(30)
         self.score_threshold_spinbox.blockSignals(False)
-        self.max_instances_spinbox.blockSignals(True)
-        self.max_instances_spinbox.setValue(10)
-        self.max_instances_spinbox.blockSignals(False)
         self._update_button_visibility()
         self._update_ui_state()
 
     def get_score_threshold(self) -> float:
         return self.score_threshold_spinbox.value() / 100.0
 
-    def get_max_instances(self) -> int:
-        return self.max_instances_spinbox.value()
-
     def get_pro_text_prompt(self) -> str:
-        return self.pro_text_prompt.text().strip()
+        for btn in self._tag_buttons:
+            if btn.isChecked():
+                return btn.text().lower()
+        return ""
 
     def is_activated(self) -> bool:
         return is_plugin_activated()
@@ -426,6 +435,12 @@ class AISegmentationProDockWidget(QDockWidget):
         self.start_pro_button.setEnabled(
             has_layer and activated and not self._segmentation_active
         )
+
+    def _on_tag_clicked(self, clicked_btn: QPushButton, checked: bool):
+        for btn in self._tag_buttons:
+            if btn is not clicked_btn:
+                btn.setChecked(False)
+        self.pro_detect_button.setVisible(checked)
 
     def _on_layers_changed(self, *args):
         self._update_ui_state()

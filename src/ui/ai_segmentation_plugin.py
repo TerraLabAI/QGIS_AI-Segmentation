@@ -1323,8 +1323,11 @@ class AISegmentationPlugin:
 
     def _on_start_pro_segmentation(self, layer: QgsRasterLayer):
         """Start PRO (SAM 3) cloud segmentation."""
+        from ..core.venv_manager import ensure_venv_packages_available
         from ..core.pro_predictor import CloudSam3Predictor
         import pathlib
+
+        ensure_venv_packages_available()
 
         if self._warmup_thread is not None and self._warmup_thread.isRunning():
             return  # warmup already in progress
@@ -1350,7 +1353,7 @@ class AISegmentationPlugin:
             if "401" in str(pre_err):
                 QMessageBox.warning(
                     self.iface.mainWindow(),
-                    tr("SAM 3 Cloud"),
+                    tr("AI Segmentation PRO"),
                     tr(
                         "Invalid PRO API key.\n\n"
                         "Check the value of PRO_API_KEY in:\n"
@@ -1361,10 +1364,10 @@ class AISegmentationPlugin:
 
         from qgis.PyQt.QtWidgets import QProgressDialog
         progress = QProgressDialog(
-            tr("Connecting to SAM 3 server..."),
+            tr("Connecting to PRO server..."),
             tr("Cancel"), 0, 0, self.iface.mainWindow()
         )
-        progress.setWindowTitle(tr("SAM 3 Cloud"))
+        progress.setWindowTitle(tr("AI Segmentation PRO"))
         progress.setMinimumDuration(0)
         progress.setWindowModality(Qt.WindowModal)
         progress.show()
@@ -1379,7 +1382,7 @@ class AISegmentationPlugin:
         self._warmup_worker = worker
         worker.attempt_started.connect(
             lambda n, m: progress.setLabelText(
-                tr("Connecting to SAM 3 server... (attempt {}/{})").format(n, m)
+                tr("Connecting to PRO server... (attempt {}/{})").format(n, m)
             )
         )
         thread.start()
@@ -1408,26 +1411,26 @@ class AISegmentationPlugin:
                 ).format(str(pathlib.Path(__file__).parent.parent.parent / ".env"))
             elif worker.error_type == "timeout":
                 message = tr(
-                    "The SAM 3 server did not respond in time.\n\n"
+                    "The AI Segmentation PRO server did not respond.\n\n"
                     "This can happen during first startup (cold start) "
                     "which takes 2-5 minutes.\n\n"
                     "Please try again in a few minutes."
                 )
             elif worker.error_type == "network":
                 message = tr(
-                    "Could not connect to the SAM 3 server.\n\n"
+                    "Could not connect to the PRO server.\n\n"
                     "Check your internet connection and verify that the "
                     "server URL is correct in model_config.py."
                 )
             else:
                 message = tr(
-                    "SAM 3 server connection error.\n\n"
+                    "PRO server connection error.\n\n"
                     "Check the QGIS logs for more details."
                 )
 
             QMessageBox.warning(
                 self.iface.mainWindow(),
-                tr("SAM 3 Cloud"),
+                tr("AI Segmentation PRO"),
                 message
             )
             return
