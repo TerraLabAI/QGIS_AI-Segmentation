@@ -1698,7 +1698,7 @@ class AISegmentationPlugin:
         return batch_count
 
     def _run_pro_text_detection(self):
-        """Detect all instances of the text prompt across the visible canvas extent using 3x3 tiling."""
+        """Detect all instances of the text prompt across the visible canvas extent using adaptive tiling."""
         if not self._active_dock or not self.predictor:
             return
         text_prompt = self._active_dock.get_pro_text_prompt()
@@ -1731,10 +1731,27 @@ class AISegmentationPlugin:
         ymin = canvas_extent.yMinimum()
         ymax = canvas_extent.yMaximum()
 
-        n_cols = 3
-        n_rows = 3
-        dx = (xmax - xmin) / n_cols
-        dy = (ymax - ymin) / n_rows
+        # Adaptive tiling: target GSD per tile so individual tree crowns are visible.
+        # At 0.35 m/px a 6m crown = ~17px which SAM3 can reliably detect.
+        TARGET_GSD = 0.35  # m/px
+        tile_geo = TARGET_GSD * 1024  # geographic size of one tile at target GSD (~358m)
+        canvas_w = xmax - xmin
+        canvas_h = ymax - ymin
+        n_cols = max(2, min(6, math.ceil(canvas_w / tile_geo)))
+        n_rows = max(2, min(6, math.ceil(canvas_h / tile_geo)))
+
+        if canvas_w / n_cols / 1024 > 0.7:
+            self.iface.messageBar().pushMessage(
+                tr("AI Segmentation"),
+                tr("Detection resolution is coarse ({gsd:.1f} m/px). Zoom in for better tree detection.").format(
+                    gsd=canvas_w / n_cols / 1024
+                ),
+                level=Qgis.MessageLevel.Warning,
+                duration=5,
+            )
+
+        dx = canvas_w / n_cols
+        dy = canvas_h / n_rows
         overlap = 0.20
 
         tile_centers = [
@@ -1858,7 +1875,7 @@ class AISegmentationPlugin:
         batch_count = 0
 
         for mask, score, ti in all_detections:
-            if mask.sum() < 50:
+            if mask.sum() < 20:
                 continue
             polys = mask_to_polygons(mask, ti)
             if not polys:

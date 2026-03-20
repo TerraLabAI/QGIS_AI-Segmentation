@@ -682,36 +682,56 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>AI Segmentation PRO by TerraLab</translation>
     </message>
     <message>
-        <source>Cloud-powered AI segmentation with SAM 3</source>
-        <translation>Segmentacion IA en la nube con SAM 3</translation>
+        <source>Select object type:</source>
+        <translation>Seleccionar tipo de objeto:</translation>
     </message>
     <message>
-        <source>e.g. roof, tree, car</source>
-        <translation>ej. techo, arbol, coche</translation>
+        <source>Select a category...</source>
+        <translation>Seleccionar una categoría...</translation>
     </message>
     <message>
-        <source>Describe objects visible from above.
-For buildings: try 'roof' or 'building roof'.
-Zoom in for better results.</source>
-        <translation>Describa objetos visibles desde arriba.
-Para edificios: pruebe 'techo' o 'techo de edificio'.
-Acerque para mejores resultados.</translation>
+        <source>Other</source>
+        <translation>Otro</translation>
+    </message>
+    <message>
+        <source>Describe the object...</source>
+        <translation>Describir el objeto...</translation>
+    </message>
+    <message>
+        <source>Select an object...</source>
+        <translation>Seleccionar un objeto...</translation>
     </message>
     <message>
         <source>Detecting objects (tile {current}/{total})...</source>
         <translation>Detectando objetos (mosaico {current}/{total})...</translation>
     </message>
     <message>
+        <source>Detection resolution is coarse ({gsd:.1f} m/px). Zoom in for better tree detection.</source>
+        <translation>La resolucion de deteccion es baja ({gsd:.1f} m/px). Acerquese para una mejor deteccion de arboles.</translation>
+    </message>
+    <message>
         <source>Min. confidence</source>
         <translation>Confianza min.</translation>
     </message>
     <message>
-        <source>Click on the area to detect and segment objects</source>
-        <translation>Haga clic en el area para detectar y segmentar objetos</translation>
+        <source>Select an object type to detect</source>
+        <translation>Seleccione un tipo de objeto para detectar</translation>
     </message>
     <message>
-        <source>Click another area to detect more objects</source>
-        <translation>Haga clic en otra area para detectar mas objetos</translation>
+        <source>Click on one {prompt} as reference, then click Detect</source>
+        <translation>Haga clic en un(a) {prompt} como referencia, luego haga clic en Detectar</translation>
+    </message>
+    <message>
+        <source>Reference set. Click Detect to find all {prompt}.</source>
+        <translation>Referencia establecida. Haga clic en Detectar para encontrar todos los {prompt}.</translation>
+    </message>
+    <message>
+        <source>{count} object(s) detected. Save or detect again.</source>
+        <translation>{count} objeto(s) detectado(s). Guarde o detecte de nuevo.</translation>
+    </message>
+    <message>
+        <source>Reference already set. Click Detect to proceed.</source>
+        <translation>Referencia ya establecida. Haga clic en Detectar para continuar.</translation>
     </message>
     <message>
         <source>Start AI Segmentation PRO</source>
@@ -722,42 +742,42 @@ Acerque para mejores resultados.</translation>
         <translation>Detectar objetos</translation>
     </message>
     <message>
-        <source>Connecting to SAM 3 server...</source>
-        <translation>Conectando al servidor SAM 3...</translation>
+        <source>Connecting to PRO server...</source>
+        <translation>Conectando al servidor PRO...</translation>
     </message>
     <message>
-        <source>Connecting to SAM 3 server... (attempt {}/{})</source>
-        <translation>Conectando al servidor SAM 3... (intento {}/{})</translation>
+        <source>Connecting to PRO server... (attempt {}/{})</source>
+        <translation>Conectando al servidor PRO... (intento {}/{})</translation>
     </message>
     <message>
-        <source>SAM 3 Cloud</source>
-        <translation>SAM 3 Cloud</translation>
+        <source>AI Segmentation PRO</source>
+        <translation>AI Segmentation PRO</translation>
     </message>
     <message>
-        <source>The SAM 3 server did not respond in time.
+        <source>The AI Segmentation PRO server did not respond.
 
 This can happen during first startup (cold start) which takes 2-5 minutes.
 
 Please try again in a few minutes.</source>
-        <translation>El servidor SAM 3 no respondió a tiempo.
+        <translation>El servidor AI Segmentation PRO no respondió.
 
 Esto puede suceder durante el primer inicio (cold start) que toma 2-5 minutos.
 
 Por favor, inténtelo de nuevo en unos minutos.</translation>
     </message>
     <message>
-        <source>Could not connect to the SAM 3 server.
+        <source>Could not connect to the PRO server.
 
 Check your internet connection and verify that the server URL is correct in model_config.py.</source>
-        <translation>No se pudo conectar al servidor SAM 3.
+        <translation>No se pudo conectar al servidor PRO.
 
 Verifique su conexión a internet y que la URL del servidor sea correcta en model_config.py.</translation>
     </message>
     <message>
-        <source>SAM 3 server connection error.
+        <source>PRO server connection error.
 
 Check the QGIS logs for more details.</source>
-        <translation>Error de conexión al servidor SAM 3.
+        <translation>Error de conexión al servidor PRO.
 
 Consulte los registros de QGIS para más detalles.</translation>
     </message>
