@@ -308,6 +308,7 @@ class AISegmentationPlugin:
         # PRO mode accumulation state
         self._pro_pending_detections = []  # list of {mask, score, transform_info, rb}
         self._pro_detection_batches = []   # list of int (size of each batch)
+        self._pro_reference_set: bool = False  # True after first reference click
 
         self._initialized = False
         self._current_layer = None
@@ -1492,6 +1493,17 @@ class AISegmentationPlugin:
         if not self.predictor:
             return
 
+        if self._pro_reference_set:
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("Reference already set. Click Detect to proceed."),
+                level=Qgis.MessageLevel.Info,
+                duration=3
+            )
+            return
+
         raster_pt = self._transform_to_raster_crs(point)
 
         if not self._is_point_in_raster_extent(raster_pt):
@@ -1603,6 +1615,11 @@ class AISegmentationPlugin:
         batch_count = self._apply_pro_detection_results(
             masks, scores, score_threshold, transform_info
         )
+        if batch_count > 0 and not self._pro_reference_set:
+            self._pro_reference_set = True
+            if self._active_dock:
+                prompt = self._active_dock.get_pro_text_prompt() or tr("object")
+                self._active_dock.set_reference_set(prompt)
         # Always remove marker after processing (success or failure)
         if self.map_tool:
             self.map_tool.remove_last_marker()
@@ -1681,12 +1698,13 @@ class AISegmentationPlugin:
         return batch_count
 
     def _run_pro_text_detection(self):
-        """Detect all instances of the text prompt across the visible canvas extent using 2x2 tiling."""
+        """Detect all instances of the text prompt across the visible canvas extent using 3x3 tiling."""
         if not self._active_dock or not self.predictor:
             return
         text_prompt = self._active_dock.get_pro_text_prompt()
         if not text_prompt:
             return
+        self._pro_reference_set = False
 
         raster_layer = self._current_layer
         if raster_layer is None:
@@ -1713,25 +1731,29 @@ class AISegmentationPlugin:
         ymin = canvas_extent.yMinimum()
         ymax = canvas_extent.yMaximum()
 
-        dx = (xmax - xmin) / 2.0
-        dy = (ymax - ymin) / 2.0
-        overlap = 0.15
+        n_cols = 3
+        n_rows = 3
+        dx = (xmax - xmin) / n_cols
+        dy = (ymax - ymin) / n_rows
+        overlap = 0.20
 
         tile_centers = [
-            (xmin + dx * 0.5, ymin + dy * 0.5),
-            (xmin + dx * 0.5, ymin + dy * 1.5),
-            (xmin + dx * 1.5, ymin + dy * 0.5),
-            (xmin + dx * 1.5, ymin + dy * 1.5),
+            (xmin + dx * (col + 0.5), ymin + dy * (row + 0.5))
+            for row in range(n_rows)
+            for col in range(n_cols)
         ]
+        total_tiles = len(tile_centers)
         half_w = dx * (1.0 + overlap) / 2.0
         half_h = dy * (1.0 + overlap) / 2.0
+
+        score_threshold = self._active_dock.get_score_threshold() if self._active_dock else 0.0
 
         all_detections = []
         first_error = None
 
         for i, (cx, cy) in enumerate(tile_centers):
             msg = tr("Detecting objects (tile {current}/{total})...").format(
-                current=i + 1, total=4
+                current=i + 1, total=total_tiles
             )
             self.iface.messageBar().pushMessage(
                 tr("AI Segmentation"),
@@ -1744,12 +1766,17 @@ class AISegmentationPlugin:
                 (cx - half_w, cy - half_h),
                 (cx + half_w, cy + half_h),
             ]
-            _, _, mupp_or_scale = self._compute_crop_center_and_mupp(tile_corners)
+            tile_geo_size = max(2 * half_w, 2 * half_h) * 1.4
+            if self._is_online_layer:
+                mupp_or_scale = tile_geo_size / 1024
+            else:
+                native_px = self._get_native_pixel_size()
+                mupp_or_scale = max(1.0, (tile_geo_size / 1024) / native_px) if native_px > 0 else 1.0
             center_pt = QgsPointXY(cx, cy)
 
             if not self._extract_and_encode_crop(center_pt, mupp_override=mupp_or_scale):
                 QgsMessageLog.logMessage(
-                    "Tile {}/{} encode failed, skipping".format(i + 1, 4),
+                    "Tile {}/{} encode failed, skipping".format(i + 1, total_tiles),
                     "AI Segmentation", level=Qgis.MessageLevel.Warning
                 )
                 continue
@@ -1781,19 +1808,20 @@ class AISegmentationPlugin:
                     multimask_output=True,
                 )
                 for j in range(masks.shape[0]):
-                    all_detections.append((masks[j], float(scores[j]), transform_info))
+                    if float(scores[j]) >= score_threshold:
+                        all_detections.append((masks[j], float(scores[j]), transform_info))
             except RuntimeError as e:
                 if first_error is None:
                     first_error = e
                 QgsMessageLog.logMessage(
-                    "Tile {}/{} detection failed: {}".format(i + 1, 4, e),
+                    "Tile {}/{} detection failed: {}".format(i + 1, total_tiles, e),
                     "AI Segmentation", level=Qgis.MessageLevel.Warning
                 )
             except Exception as e:
                 if first_error is None:
                     first_error = e
                 QgsMessageLog.logMessage(
-                    "Tile {}/{} unexpected error: {}".format(i + 1, 4, e),
+                    "Tile {}/{} unexpected error: {}".format(i + 1, total_tiles, e),
                     "AI Segmentation", level=Qgis.MessageLevel.Critical
                 )
 
@@ -1817,10 +1845,21 @@ class AISegmentationPlugin:
         from ..core.polygon_exporter import mask_to_polygons
         all_detections.sort(key=lambda x: x[1], reverse=True)
 
+        IOU_THRESHOLD = 0.3
+
+        def _iou(g1, g2):
+            inter = g1.intersection(g2)
+            if inter.isEmpty():
+                return 0.0
+            union = g1.combine(g2)
+            return inter.area() / union.area() if union.area() > 0 else 0.0
+
         accepted_geoms = []
         batch_count = 0
 
         for mask, score, ti in all_detections:
+            if mask.sum() < 50:
+                continue
             polys = mask_to_polygons(mask, ti)
             if not polys:
                 continue
@@ -1828,8 +1867,7 @@ class AISegmentationPlugin:
             if not geom or geom.isEmpty():
                 continue
 
-            centroid = geom.centroid()
-            if any(ag.contains(centroid) for ag in accepted_geoms):
+            if any(_iou(geom, ag) > IOU_THRESHOLD for ag in accepted_geoms):
                 continue
 
             accepted_geoms.append(geom)
@@ -1863,8 +1901,9 @@ class AISegmentationPlugin:
                 self._active_dock.set_mask_available(True)
                 pos = len(self._pro_detection_batches)
                 self._active_dock.set_point_count(pos, 0)
+                self._active_dock.set_batch_done(batch_count)
             QgsMessageLog.logMessage(
-                "PRO text detection: {} object(s) found across 4 tiles".format(batch_count),
+                "PRO text detection: {} object(s) found across {} tiles".format(batch_count, total_tiles),
                 "AI Segmentation", level=Qgis.MessageLevel.Info
             )
 
@@ -3505,6 +3544,7 @@ class AISegmentationPlugin:
             self._safe_remove_rubber_band(det.get('rb'))
         self._pro_pending_detections = []
         self._pro_detection_batches = []
+        self._pro_reference_set = False
 
         if self.map_tool:
             self.map_tool.clear_markers()

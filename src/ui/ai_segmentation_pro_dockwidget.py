@@ -5,7 +5,6 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QGridLayout,
     QLabel,
     QPushButton,
     QFrame,
@@ -13,7 +12,8 @@ from qgis.PyQt.QtWidgets import (
     QToolButton,
     QStyle,
     QScrollArea,
-    QSizePolicy,
+    QComboBox,
+    QLineEdit,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.core import QgsMapLayerProxyModel, QgsProject
@@ -22,6 +22,16 @@ from qgis.gui import QgsMapLayerComboBox
 
 from ..core.activation_manager import is_plugin_activated  # noqa: E402
 from ..core.i18n import tr  # noqa: E402
+
+
+_TAG_CATEGORIES = {
+    "Urban / Artificial": [
+        "Roof", "Building", "Warehouse", "Solar panel",
+        "Car", "Truck", "Road", "Parking", "Railway", "Greenhouse",
+    ],
+    "Natural / Vegetation": ["Tree", "Bush", "Grass", "Forest", "Crop", "Field"],
+    "Water & Land": ["River", "Pool", "Shadow"],
+}
 
 
 class AISegmentationProDockWidget(QDockWidget):
@@ -158,58 +168,27 @@ class AISegmentationProDockWidget(QDockWidget):
         pro_ctrl_layout.setContentsMargins(0, 4, 0, 4)
         pro_ctrl_layout.setSpacing(6)
 
-        # Tag grid
-        pro_tags_widget = QWidget()
-        tags_vbox = QVBoxLayout(pro_tags_widget)
-        tags_vbox.setContentsMargins(0, 0, 0, 0)
-        tags_vbox.setSpacing(4)
+        # Category combo
+        self._category_combo = QComboBox()
+        self._category_combo.addItem(tr("Select a category..."), None)
+        for cat in _TAG_CATEGORIES:
+            self._category_combo.addItem(cat, cat)
+        self._category_combo.addItem(tr("Other"), "other")
+        self._category_combo.currentIndexChanged.connect(self._on_category_changed)
+        pro_ctrl_layout.addWidget(self._category_combo)
 
-        tags_label = QLabel(tr("Select object type:"))
-        tags_label.setStyleSheet("font-size: 11px; color: palette(text);")
-        tags_vbox.addWidget(tags_label)
+        # Tag combo (hidden until category chosen)
+        self._tag_combo = QComboBox()
+        self._tag_combo.setVisible(False)
+        self._tag_combo.currentIndexChanged.connect(self._on_tag_changed)
+        pro_ctrl_layout.addWidget(self._tag_combo)
 
-        tags_grid_widget = QWidget()
-        tags_grid = QGridLayout(tags_grid_widget)
-        tags_grid.setContentsMargins(0, 0, 0, 0)
-        tags_grid.setSpacing(3)
-
-        _tags = [
-            "Roof", "Building", "Warehouse",
-            "Solar panel", "Tree", "Bush",
-            "Grass", "Forest", "Car",
-            "Truck", "Road", "Parking",
-            "Railway", "Pool", "River",
-            "Field", "Crop", "Shadow",
-            "Greenhouse",
-        ]
-        self._tag_buttons = []
-        for i, tag in enumerate(_tags):
-            btn = QPushButton(tag)
-            btn.setCheckable(True)
-            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            btn.setStyleSheet(
-                "QPushButton {"
-                "  padding: 3px 8px;"
-                "  border-radius: 10px;"
-                "  font-size: 11px;"
-                "  border: 1px solid rgba(128,128,128,0.35);"
-                "  background-color: transparent;"
-                "}"
-                "QPushButton:checked {"
-                "  background-color: #2e7d32;"
-                "  color: white;"
-                "  border: 1px solid #2e7d32;"
-                "}"
-                "QPushButton:hover:!checked {"
-                "  background-color: rgba(128,128,128,0.12);"
-                "}"
-            )
-            btn.clicked.connect(lambda checked, b=btn: self._on_tag_clicked(b, checked))
-            tags_grid.addWidget(btn, i // 4, i % 4)
-            self._tag_buttons.append(btn)
-
-        tags_vbox.addWidget(tags_grid_widget)
-        pro_ctrl_layout.addWidget(pro_tags_widget)
+        # Free-text (shown for "Other")
+        self._custom_prompt_edit = QLineEdit()
+        self._custom_prompt_edit.setPlaceholderText(tr("Describe the object..."))
+        self._custom_prompt_edit.setVisible(False)
+        self._custom_prompt_edit.textChanged.connect(self._on_custom_prompt_changed)
+        pro_ctrl_layout.addWidget(self._custom_prompt_edit)
 
         self.pro_detect_button = QPushButton(tr("Detect objects"))
         self.pro_detect_button.setVisible(False)
@@ -310,12 +289,11 @@ class AISegmentationProDockWidget(QDockWidget):
         self._update_button_visibility()
         self._update_ui_state()
         if active:
-            self._update_instructions()
+            self._update_detect_button()
 
     def set_point_count(self, positive: int, negative: int):
         self._positive_count = positive
         has_detections = positive > 0
-        old_has_mask = self._has_mask
         self._has_mask = has_detections
 
         self.undo_button.setEnabled(
@@ -324,7 +302,6 @@ class AISegmentationProDockWidget(QDockWidget):
         self.save_mask_button.setEnabled(has_detections)
 
         if self._segmentation_active:
-            self._update_instructions()
             self._update_export_button_style()
 
     def set_mask_available(self, available: bool):
@@ -347,8 +324,10 @@ class AISegmentationProDockWidget(QDockWidget):
         self._saved_polygon_count = 0
         self._positive_count = 0
         self.disjoint_warning_widget.setVisible(False)
-        for btn in self._tag_buttons:
-            btn.setChecked(False)
+        self._category_combo.setCurrentIndex(0)
+        self._tag_combo.setVisible(False)
+        self._custom_prompt_edit.setVisible(False)
+        self._custom_prompt_edit.clear()
         self.pro_detect_button.setVisible(False)
         self.score_threshold_spinbox.blockSignals(True)
         self.score_threshold_spinbox.setValue(30)
@@ -360,9 +339,11 @@ class AISegmentationProDockWidget(QDockWidget):
         return self.score_threshold_spinbox.value() / 100.0
 
     def get_pro_text_prompt(self) -> str:
-        for btn in self._tag_buttons:
-            if btn.isChecked():
-                return btn.text().lower()
+        data = self._category_combo.currentData()
+        if data == "other":
+            return self._custom_prompt_edit.text().strip().lower()
+        if data is not None and self._tag_combo.currentData() is not None:
+            return self._tag_combo.currentText().lower()
         return ""
 
     def is_activated(self) -> bool:
@@ -418,11 +399,7 @@ class AISegmentationProDockWidget(QDockWidget):
             )
 
     def _update_instructions(self):
-        if self._positive_count == 0:
-            text = tr("Click on the area to detect and segment objects")
-        else:
-            text = tr("Click another area to detect more objects")
-        self.instructions_label.setText(text)
+        self.instructions_label.setText(tr("Select an object type to detect"))
 
     def _update_ui_state(self):
         has_rasters = self.layer_combo.count() > 0
@@ -436,11 +413,55 @@ class AISegmentationProDockWidget(QDockWidget):
             has_layer and activated and not self._segmentation_active
         )
 
-    def _on_tag_clicked(self, clicked_btn: QPushButton, checked: bool):
-        for btn in self._tag_buttons:
-            if btn is not clicked_btn:
-                btn.setChecked(False)
-        self.pro_detect_button.setVisible(checked)
+    def _on_category_changed(self, index: int):
+        data = self._category_combo.currentData()
+        if data is None:
+            self._tag_combo.setVisible(False)
+            self._custom_prompt_edit.setVisible(False)
+        elif data == "other":
+            self._tag_combo.setVisible(False)
+            self._custom_prompt_edit.setVisible(True)
+            self._custom_prompt_edit.setFocus()
+        else:
+            self._tag_combo.blockSignals(True)
+            self._tag_combo.clear()
+            self._tag_combo.addItem(tr("Select an object..."), None)
+            for tag in _TAG_CATEGORIES[data]:
+                self._tag_combo.addItem(tag, tag)
+            self._tag_combo.blockSignals(False)
+            self._tag_combo.setVisible(True)
+            self._custom_prompt_edit.setVisible(False)
+        self._update_detect_button()
+
+    def _on_tag_changed(self, index: int):
+        self._update_detect_button()
+
+    def _on_custom_prompt_changed(self, text: str):
+        self._update_detect_button()
+
+    def set_reference_pending(self, prompt: str):
+        self.instructions_label.setText(
+            tr("Click on one {prompt} as reference, then click Detect").format(prompt=prompt)
+        )
+
+    def set_reference_set(self, prompt: str):
+        self.instructions_label.setText(
+            tr("Reference set. Click Detect to find all {prompt}.").format(prompt=prompt)
+        )
+
+    def set_batch_done(self, count: int):
+        self.instructions_label.setText(
+            tr("{count} object(s) detected. Save or detect again.").format(count=count)
+        )
+
+    def _update_detect_button(self):
+        prompt = self.get_pro_text_prompt()
+        self.pro_detect_button.setVisible(bool(prompt))
+        if self._segmentation_active:
+            if prompt:
+                self.set_reference_pending(prompt)
+            else:
+                self._update_instructions()
 
     def _on_layers_changed(self, *args):
         self._update_ui_state()
