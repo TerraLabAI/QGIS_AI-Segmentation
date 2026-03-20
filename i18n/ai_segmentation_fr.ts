@@ -678,6 +678,14 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Segmentation IA cloud</translation>
     </message>
     <message>
+        <source>AI Segmentation PRO by TerraLab</source>
+        <translation>AI Segmentation PRO by TerraLab</translation>
+    </message>
+    <message>
+        <source>Cloud-powered AI segmentation with SAM 3</source>
+        <translation>Segmentation IA cloud avec SAM 3</translation>
+    </message>
+    <message>
         <source>e.g. roof, tree, car</source>
         <translation>ex. toit, arbre, voiture</translation>
     </message>

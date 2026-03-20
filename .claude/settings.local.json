@@ -1,4 +1,4 @@
-d{
+{
   "attribution": {
     "commit": "",
     "pr": ""
@@ -83,7 +83,36 @@ d{
       "WebFetch(domain:www.riverbankcomputing.com)",
       "WebFetch(domain:api.qgis.org)",
       "WebFetch(domain:www.mail-archive.com)",
-      "Bash(awk 'NR>=650 && NR<=750' \"C:\\\\Users\\\\yvann_416voxb\\\\AppData\\\\Roaming\\\\QGIS\\\\QGIS3\\\\profiles\\\\default\\\\python\\\\plugins\\\\QGIS_AI-Segmentation/src/ui/ai_segmentation_plugin.py\" | grep -n \"def \" | head -3)"
+      "Bash(awk 'NR>=650 && NR<=750' \"C:\\\\Users\\\\yvann_416voxb\\\\AppData\\\\Roaming\\\\QGIS\\\\QGIS3\\\\profiles\\\\default\\\\python\\\\plugins\\\\QGIS_AI-Segmentation/src/ui/ai_segmentation_plugin.py\" | grep -n \"def \" | head -3)",
+      "WebSearch",
+      "WebFetch(domain:ai.meta.com)",
+      "WebFetch(domain:samgeo.gishub.org)",
+      "WebFetch(domain:docs.ultralytics.com)",
+      "WebFetch(domain:voxel51.com)",
+      "WebFetch(domain:opengeoai.org)",
+      "Bash(find /Users/lilien/QGIS_AI-Segmentation-Pro -type f \\\\\\( -name \"*.sh\" -o -name \"*deploy*\" -o -name \"*.bicep\" \\\\\\) 2>/dev/null | head -20)",
+      "Bash(grep -r \"containerapp\\\\|Container App\\\\|azure\\\\|bicep\" /Users/lilien/QGIS_AI-Segmentation-Pro --include=\"*.md\" --include=\"*.py\" --include=\"*.sh\" 2>/dev/null | head -20)",
+      "Bash(az account:*)",
+      "Bash(az containerapp:*)",
+      "Bash(az acr:*)",
+      "Bash(az monitor:*)",
+      "Bash(for region:*)",
+      "Bash(pip show:*)",
+      "Bash(which gh:*)",
+      "Bash(gh auth:*)",
+      "WebFetch(domain:deepwiki.com)",
+      "Bash(git log:*)",
+      "Bash(~/.qgis_ai_segmentation/venv_py3.12/bin/python3 -m pip show sam3 2>/dev/null || echo \"sam3 not installed in venv\")",
+      "Bash(~/.qgis_ai_segmentation/venv_py3.12/bin/python3 -c \"import sys; print\\('\\\\n'.join\\(sys.path\\)\\)\")",
+      "Bash(/Users/lilien/.qgis_ai_segmentation/venv_py3.12/bin/python3 -c \"import sam3; print\\(sam3.__file__\\)\" 2>&1)",
+      "Bash(/Users/lilien/.qgis_ai_segmentation/venv_py3.12/bin/python3 -c \"import sam3; print\\(sam3.__file__\\)\")",
+      "WebFetch(domain:api.github.com)",
+      "Bash(grep -r \"Sam3Processor\\\\|SAM3InteractiveImagePredictor\" /Users/lilien/QGIS_AI-Segmentation-Pro --include=\"*.py\" 2>/dev/null | head -20)",
+      "Bash(grep -rn \"enable_inst_interactivity\\\\|SAM3InteractiveImagePredictor\\\\|Sam3Processor\" /Users/lilien/QGIS_AI-Segmentation-Pro/ --include=\"*.py\" 2>/dev/null | grep -v __pycache__)",
+      "Bash(find /Users/lilien/QGIS_AI-Segmentation-Pro -maxdepth 2 -type f \\\\\\( -name \"*.sh\" -o -name \"*deploy*\" -o -name \"*build*\" \\\\\\) 2>/dev/null | head -20)",
+      "WebFetch(domain:www.sieve.ai)",
+      "WebFetch(domain:pyimagesearch.com)"
     ]
-  }
+  },
+  "outputStyle": "Explanatory"
 }

@@ -34,6 +34,7 @@ from qgis.gui import QgisInterface, QgsRubberBand
 from qgis.PyQt.QtGui import QColor
 
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
+from .ai_segmentation_pro_dockwidget import AISegmentationProDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
 from .error_report_dialog import show_error_report, start_log_collector, stop_log_collector
 from ..core.i18n import tr
@@ -286,11 +287,14 @@ class AISegmentationPlugin:
         self.plugin_dir = Path(__file__).parent.parent.parent
 
         self.dock_widget: Optional[AISegmentationDockWidget] = None
+        self.pro_dock_widget: Optional[AISegmentationProDockWidget] = None
         self.map_tool: Optional[AISegmentationMapTool] = None
         self.action: Optional[QAction] = None
+        self.pro_action: Optional[QAction] = None
         self.terralab_menu: Optional[QMenu] = None
         self.check_update_action: Optional[QAction] = None
         self.website_action: Optional[QAction] = None
+        self._active_mode: str = 'standard'  # 'standard' | 'pro'
 
         self.predictor = None
         self.prompts = PromptManager()
@@ -344,6 +348,13 @@ class AISegmentationPlugin:
         # None when both CRS are the same (no transform needed).
         self._canvas_to_raster_xform = None  # type: Optional[QgsCoordinateTransform]
         self._raster_to_canvas_xform = None  # type: Optional[QgsCoordinateTransform]
+
+    @property
+    def _active_dock(self):
+        """Return the dock widget corresponding to the current active mode."""
+        if self._active_mode == 'pro' and self.pro_dock_widget:
+            return self.pro_dock_widget
+        return self.dock_widget
 
     @staticmethod
     def _safe_remove_rubber_band(rb):
@@ -475,6 +486,13 @@ class AISegmentationPlugin:
         self.terralab_menu = QMenu("TerraLab", self.iface.mainWindow())
         self.iface.mainWindow().menuBar().addMenu(self.terralab_menu)
         self.terralab_menu.addAction(self.action)
+
+        self.pro_action = QAction(icon, "AI Segmentation Pro", self.iface.mainWindow())
+        self.pro_action.setCheckable(True)
+        self.pro_action.triggered.connect(self._toggle_pro_dock_widget)
+        self.iface.addToolBarIcon(self.pro_action)
+        self.terralab_menu.addAction(self.pro_action)
+
         self.terralab_menu.addSeparator()
 
         update_icon = QIcon(":/images/themes/default/mActionRefresh.svg")
@@ -501,7 +519,6 @@ class AISegmentationPlugin:
         self.dock_widget.install_requested.connect(self._on_install_requested)
         self.dock_widget.cancel_install_requested.connect(self._on_cancel_install)
         self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
-        self.dock_widget.start_pro_segmentation_requested.connect(self._on_start_pro_segmentation)
         self.dock_widget.save_polygon_requested.connect(self._on_save_polygon)
         self.dock_widget.export_layer_requested.connect(self._on_export_layer)
         self.dock_widget.clear_points_requested.connect(self._on_clear_points)
@@ -509,12 +526,25 @@ class AISegmentationPlugin:
         self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
         self.dock_widget.refine_settings_changed.connect(self._on_refine_settings_changed)
         self.dock_widget.batch_mode_changed.connect(self._on_batch_mode_changed)
-        self.dock_widget.pro_detect_requested.connect(self._run_pro_text_detection)
         self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
 
         self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
         self.dock_widget.setVisible(False)
         self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
+
+        # PRO dock
+        self.pro_dock_widget = AISegmentationProDockWidget(self.iface.mainWindow())
+        self.pro_dock_widget.start_pro_segmentation_requested.connect(self._on_start_pro_segmentation)
+        self.pro_dock_widget.save_polygon_requested.connect(self._on_save_polygon)
+        self.pro_dock_widget.export_layer_requested.connect(self._on_export_layer)
+        self.pro_dock_widget.clear_points_requested.connect(self._on_clear_points)
+        self.pro_dock_widget.undo_requested.connect(self._on_undo)
+        self.pro_dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
+        self.pro_dock_widget.pro_detect_requested.connect(self._run_pro_text_detection)
+        self.pro_dock_widget.layer_combo.layerChanged.connect(self._on_pro_layer_combo_changed)
+        self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.pro_dock_widget)
+        self.pro_dock_widget.setVisible(False)
+        self.pro_dock_widget.visibilityChanged.connect(self._on_pro_dock_visibility_changed)
 
         self.map_tool = AISegmentationMapTool(self.iface.mapCanvas())
         self.map_tool.positive_click.connect(self._on_positive_click)
@@ -593,7 +623,6 @@ class AISegmentationPlugin:
                 (self.dock_widget.install_requested, self._on_install_requested),
                 (self.dock_widget.cancel_install_requested, self._on_cancel_install),
                 (self.dock_widget.start_segmentation_requested, self._on_start_segmentation),
-                (self.dock_widget.start_pro_segmentation_requested, self._on_start_pro_segmentation),
                 (self.dock_widget.save_polygon_requested, self._on_save_polygon),
                 (self.dock_widget.export_layer_requested, self._on_export_layer),
                 (self.dock_widget.clear_points_requested, self._on_clear_points),
@@ -613,6 +642,33 @@ class AISegmentationPlugin:
                 self.dock_widget._refine_debounce_timer.stop()
             except (AttributeError, RuntimeError):
                 pass
+        if self.pro_dock_widget:
+            try:
+                self.pro_dock_widget.cleanup_signals()
+            except (TypeError, RuntimeError, AttributeError):
+                pass
+            try:
+                self.pro_dock_widget.visibilityChanged.disconnect(self._on_pro_dock_visibility_changed)
+            except (TypeError, RuntimeError, AttributeError):
+                pass
+            try:
+                self.pro_dock_widget.layer_combo.layerChanged.disconnect(self._on_pro_layer_combo_changed)
+            except (TypeError, RuntimeError, AttributeError):
+                pass
+            _pro_signals = [
+                (self.pro_dock_widget.start_pro_segmentation_requested, self._on_start_pro_segmentation),
+                (self.pro_dock_widget.save_polygon_requested, self._on_save_polygon),
+                (self.pro_dock_widget.export_layer_requested, self._on_export_layer),
+                (self.pro_dock_widget.clear_points_requested, self._on_clear_points),
+                (self.pro_dock_widget.undo_requested, self._on_undo),
+                (self.pro_dock_widget.stop_segmentation_requested, self._on_stop_segmentation),
+                (self.pro_dock_widget.pro_detect_requested, self._run_pro_text_detection),
+            ]
+            for sig, slot in _pro_signals:
+                try:
+                    sig.disconnect(slot)
+                except (TypeError, RuntimeError, AttributeError):
+                    pass
         try:
             if self.map_tool:
                 self.map_tool.positive_click.disconnect(self._on_positive_click)
@@ -697,12 +753,24 @@ class AISegmentationPlugin:
         self.check_update_action = None
         self.website_action = None
         self.iface.removeToolBarIcon(self.action)
+        try:
+            if self.pro_action:
+                self.pro_action.triggered.disconnect(self._toggle_pro_dock_widget)
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        if self.pro_action:
+            self.iface.removeToolBarIcon(self.pro_action)
+            self.pro_action = None
 
-        # 6. Remove dock widget
+        # 6. Remove dock widgets
         if self.dock_widget:
             self.iface.removeDockWidget(self.dock_widget)
             self.dock_widget.deleteLater()
             self.dock_widget = None
+        if self.pro_dock_widget:
+            self.iface.removeDockWidget(self.pro_dock_widget)
+            self.pro_dock_widget.deleteLater()
+            self.pro_dock_widget = None
 
         # 7. Unset map tool
         if self.map_tool:
@@ -732,6 +800,10 @@ class AISegmentationPlugin:
         if self.dock_widget:
             self.dock_widget.setVisible(checked)
 
+    def _toggle_pro_dock_widget(self, checked: bool):
+        if self.pro_dock_widget:
+            self.pro_dock_widget.setVisible(checked)
+
     def _on_dock_visibility_changed(self, visible: bool):
         if self.action:
             self.action.setChecked(visible)
@@ -739,6 +811,10 @@ class AISegmentationPlugin:
         if visible and not self._initialized:
             self._initialized = True
             self._do_first_time_setup()
+
+    def _on_pro_dock_visibility_changed(self, visible: bool):
+        if self.pro_action:
+            self.pro_action.setChecked(visible)
 
     def _do_first_time_setup(self):
         QgsMessageLog.logMessage(
@@ -1232,6 +1308,7 @@ class AISegmentationPlugin:
         # user positions their first click (reduces first-click latency)
         self.predictor.warm_up()
 
+        self._active_mode = 'standard'
         # Activate segmentation tool immediately (no pre-encoding)
         self._activate_segmentation_tool()
 
@@ -1402,6 +1479,7 @@ class AISegmentationPlugin:
                 self._raster_to_canvas_xform = QgsCoordinateTransform(
                     raster_crs, canvas_crs, QgsProject.instance())
 
+        self._active_mode = 'pro'
         self._activate_segmentation_tool()
 
     def _run_pro_detection(self, point):
@@ -1437,8 +1515,8 @@ class AISegmentationPlugin:
             return
 
         score_threshold = 0.3
-        if self.dock_widget:
-            score_threshold = self.dock_widget.get_score_threshold()
+        if self._active_dock:
+            score_threshold = self._active_dock.get_score_threshold()
 
         crop_bounds = self._current_crop_info['bounds']
         img_shape = self._current_crop_info['img_shape']
@@ -1588,10 +1666,10 @@ class AISegmentationPlugin:
             # Update UI to show refine panel and statistics
             self._update_ui_after_prediction()
 
-            if self.dock_widget:
-                self.dock_widget.set_mask_available(True)
+            if self._active_dock:
+                self._active_dock.set_mask_available(True)
                 pos = len(self._pro_detection_batches)
-                self.dock_widget.set_point_count(pos, 0)
+                self._active_dock.set_point_count(pos, 0)
             QgsMessageLog.logMessage(
                 "PRO detection: {} object(s) found".format(batch_count),
                 "AI Segmentation", level=Qgis.MessageLevel.Info
@@ -1601,9 +1679,9 @@ class AISegmentationPlugin:
 
     def _run_pro_text_detection(self):
         """Detect all instances of the text prompt across the visible canvas extent using 2x2 tiling."""
-        if not self.dock_widget or not self.predictor:
+        if not self._active_dock or not self.predictor:
             return
-        text_prompt = self.dock_widget.get_pro_text_prompt()
+        text_prompt = self._active_dock.get_pro_text_prompt()
         if not text_prompt:
             return
 
@@ -1778,10 +1856,10 @@ class AISegmentationPlugin:
 
         if batch_count > 0:
             self._pro_detection_batches.append(batch_count)
-            if self.dock_widget:
-                self.dock_widget.set_mask_available(True)
+            if self._active_dock:
+                self._active_dock.set_mask_available(True)
                 pos = len(self._pro_detection_batches)
-                self.dock_widget.set_point_count(pos, 0)
+                self._active_dock.set_point_count(pos, 0)
             QgsMessageLog.logMessage(
                 "PRO text detection: {} object(s) found across 4 tiles".format(batch_count),
                 "AI Segmentation", level=Qgis.MessageLevel.Info
@@ -1794,7 +1872,8 @@ class AISegmentationPlugin:
             self._previous_map_tool = current_tool
 
         self.iface.mapCanvas().setMapTool(self.map_tool)
-        self.dock_widget.set_segmentation_active(True)
+        if self._active_dock:
+            self._active_dock.set_segmentation_active(True)
         # Status bar hint will be set by _update_status_hint via set_point_count
 
         # Install keyboard shortcut filter on the main window so shortcuts
@@ -1901,7 +1980,58 @@ class AISegmentationPlugin:
             self._restore_previous_map_tool()
             self._stopping_segmentation = False
             self._reset_session()
-            self.dock_widget.reset_session()
+            if self.dock_widget:
+                self.dock_widget.reset_session()
+
+    def _on_pro_layer_combo_changed(self, layer):
+        """Handle layer selection change in the PRO dock combo box."""
+        if not self._current_layer:
+            return
+
+        try:
+            new_layer_id = layer.id() if layer else None
+            current_layer_id = self._current_layer.id() if self._current_layer else None
+        except RuntimeError:
+            self._current_layer = None
+            return
+
+        if new_layer_id == current_layer_id:
+            return
+
+        if self.iface.mapCanvas().mapTool() == self.map_tool:
+            has_unsaved_mask = self.current_mask is not None
+            has_saved_polygons = len(self.saved_polygons) > 0
+
+            if has_unsaved_mask or has_saved_polygons:
+                polygon_count = len(self.saved_polygons)
+                if has_unsaved_mask:
+                    polygon_count += 1
+                message = "{}\n\n{}".format(
+                    tr("You have {count} unsaved polygon(s).").format(count=polygon_count),
+                    tr("Changing layer will discard your current segmentation. Continue?"))
+
+                reply = QMessageBox.warning(
+                    self.iface.mainWindow(),
+                    tr("Change Layer?"),
+                    message,
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+
+                if reply != QMessageBox.StandardButton.Yes:
+                    if self.pro_dock_widget:
+                        self.pro_dock_widget.layer_combo.blockSignals(True)
+                        self.pro_dock_widget.layer_combo.setLayer(self._current_layer)
+                        self.pro_dock_widget.layer_combo.blockSignals(False)
+                    return
+
+            self._stopping_segmentation = True
+            self.iface.mapCanvas().unsetMapTool(self.map_tool)
+            self._restore_previous_map_tool()
+            self._stopping_segmentation = False
+            self._reset_session()
+            if self.pro_dock_widget:
+                self.pro_dock_widget.reset_session()
 
     def _save_single_mask(self, mask, score, transform_info,
                           points_positive=None, points_negative=None,
@@ -1985,11 +2115,11 @@ class AISegmentationPlugin:
             self._pro_detection_batches = []
             if self.map_tool:
                 self.map_tool.clear_markers()
-            if self.dock_widget:
-                self.dock_widget.set_saved_polygon_count(
+            if self._active_dock:
+                self._active_dock.set_saved_polygon_count(
                     len(self.saved_polygons))
-                self.dock_widget.set_point_count(0, 0)
-                self.dock_widget.set_mask_available(False)
+                self._active_dock.set_point_count(0, 0)
+                self._active_dock.set_mask_available(False)
             QgsMessageLog.logMessage(
                 "PRO: saved {} detection(s)".format(
                     len(self.saved_polygons)),
@@ -2020,7 +2150,8 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Info
             )
-            self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
+            if self._active_dock:
+                self._active_dock.set_saved_polygon_count(len(self.saved_polygons))
 
         # Clear current state for next polygon
         self.prompts.clear()
@@ -2030,7 +2161,8 @@ class AISegmentationPlugin:
         self.current_mask = None
         self.current_score = 0.0
         self.current_low_res_mask = None
-        self.dock_widget.set_point_count(0, 0)
+        if self._active_dock:
+            self._active_dock.set_point_count(0, 0)
 
         # Keep crop info so clicks in the same area reuse the encoding
         # (re-encode only happens when point falls outside current crop bounds)
@@ -2286,8 +2418,10 @@ class AISegmentationPlugin:
             level=Qgis.MessageLevel.Info
         )
 
+        active_dock = self._active_dock
         self._reset_session()
-        self.dock_widget.reset_session()
+        if active_dock:
+            active_dock.reset_session()
 
     def _add_layer_to_raster_group(self, layer):
         """Add the exported layer to a group named after the source raster."""
@@ -2318,14 +2452,15 @@ class AISegmentationPlugin:
             pass
 
         if self._stopping_segmentation:
-            if self.dock_widget:
-                self.dock_widget.set_segmentation_active(False)
+            if self._active_dock:
+                self._active_dock.set_segmentation_active(False)
             return
 
         # Silently reset session and deactivate
+        active_dock = self._active_dock
         self._reset_session()
-        if self.dock_widget:
-            self.dock_widget.reset_session()
+        if active_dock:
+            active_dock.reset_session()
         self._previous_map_tool = None
 
     def _restore_previous_map_tool(self):
@@ -2365,8 +2500,10 @@ class AISegmentationPlugin:
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
         self._restore_previous_map_tool()
         self._stopping_segmentation = False
+        active_dock = self._active_dock
         self._reset_session()
-        self.dock_widget.reset_session()
+        if active_dock:
+            active_dock.reset_session()
 
     def _on_refine_settings_changed(self, expand: int, simplify: int, fill_holes: bool, min_area: int):
         """Handle refinement control changes."""
@@ -2821,7 +2958,7 @@ class AISegmentationPlugin:
 
     def _on_positive_click(self, point):
         """Handle left-click: add positive point (select this element)."""
-        if self.dock_widget and self.dock_widget.is_pro_mode():
+        if self._active_mode == 'pro':
             self._run_pro_detection(point)
             return
 
@@ -2870,7 +3007,7 @@ class AISegmentationPlugin:
 
     def _on_negative_click(self, point):
         """Handle right-click: add negative point (exclude this area)."""
-        if self.dock_widget and self.dock_widget.is_pro_mode():
+        if self._active_mode == 'pro':
             if self.map_tool:
                 self.map_tool.remove_last_marker()
             return
@@ -3059,10 +3196,10 @@ class AISegmentationPlugin:
         self._update_ui_after_prediction()
 
     def _update_ui_after_prediction(self):
-        if not self.dock_widget:
+        if not self._active_dock:
             return
         pos_count, neg_count = self.prompts.point_count
-        self.dock_widget.set_point_count(pos_count, neg_count)
+        self._active_dock.set_point_count(pos_count, neg_count)
 
         if self.current_mask is not None:
             mask_pixels = int(self.current_mask.sum())
@@ -3128,7 +3265,8 @@ class AISegmentationPlugin:
 
             # Detect disjoint regions and show/hide warning
             region_count = count_significant_regions(mask_to_display)
-            self.dock_widget.set_disjoint_warning(region_count > 1)
+            if self._active_dock:
+                self._active_dock.set_disjoint_warning(region_count > 1)
 
             geometries = mask_to_polygons(mask_to_display, self.current_transform_info)
 
@@ -3174,8 +3312,8 @@ class AISegmentationPlugin:
                 self.mask_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
             except RuntimeError:
                 self.mask_rubber_band = None
-        if self.dock_widget:
-            self.dock_widget.set_disjoint_warning(False)
+        if self._active_dock:
+            self._active_dock.set_disjoint_warning(False)
 
     @staticmethod
     def _make_qgs_rectangle(minx, miny, maxx, maxy):
@@ -3199,9 +3337,11 @@ class AISegmentationPlugin:
             if reply != QMessageBox.StandardButton.Yes:
                 return
             # User confirmed: reset entire session
+            active_dock = self._active_dock
             self._reset_session()
-            self.dock_widget.set_point_count(0, 0)
-            self.dock_widget.set_saved_polygon_count(0)
+            if active_dock:
+                active_dock.set_point_count(0, 0)
+                active_dock.set_saved_polygon_count(0)
             return
 
         # Normal clear: just clear current mask points
@@ -3215,7 +3355,8 @@ class AISegmentationPlugin:
         self.current_mask = None
         self.current_score = 0.0
         self.current_low_res_mask = None
-        self.dock_widget.set_point_count(0, 0)
+        if self._active_dock:
+            self._active_dock.set_point_count(0, 0)
 
     def _on_undo(self):
         """Undo last point/batch, or restore last saved mask in batch mode."""
@@ -3228,11 +3369,11 @@ class AISegmentationPlugin:
                     self._safe_remove_rubber_band(det.get('rb'))
             if self.map_tool:
                 self.map_tool.remove_last_marker()
-            if self.dock_widget:
+            if self._active_dock:
                 has_detections = len(self._pro_pending_detections) > 0
-                self.dock_widget.set_mask_available(has_detections)
+                self._active_dock.set_mask_available(has_detections)
                 pos = len(self._pro_detection_batches)
-                self.dock_widget.set_point_count(pos, 0)
+                self._active_dock.set_point_count(pos, 0)
             return
 
         # Check if we have points in current mask
@@ -3257,7 +3398,8 @@ class AISegmentationPlugin:
                 self.current_mask = None
                 self.current_score = 0.0
                 self._clear_mask_visualization()
-                self.dock_widget.set_point_count(0, 0)
+                if self._active_dock:
+                    self._active_dock.set_point_count(0, 0)
         elif len(self.saved_polygons) > 0:
             # No points in current mask, but have saved masks
             # Ask user if they want to restore the last saved mask
@@ -3387,6 +3529,7 @@ class AISegmentationPlugin:
         self._refine_fill_holes = False  # Default: matches dockwidget checkbox
         self._refine_min_area = 100  # Default: matches dockwidget spinbox
 
-        if self.dock_widget:
-            self.dock_widget.set_point_count(0, 0)
-            self.dock_widget.set_saved_polygon_count(0)
+        if self._active_dock:
+            self._active_dock.set_point_count(0, 0)
+            self._active_dock.set_saved_polygon_count(0)
+        self._active_mode = 'standard'

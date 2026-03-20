@@ -19,7 +19,7 @@ from qgis.PyQt.QtWidgets import (
     QSizePolicy,
     QScrollArea,
 )
-from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl, QSettings
+from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
 from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
 from qgis.PyQt.QtWidgets import QShortcut
 from qgis.core import QgsMapLayerProxyModel, QgsProject
@@ -44,7 +44,6 @@ class AISegmentationDockWidget(QDockWidget):
     install_requested = pyqtSignal()
     cancel_install_requested = pyqtSignal()
     start_segmentation_requested = pyqtSignal(object)
-    start_pro_segmentation_requested = pyqtSignal(object)  # layer
     clear_points_requested = pyqtSignal()
     undo_requested = pyqtSignal()
     save_polygon_requested = pyqtSignal()
@@ -52,7 +51,6 @@ class AISegmentationDockWidget(QDockWidget):
     stop_segmentation_requested = pyqtSignal()
     refine_settings_changed = pyqtSignal(int, int, bool, int)  # expand, simplify, fill_holes, min_area
     batch_mode_changed = pyqtSignal(bool)  # Batch mode is always on
-    pro_detect_requested = pyqtSignal()  # text-based detection over canvas extent
 
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation by TerraLab"), parent)
@@ -63,9 +61,6 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Initialize state variables that are needed during UI setup
         self._refine_expanded = False  # Refine panel collapsed state persisted in session
-        self._pro_mode = QSettings().value(
-            "AI_Segmentation/pro_mode", False, type=bool
-        )
 
         self.main_widget = QWidget()
         self.main_layout = QVBoxLayout(self.main_widget)
@@ -415,112 +410,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.instructions_label.setVisible(False)
         layout.addWidget(self.instructions_label)
 
-        # Mode toggle: Standard / PRO (SAM 3)
-        self.mode_toggle_container = QWidget()
-        mode_layout = QHBoxLayout(self.mode_toggle_container)
-        mode_layout.setContentsMargins(0, 4, 0, 4)
-        mode_layout.setSpacing(0)
-
-        self.mode_standard_btn = QPushButton(tr("Standard"))
-        self.mode_standard_btn.setCheckable(True)
-        self.mode_standard_btn.setChecked(not self._pro_mode)
-        self.mode_standard_btn.clicked.connect(
-            lambda: self._on_mode_toggle(False)
-        )
-        mode_layout.addWidget(self.mode_standard_btn)
-
-        self.mode_pro_btn = QPushButton("PRO")
-        self.mode_pro_btn.setCheckable(True)
-        self.mode_pro_btn.setChecked(self._pro_mode)
-        self.mode_pro_btn.clicked.connect(
-            lambda: self._on_mode_toggle(True)
-        )
-        mode_layout.addWidget(self.mode_pro_btn)
-
-        self._update_mode_toggle_style()
-        layout.addWidget(self.mode_toggle_container)
-
-        # PRO container (visible when PRO mode)
-        self.pro_container = QWidget()
-        pro_layout = QVBoxLayout(self.pro_container)
-        pro_layout.setContentsMargins(0, 0, 0, 0)
-        pro_layout.setSpacing(8)
-
-        # Info box: blue background, describes SAM 3
-        self.pro_info_widget = QWidget()
-        self.pro_info_widget.setStyleSheet(
-            "QWidget { background-color: rgba(100, 149, 237, 0.15); "
-            "border: 1px solid rgba(100, 149, 237, 0.3); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; color: palette(text); }"
-        )
-        pro_info_layout = QVBoxLayout(self.pro_info_widget)
-        pro_info_layout.setContentsMargins(10, 10, 10, 10)
-        pro_info_layout.setSpacing(4)
-
-        pro_desc = QLabel(tr("Cloud-powered AI segmentation"))
-        pro_desc.setWordWrap(True)
-        pro_desc.setStyleSheet(
-            "font-weight: bold; font-size: 12px; color: palette(text);"
-        )
-        pro_info_layout.addWidget(pro_desc)
-
-        pro_layout.addWidget(self.pro_info_widget)
-
-        # Start PRO Segmentation button
-        self.start_pro_button = QPushButton(tr("Start AI Segmentation PRO"))
-        self.start_pro_button.setEnabled(False)
-        self.start_pro_button.clicked.connect(self._on_start_pro_clicked)
-        self.start_pro_button.setStyleSheet(
-            "QPushButton { background-color: #2e7d32; padding: 8px 16px; }"
-            "QPushButton:disabled { background-color: #c8e6c9; }"
-        )
-        pro_layout.addWidget(self.start_pro_button)
-
-        self.pro_container.setVisible(self._pro_mode)
-        layout.addWidget(self.pro_container)
-
-        # PRO granularity controls (visible during PRO segmentation)
-        self.pro_controls_container = QWidget()
-        pro_ctrl_layout = QVBoxLayout(self.pro_controls_container)
-        pro_ctrl_layout.setContentsMargins(0, 4, 0, 4)
-        pro_ctrl_layout.setSpacing(6)
-
-        # Text prompt (optional, triggers canvas-wide text detection)
-        self.pro_text_prompt = QLineEdit()
-        self.pro_text_prompt.setPlaceholderText(
-            tr("e.g. roof, tree, car"))
-        self.pro_text_prompt.setToolTip(
-            tr("Describe objects visible from above.\n"
-               "For buildings: try 'roof' or 'building roof'.\n"
-               "Zoom in for better results."))
-        pro_ctrl_layout.addWidget(self.pro_text_prompt)
-
-        self.pro_detect_button = QPushButton(tr("Detect objects"))
-        self.pro_detect_button.setVisible(False)
-        self.pro_detect_button.clicked.connect(self.pro_detect_requested)
-        pro_ctrl_layout.addWidget(self.pro_detect_button)
-
-        self.pro_text_prompt.textChanged.connect(
-            lambda t: self.pro_detect_button.setVisible(bool(t.strip()))
-        )
-
-        # Score threshold (min confidence)
-        score_layout = QHBoxLayout()
-        score_label = QLabel(tr("Min. confidence"))
-        score_label.setStyleSheet("font-size: 12px; color: palette(text);")
-        self.score_threshold_spinbox = QSpinBox()
-        self.score_threshold_spinbox.setRange(0, 100)
-        self.score_threshold_spinbox.setValue(30)
-        self.score_threshold_spinbox.setSuffix(" %")
-        self.score_threshold_spinbox.setMinimumWidth(80)
-        score_layout.addWidget(score_label)
-        score_layout.addStretch()
-        score_layout.addWidget(self.score_threshold_spinbox)
-        pro_ctrl_layout.addLayout(score_layout)
-
-        self.pro_controls_container.setVisible(False)
-        layout.addWidget(self.pro_controls_container)
-
         # Container for start button
         self.start_container = QWidget()
         start_layout = QVBoxLayout(self.start_container)
@@ -541,7 +430,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_shortcut.activated.connect(self._on_start_shortcut)
 
         layout.addWidget(self.start_container)
-        self.start_container.setVisible(not self._pro_mode)
+        self.start_container.setVisible(True)
 
         # Collapsible Refine mask panel
         self._setup_refine_panel(layout)
@@ -1005,10 +894,8 @@ class AISegmentationDockWidget(QDockWidget):
         """Update the full UI based on current state."""
         setup_complete = self._dependencies_ok and self._checkpoint_ok
 
-        # Segmentation section: show if fully set up + activated, OR PRO mode + activated
-        show_segmentation = (
-            (setup_complete or self._pro_mode) and self._plugin_activated
-        )
+        # Segmentation section: show if fully set up + activated
+        show_segmentation = setup_complete and self._plugin_activated
         self.seg_widget.setVisible(show_segmentation)
         self.seg_separator.setVisible(show_segmentation)
 
@@ -1073,85 +960,6 @@ class AISegmentationDockWidget(QDockWidget):
         """Handle layers removed from project."""
         self._update_ui_state()
 
-    def _on_mode_toggle(self, pro: bool):
-        if self._segmentation_active:
-            self.stop_segmentation_requested.emit()
-        self._pro_mode = pro
-        QSettings().setValue("AI_Segmentation/pro_mode", pro)
-        self.mode_standard_btn.setChecked(not pro)
-        self.mode_pro_btn.setChecked(pro)
-        self._update_mode_toggle_style()
-        self._update_mode_containers()
-        self._update_ui_state()
-
-    def _update_mode_toggle_style(self):
-        active = (
-            "QPushButton { background-color: #1565c0; color: white; "
-            "padding: 6px 12px; border: 1px solid #0d47a1; "
-            "font-weight: bold; }"
-        )
-        inactive = (
-            "QPushButton { background-color: rgba(128, 128, 128, 0.15); "
-            "color: palette(text); padding: 6px 12px; "
-            "border: 1px solid rgba(128, 128, 128, 0.3); }"
-        )
-        self.mode_standard_btn.setStyleSheet(
-            inactive if self._pro_mode else active
-        )
-        self.mode_pro_btn.setStyleSheet(
-            active if self._pro_mode else inactive
-        )
-
-    def _update_mode_containers(self):
-        if self._segmentation_active:
-            self.start_container.setVisible(False)
-            self.pro_container.setVisible(False)
-            return
-        self.start_container.setVisible(not self._pro_mode)
-        self.pro_container.setVisible(self._pro_mode)
-
-    def get_score_threshold(self) -> float:
-        """Return score threshold as a float (0.0 to 1.0)."""
-        return self.score_threshold_spinbox.value() / 100.0
-
-    def get_pro_text_prompt(self) -> str:
-        """Return text prompt for PRO mode (empty = interactive mode)."""
-        return self.pro_text_prompt.text().strip()
-
-    def _on_start_pro_clicked(self):
-        import pathlib
-        from qgis.PyQt.QtWidgets import QMessageBox
-        from ..core.i18n import tr
-
-        env_path = pathlib.Path(__file__).parent.parent.parent / ".env"
-        api_key = ""
-        if env_path.exists():
-            with open(env_path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("PRO_API_KEY="):
-                        api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        break
-
-        if not api_key:
-            QMessageBox.warning(
-                self,
-                tr("PRO API Key Missing"),
-                tr(
-                    "PRO API key is not configured.\n\n"
-                    "Create the file .env at the root of the plugin directory\n"
-                    "with the content:\n"
-                    "PRO_API_KEY=your_key_here"
-                ),
-            )
-            return
-
-        layer = self.layer_combo.currentLayer()
-        if layer:
-            self.start_pro_segmentation_requested.emit(layer)
-
-    def is_pro_mode(self) -> bool:
-        return self._pro_mode
 
     def _on_start_clicked(self):
         layer = self.layer_combo.currentLayer()
@@ -1351,13 +1159,8 @@ class AISegmentationDockWidget(QDockWidget):
     def _update_button_visibility(self):
         if self._segmentation_active:
             self.start_container.setVisible(False)
-            self.pro_container.setVisible(False)
-            self.mode_toggle_container.setVisible(False)
             self.instructions_label.setVisible(True)
             self._update_instructions()
-
-            # PRO granularity controls: visible only during PRO segmentation
-            self.pro_controls_container.setVisible(self._pro_mode)
 
             # Refine panel visibility
             self._update_refine_panel_visibility()
@@ -1381,10 +1184,8 @@ class AISegmentationDockWidget(QDockWidget):
 
         else:
             # Not segmenting - hide all segmentation buttons, show start controls
-            self.mode_toggle_container.setVisible(True)
-            self._update_mode_containers()
+            self.start_container.setVisible(True)
             self.instructions_label.setVisible(False)
-            self.pro_controls_container.setVisible(False)
             self.refine_group.setVisible(False)
             self.save_mask_button.setVisible(False)
             self.export_button.setVisible(False)
@@ -1443,18 +1244,6 @@ class AISegmentationDockWidget(QDockWidget):
         """Update instruction text based on current segmentation state."""
         total = self._positive_count + self._negative_count
 
-        if self._pro_mode:
-            if total == 0:
-                text = tr(
-                    "Click on the area to detect and segment objects"
-                )
-            else:
-                text = tr(
-                    "Click another area to detect more objects"
-                )
-            self.instructions_label.setText(text)
-            return
-
         if total == 0:
             text = (
                 tr("Click on the element you want to segment:") + "\n\n"
@@ -1484,12 +1273,6 @@ class AISegmentationDockWidget(QDockWidget):
         self._positive_count = 0
         self._negative_count = 0
         self.disjoint_warning_widget.setVisible(False)
-        # Reset PRO controls
-        self.pro_text_prompt.clear()
-        self.pro_detect_button.setVisible(False)
-        self.score_threshold_spinbox.blockSignals(True)
-        self.score_threshold_spinbox.setValue(30)
-        self.score_threshold_spinbox.blockSignals(False)
         self.reset_refine_sliders()
         self._update_button_visibility()
         self._update_ui_state()
@@ -1579,11 +1362,6 @@ class AISegmentationDockWidget(QDockWidget):
         can_start = deps_ok and checkpoint_ok and has_layer and activated
         self.start_button.setEnabled(
             can_start and not self._segmentation_active
-        )
-
-        can_start_pro = has_layer and activated
-        self.start_pro_button.setEnabled(
-            can_start_pro and not self._segmentation_active
         )
 
     def show_activation_dialog(self):
