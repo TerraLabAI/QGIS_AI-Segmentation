@@ -1,5 +1,7 @@
-# SHARED MODULE v1.1 — keep in sync between AI Canvas and AI Segmentation
+# SHARED MODULE v1.2 — keep in sync between AI Canvas and AI Segmentation
 """Cooperative TerraLab menu management for QGIS plugins."""
+import os
+
 from qgis.PyQt.QtCore import QUrl
 from qgis.PyQt.QtWidgets import QMenu
 from qgis.PyQt.QtGui import QDesktopServices, QIcon
@@ -7,6 +9,17 @@ from qgis.PyQt.QtGui import QDesktopServices, QIcon
 from .constants import TERRALAB_URL
 
 _UTILITY_SEPARATOR = "_terralab_utility_sep"
+
+
+def _find_terralab_logo():
+    """Find terralab-logo.png in the plugin's resources/icons/ directory."""
+    # shared/ is inside src/, which is inside the plugin root
+    shared_dir = os.path.dirname(__file__)
+    plugin_dir = os.path.dirname(os.path.dirname(shared_dir))
+    logo_path = os.path.join(plugin_dir, "resources", "icons", "terralab-logo.png")
+    if os.path.isfile(logo_path):
+        return logo_path
+    return None
 
 
 def _open_plugin_manager_updates():
@@ -41,7 +54,9 @@ def get_or_create_terralab_menu(main_window) -> QMenu:
     check_update.triggered.connect(_open_plugin_manager_updates)
 
     # More from TerraLab...
-    more_action = menu.addAction("More from TerraLab...")
+    logo_path = _find_terralab_logo()
+    website_icon = QIcon(logo_path) if logo_path else QIcon()
+    more_action = menu.addAction(website_icon, "More from TerraLab...")
     more_action.triggered.connect(
         lambda: QDesktopServices.openUrl(QUrl(TERRALAB_URL))
     )
