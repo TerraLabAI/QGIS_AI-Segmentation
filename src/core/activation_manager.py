@@ -12,6 +12,7 @@ UNLOCK_CODES = ["fromage", "baguette"]
 # QSettings keys
 SETTINGS_PREFIX = "AISegmentation"
 ACTIVATION_KEY = f"{SETTINGS_PREFIX}/activated"
+PRO_API_KEY_SETTING = f"{SETTINGS_PREFIX}/pro_api_key"
 
 # TerraLab URLs
 TERRALAB_WEBSITE = "https://terra-lab.ai"
@@ -43,6 +44,18 @@ def deactivate_plugin():
     """Deactivate the plugin (for testing purposes)."""
     settings = QgsSettings()
     settings.setValue(ACTIVATION_KEY, False)
+
+
+def get_pro_api_key() -> str:
+    """Return the stored PRO API key, or empty string if not set."""
+    settings = QgsSettings()
+    return settings.value(PRO_API_KEY_SETTING, "", type=str)
+
+
+def set_pro_api_key(key: str) -> None:
+    """Store the PRO API key in QSettings."""
+    settings = QgsSettings()
+    settings.setValue(PRO_API_KEY_SETTING, key.strip())
 
 
 def get_newsletter_url() -> str:

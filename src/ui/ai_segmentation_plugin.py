@@ -1326,22 +1326,14 @@ class AISegmentationPlugin:
         """Start PRO (SAM 3) cloud segmentation."""
         from ..core.venv_manager import ensure_venv_packages_available
         from ..core.pro_predictor import CloudSam3Predictor
-        import pathlib
+        from ..core.activation_manager import get_pro_api_key
 
         ensure_venv_packages_available()
 
         if self._warmup_thread is not None and self._warmup_thread.isRunning():
             return  # warmup already in progress
 
-        env_path = pathlib.Path(__file__).parent.parent.parent / ".env"
-        api_key = ""
-        if env_path.exists():
-            with open(env_path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("PRO_API_KEY="):
-                        api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        break
+        api_key = get_pro_api_key()
 
         sam3 = CloudSam3Predictor(api_key=api_key)
 
@@ -1357,9 +1349,8 @@ class AISegmentationPlugin:
                     tr("AI Segmentation PRO"),
                     tr(
                         "Invalid PRO API key.\n\n"
-                        "Check the value of PRO_API_KEY in:\n"
-                        "{}"
-                    ).format(str(env_path))
+                        "Go to the PRO settings to update your API key."
+                    )
                 )
                 return
 
@@ -1407,9 +1398,8 @@ class AISegmentationPlugin:
             if worker.error_type == "auth":
                 message = tr(
                     "Invalid PRO API key.\n\n"
-                    "Check the value of PRO_API_KEY in:\n"
-                    "{}"
-                ).format(str(pathlib.Path(__file__).parent.parent.parent / ".env"))
+                    "Go to the PRO settings to update your API key."
+                )
             elif worker.error_type == "timeout":
                 message = tr(
                     "The AI Segmentation PRO server did not respond.\n\n"

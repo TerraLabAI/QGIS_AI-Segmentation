@@ -796,12 +796,10 @@ Consulte los registros de QGIS para más detalles.</translation>
     <message>
         <source>Invalid PRO API key.
 
-Check the value of PRO_API_KEY in:
-{}</source>
+Go to the PRO settings to update your API key.</source>
         <translation>Clave API PRO inválida.
 
-Verifique el valor de PRO_API_KEY en:
-{}</translation>
+Ve a la configuración PRO para actualizar tu clave.</translation>
     </message>
     <message>
         <source>PRO API Key Missing</source>
@@ -810,14 +808,10 @@ Verifique el valor de PRO_API_KEY en:
     <message>
         <source>PRO API key is not configured.
 
-Create the file .env at the root of the plugin directory
-with the content:
-PRO_API_KEY=your_key_here</source>
+Enter your API key in the PRO settings panel.</source>
         <translation>La clave API PRO no está configurada.
 
-Cree el archivo .env en la raíz del directorio del plugin
-con el contenido:
-PRO_API_KEY=your_key_here</translation>
+Introduce tu clave API en el panel de configuración PRO.</translation>
     </message>
 </context>
 </TS>

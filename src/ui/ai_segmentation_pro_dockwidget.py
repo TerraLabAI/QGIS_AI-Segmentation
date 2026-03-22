@@ -1,4 +1,3 @@
-import pathlib
 
 from qgis.PyQt.QtWidgets import (
     QDockWidget,
@@ -20,7 +19,7 @@ from qgis.core import QgsMapLayerProxyModel, QgsProject
 
 from qgis.gui import QgsMapLayerComboBox
 
-from ..core.activation_manager import is_plugin_activated  # noqa: E402
+from ..core.activation_manager import is_plugin_activated, get_pro_api_key  # noqa: E402
 from ..core.i18n import tr  # noqa: E402
 
 
@@ -469,15 +468,7 @@ class AISegmentationProDockWidget(QDockWidget):
     def _on_start_pro_clicked(self):
         from qgis.PyQt.QtWidgets import QMessageBox
 
-        env_path = pathlib.Path(__file__).parent.parent.parent / ".env"
-        api_key = ""
-        if env_path.exists():
-            with open(env_path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("PRO_API_KEY="):
-                        api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        break
+        api_key = get_pro_api_key()
 
         if not api_key:
             QMessageBox.warning(
@@ -485,9 +476,7 @@ class AISegmentationProDockWidget(QDockWidget):
                 tr("PRO API Key Missing"),
                 tr(
                     "PRO API key is not configured.\n\n"
-                    "Create the file .env at the root of the plugin directory\n"
-                    "with the content:\n"
-                    "PRO_API_KEY=your_key_here"
+                    "Enter your API key in the PRO settings panel."
                 ),
             )
             return
