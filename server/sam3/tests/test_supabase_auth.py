@@ -46,3 +46,13 @@ def test_validate_supabase_unreachable():
         with pytest.raises(HTTPException) as exc_info:
             validate_api_key("tl_pro_any")
         assert exc_info.value.status_code == 503
+
+
+def test_validate_supabase_error_status():
+    mock_resp = MagicMock()
+    mock_resp.status_code = 500
+    mock_resp.json.return_value = []
+    with patch("supabase_auth.httpx.get", return_value=mock_resp):
+        with pytest.raises(HTTPException) as exc_info:
+            validate_api_key("tl_pro_any")
+        assert exc_info.value.status_code == 401
