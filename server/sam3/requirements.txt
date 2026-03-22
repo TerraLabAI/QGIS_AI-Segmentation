@@ -4,6 +4,7 @@ torchvision>=0.22.0
 sam3
 psutil
 fastapi>=0.104.0
+httpx>=0.27.0
 uvicorn[standard]>=0.24.0
 numpy>=1.26.0
 huggingface-hub>=0.20.0

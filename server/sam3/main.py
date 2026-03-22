@@ -25,11 +25,11 @@ from typing import Optional, List
 from sam3.model_builder import build_sam3_image_model
 from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
 from sam3.model.sam3_image_processor import Sam3Processor
+from supabase_auth import validate_api_key
 
 CHECKPOINT_PATH = os.environ.get(
     "CHECKPOINT_PATH", "/app/checkpoints/sam3.pt"
 )
-API_KEY = os.environ.get("API_KEY", "")
 SESSION_TTL = int(os.environ.get("SESSION_TTL", "600"))
 
 app = FastAPI(title="SAM3 Inference API", version="1.0.0")
@@ -68,11 +68,6 @@ def get_device():
     num_cores = os.cpu_count() or 4
     torch.set_num_threads(num_cores)
     return torch.device("cpu")
-
-
-def check_api_key(x_api_key: Optional[str] = Header(None)):
-    if API_KEY and x_api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
 
 
 def cleanup_expired_sessions():
@@ -187,7 +182,7 @@ def health():
 
 @app.post("/set_image")
 def set_image(req: SetImageRequest, x_api_key: Optional[str] = Header(None)):
-    check_api_key(x_api_key)
+    validate_api_key(x_api_key or "")
     cleanup_expired_sessions()
 
     try:
@@ -236,9 +231,7 @@ def set_image(req: SetImageRequest, x_api_key: Optional[str] = Header(None)):
 
 
 @app.post("/predict")
-def predict(req: PredictRequest, x_api_key: Optional[str] = Header(None)):
-    check_api_key(x_api_key)
-
+def predict(req: PredictRequest):
     session = _sessions.get(req.session_id)
     if not session:
         raise HTTPException(
@@ -433,9 +426,7 @@ def _predict_interactive(req, session, has_points):
 
 
 @app.post("/reset")
-def reset(session_id: str, x_api_key: Optional[str] = Header(None)):
-    check_api_key(x_api_key)
-
+def reset(session_id: str):
     session = _sessions.pop(session_id, None)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
