@@ -17,7 +17,7 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QUrl
 from qgis.PyQt.QtGui import QPixmap, QDesktopServices, QFont
 
-from ..core.activation_manager import (
+from ..shared.activation_manager import (
     activate_plugin,
     get_newsletter_url,
 )
@@ -157,7 +157,7 @@ class ActivationDialog(QDialog):
 
     def _on_get_code_clicked(self):
         """Open the newsletter signup page in the default browser."""
-        QDesktopServices.openUrl(QUrl(get_newsletter_url()))
+        QDesktopServices.openUrl(QUrl(get_newsletter_url("ai-segmentation")))
         # Move focus to code input so Enter triggers Unlock, not this button
         self.code_input.setFocus()
 
@@ -169,7 +169,7 @@ class ActivationDialog(QDialog):
             self._show_message(tr("Enter your verification code"), is_error=True)
             return
 
-        success, message = activate_plugin(code)
+        success, message = activate_plugin("ai-segmentation", code)
 
         if success:
             self._show_message(tr("Unlocked!"), is_error=False)

@@ -292,8 +292,7 @@ class AISegmentationPlugin:
         self.action: Optional[QAction] = None
         self.pro_action: Optional[QAction] = None
         self.terralab_menu: Optional[QMenu] = None
-        self.check_update_action: Optional[QAction] = None
-        self.website_action: Optional[QAction] = None
+        # check_update_action and website_action are handled by shared terralab_menu
         self._active_mode: str = 'standard'  # 'standard' | 'pro'
 
         self.predictor = None
@@ -483,37 +482,19 @@ class AISegmentationPlugin:
 
         self.iface.addToolBarIcon(self.action)
 
-        # Create TerraLab top-level menu in the menu bar
-        self.terralab_menu = QMenu("TerraLab", self.iface.mainWindow())
-        self.iface.mainWindow().menuBar().addMenu(self.terralab_menu)
-        self.terralab_menu.addAction(self.action)
+        # Create or join shared TerraLab menu
+        from ..shared.terralab_menu import (
+            get_or_create_terralab_menu,
+            add_plugin_to_menu,
+        )
+        self.terralab_menu = get_or_create_terralab_menu(self.iface.mainWindow())
+        add_plugin_to_menu(self.terralab_menu, self.action, "ai-segmentation")
 
         self.pro_action = QAction(icon, "AI Segmentation Pro", self.iface.mainWindow())
         self.pro_action.setCheckable(True)
         self.pro_action.triggered.connect(self._toggle_pro_dock_widget)
         self.iface.addToolBarIcon(self.pro_action)
         self.terralab_menu.addAction(self.pro_action)
-
-        self.terralab_menu.addSeparator()
-
-        update_icon = QIcon(":/images/themes/default/mActionRefresh.svg")
-        self.check_update_action = QAction(
-            update_icon,
-            tr("Check for Updates"),
-            self.iface.mainWindow()
-        )
-        self.check_update_action.triggered.connect(self._open_plugin_manager_update)
-        self.terralab_menu.addAction(self.check_update_action)
-
-        terralab_logo = str(self.plugin_dir / "resources" / "icons" / "terralab-logo.png")
-        website_icon = QIcon(terralab_logo) if os.path.exists(terralab_logo) else QIcon()
-        self.website_action = QAction(
-            website_icon,
-            tr("More from TerraLab..."),
-            self.iface.mainWindow()
-        )
-        self.website_action.triggered.connect(self._open_terralab_website)
-        self.terralab_menu.addAction(self.website_action)
 
         self.dock_widget = AISegmentationDockWidget(self.iface.mainWindow())
 
@@ -734,25 +715,12 @@ class AISegmentationPlugin:
             self.action.triggered.disconnect(self.toggle_dock_widget)
         except (TypeError, RuntimeError, AttributeError):
             pass
-        try:
-            if self.check_update_action:
-                self.check_update_action.triggered.disconnect(
-                    self._open_plugin_manager_update)
-        except (TypeError, RuntimeError, AttributeError):
-            pass
-        try:
-            if self.website_action:
-                self.website_action.triggered.disconnect(
-                    self._open_terralab_website)
-        except (TypeError, RuntimeError, AttributeError):
-            pass
-        if self.terralab_menu:
-            self.iface.mainWindow().menuBar().removeAction(
-                self.terralab_menu.menuAction())
-            self.terralab_menu.deleteLater()
+        from ..shared.terralab_menu import remove_plugin_from_menu
+        if self.terralab_menu and self.action:
+            remove_plugin_from_menu(
+                self.terralab_menu, self.action, self.iface.mainWindow()
+            )
             self.terralab_menu = None
-        self.check_update_action = None
-        self.website_action = None
         self.iface.removeToolBarIcon(self.action)
         try:
             if self.pro_action:
@@ -886,19 +854,6 @@ class AISegmentationPlugin:
                 from qgis.PyQt.QtCore import QTimer
                 delay = self._update_check_delays[self._update_check_index]
                 QTimer.singleShot(delay, self._check_for_plugin_update)
-
-    def _open_plugin_manager_update(self):
-        """Open the QGIS Plugin Manager on the Upgradeable tab."""
-        try:
-            self.iface.pluginManagerInterface().showPluginManager(3)
-        except Exception:
-            pass
-
-    def _open_terralab_website(self):
-        """Open the TerraLab website in the default browser."""
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
-        QDesktopServices.openUrl(QUrl("https://terra-lab.ai"))
 
     def _check_checkpoint(self):
         try:
@@ -1035,8 +990,8 @@ class AISegmentationPlugin:
 
     def _show_activation_popup_if_needed(self):
         """Show activation popup if not already activated (after deps+model ready)."""
-        from ..core.activation_manager import is_plugin_activated
-        if not is_plugin_activated() and not self.dock_widget.is_activated():
+        from ..shared.activation_manager import is_activated
+        if not is_activated("ai-segmentation") and not self.dock_widget.is_activated():
             self.dock_widget.show_activation_dialog()
 
     def _on_deps_install_progress(self, percent: int, message: str):
