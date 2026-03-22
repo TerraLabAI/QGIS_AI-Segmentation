@@ -1,4 +1,3 @@
-
 from qgis.PyQt.QtWidgets import (
     QDockWidget,
     QWidget,

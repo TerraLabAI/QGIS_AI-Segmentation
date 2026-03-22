@@ -66,5 +66,3 @@ def get_newsletter_url() -> str:
 def get_website_url() -> str:
     """Get the main TerraLab website URL."""
     return TERRALAB_WEBSITE
-
-
