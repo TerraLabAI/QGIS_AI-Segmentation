@@ -813,5 +813,21 @@ Enter your API key in the PRO settings panel.</source>
 
 Insira sua chave API no painel de configurações PRO.</translation>
     </message>
+    <message>
+        <source>API Key</source>
+        <translation>Chave API</translation>
+    </message>
+    <message>
+        <source>Enter your tl_pro_... key</source>
+        <translation>Insira sua chave tl_pro_...</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Salvar</translation>
+    </message>
+    <message>
+        <source>API key saved.</source>
+        <translation>Chave API salva.</translation>
+    </message>
 </context>
 </TS>

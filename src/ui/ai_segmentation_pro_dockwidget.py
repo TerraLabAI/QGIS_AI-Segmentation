@@ -18,7 +18,7 @@ from qgis.core import QgsMapLayerProxyModel, QgsProject
 
 from qgis.gui import QgsMapLayerComboBox
 
-from ..core.activation_manager import is_plugin_activated, get_pro_api_key  # noqa: E402
+from ..core.activation_manager import is_plugin_activated, get_pro_api_key, set_pro_api_key  # noqa: E402
 from ..core.i18n import tr  # noqa: E402
 
 
@@ -278,6 +278,29 @@ class AISegmentationProDockWidget(QDockWidget):
         self.disjoint_warning_widget.setVisible(False)
         self.main_layout.addWidget(self.disjoint_warning_widget)
 
+        # API key settings
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        self.main_layout.addWidget(separator)
+
+        api_key_label = QLabel(tr("API Key"))
+        api_key_label.setStyleSheet("font-size: 11px; color: palette(text);")
+        self.main_layout.addWidget(api_key_label)
+
+        api_key_row = QHBoxLayout()
+        self._api_key_edit = QLineEdit()
+        self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._api_key_edit.setPlaceholderText(tr("Enter your tl_pro_... key"))
+        self._api_key_edit.setText(get_pro_api_key())
+        api_key_row.addWidget(self._api_key_edit)
+
+        api_key_save_btn = QPushButton(tr("Save"))
+        api_key_save_btn.setFixedWidth(60)
+        api_key_save_btn.clicked.connect(self._on_save_api_key)
+        api_key_row.addWidget(api_key_save_btn)
+        self.main_layout.addLayout(api_key_row)
+
         self.main_layout.addStretch()
 
     # ── Public interface (mirrors AISegmentationDockWidget for shared callsites) ──
@@ -483,3 +506,8 @@ class AISegmentationProDockWidget(QDockWidget):
         layer = self.layer_combo.currentLayer()
         if layer:
             self.start_pro_segmentation_requested.emit(layer)
+
+    def _on_save_api_key(self):
+        from qgis.PyQt.QtWidgets import QMessageBox
+        set_pro_api_key(self._api_key_edit.text())
+        QMessageBox.information(self, tr("API Key"), tr("API key saved."))
