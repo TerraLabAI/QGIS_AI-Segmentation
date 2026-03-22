@@ -12,6 +12,7 @@ from qgis.PyQt.QtWidgets import (
     QScrollArea,
     QComboBox,
     QLineEdit,
+    QMessageBox,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.core import QgsMapLayerProxyModel, QgsProject
@@ -488,8 +489,6 @@ class AISegmentationProDockWidget(QDockWidget):
         self._update_ui_state()
 
     def _on_start_pro_clicked(self):
-        from qgis.PyQt.QtWidgets import QMessageBox
-
         api_key = get_pro_api_key()
 
         if not api_key:
@@ -508,6 +507,5 @@ class AISegmentationProDockWidget(QDockWidget):
             self.start_pro_segmentation_requested.emit(layer)
 
     def _on_save_api_key(self):
-        from qgis.PyQt.QtWidgets import QMessageBox
         set_pro_api_key(self._api_key_edit.text())
         QMessageBox.information(self, tr("API Key"), tr("API key saved."))
