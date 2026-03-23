@@ -31,10 +31,10 @@ _REFINE_COLLAPSED_HEIGHT = 25
 from ..core.i18n import tr  # noqa: E402
 from ..core.model_config import _IS_MACOS_X86, USE_SAM2  # noqa: E402
 from ..core.venv_manager import CACHE_DIR  # noqa: E402
-from ..shared.activation_manager import (  # noqa: E402
+from ..core.activation_manager import (  # noqa: E402
     activate_plugin,
     get_newsletter_url,
-    is_activated,
+    is_plugin_activated,
 )
 
 
@@ -86,7 +86,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._saved_polygon_count = 0
         self._positive_count = 0
         self._negative_count = 0
-        self._plugin_activated = is_activated("ai-segmentation")
+        self._plugin_activated = is_plugin_activated()
         self._activation_popup_shown = False  # Track if popup was shown
         self._batch_mode = True  # Batch mode is now the only mode
         self._segmentation_layer_id = None  # Track which layer we're segmenting
@@ -947,7 +947,7 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _on_get_code_clicked(self):
         """Open the newsletter signup page in the default browser."""
-        QDesktopServices.openUrl(QUrl(get_newsletter_url("ai-segmentation")))
+        QDesktopServices.openUrl(QUrl(get_newsletter_url()))
 
     def _on_activate_clicked(self):
         """Attempt to activate the plugin with the entered code."""
@@ -957,7 +957,7 @@ class AISegmentationDockWidget(QDockWidget):
             self._show_activation_message(tr("Enter your code"), is_error=True)
             return
 
-        success, message = activate_plugin("ai-segmentation", code)
+        success, message = activate_plugin(code)
 
         if success:
             self._plugin_activated = True

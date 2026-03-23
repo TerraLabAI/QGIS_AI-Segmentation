@@ -486,14 +486,51 @@ class AISegmentationPlugin:
 
         self.iface.addToolBarIcon(self.action)
 
-        # Create or join shared TerraLab menu
-        from ..shared.terralab_menu import (
-            add_plugin_to_menu,
-            get_or_create_terralab_menu,
-        )
+        # Create or join cooperative TerraLab menu in the menu bar
+        menu_bar = self.iface.mainWindow().menuBar()
+        self.terralab_menu = None
+        for menu_action in menu_bar.actions():
+            if menu_action.menu() and menu_action.text().replace("&", "") == "TerraLab":
+                self.terralab_menu = menu_action.menu()
+                break
 
-        self.terralab_menu = get_or_create_terralab_menu(self.iface.mainWindow())
-        add_plugin_to_menu(self.terralab_menu, self.action, "ai-segmentation")
+        if self.terralab_menu is None:
+            self.terralab_menu = QMenu("TerraLab", self.iface.mainWindow())
+            menu_bar.addMenu(self.terralab_menu)
+            # Add utility separator and actions
+            self._utility_separator = self.terralab_menu.addSeparator()
+            self._check_updates_action = QAction(
+                tr("Check for Updates..."), self.iface.mainWindow()
+            )
+            self._check_updates_action.triggered.connect(
+                lambda: self.iface.pluginManagerInterface().showPluginManager(3)
+            )
+            self.terralab_menu.addAction(self._check_updates_action)
+            self._more_action = QAction(
+                tr("More from TerraLab..."), self.iface.mainWindow()
+            )
+            self._more_action.triggered.connect(
+                lambda: __import__("webbrowser").open("https://terra-lab.ai")
+            )
+            self.terralab_menu.addAction(self._more_action)
+        else:
+            self._utility_separator = None
+            self._check_updates_action = None
+            self._more_action = None
+
+        # Insert plugin action before the utility separator
+        actions = self.terralab_menu.actions()
+        sep = None
+        for a in actions:
+            if a.isSeparator():
+                sep = a
+                break
+        if sep:
+            self.terralab_menu.insertAction(sep, self.action)
+        else:
+            self.terralab_menu.addAction(self.action)
+
+        self.iface.addPluginToMenu("TerraLab", self.action)
 
         self.dock_widget = AISegmentationDockWidget(self.iface.mainWindow())
 
@@ -695,12 +732,18 @@ class AISegmentationPlugin:
             self.action.triggered.disconnect(self.toggle_dock_widget)
         except (TypeError, RuntimeError, AttributeError):
             pass
-        from ..shared.terralab_menu import remove_plugin_from_menu
-
         if self.terralab_menu and self.action:
-            remove_plugin_from_menu(
-                self.terralab_menu, self.action, self.iface.mainWindow()
-            )
+            self.iface.removePluginMenu("TerraLab", self.action)
+            self.terralab_menu.removeAction(self.action)
+            # Clean up utility actions we own
+            for a in (self._check_updates_action, self._more_action, self._utility_separator):
+                if a is not None:
+                    self.terralab_menu.removeAction(a)
+            # Remove the menu from menu bar if empty (no other plugin actions left)
+            remaining = [a for a in self.terralab_menu.actions() if not a.isSeparator()]
+            if not remaining:
+                menu_bar = self.iface.mainWindow().menuBar()
+                menu_bar.removeAction(self.terralab_menu.menuAction())
             self.terralab_menu = None
         self.iface.removeToolBarIcon(self.action)
 
@@ -967,9 +1010,9 @@ class AISegmentationPlugin:
 
     def _show_activation_popup_if_needed(self):
         """Show activation popup if not already activated (after deps+model ready)."""
-        from ..shared.activation_manager import is_activated
+        from ..core.activation_manager import is_plugin_activated
 
-        if not is_activated("ai-segmentation") and not self.dock_widget.is_activated():
+        if not is_plugin_activated() and not self.dock_widget.is_activated():
             self.dock_widget.show_activation_dialog()
 
     def _on_deps_install_progress(self, percent: int, message: str):
