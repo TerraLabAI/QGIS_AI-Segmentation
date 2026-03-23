@@ -1,46 +1,44 @@
 import os
 import sys
 
-from qgis.PyQt.QtWidgets import (
-    QDockWidget,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QGroupBox,
-    QLabel,
-    QPushButton,
-    QProgressBar,
-    QFrame,
-    QLineEdit,
-    QSpinBox,
-    QCheckBox,
-    QToolButton,
-    QStyle,
-    QSizePolicy,
-    QScrollArea,
-)
-from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
-from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
-from qgis.PyQt.QtWidgets import QShortcut
 from qgis.core import QgsMapLayerProxyModel, QgsProject
-
 from qgis.gui import QgsMapLayerComboBox
+from qgis.PyQt.QtCore import Qt, QTimer, QUrl, pyqtSignal
+from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
+from qgis.PyQt.QtWidgets import (
+    QCheckBox,
+    QDockWidget,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QShortcut,
+    QSizePolicy,
+    QSpinBox,
+    QStyle,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
 
+from ..core.i18n import tr  # noqa: E402
+from ..core.model_config import _IS_MACOS_X86, USE_SAM2  # noqa: E402
+from ..core.venv_manager import CACHE_DIR  # noqa: E402
 from ..core.activation_manager import (  # noqa: E402
-    is_plugin_activated,
     activate_plugin,
     get_newsletter_url,
+    is_plugin_activated,
 )
-from ..core.i18n import tr  # noqa: E402
-from ..core.model_config import USE_SAM2, _IS_MACOS_X86  # noqa: E402
-from ..core.venv_manager import CACHE_DIR  # noqa: E402
 
 
 class AISegmentationDockWidget(QDockWidget):
-
     install_requested = pyqtSignal()
     cancel_install_requested = pyqtSignal()
     start_segmentation_requested = pyqtSignal(object)
@@ -49,18 +47,24 @@ class AISegmentationDockWidget(QDockWidget):
     save_polygon_requested = pyqtSignal()
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
-    refine_settings_changed = pyqtSignal(int, int, bool, int)  # expand, simplify, fill_holes, min_area
+    refine_settings_changed = pyqtSignal(
+        int, int, bool, int
+    )  # expand, simplify, fill_holes, min_area
     batch_mode_changed = pyqtSignal(bool)  # Batch mode is always on
 
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation by TerraLab"), parent)
 
-        self.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+        self.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        )
 
         self._setup_title_bar()
 
         # Initialize state variables that are needed during UI setup
-        self._refine_expanded = False  # Refine panel collapsed state persisted in session
+        self._refine_expanded = (
+            False  # Refine panel collapsed state persisted in session
+        )
 
         self.main_widget = QWidget()
         self.main_layout = QVBoxLayout(self.main_widget)
@@ -86,6 +90,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._activation_popup_shown = False  # Track if popup was shown
         self._batch_mode = True  # Batch mode is now the only mode
         self._segmentation_layer_id = None  # Track which layer we're segmenting
+        # Note: _refine_expanded is initialized before _setup_ui() call
 
         # Smooth progress animation timer for long-running installs
         self._progress_timer = QTimer(self)
@@ -118,7 +123,7 @@ class AISegmentationDockWidget(QDockWidget):
         title_layout.setSpacing(0)
 
         title_label = QLabel(
-            'AI Segmentation by '
+            "AI Segmentation by "
             '<a href="https://terra-lab.ai" style="color: #1976d2; text-decoration: none;">TerraLab</a>'
         )
         title_label.setOpenExternalLinks(True)
@@ -128,14 +133,18 @@ class AISegmentationDockWidget(QDockWidget):
         icon_size = self.style().pixelMetric(QStyle.PixelMetric.PM_SmallIconSize)
 
         float_btn = QToolButton()
-        float_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarNormalButton))
+        float_btn.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarNormalButton)
+        )
         float_btn.setFixedSize(icon_size + 4, icon_size + 4)
         float_btn.setAutoRaise(True)
         float_btn.clicked.connect(lambda: self.setFloating(not self.isFloating()))
         title_layout.addWidget(float_btn)
 
         close_btn = QToolButton()
-        close_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton))
+        close_btn.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton)
+        )
         close_btn.setFixedSize(icon_size + 4, icon_size + 4)
         close_btn.setAutoRaise(True)
         close_btn.clicked.connect(self.close)
@@ -168,7 +177,9 @@ class AISegmentationDockWidget(QDockWidget):
         layout.setSpacing(4)
 
         self.welcome_title = QLabel(tr("Click Install to set up AI Segmentation"))
-        self.welcome_title.setStyleSheet("font-weight: bold; font-size: 12px; color: palette(text);")
+        self.welcome_title.setStyleSheet(
+            "font-weight: bold; font-size: 12px; color: palette(text);"
+        )
         layout.addWidget(self.welcome_title)
 
         self.main_layout.addWidget(self.welcome_widget)
@@ -191,7 +202,9 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.setup_progress)
 
         self.setup_progress_label = QLabel("")
-        self.setup_progress_label.setStyleSheet("color: palette(text); font-size: 10px;")
+        self.setup_progress_label.setStyleSheet(
+            "color: palette(text); font-size: 10px;"
+        )
         self.setup_progress_label.setVisible(False)
         layout.addWidget(self.setup_progress_label)
 
@@ -213,8 +226,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.gpu_info_box.setVisible(False)
         layout.addWidget(self.gpu_info_box)
 
-        self.install_path_label = QLabel(
-            tr("Install path: {}").format(CACHE_DIR))
+        self.install_path_label = QLabel(tr("Install path: {}").format(CACHE_DIR))
         self.install_path_label.setWordWrap(True)
         self.install_path_label.setStyleSheet(
             "color: palette(text);"
@@ -229,9 +241,12 @@ class AISegmentationDockWidget(QDockWidget):
         self.cancel_toggle = QToolButton()
         self.cancel_toggle.setText(tr("Cancel installation"))
         self.cancel_toggle.setArrowType(Qt.ArrowType.RightArrow)
-        self.cancel_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.cancel_toggle.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
         self.cancel_toggle.setStyleSheet(
-            "color: palette(text); font-size: 10px; border: none;")
+            "color: palette(text); font-size: 10px; border: none;"
+        )
         self.cancel_toggle.setVisible(False)
         self.cancel_toggle.clicked.connect(self._toggle_cancel_button)
         layout.addWidget(self.cancel_toggle)
@@ -266,25 +281,34 @@ class AISegmentationDockWidget(QDockWidget):
         # TerraLab banner
         banner_label = QLabel()
         banner_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__)))),
-            "resources", "icons", "terralab-banner.png")
+            os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            ),
+            "resources",
+            "icons",
+            "terralab-banner.png",
+        )
         if os.path.exists(banner_path):
             from qgis.PyQt.QtGui import QPixmap
+
             pixmap = QPixmap(banner_path)
-            scaled = pixmap.scaledToWidth(280, Qt.TransformationMode.SmoothTransformation)
+            scaled = pixmap.scaledToWidth(
+                280, Qt.TransformationMode.SmoothTransformation
+            )
             banner_label.setPixmap(scaled)
         else:
             banner_label.setText("TerraLab")
             banner_label.setStyleSheet(
-                "font-size: 16px; font-weight: bold; color: palette(text);")
+                "font-size: 16px; font-weight: bold; color: palette(text);"
+            )
         banner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(banner_label)
 
         # Title
         title_label = QLabel(tr("Unlock Plugin"))
         title_label.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: palette(text);")
+            "font-size: 13px; font-weight: bold; color: palette(text);"
+        )
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
@@ -303,7 +327,8 @@ class AISegmentationDockWidget(QDockWidget):
         # Code input section - compact
         code_label = QLabel(tr("Then paste your code:"))
         code_label.setStyleSheet(
-            "font-size: 11px; margin-top: 2px; color: palette(text);")
+            "font-size: 11px; margin-top: 2px; color: palette(text);"
+        )
         layout.addWidget(code_label)
 
         code_layout = QHBoxLayout()
@@ -360,7 +385,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.layer_combo.setAllowEmptyLayer(False)
         self.layer_combo.setShowCrs(False)
         self.layer_combo.layerChanged.connect(self._on_layer_changed)
-        self.layer_combo.setToolTip(tr("Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)"))
+        self.layer_combo.setToolTip(
+            tr("Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)")
+        )
         layout.addWidget(self.layer_combo)
 
         # Warning container with icon and text - yellow background with dark text
@@ -383,8 +410,11 @@ class AISegmentationDockWidget(QDockWidget):
         no_rasters_layout.addWidget(warning_icon_label, 0, Qt.AlignmentFlag.AlignTop)
 
         self.no_rasters_label = QLabel(
-            tr("No raster layer found. Add a GeoTIFF, image file, "
-               "or online layer (WMS, XYZ) to your project."))
+            tr(
+                "No raster layer found. Add a GeoTIFF, image file, "
+                "or online layer (WMS, XYZ) to your project."
+            )
+        )
         self.no_rasters_label.setWordWrap(True)
         no_rasters_layout.addWidget(self.no_rasters_label, 1)
 
@@ -396,7 +426,8 @@ class AISegmentationDockWidget(QDockWidget):
         self.instructions_label.setWordWrap(True)
         self.instructions_label.setMinimumHeight(0)
         self.instructions_label.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum
+        )
         self.instructions_label.setStyleSheet("""
             QLabel {
                 background-color: rgba(128, 128, 128, 0.12);
@@ -430,7 +461,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_shortcut.activated.connect(self._on_start_shortcut)
 
         layout.addWidget(self.start_container)
-        self.start_container.setVisible(True)
 
         # Collapsible Refine mask panel
         self._setup_refine_panel(layout)
@@ -444,9 +474,7 @@ class AISegmentationDockWidget(QDockWidget):
             "QPushButton { background-color: #1976d2; padding: 6px 12px; }"
             "QPushButton:disabled { background-color: #b0bec5; }"
         )
-        self.save_mask_button.setToolTip(
-            tr("Save current polygon to your session")
-        )
+        self.save_mask_button.setToolTip(tr("Save current polygon to your session"))
         layout.addWidget(self.save_mask_button)
 
         self.export_button = QPushButton(tr("Export polygon to a layer"))
@@ -475,12 +503,46 @@ class AISegmentationDockWidget(QDockWidget):
         self.stop_button.setStyleSheet(
             "QPushButton { background-color: #757575; padding: 4px 8px; }"
         )
-        secondary_layout.addWidget(self.stop_button, 1)  # stretch factor 1 for same width
+        secondary_layout.addWidget(
+            self.stop_button, 1
+        )  # stretch factor 1 for same width
 
         self.secondary_buttons_widget = QWidget()
         self.secondary_buttons_widget.setLayout(secondary_layout)
         self.secondary_buttons_widget.setVisible(False)
         layout.addWidget(self.secondary_buttons_widget)
+
+        # Info box for segmentation mode (subtle blue style)
+        self.batch_info_widget = QWidget()
+        self.batch_info_widget.setStyleSheet(
+            "QWidget { background-color: rgba(100, 149, 237, 0.15); "
+            "border: 1px solid rgba(100, 149, 237, 0.3); border-radius: 4px; }"
+            "QLabel { background: transparent; border: none; }"
+        )
+        batch_info_layout = QHBoxLayout(self.batch_info_widget)
+        batch_info_layout.setContentsMargins(8, 6, 8, 6)
+        batch_info_layout.setSpacing(8)
+
+        # Info icon
+        batch_info_icon = QLabel()
+        style = self.batch_info_widget.style()
+        batch_icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation)
+        batch_info_icon.setPixmap(batch_icon.pixmap(14, 14))
+        batch_info_icon.setFixedSize(14, 14)
+        batch_info_layout.addWidget(batch_info_icon, 0, Qt.AlignmentFlag.AlignTop)
+
+        # Info text
+        info_msg = "{}\n{}".format(
+            tr("The AI model works best on one element at a time."),
+            tr("Save your polygon before selecting the next element."),
+        )
+        batch_info_text = QLabel(info_msg)
+        batch_info_text.setWordWrap(True)
+        batch_info_text.setStyleSheet("font-size: 11px; color: palette(text);")
+        batch_info_layout.addWidget(batch_info_text, 1)
+
+        self.batch_info_widget.setVisible(False)
+        layout.addWidget(self.batch_info_widget)
 
         # Warning box for disjoint regions (yellow/orange style)
         self.disjoint_warning_widget = QWidget()
@@ -501,7 +563,8 @@ class AISegmentationDockWidget(QDockWidget):
 
         disjoint_msg = "{}\n{}".format(
             tr("Disconnected parts detected in your polygon."),
-            tr("For best accuracy, segment one element at a time."))
+            tr("For best accuracy, segment one element at a time."),
+        )
         disjoint_text = QLabel(disjoint_msg)
         disjoint_text.setWordWrap(True)
         disjoint_text.setStyleSheet("font-size: 11px; color: palette(text);")
@@ -565,7 +628,9 @@ class AISegmentationDockWidget(QDockWidget):
         # 1. Expand/Contract: SpinBox with +/- buttons (-1000 to +1000)
         expand_layout = QHBoxLayout()
         expand_label = QLabel(tr("Expand/Contract:"))
-        expand_label.setToolTip(tr("Positive = expand outward, Negative = shrink inward"))
+        expand_label.setToolTip(
+            tr("Positive = expand outward, Negative = shrink inward")
+        )
         self.expand_spinbox = QSpinBox()
         self.expand_spinbox.setRange(-1000, 1000)
         self.expand_spinbox.setValue(0)
@@ -579,7 +644,9 @@ class AISegmentationDockWidget(QDockWidget):
         # 2. Simplify outline: SpinBox (0 to 1000) - reduces small variations in the outline
         simplify_layout = QHBoxLayout()
         simplify_label = QLabel(tr("Simplify outline:"))
-        simplify_label.setToolTip(tr("Reduce small variations in the outline (0 = no change)"))
+        simplify_label.setToolTip(
+            tr("Reduce small variations in the outline (0 = no change)")
+        )
         self.simplify_spinbox = QSpinBox()
         self.simplify_spinbox.setRange(0, 1000)
         self.simplify_spinbox.setValue(3)  # Default to 3 for smoother outlines
@@ -605,7 +672,9 @@ class AISegmentationDockWidget(QDockWidget):
             "{}\n{}\n{}".format(
                 tr("Remove disconnected regions smaller than this area (in pixels²)."),
                 tr("Example: 100 = ~10x10 pixel regions, 900 = ~30x30."),
-                tr("0 = keep all.")))
+                tr("0 = keep all."),
+            )
+        )
         self.min_area_spinbox = QSpinBox()
         self.min_area_spinbox.setRange(0, 100000)
         self.min_area_spinbox.setValue(100)  # Default: remove small artifacts
@@ -644,9 +713,13 @@ class AISegmentationDockWidget(QDockWidget):
         self.refine_group.setTitle(f"{arrow} " + tr("Refine selection"))
         # Adjust size constraints to eliminate empty rectangle when collapsed
         if self._refine_expanded:
-            self.refine_group.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX  # Reset to default
+            self.refine_group.setMaximumHeight(
+                16777215
+            )  # QWIDGETSIZE_MAX  # Reset to default
         else:
-            self.refine_group.setMaximumHeight(_REFINE_COLLAPSED_HEIGHT)  # Just enough for the title
+            self.refine_group.setMaximumHeight(
+                _REFINE_COLLAPSED_HEIGHT
+            )  # Just enough for the title
 
     def _on_refine_changed(self, value=None):
         """Handle refine control changes with debounce."""
@@ -658,7 +731,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.expand_spinbox.value(),
             self.simplify_spinbox.value(),
             self.fill_holes_checkbox.isChecked(),
-            self.min_area_spinbox.value()
+            self.min_area_spinbox.value(),
         )
 
     def reset_refine_sliders(self):
@@ -678,7 +751,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.fill_holes_checkbox.blockSignals(False)
         self.min_area_spinbox.blockSignals(False)
 
-    def set_refine_values(self, expand: int, simplify: int, fill_holes: bool = False, min_area: int = 0):
+    def set_refine_values(
+        self, expand: int, simplify: int, fill_holes: bool = False, min_area: int = 0
+    ):
         """Set refine slider values without emitting signals."""
         self.expand_spinbox.blockSignals(True)
         self.simplify_spinbox.blockSignals(True)
@@ -712,7 +787,8 @@ class AISegmentationDockWidget(QDockWidget):
         )
         self.update_notification_label.setOpenExternalLinks(False)
         self.update_notification_label.linkActivated.connect(
-            self._on_open_plugin_manager)
+            self._on_open_plugin_manager
+        )
         container_layout.addWidget(self.update_notification_label)
 
         self._update_notif_container.setVisible(False)
@@ -724,14 +800,16 @@ class AISegmentationDockWidget(QDockWidget):
         """Check if a newer version is available in the QGIS plugin repository."""
         try:
             from pyplugin_installer.installer_data import plugins
-            plugin_data = plugins.all().get('AI_Segmentation')
-            if plugin_data and plugin_data.get('status') == 'upgradeable':
-                available_version = plugin_data.get(
-                    'version_available', '?')
+
+            plugin_data = plugins.all().get("AI_Segmentation")
+            if plugin_data and plugin_data.get("status") == "upgradeable":
+                available_version = plugin_data.get("version_available", "?")
                 text = '{} <a href="#update" style="color: #1976d2; font-weight: bold;">{}</a>'.format(
                     tr("A new version is available (v{version}).").format(
-                        version=available_version),
-                    tr("Update now"))
+                        version=available_version
+                    ),
+                    tr("Update now"),
+                )
                 self.update_notification_label.setText(text)
                 self.update_notification_widget.setVisible(True)
         except Exception:
@@ -741,6 +819,7 @@ class AISegmentationDockWidget(QDockWidget):
         """Open the QGIS Plugin Manager on the Upgradeable tab (index 3)."""
         try:
             from qgis.utils import iface
+
             iface.pluginManagerInterface().showPluginManager(3)
         except Exception:
             pass
@@ -752,7 +831,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._shortcuts_toggle = QLabel(
             '<a href="#" style="color: palette(text); '
             'text-decoration: none; font-size: 11px;">'
-            '&#9654; ' + tr("Shortcuts") + '</a>'
+            "&#9654; " + tr("Shortcuts") + "</a>"
         )
         self._shortcuts_toggle.setAlignment(Qt.AlignmentFlag.AlignRight)
         self._shortcuts_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -771,11 +850,11 @@ class AISegmentationDockWidget(QDockWidget):
                 export=tr("Export polygon to a layer"),
                 undo_key=undo_key,
                 undo=tr("Undo last point"),
-                stop=tr("Stop segmentation"))
+                stop=tr("Stop segmentation"),
+            )
         )
         self._shortcuts_content.setStyleSheet(
-            "font-size: 11px; color: palette(text); "
-            "padding: 4px 8px; margin: 0;"
+            "font-size: 11px; color: palette(text); padding: 4px 8px; margin: 0;"
         )
         self._shortcuts_content.setAlignment(Qt.AlignmentFlag.AlignRight)
         self._shortcuts_content.setVisible(False)
@@ -789,7 +868,9 @@ class AISegmentationDockWidget(QDockWidget):
         self._shortcuts_toggle.setText(
             '<a href="#" style="color: palette(text); '
             'text-decoration: none; font-size: 11px;">'
-            '{} '.format(arrow) + tr("Shortcuts") + '</a>'
+            "{} ".format(arrow)
+            + tr("Shortcuts")
+            + "</a>"
         )
 
     def _setup_about_section(self):
@@ -804,7 +885,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Report a bug button (styled as link)
         report_link = QLabel(
-            '<a href="#" style="color: #1976d2;">' + tr("Report a bug") + '</a>'
+            '<a href="#" style="color: #1976d2;">' + tr("Report a bug") + "</a>"
         )
         report_link.setStyleSheet("font-size: 13px;")
         report_link.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -813,7 +894,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Suggest feature button (styled as link)
         suggest_link = QLabel(
-            '<a href="#" style="color: #1976d2;">' + tr("Suggest feature") + '</a>'
+            '<a href="#" style="color: #1976d2;">' + tr("Suggest feature") + "</a>"
         )
         suggest_link.setStyleSheet("font-size: 13px;")
         suggest_link.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -822,7 +903,9 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Tutorial link
         docs_link = QLabel(
-            '<a href="https://terra-lab.ai/docs/ai-segmentation" style="color: #1976d2;">' + tr("Tutorial") + '</a>'
+            '<a href="https://terra-lab.ai/docs/ai-segmentation" style="color: #1976d2;">'
+            + tr("Tutorial")
+            + "</a>"
         )
         docs_link.setStyleSheet("font-size: 13px;")
         docs_link.setOpenExternalLinks(True)
@@ -831,7 +914,9 @@ class AISegmentationDockWidget(QDockWidget):
 
         # About link
         about_link = QLabel(
-            '<a href="https://terra-lab.ai/about" style="color: #1976d2;">' + tr("About us") + '</a>'
+            '<a href="https://terra-lab.ai/about" style="color: #1976d2;">'
+            + tr("About us")
+            + "</a>"
         )
         about_link.setStyleSheet("font-size: 13px;")
         about_link.setOpenExternalLinks(True)
@@ -843,11 +928,13 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_report_bug(self):
         """Open the bug report dialog."""
         from .error_report_dialog import show_bug_report
+
         show_bug_report(self)
 
     def _on_suggest_feature(self):
         """Open the suggest a feature dialog."""
         from .error_report_dialog import show_suggest_feature
+
         show_suggest_feature(self)
 
     def is_batch_mode(self) -> bool:
@@ -885,16 +972,20 @@ class AISegmentationDockWidget(QDockWidget):
         """Display a message in the activation section."""
         self.activation_message_label.setText(text)
         if is_error:
-            self.activation_message_label.setStyleSheet("color: #d32f2f; font-size: 11px;")
+            self.activation_message_label.setStyleSheet(
+                "color: #d32f2f; font-size: 11px;"
+            )
         else:
-            self.activation_message_label.setStyleSheet("color: #2e7d32; font-size: 11px;")
+            self.activation_message_label.setStyleSheet(
+                "color: #2e7d32; font-size: 11px;"
+            )
         self.activation_message_label.setVisible(True)
 
     def _update_full_ui(self):
         """Update the full UI based on current state."""
         setup_complete = self._dependencies_ok and self._checkpoint_ok
 
-        # Segmentation section: show if fully set up + activated
+        # Segmentation section: only show if fully set up + activated
         show_segmentation = setup_complete and self._plugin_activated
         self.seg_widget.setVisible(show_segmentation)
         self.seg_separator.setVisible(show_segmentation)
@@ -925,12 +1016,14 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _on_cancel_clicked(self):
         from qgis.PyQt.QtWidgets import QMessageBox
+
         reply = QMessageBox.question(
             self,
             tr("Cancel installation"),
             tr("Are you sure you want to cancel the installation?"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No)
+            QMessageBox.StandardButton.No,
+        )
         if reply == QMessageBox.StandardButton.Yes:
             self.cancel_install_requested.emit()
 
@@ -959,7 +1052,6 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_layers_removed(self, layer_ids):
         """Handle layers removed from project."""
         self._update_ui_state()
-
 
     def _on_start_clicked(self):
         layer = self.layer_combo.currentLayer()
@@ -997,7 +1089,9 @@ class AISegmentationDockWidget(QDockWidget):
         if ok:
             self.setup_status_label.setText(message)
             self.setup_status_label.setVisible(True)
-            self.setup_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
+            self.setup_status_label.setStyleSheet(
+                "font-weight: bold; color: palette(text);"
+            )
             self.install_button.setVisible(False)
             self.cancel_toggle.setVisible(False)
             self.cancel_button.setVisible(False)
@@ -1010,10 +1104,12 @@ class AISegmentationDockWidget(QDockWidget):
             if is_dll_error:
                 short_msg = tr(
                     "Missing Visual C++ Redistributable. "
-                    "Install it, restart your computer, then click Retry.")
+                    "Install it, restart your computer, then click Retry."
+                )
                 self.setup_status_label.setText(short_msg)
                 self.setup_status_label.setStyleSheet(
-                    "font-weight: bold; color: #c62828;")
+                    "font-weight: bold; color: #c62828;"
+                )
                 self.setup_status_label.setVisible(True)
                 self.install_button.setText(tr("Retry"))
             else:
@@ -1068,8 +1164,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.setup_progress_label.setText("{}{}".format(message, time_info))
 
-        is_update = self.install_button.text() in (
-            tr("Update"), tr("Updating..."))
+        is_update = self.install_button.text() in (tr("Update"), tr("Updating..."))
 
         if percent == 0:
             self._install_start_time = time.time()
@@ -1088,7 +1183,9 @@ class AISegmentationDockWidget(QDockWidget):
             self.setup_status_label.setVisible(False)
             self.welcome_title.setText(tr("Installing AI Segmentation..."))
             self._progress_timer.start(500)
-        elif percent >= 100 or "cancel" in message.lower() or "failed" in message.lower():
+        elif (
+            percent >= 100 or "cancel" in message.lower() or "failed" in message.lower()
+        ):
             self._progress_timer.stop()
             self._install_start_time = None
             self.setup_progress.setValue(percent)
@@ -1105,13 +1202,19 @@ class AISegmentationDockWidget(QDockWidget):
             if "cancel" in message.lower():
                 self.setup_status_label.setVisible(True)
                 self.setup_status_label.setText(tr("Installation cancelled"))
-                self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
+                self.welcome_title.setText(
+                    tr("Click Install to set up AI Segmentation")
+                )
             elif "failed" in message.lower():
                 self.setup_status_label.setVisible(True)
                 self.setup_status_label.setText(tr("Installation failed"))
-                self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
+                self.welcome_title.setText(
+                    tr("Click Install to set up AI Segmentation")
+                )
             else:
-                self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
+                self.welcome_title.setText(
+                    tr("Click Install to set up AI Segmentation")
+                )
         else:
             if self._current_progress < percent:
                 self._current_progress = percent
@@ -1122,7 +1225,8 @@ class AISegmentationDockWidget(QDockWidget):
         if self._current_progress < self._target_progress:
             step = max(1, (self._target_progress - self._current_progress) // 3)
             self._current_progress = min(
-                self._current_progress + step, self._target_progress)
+                self._current_progress + step, self._target_progress
+            )
             self._creep_counter = 0
         elif self._current_progress < 99 and self._target_progress > 0:
             self._creep_counter += 1
@@ -1137,7 +1241,9 @@ class AISegmentationDockWidget(QDockWidget):
         self._checkpoint_ok = ok
         if ok:
             self.setup_status_label.setText(message)
-            self.setup_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
+            self.setup_status_label.setStyleSheet(
+                "font-weight: bold; color: palette(text);"
+            )
             self.setup_group.setVisible(False)
         self._update_full_ui()
 
@@ -1182,6 +1288,8 @@ class AISegmentationDockWidget(QDockWidget):
             self.stop_button.setVisible(True)
             self.stop_button.setEnabled(True)
 
+            # Info box
+            self.batch_info_widget.setVisible(True)
         else:
             # Not segmenting - hide all segmentation buttons, show start controls
             self.start_container.setVisible(True)
@@ -1192,6 +1300,7 @@ class AISegmentationDockWidget(QDockWidget):
             self.undo_button.setVisible(False)
             self.stop_button.setVisible(False)
             self.secondary_buttons_widget.setVisible(False)
+            self.batch_info_widget.setVisible(False)
 
     def _update_refine_panel_visibility(self):
         """Update refine panel visibility based on mask state."""
@@ -1231,7 +1340,9 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Undo enabled if: has points OR has saved masks
         can_undo_saved = self._saved_polygon_count > 0
-        self.undo_button.setEnabled((has_points or can_undo_saved) and self._segmentation_active)
+        self.undo_button.setEnabled(
+            (has_points or can_undo_saved) and self._segmentation_active
+        )
         self.save_mask_button.setEnabled(has_points)
 
         if self._segmentation_active:
@@ -1259,11 +1370,8 @@ class AISegmentationDockWidget(QDockWidget):
 
     def set_disjoint_warning(self, visible: bool):
         self.disjoint_warning_widget.setVisible(visible)
-
-    def set_mask_available(self, available: bool):
-        """Signal that a mask is available (e.g. from text-only prediction)."""
-        self._has_mask = available
-        self._update_button_visibility()
+        if self._segmentation_active:
+            self.batch_info_widget.setVisible(not visible)
 
     def reset_session(self):
         self._has_mask = False
@@ -1295,7 +1403,7 @@ class AISegmentationDockWidget(QDockWidget):
         provider = layer.dataProvider()
         if provider is None:
             return False
-        return provider.name() in ('wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs')
+        return provider.name() in ("wms", "wmts", "xyz", "arcgismapserver", "wcs")
 
     def _is_layer_georeferenced(self, layer) -> bool:
         """Check if a raster layer is properly georeferenced."""
@@ -1306,7 +1414,7 @@ class AISegmentationDockWidget(QDockWidget):
         source = layer.source().lower()
 
         # PNG, JPG, BMP etc. without world files are not georeferenced
-        non_georef_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
+        non_georef_extensions = (".png", ".jpg", ".jpeg", ".bmp", ".gif")
 
         has_non_georef_ext = any(source.endswith(ext) for ext in non_georef_extensions)
 
@@ -1360,9 +1468,7 @@ class AISegmentationDockWidget(QDockWidget):
         checkpoint_ok = self._checkpoint_ok
         activated = self._plugin_activated
         can_start = deps_ok and checkpoint_ok and has_layer and activated
-        self.start_button.setEnabled(
-            can_start and not self._segmentation_active
-        )
+        self.start_button.setEnabled(can_start and not self._segmentation_active)
 
     def show_activation_dialog(self):
         """Show the activation dialog (popup). Only shown once per session."""

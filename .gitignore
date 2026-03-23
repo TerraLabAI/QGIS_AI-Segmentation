@@ -19,3 +19,9 @@ python_standalone/
 libs/
 venv_py3.9/
 venv_py3.12/
+
+# Local dev / debug artifacts — never commit
+.env.local
+.debug/
+.ruff_cache/
+.pytest_cache/
