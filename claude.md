@@ -4,75 +4,110 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-QGIS AI Segmentation plugin by TerraLab — point-and-click AI segmentation that turns raster objects into vector polygons. Users click on features (buildings, vegetation, any object) in their raster layers and the plugin runs local inference to produce segmentation masks, exported as vector polygons.
+QGIS AI Segmentation plugin by TerraLab — point-and-click AI segmentation on raster data directly in QGIS.
 
 Part of the TerraLab ecosystem:
-- **AI Segmentation** (this repo) — local inference via on-device model, same shared modules
-- **AI Canvas** — image generation via terra-lab.ai backend, path: `/Users/yvann/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Canvas`
-- **terra-lab.ai** — Next.js website, API proxy, activation service, path: `/Users/yvann/Documents/GitHub/terralab-website`
+- **AI Segmentation** (this repo — PRIVATE dev) — local SAM inference
+- **AI Canvas** — image generation, same shared modules — `/Users/yvann/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Canvas`
+- **terra-lab.ai** — Next.js website, activation service, billing — `/Users/yvann/Documents/GitHub/terralab-website`
+
+## Dual-Repo Workflow
+
+```
+origin  → TerraLabAI/QGIS_AI-Segmentation-Team  (private, default push/pull)
+public  → TerraLabAI/QGIS_AI-Segmentation       (public open-source, release-only)
+```
+
+- All commits go to `origin` (private) by default
+- NEVER `git push public` directly — always use `/release-public`
+- Release flow: bump `metadata.txt` → `/verify` → `/release-public`
+
+**What NEVER goes in public commits** (code, comments, commit messages):
+- Backend/inference provider names, model names, weight URLs
+- Infrastructure names (Supabase, Stripe, Azure, specific cloud providers)
+- API endpoints, activation codes, internal URLs
+- Internal architecture decisions or cost/pricing details
+
+## Open-Source Confidentiality
+
+Plugin is GPL open-source. The community should only see clean abstracted code.
+
+- **Never mention in code/commits/comments**: inference provider names, Supabase, Stripe, specific model checkpoint names, API endpoint paths
+- **Production-safe logging**: NEVER log API URLs, model names, API keys. Only log dimensions, extents, CRS, timing, file paths
+- **Debug artifacts** (`.debug/`, `.env.local`): gitignored — never commit
+
+## Shared Modules
+
+- **`src/shared/`** must stay byte-identical with AI Canvas's `src/shared/`. Use `/sync-shared` before committing changes to shared modules
+- Shared modules use `product_id` from `PRODUCTS` dict in `src/shared/constants.py` — never hardcode plugin-specific behavior in shared code
 
 ## Architecture
 
-3-tier layout in `src/`:
-- `ui/` — QGIS UI components (dock widget, map tool, plugin entry point, activation dialog, error report dialog)
-- `core/` — Business logic (model config, checkpoint manager, venv/uv/python managers, SAM predictor, geo utils, polygon exporter, device manager, feature encoder)
-- `shared/` — Modules shared byte-identical with AI Canvas (activation, branding, menu, constants)
-- `workers/` — Subprocess-based prediction worker (`prediction_worker.py` runs in isolated venv with PyTorch/SAM)
-
-Note: this plugin has no `api/` layer — inference is fully local; there is no HTTP client for generation. The `core/activation_manager.py` (plugin-local, legacy) is distinct from `src/shared/activation_manager.py` (shared, canonical).
-
-## Critical Rules
-
-### Open-source confidentiality
-This plugin is GPL open-source. The community should only see clean abstracted code — they must NOT be able to infer the backend stack or paid infrastructure from the code, commits, comments, or logs.
-
-- **Never mention in code/commits/comments**: Supabase, Stripe, specific inference provider names, API endpoint paths, or any third-party service names used internally
-- **Activation abstraction**: the activation/licensing system is exposed only through generic terms ("activation code", "license", "unlock"). No backend provider details in public code
-- **Commit messages**: No provider names, no infrastructure details. Use generic terms: "backend", "API", "authentication", "activation", "inference"
-- **Production-safe logging**: NEVER log API URLs, model checkpoint URLs, activation keys, or backend provider names. Only log dimensions, extents, CRS, timing, file paths, device info
-- **Debug artifacts** (`.debug/`, `.env.local`): gitignored — never commit
-
-### Shared modules
-- **`src/shared/`** must stay byte-identical with AI Canvas's `src/shared/`. Changes require syncing. Use `/sync-shared` to verify.
-- **Parametric design**: shared modules use `product_id` from `PRODUCTS` dict — never hardcode plugin-specific behavior in shared code.
-
-### Inference worker isolation
-- `src/workers/prediction_worker.py` runs as a subprocess in an isolated venv (managed by `src/core/venv_manager.py`)
-- Communication is JSON over stdin/stdout — keep the protocol stable
-- The worker must never log checkpoint URLs or model names to stdout (JSON channel); stderr only for diagnostics
+- `src/core/model_config.py`: ALL version-dependent constants (SAM1 vs SAM2). Single source of truth
+- SAM2 (Python 3.10+, QGIS 3.34+) / SAM1 fallback (Python 3.9, QGIS 3.22/3.28)
+- Dependencies installed in isolated venv at `~/.qgis_ai_segmentation/venv_py3.*/`
+- `src/workers/prediction_worker.py` runs as subprocess in isolated venv — JSON over stdin/stdout, keep protocol stable
+- GPU/CUDA code exists but is NOT user-facing. Never mention GPU/CUDA in UI, issues, or descriptions
+- Plugin key in code must be `'AI_Segmentation'` (not the repo name)
+- Buttons hidden when not in segmentation mode (not disabled-but-visible), use `_update_button_visibility()`
 
 ## Commands
 
 ```bash
-# Run all tests
-pytest tests/
-
-# Run single test
-pytest tests/path/to/test.py -k 'test_name'
-
-# Lint
-ruff check src/ tests/
-
-# Format
-ruff format src/ tests/
-
-# Full verification
-# Use /verify skill
+ruff check src/ tests/           # lint
+ruff format src/ tests/          # format
+pytest tests/                    # run all tests
+pytest -k 'test_name'            # run single test
+# /verify                        # full check (lint + format + tests)
+# /release-public                # release to public repo
+# /sync-shared                   # sync src/shared/ with AI Canvas
 ```
 
-## Code Style
+## Code Quality
 
+- Ruff for linting and formatting (see `ruff.toml`, line-length 88)
 - Conventional commits: `fix:`, `feat:`, `refactor:`, `test:`, `docs:`
-- Python 3.9+ type hints
-- SOLID/DRY/KISS — no over-engineering
-- Ruff for formatting and linting (see `ruff.toml`)
-- Line length 88 (ruff), 120 (flake8 legacy — prefer ruff)
+- Python 3.9+ compat: `Tuple[bool, str]` from typing, not `tuple[bool, str]`
+- No unused imports (F401), no unused variables (F841)
 
-## Dev Environment
+## Terminology
 
-- QGIS 3.22+ required, tests mock `qgis.*` modules via `conftest.py`
-- Dependencies (PyTorch, SAM) are installed automatically into an isolated venv at `~/.qgis_ai_segmentation/` on first use — not bundled in the repo
-- Model checkpoints are downloaded to `~/.qgis_ai_segmentation/checkpoints/` — not in repo (gitignored via `models/`)
-- `AI_SEGMENTATION_CACHE_DIR` env var overrides the default cache location for testing
-- `pytest tests/` runs without QGIS runtime — `conftest.py` mocks all `qgis.*` imports
-- No `.env.local` needed for local development (no remote API calls in this plugin)
+- **Selection** = temporary AI-generated mask (before saving)
+- **Polygon** = saved items (after "Save polygon" or export)
+
+## i18n
+
+Languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
+
+**When modifying ANY UI string, you MUST update code AND all 3 .ts files.**
+
+1. Wrap string with `tr()` from `..core.i18n`
+2. Add `<message>` block in ALL .ts files inside `<context><name>AISegmentation</name>`
+3. Use `.format()` for dynamic strings: `tr("Export {count} polygon(s)").format(count=5)`
+4. Keep in English: "AI Segmentation", "SAM", "TerraLab", "Batch mode", "Export", "Checkpoint", package names
+
+## Refine Panel Defaults (KEEP IN SYNC)
+
+`expand=0, simplify=3, fill_holes=False, min_area=100`
+
+5 locations must match: plugin `__init__`, `_reset_session()`, `_restore_last_saved_mask` fallbacks, dockwidget `_setup_refine_panel`, `reset_refine_sliders`.
+
+## Dark Theme
+
+- **NEVER** use `palette(mid)` for text — invisible on dark backgrounds. Use `palette(text)`
+- Secondary text: `palette(text)` with smaller `font-size` (11px)
+
+## Common Pitfalls
+
+- `stderr=subprocess.PIPE` without draining it = deadlock. Use `DEVNULL` or temp file
+- `os.replace()` not `os.rename()` (Windows fails if dest exists)
+- `os.path.normcase()` before comparing paths (Windows case-insensitive)
+- `encoding='utf-8'` on all `open()` calls
+- `blockSignals(True/False)` when setting widget values programmatically
+- Disconnect `QgsProject.instance()` signals in `unload()`
+
+## Security
+
+- XML parsing: use `defusedxml.defuse_stdlib()` before `ET.parse()` (B314)
+- Subprocess: list arguments, never `shell=True` with string interpolation
+- No hardcoded credentials or credential-like patterns in code/comments
