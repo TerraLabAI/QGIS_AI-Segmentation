@@ -2,10 +2,7 @@ import math
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Tuple
-
-if TYPE_CHECKING:
-    import numpy
+from typing import List, Optional
 
 from qgis.core import (
     Qgis,
@@ -25,7 +22,6 @@ from qgis.core import (
 )
 from qgis.gui import QgisInterface, QgsRubberBand
 from qgis.PyQt.QtCore import (
-    QEvent,
     QObject,
     QSettings,
     Qt,
@@ -37,23 +33,22 @@ from qgis.PyQt.QtGui import QColor, QIcon
 from qgis.PyQt.QtWidgets import (
     QAction,
     QApplication,
-    QDoubleSpinBox,
-    QLineEdit,
     QMenu,
     QMessageBox,
-    QPlainTextEdit,
-    QSpinBox,
-    QTextEdit,
 )
 
 from ..core.i18n import tr
+from ..core.prompt_manager import PromptManager
+from ..workers.setup_workers import DepsInstallWorker, DownloadWorker, VerifyWorker
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
+from .ai_segmentation_pro_dockwidget import AISegmentationProDockWidget
 from .error_report_dialog import (
     show_error_report,
     start_log_collector,
     stop_log_collector,
 )
+from .shortcut_filter import ShortcutFilter
 
 # QSettings keys for tutorial flags
 SETTINGS_KEY_TUTORIAL_SHOWN = "AI_Segmentation/tutorial_simple_shown"
@@ -90,206 +85,29 @@ def _get_change_path_instructions():
     )
 
 
-class DepsInstallWorker(QThread):
-    progress = pyqtSignal(int, str)
-    finished = pyqtSignal(bool, str)
+class _CloudWarmupWorker(QObject):
+    finished = pyqtSignal()
+    attempt_started = pyqtSignal(int, int)  # (attempt_num, max_attempts)
 
-    def __init__(self, cuda_enabled: bool = False, parent=None):
-        super().__init__(parent)
-        self._cancelled = False
-        self._cuda_enabled = cuda_enabled
-
-    def cancel(self):
-        self._cancelled = True
-
-    def run(self):
-        try:
-            from ..core.venv_manager import create_venv_and_install
-
-            success, message = create_venv_and_install(
-                progress_callback=lambda percent, msg: self.progress.emit(percent, msg),
-                cancel_check=lambda: self._cancelled,
-                cuda_enabled=self._cuda_enabled,
-            )
-            self.finished.emit(success, message)
-        except Exception as e:
-            import traceback
-
-            error_msg = f"{str(e)}\n{traceback.format_exc()}"
-            self.finished.emit(False, error_msg)
-
-
-class DownloadWorker(QThread):
-    progress = pyqtSignal(int, str)
-    finished = pyqtSignal(bool, str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, cloud, use_retry=False):
+        super().__init__()
+        self.cloud = cloud
+        self.result = False
+        self.error_type = "none"
+        self.use_retry = use_retry
 
     def run(self):
-        try:
-            from ..core.checkpoint_manager import download_checkpoint
+        def on_attempt(n, m):
+            self.attempt_started.emit(n, m)
 
-            success, message = download_checkpoint(
-                progress_callback=lambda p, m: self.progress.emit(p, m)
+        if self.use_retry and hasattr(self.cloud, "warm_up_with_retry"):
+            self.result, self.error_type = self.cloud.warm_up_with_retry(
+                attempt_callback=on_attempt
             )
-            self.finished.emit(success, message)
-        except Exception as e:
-            self.finished.emit(False, str(e))
-
-
-class VerifyWorker(QThread):
-    """Runs venv verification + device detection off the main thread."""
-
-    finished = pyqtSignal(bool, str)  # (is_valid, message)
-    progress = pyqtSignal(int, str)  # (percent, message)
-
-    def run(self):
-        try:
-            from ..core.venv_manager import verify_venv
-
-            is_valid, msg = verify_venv(
-                progress_callback=lambda pct, m: self.progress.emit(pct, m)
-            )
-            if not is_valid:
-                self.finished.emit(False, msg)
-                return
-            self.progress.emit(100, tr("Detecting device..."))
-            try:
-                from ..core.venv_manager import ensure_venv_packages_available
-
-                ensure_venv_packages_available()
-                from ..core.device_manager import get_device_info
-
-                info = get_device_info()
-                self.finished.emit(True, info or "")
-            except Exception as e:
-                self.finished.emit(True, "device_error: {}".format(str(e)))
-        except Exception as e:
-            self.finished.emit(False, str(e))
-
-
-class _ShortcutFilter(QObject):
-    """Event filter that intercepts keyboard shortcuts on the main window.
-
-    QgsMapTool.keyPressEvent only fires when the canvas has keyboard
-    focus, which is unreliable after encoding/prediction (dock widget
-    updates steal focus).  This filter catches shortcuts regardless of
-    which widget has focus.
-    """
-
-    def __init__(self, plugin, parent=None):
-        super().__init__(parent)
-        self._plugin = plugin
-
-    def eventFilter(self, obj, event):
-        if event.type() != QEvent.Type.KeyPress:
-            return False
-        plugin = self._plugin
-        if not plugin.map_tool or not plugin.map_tool.isActive():
-            return False
-
-        app = QApplication.instance()
-        if not app:
-            return False
-        focused = app.focusWidget()
-        if isinstance(
-            focused, (QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox)
-        ):
-            return False
-
-        key = event.key()
-        modifiers = event.modifiers()
-
-        if key == Qt.Key.Key_Z and modifiers & Qt.KeyboardModifier.ControlModifier:
-            plugin._on_undo()
-            return True
-        elif key == Qt.Key.Key_S and not (
-            modifiers
-            & (
-                Qt.KeyboardModifier.ControlModifier
-                | Qt.KeyboardModifier.AltModifier
-                | Qt.KeyboardModifier.ShiftModifier
-            )
-        ):
-            plugin._on_save_polygon()
-            return True
-        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            plugin._on_export_layer()
-            return True
-        elif key == Qt.Key.Key_Escape:
-            plugin._on_stop_segmentation()
-            return True
-
-        return False
-
-
-class PromptManager:
-    def __init__(self):
-        self.positive_points: List[Tuple[float, float]] = []
-        self.negative_points: List[Tuple[float, float]] = []
-        self._history: List[Tuple[str, Tuple[float, float]]] = []
-
-    def add_positive_point(self, x: float, y: float):
-        self.positive_points.append((x, y))
-        self._history.append(("positive", (x, y)))
-
-    def add_negative_point(self, x: float, y: float):
-        self.negative_points.append((x, y))
-        self._history.append(("negative", (x, y)))
-
-    def undo(self) -> Optional[Tuple[str, Tuple[float, float]]]:
-        if not self._history:
-            return None
-
-        label, point = self._history.pop()
-        if label == "positive":
-            # Remove last occurrence (not first) to correctly undo duplicate coords
-            for i in range(len(self.positive_points) - 1, -1, -1):
-                if self.positive_points[i] == point:
-                    self.positive_points.pop(i)
-                    break
-        elif label == "negative":
-            for i in range(len(self.negative_points) - 1, -1, -1):
-                if self.negative_points[i] == point:
-                    self.negative_points.pop(i)
-                    break
-
-        return label, point
-
-    def clear(self):
-        self.positive_points = []
-        self.negative_points = []
-        self._history = []
-
-    @property
-    def point_count(self) -> Tuple[int, int]:
-        return len(self.positive_points), len(self.negative_points)
-
-    def get_points_for_predictor(
-        self, transform
-    ) -> Tuple[Optional["numpy.ndarray"], Optional["numpy.ndarray"]]:
-        import numpy as np
-        from rasterio import transform as rio_transform
-
-        all_points = self.positive_points + self.negative_points
-        if not all_points:
-            return None, None
-
-        point_coords = []
-        point_labels = []
-
-        for x, y in self.positive_points:
-            row, col = rio_transform.rowcol(transform, x, y)
-            point_coords.append([col, row])
-            point_labels.append(1)
-
-        for x, y in self.negative_points:
-            row, col = rio_transform.rowcol(transform, x, y)
-            point_coords.append([col, row])
-            point_labels.append(0)
-
-        return np.array(point_coords), np.array(point_labels)
+        else:
+            self.result = self.cloud.warm_up()
+            self.error_type = "unknown" if not self.result else "none"
+        self.finished.emit()
 
 
 class AISegmentationPlugin:
@@ -298,10 +116,12 @@ class AISegmentationPlugin:
         self.plugin_dir = Path(__file__).parent.parent.parent
 
         self.dock_widget: Optional[AISegmentationDockWidget] = None
+        self.pro_dock_widget: Optional[AISegmentationProDockWidget] = None
         self.map_tool: Optional[AISegmentationMapTool] = None
         self.action: Optional[QAction] = None
-        self.terralab_menu: Optional[QMenu] = None
-        # check_update_action and website_action are now handled by shared terralab_menu
+        self.pro_action: Optional[QAction] = None
+        self._terralab_menu: Optional[QMenu] = None
+        self._active_mode: str = "standard"  # "standard" | "pro"
 
         self.predictor = None
         self.prompts = PromptManager()
@@ -361,6 +181,20 @@ class AISegmentationPlugin:
         # None when both CRS are the same (no transform needed).
         self._canvas_to_raster_xform = None  # type: Optional[QgsCoordinateTransform]
         self._raster_to_canvas_xform = None  # type: Optional[QgsCoordinateTransform]
+
+        # PRO mode state
+        self._pro_pending_detections = []  # list of {mask, score, transform_info, rb}
+        self._pro_detection_batches = []  # list of int (size of each batch)
+        self._pro_reference_set: bool = False
+        self._warmup_thread = None
+        self._warmup_worker = None
+
+    @property
+    def _active_dock(self):
+        """Return the dock widget corresponding to the current active mode."""
+        if self._active_mode == "pro" and self.pro_dock_widget:
+            return self.pro_dock_widget
+        return self.dock_widget
 
     @staticmethod
     def _safe_remove_rubber_band(rb):
@@ -484,53 +318,17 @@ class AISegmentationPlugin:
         )
         self.action.triggered.connect(self.toggle_dock_widget)
 
+        from .terralab_menu import (
+            add_plugin_to_menu,
+            add_to_plugins_menu,
+            get_or_create_terralab_menu,
+        )
+
+        main_window = self.iface.mainWindow()
+        self._terralab_menu = get_or_create_terralab_menu(main_window)
+        add_plugin_to_menu(self._terralab_menu, self.action, "ai-segmentation")
         self.iface.addToolBarIcon(self.action)
-
-        # Create or join cooperative TerraLab menu in the menu bar
-        menu_bar = self.iface.mainWindow().menuBar()
-        self.terralab_menu = None
-        for menu_action in menu_bar.actions():
-            if menu_action.menu() and menu_action.text().replace("&", "") == "TerraLab":
-                self.terralab_menu = menu_action.menu()
-                break
-
-        if self.terralab_menu is None:
-            self.terralab_menu = QMenu("TerraLab", self.iface.mainWindow())
-            menu_bar.addMenu(self.terralab_menu)
-            # Add utility separator and actions
-            self._utility_separator = self.terralab_menu.addSeparator()
-            self._check_updates_action = QAction(
-                tr("Check for Updates..."), self.iface.mainWindow()
-            )
-            self._check_updates_action.triggered.connect(
-                lambda: self.iface.pluginManagerInterface().showPluginManager(3)
-            )
-            self.terralab_menu.addAction(self._check_updates_action)
-            self._more_action = QAction(
-                tr("More from TerraLab..."), self.iface.mainWindow()
-            )
-            self._more_action.triggered.connect(
-                lambda: __import__("webbrowser").open("https://terra-lab.ai")
-            )
-            self.terralab_menu.addAction(self._more_action)
-        else:
-            self._utility_separator = None
-            self._check_updates_action = None
-            self._more_action = None
-
-        # Insert plugin action before the utility separator
-        actions = self.terralab_menu.actions()
-        sep = None
-        for a in actions:
-            if a.isSeparator():
-                sep = a
-                break
-        if sep:
-            self.terralab_menu.insertAction(sep, self.action)
-        else:
-            self.terralab_menu.addAction(self.action)
-
-        self.iface.addPluginToMenu("TerraLab", self.action)
+        add_to_plugins_menu(self.iface, self.action)
 
         self.dock_widget = AISegmentationDockWidget(self.iface.mainWindow())
 
@@ -555,6 +353,48 @@ class AISegmentationPlugin:
         )
         self.dock_widget.setVisible(False)
         self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
+
+        # Project signals owned by plugin (not dock widget) for clean lifecycle
+        QgsProject.instance().layersAdded.connect(self.dock_widget._on_layers_added)
+        QgsProject.instance().layersRemoved.connect(self.dock_widget._on_layers_removed)
+
+        # --- PRO dock widget ---
+        self.pro_action = QAction(icon, "AI Segmentation Pro", self.iface.mainWindow())
+        self.pro_action.setCheckable(True)
+        self.pro_action.triggered.connect(self._toggle_pro_dock_widget)
+        add_plugin_to_menu(self._terralab_menu, self.pro_action, "ai-segmentation-pro")
+        self.iface.addToolBarIcon(self.pro_action)
+        add_to_plugins_menu(self.iface, self.pro_action)
+
+        self.pro_dock_widget = AISegmentationProDockWidget(self.iface.mainWindow())
+        self.pro_dock_widget.start_pro_segmentation_requested.connect(
+            self._on_start_pro_segmentation
+        )
+        self.pro_dock_widget.save_polygon_requested.connect(self._on_save_polygon)
+        self.pro_dock_widget.export_layer_requested.connect(self._on_export_layer)
+        self.pro_dock_widget.clear_points_requested.connect(self._on_clear_points)
+        self.pro_dock_widget.undo_requested.connect(self._on_undo)
+        self.pro_dock_widget.stop_segmentation_requested.connect(
+            self._on_stop_segmentation
+        )
+        self.pro_dock_widget.pro_detect_requested.connect(self._run_pro_text_detection)
+        self.pro_dock_widget.layer_combo.layerChanged.connect(
+            self._on_pro_layer_combo_changed
+        )
+        self.iface.addDockWidget(
+            Qt.DockWidgetArea.RightDockWidgetArea, self.pro_dock_widget
+        )
+        self.pro_dock_widget.setVisible(False)
+        self.pro_dock_widget.visibilityChanged.connect(
+            self._on_pro_dock_visibility_changed
+        )
+
+        QgsProject.instance().layersAdded.connect(
+            self.pro_dock_widget._on_layers_changed
+        )
+        QgsProject.instance().layersRemoved.connect(
+            self.pro_dock_widget._on_layers_changed
+        )
 
         self.map_tool = AISegmentationMapTool(self.iface.mapCanvas())
         self.map_tool.positive_click.connect(self._on_positive_click)
@@ -606,82 +446,37 @@ class AISegmentationPlugin:
             )
 
     def unload(self):
-        # 0. Remove keyboard shortcut filter
-        try:
-            if self._shortcut_filter is not None:
-                app = QApplication.instance()
-                if app:
-                    app.removeEventFilter(self._shortcut_filter)
-                self._shortcut_filter = None
-        except (RuntimeError, AttributeError):
-            pass
+        # 1. Remove keyboard shortcut filter
+        if self._shortcut_filter is not None:
+            app = QApplication.instance()
+            if app:
+                app.removeEventFilter(self._shortcut_filter)
+            self._shortcut_filter = None
 
-        # 1. Disconnect ALL signals FIRST to prevent callbacks on partially-cleaned state
-        if self.dock_widget:
-            try:
-                self.dock_widget.cleanup_signals()
-            except (TypeError, RuntimeError, AttributeError):
-                pass
-            try:
-                self.dock_widget.visibilityChanged.disconnect(
-                    self._on_dock_visibility_changed
-                )
-            except (TypeError, RuntimeError, AttributeError):
-                pass
-            try:
-                self.dock_widget.layer_combo.layerChanged.disconnect(
-                    self._on_layer_combo_changed
-                )
-            except (TypeError, RuntimeError, AttributeError):
-                pass
-            # Disconnect all dock widget signals connected in initGui()
-            _dock_signals = [
-                (self.dock_widget.install_requested, self._on_install_requested),
-                (self.dock_widget.cancel_install_requested, self._on_cancel_install),
-                (
-                    self.dock_widget.start_segmentation_requested,
-                    self._on_start_segmentation,
-                ),
-                (self.dock_widget.save_polygon_requested, self._on_save_polygon),
-                (self.dock_widget.export_layer_requested, self._on_export_layer),
-                (self.dock_widget.clear_points_requested, self._on_clear_points),
-                (self.dock_widget.undo_requested, self._on_undo),
-                (
-                    self.dock_widget.stop_segmentation_requested,
-                    self._on_stop_segmentation,
-                ),
-                (
-                    self.dock_widget.refine_settings_changed,
-                    self._on_refine_settings_changed,
-                ),
-                (self.dock_widget.batch_mode_changed, self._on_batch_mode_changed),
-            ]
-            for sig, slot in _dock_signals:
-                try:
-                    sig.disconnect(slot)
-                except (TypeError, RuntimeError, AttributeError):
-                    pass
-            # Stop timers before disconnection
-            try:
-                self.dock_widget._progress_timer.stop()
-                self.dock_widget._refine_debounce_timer.stop()
-            except (AttributeError, RuntimeError):
-                pass
-        try:
-            if self.map_tool:
-                self.map_tool.positive_click.disconnect(self._on_positive_click)
-                self.map_tool.negative_click.disconnect(self._on_negative_click)
-                self.map_tool.tool_deactivated.disconnect(self._on_tool_deactivated)
-                self.map_tool.undo_requested.disconnect(self._on_undo)
-                self.map_tool.save_polygon_requested.disconnect(self._on_save_polygon)
-                self.map_tool.export_layer_requested.disconnect(self._on_export_layer)
-                self.map_tool.stop_segmentation_requested.disconnect(
-                    self._on_stop_segmentation
-                )
-        except (TypeError, RuntimeError, AttributeError):
-            pass
+        # 2. Cancel warmup thread if running
+        if self._warmup_thread and self._warmup_thread.isRunning():
+            if self._warmup_worker:
+                self._warmup_worker.cloud.stop()
+            self._warmup_thread.quit()
+            self._warmup_thread.wait(3000)
+        self._warmup_thread = None
+        self._warmup_worker = None
 
-        # 2. Cleanup predictor subprocess
+        # 3. Cancel and terminate workers
+        for worker in [
+            self.deps_install_worker,
+            self.download_worker,
+            self._verify_worker,
+        ]:
+            if worker and worker.isRunning():
+                if hasattr(worker, "cancel"):
+                    worker.cancel()
+                worker.wait(5000)
+        self.deps_install_worker = None
+        self.download_worker = None
+        self._verify_worker = None
+
+        # 3. Cleanup predictor subprocess
         if self.predictor:
             try:
                 self.predictor.cleanup()
@@ -689,69 +484,57 @@ class AISegmentationPlugin:
                 pass
             self.predictor = None
 
-        # 3. Disconnect worker signals before termination to prevent callbacks on deleted UI
-        for worker in [
-            self.deps_install_worker,
-            self.download_worker,
-            self._verify_worker,
-        ]:
-            if worker:
+        # 4. Disconnect QgsProject signals (only ones needing explicit disconnect)
+        if self.dock_widget:
+            for sig, slot in [
+                (
+                    QgsProject.instance().layersAdded,
+                    self.dock_widget._on_layers_added,
+                ),
+                (
+                    QgsProject.instance().layersRemoved,
+                    self.dock_widget._on_layers_removed,
+                ),
+            ]:
                 try:
-                    if hasattr(worker, "progress"):
-                        worker.progress.disconnect()
+                    sig.disconnect(slot)
                 except (TypeError, RuntimeError):
                     pass
+        if self.pro_dock_widget:
+            for sig, slot in [
+                (
+                    QgsProject.instance().layersAdded,
+                    self.pro_dock_widget._on_layers_changed,
+                ),
+                (
+                    QgsProject.instance().layersRemoved,
+                    self.pro_dock_widget._on_layers_changed,
+                ),
+            ]:
                 try:
-                    worker.finished.disconnect()
+                    sig.disconnect(slot)
                 except (TypeError, RuntimeError):
                     pass
 
-        # 4. Terminate workers with timeout
-        for worker in [
-            self.deps_install_worker,
-            self.download_worker,
-            self._verify_worker,
-        ]:
-            if worker and worker.isRunning():
-                try:
-                    worker.terminate()
-                    if not worker.wait(5000):
-                        QgsMessageLog.logMessage(
-                            "Worker did not terminate within 5s",
-                            "AI Segmentation",
-                            level=Qgis.MessageLevel.Warning,
-                        )
-                except RuntimeError:
-                    pass
-        self.deps_install_worker = None
-        self.download_worker = None
-        self._verify_worker = None
+        # 6. Remove rubber bands + PRO pending detections
+        self._safe_remove_rubber_band(self.mask_rubber_band)
+        self.mask_rubber_band = None
+        for rb in self.saved_rubber_bands:
+            self._safe_remove_rubber_band(rb)
+        self.saved_rubber_bands = []
+        for det in self._pro_pending_detections:
+            self._safe_remove_rubber_band(det.get("rb"))
+        self._pro_pending_detections = []
 
-        # 5. Disconnect action signal and remove menu/toolbar
-        try:
-            self.action.triggered.disconnect(self.toggle_dock_widget)
-        except (TypeError, RuntimeError, AttributeError):
-            pass
-        if self.terralab_menu and self.action:
-            self.iface.removePluginMenu("TerraLab", self.action)
-            self.terralab_menu.removeAction(self.action)
-            # Clean up utility actions we own
-            for a in (self._check_updates_action, self._more_action, self._utility_separator):
-                if a is not None:
-                    self.terralab_menu.removeAction(a)
-            # Remove the menu from menu bar if empty (no other plugin actions left)
-            remaining = [a for a in self.terralab_menu.actions() if not a.isSeparator()]
-            if not remaining:
-                menu_bar = self.iface.mainWindow().menuBar()
-                menu_bar.removeAction(self.terralab_menu.menuAction())
-            self.terralab_menu = None
-        self.iface.removeToolBarIcon(self.action)
-
-        # 6. Remove dock widget
+        # 7. Remove dock widgets (deleteLater cascades all widget signals)
         if self.dock_widget:
             self.iface.removeDockWidget(self.dock_widget)
             self.dock_widget.deleteLater()
             self.dock_widget = None
+        if self.pro_dock_widget:
+            self.iface.removeDockWidget(self.pro_dock_widget)
+            self.pro_dock_widget.deleteLater()
+            self.pro_dock_widget = None
 
         # 7. Unset map tool
         if self.map_tool:
@@ -762,15 +545,27 @@ class AISegmentationPlugin:
                 pass
             self.map_tool = None
 
-        # 8. Remove rubber bands safely
-        self._safe_remove_rubber_band(self.mask_rubber_band)
-        self.mask_rubber_band = None
+        # 8. Remove menu/toolbar
+        from .terralab_menu import (
+            remove_from_plugins_menu,
+            remove_plugin_from_menu,
+        )
 
-        for rb in self.saved_rubber_bands:
-            self._safe_remove_rubber_band(rb)
-        self.saved_rubber_bands = []
+        for action_ref in (self.action, self.pro_action):
+            if action_ref:
+                remove_from_plugins_menu(self.iface, action_ref)
+                if self._terralab_menu:
+                    remove_plugin_from_menu(
+                        self._terralab_menu,
+                        action_ref,
+                        self.iface.mainWindow(),
+                    )
+                self.iface.removeToolBarIcon(action_ref)
+        self.action = None
+        self.pro_action = None
+        self._terralab_menu = None
 
-        # 9. Disconnect log collector signal
+        # 9. Stop log collector
         stop_log_collector()
 
     def toggle_dock_widget(self, checked: bool):
@@ -784,6 +579,14 @@ class AISegmentationPlugin:
         if visible and not self._initialized:
             self._initialized = True
             self._do_first_time_setup()
+
+    def _toggle_pro_dock_widget(self, checked: bool):
+        if self.pro_dock_widget:
+            self.pro_dock_widget.setVisible(checked)
+
+    def _on_pro_dock_visibility_changed(self, visible: bool):
+        if self.pro_action:
+            self.pro_action.setChecked(visible)
 
     def _do_first_time_setup(self):
         QgsMessageLog.logMessage(
@@ -1337,7 +1140,7 @@ class AISegmentationPlugin:
         # work regardless of which widget has focus (the canvas loses focus
         # after encoding/prediction because dock widget updates steal it).
         if self._shortcut_filter is None:
-            self._shortcut_filter = _ShortcutFilter(self)
+            self._shortcut_filter = ShortcutFilter(self)
         app = QApplication.instance()
         if app:
             app.installEventFilter(self._shortcut_filter)
@@ -2817,6 +2620,13 @@ class AISegmentationPlugin:
             self._safe_remove_rubber_band(rb)
         self.saved_rubber_bands = []
 
+        # Clean up PRO pending detections
+        for det in self._pro_pending_detections:
+            self._safe_remove_rubber_band(det.get("rb"))
+        self._pro_pending_detections = []
+        self._pro_detection_batches = []
+        self._pro_reference_set = False
+
         if self.map_tool:
             self.map_tool.clear_markers()
 
@@ -2843,6 +2653,632 @@ class AISegmentationPlugin:
         self._refine_fill_holes = False  # Default: matches dockwidget checkbox
         self._refine_min_area = 100  # Default: matches dockwidget spinbox
 
-        if self.dock_widget:
-            self.dock_widget.set_point_count(0, 0)
-            self.dock_widget.set_saved_polygon_count(0)
+        if self._active_dock:
+            self._active_dock.set_point_count(0, 0)
+            self._active_dock.set_saved_polygon_count(0)
+        self._active_mode = "standard"
+
+    # ── PRO mode methods ─────────────────────────────────────────────────
+
+    def _on_start_pro_segmentation(self, layer: QgsRasterLayer):
+        """Start PRO cloud segmentation."""
+        from ..core.activation_manager import get_pro_api_key
+        from ..core.pro_predictor import CloudSam3Predictor
+        from ..core.venv_manager import ensure_venv_packages_available
+
+        ensure_venv_packages_available()
+
+        if self._warmup_thread is not None and self._warmup_thread.isRunning():
+            return
+
+        api_key = get_pro_api_key()
+        sam3 = CloudSam3Predictor(api_key=api_key)
+
+        # Synchronous auth pre-check
+        try:
+            sam3._request("POST", "/reset?session_id=auth-check", timeout=5)
+        except Exception as pre_err:
+            if "401" in str(pre_err):
+                QMessageBox.warning(
+                    self.iface.mainWindow(),
+                    tr("AI Segmentation PRO"),
+                    tr(
+                        "Invalid PRO API key.\n\n"
+                        "Go to the PRO settings to update your API key."
+                    ),
+                )
+                return
+
+        from qgis.PyQt.QtWidgets import QProgressDialog
+
+        progress = QProgressDialog(
+            tr("Connecting to PRO server..."),
+            tr("Cancel"),
+            0,
+            0,
+            self.iface.mainWindow(),
+        )
+        progress.setWindowTitle(tr("AI Segmentation PRO"))
+        progress.setMinimumDuration(0)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.show()
+        QApplication.processEvents()
+
+        thread = QThread()
+        worker = _CloudWarmupWorker(sam3, use_retry=True)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(thread.quit)
+        self._warmup_thread = thread
+        self._warmup_worker = worker
+        worker.attempt_started.connect(
+            lambda n, m: progress.setLabelText(
+                tr("Connecting to PRO server... (attempt {}/{})").format(n, m)
+            )
+        )
+        thread.start()
+
+        while thread.isRunning():
+            QApplication.processEvents()
+            if progress.wasCanceled():
+                worker.cloud.stop()
+                thread.quit()
+                thread.wait(3000)
+                self._warmup_thread = None
+                self._warmup_worker = None
+                return
+            thread.wait(100)
+
+        self._warmup_thread = None
+        self._warmup_worker = None
+        progress.close()
+
+        if not worker.result:
+            if worker.error_type == "auth":
+                message = tr(
+                    "Invalid PRO API key.\n\n"
+                    "Go to the PRO settings to update your API key."
+                )
+            elif worker.error_type == "timeout":
+                message = tr(
+                    "The AI Segmentation PRO server did not respond.\n\n"
+                    "This can happen during first startup (cold start) "
+                    "which takes 2-5 minutes.\n\n"
+                    "Please try again in a few minutes."
+                )
+            elif worker.error_type == "network":
+                message = tr(
+                    "Could not connect to the PRO server.\n\n"
+                    "Check your internet connection and verify that the "
+                    "server URL is correct."
+                )
+            else:
+                message = tr(
+                    "PRO server connection error.\n\n"
+                    "Check the QGIS logs for more details."
+                )
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                tr("AI Segmentation PRO"),
+                message,
+            )
+            return
+
+        if self.predictor:
+            try:
+                self.predictor.cleanup()
+            except Exception:
+                pass
+        self.predictor = sam3
+
+        if not self._is_layer_valid(layer):
+            self.predictor.cleanup()
+            self.predictor = None
+            return
+
+        try:
+            layer_name = layer.name().replace(" ", "_")
+            raster_path = os.path.normcase(layer.source())
+        except RuntimeError:
+            self.predictor.cleanup()
+            self.predictor = None
+            return
+
+        self._reset_session()
+        self._current_layer = layer
+        self._current_layer_name = layer_name
+        self._is_online_layer = self._is_online_provider(layer)
+        self._is_non_georeferenced_mode = (
+            not self._is_online_layer and not self._is_layer_georeferenced(layer)
+        )
+        self._current_raster_path = raster_path
+
+        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        raster_crs = layer.crs() if layer else None
+        self._canvas_to_raster_xform = None
+        self._raster_to_canvas_xform = None
+        if raster_crs and canvas_crs.isValid() and raster_crs.isValid():
+            if canvas_crs != raster_crs:
+                self._canvas_to_raster_xform = QgsCoordinateTransform(
+                    canvas_crs, raster_crs, QgsProject.instance()
+                )
+                self._raster_to_canvas_xform = QgsCoordinateTransform(
+                    raster_crs, canvas_crs, QgsProject.instance()
+                )
+
+        self._active_mode = "pro"
+        self._activate_segmentation_tool()
+
+    def _run_pro_detection(self, point):
+        """Handle left-click in PRO mode: detect objects around click point."""
+        import numpy as np
+
+        if not self.predictor:
+            return
+
+        if self._pro_reference_set:
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("Reference already set. Click Detect to proceed."),
+                level=Qgis.MessageLevel.Info,
+                duration=3,
+            )
+            return
+
+        raster_pt = self._transform_to_raster_crs(point)
+
+        if not self._is_point_in_raster_extent(raster_pt):
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("Point is outside the raster image. Click inside the raster."),
+                level=Qgis.MessageLevel.Warning,
+                duration=4,
+            )
+            return
+
+        crop_status = self._check_crop_status(raster_pt)
+        if crop_status != "ok":
+            if not self._handle_reencode(crop_status, raster_pt):
+                if self.map_tool:
+                    self.map_tool.remove_last_marker()
+                return
+
+        if self._current_crop_info is None:
+            return
+
+        score_threshold = 0.3
+        if self._active_dock:
+            score_threshold = self._active_dock.get_score_threshold()
+
+        crop_bounds = self._current_crop_info["bounds"]
+        img_shape = self._current_crop_info["img_shape"]
+        img_height, img_width = img_shape
+        minx, miny, maxx, maxy = crop_bounds
+
+        crs_value = None
+        try:
+            if self._current_layer and self._current_layer.crs().isValid():
+                crs_value = self._current_layer.crs().authid()
+        except RuntimeError:
+            pass
+
+        transform_info = {
+            "bbox": (minx, miny, maxx, maxy),
+            "img_shape": (img_height, img_width),
+            "crs": crs_value,
+        }
+        self.current_transform_info = transform_info
+
+        try:
+            from rasterio.transform import from_bounds as transform_from_bounds
+            from rasterio.transform import rowcol
+
+            img_clip_transform = transform_from_bounds(
+                minx, miny, maxx, maxy, img_width, img_height
+            )
+            row, col = rowcol(img_clip_transform, raster_pt.x(), raster_pt.y())
+            point_coords = np.array([[col, row]], dtype=np.float64)
+            point_labels = np.array([1])
+            masks, scores, _ = self.predictor.predict(
+                point_coords=point_coords,
+                point_labels=point_labels,
+                multimask_output=True,
+            )
+        except RuntimeError as e:
+            QgsMessageLog.logMessage(
+                "PRO detection failed: {}".format(e),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Critical,
+            )
+            QMessageBox.warning(self.iface.mainWindow(), tr("Prediction Error"), str(e))
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            return
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                "Unexpected PRO detection error: {}".format(e),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Critical,
+            )
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            return
+
+        total_pixels = masks[0].shape[0] * masks[0].shape[1]
+        mask_areas = [int(m.sum()) for m in masks]
+        small_enough = [
+            i for i in range(len(scores)) if mask_areas[i] < 0.8 * total_pixels
+        ]
+        if small_enough:
+            best_idx = max(small_enough, key=lambda i: scores[i])
+        else:
+            best_idx = min(range(len(scores)), key=lambda i: mask_areas[i])
+        masks = masks[best_idx : best_idx + 1]
+        scores = scores[best_idx : best_idx + 1]
+
+        batch_count = self._apply_pro_detection_results(
+            masks, scores, score_threshold, transform_info
+        )
+        if batch_count > 0 and not self._pro_reference_set:
+            self._pro_reference_set = True
+            if self._active_dock:
+                prompt = self._active_dock.get_pro_text_prompt() or tr("object")
+                self._active_dock.set_reference_set(prompt)
+        if self.map_tool:
+            self.map_tool.remove_last_marker()
+
+    def _apply_pro_detection_results(
+        self, masks, scores, score_threshold, transform_info
+    ):
+        """Filter masks by score and create rubber bands. Returns count."""
+        from ..core.polygon_exporter import mask_to_polygons
+
+        filtered = [
+            (masks[i], float(scores[i]))
+            for i in range(masks.shape[0])
+            if float(scores[i]) >= score_threshold
+        ]
+        filtered.sort(key=lambda x: x[1], reverse=True)
+
+        if not filtered:
+            QgsMessageLog.logMessage(
+                "PRO detection: no masks above threshold {:.0%}".format(
+                    score_threshold
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
+            return 0
+
+        batch_count = 0
+        for mask, score in filtered:
+            h, w = transform_info["img_shape"]
+            if mask.shape[0] > h or mask.shape[1] > w:
+                mask = mask[:h, :w]
+                if mask.sum() == 0:
+                    continue
+            geometries = mask_to_polygons(mask, transform_info)
+            if not geometries:
+                continue
+            combined = QgsGeometry.unaryUnion(geometries)
+            if not combined or combined.isEmpty():
+                continue
+
+            rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
+            rb.setColor(QColor(0, 200, 100, 120))
+            rb.setFillColor(QColor(0, 200, 100, 80))
+            rb.setWidth(2)
+            display_geom = QgsGeometry(combined)
+            self._transform_geometry_to_canvas_crs(display_geom)
+            rb.setToGeometry(display_geom, None)
+
+            self._pro_pending_detections.append(
+                {
+                    "mask": mask,
+                    "score": score,
+                    "transform_info": transform_info.copy(),
+                    "rb": rb,
+                }
+            )
+            batch_count += 1
+
+        if batch_count > 0:
+            self._pro_detection_batches.append(batch_count)
+            last_detection = self._pro_pending_detections[-1]
+            self.current_mask = last_detection["mask"]
+            self.current_score = last_detection["score"]
+            self.current_transform_info = last_detection["transform_info"].copy()
+            self._update_ui_after_prediction()
+
+            if self._active_dock:
+                self._active_dock.set_mask_available(True)
+                pos = len(self._pro_detection_batches)
+                self._active_dock.set_point_count(pos, 0)
+            QgsMessageLog.logMessage(
+                "PRO detection: {} object(s) found".format(batch_count),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
+
+        return batch_count
+
+    def _run_pro_text_detection(self):
+        """Detect all instances of the text prompt across the visible extent."""
+        if not self._active_dock or not self.predictor:
+            return
+        text_prompt = self._active_dock.get_pro_text_prompt()
+        if not text_prompt:
+            return
+        self._pro_reference_set = False
+
+        raster_layer = self._current_layer
+        if raster_layer is None:
+            return
+
+        canvas = self.iface.mapCanvas()
+        canvas_crs = canvas.mapSettings().destinationCrs()
+        layer_crs = raster_layer.crs()
+
+        canvas_extent = canvas.extent()
+        if canvas_crs != layer_crs:
+            transform = QgsCoordinateTransform(
+                canvas_crs, layer_crs, QgsProject.instance()
+            )
+            canvas_extent = transform.transformBoundingBox(canvas_extent)
+
+        layer_extent = raster_layer.extent()
+        if not canvas_extent.intersects(layer_extent):
+            return
+        canvas_extent = canvas_extent.intersect(layer_extent)
+
+        xmin = canvas_extent.xMinimum()
+        xmax = canvas_extent.xMaximum()
+        ymin = canvas_extent.yMinimum()
+        ymax = canvas_extent.yMaximum()
+
+        # Adaptive tiling
+        TARGET_GSD = 0.35
+        tile_geo = TARGET_GSD * 1024
+        canvas_w = xmax - xmin
+        canvas_h = ymax - ymin
+        n_cols = max(2, min(6, math.ceil(canvas_w / tile_geo)))
+        n_rows = max(2, min(6, math.ceil(canvas_h / tile_geo)))
+
+        if canvas_w / n_cols / 1024 > 0.7:
+            self.iface.messageBar().pushMessage(
+                tr("AI Segmentation"),
+                tr(
+                    "Detection resolution is coarse ({gsd:.1f} m/px). "
+                    "Zoom in for better detection."
+                ).format(gsd=canvas_w / n_cols / 1024),
+                level=Qgis.MessageLevel.Warning,
+                duration=5,
+            )
+
+        dx = canvas_w / n_cols
+        dy = canvas_h / n_rows
+        overlap = 0.20
+
+        tile_centers = [
+            (xmin + dx * (col + 0.5), ymin + dy * (row + 0.5))
+            for row in range(n_rows)
+            for col in range(n_cols)
+        ]
+        total_tiles = len(tile_centers)
+        half_w = dx * (1.0 + overlap) / 2.0
+        half_h = dy * (1.0 + overlap) / 2.0
+
+        score_threshold = (
+            self._active_dock.get_score_threshold() if self._active_dock else 0.0
+        )
+
+        all_detections = []
+        first_error = None
+
+        for i, (cx, cy) in enumerate(tile_centers):
+            msg = tr("Detecting objects (tile {current}/{total})...").format(
+                current=i + 1, total=total_tiles
+            )
+            self.iface.messageBar().pushMessage(
+                tr("AI Segmentation"),
+                msg,
+                level=Qgis.MessageLevel.Info,
+                duration=0,
+            )
+
+            tile_geo_size = max(2 * half_w, 2 * half_h) * 1.4
+            if self._is_online_layer:
+                mupp_or_scale = tile_geo_size / 1024
+            else:
+                native_px = self._get_native_pixel_size()
+                mupp_or_scale = (
+                    max(1.0, (tile_geo_size / 1024) / native_px)
+                    if native_px > 0
+                    else 1.0
+                )
+            center_pt = QgsPointXY(cx, cy)
+
+            if not self._extract_and_encode_crop(
+                center_pt, mupp_override=mupp_or_scale
+            ):
+                continue
+
+            if self._current_crop_info is None:
+                continue
+
+            crop_bounds = self._current_crop_info["bounds"]
+            img_shape = self._current_crop_info["img_shape"]
+            img_height, img_width = img_shape
+            minx_tile, miny_tile, maxx_tile, maxy_tile = crop_bounds
+
+            crs_value = None
+            try:
+                if self._current_layer and self._current_layer.crs().isValid():
+                    crs_value = self._current_layer.crs().authid()
+            except RuntimeError:
+                pass
+
+            transform_info = {
+                "bbox": (minx_tile, miny_tile, maxx_tile, maxy_tile),
+                "img_shape": (img_height, img_width),
+                "crs": crs_value,
+            }
+
+            try:
+                masks, scores, _ = self.predictor.predict(
+                    text_prompt=text_prompt,
+                    multimask_output=True,
+                )
+                for j in range(masks.shape[0]):
+                    if float(scores[j]) >= score_threshold:
+                        all_detections.append(
+                            (masks[j], float(scores[j]), transform_info)
+                        )
+            except Exception as e:
+                if first_error is None:
+                    first_error = e
+                QgsMessageLog.logMessage(
+                    "Tile {}/{} detection failed: {}".format(i + 1, total_tiles, e),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Warning,
+                )
+
+        self.iface.messageBar().clearWidgets()
+
+        if not all_detections and first_error:
+            QMessageBox.warning(
+                self.iface.mainWindow(),
+                tr("Detection Error"),
+                str(first_error),
+            )
+            return
+
+        if not all_detections:
+            return
+
+        from ..core.polygon_exporter import mask_to_polygons
+
+        all_detections.sort(key=lambda x: x[1], reverse=True)
+
+        IOU_THRESHOLD = 0.3
+
+        def _iou(g1, g2):
+            inter = g1.intersection(g2)
+            if inter.isEmpty():
+                return 0.0
+            union = g1.combine(g2)
+            return inter.area() / union.area() if union.area() > 0 else 0.0
+
+        accepted_geoms = []
+        batch_count = 0
+
+        for mask, score, ti in all_detections:
+            if mask.sum() < 20:
+                continue
+            polys = mask_to_polygons(mask, ti)
+            if not polys:
+                continue
+            geom = QgsGeometry.unaryUnion(polys)
+            if not geom or geom.isEmpty():
+                continue
+
+            if any(_iou(geom, ag) > IOU_THRESHOLD for ag in accepted_geoms):
+                continue
+
+            accepted_geoms.append(geom)
+
+            rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
+            rb.setColor(QColor(0, 200, 100, 120))
+            rb.setFillColor(QColor(0, 200, 100, 80))
+            rb.setWidth(2)
+            display_geom = QgsGeometry(geom)
+            self._transform_geometry_to_canvas_crs(display_geom)
+            rb.setToGeometry(display_geom, None)
+
+            self._pro_pending_detections.append(
+                {
+                    "mask": mask,
+                    "score": score,
+                    "transform_info": ti.copy(),
+                    "rb": rb,
+                }
+            )
+            batch_count += 1
+
+        self._clear_mask_visualization()
+        self.current_mask = None
+        self.current_transform_info = None
+
+        if batch_count > 0:
+            self._pro_detection_batches.append(batch_count)
+            if self._active_dock:
+                self._active_dock.set_mask_available(True)
+                pos = len(self._pro_detection_batches)
+                self._active_dock.set_point_count(pos, 0)
+                self._active_dock.set_batch_done(batch_count)
+            QgsMessageLog.logMessage(
+                "PRO text detection: {} object(s) found across {} tiles".format(
+                    batch_count, total_tiles
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
+
+    def _on_pro_layer_combo_changed(self, layer):
+        """Handle layer selection change in the PRO dock combo box."""
+        if not self._current_layer:
+            return
+
+        try:
+            new_layer_id = layer.id() if layer else None
+            current_layer_id = self._current_layer.id() if self._current_layer else None
+        except RuntimeError:
+            self._current_layer = None
+            return
+
+        if new_layer_id == current_layer_id:
+            return
+
+        if self.iface.mapCanvas().mapTool() == self.map_tool:
+            has_unsaved_mask = self.current_mask is not None
+            has_saved_polygons = len(self.saved_polygons) > 0
+
+            if has_unsaved_mask or has_saved_polygons:
+                polygon_count = len(self.saved_polygons)
+                if has_unsaved_mask:
+                    polygon_count += 1
+                message = "{}\n\n{}".format(
+                    tr("You have {count} unsaved polygon(s).").format(
+                        count=polygon_count
+                    ),
+                    tr(
+                        "Changing layer will discard your current "
+                        "segmentation. Continue?"
+                    ),
+                )
+
+                reply = QMessageBox.warning(
+                    self.iface.mainWindow(),
+                    tr("Change Layer?"),
+                    message,
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+
+                if reply != QMessageBox.StandardButton.Yes:
+                    self.pro_dock_widget.layer_combo.blockSignals(True)
+                    self.pro_dock_widget.layer_combo.setLayer(self._current_layer)
+                    self.pro_dock_widget.layer_combo.blockSignals(False)
+                    return
+
+            self._stopping_segmentation = True
+            self.iface.mapCanvas().unsetMapTool(self.map_tool)
+            self._restore_previous_map_tool()
+            self._stopping_segmentation = False
+            self._reset_session()
+            if self.pro_dock_widget:
+                self.pro_dock_widget.reset_session()

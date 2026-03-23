@@ -1,4 +1,4 @@
-from qgis.core import QgsMapLayerProxyModel, QgsProject
+from qgis.core import QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import (
@@ -78,9 +78,6 @@ class AISegmentationProDockWidget(QDockWidget):
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
         self.setWidget(scroll_area)
-
-        QgsProject.instance().layersAdded.connect(self._on_layers_changed)
-        QgsProject.instance().layersRemoved.connect(self._on_layers_changed)
 
         self._update_ui_state()
 
@@ -392,16 +389,6 @@ class AISegmentationProDockWidget(QDockWidget):
 
     def is_activated(self) -> bool:
         return is_plugin_activated()
-
-    def cleanup_signals(self):
-        try:
-            QgsProject.instance().layersAdded.disconnect(self._on_layers_changed)
-        except (TypeError, RuntimeError):
-            pass
-        try:
-            QgsProject.instance().layersRemoved.disconnect(self._on_layers_changed)
-        except (TypeError, RuntimeError):
-            pass
 
     # ── Private ──────────────────────────────────────────────────────────────
 

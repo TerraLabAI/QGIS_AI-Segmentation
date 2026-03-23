@@ -1,5 +1,7 @@
 """Activation manager for the AI Segmentation plugin."""
+
 from typing import Tuple
+
 from qgis.core import QgsSettings
 
 UNLOCK_CODES = ["fromage", "baguette"]
