@@ -1,160 +1,78 @@
-# QGIS AI Segmentation Plugin
+# CLAUDE.md
 
-## Workflow Orchestration
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-### 1. Plan Mode Default
-- Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
-- If something goes sideways, STOP and re-plan immediately - don't keep pushing
-- Use plan mode for verification steps, not just building
-- Write detailed specs upfront to reduce ambiguity
+## Project
 
-### 2. Subagent Strategy
-- Use subagents liberally to keep main context window clean
-- Offload research, exploration, and parallel analysis to subagents
-- For complex problems, throw more compute at it via subagents
-- One task per subagent for focused execution
+QGIS AI Segmentation plugin by TerraLab — point-and-click AI segmentation that turns raster objects into vector polygons. Users click on features (buildings, vegetation, any object) in their raster layers and the plugin runs local inference to produce segmentation masks, exported as vector polygons.
 
-### 3. Self-Improvement Loop
-- After ANY correction from the user: update memory/MEMORY.md with the pattern
-- Write rules for yourself that prevent the same mistake
-- Ruthlessly iterate on these lessons until mistake rate drops
-- Review lessons at session start for relevant project
+Part of the TerraLab ecosystem:
+- **AI Segmentation** (this repo) — local inference via on-device model, same shared modules
+- **AI Canvas** — image generation via terra-lab.ai backend, path: `/Users/yvann/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Canvas`
+- **terra-lab.ai** — Next.js website, API proxy, activation service, path: `/Users/yvann/Documents/GitHub/terralab-website`
 
-### 4. Verification Before Done
-- Never mark a task complete without proving it works
-- Diff behavior between main and your changes when relevant
-- Ask yourself: "Would a staff engineer approve this?"
-- Run tests, check logs, demonstrate correctness
+## Architecture
 
-### 5. Demand Elegance (Balanced)
-- For non-trivial changes: pause and ask "is there a more elegant way?"
-- If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
-- Skip this for simple, obvious fixes - don't over-engineer
-- Challenge your own work before presenting it
+3-tier layout in `src/`:
+- `ui/` — QGIS UI components (dock widget, map tool, plugin entry point, activation dialog, error report dialog)
+- `core/` — Business logic (model config, checkpoint manager, venv/uv/python managers, SAM predictor, geo utils, polygon exporter, device manager, feature encoder)
+- `shared/` — Modules shared byte-identical with AI Canvas (activation, branding, menu, constants)
+- `workers/` — Subprocess-based prediction worker (`prediction_worker.py` runs in isolated venv with PyTorch/SAM)
 
-### 6. Autonomous Bug Fixing
-- When given a bug report: just fix it. Don't ask for hand-holding
-- Point at logs, errors, failing tests - then resolve them
-- Zero context switching required from the user
-- Go fix failing CI tests without being told how
+Note: this plugin has no `api/` layer — inference is fully local; there is no HTTP client for generation. The `core/activation_manager.py` (plugin-local, legacy) is distinct from `src/shared/activation_manager.py` (shared, canonical).
 
-### Task Management
-1. Plan First: Write plan to tasks/todo.md with checkable items
-2. Verify Plan: Check in before starting implementation
-3. Track Progress: Mark items complete as you go
-4. Explain Changes: High-level summary at each step
-5. Document Results: Add review section to tasks/todo.md
-6. Capture Lessons: Update memory/MEMORY.md after corrections
+## Critical Rules
 
-### Core Principles
-- Simplicity First: Make every change as simple as possible. Impact minimal code.
-- No Laziness: Find root causes. No temporary fixes. Senior developer standards.
-- Minimal Impact: Changes should only touch what's necessary. Avoid introducing bugs.
-- After big changes: output a short summary with bullet points of what changed.
+### Open-source confidentiality
+This plugin is GPL open-source. The community should only see clean abstracted code — they must NOT be able to infer the backend stack or paid infrastructure from the code, commits, comments, or logs.
 
-## Writing Style
+- **Never mention in code/commits/comments**: Supabase, Stripe, specific inference provider names, API endpoint paths, or any third-party service names used internally
+- **Activation abstraction**: the activation/licensing system is exposed only through generic terms ("activation code", "license", "unlock"). No backend provider details in public code
+- **Commit messages**: No provider names, no infrastructure details. Use generic terms: "backend", "API", "authentication", "activation", "inference"
+- **Production-safe logging**: NEVER log API URLs, model checkpoint URLs, activation keys, or backend provider names. Only log dimensions, extents, CRS, timing, file paths, device info
+- **Debug artifacts** (`.debug/`, `.env.local`): gitignored — never commit
 
-- Never use em dashes "--" in text output or GitHub issues
-- Minimal comments in code, concise and in English only
-- All UI text in English in source code, never in French
+### Shared modules
+- **`src/shared/`** must stay byte-identical with AI Canvas's `src/shared/`. Changes require syncing. Use `/sync-shared` to verify.
+- **Parametric design**: shared modules use `product_id` from `PRODUCTS` dict — never hardcode plugin-specific behavior in shared code.
 
-## Architecture (what you can't infer from code)
+### Inference worker isolation
+- `src/workers/prediction_worker.py` runs as a subprocess in an isolated venv (managed by `src/core/venv_manager.py`)
+- Communication is JSON over stdin/stdout — keep the protocol stable
+- The worker must never log checkpoint URLs or model names to stdout (JSON channel); stderr only for diagnostics
 
-- `src/core/model_config.py`: ALL version-dependent constants (SAM1 vs SAM2). Single source of truth.
-- SAM2 (Python 3.10+, QGIS 3.34+) / SAM1 fallback (Python 3.9, QGIS 3.22/3.28)
-- Dependencies installed in isolated venv at `~/.qgis_ai_segmentation/venv_py3.*/`
-- GPU/CUDA code exists but is NOT user-facing. Never mention GPU/CUDA in UI, issues, or descriptions.
-- Plugin key in code must be `'AI_Segmentation'` (not the repo name `QGIS_AI-Segmentation`)
-- Buttons hidden when not in segmentation mode (not disabled-but-visible), use `_update_button_visibility()`
+## Commands
 
-## Azure Cloud Infrastructure
+```bash
+# Run all tests
+pytest tests/
 
-- **Subscription**: Azure subscription 1
-- **Resource group**: `terralab-sam`
-- **Container Registry**: `terralabsamacr` (Basic SKU, admin-enabled)
-- **Container Apps Environment**: `sam-env-gpu` in `francecentral` (workload profiles enabled, GPU)
-  - GPU workload profile: `gpu-t4` (type `Consumption-GPU-NC8as-T4`, NVIDIA T4 16GB)
-  - Old environment `sam-env` in `westeurope` (Consumption-only, no GPU) to delete after migration
-- **SAM2 Container App**: `sam-api` (serves SAM2 cloud inference)
-  - URL: `https://sam-api.<env-subdomain>.westeurope.azurecontainerapps.io` (update after deploy)
-  - Image: `terralabsamacr.azurecr.io/sam-api:gpu-v1`
-  - Server code: `server/main.py` (FastAPI + SAM2)
-  - Docker: `server/Dockerfile` (CUDA 12.4 base)
-  - Auth: `X-Api-Key` header, key set via `API_KEY` env var
-  - Endpoints: `/health`, `/set_image`, `/predict`, `/reset`
-  - Session-based: `/set_image` returns `session_id`, used in subsequent calls
-  - Response format: base64-encoded numpy arrays (masks, scores, low_res_masks)
-- **SAM3 Container App**: `sam3-api` (serves SAM3 cloud inference)
-  - URL: `https://sam3-api.kindrock-9d62e9fa.francecentral.azurecontainerapps.io`
-  - Image: `terralabsamacr.azurecr.io/sam3-api:gpu-v2` (thin app layer)
-  - Base image: `terralabsamacr.azurecr.io/sam3-api-base:v1` (CUDA + deps + checkpoint, rebuild rarely)
-  - Server code: `server/sam3/main.py`
-  - Docker: `server/sam3/Dockerfile` (thin app), `server/sam3/Dockerfile.base` (heavy base)
-  - `HF_TOKEN` is a build-arg on the base image only (checkpoint downloaded at build time)
-  - Adds `text_prompt` field to `/predict` endpoint
+# Run single test
+pytest tests/path/to/test.py -k 'test_name'
 
-### Deployment Pattern
-- SAM3 uses two-stage Docker: `Dockerfile.base` (heavy, ~13min, deps+checkpoint) and `Dockerfile` (thin, ~10-30s, code only)
-- Docker images built via `az acr build`, pushed to `terralabsamacr`
-- Container Apps run on GPU workload profile (`gpu-t4`), scale 0-1 replicas
-- API keys stored as Azure secrets, passed as env vars
-- Client code in plugin reads cloud URL from `src/core/model_config.py`
-- Cold start from scale-to-zero: ~2-5 min (CUDA image pull + model load)
+# Lint
+ruff check src/ tests/
 
-## Terminology
+# Format
+ruff format src/ tests/
 
-- **Selection** = temporary AI-generated mask (before saving)
-- **Polygon** = saved items (after "Save polygon" or export)
+# Full verification
+# Use /verify skill
+```
 
-## Refine Panel Defaults (KEEP IN SYNC)
+## Code Style
 
-`expand=0, simplify=3, fill_holes=False, min_area=100`
+- Conventional commits: `fix:`, `feat:`, `refactor:`, `test:`, `docs:`
+- Python 3.9+ type hints
+- SOLID/DRY/KISS — no over-engineering
+- Ruff for formatting and linting (see `ruff.toml`)
+- Line length 88 (ruff), 120 (flake8 legacy — prefer ruff)
 
-5 locations must match: plugin `__init__`, `_reset_session()`, `_restore_last_saved_mask` fallbacks, dockwidget `_setup_refine_panel`, `reset_refine_sliders`.
+## Dev Environment
 
-## i18n - IMPORTANT
-
-Languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
-
-**When modifying ANY UI string, you MUST update code AND all 3 .ts files.**
-
-1. Wrap string with `tr()` from `..core.i18n`
-2. Add `<message>` block in ALL .ts files (`fr.ts`, `pt_BR.ts`, `es.ts`) inside `<context><name>AISegmentation</name>`
-3. Use `.format()` for dynamic strings: `tr("Export {count} polygon(s)").format(count=5)`
-4. Keep in English: "AI Segmentation", "SAM", "TerraLab", "Batch mode", "Export", "Checkpoint", package names
-
-## Dark Theme
-
-- **NEVER** use `palette(mid)` for text -- invisible on dark backgrounds. Use `palette(text)`.
-- Secondary text: `palette(text)` with smaller `font-size` (11px).
-- Hardcoded colors OK only on elements with their own hardcoded background.
-
-## Common Pitfalls
-
-- `stderr=subprocess.PIPE` without draining it = deadlock. Use `DEVNULL` or temp file.
-- `os.replace()` not `os.rename()` (Windows fails if dest exists)
-- `os.path.normcase()` before comparing paths (Windows case-insensitive)
-- `encoding='utf-8'` on all `open()` calls
-- `Tuple[bool, str]` from typing, not `tuple[bool, str]` (Python 3.9 compat)
-- `blockSignals(True/False)` when setting widget values programmatically
-- Disconnect `QgsProject.instance()` signals in `unload()`
-
-## Code Quality (Flake8)
-
-- Max line length: 120 characters
-- No unused imports (F401), no unused variables (F841)
-- Import order: stdlib, third-party, local. Use `# noqa: E402` when import must follow runtime setup.
-- W503/W504 (line breaks with operators): use `.format()` or intermediate variables instead
-- `global` only needed when reassigning a module-level variable, not when modifying a dict/list
-
-## Security (Bandit)
-
-- XML parsing: use `defusedxml.defuse_stdlib()` before `ET.parse()` (B314)
-- Subprocess: list arguments, never `shell=True` with string interpolation
-- No hardcoded credentials or credential-like patterns in code/comments
-
-## Release Process
-
-- **Never create GitHub releases or tags without explicit user confirmation**
-- Release flow: create a GitHub Release with tag `vX.Y.Z`, then upload zip manually to plugins.qgis.org
-- `.gitattributes` ensures dev files (tests, CI, CLAUDE.md, etc.) are excluded from the release zip
+- QGIS 3.22+ required, tests mock `qgis.*` modules via `conftest.py`
+- Dependencies (PyTorch, SAM) are installed automatically into an isolated venv at `~/.qgis_ai_segmentation/` on first use — not bundled in the repo
+- Model checkpoints are downloaded to `~/.qgis_ai_segmentation/checkpoints/` — not in repo (gitignored via `models/`)
+- `AI_SEGMENTATION_CACHE_DIR` env var overrides the default cache location for testing
+- `pytest tests/` runs without QGIS runtime — `conftest.py` mocks all `qgis.*` imports
+- No `.env.local` needed for local development (no remote API calls in this plugin)

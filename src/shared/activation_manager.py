@@ -1,8 +1,9 @@
 # SHARED MODULE v1.0 — keep in sync between AI Canvas and AI Segmentation
 """Shared activation logic for TerraLab QGIS plugins."""
+
 from typing import Optional, Tuple
 
-from .constants import PRODUCTS, NEWSLETTER_URL
+from .constants import NEWSLETTER_URL, PRODUCTS
 
 UNLOCK_CODES = ["fromage", "baguette"]
 
@@ -12,6 +13,7 @@ def _get_settings(settings=None):
     if settings is not None:
         return settings
     from qgis.core import QgsSettings
+
     return QgsSettings()
 
 

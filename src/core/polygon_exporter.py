@@ -1,34 +1,34 @@
-from typing import List, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Tuple
 
 if TYPE_CHECKING:
     import rasterio
 
 from .venv_manager import ensure_venv_packages_available
+
 ensure_venv_packages_available()
 
 import numpy as np  # noqa: E402
-
 from qgis.core import (  # noqa: E402
+    Qgis,
     QgsGeometry,
-    QgsPointXY,
-    QgsPolygon,
     QgsLineString,
     QgsMessageLog,
-    Qgis,
+    QgsPointXY,
+    QgsPolygon,
 )
 
 
 def mask_to_polygons_rasterio(
     mask: np.ndarray,
-    transform: 'rasterio.Affine',
+    transform: "rasterio.Affine",
     crs: str,
-    simplify_tolerance: float = 0.0
+    simplify_tolerance: float = 0.0,
 ) -> List[QgsGeometry]:
     if mask is None or mask.sum() == 0:
         QgsMessageLog.logMessage(
             "mask_to_polygons: Empty or None mask",
             "AI Segmentation",
-            level=Qgis.MessageLevel.Warning
+            level=Qgis.MessageLevel.Warning,
         )
         return []
 
@@ -58,17 +58,18 @@ def mask_to_polygons_rasterio(
         QgsMessageLog.logMessage(
             f"mask_to_polygons: Created {len(geometries)} polygons",
             "AI Segmentation",
-            level=Qgis.MessageLevel.Info
+            level=Qgis.MessageLevel.Info,
         )
 
         return geometries
 
     except Exception as e:
         import traceback
+
         QgsMessageLog.logMessage(
             f"Failed to convert mask to polygons: {str(e)}\n{traceback.format_exc()}",
             "AI Segmentation",
-            level=Qgis.MessageLevel.Warning
+            level=Qgis.MessageLevel.Warning,
         )
         return []
 
@@ -98,15 +99,13 @@ def geojson_to_wkt(geojson: dict) -> str:
 
 
 def mask_to_polygons(
-    mask: np.ndarray,
-    transform_info: dict,
-    simplify_tolerance: float = 0.0
+    mask: np.ndarray, transform_info: dict, simplify_tolerance: float = 0.0
 ) -> List[QgsGeometry]:
     if mask is None or mask.sum() == 0:
         QgsMessageLog.logMessage(
             f"mask_to_polygons: Empty or None mask (sum={mask.sum() if mask is not None else 'None'})",
             "AI Segmentation",
-            level=Qgis.MessageLevel.Warning
+            level=Qgis.MessageLevel.Warning,
         )
         return []
 
@@ -150,7 +149,9 @@ def mask_to_polygons(
                     return []
 
             transform = transform_from_bounds(x_min, y_min, x_max, y_max, width, height)
-            crs = transform_info.get("layer_crs", transform_info.get("crs", "EPSG:4326"))
+            crs = transform_info.get(
+                "layer_crs", transform_info.get("crs", "EPSG:4326")
+            )
 
             return mask_to_polygons_rasterio(mask, transform, crs, simplify_tolerance)
 
@@ -160,18 +161,17 @@ def mask_to_polygons(
         return mask_to_polygons_fallback(mask, transform_info, simplify_tolerance)
     except Exception as e:
         import traceback
+
         QgsMessageLog.logMessage(
             f"mask_to_polygons error: {str(e)}\n{traceback.format_exc()}",
             "AI Segmentation",
-            level=Qgis.MessageLevel.Warning
+            level=Qgis.MessageLevel.Warning,
         )
         return mask_to_polygons_fallback(mask, transform_info, simplify_tolerance)
 
 
 def mask_to_polygons_fallback(
-    mask: np.ndarray,
-    transform_info: dict,
-    simplify_tolerance: float = 0.0
+    mask: np.ndarray, transform_info: dict, simplify_tolerance: float = 0.0
 ) -> List[QgsGeometry]:
     try:
         contours = find_contours(mask)
@@ -208,10 +208,11 @@ def mask_to_polygons_fallback(
 
     except Exception as e:
         import traceback
+
         QgsMessageLog.logMessage(
             f"Fallback polygon conversion failed: {str(e)}\n{traceback.format_exc()}",
             "AI Segmentation",
-            level=Qgis.MessageLevel.Warning
+            level=Qgis.MessageLevel.Warning,
         )
         return []
 
@@ -219,6 +220,7 @@ def mask_to_polygons_fallback(
 def find_contours(mask: np.ndarray) -> List[List[Tuple[int, int]]]:
     try:
         from skimage import measure
+
         raw_contours = measure.find_contours(mask.astype(float), 0.5)
         contours = []
         for contour in raw_contours:
@@ -232,13 +234,10 @@ def find_contours(mask: np.ndarray) -> List[List[Tuple[int, int]]]:
     contours = []
     h, w = mask.shape
     visited = np.zeros_like(mask, dtype=bool)
-    padded = np.pad(mask, 1, mode='constant', constant_values=0)
-    visited_pad = np.pad(visited, 1, mode='constant', constant_values=True)
+    padded = np.pad(mask, 1, mode="constant", constant_values=0)
+    visited_pad = np.pad(visited, 1, mode="constant", constant_values=True)
 
-    directions = [
-        (1, 0), (1, 1), (0, 1), (-1, 1),
-        (-1, 0), (-1, -1), (0, -1), (1, -1)
-    ]
+    directions = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
 
     for y in range(1, h + 1):
         for x in range(1, w + 1):
@@ -263,7 +262,7 @@ def trace_contour(
     visited: np.ndarray,
     start_x: int,
     start_y: int,
-    directions: List[Tuple[int, int]]
+    directions: List[Tuple[int, int]],
 ) -> List[Tuple[int, int]]:
     contour = [(start_x, start_y)]
     visited[start_y, start_x] = True
@@ -309,9 +308,7 @@ def trace_contour(
 
 
 def pixel_to_map_coords(
-    pixel_x: float,
-    pixel_y: float,
-    transform_info: dict
+    pixel_x: float, pixel_y: float, transform_info: dict
 ) -> Tuple[float, float]:
     bbox = transform_info.get("bbox")
     img_shape = transform_info.get("img_shape")
@@ -344,9 +341,9 @@ def pixel_to_map_coords(
 
 def apply_mask_refinement(
     mask: np.ndarray,
-    expand_value: int = 0,        # -20 to +20 (pixels)
-    fill_holes: bool = False,     # Fill interior holes
-    min_area: int = 0             # Remove regions smaller than this (pixels)
+    expand_value: int = 0,  # -20 to +20 (pixels)
+    fill_holes: bool = False,  # Fill interior holes
+    min_area: int = 0,  # Remove regions smaller than this (pixels)
 ) -> np.ndarray:
     """
     Apply morphological operations to refine the mask.
@@ -389,6 +386,7 @@ def _fill_holes(mask: np.ndarray) -> np.ndarray:
     # Try scipy first - it's much faster (C implementation)
     try:
         from scipy import ndimage
+
         return ndimage.binary_fill_holes(mask).astype(np.uint8)
     except ImportError:
         pass
@@ -401,13 +399,13 @@ def _fill_holes(mask: np.ndarray) -> np.ndarray:
 
     # Start with border pixels as exterior (only background pixels)
     exterior = np.zeros_like(padded, dtype=bool)
-    exterior[0, :] = (padded[0, :] == 0)
-    exterior[-1, :] = (padded[-1, :] == 0)
-    exterior[:, 0] = (padded[:, 0] == 0)
-    exterior[:, -1] = (padded[:, -1] == 0)
+    exterior[0, :] = padded[0, :] == 0
+    exterior[-1, :] = padded[-1, :] == 0
+    exterior[:, 0] = padded[:, 0] == 0
+    exterior[:, -1] = padded[:, -1] == 0
 
     # Iteratively expand exterior into connected background pixels
-    background = (padded == 0)
+    background = padded == 0
     for _ in range(max(h, w)):  # Max iterations = image diagonal
         # Dilate exterior by 1 pixel in 4 directions using slicing
         expanded = exterior.copy()
@@ -442,6 +440,7 @@ def _remove_small_regions(mask: np.ndarray, min_area: int) -> np.ndarray:
     # Try to use scipy if available (much faster - C implementation)
     try:
         from scipy import ndimage
+
         labeled, num_features = ndimage.label(mask)
         if num_features == 0:
             return mask.copy()
@@ -524,6 +523,7 @@ def _label_region_sizes(mask: np.ndarray) -> list:
     """Return list of region sizes (pixel counts) for each connected component."""
     try:
         from scipy import ndimage
+
         labeled, num_features = ndimage.label(mask)
         if num_features == 0:
             return []
@@ -567,16 +567,17 @@ def _numpy_dilate(mask: np.ndarray, iterations: int) -> np.ndarray:
     """
     try:
         from scipy.ndimage import binary_dilation
+
         struct = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
-        return binary_dilation(
-            mask, structure=struct, iterations=iterations
-        ).astype(np.uint8)
+        return binary_dilation(mask, structure=struct, iterations=iterations).astype(
+            np.uint8
+        )
     except ImportError:
         pass
 
     result = mask.copy()
     for _ in range(iterations):
-        padded = np.pad(result, 1, mode='constant', constant_values=0)
+        padded = np.pad(result, 1, mode="constant", constant_values=0)
         center = padded[1:-1, 1:-1]
         up = padded[:-2, 1:-1]
         down = padded[2:, 1:-1]
@@ -595,16 +596,17 @@ def _numpy_erode(mask: np.ndarray, iterations: int) -> np.ndarray:
     """
     try:
         from scipy.ndimage import binary_erosion
+
         struct = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
-        return binary_erosion(
-            mask, structure=struct, iterations=iterations
-        ).astype(np.uint8)
+        return binary_erosion(mask, structure=struct, iterations=iterations).astype(
+            np.uint8
+        )
     except ImportError:
         pass
 
     result = mask.copy()
     for _ in range(iterations):
-        padded = np.pad(result, 1, mode='constant', constant_values=0)
+        padded = np.pad(result, 1, mode="constant", constant_values=0)
         center = padded[1:-1, 1:-1]
         up = padded[:-2, 1:-1]
         down = padded[2:, 1:-1]

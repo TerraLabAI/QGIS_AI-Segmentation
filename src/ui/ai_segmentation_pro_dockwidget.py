@@ -1,32 +1,42 @@
+from qgis.core import QgsMapLayerProxyModel, QgsProject
+from qgis.gui import QgsMapLayerComboBox
+from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import (
+    QComboBox,
     QDockWidget,
-    QWidget,
-    QVBoxLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
-    QPushButton,
-    QFrame,
-    QSpinBox,
-    QToolButton,
-    QStyle,
-    QScrollArea,
-    QComboBox,
     QLineEdit,
     QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QStyle,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
-from qgis.PyQt.QtCore import Qt, pyqtSignal
-from qgis.core import QgsMapLayerProxyModel, QgsProject
 
-from qgis.gui import QgsMapLayerComboBox
-
-from ..core.activation_manager import is_plugin_activated, get_pro_api_key, set_pro_api_key  # noqa: E402
+from ..core.activation_manager import (  # noqa: E402
+    get_pro_api_key,
+    is_plugin_activated,
+    set_pro_api_key,
+)
 from ..core.i18n import tr  # noqa: E402
-
 
 _TAG_CATEGORIES = {
     "Urban / Artificial": [
-        "Roof", "Building", "Warehouse", "Solar panel",
-        "Car", "Truck", "Road", "Parking", "Railway", "Greenhouse",
+        "Roof",
+        "Building",
+        "Warehouse",
+        "Solar panel",
+        "Car",
+        "Truck",
+        "Road",
+        "Parking",
+        "Railway",
+        "Greenhouse",
     ],
     "Natural / Vegetation": ["Tree", "Bush", "Grass", "Forest", "Crop", "Field"],
     "Water & Land": ["River", "Pool", "Shadow"],
@@ -34,7 +44,6 @@ _TAG_CATEGORIES = {
 
 
 class AISegmentationProDockWidget(QDockWidget):
-
     start_pro_segmentation_requested = pyqtSignal(object)  # layer
     save_polygon_requested = pyqtSignal()
     export_layer_requested = pyqtSignal()
@@ -46,7 +55,9 @@ class AISegmentationProDockWidget(QDockWidget):
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation PRO by TerraLab"), parent)
 
-        self.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+        self.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        )
 
         self._setup_title_bar()
 
@@ -80,7 +91,7 @@ class AISegmentationProDockWidget(QDockWidget):
         title_layout.setSpacing(0)
 
         title_label = QLabel(
-            'AI Segmentation PRO by '
+            "AI Segmentation PRO by "
             '<a href="https://terra-lab.ai" style="color: #1976d2; text-decoration: none;">TerraLab</a>'
         )
         title_label.setOpenExternalLinks(True)
@@ -90,14 +101,18 @@ class AISegmentationProDockWidget(QDockWidget):
         icon_size = self.style().pixelMetric(QStyle.PixelMetric.PM_SmallIconSize)
 
         float_btn = QToolButton()
-        float_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarNormalButton))
+        float_btn.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarNormalButton)
+        )
         float_btn.setFixedSize(icon_size + 4, icon_size + 4)
         float_btn.setAutoRaise(True)
         float_btn.clicked.connect(lambda: self.setFloating(not self.isFloating()))
         title_layout.addWidget(float_btn)
 
         close_btn = QToolButton()
-        close_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton))
+        close_btn.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton)
+        )
         close_btn.setFixedSize(icon_size + 4, icon_size + 4)
         close_btn.setAutoRaise(True)
         close_btn.clicked.connect(self.close)
@@ -110,7 +125,9 @@ class AISegmentationProDockWidget(QDockWidget):
         self.layer_combo = QgsMapLayerComboBox()
         self.layer_combo.setFilters(QgsMapLayerProxyModel.Filter.RasterLayer)
         self.layer_combo.setAllowEmptyLayer(False)
-        self.layer_combo.setToolTip(tr("Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)"))
+        self.layer_combo.setToolTip(
+            tr("Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)")
+        )
         self.main_layout.addWidget(self.layer_combo)
 
         # No rasters warning
@@ -132,8 +149,11 @@ class AISegmentationProDockWidget(QDockWidget):
         no_rasters_layout.addWidget(warning_icon_label, 0, Qt.AlignmentFlag.AlignTop)
 
         self.no_rasters_label = QLabel(
-            tr("No raster layer found. Add a GeoTIFF, image file, "
-               "or online layer (WMS, XYZ) to your project."))
+            tr(
+                "No raster layer found. Add a GeoTIFF, image file, "
+                "or online layer (WMS, XYZ) to your project."
+            )
+        )
         self.no_rasters_label.setWordWrap(True)
         no_rasters_layout.addWidget(self.no_rasters_label, 1)
 
@@ -270,7 +290,8 @@ class AISegmentationProDockWidget(QDockWidget):
 
         disjoint_msg = "{}\n{}".format(
             tr("Disconnected parts detected in your polygon."),
-            tr("For best accuracy, segment one element at a time."))
+            tr("For best accuracy, segment one element at a time."),
+        )
         disjoint_text = QLabel(disjoint_msg)
         disjoint_text.setWordWrap(True)
         disjoint_text.setStyleSheet("font-size: 11px; color: palette(text);")
@@ -319,7 +340,8 @@ class AISegmentationProDockWidget(QDockWidget):
         self._has_mask = has_detections
 
         self.undo_button.setEnabled(
-            (has_detections or self._saved_polygon_count > 0) and self._segmentation_active
+            (has_detections or self._saved_polygon_count > 0)
+            and self._segmentation_active
         )
         self.save_mask_button.setEnabled(has_detections)
 
@@ -425,7 +447,9 @@ class AISegmentationProDockWidget(QDockWidget):
 
     def _update_ui_state(self):
         has_rasters = self.layer_combo.count() > 0
-        self.no_rasters_widget.setVisible(not has_rasters and not self._segmentation_active)
+        self.no_rasters_widget.setVisible(
+            not has_rasters and not self._segmentation_active
+        )
         self.layer_combo.setVisible(has_rasters)
 
         layer = self.layer_combo.currentLayer()
@@ -463,12 +487,16 @@ class AISegmentationProDockWidget(QDockWidget):
 
     def set_reference_pending(self, prompt: str):
         self.instructions_label.setText(
-            tr("Click on one {prompt} as reference, then click Detect").format(prompt=prompt)
+            tr("Click on one {prompt} as reference, then click Detect").format(
+                prompt=prompt
+            )
         )
 
     def set_reference_set(self, prompt: str):
         self.instructions_label.setText(
-            tr("Reference set. Click Detect to find all {prompt}.").format(prompt=prompt)
+            tr("Reference set. Click Detect to find all {prompt}.").format(
+                prompt=prompt
+            )
         )
 
     def set_batch_done(self, count: int):

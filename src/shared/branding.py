@@ -1,11 +1,16 @@
 # SHARED MODULE v1.0 — keep in sync between AI Canvas and AI Segmentation
 """Shared branding utilities for TerraLab QGIS plugins."""
-from qgis.PyQt.QtWidgets import QPushButton, QLabel
+
 from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtWidgets import QLabel, QPushButton
 
 from .constants import (
-    BRAND_GREEN, BRAND_GREEN_HOVER, BRAND_BLUE, BRAND_BLUE_HOVER,
-    BRAND_RED, BRAND_DISABLED,
+    BRAND_BLUE,
+    BRAND_BLUE_HOVER,
+    BRAND_DISABLED,
+    BRAND_GREEN,
+    BRAND_GREEN_HOVER,
+    BRAND_RED,
 )
 
 

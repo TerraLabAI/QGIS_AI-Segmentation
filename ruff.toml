@@ -1,0 +1,10 @@
+target-version = "py39"
+line-length = 88
+src = ["src", "tests"]
+
+[lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[lint.isort]
+known-first-party = ["src"]

@@ -1,21 +1,30 @@
 # SHARED MODULE v1.0 — keep in sync between AI Canvas and AI Segmentation
 """Shared activation dialog for TerraLab QGIS plugins."""
-from qgis.PyQt.QtCore import Qt, QUrl, QTimer
-from qgis.PyQt.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QWidget,
-)
-from qgis.PyQt.QtGui import QDesktopServices
 
-from .constants import PRODUCTS
+from qgis.PyQt.QtCore import Qt, QTimer, QUrl
+from qgis.PyQt.QtGui import QDesktopServices
+from qgis.PyQt.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QVBoxLayout,
+)
+
 from .activation_manager import (
-    detect_sibling_activation, auto_activate_from_sibling,
-    activate_plugin, get_newsletter_url, set_user_email,
+    activate_plugin,
+    auto_activate_from_sibling,
+    detect_sibling_activation,
+    get_newsletter_url,
 )
 from .branding import (
-    create_terralab_title_bar, create_primary_button,
-    create_secondary_button, style_error_label, style_success_label,
+    create_primary_button,
+    create_secondary_button,
+    create_terralab_title_bar,
+    style_error_label,
+    style_success_label,
 )
+from .constants import PRODUCTS
 
 
 class ActivationDialog(QDialog):

@@ -1,12 +1,17 @@
 from src.shared.activation_manager import (
-    is_activated, activate_plugin, get_user_email, set_user_email,
-    detect_sibling_activation, auto_activate_from_sibling,
+    activate_plugin,
+    auto_activate_from_sibling,
+    detect_sibling_activation,
     get_newsletter_url,
+    get_user_email,
+    is_activated,
+    set_user_email,
 )
 
 
 class FakeSettings:
     """In-memory QSettings mock."""
+
     def __init__(self):
         self._data = {}
 

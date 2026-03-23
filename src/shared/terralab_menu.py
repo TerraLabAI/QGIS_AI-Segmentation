@@ -1,10 +1,11 @@
 # SHARED MODULE v1.2 — keep in sync between AI Canvas and AI Segmentation
 """Cooperative TerraLab menu management for QGIS plugins."""
+
 import os
 
 from qgis.PyQt.QtCore import QUrl
-from qgis.PyQt.QtWidgets import QMenu
 from qgis.PyQt.QtGui import QDesktopServices, QIcon
+from qgis.PyQt.QtWidgets import QMenu
 
 from .constants import TERRALAB_URL
 
@@ -26,6 +27,7 @@ def _open_plugin_manager_updates():
     """Open the QGIS Plugin Manager on the Upgradeable tab."""
     try:
         from qgis.utils import iface
+
         iface.pluginManagerInterface().showPluginManager(3)
     except Exception:
         pass
@@ -57,9 +59,7 @@ def get_or_create_terralab_menu(main_window) -> QMenu:
     logo_path = _find_terralab_logo()
     website_icon = QIcon(logo_path) if logo_path else QIcon()
     more_action = menu.addAction(website_icon, "More from TerraLab...")
-    more_action.triggered.connect(
-        lambda: QDesktopServices.openUrl(QUrl(TERRALAB_URL))
-    )
+    more_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(TERRALAB_URL)))
 
     return menu
 

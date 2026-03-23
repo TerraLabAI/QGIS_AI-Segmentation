@@ -1,4 +1,4 @@
-from src.shared.constants import PRODUCTS, TERRALAB_URL, NEWSLETTER_URL
+from src.shared.constants import NEWSLETTER_URL, PRODUCTS, TERRALAB_URL
 
 
 class TestConstants:
