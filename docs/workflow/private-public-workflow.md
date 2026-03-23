@@ -3,13 +3,13 @@
 ## Repo Structure
 
 ```
-TerraLabAI/QGIS_AI-Segmentation-Pro   ← PRIVATE dev repo (this repo)
+TerraLabAI/QGIS_AI-Segmentation-Team   ← PRIVATE dev repo (this repo)
 TerraLabAI/QGIS_AI-Segmentation       ← PUBLIC open-source (release-only)
 ```
 
 Local remotes:
 ```
-origin  → TerraLabAI/QGIS_AI-Segmentation-Pro  (default push/pull)
+origin  → TerraLabAI/QGIS_AI-Segmentation-Team  (default push/pull)
 public  → TerraLabAI/QGIS_AI-Segmentation      (release target)
 ```
 
@@ -53,7 +53,7 @@ Even through squash, the final commit message and all file contents must be clea
 Both devs clone and work from the private repo:
 
 ```bash
-git clone https://github.com/TerraLabAI/QGIS_AI-Segmentation-Pro.git
+git clone https://github.com/TerraLabAI/QGIS_AI-Segmentation-Team.git
 ```
 
 - Default `git push` = private repo — safe to use anytime
@@ -71,7 +71,7 @@ Shared byte-identical with AI Canvas. Before committing changes to `src/shared/`
 ## Setting Up a New Clone
 
 ```bash
-git clone https://github.com/TerraLabAI/QGIS_AI-Segmentation-Pro.git
-cd QGIS_AI-Segmentation-Pro
+git clone https://github.com/TerraLabAI/QGIS_AI-Segmentation-Team.git
+cd QGIS_AI-Segmentation-Team
 git remote add public https://github.com/TerraLabAI/QGIS_AI-Segmentation.git
 ```
