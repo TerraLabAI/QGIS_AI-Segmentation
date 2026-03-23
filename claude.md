@@ -67,6 +67,40 @@
 - Plugin key in code must be `'AI_Segmentation'` (not the repo name `QGIS_AI-Segmentation`)
 - Buttons hidden when not in segmentation mode (not disabled-but-visible), use `_update_button_visibility()`
 
+## Azure Cloud Infrastructure
+
+- **Subscription**: Azure subscription 1
+- **Resource group**: `terralab-sam`
+- **Container Registry**: `terralabsamacr` (Basic SKU, admin-enabled)
+- **Container Apps Environment**: `sam-env-gpu` in `francecentral` (workload profiles enabled, GPU)
+  - GPU workload profile: `gpu-t4` (type `Consumption-GPU-NC8as-T4`, NVIDIA T4 16GB)
+  - Old environment `sam-env` in `westeurope` (Consumption-only, no GPU) to delete after migration
+- **SAM2 Container App**: `sam-api` (serves SAM2 cloud inference)
+  - URL: `https://sam-api.<env-subdomain>.westeurope.azurecontainerapps.io` (update after deploy)
+  - Image: `terralabsamacr.azurecr.io/sam-api:gpu-v1`
+  - Server code: `server/main.py` (FastAPI + SAM2)
+  - Docker: `server/Dockerfile` (CUDA 12.4 base)
+  - Auth: `X-Api-Key` header, key set via `API_KEY` env var
+  - Endpoints: `/health`, `/set_image`, `/predict`, `/reset`
+  - Session-based: `/set_image` returns `session_id`, used in subsequent calls
+  - Response format: base64-encoded numpy arrays (masks, scores, low_res_masks)
+- **SAM3 Container App**: `sam3-api` (serves SAM3 cloud inference)
+  - URL: `https://sam3-api.kindrock-9d62e9fa.francecentral.azurecontainerapps.io`
+  - Image: `terralabsamacr.azurecr.io/sam3-api:gpu-v2` (thin app layer)
+  - Base image: `terralabsamacr.azurecr.io/sam3-api-base:v1` (CUDA + deps + checkpoint, rebuild rarely)
+  - Server code: `server/sam3/main.py`
+  - Docker: `server/sam3/Dockerfile` (thin app), `server/sam3/Dockerfile.base` (heavy base)
+  - `HF_TOKEN` is a build-arg on the base image only (checkpoint downloaded at build time)
+  - Adds `text_prompt` field to `/predict` endpoint
+
+### Deployment Pattern
+- SAM3 uses two-stage Docker: `Dockerfile.base` (heavy, ~13min, deps+checkpoint) and `Dockerfile` (thin, ~10-30s, code only)
+- Docker images built via `az acr build`, pushed to `terralabsamacr`
+- Container Apps run on GPU workload profile (`gpu-t4`), scale 0-1 replicas
+- API keys stored as Azure secrets, passed as env vars
+- Client code in plugin reads cloud URL from `src/core/model_config.py`
+- Cold start from scale-to-zero: ~2-5 min (CUDA image pull + model load)
+
 ## Terminology
 
 - **Selection** = temporary AI-generated mask (before saving)

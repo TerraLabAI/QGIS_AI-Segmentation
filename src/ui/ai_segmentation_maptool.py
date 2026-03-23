@@ -109,36 +109,20 @@ class AISegmentationMapTool(QgsMapTool):
         point = self.toMapCoordinates(event.pos())
 
         if event.button() == Qt.MouseButton.LeftButton:
-            # Positive point - include this area
             self.add_marker(point, is_positive=True)
             self.positive_click.emit(point)
         elif event.button() == Qt.MouseButton.RightButton:
-            # Negative point - exclude this area
             self.add_marker(point, is_positive=False)
             self.negative_click.emit(point)
 
-    def canvasReleaseEvent(self, event):
-        pass
-
-    def canvasMoveEvent(self, event):
-        pass
-
     def wheelEvent(self, event):
-        # Let the canvas handle wheel events for zoom
-        # By not accepting the event, it propagates to the canvas
         event.ignore()
 
     def gestureEvent(self, event):
-        # Let the canvas handle pinch-to-zoom and other gestures
-        # This is essential for trackpad gestures on macOS
-        # Return False so the event propagates (QGIS 3.44+/Qt6 requires bool return)
         event.ignore()
         return False
 
     def keyPressEvent(self, event):
-        # Keyboard shortcuts are handled by the plugin's eventFilter on the
-        # main window (works regardless of focus).  This method only exists
-        # to prevent unhandled keys from propagating to QGIS defaults.
         event.ignore()
 
     def isActive(self) -> bool:

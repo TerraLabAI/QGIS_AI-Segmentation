@@ -1,0 +1,19 @@
+services:
+  sam3-api:
+    build:
+      context: .
+      args:
+        HF_TOKEN: ${HF_TOKEN}
+    ports:
+      - "8001:8000"
+    environment:
+      - API_KEY=${API_KEY}
+      - HF_TOKEN=${HF_TOKEN}
+      - SESSION_TTL=600
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

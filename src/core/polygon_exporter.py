@@ -117,8 +117,15 @@ def mask_to_polygons(
         img_shape = transform_info.get("img_shape")
 
         if bbox and img_shape:
-            minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
+            minx, miny, maxx, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
             height, width = img_shape
+
+            # Clip to valid region: SAM returns crop_size×crop_size but only
+            # (height × width) corresponds to real raster data (rest is padding)
+            if mask.shape[0] > height or mask.shape[1] > width:
+                mask = mask[:height, :width]
+                if mask.sum() == 0:
+                    return []
 
             transform = transform_from_bounds(minx, miny, maxx, maxy, width, height)
             crs = transform_info.get("crs", "EPSG:4326")
@@ -135,6 +142,12 @@ def mask_to_polygons(
                 height, width = original_size[0], original_size[1]
             else:
                 height = width = original_size
+
+            # Clip to valid region (same padding issue applies to SAM2 cloud path)
+            if mask.shape[0] > height or mask.shape[1] > width:
+                mask = mask[:height, :width]
+                if mask.sum() == 0:
+                    return []
 
             transform = transform_from_bounds(x_min, y_min, x_max, y_max, width, height)
             crs = transform_info.get("layer_crs", transform_info.get("crs", "EPSG:4326"))
@@ -304,7 +317,7 @@ def pixel_to_map_coords(
     img_shape = transform_info.get("img_shape")
 
     if bbox and img_shape:
-        minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
+        minx, miny, maxx, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
         height, width = img_shape
 
         map_x = minx + (pixel_x / width) * (maxx - minx)

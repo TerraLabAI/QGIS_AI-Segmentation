@@ -86,7 +86,6 @@ class AISegmentationDockWidget(QDockWidget):
         self._activation_popup_shown = False  # Track if popup was shown
         self._batch_mode = True  # Batch mode is now the only mode
         self._segmentation_layer_id = None  # Track which layer we're segmenting
-        # Note: _refine_expanded is initialized before _setup_ui() call
 
         # Smooth progress animation timer for long-running installs
         self._progress_timer = QTimer(self)
@@ -431,6 +430,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_shortcut.activated.connect(self._on_start_shortcut)
 
         layout.addWidget(self.start_container)
+        self.start_container.setVisible(True)
 
         # Collapsible Refine mask panel
         self._setup_refine_panel(layout)
@@ -481,37 +481,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.secondary_buttons_widget.setLayout(secondary_layout)
         self.secondary_buttons_widget.setVisible(False)
         layout.addWidget(self.secondary_buttons_widget)
-
-        # Info box for segmentation mode (subtle blue style)
-        self.batch_info_widget = QWidget()
-        self.batch_info_widget.setStyleSheet(
-            "QWidget { background-color: rgba(100, 149, 237, 0.15); "
-            "border: 1px solid rgba(100, 149, 237, 0.3); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; }"
-        )
-        batch_info_layout = QHBoxLayout(self.batch_info_widget)
-        batch_info_layout.setContentsMargins(8, 6, 8, 6)
-        batch_info_layout.setSpacing(8)
-
-        # Info icon
-        batch_info_icon = QLabel()
-        style = self.batch_info_widget.style()
-        batch_icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation)
-        batch_info_icon.setPixmap(batch_icon.pixmap(14, 14))
-        batch_info_icon.setFixedSize(14, 14)
-        batch_info_layout.addWidget(batch_info_icon, 0, Qt.AlignmentFlag.AlignTop)
-
-        # Info text
-        info_msg = "{}\n{}".format(
-            tr("The AI model works best on one element at a time."),
-            tr("Save your polygon before selecting the next element."))
-        batch_info_text = QLabel(info_msg)
-        batch_info_text.setWordWrap(True)
-        batch_info_text.setStyleSheet("font-size: 11px; color: palette(text);")
-        batch_info_layout.addWidget(batch_info_text, 1)
-
-        self.batch_info_widget.setVisible(False)
-        layout.addWidget(self.batch_info_widget)
 
         # Warning box for disjoint regions (yellow/orange style)
         self.disjoint_warning_widget = QWidget()
@@ -925,7 +894,7 @@ class AISegmentationDockWidget(QDockWidget):
         """Update the full UI based on current state."""
         setup_complete = self._dependencies_ok and self._checkpoint_ok
 
-        # Segmentation section: only show if fully set up + activated
+        # Segmentation section: show if fully set up + activated
         show_segmentation = setup_complete and self._plugin_activated
         self.seg_widget.setVisible(show_segmentation)
         self.seg_separator.setVisible(show_segmentation)
@@ -990,6 +959,7 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_layers_removed(self, layer_ids):
         """Handle layers removed from project."""
         self._update_ui_state()
+
 
     def _on_start_clicked(self):
         layer = self.layer_combo.currentLayer()
@@ -1212,8 +1182,6 @@ class AISegmentationDockWidget(QDockWidget):
             self.stop_button.setVisible(True)
             self.stop_button.setEnabled(True)
 
-            # Info box
-            self.batch_info_widget.setVisible(True)
         else:
             # Not segmenting - hide all segmentation buttons, show start controls
             self.start_container.setVisible(True)
@@ -1224,7 +1192,6 @@ class AISegmentationDockWidget(QDockWidget):
             self.undo_button.setVisible(False)
             self.stop_button.setVisible(False)
             self.secondary_buttons_widget.setVisible(False)
-            self.batch_info_widget.setVisible(False)
 
     def _update_refine_panel_visibility(self):
         """Update refine panel visibility based on mask state."""
@@ -1292,8 +1259,11 @@ class AISegmentationDockWidget(QDockWidget):
 
     def set_disjoint_warning(self, visible: bool):
         self.disjoint_warning_widget.setVisible(visible)
-        if self._segmentation_active:
-            self.batch_info_widget.setVisible(not visible)
+
+    def set_mask_available(self, available: bool):
+        """Signal that a mask is available (e.g. from text-only prediction)."""
+        self._has_mask = available
+        self._update_button_visibility()
 
     def reset_session(self):
         self._has_mask = False
@@ -1381,14 +1351,18 @@ class AISegmentationDockWidget(QDockWidget):
         has_layer = layer is not None
 
         has_rasters_available = self.layer_combo.count() > 0
-        self.no_rasters_widget.setVisible(not has_rasters_available and not self._segmentation_active)
+        self.no_rasters_widget.setVisible(
+            not has_rasters_available and not self._segmentation_active
+        )
         self.layer_combo.setVisible(has_rasters_available)
 
         deps_ok = self._dependencies_ok
         checkpoint_ok = self._checkpoint_ok
         activated = self._plugin_activated
         can_start = deps_ok and checkpoint_ok and has_layer and activated
-        self.start_button.setEnabled(can_start and not self._segmentation_active)
+        self.start_button.setEnabled(
+            can_start and not self._segmentation_active
+        )
 
     def show_activation_dialog(self):
         """Show the activation dialog (popup). Only shown once per session."""

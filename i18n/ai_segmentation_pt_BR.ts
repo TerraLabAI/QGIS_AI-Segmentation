@@ -265,14 +265,6 @@ export AI_SEGMENTATION_CACHE_DIR=/seu/caminho</translation>
         <translation>Salvar poligono atual na sua sessão</translation>
     </message>
     <message>
-        <source>The AI model works best on one element at a time.</source>
-        <translation>O modelo IA funciona melhor com um elemento de cada vez.</translation>
-    </message>
-    <message>
-        <source>Save your polygon before selecting the next element.</source>
-        <translation>Salve seu poligono antes de selecionar o proximo.</translation>
-    </message>
-    <message>
         <source>Export polygon to a layer</source>
         <translation>Exportar poligono para uma camada</translation>
     </message>
@@ -599,6 +591,14 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <translation>Erro de predição</translation>
     </message>
     <message>
+        <source>Detection Error</source>
+        <translation>Erro de detecção</translation>
+    </message>
+    <message>
+        <source>Click on the map first to set an image before using text prediction.</source>
+        <translation>Clique no mapa primeiro para definir uma imagem antes de usar a predicao por texto.</translation>
+    </message>
+    <message>
         <source>Segmentation failed</source>
         <translation>Falha na segmentação</translation>
     </message>
@@ -666,6 +666,168 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
     <message>
         <source>Retry</source>
         <translation>Tentar novamente</translation>
+    </message>
+
+    <!-- PRO (SAM 3) Section -->
+    <message>
+        <source>Standard</source>
+        <translation>Padrao</translation>
+    </message>
+    <message>
+        <source>Cloud-powered AI segmentation</source>
+        <translation>Segmentacao IA na nuvem</translation>
+    </message>
+    <message>
+        <source>AI Segmentation PRO by TerraLab</source>
+        <translation>AI Segmentation PRO by TerraLab</translation>
+    </message>
+    <message>
+        <source>Select object type:</source>
+        <translation>Selecionar tipo de objeto:</translation>
+    </message>
+    <message>
+        <source>Select a category...</source>
+        <translation>Selecionar uma categoria...</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>Outro</translation>
+    </message>
+    <message>
+        <source>Describe the object...</source>
+        <translation>Descrever o objeto...</translation>
+    </message>
+    <message>
+        <source>Select an object...</source>
+        <translation>Selecionar um objeto...</translation>
+    </message>
+    <message>
+        <source>Detecting objects (tile {current}/{total})...</source>
+        <translation>Detectando objetos (azulejo {current}/{total})...</translation>
+    </message>
+    <message>
+        <source>Detection resolution is coarse ({gsd:.1f} m/px). Zoom in for better tree detection.</source>
+        <translation>A resolucao de deteccao e baixa ({gsd:.1f} m/px). Aproxime o zoom para melhor deteccao de arvores.</translation>
+    </message>
+    <message>
+        <source>Min. confidence</source>
+        <translation>Confianca min.</translation>
+    </message>
+    <message>
+        <source>Select an object type to detect</source>
+        <translation>Selecione um tipo de objeto para detectar</translation>
+    </message>
+    <message>
+        <source>Click on one {prompt} as reference, then click Detect</source>
+        <translation>Clique em um(a) {prompt} como referencia, depois clique em Detectar</translation>
+    </message>
+    <message>
+        <source>Reference set. Click Detect to find all {prompt}.</source>
+        <translation>Referencia definida. Clique em Detectar para encontrar todos os {prompt}.</translation>
+    </message>
+    <message>
+        <source>{count} object(s) detected. Save or detect again.</source>
+        <translation>{count} objeto(s) detectado(s). Salve ou detecte novamente.</translation>
+    </message>
+    <message>
+        <source>Reference already set. Click Detect to proceed.</source>
+        <translation>Referencia ja definida. Clique em Detectar para continuar.</translation>
+    </message>
+    <message>
+        <source>Start AI Segmentation PRO</source>
+        <translation>Iniciar segmentacao IA PRO</translation>
+    </message>
+    <message>
+        <source>Detect objects</source>
+        <translation>Detectar objetos</translation>
+    </message>
+    <message>
+        <source>Connecting to PRO server...</source>
+        <translation>Conectando ao servidor PRO...</translation>
+    </message>
+    <message>
+        <source>Connecting to PRO server... (attempt {}/{})</source>
+        <translation>Conectando ao servidor PRO... (tentativa {}/{})</translation>
+    </message>
+    <message>
+        <source>AI Segmentation PRO</source>
+        <translation>AI Segmentation PRO</translation>
+    </message>
+    <message>
+        <source>The AI Segmentation PRO server did not respond.
+
+This can happen during first startup (cold start) which takes 2-5 minutes.
+
+Please try again in a few minutes.</source>
+        <translation>O servidor AI Segmentation PRO não respondeu.
+
+Isso pode acontecer durante a primeira inicialização (cold start) que leva 2-5 minutos.
+
+Por favor, tente novamente em alguns minutos.</translation>
+    </message>
+    <message>
+        <source>Could not connect to the PRO server.
+
+Check your internet connection and verify that the server URL is correct in model_config.py.</source>
+        <translation>Não foi possível conectar ao servidor PRO.
+
+Verifique sua conexão com a internet e verifique se a URL do servidor está correta em model_config.py.</translation>
+    </message>
+    <message>
+        <source>PRO server connection error.
+
+Check the QGIS logs for more details.</source>
+        <translation>Erro de conexão com o servidor PRO.
+
+Consulte os logs do QGIS para mais detalhes.</translation>
+    </message>
+    <message>
+        <source>Text prompt cannot be empty</source>
+        <translation>O texto nao pode estar vazio</translation>
+    </message>
+    <message>
+        <source>Found {count} instance(s) for "{text}"</source>
+        <translation>{count} instancia(s) encontrada(s) para "{text}"</translation>
+    </message>
+    <message>
+        <source>No instances found for "{text}"</source>
+        <translation>Nenhuma instancia encontrada para "{text}"</translation>
+    </message>
+    <message>
+        <source>Invalid PRO API key.
+
+Go to the PRO settings to update your API key.</source>
+        <translation>Chave API PRO inválida.
+
+Vá para as configurações PRO para atualizar sua chave.</translation>
+    </message>
+    <message>
+        <source>PRO API Key Missing</source>
+        <translation>Chave API PRO não configurada</translation>
+    </message>
+    <message>
+        <source>PRO API key is not configured.
+
+Enter your API key in the PRO settings panel.</source>
+        <translation>A chave API PRO não está configurada.
+
+Insira sua chave API no painel de configurações PRO.</translation>
+    </message>
+    <message>
+        <source>API Key</source>
+        <translation>Chave API</translation>
+    </message>
+    <message>
+        <source>Enter your tl_pro_... key</source>
+        <translation>Insira sua chave tl_pro_...</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Salvar</translation>
+    </message>
+    <message>
+        <source>API key saved.</source>
+        <translation>Chave API salva.</translation>
     </message>
 </context>
 </TS>
