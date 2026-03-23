@@ -7,6 +7,7 @@ platforms or Python 3.9, we fall back to SAM1 (segment-anything / ViT-B).
 Exception: under Rosetta (x86_64 QGIS on Apple Silicon), the standalone
 Python is downloaded as ARM64 3.10+, so SAM2 is available.
 """
+
 import platform
 import subprocess
 import sys
@@ -19,7 +20,9 @@ def _is_rosetta() -> bool:
     try:
         result = subprocess.run(
             ["sysctl", "-n", "sysctl.proc_translated"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return result.stdout.strip() == "1"
     except Exception:
@@ -29,9 +32,7 @@ def _is_rosetta() -> bool:
 IS_ROSETTA = _is_rosetta()
 
 _IS_MACOS_X86 = (
-    sys.platform == "darwin"
-    and platform.machine() == "x86_64"
-    and not IS_ROSETTA
+    sys.platform == "darwin" and platform.machine() == "x86_64" and not IS_ROSETTA
 )
 
 # Under Rosetta, standalone Python will be ARM64 3.10+ -> SAM2
@@ -47,7 +48,9 @@ if USE_SAM2:
     )
     CHECKPOINT_FILENAME = "sam2.1_hiera_base_plus.pt"
     # SHA256 hash for checkpoint verification (not a secret)
-    CHECKPOINT_SHA256 = "a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5"  # noqa: S105, E501  # pragma: allowlist secret
+    CHECKPOINT_SHA256 = (
+        "a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5"  # noqa: S105, E501  # pragma: allowlist secret
+    )
     CHECKPOINT_SIZE_LABEL = "~323MB"
     MODEL_CFG = "configs/sam2.1/sam2.1_hiera_b+.yaml"
 else:
@@ -59,15 +62,18 @@ else:
         TORCH_MIN = ">=2.0.0"
         TORCHVISION_MIN = ">=0.15.0"
     CHECKPOINT_URL = (
-        "https://dl.fbaipublicfiles.com/segment_anything"
-        "/sam_vit_b_01ec64.pth"
+        "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth"
     )
     CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
     # SHA256 hash for checkpoint verification (not a secret)
-    CHECKPOINT_SHA256 = "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"  # noqa: S105, E501  # pragma: allowlist secret
+    CHECKPOINT_SHA256 = (
+        "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"  # noqa: S105, E501  # pragma: allowlist secret
+    )
     CHECKPOINT_SIZE_LABEL = "~375MB"
     MODEL_CFG = None  # SAM1 uses registry, no config file
 
 # SAM3 cloud-only
 SAM3_MODEL_NAME = "SAM 3"
-SAM3_CLOUD_URL = "https://sam3-api.kindrock-9d62e9fa.francecentral.azurecontainerapps.io"
+SAM3_CLOUD_URL = (
+    "https://sam3-api.kindrock-9d62e9fa.francecentral.azurecontainerapps.io"
+)

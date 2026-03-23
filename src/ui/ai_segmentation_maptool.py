@@ -1,9 +1,9 @@
 from typing import List
 
-from qgis.PyQt.QtCore import Qt, pyqtSignal
-from qgis.PyQt.QtGui import QCursor, QColor
-from qgis.gui import QgsMapTool, QgsMapCanvas, QgsVertexMarker
 from qgis.core import QgsPointXY
+from qgis.gui import QgsMapCanvas, QgsMapTool, QgsVertexMarker
+from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtGui import QColor, QCursor
 
 
 class AISegmentationMapTool(QgsMapTool):
@@ -26,8 +26,8 @@ class AISegmentationMapTool(QgsMapTool):
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
 
-    POSITIVE_COLOR = QColor(0, 200, 0)    # Green for include
-    NEGATIVE_COLOR = QColor(220, 0, 0)    # Red for exclude
+    POSITIVE_COLOR = QColor(0, 200, 0)  # Green for include
+    NEGATIVE_COLOR = QColor(220, 0, 0)  # Red for exclude
     MARKER_SIZE = 10
     MARKER_PEN_WIDTH = 2
 

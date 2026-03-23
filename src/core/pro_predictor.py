@@ -1,16 +1,16 @@
 """CloudSam3Predictor - same interface as CloudPredictor but calls SAM3 server."""
+
+import base64
 import io
 import json
-import zlib
-import base64
-import urllib.request
 import urllib.error
-from typing import Tuple, Optional
+import urllib.request
+import zlib
+from typing import Optional, Tuple
 
 import numpy as np
 from PIL import Image as PILImage
-
-from qgis.core import QgsMessageLog, Qgis
+from qgis.core import Qgis, QgsMessageLog
 
 from .model_config import SAM3_CLOUD_URL
 
@@ -23,11 +23,11 @@ _TIMEOUT_RESET = 10
 
 class SessionExpiredError(RuntimeError):
     """Raised when the server returns 404 for an expired session."""
+
     pass
 
 
 class CloudSam3Predictor:
-
     def __init__(self, api_key: str = "") -> None:
         self.is_image_set = False
         self.original_size = None
@@ -50,9 +50,7 @@ class CloudSam3Predictor:
             headers["Content-Type"] = "application/json"
         if self._api_key:
             headers["X-Api-Key"] = self._api_key
-        req = urllib.request.Request(
-            url, data=body, method=method, headers=headers
-        )
+        req = urllib.request.Request(url, data=body, method=method, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
@@ -68,13 +66,9 @@ class CloudSam3Predictor:
                 detail = json.loads(detail).get("detail", detail)
             except Exception:
                 pass
-            raise RuntimeError(
-                "SAM 3 server error {}: {}".format(e.code, detail)
-            )
+            raise RuntimeError("SAM 3 server error {}: {}".format(e.code, detail))
         except urllib.error.URLError as e:
-            raise RuntimeError(
-                "SAM 3 server unreachable: {}".format(e.reason)
-            )
+            raise RuntimeError("SAM 3 server unreachable: {}".format(e.reason))
 
     def warm_up(self) -> bool:
         try:
@@ -82,21 +76,24 @@ class CloudSam3Predictor:
             if resp.get("status") == "ok":
                 QgsMessageLog.logMessage(
                     "SAM 3 server connected (device: {})".format(
-                        resp.get("device", "unknown")),
-                    "AI Segmentation", level=Qgis.Info
+                        resp.get("device", "unknown")
+                    ),
+                    "AI Segmentation",
+                    level=Qgis.Info,
                 )
                 return True
-            raise RuntimeError(
-                "Unexpected health response: {}".format(resp)
-            )
+            raise RuntimeError("Unexpected health response: {}".format(resp))
         except Exception as e:
             QgsMessageLog.logMessage(
                 "SAM 3 warm_up failed: {}".format(e),
-                "AI Segmentation", level=Qgis.Critical
+                "AI Segmentation",
+                level=Qgis.Critical,
             )
             return False
 
-    def warm_up_with_retry(self, max_attempts=5, initial_delay=30, attempt_callback=None) -> Tuple[bool, str]:
+    def warm_up_with_retry(
+        self, max_attempts=5, initial_delay=30, attempt_callback=None
+    ) -> Tuple[bool, str]:
         """
         Try to contact SAM 3 server with retry and exponential backoff.
 
@@ -120,7 +117,8 @@ class CloudSam3Predictor:
             try:
                 QgsMessageLog.logMessage(
                     "SAM 3 warm_up: attempt {}/{}".format(attempt, max_attempts),
-                    "AI Segmentation", level=Qgis.Info
+                    "AI Segmentation",
+                    level=Qgis.Info,
                 )
 
                 resp = self._request("GET", "/health", timeout=_TIMEOUT_HEALTH)
@@ -129,12 +127,18 @@ class CloudSam3Predictor:
                     sessions = resp.get("active_sessions", 0)
                     QgsMessageLog.logMessage(
                         "SAM 3 warm_up: success (device={}, sessions={})".format(
-                            device, sessions),
-                        "AI Segmentation", level=Qgis.Info
+                            device, sessions
+                        ),
+                        "AI Segmentation",
+                        level=Qgis.Info,
                     )
                     # Validate API key against a protected endpoint
                     try:
-                        self._request("POST", "/reset?session_id=auth-check", timeout=_TIMEOUT_RESET)
+                        self._request(
+                            "POST",
+                            "/reset?session_id=auth-check",
+                            timeout=_TIMEOUT_RESET,
+                        )
                     except Exception as auth_err:
                         if "401" in str(auth_err):
                             return (False, "auth")
@@ -145,23 +149,24 @@ class CloudSam3Predictor:
             except Exception as e:
                 error_msg = str(e)
                 is_timeout = (
-                    "504" in error_msg or "503" in error_msg or "502" in error_msg
+                    "504" in error_msg
+                    or "503" in error_msg
+                    or "502" in error_msg
                     or "timeout" in error_msg.lower()
                 )
 
                 QgsMessageLog.logMessage(
-                    "SAM 3 warm_up: attempt {} failed - {}".format(
-                        attempt, error_msg),
+                    "SAM 3 warm_up: attempt {} failed - {}".format(attempt, error_msg),
                     "AI Segmentation",
-                    level=Qgis.Warning
+                    level=Qgis.Warning,
                 )
 
                 # Last attempt: give up
                 if attempt == max_attempts:
                     QgsMessageLog.logMessage(
-                        "SAM 3 warm_up: failed after {} attempts".format(
-                            max_attempts),
-                        "AI Segmentation", level=Qgis.Critical
+                        "SAM 3 warm_up: failed after {} attempts".format(max_attempts),
+                        "AI Segmentation",
+                        level=Qgis.Critical,
                     )
                     if is_timeout:
                         return (False, "timeout")
@@ -171,11 +176,14 @@ class CloudSam3Predictor:
                         return (False, "unknown")
 
                 # Wait before retry (exponential backoff for cold starts, capped at 60s)
-                delay = min(initial_delay * (2 ** (attempt - 1)), 60) if is_timeout else 2
+                delay = (
+                    min(initial_delay * (2 ** (attempt - 1)), 60) if is_timeout else 2
+                )
                 if is_timeout:
                     QgsMessageLog.logMessage(
                         "SAM 3 cold start detected, retrying in {}s...".format(delay),
-                        "AI Segmentation", level=Qgis.Info
+                        "AI Segmentation",
+                        level=Qgis.Info,
                     )
                 elapsed = 0
                 while elapsed < delay and not self._stop_requested:
@@ -197,17 +205,17 @@ class CloudSam3Predictor:
             "image_dtype": str(image_np.dtype),
             "image_format": "jpeg",
         }
-        resp = self._request(
-            "POST", "/set_image", data, timeout=_TIMEOUT_SET_IMAGE
-        )
+        resp = self._request("POST", "/set_image", data, timeout=_TIMEOUT_SET_IMAGE)
         self._session_id = resp["session_id"]
         self.original_size = tuple(resp["original_size"])
         self.input_size = None
         self.is_image_set = True
         QgsMessageLog.logMessage(
             "SAM 3 set_image: session={}, size={}".format(
-                self._session_id, self.original_size),
-            "AI Segmentation", level=Qgis.Info
+                self._session_id, self.original_size
+            ),
+            "AI Segmentation",
+            level=Qgis.Info,
         )
 
     def predict(
@@ -221,18 +229,12 @@ class CloudSam3Predictor:
         text_prompt: Optional[str] = None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if not self.is_image_set or self._session_id is None:
-            raise RuntimeError(
-                "Image has not been set. Call set_image first."
-            )
+            raise RuntimeError("Image has not been set. Call set_image first.")
 
         data = {
             "session_id": self._session_id,
-            "point_coords": (
-                point_coords.tolist() if point_coords is not None else []
-            ),
-            "point_labels": (
-                point_labels.tolist() if point_labels is not None else []
-            ),
+            "point_coords": (point_coords.tolist() if point_coords is not None else []),
+            "point_labels": (point_labels.tolist() if point_labels is not None else []),
             "multimask_output": multimask_output,
         }
         if box is not None:
@@ -240,47 +242,35 @@ class CloudSam3Predictor:
         if text_prompt:
             data["text_prompt"] = text_prompt
         if mask_input is not None:
-            data["mask_input"] = base64.b64encode(
-                mask_input.tobytes()
-            ).decode("utf-8")
+            data["mask_input"] = base64.b64encode(mask_input.tobytes()).decode("utf-8")
             data["mask_input_shape"] = list(mask_input.shape)
             data["mask_input_dtype"] = str(mask_input.dtype)
 
-        timeout = (
-            _TIMEOUT_PREDICT_TEXT if text_prompt
-            else _TIMEOUT_PREDICT
-        )
+        timeout = _TIMEOUT_PREDICT_TEXT if text_prompt else _TIMEOUT_PREDICT
         try:
-            resp = self._request(
-                "POST", "/predict", data, timeout=timeout
-            )
+            resp = self._request("POST", "/predict", data, timeout=timeout)
         except SessionExpiredError:
             if self._last_image_np is None:
-                raise RuntimeError(
-                    "Session expired and no image available for retry"
-                )
+                raise RuntimeError("Session expired and no image available for retry")
             QgsMessageLog.logMessage(
                 "SAM 3 session expired, re-uploading image...",
-                "AI Segmentation", level=Qgis.Info
+                "AI Segmentation",
+                level=Qgis.Info,
             )
             self.set_image(self._last_image_np)
             data["session_id"] = self._session_id
-            resp = self._request(
-                "POST", "/predict", data, timeout=timeout
-            )
+            resp = self._request("POST", "/predict", data, timeout=timeout)
 
         masks_bytes = base64.b64decode(resp["masks"].encode("utf-8"))
         if resp.get("masks_compressed"):
             masks_bytes = zlib.decompress(masks_bytes)
-        masks = np.frombuffer(
-            masks_bytes, dtype=resp["masks_dtype"]
-        ).reshape(resp["masks_shape"])
+        masks = np.frombuffer(masks_bytes, dtype=resp["masks_dtype"]).reshape(
+            resp["masks_shape"]
+        )
 
         scores = np.array(resp["scores"])
 
-        lr_bytes = base64.b64decode(
-            resp["low_res_masks"].encode("utf-8")
-        )
+        lr_bytes = base64.b64decode(resp["low_res_masks"].encode("utf-8"))
         if resp.get("low_res_masks_compressed"):
             lr_bytes = zlib.decompress(lr_bytes)
         low_res_masks = np.frombuffer(
@@ -295,12 +285,13 @@ class CloudSam3Predictor:
                 self._request(
                     "POST",
                     "/reset?session_id={}".format(self._session_id),
-                    timeout=_TIMEOUT_RESET
+                    timeout=_TIMEOUT_RESET,
                 )
             except Exception as e:
                 QgsMessageLog.logMessage(
                     "SAM 3 reset error: {}".format(e),
-                    "AI Segmentation", level=Qgis.Warning
+                    "AI Segmentation",
+                    level=Qgis.Warning,
                 )
         self._session_id = None
         self.is_image_set = False

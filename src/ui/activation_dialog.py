@@ -5,23 +5,23 @@ Shows during dependency installation and prompts user to get activation code.
 
 from pathlib import Path
 
+from qgis.PyQt.QtCore import Qt, QUrl, pyqtSignal
+from qgis.PyQt.QtGui import QDesktopServices, QFont, QPixmap
 from qgis.PyQt.QtWidgets import (
     QDialog,
-    QVBoxLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
-    QFrame,
+    QVBoxLayout,
 )
-from qgis.PyQt.QtCore import Qt, pyqtSignal, QUrl
-from qgis.PyQt.QtGui import QPixmap, QDesktopServices, QFont
 
-from ..core.activation_manager import (
+from ..core.i18n import tr
+from ..shared.activation_manager import (
     activate_plugin,
     get_newsletter_url,
 )
-from ..core.i18n import tr
 
 
 class ActivationDialog(QDialog):
@@ -48,10 +48,17 @@ class ActivationDialog(QDialog):
 
         # Banner section - using the TerraLab banner
         banner_label = QLabel()
-        banner_path = Path(__file__).parent.parent.parent / "resources" / "icons" / "terralab-banner.png"
+        banner_path = (
+            Path(__file__).parent.parent.parent
+            / "resources"
+            / "icons"
+            / "terralab-banner.png"
+        )
         if banner_path.exists():
             pixmap = QPixmap(str(banner_path))
-            scaled_pixmap = pixmap.scaledToWidth(380, Qt.TransformationMode.SmoothTransformation)
+            scaled_pixmap = pixmap.scaledToWidth(
+                380, Qt.TransformationMode.SmoothTransformation
+            )
             banner_label.setPixmap(scaled_pixmap)
         else:
             banner_label.setText("TerraLab")
@@ -74,7 +81,9 @@ class ActivationDialog(QDialog):
 
         # Description - clear about the email/code relationship
         desc_label = QLabel(
-            tr("This plugin is in beta. We'd love to keep you updated when we release new versions and features.")
+            tr(
+                "This plugin is in beta. We'd love to keep you updated when we release new versions and features."
+            )
         )
         desc_label.setWordWrap(True)
         desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -157,7 +166,7 @@ class ActivationDialog(QDialog):
 
     def _on_get_code_clicked(self):
         """Open the newsletter signup page in the default browser."""
-        QDesktopServices.openUrl(QUrl(get_newsletter_url()))
+        QDesktopServices.openUrl(QUrl(get_newsletter_url("ai-segmentation")))
         # Move focus to code input so Enter triggers Unlock, not this button
         self.code_input.setFocus()
 
@@ -169,12 +178,13 @@ class ActivationDialog(QDialog):
             self._show_message(tr("Enter your verification code"), is_error=True)
             return
 
-        success, message = activate_plugin(code)
+        success, message = activate_plugin("ai-segmentation", code)
 
         if success:
             self._show_message(tr("Unlocked!"), is_error=False)
             self.activated.emit()
             from qgis.PyQt.QtCore import QTimer
+
             QTimer.singleShot(600, self.accept)
         else:
             self._show_message(tr("Invalid code"), is_error=True)

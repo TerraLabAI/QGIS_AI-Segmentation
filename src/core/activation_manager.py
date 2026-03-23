@@ -4,6 +4,7 @@ Handles plugin activation state using QSettings.
 """
 
 from typing import Tuple
+
 from qgis.core import QgsSettings
 
 # The unlock codes

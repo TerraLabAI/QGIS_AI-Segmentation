@@ -8,21 +8,21 @@ Source: https://github.com/astral-sh/uv
 """
 
 import os
-import sys
 import platform
-import subprocess
-import tarfile
-import zipfile
-import tempfile
 import shutil
 import stat
-from typing import Tuple, Optional, Callable
-from .model_config import IS_ROSETTA
+import subprocess
+import sys
+import tarfile
+import tempfile
+import zipfile
+from typing import Callable, Optional, Tuple
 
-from qgis.core import QgsMessageLog, Qgis, QgsBlockingNetworkRequest
+from qgis.core import Qgis, QgsBlockingNetworkRequest, QgsMessageLog
 from qgis.PyQt.QtCore import QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
+from .model_config import IS_ROSETTA
 
 CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
 UV_DIR = os.path.join(CACHE_DIR, "uv")
@@ -65,9 +65,8 @@ def _get_uv_platform_info() -> Tuple[str, str]:
 def _get_uv_download_url() -> str:
     """Build the GitHub release URL for uv."""
     triple, ext = _get_uv_platform_info()
-    return (
-        "https://github.com/astral-sh/uv/releases/download/"
-        "{}/uv-{}{}".format(UV_VERSION, triple, ext)
+    return "https://github.com/astral-sh/uv/releases/download/{}/uv-{}{}".format(
+        UV_VERSION, triple, ext
     )
 
 
@@ -82,7 +81,7 @@ def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: str) -> None:
         if not member_path.startswith(dest_dir + os.sep) and member_path != dest_dir:
             raise ValueError("Path traversal in tar: {}".format(member.name))
         if use_filter:
-            tar.extract(member, dest_dir, filter='data')
+            tar.extract(member, dest_dir, filter="data")
         else:
             tar.extract(member, dest_dir)
 
@@ -107,7 +106,7 @@ def _find_file_in_dir(directory: str, filename: str) -> Optional[str]:
 
 def download_uv(
     progress_callback: Optional[Callable[[int, str], None]] = None,
-    cancel_check: Optional[Callable[[], bool]] = None
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> Tuple[bool, str]:
     """Download uv from GitHub releases using QgsBlockingNetworkRequest.
 
@@ -143,7 +142,9 @@ def download_uv(
 
     if progress_callback:
         size_mb = len(content_bytes) / (1024 * 1024)
-        progress_callback(50, "Downloaded uv ({:.1f} MB), extracting...".format(size_mb))
+        progress_callback(
+            50, "Downloaded uv ({:.1f} MB), extracting...".format(size_mb)
+        )
 
     _, ext = _get_uv_platform_info()
     suffix = ".zip" if ext == ".zip" else ".tar.gz"
@@ -151,7 +152,7 @@ def download_uv(
     os.close(fd)
 
     try:
-        with open(temp_path, 'wb') as f:
+        with open(temp_path, "wb") as f:
             f.write(content_bytes)
 
         # Remove existing UV_DIR if present
@@ -181,7 +182,14 @@ def download_uv(
 
             # Set executable on Unix
             if sys.platform != "win32":
-                os.chmod(tmp_dest, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+                os.chmod(
+                    tmp_dest,
+                    stat.S_IRWXU
+                    | stat.S_IRGRP
+                    | stat.S_IXGRP
+                    | stat.S_IROTH
+                    | stat.S_IXOTH,
+                )
 
             os.replace(tmp_dest, dest)
 
@@ -192,7 +200,10 @@ def download_uv(
             progress_callback(80, "Verifying uv...")
 
         if verify_uv():
-            _log("uv {} installed successfully".format(UV_VERSION), Qgis.MessageLevel.Success)
+            _log(
+                "uv {} installed successfully".format(UV_VERSION),
+                Qgis.MessageLevel.Success,
+            )
             if progress_callback:
                 progress_callback(100, "uv ready")
             return True, "uv {} installed".format(UV_VERSION)
@@ -229,7 +240,10 @@ def verify_uv() -> bool:
 
         result = subprocess.run(
             [uv_path, "--version"],
-            capture_output=True, text=True, encoding="utf-8", timeout=15,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=15,
             **kwargs,
         )
         if result.returncode == 0:
@@ -240,14 +254,16 @@ def verify_uv() -> bool:
                 _log(
                     "uv version mismatch: expected {}, got '{}'. "
                     "Re-downloading.".format(UV_VERSION, version_out),
-                    Qgis.MessageLevel.Warning
+                    Qgis.MessageLevel.Warning,
                 )
                 shutil.rmtree(UV_DIR, ignore_errors=True)
                 return False
             return True
         else:
-            _log("uv --version failed: {}".format(
-                result.stderr or result.stdout), Qgis.MessageLevel.Warning)
+            _log(
+                "uv --version failed: {}".format(result.stderr or result.stdout),
+                Qgis.MessageLevel.Warning,
+            )
     except Exception as e:
         _log("uv verification failed: {}".format(e), Qgis.MessageLevel.Warning)
 

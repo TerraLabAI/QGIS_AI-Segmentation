@@ -1,3 +1,8 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+norecursedirs = ["src", "libs", "models", ".git"]
+
 [tool.bandit]
 exclude_dirs = ["__pycache__", "libs", "models"]
 skips = ["B101"]
