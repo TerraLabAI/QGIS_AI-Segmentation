@@ -1,62 +1,47 @@
-# QGIS AI Segmentation Plugin
+# CLAUDE.md
 
-## Workflow Orchestration
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-### 1. Plan Mode Default
-- Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
-- If something goes sideways, STOP and re-plan immediately - don't keep pushing
-- Use plan mode for verification steps, not just building
-- Write detailed specs upfront to reduce ambiguity
+## Project
 
-### 2. Subagent Strategy
-- Use subagents liberally to keep main context window clean
-- Offload research, exploration, and parallel analysis to subagents
-- For complex problems, throw more compute at it via subagents
-- One task per subagent for focused execution
+QGIS AI Segmentation plugin by TerraLab — point-and-click AI segmentation on raster data directly in QGIS.
 
-### 3. Self-Improvement Loop
-- After ANY correction from the user: update memory/MEMORY.md with the pattern
-- Write rules for yourself that prevent the same mistake
-- Ruthlessly iterate on these lessons until mistake rate drops
-- Review lessons at session start for relevant project
+Part of the TerraLab ecosystem:
+- **AI Segmentation** (this repo — PRIVATE dev) — local SAM inference via inference backend
+- **AI Canvas** — image generation, same shared modules — `/Users/yvann/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Canvas`
+- **terra-lab.ai** — Next.js website, activation service, billing — `/Users/yvann/Documents/GitHub/terralab-website`
 
-### 4. Verification Before Done
-- Never mark a task complete without proving it works
-- Diff behavior between main and your changes when relevant
-- Ask yourself: "Would a staff engineer approve this?"
-- Run tests, check logs, demonstrate correctness
+## Dual-Repo Workflow
 
-### 5. Demand Elegance (Balanced)
-- For non-trivial changes: pause and ask "is there a more elegant way?"
-- If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
-- Skip this for simple, obvious fixes - don't over-engineer
-- Challenge your own work before presenting it
+This is the **PRIVATE development repo** (`TerraLabAI/QGIS_AI-Segmentation-Team`). All development happens here.
 
-### 6. Autonomous Bug Fixing
-- When given a bug report: just fix it. Don't ask for hand-holding
-- Point at logs, errors, failing tests - then resolve them
-- Zero context switching required from the user
-- Go fix failing CI tests without being told how
+```
+origin  → TerraLabAI/QGIS_AI-Segmentation-Team  (private, default push/pull)
+public  → TerraLabAI/QGIS_AI-Segmentation       (public open-source, release-only)
+```
 
-### Task Management
-1. Plan First: Write plan to tasks/todo.md with checkable items
-2. Verify Plan: Check in before starting implementation
-3. Track Progress: Mark items complete as you go
-4. Explain Changes: High-level summary at each step
-5. Document Results: Add review section to tasks/todo.md
-6. Capture Lessons: Update memory/MEMORY.md after corrections
+**Rules:**
+- All commits go to `origin` (private) by default
+- NEVER `git push public` directly — always use `/release-public` skill
+- See `docs/workflow/private-public-workflow.md` for full details
 
-### Core Principles
-- Simplicity First: Make every change as simple as possible. Impact minimal code.
-- No Laziness: Find root causes. No temporary fixes. Senior developer standards.
-- Minimal Impact: Changes should only touch what's necessary. Avoid introducing bugs.
-- After big changes: output a short summary with bullet points of what changed.
+**What NEVER goes in public commits** (code, comments, commit messages):
+- Backend/inference provider names, model names, weight URLs
+- Infrastructure names (Supabase, Stripe, Azure, specific cloud providers)
+- API endpoints, activation codes, internal URLs
+- Internal architecture decisions or cost/pricing details
 
-## Writing Style
+## Open-Source Confidentiality
 
-- Never use em dashes "--" in text output or GitHub issues
-- Minimal comments in code, concise and in English only
-- All UI text in English in source code, never in French
+Plugin is GPL open-source. The community should only see clean abstracted code.
+
+- **Never mention in code/commits/comments**: inference provider names, Supabase, Stripe, specific model checkpoint names, API endpoint paths
+- **Production-safe logging**: NEVER log API URLs, model names, API keys. Only log dimensions, extents, CRS, timing, file paths
+- **Debug artifacts** (`.debug/`, `.env.local`): gitignored — never commit
+
+## Shared Modules
+
+- **`src/shared/`** must stay byte-identical with AI Canvas's `src/shared/`. Use `/sync-shared` before committing changes
 
 ## Architecture (what you can't infer from code)
 
@@ -66,40 +51,6 @@
 - GPU/CUDA code exists but is NOT user-facing. Never mention GPU/CUDA in UI, issues, or descriptions.
 - Plugin key in code must be `'AI_Segmentation'` (not the repo name `QGIS_AI-Segmentation`)
 - Buttons hidden when not in segmentation mode (not disabled-but-visible), use `_update_button_visibility()`
-
-## Azure Cloud Infrastructure
-
-- **Subscription**: Azure subscription 1
-- **Resource group**: `terralab-sam`
-- **Container Registry**: `terralabsamacr` (Basic SKU, admin-enabled)
-- **Container Apps Environment**: `sam-env-gpu` in `francecentral` (workload profiles enabled, GPU)
-  - GPU workload profile: `gpu-t4` (type `Consumption-GPU-NC8as-T4`, NVIDIA T4 16GB)
-  - Old environment `sam-env` in `westeurope` (Consumption-only, no GPU) to delete after migration
-- **SAM2 Container App**: `sam-api` (serves SAM2 cloud inference)
-  - URL: `https://sam-api.<env-subdomain>.westeurope.azurecontainerapps.io` (update after deploy)
-  - Image: `terralabsamacr.azurecr.io/sam-api:gpu-v1`
-  - Server code: `server/main.py` (FastAPI + SAM2)
-  - Docker: `server/Dockerfile` (CUDA 12.4 base)
-  - Auth: `X-Api-Key` header, key set via `API_KEY` env var
-  - Endpoints: `/health`, `/set_image`, `/predict`, `/reset`
-  - Session-based: `/set_image` returns `session_id`, used in subsequent calls
-  - Response format: base64-encoded numpy arrays (masks, scores, low_res_masks)
-- **SAM3 Container App**: `sam3-api` (serves SAM3 cloud inference)
-  - URL: `https://sam3-api.kindrock-9d62e9fa.francecentral.azurecontainerapps.io`
-  - Image: `terralabsamacr.azurecr.io/sam3-api:gpu-v2` (thin app layer)
-  - Base image: `terralabsamacr.azurecr.io/sam3-api-base:v1` (CUDA + deps + checkpoint, rebuild rarely)
-  - Server code: `server/sam3/main.py`
-  - Docker: `server/sam3/Dockerfile` (thin app), `server/sam3/Dockerfile.base` (heavy base)
-  - `HF_TOKEN` is a build-arg on the base image only (checkpoint downloaded at build time)
-  - Adds `text_prompt` field to `/predict` endpoint
-
-### Deployment Pattern
-- SAM3 uses two-stage Docker: `Dockerfile.base` (heavy, ~13min, deps+checkpoint) and `Dockerfile` (thin, ~10-30s, code only)
-- Docker images built via `az acr build`, pushed to `terralabsamacr`
-- Container Apps run on GPU workload profile (`gpu-t4`), scale 0-1 replicas
-- API keys stored as Azure secrets, passed as env vars
-- Client code in plugin reads cloud URL from `src/core/model_config.py`
-- Cold start from scale-to-zero: ~2-5 min (CUDA image pull + model load)
 
 ## Terminology
 
@@ -119,7 +70,7 @@ Languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
 **When modifying ANY UI string, you MUST update code AND all 3 .ts files.**
 
 1. Wrap string with `tr()` from `..core.i18n`
-2. Add `<message>` block in ALL .ts files (`fr.ts`, `pt_BR.ts`, `es.ts`) inside `<context><name>AISegmentation</name>`
+2. Add `<message>` block in ALL .ts files inside `<context><name>AISegmentation</name>`
 3. Use `.format()` for dynamic strings: `tr("Export {count} polygon(s)").format(count=5)`
 4. Keep in English: "AI Segmentation", "SAM", "TerraLab", "Batch mode", "Export", "Checkpoint", package names
 
@@ -127,7 +78,6 @@ Languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
 
 - **NEVER** use `palette(mid)` for text -- invisible on dark backgrounds. Use `palette(text)`.
 - Secondary text: `palette(text)` with smaller `font-size` (11px).
-- Hardcoded colors OK only on elements with their own hardcoded background.
 
 ## Common Pitfalls
 
@@ -139,22 +89,32 @@ Languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
 - `blockSignals(True/False)` when setting widget values programmatically
 - Disconnect `QgsProject.instance()` signals in `unload()`
 
-## Code Quality (Flake8)
+## Code Quality (Ruff)
 
-- Max line length: 120 characters
+- Max line length: 88 characters (see `ruff.toml`)
 - No unused imports (F401), no unused variables (F841)
-- Import order: stdlib, third-party, local. Use `# noqa: E402` when import must follow runtime setup.
-- W503/W504 (line breaks with operators): use `.format()` or intermediate variables instead
-- `global` only needed when reassigning a module-level variable, not when modifying a dict/list
+- Import order: stdlib, third-party, local
 
-## Security (Bandit)
+## Security
 
 - XML parsing: use `defusedxml.defuse_stdlib()` before `ET.parse()` (B314)
 - Subprocess: list arguments, never `shell=True` with string interpolation
 - No hardcoded credentials or credential-like patterns in code/comments
 
+## Commands
+
+```bash
+pytest tests/                    # run all tests
+pytest -k 'test_name'            # run single test
+ruff check src/ tests/           # lint
+ruff format src/ tests/          # format
+# /verify                        # full check (lint + format + tests)
+# /release-public                # release to public repo
+# /sync-shared                   # sync src/shared/ with AI Canvas
+```
+
 ## Release Process
 
 - **Never create GitHub releases or tags without explicit user confirmation**
-- Release flow: create a GitHub Release with tag `vX.Y.Z`, then upload zip manually to plugins.qgis.org
-- `.gitattributes` ensures dev files (tests, CI, CLAUDE.md, etc.) are excluded from the release zip
+- Release flow: bump `metadata.txt`, run `/verify`, run `/release-public`
+- Public commits must be generic — no provider names, no internal details
