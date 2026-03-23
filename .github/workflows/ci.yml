@@ -1,0 +1,183 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install linters
+        run: pip install flake8 flake8-qgis
+
+      - name: Flake8
+        run: flake8 .
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install bandit
+        run: pip install bandit
+
+      - name: Bandit
+        run: bandit -r src/ __init__.py -c pyproject.toml -ll
+
+  syntax-check:
+    name: Syntax check (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Compile all .py files
+        run: python -m py_compile __init__.py && find src -name '*.py' -exec python -m py_compile {} +
+
+  i18n-check:
+    name: i18n consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check translation key parity
+        run: |
+          python3 << 'SCRIPT'
+          import xml.etree.ElementTree as ET
+          import sys
+
+          files = [
+              "i18n/ai_segmentation_fr.ts",
+              "i18n/ai_segmentation_es.ts",
+              "i18n/ai_segmentation_pt_BR.ts",
+          ]
+
+          keys_per_file = {}
+          for path in files:
+              tree = ET.parse(path)
+              root = tree.getroot()
+              keys = set()
+              for context in root.findall("context"):
+                  name = context.find("name")
+                  if name is not None and name.text == "AISegmentation":
+                      for msg in context.findall("message"):
+                          src = msg.find("source")
+                          if src is not None and src.text:
+                              keys.add(src.text)
+              keys_per_file[path] = keys
+
+          all_keys = set()
+          for k in keys_per_file.values():
+              all_keys |= k
+
+          errors = []
+          for path, keys in keys_per_file.items():
+              missing = all_keys - keys
+              for m in sorted(missing):
+                  errors.append(f"  {path}: missing key: {m}")
+
+          if errors:
+              print("i18n key mismatch detected:")
+              for e in errors:
+                  print(e)
+              sys.exit(1)
+          else:
+              print(f"All {len(all_keys)} translation keys present in all 3 files.")
+          SCRIPT
+
+  metadata-check:
+    name: Metadata validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate metadata.txt
+        run: |
+          python3 << 'SCRIPT'
+          import configparser
+          import re
+          import sys
+
+          config = configparser.ConfigParser()
+          config.read("metadata.txt")
+
+          errors = []
+
+          if not config.has_section("general"):
+              errors.append("Missing [general] section")
+              print("\n".join(errors))
+              sys.exit(1)
+
+          required = [
+              "name", "description", "qgisMinimumVersion", "version",
+              "author", "email", "about", "tracker", "repository",
+          ]
+          for field in required:
+              val = config.get("general", field, fallback="").strip()
+              if not val:
+                  errors.append(f"Missing or empty required field: {field}")
+
+          version = config.get("general", "version", fallback="")
+          if version and not re.match(r"^\d+\.\d+(\.\d+)?$", version):
+              errors.append(f"Invalid version format: '{version}' (expected X.Y or X.Y.Z)")
+
+          qgis_min = config.get("general", "qgisMinimumVersion", fallback="")
+          if qgis_min and not re.match(r"^\d+\.\d+$", qgis_min):
+              errors.append(f"Invalid qgisMinimumVersion: '{qgis_min}' (expected X.Y)")
+
+          if errors:
+              print("metadata.txt validation failed:")
+              for e in errors:
+                  print(f"  {e}")
+              sys.exit(1)
+          else:
+              print(f"metadata.txt OK (version={version}, qgisMin={qgis_min})")
+          SCRIPT
+
+  secrets-scan:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.22.1/gitleaks_8.22.1_linux_x64.tar.gz \
+            | tar xz -C /usr/local/bin gitleaks
+
+      - name: Gitleaks
+        run: gitleaks detect --source . -v
+

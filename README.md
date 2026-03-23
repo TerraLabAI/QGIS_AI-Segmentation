@@ -9,5 +9,9 @@
 
 <img src="https://github.com/user-attachments/assets/8528dc25-0dc7-4102-b242-5a223339db36" alt="Demo" width="700"/>
 
+---
 
+## Release
 
+1. Create a GitHub Release with a tag matching `vX.Y.Z` (e.g. `gh release create v0.8.0`)
+2. Upload the plugin zip manually to [plugins.qgis.org](https://plugins.qgis.org)

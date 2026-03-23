@@ -478,6 +478,8 @@ _NETWORK_ERROR_PATTERNS = [
     "network is unreachable",
     "temporary failure in name resolution",
     "name or service not known",
+    "network timeout",
+    "failed to download",
 ]
 
 
@@ -528,8 +530,10 @@ def _get_vcpp_help() -> str:
         "  2. Restart your computer after installing\n"
         "  3. If the error persists after reboot, click 'Reinstall Dependencies'\n"
         "     to force a clean reinstall of PyTorch\n"
-        "  4. Check that no other Python/Anaconda installation puts conflicting\n"
-        "     torch DLLs on your system PATH"
+        "  4. Check that no other Python (Anaconda, Miniconda, standalone Python)\n"
+        "     puts conflicting torch DLLs on your system PATH.\n"
+        "     Open a terminal and run: where python\n"
+        "     If you see multiple results, remove the extra ones from PATH"
     )
     return msg
 
@@ -599,8 +603,14 @@ def _is_windows_process_crash(returncode: int) -> bool:
 def _is_rename_or_record_error(output: str) -> bool:
     """Detect dist-info rename/RECORD errors during torch upgrade on Windows."""
     lower = output.lower()
-    return ("rename" in lower and "dist-info" in lower) or \
-           ("record" in lower and "dist-info" in lower)
+    if ("rename" in lower and "dist-info" in lower):
+        return True
+    if ("record" in lower and "dist-info" in lower):
+        return True
+    # uv may truncate "dist-info" from output
+    if ("failed to install" in lower and "failed to rename" in lower):
+        return True
+    return False
 
 
 def _get_crash_help(venv_dir: str) -> str:
@@ -916,12 +926,23 @@ def _get_system_python() -> str:
     On Windows, falls back to QGIS's bundled Python if standalone is unavailable
     (e.g. when anti-malware blocks the standalone download).
     """
-    from .python_manager import standalone_python_exists, get_standalone_python_path
+    from .python_manager import (
+        standalone_python_exists, get_standalone_python_path,
+        verify_standalone_python, remove_standalone_python
+    )
 
     if standalone_python_exists():
-        python_path = get_standalone_python_path()
-        _log(f"Using standalone Python: {python_path}", Qgis.MessageLevel.Info)
-        return python_path
+        ok, msg = verify_standalone_python()
+        if ok:
+            python_path = get_standalone_python_path()
+            _log(f"Using standalone Python: {python_path}", Qgis.MessageLevel.Info)
+            return python_path
+        else:
+            _log(
+                "Standalone Python broken ({}), removing...".format(msg),
+                Qgis.MessageLevel.Warning
+            )
+            remove_standalone_python()
 
     # On NixOS, use system Python (standalone binaries can't run)
     from .python_manager import is_nixos
@@ -2441,6 +2462,9 @@ def _get_clean_env_for_venv() -> dict:
     # Skip sam2 CUDA extension compilation (Python fallback works fine)
     env["SAM2_BUILD_CUDA"] = "0"
 
+    # Increase uv download timeout (default 30s too short for large wheels)
+    env["UV_HTTP_TIMEOUT"] = "300"
+
     # On Linux, QGIS desktop launchers often don't inherit LD_LIBRARY_PATH,
     # so CUDA libraries may not be discoverable. Probe standard locations.
     if sys.platform == "linux":
@@ -2593,6 +2617,56 @@ def verify_venv(
                             continue
                     except Exception:
                         pass
+
+                    # Nuclear option: delete torch dirs and reinstall fresh
+                    _log(
+                        "Force-reinstall did not fix DLL error for "
+                        "{}. Nuking and reinstalling...".format(
+                            package_name),
+                        Qgis.MessageLevel.Warning
+                    )
+                    try:
+                        site_pkgs = get_venv_site_packages(venv_dir)
+                        for pkg_dir_name in (
+                            "torch", "torchvision",
+                        ):
+                            for d in os.listdir(site_pkgs):
+                                if d == pkg_dir_name or d.startswith(
+                                    pkg_dir_name + "-"
+                                ):
+                                    target = os.path.join(site_pkgs, d)
+                                    if os.path.isdir(target):
+                                        shutil.rmtree(
+                                            target, ignore_errors=True
+                                        )
+                        # Reinstall both packages
+                        torch_spec = "torch{}".format(TORCH_MIN)
+                        tv_spec = "torchvision{}".format(
+                            TORCHVISION_MIN)
+                        nuke_cmd = _build_install_cmd(
+                            python_path,
+                            ["install", "--prefer-binary",
+                             torch_spec, tv_spec])
+                        subprocess.run(
+                            nuke_cmd,
+                            capture_output=True, text=True,
+                            encoding="utf-8", timeout=600,
+                            env=env, **subprocess_kwargs
+                        )
+                        result3 = subprocess.run(
+                            cmd, capture_output=True, text=True,
+                            encoding="utf-8", timeout=pkg_timeout,
+                            env=env, **subprocess_kwargs
+                        )
+                        if result3.returncode == 0:
+                            _log(
+                                "Package {} fixed after nuke "
+                                "reinstall".format(package_name),
+                                Qgis.MessageLevel.Success)
+                            continue
+                    except Exception:
+                        pass
+
                     _log(_get_vcpp_help(), Qgis.MessageLevel.Warning)
                     return False, (
                         "Package {} failed: {}".format(
