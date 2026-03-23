@@ -26,7 +26,7 @@ from qgis.PyQt.QtNetwork import QNetworkRequest
 
 CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
 UV_DIR = os.path.join(CACHE_DIR, "uv")
-UV_VERSION = "0.6.6"
+UV_VERSION = "0.10.10"
 
 
 def _log(message: str, level=Qgis.MessageLevel.Info):
@@ -235,6 +235,15 @@ def verify_uv() -> bool:
         if result.returncode == 0:
             version_out = result.stdout.strip()
             _log("uv verified: {}".format(version_out))
+            # Check version matches expected UV_VERSION
+            if UV_VERSION not in version_out:
+                _log(
+                    "uv version mismatch: expected {}, got '{}'. "
+                    "Re-downloading.".format(UV_VERSION, version_out),
+                    Qgis.MessageLevel.Warning
+                )
+                shutil.rmtree(UV_DIR, ignore_errors=True)
+                return False
             return True
         else:
             _log("uv --version failed: {}".format(

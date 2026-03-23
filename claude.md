@@ -118,3 +118,9 @@ Languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
 - XML parsing: use `defusedxml.defuse_stdlib()` before `ET.parse()` (B314)
 - Subprocess: list arguments, never `shell=True` with string interpolation
 - No hardcoded credentials or credential-like patterns in code/comments
+
+## Release Process
+
+- **Never create GitHub releases or tags without explicit user confirmation**
+- Release flow: create a GitHub Release with tag `vX.Y.Z`, then upload zip manually to plugins.qgis.org
+- `.gitattributes` ensures dev files (tests, CI, CLAUDE.md, etc.) are excluded from the release zip
