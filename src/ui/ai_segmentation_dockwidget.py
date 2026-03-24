@@ -1,7 +1,7 @@
 import os
 import sys
 
-from qgis.core import QgsMapLayerProxyModel, QgsProject
+from qgis.core import QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
 from qgis.PyQt.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
@@ -28,14 +28,14 @@ from qgis.PyQt.QtWidgets import (
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
 
-from ..core.i18n import tr  # noqa: E402
-from ..core.model_config import _IS_MACOS_X86, USE_SAM2  # noqa: E402
-from ..core.venv_manager import CACHE_DIR  # noqa: E402
 from ..core.activation_manager import (  # noqa: E402
     activate_plugin,
     get_newsletter_url,
     is_plugin_activated,
 )
+from ..core.i18n import tr  # noqa: E402
+from ..core.model_config import _IS_MACOS_X86, USE_SAM2  # noqa: E402
+from ..core.venv_manager import CACHE_DIR  # noqa: E402
 
 
 class AISegmentationDockWidget(QDockWidget):
@@ -107,10 +107,6 @@ class AISegmentationDockWidget(QDockWidget):
         self._refine_debounce_timer = QTimer(self)
         self._refine_debounce_timer.setSingleShot(True)
         self._refine_debounce_timer.timeout.connect(self._emit_refine_changed)
-
-        # Connect to project layer signals for dynamic updates
-        QgsProject.instance().layersAdded.connect(self._on_layers_added)
-        QgsProject.instance().layersRemoved.connect(self._on_layers_removed)
 
         # Update UI state
         self._update_full_ui()
@@ -1489,36 +1485,6 @@ class AISegmentationDockWidget(QDockWidget):
         """Handle activation from dialog."""
         self._plugin_activated = True
         self._update_full_ui()
-
-    def cleanup_signals(self):
-        """Disconnect project signals and clean up shortcuts/timers on plugin reload."""
-        try:
-            QgsProject.instance().layersAdded.disconnect(self._on_layers_added)
-        except (TypeError, RuntimeError):
-            pass
-        try:
-            QgsProject.instance().layersRemoved.disconnect(self._on_layers_removed)
-        except (TypeError, RuntimeError):
-            pass
-        # Clean up QShortcut to prevent stale callbacks
-        try:
-            self.start_shortcut.activated.disconnect()
-            self.start_shortcut.deleteLater()
-        except (TypeError, RuntimeError, AttributeError):
-            pass
-        # Stop timers first, then disconnect to avoid race conditions
-        try:
-            self._progress_timer.blockSignals(True)
-            self._progress_timer.stop()
-            self._progress_timer.timeout.disconnect()
-        except (TypeError, RuntimeError, AttributeError):
-            pass
-        try:
-            self._refine_debounce_timer.blockSignals(True)
-            self._refine_debounce_timer.stop()
-            self._refine_debounce_timer.timeout.disconnect()
-        except (TypeError, RuntimeError, AttributeError):
-            pass
 
     def is_activated(self) -> bool:
         """Check if the plugin is activated."""

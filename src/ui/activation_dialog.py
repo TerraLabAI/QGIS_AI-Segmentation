@@ -17,11 +17,11 @@ from qgis.PyQt.QtWidgets import (
     QVBoxLayout,
 )
 
-from ..core.i18n import tr
 from ..core.activation_manager import (
     activate_plugin,
     get_newsletter_url,
 )
+from ..core.i18n import tr
 
 
 class ActivationDialog(QDialog):
