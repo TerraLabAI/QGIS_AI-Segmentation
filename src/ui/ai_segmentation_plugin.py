@@ -347,7 +347,7 @@ class AISegmentationPlugin:
         self.pro_dock_widget.stop_segmentation_requested.connect(
             self._on_stop_segmentation
         )
-        self.pro_dock_widget.pro_detect_requested.connect(self._run_pro_text_detection)
+        self.pro_dock_widget.pro_detect_requested.connect(self._run_fal_detection)
         self.pro_dock_widget.layer_combo.layerChanged.connect(
             self._on_pro_layer_combo_changed
         )
@@ -2916,158 +2916,118 @@ class AISegmentationPlugin:
 
         return batch_count
 
-    def _run_pro_text_detection(self):
-        """Detect all instances of the text prompt across the visible extent."""
+    def _run_fal_detection(self):
+        """Detect objects matching the text prompt on the current canvas view."""
+        from ..core.pro_predictor import decode_rle_to_mask
+
         if not self._active_dock or not self.predictor:
             return
         text_prompt = self._active_dock.get_pro_text_prompt()
         if not text_prompt:
             return
-        self._pro_reference_set = False
 
         raster_layer = self._current_layer
         if raster_layer is None:
             return
 
         canvas = self.iface.mapCanvas()
+        canvas_extent = canvas.extent()
+        canvas_center = canvas_extent.center()
+
+        # Convert canvas center to raster CRS if needed
         canvas_crs = canvas.mapSettings().destinationCrs()
         layer_crs = raster_layer.crs()
-
-        canvas_extent = canvas.extent()
         if canvas_crs != layer_crs:
-            transform = QgsCoordinateTransform(
+            xform = QgsCoordinateTransform(
                 canvas_crs, layer_crs, QgsProject.instance()
             )
-            canvas_extent = transform.transformBoundingBox(canvas_extent)
+            raster_center = xform.transform(canvas_center)
+        else:
+            raster_center = canvas_center
 
-        layer_extent = raster_layer.extent()
-        if not canvas_extent.intersects(layer_extent):
+        # Extract and store the image (calls predictor.set_image internally)
+        if not self._extract_and_encode_crop(raster_center):
             return
-        canvas_extent = canvas_extent.intersect(layer_extent)
 
-        xmin = canvas_extent.xMinimum()
-        xmax = canvas_extent.xMaximum()
-        ymin = canvas_extent.yMinimum()
-        ymax = canvas_extent.yMaximum()
+        if self._current_crop_info is None:
+            return
 
-        # Adaptive tiling
-        TARGET_GSD = 0.35
-        tile_geo = TARGET_GSD * 1024
-        canvas_w = xmax - xmin
-        canvas_h = ymax - ymin
-        n_cols = max(2, min(6, math.ceil(canvas_w / tile_geo)))
-        n_rows = max(2, min(6, math.ceil(canvas_h / tile_geo)))
+        crop_bounds = self._current_crop_info["bounds"]
+        img_shape = self._current_crop_info["img_shape"]
+        img_height, img_width = img_shape
+        minx, miny, maxx, maxy = crop_bounds
 
-        if canvas_w / n_cols / 1024 > 0.7:
-            self.iface.messageBar().pushMessage(
-                tr("AI Segmentation"),
-                tr(
-                    "Detection resolution is coarse ({gsd:.1f} m/px). "
-                    "Zoom in for better detection."
-                ).format(gsd=canvas_w / n_cols / 1024),
-                level=Qgis.MessageLevel.Warning,
-                duration=5,
-            )
+        crs_value = None
+        try:
+            if self._current_layer and self._current_layer.crs().isValid():
+                crs_value = self._current_layer.crs().authid()
+        except RuntimeError:
+            pass
 
-        dx = canvas_w / n_cols
-        dy = canvas_h / n_rows
-        overlap = 0.20
-
-        tile_centers = [
-            (xmin + dx * (col + 0.5), ymin + dy * (row + 0.5))
-            for row in range(n_rows)
-            for col in range(n_cols)
-        ]
-        total_tiles = len(tile_centers)
-        half_w = dx * (1.0 + overlap) / 2.0
-        half_h = dy * (1.0 + overlap) / 2.0
+        transform_info = {
+            "bbox": (minx, miny, maxx, maxy),
+            "img_shape": (img_height, img_width),
+            "crs": crs_value,
+        }
 
         score_threshold = (
-            self._active_dock.get_score_threshold() if self._active_dock else 0.0
+            self._active_dock.get_score_threshold()
+            if self._active_dock
+            else 0.0
         )
 
-        all_detections = []
-        first_error = None
+        self.iface.messageBar().pushMessage(
+            tr("AI Segmentation"),
+            tr("Detecting '{prompt}'...").format(prompt=text_prompt),
+            level=Qgis.MessageLevel.Info,
+            duration=0,
+        )
+        QApplication.processEvents()
 
-        for i, (cx, cy) in enumerate(tile_centers):
-            msg = tr("Detecting objects (tile {current}/{total})...").format(
-                current=i + 1, total=total_tiles
-            )
-            self.iface.messageBar().pushMessage(
-                tr("AI Segmentation"),
-                msg,
-                level=Qgis.MessageLevel.Info,
-                duration=0,
-            )
-
-            tile_geo_size = max(2 * half_w, 2 * half_h) * 1.4
-            if self._is_online_layer:
-                mupp_or_scale = tile_geo_size / 1024
-            else:
-                native_px = self._get_native_pixel_size()
-                mupp_or_scale = (
-                    max(1.0, (tile_geo_size / 1024) / native_px)
-                    if native_px > 0
-                    else 1.0
-                )
-            center_pt = QgsPointXY(cx, cy)
-
-            if not self._extract_and_encode_crop(
-                center_pt, mupp_override=mupp_or_scale
-            ):
-                continue
-
-            if self._current_crop_info is None:
-                continue
-
-            crop_bounds = self._current_crop_info["bounds"]
-            img_shape = self._current_crop_info["img_shape"]
-            img_height, img_width = img_shape
-            minx_tile, miny_tile, maxx_tile, maxy_tile = crop_bounds
-
-            crs_value = None
-            try:
-                if self._current_layer and self._current_layer.crs().isValid():
-                    crs_value = self._current_layer.crs().authid()
-            except RuntimeError:
-                pass
-
-            transform_info = {
-                "bbox": (minx_tile, miny_tile, maxx_tile, maxy_tile),
-                "img_shape": (img_height, img_width),
-                "crs": crs_value,
-            }
-
-            try:
-                masks, scores, _ = self.predictor.predict(
-                    text_prompt=text_prompt,
-                    multimask_output=True,
-                )
-                for j in range(masks.shape[0]):
-                    if float(scores[j]) >= score_threshold:
-                        all_detections.append(
-                            (masks[j], float(scores[j]), transform_info)
-                        )
-            except Exception as e:
-                if first_error is None:
-                    first_error = e
-                QgsMessageLog.logMessage(
-                    "Tile {}/{} detection failed: {}".format(i + 1, total_tiles, e),
-                    "AI Segmentation",
-                    level=Qgis.MessageLevel.Warning,
-                )
-
-        self.iface.messageBar().clearWidgets()
-
-        if not all_detections and first_error:
+        try:
+            result = self.predictor.predict_text(text_prompt)
+        except RuntimeError as e:
+            self.iface.messageBar().clearWidgets()
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Detection Error"),
-                str(first_error),
+                str(e),
             )
             return
 
+        self.iface.messageBar().clearWidgets()
+
+        # Normalize rle to list
+        rle_list = result.get("rle", [])
+        if isinstance(rle_list, dict):
+            rle_list = [rle_list]
+        scores_list = result.get("scores") or []
+
+        all_detections = []
+        for i, rle in enumerate(rle_list):
+            score = float(scores_list[i]) if i < len(scores_list) else 1.0
+            if score < score_threshold:
+                continue
+            try:
+                mask = decode_rle_to_mask(rle)
+            except Exception as e:
+                QgsMessageLog.logMessage(
+                    "RLE decode error for mask {}: {}".format(i, e),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Warning,
+                )
+                continue
+            all_detections.append((mask, score, transform_info))
+
         if not all_detections:
+            self.iface.messageBar().pushMessage(
+                tr("AI Segmentation"),
+                tr("No objects found for '{prompt}'.").format(
+                    prompt=text_prompt
+                ),
+                level=Qgis.MessageLevel.Info,
+                duration=5,
+            )
             return
 
         from ..core.polygon_exporter import mask_to_polygons
@@ -3095,13 +3055,13 @@ class AISegmentationPlugin:
             geom = QgsGeometry.unaryUnion(polys)
             if not geom or geom.isEmpty():
                 continue
-
             if any(_iou(geom, ag) > IOU_THRESHOLD for ag in accepted_geoms):
                 continue
-
             accepted_geoms.append(geom)
 
-            rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
+            rb = QgsRubberBand(
+                self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry
+            )
             rb.setColor(QColor(0, 200, 100, 120))
             rb.setFillColor(QColor(0, 200, 100, 80))
             rb.setWidth(2)
@@ -3126,16 +3086,17 @@ class AISegmentationPlugin:
         if batch_count > 0:
             self._pro_detection_batches.append(batch_count)
             if self._active_dock:
-                self._active_dock.set_mask_available(True)
                 pos = len(self._pro_detection_batches)
                 self._active_dock.set_point_count(pos, 0)
                 self._active_dock.set_batch_done(batch_count)
-            QgsMessageLog.logMessage(
-                "PRO text detection: {} object(s) found across {} tiles".format(
-                    batch_count, total_tiles
+                self._active_dock.set_mask_available(True)
+            self.iface.messageBar().pushMessage(
+                tr("AI Segmentation"),
+                tr("{n} object(s) detected. Review and save.").format(
+                    n=batch_count
                 ),
-                "AI Segmentation",
-                level=Qgis.MessageLevel.Info,
+                level=Qgis.MessageLevel.Success,
+                duration=5,
             )
 
     def _on_pro_layer_combo_changed(self, layer):

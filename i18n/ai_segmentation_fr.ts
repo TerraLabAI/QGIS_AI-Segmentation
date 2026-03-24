@@ -829,5 +829,31 @@ Entrez votre clé API dans le panneau des paramètres PRO.</translation>
         <source>API key saved.</source>
         <translation>Clé API enregistrée.</translation>
     </message>
+    <message>
+        <source>No API key configured.
+
+Add FAL_KEY=your_key to the .env file
+at the plugin root directory.</source>
+        <translation>Clé API non configurée.
+
+Ajoutez FAL_KEY=votre_clé dans le fichier .env
+à la racine du plugin.</translation>
+    </message>
+    <message>
+        <source>Detecting &apos;{prompt}&apos;...</source>
+        <translation>Détection de &apos;{prompt}&apos;...</translation>
+    </message>
+    <message>
+        <source>No objects found for &apos;{prompt}&apos;.</source>
+        <translation>Aucun objet trouvé pour &apos;{prompt}&apos;.</translation>
+    </message>
+    <message>
+        <source>{n} object(s) detected. Review and save.</source>
+        <translation>{n} objet(s) détecté(s). Vérifiez et sauvegardez.</translation>
+    </message>
+    <message>
+        <source>Detection Error</source>
+        <translation>Erreur de détection</translation>
+    </message>
 </context>
 </TS>
