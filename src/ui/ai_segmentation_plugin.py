@@ -22,12 +22,9 @@ from qgis.core import (
 )
 from qgis.gui import QgisInterface, QgsRubberBand
 from qgis.PyQt.QtCore import (
-    QObject,
     QSettings,
     Qt,
-    QThread,
     QVariant,
-    pyqtSignal,
 )
 from qgis.PyQt.QtGui import QColor, QIcon
 from qgis.PyQt.QtWidgets import (
@@ -83,31 +80,6 @@ def _get_change_path_instructions():
         ),
         steps,
     )
-
-
-class _CloudWarmupWorker(QObject):
-    finished = pyqtSignal()
-    attempt_started = pyqtSignal(int, int)  # (attempt_num, max_attempts)
-
-    def __init__(self, cloud, use_retry=False):
-        super().__init__()
-        self.cloud = cloud
-        self.result = False
-        self.error_type = "none"
-        self.use_retry = use_retry
-
-    def run(self):
-        def on_attempt(n, m):
-            self.attempt_started.emit(n, m)
-
-        if self.use_retry and hasattr(self.cloud, "warm_up_with_retry"):
-            self.result, self.error_type = self.cloud.warm_up_with_retry(
-                attempt_callback=on_attempt
-            )
-        else:
-            self.result = self.cloud.warm_up()
-            self.error_type = "unknown" if not self.result else "none"
-        self.finished.emit()
 
 
 class AISegmentationPlugin:
@@ -186,8 +158,6 @@ class AISegmentationPlugin:
         self._pro_pending_detections = []  # list of {mask, score, transform_info, rb}
         self._pro_detection_batches = []  # list of int (size of each batch)
         self._pro_reference_set: bool = False
-        self._warmup_thread = None
-        self._warmup_worker = None
 
     @property
     def _active_dock(self):
@@ -453,16 +423,7 @@ class AISegmentationPlugin:
                 app.removeEventFilter(self._shortcut_filter)
             self._shortcut_filter = None
 
-        # 2. Cancel warmup thread if running
-        if self._warmup_thread and self._warmup_thread.isRunning():
-            if self._warmup_worker:
-                self._warmup_worker.cloud.stop()
-            self._warmup_thread.quit()
-            self._warmup_thread.wait(3000)
-        self._warmup_thread = None
-        self._warmup_worker = None
-
-        # 3. Cancel and terminate workers
+        # 2. Cancel and terminate workers
         for worker in [
             self.deps_install_worker,
             self.download_worker,
@@ -2661,117 +2622,57 @@ class AISegmentationPlugin:
     # ── PRO mode methods ─────────────────────────────────────────────────
 
     def _on_start_pro_segmentation(self, layer: QgsRasterLayer):
-        """Start PRO cloud segmentation."""
-        from ..core.activation_manager import get_pro_api_key
-        from ..core.pro_predictor import CloudSam3Predictor
+        """Start PRO (SAM 3) segmentation via serverless inference."""
+        import pathlib
+
+        from ..core.pro_predictor import FalPredictor
         from ..core.venv_manager import ensure_venv_packages_available
 
         ensure_venv_packages_available()
 
-        if self._warmup_thread is not None and self._warmup_thread.isRunning():
-            return
+        # Read FAL_KEY from .env at plugin root
+        env_path = pathlib.Path(__file__).parent.parent.parent / ".env"
+        fal_key = ""
+        if env_path.exists():
+            with open(env_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("FAL_KEY="):
+                        fal_key = (
+                            line.split("=", 1)[1]
+                            .strip()
+                            .strip('"')
+                            .strip("'")
+                        )
+                        break
 
-        api_key = get_pro_api_key()
-        sam3 = CloudSam3Predictor(api_key=api_key)
-
-        # Synchronous auth pre-check
-        try:
-            sam3._request("POST", "/reset?session_id=auth-check", timeout=5)
-        except Exception as pre_err:
-            if "401" in str(pre_err):
-                QMessageBox.warning(
-                    self.iface.mainWindow(),
-                    tr("AI Segmentation PRO"),
-                    tr(
-                        "Invalid PRO API key.\n\n"
-                        "Go to the PRO settings to update your API key."
-                    ),
-                )
-                return
-
-        from qgis.PyQt.QtWidgets import QProgressDialog
-
-        progress = QProgressDialog(
-            tr("Connecting to PRO server..."),
-            tr("Cancel"),
-            0,
-            0,
-            self.iface.mainWindow(),
-        )
-        progress.setWindowTitle(tr("AI Segmentation PRO"))
-        progress.setMinimumDuration(0)
-        progress.setWindowModality(Qt.WindowModal)
-        progress.show()
-        QApplication.processEvents()
-
-        thread = QThread()
-        worker = _CloudWarmupWorker(sam3, use_retry=True)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(thread.quit)
-        self._warmup_thread = thread
-        self._warmup_worker = worker
-        worker.attempt_started.connect(
-            lambda n, m: progress.setLabelText(
-                tr("Connecting to PRO server... (attempt {}/{})").format(n, m)
-            )
-        )
-        thread.start()
-
-        while thread.isRunning():
-            QApplication.processEvents()
-            if progress.wasCanceled():
-                worker.cloud.stop()
-                thread.quit()
-                thread.wait(3000)
-                self._warmup_thread = None
-                self._warmup_worker = None
-                return
-            thread.wait(100)
-
-        self._warmup_thread = None
-        self._warmup_worker = None
-        progress.close()
-
-        if not worker.result:
-            if worker.error_type == "auth":
-                message = tr(
-                    "Invalid PRO API key.\n\n"
-                    "Go to the PRO settings to update your API key."
-                )
-            elif worker.error_type == "timeout":
-                message = tr(
-                    "The AI Segmentation PRO server did not respond.\n\n"
-                    "This can happen during first startup (cold start) "
-                    "which takes 2-5 minutes.\n\n"
-                    "Please try again in a few minutes."
-                )
-            elif worker.error_type == "network":
-                message = tr(
-                    "Could not connect to the PRO server.\n\n"
-                    "Check your internet connection and verify that the "
-                    "server URL is correct."
-                )
-            else:
-                message = tr(
-                    "PRO server connection error.\n\n"
-                    "Check the QGIS logs for more details."
-                )
+        if not fal_key:
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("AI Segmentation PRO"),
-                message,
+                tr(
+                    "No API key configured.\n\n"
+                    "Add FAL_KEY=your_key to the .env file\n"
+                    "at the plugin root directory."
+                ),
             )
             return
 
+        # Clean up previous predictor
         if self.predictor:
             try:
                 self.predictor.cleanup()
             except Exception:
                 pass
-        self.predictor = sam3
+        self.predictor = FalPredictor(fal_key=fal_key)
 
+        # Validate layer
         if not self._is_layer_valid(layer):
+            QgsMessageLog.logMessage(
+                "Layer was deleted before PRO segmentation could start",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Warning,
+            )
             self.predictor.cleanup()
             self.predictor = None
             return
@@ -2789,11 +2690,15 @@ class AISegmentationPlugin:
         self._current_layer_name = layer_name
         self._is_online_layer = self._is_online_provider(layer)
         self._is_non_georeferenced_mode = (
-            not self._is_online_layer and not self._is_layer_georeferenced(layer)
+            not self._is_online_layer
+            and not self._is_layer_georeferenced(layer)
         )
         self._current_raster_path = raster_path
 
-        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        # Set up CRS transforms
+        canvas_crs = (
+            self.iface.mapCanvas().mapSettings().destinationCrs()
+        )
         raster_crs = layer.crs() if layer else None
         self._canvas_to_raster_xform = None
         self._raster_to_canvas_xform = None
@@ -2808,6 +2713,11 @@ class AISegmentationPlugin:
 
         self._active_mode = "pro"
         self._activate_segmentation_tool()
+        QgsMessageLog.logMessage(
+            "PRO mode activated",
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
 
     def _run_pro_detection(self, point):
         """Handle left-click in PRO mode: detect objects around click point."""
