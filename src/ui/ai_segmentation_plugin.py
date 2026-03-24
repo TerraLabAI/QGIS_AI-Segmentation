@@ -2623,10 +2623,11 @@ class AISegmentationPlugin:
         """Start PRO (SAM 3) segmentation via serverless inference."""
         import pathlib
 
-        from ..core.pro_predictor import FalPredictor
         from ..core.venv_manager import ensure_venv_packages_available
 
         ensure_venv_packages_available()
+
+        from ..core.pro_predictor import FalPredictor
 
         # Read FAL_KEY from .env at plugin root
         env_path = pathlib.Path(__file__).parent.parent.parent / ".env"
