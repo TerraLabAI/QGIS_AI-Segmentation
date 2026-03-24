@@ -74,7 +74,4 @@ else:
 
 # SAM3 cloud-only
 SAM3_MODEL_NAME = "SAM 3"
-SAM3_CLOUD_URL = (
-    "https://sam3-api.kindrock-9d62e9fa.francecentral.azurecontainerapps.io"
-)
 SAM3_INFERENCE_URL = "https://fal.run/fal-ai/sam-3/image-rle"
