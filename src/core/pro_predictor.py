@@ -1,4 +1,4 @@
-"""FalPredictor - calls fal.ai SAM3 image-rle endpoint directly."""
+"""FalPredictor - calls remote SAM3 segmentation endpoint."""
 import base64
 import io
 import json
@@ -34,7 +34,7 @@ def decode_rle_to_mask(rle: dict) -> np.ndarray:
 
 
 class FalPredictor:
-    """Stateless predictor that calls fal.ai SAM3 image-rle endpoint."""
+    """Stateless predictor that calls remote endpoint SAM3 image-rle endpoint."""
 
     def __init__(self, fal_key: str) -> None:
         self._fal_key = fal_key
@@ -56,7 +56,7 @@ class FalPredictor:
         )
 
     def predict_text(self, prompt: str) -> dict:
-        """Send image + prompt to fal.ai, return raw response dict.
+        """Send image + prompt to remote endpoint, return raw response dict.
 
         Returns dict with keys: rle, scores, boxes.
         Raises RuntimeError on HTTP errors or timeout.
