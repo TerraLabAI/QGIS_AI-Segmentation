@@ -1604,15 +1604,38 @@ class AISegmentationPlugin:
                 self.dock_widget.set_segmentation_active(False)
             return
 
-        # In PRO mode, keep session alive when switching map tools
-        # (PRO detection is text-based, doesn't require the segmentation tool)
+        # In PRO mode, ask before discarding pending detections
         if self._active_mode == "pro":
-            return
+            if self._pro_pending_detections:
+                reply = QMessageBox.warning(
+                    self.iface.mainWindow(),
+                    tr("Stop Segmentation?"),
+                    "{}\n\n{}".format(
+                        tr("This will discard {count} polygon(s).").format(
+                            count=len(self._pro_pending_detections)
+                        ),
+                        tr("Use 'Export to layer' to keep them."),
+                    ),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    # Re-activate the segmentation tool to stay in PRO mode
+                    if self.map_tool:
+                        self._stopping_segmentation = True
+                        self.iface.mapCanvas().setMapTool(self.map_tool)
+                        self._stopping_segmentation = False
+                    return
+                # User confirmed: fall through to reset
+            else:
+                return  # No detections, just keep PRO mode alive
 
-        # Standard mode: silently reset session and deactivate
+        # Silently reset session and deactivate
         self._reset_session()
         if self.dock_widget:
             self.dock_widget.reset_session()
+        if self.pro_dock_widget:
+            self.pro_dock_widget.reset_session()
         self._previous_map_tool = None
 
     def _restore_previous_map_tool(self):
@@ -1677,9 +1700,11 @@ class AISegmentationPlugin:
         self._refine_fill_holes = fill_holes
         self._refine_min_area = min_area
 
-        # In both modes: update current mask preview only
-        # Saved masks (green) keep their own refine settings from when they were saved
+        # Standard mode: update current mask preview (yellow rubber band)
         self._update_mask_visualization()
+        # PRO mode: re-render all pending detection rubber bands in real-time
+        if self._active_mode == "pro" and self._pro_pending_detections:
+            self._update_pro_detections_visualization()
 
     def _transform_to_raster_crs(self, point):
         """Transform a QgsPointXY from canvas CRS to raster CRS.
@@ -2757,6 +2782,52 @@ class AISegmentationPlugin:
             "AI Segmentation",
             level=Qgis.MessageLevel.Info,
         )
+
+    def _update_pro_detections_visualization(self):
+        """Re-render all PRO pending detection rubber bands with current refine settings."""
+        from ..core.polygon_exporter import apply_mask_refinement, mask_to_polygons
+
+        for det in self._pro_pending_detections:
+            mask = det["mask"]
+            ti = det["transform_info"]
+            rb = det.get("rb")
+            if rb is None or mask is None:
+                continue
+
+            # Apply mask refinement
+            refined_mask = mask
+            if (
+                self._refine_fill_holes
+                or self._refine_min_area > 0
+                or self._refine_expand != 0
+            ):
+                refined_mask = apply_mask_refinement(
+                    mask,
+                    expand_value=self._refine_expand,
+                    fill_holes=self._refine_fill_holes,
+                    min_area=self._refine_min_area,
+                )
+
+            polys = mask_to_polygons(refined_mask, ti)
+            if not polys:
+                rb.reset(QgsWkbTypes.PolygonGeometry)
+                continue
+
+            geom = QgsGeometry.unaryUnion(polys)
+            if not geom or geom.isEmpty():
+                rb.reset(QgsWkbTypes.PolygonGeometry)
+                continue
+
+            # Apply simplification
+            tolerance = self._compute_simplification_tolerance(
+                ti, self._refine_simplify
+            )
+            if tolerance > 0:
+                geom = geom.simplify(tolerance)
+
+            display_geom = QgsGeometry(geom)
+            self._transform_geometry_to_canvas_crs(display_geom)
+            rb.setToGeometry(display_geom, None)
 
     def _run_fal_detection(self):
         """Detect objects matching the text prompt on the current canvas view."""
