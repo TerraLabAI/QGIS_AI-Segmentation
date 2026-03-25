@@ -1,10 +1,12 @@
 from qgis.core import QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDockWidget,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -19,6 +21,9 @@ from qgis.PyQt.QtWidgets import (
 
 from ..core.activation_manager import is_plugin_activated  # noqa: E402
 from ..core.i18n import tr  # noqa: E402
+
+_REFINE_COLLAPSED_HEIGHT = 25
+
 
 _TAG_CATEGORIES = {
     "Urban / Artificial": [
@@ -46,6 +51,9 @@ class AISegmentationProDockWidget(QDockWidget):
     stop_segmentation_requested = pyqtSignal()
     pro_detect_requested = pyqtSignal()
     clear_points_requested = pyqtSignal()
+    refine_settings_changed = pyqtSignal(
+        int, int, bool, int
+    )  # expand, simplify, fill_holes, min_area
 
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation PRO by TerraLab"), parent)
@@ -60,6 +68,12 @@ class AISegmentationProDockWidget(QDockWidget):
         self._has_mask = False
         self._saved_polygon_count = 0
         self._positive_count = 0  # batch detection count in PRO mode
+        self._refine_expanded = False
+
+        # Debounce timer for refinement sliders
+        self._refine_debounce_timer = QTimer(self)
+        self._refine_debounce_timer.setSingleShot(True)
+        self._refine_debounce_timer.timeout.connect(self._emit_refine_changed)
 
         self.main_widget = QWidget()
         self.main_layout = QVBoxLayout(self.main_widget)
@@ -212,7 +226,7 @@ class AISegmentationProDockWidget(QDockWidget):
         score_label.setStyleSheet("font-size: 12px; color: palette(text);")
         self.score_threshold_spinbox = QSpinBox()
         self.score_threshold_spinbox.setRange(0, 100)
-        self.score_threshold_spinbox.setValue(30)
+        self.score_threshold_spinbox.setValue(0)
         self.score_threshold_spinbox.setSuffix(" %")
         self.score_threshold_spinbox.setMinimumWidth(80)
         score_layout.addWidget(score_label)
@@ -226,7 +240,7 @@ class AISegmentationProDockWidget(QDockWidget):
         max_obj_label.setStyleSheet("font-size: 12px; color: palette(text);")
         self.max_objects_spinbox = QSpinBox()
         self.max_objects_spinbox.setRange(1, 32)
-        self.max_objects_spinbox.setValue(10)
+        self.max_objects_spinbox.setValue(32)
         self.max_objects_spinbox.setMinimumWidth(80)
         max_obj_layout.addWidget(max_obj_label)
         max_obj_layout.addStretch()
@@ -305,6 +319,9 @@ class AISegmentationProDockWidget(QDockWidget):
         self.disjoint_warning_widget.setVisible(False)
         self.main_layout.addWidget(self.disjoint_warning_widget)
 
+        # Refine selection panel (same as standard dock)
+        self._setup_refine_panel(self.main_layout)
+
         self.main_layout.addStretch()
 
     # ── Public interface (mirrors AISegmentationDockWidget for shared callsites) ──
@@ -356,8 +373,12 @@ class AISegmentationProDockWidget(QDockWidget):
         self._custom_prompt_edit.clear()
         self.pro_detect_button.setVisible(False)
         self.score_threshold_spinbox.blockSignals(True)
-        self.score_threshold_spinbox.setValue(30)
+        self.score_threshold_spinbox.setValue(0)
         self.score_threshold_spinbox.blockSignals(False)
+        self.max_objects_spinbox.blockSignals(True)
+        self.max_objects_spinbox.setValue(32)
+        self.max_objects_spinbox.blockSignals(False)
+        self.reset_refine_sliders()
         self._update_button_visibility()
         self._update_ui_state()
 
@@ -389,6 +410,7 @@ class AISegmentationProDockWidget(QDockWidget):
             self.save_mask_button.setEnabled(self._has_mask)
             self.export_button.show()
             self.secondary_buttons_widget.show()
+            self.refine_group.show()
         else:
             self.start_pro_button.show()
             self.instructions_label.hide()
@@ -396,6 +418,7 @@ class AISegmentationProDockWidget(QDockWidget):
             self.save_mask_button.hide()
             self.export_button.hide()
             self.secondary_buttons_widget.hide()
+            self.refine_group.hide()
 
     def _update_export_button_style(self):
         count = self._saved_polygon_count
@@ -490,6 +513,167 @@ class AISegmentationProDockWidget(QDockWidget):
 
     def _on_layers_changed(self, *args):
         self._update_ui_state()
+
+    def _setup_refine_panel(self, parent_layout):
+        """Setup the collapsible Refine mask panel."""
+        self.refine_group = QGroupBox("▶ " + tr("Refine selection"))
+        self.refine_group.setCheckable(False)
+        self.refine_group.setVisible(False)
+        self.refine_group.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.refine_group.mousePressEvent = self._on_refine_group_clicked
+        self.refine_group.setStyleSheet("""
+            QGroupBox {
+                background-color: transparent;
+                border: none;
+                border-radius: 0px;
+                margin: 0px;
+                padding: 0px;
+                padding-top: 20px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: padding;
+                subcontrol-position: top left;
+                padding: 2px 4px;
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        refine_layout = QVBoxLayout(self.refine_group)
+        refine_layout.setSpacing(0)
+        refine_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.refine_content_widget = QWidget()
+        self.refine_content_widget.setObjectName("refineContentWidget")
+        self.refine_content_widget.setStyleSheet("""
+            QWidget#refineContentWidget {
+                background-color: rgba(128, 128, 128, 0.08);
+                border: 1px solid rgba(128, 128, 128, 0.2);
+                border-radius: 4px;
+            }
+            QLabel {
+                background: transparent;
+                border: none;
+            }
+        """)
+        refine_content_layout = QVBoxLayout(self.refine_content_widget)
+        refine_content_layout.setContentsMargins(10, 10, 10, 10)
+        refine_content_layout.setSpacing(8)
+
+        # Expand/Contract
+        expand_layout = QHBoxLayout()
+        expand_label = QLabel(tr("Expand/Contract:"))
+        expand_label.setToolTip(
+            tr("Positive = expand outward, Negative = shrink inward")
+        )
+        self.expand_spinbox = QSpinBox()
+        self.expand_spinbox.setRange(-1000, 1000)
+        self.expand_spinbox.setValue(0)
+        self.expand_spinbox.setSuffix(" px")
+        self.expand_spinbox.setMinimumWidth(80)
+        expand_layout.addWidget(expand_label)
+        expand_layout.addStretch()
+        expand_layout.addWidget(self.expand_spinbox)
+        refine_content_layout.addLayout(expand_layout)
+
+        # Simplify outline
+        simplify_layout = QHBoxLayout()
+        simplify_label = QLabel(tr("Simplify outline:"))
+        simplify_label.setToolTip(
+            tr("Reduce small variations in the outline (0 = no change)")
+        )
+        self.simplify_spinbox = QSpinBox()
+        self.simplify_spinbox.setRange(0, 1000)
+        self.simplify_spinbox.setValue(3)
+        self.simplify_spinbox.setMinimumWidth(80)
+        simplify_layout.addWidget(simplify_label)
+        simplify_layout.addStretch()
+        simplify_layout.addWidget(self.simplify_spinbox)
+        refine_content_layout.addLayout(simplify_layout)
+
+        # Fill holes
+        fill_holes_layout = QHBoxLayout()
+        self.fill_holes_checkbox = QCheckBox(tr("Fill holes"))
+        self.fill_holes_checkbox.setChecked(False)
+        self.fill_holes_checkbox.setToolTip(tr("Fill interior holes in the selection"))
+        fill_holes_layout.addWidget(self.fill_holes_checkbox)
+        fill_holes_layout.addStretch()
+        refine_content_layout.addLayout(fill_holes_layout)
+
+        # Min. region size
+        min_area_layout = QHBoxLayout()
+        min_area_label = QLabel(tr("Min. region size:"))
+        min_area_label.setToolTip(
+            "{}\n{}\n{}".format(
+                tr("Remove disconnected regions smaller than this area (in pixels²)."),
+                tr("Example: 100 = ~10x10 pixel regions, 900 = ~30x30."),
+                tr("0 = keep all."),
+            )
+        )
+        self.min_area_spinbox = QSpinBox()
+        self.min_area_spinbox.setRange(0, 100000)
+        self.min_area_spinbox.setValue(100)
+        self.min_area_spinbox.setSuffix(" px²")
+        self.min_area_spinbox.setSingleStep(50)
+        self.min_area_spinbox.setMinimumWidth(80)
+        min_area_layout.addWidget(min_area_label)
+        min_area_layout.addStretch()
+        min_area_layout.addWidget(self.min_area_spinbox)
+        refine_content_layout.addLayout(min_area_layout)
+
+        refine_layout.addWidget(self.refine_content_widget)
+        self.refine_content_widget.setVisible(self._refine_expanded)
+        if not self._refine_expanded:
+            self.refine_group.setMaximumHeight(_REFINE_COLLAPSED_HEIGHT)
+
+        self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
+        self.simplify_spinbox.valueChanged.connect(self._on_refine_changed)
+        self.fill_holes_checkbox.stateChanged.connect(self._on_refine_changed)
+        self.min_area_spinbox.valueChanged.connect(self._on_refine_changed)
+
+        parent_layout.addWidget(self.refine_group)
+
+    def _on_refine_group_clicked(self, event):
+        """Toggle the refine panel expanded/collapsed state."""
+        if event.pos().y() > _REFINE_COLLAPSED_HEIGHT:
+            return
+        self._refine_expanded = not self._refine_expanded
+        self.refine_content_widget.setVisible(self._refine_expanded)
+        arrow = "▼" if self._refine_expanded else "▶"
+        self.refine_group.setTitle("{} ".format(arrow) + tr("Refine selection"))
+        if self._refine_expanded:
+            self.refine_group.setMaximumHeight(16777215)
+        else:
+            self.refine_group.setMaximumHeight(_REFINE_COLLAPSED_HEIGHT)
+
+    def _on_refine_changed(self, value=None):
+        """Handle refine control changes with debounce."""
+        self._refine_debounce_timer.start(150)
+
+    def _emit_refine_changed(self):
+        """Emit the refine settings changed signal after debounce."""
+        self.refine_settings_changed.emit(
+            self.expand_spinbox.value(),
+            self.simplify_spinbox.value(),
+            self.fill_holes_checkbox.isChecked(),
+            self.min_area_spinbox.value(),
+        )
+
+    def reset_refine_sliders(self):
+        """Reset refinement controls to default values without emitting signals."""
+        self.expand_spinbox.blockSignals(True)
+        self.simplify_spinbox.blockSignals(True)
+        self.fill_holes_checkbox.blockSignals(True)
+        self.min_area_spinbox.blockSignals(True)
+
+        self.expand_spinbox.setValue(0)
+        self.simplify_spinbox.setValue(3)
+        self.fill_holes_checkbox.setChecked(False)
+        self.min_area_spinbox.setValue(100)
+
+        self.expand_spinbox.blockSignals(False)
+        self.simplify_spinbox.blockSignals(False)
+        self.fill_holes_checkbox.blockSignals(False)
+        self.min_area_spinbox.blockSignals(False)
 
     def _on_start_pro_clicked(self):
         layer = self.layer_combo.currentLayer()

@@ -260,10 +260,10 @@ class AISegmentationPlugin:
         """
         if simplify_value <= 0 or transform_info is None:
             return 0
-        bbox = transform_info.get("bbox", [0, 1, 0, 1])
+        bbox = transform_info.get("bbox", [0, 0, 1, 1])
         img_shape = transform_info.get("img_shape", (1024, 1024))
         width_pixels = max(img_shape[1], 1)
-        bbox_width = bbox[1] - bbox[0]
+        bbox_width = bbox[2] - bbox[0]  # maxx - minx
         if bbox_width == 0:
             return 0
         pixel_size = bbox_width / width_pixels
@@ -347,6 +347,9 @@ class AISegmentationPlugin:
             self._on_stop_segmentation
         )
         self.pro_dock_widget.pro_detect_requested.connect(self._run_fal_detection)
+        self.pro_dock_widget.refine_settings_changed.connect(
+            self._on_refine_settings_changed
+        )
         self.pro_dock_widget.layer_combo.layerChanged.connect(
             self._on_pro_layer_combo_changed
         )
@@ -1601,7 +1604,12 @@ class AISegmentationPlugin:
                 self.dock_widget.set_segmentation_active(False)
             return
 
-        # Silently reset session and deactivate
+        # In PRO mode, keep session alive when switching map tools
+        # (PRO detection is text-based, doesn't require the segmentation tool)
+        if self._active_mode == "pro":
+            return
+
+        # Standard mode: silently reset session and deactivate
         self._reset_session()
         if self.dock_widget:
             self.dock_widget.reset_session()
@@ -3009,7 +3017,7 @@ class AISegmentationPlugin:
             )
             return
 
-        from ..core.polygon_exporter import mask_to_polygons
+        from ..core.polygon_exporter import apply_mask_refinement, mask_to_polygons
 
         all_detections.sort(key=lambda x: x[1], reverse=True)
 
@@ -3026,6 +3034,18 @@ class AISegmentationPlugin:
         batch_count = 0
 
         for det_idx, (mask, score, ti) in enumerate(all_detections):
+            # Apply mask refinement (expand, fill holes, min area)
+            if (
+                self._refine_fill_holes
+                or self._refine_min_area > 0
+                or self._refine_expand != 0
+            ):
+                mask = apply_mask_refinement(
+                    mask,
+                    expand_value=self._refine_expand,
+                    fill_holes=self._refine_fill_holes,
+                    min_area=self._refine_min_area,
+                )
             px_count = int(mask.sum())
             if px_count < 20:
                 QgsMessageLog.logMessage(
@@ -3079,6 +3099,13 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Info,
             )
+            # Apply simplification
+            tolerance = self._compute_simplification_tolerance(
+                ti, self._refine_simplify
+            )
+            if tolerance > 0:
+                geom = geom.simplify(tolerance)
+
             accepted_geoms.append(geom)
 
             rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
