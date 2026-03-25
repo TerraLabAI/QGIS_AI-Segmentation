@@ -3105,19 +3105,20 @@ class AISegmentationPlugin:
         batch_count = 0
 
         for det_idx, (mask, score, ti) in enumerate(all_detections):
-            # Apply mask refinement (expand, fill holes, min area)
+            # Apply mask refinement for filtering/display, keep raw mask for storage
+            refined_mask = mask
             if (
                 self._refine_fill_holes
                 or self._refine_min_area > 0
                 or self._refine_expand != 0
             ):
-                mask = apply_mask_refinement(
+                refined_mask = apply_mask_refinement(
                     mask,
                     expand_value=self._refine_expand,
                     fill_holes=self._refine_fill_holes,
                     min_area=self._refine_min_area,
                 )
-            px_count = int(mask.sum())
+            px_count = int(refined_mask.sum())
             if px_count < 20:
                 QgsMessageLog.logMessage(
                     "  det {}: SKIP — only {} fg pixels (<20)".format(
@@ -3127,7 +3128,7 @@ class AISegmentationPlugin:
                     level=Qgis.MessageLevel.Info,
                 )
                 continue
-            polys = mask_to_polygons(mask, ti)
+            polys = mask_to_polygons(refined_mask, ti)
             if not polys:
                 QgsMessageLog.logMessage(
                     "  det {}: SKIP — mask_to_polygons returned empty".format(det_idx),
