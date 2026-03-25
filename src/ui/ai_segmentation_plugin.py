@@ -1622,6 +1622,7 @@ class AISegmentationPlugin:
         polygon_count = len(self.saved_polygons)
         if self.current_mask is not None:
             polygon_count += 1
+        polygon_count += len(self._pro_pending_detections)
 
         if polygon_count > 0:
             reply = QMessageBox.warning(
@@ -1649,6 +1650,8 @@ class AISegmentationPlugin:
         self._stopping_segmentation = False
         self._reset_session()
         self.dock_widget.reset_session()
+        if self.pro_dock_widget:
+            self.pro_dock_widget.reset_session()
 
     def _on_refine_settings_changed(
         self, expand: int, simplify: int, fill_holes: bool, min_area: int
@@ -2794,6 +2797,12 @@ class AISegmentationPlugin:
                 level=Qgis.MessageLevel.Warning,
             )
             return
+
+        # Clear any rubber bands from a previous detection run
+        for det in self._pro_pending_detections:
+            self._safe_remove_rubber_band(det.get("rb"))
+        self._pro_pending_detections = []
+        self._pro_detection_batches = []
 
         canvas = self.iface.mapCanvas()
         canvas_extent = canvas.extent()
