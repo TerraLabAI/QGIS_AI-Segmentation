@@ -1093,7 +1093,14 @@ class AISegmentationPlugin:
             self._previous_map_tool = current_tool
 
         self.iface.mapCanvas().setMapTool(self.map_tool)
-        self.dock_widget.set_segmentation_active(True)
+        self._active_dock.set_segmentation_active(True)
+        QgsMessageLog.logMessage(
+            "_activate_segmentation_tool: mode={}, dock={}".format(
+                self._active_mode, type(self._active_dock).__name__
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
         # Status bar hint will be set by _update_status_hint via set_point_count
 
         # Install keyboard shortcut filter on the main window so shortcuts
@@ -1975,12 +1982,14 @@ class AISegmentationPlugin:
             self._current_crop_canvas_mupp = canvas_mupp
             actual_mupp = mupp_override if mupp_override else raster_mupp
             self._current_crop_actual_mupp = actual_mupp
+            skip_stretch = self._active_mode == "pro"
             image_np, crop_info, error = extract_crop_from_online_layer(
                 self._current_layer,
                 raster_pt_x,
                 raster_pt_y,
                 actual_mupp,
                 crop_size=1024,
+                skip_stretch=skip_stretch,
             )
         elif not self._current_raster_path:
             self._encoding_in_progress = False
@@ -2010,6 +2019,7 @@ class AISegmentationPlugin:
             scale_factor = mupp_override if mupp_override else 1.0
             self._current_crop_scale_factor = scale_factor
             self._current_crop_canvas_mupp = self.iface.mapCanvas().mapUnitsPerPixel()
+            skip_stretch = self._active_mode == "pro"
             image_np, crop_info, error = extract_crop_from_raster(
                 self._current_raster_path,
                 raster_pt_x,
@@ -2018,6 +2028,7 @@ class AISegmentationPlugin:
                 layer_crs_wkt=layer_crs_wkt,
                 layer_extent=layer_extent,
                 scale_factor=scale_factor,
+                skip_stretch=skip_stretch,
             )
 
         if error:
@@ -2623,6 +2634,14 @@ class AISegmentationPlugin:
         """Start PRO (SAM 3) segmentation via serverless inference."""
         import pathlib
 
+        QgsMessageLog.logMessage(
+            "_on_start_pro_segmentation: called with layer={}".format(
+                layer.name() if layer else "None"
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+
         from ..core.venv_manager import ensure_venv_packages_available
 
         ensure_venv_packages_available()
@@ -2639,6 +2658,14 @@ class AISegmentationPlugin:
                     if line.startswith("FAL_KEY="):
                         fal_key = line.split("=", 1)[1].strip().strip('"').strip("'")
                         break
+
+        QgsMessageLog.logMessage(
+            "_on_start_pro_segmentation: .env found={}, fal_key_len={}".format(
+                env_path.exists(), len(fal_key)
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
 
         if not fal_key:
             QMessageBox.warning(
@@ -2703,9 +2730,19 @@ class AISegmentationPlugin:
                 )
 
         self._active_mode = "pro"
+        QgsMessageLog.logMessage(
+            "_on_start_pro_segmentation: _active_mode set to 'pro', "
+            "calling _activate_segmentation_tool",
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
         self._activate_segmentation_tool()
         QgsMessageLog.logMessage(
-            "PRO mode activated",
+            "PRO mode activated — predictor={}, layer={}, dock={}".format(
+                type(self.predictor).__name__,
+                self._current_layer_name,
+                type(self._active_dock).__name__,
+            ),
             "AI Segmentation",
             level=Qgis.MessageLevel.Info,
         )
@@ -2714,14 +2751,48 @@ class AISegmentationPlugin:
         """Detect objects matching the text prompt on the current canvas view."""
         from ..core.pro_predictor import decode_rle_to_mask
 
+        QgsMessageLog.logMessage(
+            "_run_fal_detection: called — dock={}, predictor={}, layer={}".format(
+                type(self._active_dock).__name__ if self._active_dock else "None",
+                type(self.predictor).__name__ if self.predictor else "None",
+                self._current_layer_name,
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+
         if not self._active_dock or not self.predictor:
+            QgsMessageLog.logMessage(
+                "_run_fal_detection: ABORT — missing dock or predictor",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Warning,
+            )
             return
         text_prompt = self._active_dock.get_pro_text_prompt()
         if not text_prompt:
+            QgsMessageLog.logMessage(
+                "_run_fal_detection: ABORT — empty text prompt",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Warning,
+            )
             return
+
+        QgsMessageLog.logMessage(
+            "_run_fal_detection: prompt='{}', threshold={}".format(
+                text_prompt,
+                self._active_dock.get_score_threshold() if self._active_dock else "N/A",
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
 
         raster_layer = self._current_layer
         if raster_layer is None:
+            QgsMessageLog.logMessage(
+                "_run_fal_detection: ABORT — no current layer",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Warning,
+            )
             return
 
         canvas = self.iface.mapCanvas()
@@ -2737,16 +2808,52 @@ class AISegmentationPlugin:
         else:
             raster_center = canvas_center
 
+        # Compute scale factor so the crop covers the visible canvas area
+        initial_scale = self._compute_initial_scale_factor()
+        QgsMessageLog.logMessage(
+            "_run_fal_detection: scale_factor={}, online={}".format(
+                initial_scale, self._is_online_layer
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+
         # Extract and store the image (calls predictor.set_image internally)
-        if not self._extract_and_encode_crop(raster_center):
+        if not self._extract_and_encode_crop(
+            raster_center, mupp_override=initial_scale
+        ):
+            QgsMessageLog.logMessage(
+                "_run_fal_detection: ABORT — _extract_and_encode_crop failed",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Warning,
+            )
             return
 
         if self._current_crop_info is None:
+            QgsMessageLog.logMessage(
+                "_run_fal_detection: ABORT — _current_crop_info is None",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Warning,
+            )
             return
 
         crop_bounds = self._current_crop_info["bounds"]
         img_shape = self._current_crop_info["img_shape"]
         img_height, img_width = img_shape
+        # Tell the predictor to crop to native size before upload.
+        # This discards reflect-padding so SAM-3 won't detect mirror objects.
+        # RLE offsets from the response will be in native (img_height x img_width) space.
+        if self.predictor:
+            self.predictor.set_native_size(img_height, img_width)
+        sent_h = img_height
+        sent_w = img_width
+        QgsMessageLog.logMessage(
+            "_run_fal_detection: crop OK — native={}x{}, sent={}x{}, bounds={}".format(
+                img_width, img_height, sent_w, sent_h, crop_bounds
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
         minx, miny, maxx, maxy = crop_bounds
 
         crs_value = None
@@ -2761,6 +2868,22 @@ class AISegmentationPlugin:
             "img_shape": (img_height, img_width),
             "crs": crs_value,
         }
+        QgsMessageLog.logMessage(
+            "_run_fal_detection: transform_info — native_shape=({},{}), "
+            "sent_shape=({},{}), bbox=({:.2f},{:.2f},{:.2f},{:.2f}), crs={}".format(
+                img_height,
+                img_width,
+                sent_h,
+                sent_w,
+                minx,
+                miny,
+                maxx,
+                maxy,
+                crs_value,
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
 
         score_threshold = (
             self._active_dock.get_score_threshold() if self._active_dock else 0.0
@@ -2774,10 +2897,35 @@ class AISegmentationPlugin:
         )
         QApplication.processEvents()
 
+        max_masks = (
+            self._active_dock.get_max_objects()
+            if hasattr(self._active_dock, "get_max_objects")
+            else 10
+        )
+
         try:
-            result = self.predictor.predict_text(text_prompt)
+            QgsMessageLog.logMessage(
+                "_run_fal_detection: calling predict_text (max_masks={})...".format(
+                    max_masks
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
+            result = self.predictor.predict_text(text_prompt, max_masks=max_masks)
+            QgsMessageLog.logMessage(
+                "_run_fal_detection: predict_text returned — keys={}".format(
+                    list(result.keys()) if isinstance(result, dict) else type(result)
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
         except RuntimeError as e:
             self.iface.messageBar().clearWidgets()
+            QgsMessageLog.logMessage(
+                "_run_fal_detection: predict_text ERROR — {}".format(e),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Critical,
+            )
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Detection Error"),
@@ -2787,19 +2935,33 @@ class AISegmentationPlugin:
 
         self.iface.messageBar().clearWidgets()
 
-        # Normalize rle to list
+        # Normalize rle to list of strings
         rle_list = result.get("rle", [])
-        if isinstance(rle_list, dict):
+        if isinstance(rle_list, str):
             rle_list = [rle_list]
         scores_list = result.get("scores") or []
+        QgsMessageLog.logMessage(
+            "_run_fal_detection: {} RLE masks, {} scores, threshold={}".format(
+                len(rle_list), len(scores_list), score_threshold
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
 
         all_detections = []
-        for i, rle in enumerate(rle_list):
+        for i, rle_str in enumerate(rle_list):
             score = float(scores_list[i]) if i < len(scores_list) else 1.0
             if score < score_threshold:
+                QgsMessageLog.logMessage(
+                    "  mask {}: score={:.3f} < threshold={:.3f}, SKIP".format(
+                        i, score, score_threshold
+                    ),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Info,
+                )
                 continue
             try:
-                mask = decode_rle_to_mask(rle)
+                mask = decode_rle_to_mask(rle_str, sent_h, sent_w)
             except Exception as e:
                 QgsMessageLog.logMessage(
                     "RLE decode error for mask {}: {}".format(i, e),
@@ -2807,7 +2969,27 @@ class AISegmentationPlugin:
                     level=Qgis.MessageLevel.Warning,
                 )
                 continue
+            QgsMessageLog.logMessage(
+                "  mask {}: score={:.3f}, rle_tokens={}, pixels={}, "
+                "decode_shape={}".format(
+                    i,
+                    score,
+                    len(rle_str.split()),
+                    int(mask.sum()),
+                    mask.shape,
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
             all_detections.append((mask, score, transform_info))
+
+        QgsMessageLog.logMessage(
+            "_run_fal_detection: {} detections passed score filter".format(
+                len(all_detections)
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
 
         if not all_detections:
             self.iface.messageBar().pushMessage(
@@ -2834,17 +3016,60 @@ class AISegmentationPlugin:
         accepted_geoms = []
         batch_count = 0
 
-        for mask, score, ti in all_detections:
-            if mask.sum() < 20:
+        for det_idx, (mask, score, ti) in enumerate(all_detections):
+            px_count = int(mask.sum())
+            if px_count < 20:
+                QgsMessageLog.logMessage(
+                    "  det {}: SKIP — only {} fg pixels (<20)".format(
+                        det_idx, px_count
+                    ),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Info,
+                )
                 continue
             polys = mask_to_polygons(mask, ti)
             if not polys:
+                QgsMessageLog.logMessage(
+                    "  det {}: SKIP — mask_to_polygons returned empty".format(det_idx),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Info,
+                )
                 continue
             geom = QgsGeometry.unaryUnion(polys)
             if not geom or geom.isEmpty():
+                QgsMessageLog.logMessage(
+                    "  det {}: SKIP — unaryUnion empty".format(det_idx),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Info,
+                )
                 continue
-            if any(_iou(geom, ag) > IOU_THRESHOLD for ag in accepted_geoms):
+            max_iou = 0.0
+            for ag in accepted_geoms:
+                iou_val = _iou(geom, ag)
+                if iou_val > max_iou:
+                    max_iou = iou_val
+            if max_iou > IOU_THRESHOLD:
+                QgsMessageLog.logMessage(
+                    "  det {}: SKIP — IoU={:.3f} > {:.1f} (duplicate)".format(
+                        det_idx, max_iou, IOU_THRESHOLD
+                    ),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Info,
+                )
                 continue
+            QgsMessageLog.logMessage(
+                "  det {}: ACCEPTED — score={:.3f}, {}px, {} polys, "
+                "area={:.1f}, max_iou={:.3f}".format(
+                    det_idx,
+                    score,
+                    px_count,
+                    len(polys),
+                    geom.area(),
+                    max_iou,
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
             accepted_geoms.append(geom)
 
             rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)

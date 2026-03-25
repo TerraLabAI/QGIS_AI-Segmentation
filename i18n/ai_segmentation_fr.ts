@@ -714,6 +714,10 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Confiance min.</translation>
     </message>
     <message>
+        <source>Max. objects</source>
+        <translation>Objets max.</translation>
+    </message>
+    <message>
         <source>Select an object type to detect</source>
         <translation>Selectionnez un type d'objet a detecter</translation>
     </message>

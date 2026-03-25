@@ -1,4 +1,5 @@
 """FalPredictor - calls remote SAM3 segmentation endpoint."""
+
 import base64
 import io
 import json
@@ -10,37 +11,47 @@ import numpy as np
 from PIL import Image as PILImage
 from qgis.core import Qgis, QgsMessageLog
 
-from .model_config import SAM3_INFERENCE_URL
+from .model_config import MEDIA_UPLOAD_URL, SAM3_INFERENCE_URL, STORAGE_TOKEN_URL
 
-_TIMEOUT_PREDICT = 60
+_TIMEOUT_PREDICT = 120
+_TIMEOUT_UPLOAD = 15
 
 
-def decode_rle_to_mask(rle: dict) -> np.ndarray:
-    """Decode COCO uncompressed RLE to a boolean numpy mask (H, W).
+def decode_rle_to_mask(rle_string: str, height: int, width: int) -> np.ndarray:
+    """Decode RLE string from remote endpoint to a boolean numpy mask (H, W).
 
-    rle format: {"counts": [n0, n1, n2, ...], "size": [H, W]}
-    Counts alternate between background (0) and foreground (1) pixels
-    in Fortran (column-major) order. First count is always background.
+    RLE format: space-separated pairs of "offset count" where each pair
+    means 'count' foreground pixels starting at flat-array position 'offset'.
+    The flat array is in row-major order (C order).
+
+    Args:
+        rle_string: Space-separated "offset count offset count ..." string.
+        height: Image height in pixels.
+        width: Image width in pixels.
+
+    Returns:
+        Boolean numpy array of shape (height, width).
     """
-    counts = rle["counts"]
-    h, w = rle["size"]
-    flat = np.zeros(h * w, dtype=np.uint8)
-    pos = 0
-    for i, count in enumerate(counts):
-        if i % 2 == 1:
-            flat[pos : pos + count] = 1
-        pos += count
-    return flat.reshape((w, h)).T.astype(bool)
+    flat = np.zeros(height * width, dtype=np.uint8)
+    tokens = rle_string.split()
+    if not tokens:
+        return flat.reshape((height, width)).astype(bool)
+    for i in range(0, len(tokens), 2):
+        offset = int(tokens[i])
+        count = int(tokens[i + 1])
+        flat[offset : offset + count] = 1
+    return flat.reshape((height, width)).astype(bool)
 
 
 class FalPredictor:
-    """Stateless predictor that calls remote endpoint SAM3 image-rle endpoint."""
+    """Stateless predictor that calls remote SAM3 segmentation endpoint."""
 
     def __init__(self, fal_key: str) -> None:
         self._fal_key = fal_key
         self._last_image_np: Optional[np.ndarray] = None
         self.is_image_set = False
         self.original_size: Optional[Tuple[int, int]] = None
+        self._native_size: Optional[Tuple[int, int]] = None
 
     def set_image(self, image_np: np.ndarray) -> None:
         """Store image locally for subsequent predict_text calls."""
@@ -55,7 +66,89 @@ class FalPredictor:
             level=Qgis.MessageLevel.Info,
         )
 
-    def predict_text(self, prompt: str) -> dict:
+    def _get_cdn_token(self) -> Optional[str]:
+        """Exchange API key for a short-lived CDN Bearer token."""
+        req = urllib.request.Request(
+            STORAGE_TOKEN_URL,
+            method="POST",
+            headers={
+                "Authorization": "Key {}".format(self._fal_key),
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            data=b"{}",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            return result.get("token")
+
+    def _upload_to_cdn(self, image_np: np.ndarray) -> Optional[str]:
+        """Upload image to media CDN, return access URL or None on failure."""
+        try:
+            # Encode image as PNG bytes
+            pil_img = PILImage.fromarray(image_np)
+            buf = io.BytesIO()
+            pil_img.save(buf, format="PNG")
+            png_bytes = buf.getvalue()
+
+            # Get short-lived Bearer token for CDN
+            token = self._get_cdn_token()
+            if not token:
+                QgsMessageLog.logMessage(
+                    "FalPredictor: CDN token exchange returned empty",
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Warning,
+                )
+                return None
+
+            # Upload with Bearer token
+            req = urllib.request.Request(
+                MEDIA_UPLOAD_URL,
+                data=png_bytes,
+                method="POST",
+                headers={
+                    "Content-Type": "image/png",
+                    "Authorization": "Bearer {}".format(token),
+                },
+            )
+            with urllib.request.urlopen(req, timeout=_TIMEOUT_UPLOAD) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                url = result.get("access_url") or result.get("url", "")
+                if url:
+                    QgsMessageLog.logMessage(
+                        "FalPredictor: CDN upload OK ({} bytes)".format(len(png_bytes)),
+                        "AI Segmentation",
+                        level=Qgis.MessageLevel.Info,
+                    )
+                    return url
+                QgsMessageLog.logMessage(
+                    "FalPredictor: CDN upload returned no URL",
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Warning,
+                )
+                return None
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                "FalPredictor: CDN upload failed ({}), using fallback".format(e),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Warning,
+            )
+            return None
+
+    def _make_fallback_data_uri(self, image_np: np.ndarray) -> str:
+        """Encode image as JPEG Q95 data URI (fallback when CDN is unavailable)."""
+        pil_img = PILImage.fromarray(image_np)
+        buf = io.BytesIO()
+        pil_img.save(buf, format="JPEG", quality=95)
+        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        QgsMessageLog.logMessage(
+            "FalPredictor: using JPEG fallback ({} bytes)".format(len(buf.getvalue())),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+        return "data:image/jpeg;base64,{}".format(b64)
+
+    def predict_text(self, prompt: str, max_masks: int = 10) -> dict:
         """Send image + prompt to remote endpoint, return raw response dict.
 
         Returns dict with keys: rle, scores, boxes.
@@ -64,24 +157,82 @@ class FalPredictor:
         if self._last_image_np is None:
             raise RuntimeError("No image set. Call set_image first.")
 
-        # Encode image as JPEG data URI
-        pil_img = PILImage.fromarray(self._last_image_np)
-        buf = io.BytesIO()
-        pil_img.save(buf, format="JPEG", quality=90)
-        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-        data_uri = "data:image/jpeg;base64,{}".format(b64)
+        img = self._last_image_np
+        # Crop to native size if set — discards reflect-padding added by feature
+        # encoder so SAM-3 sees only real pixels and zero-pads internally.
+        if self._native_size is not None:
+            native_h, native_w = self._native_size
+            if img.shape[0] != native_h or img.shape[1] != native_w:
+                img = img[:native_h, :native_w]
+                QgsMessageLog.logMessage(
+                    "FalPredictor: cropped padded image from {}x{} to native {}x{}".format(
+                        self._last_image_np.shape[1],
+                        self._last_image_np.shape[0],
+                        native_w,
+                        native_h,
+                    ),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Info,
+                )
+        QgsMessageLog.logMessage(
+            "FalPredictor.predict_text: prompt='{}', max_masks={}, "
+            "img_shape={}, dtype={}, range=[{},{}]".format(
+                prompt,
+                max_masks,
+                img.shape,
+                img.dtype,
+                int(img.min()),
+                int(img.max()),
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+
+        # Upload to CDN (fast path) or fall back to data URI
+        cdn_url = self._upload_to_cdn(img)
+        if cdn_url:
+            image_url = cdn_url
+            QgsMessageLog.logMessage(
+                "FalPredictor: using CDN URL",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
+        else:
+            image_url = self._make_fallback_data_uri(img)
+
+        payload_dict = {
+            "image_url": image_url[:80] + "..." if len(image_url) > 80 else image_url,
+            "prompt": prompt,
+            "apply_mask": False,
+            "return_multiple_masks": True,
+            "max_masks": max_masks,
+            "include_scores": True,
+            "include_boxes": True,
+        }
+        QgsMessageLog.logMessage(
+            "FalPredictor: payload (sans image) = {}".format(
+                {k: v for k, v in payload_dict.items() if k != "image_url"}
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
 
         payload = json.dumps(
             {
-                "image_url": data_uri,
+                "image_url": image_url,
                 "prompt": prompt,
                 "apply_mask": False,
                 "return_multiple_masks": True,
-                "max_masks": 10,
+                "max_masks": max_masks,
                 "include_scores": True,
                 "include_boxes": True,
             }
         ).encode("utf-8")
+        QgsMessageLog.logMessage(
+            "FalPredictor: payload size = {} bytes".format(len(payload)),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
 
         req = urllib.request.Request(
             SAM3_INFERENCE_URL,
@@ -94,17 +245,27 @@ class FalPredictor:
         )
 
         try:
-            with urllib.request.urlopen(
-                req, timeout=_TIMEOUT_PREDICT
-            ) as resp:
+            with urllib.request.urlopen(req, timeout=_TIMEOUT_PREDICT) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
                 rle_data = result.get("rle", [])
-                n_masks = (
-                    len(rle_data) if isinstance(rle_data, list) else 1
-                )
+                scores = result.get("scores") or []
+                n_masks = len(rle_data) if isinstance(rle_data, list) else 1
+                # Log detailed response info
+                rle_preview = []
+                if isinstance(rle_data, list):
+                    for idx, r in enumerate(rle_data[:5]):
+                        tokens = r.split() if isinstance(r, str) else []
+                        rle_preview.append(
+                            "mask{}:{}tokens,{}chars".format(
+                                idx, len(tokens), len(r) if isinstance(r, str) else "?"
+                            )
+                        )
                 QgsMessageLog.logMessage(
-                    "FalPredictor: prediction OK ({} masks)".format(
-                        n_masks
+                    "FalPredictor: prediction OK — {} masks, "
+                    "scores={}, rle_preview=[{}]".format(
+                        n_masks,
+                        [round(s, 3) for s in scores[:10]] if scores else "null",
+                        ", ".join(rle_preview),
                     ),
                     "AI Segmentation",
                     level=Qgis.MessageLevel.Info,
@@ -113,28 +274,38 @@ class FalPredictor:
         except urllib.error.HTTPError as e:
             detail = ""
             try:
-                detail = json.loads(e.read().decode("utf-8")).get(
-                    "detail", ""
-                )
+                detail = json.loads(e.read().decode("utf-8")).get("detail", "")
             except Exception:
                 pass
-            if e.code == 401:
-                raise RuntimeError(
-                    "Invalid API key. Check FAL_KEY in .env"
+            # 422 with "No masks" = empty result, not an error
+            if e.code == 422 and "No masks" in detail:
+                QgsMessageLog.logMessage(
+                    "FalPredictor: no masks found for prompt '{}'".format(prompt),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Info,
                 )
-            raise RuntimeError(
-                "Inference error {}: {}".format(e.code, detail)
-            )
+                return {"rle": [], "scores": []}
+            if e.code == 401:
+                raise RuntimeError("Invalid API key. Check FAL_KEY in .env")
+            raise RuntimeError("Inference error {}: {}".format(e.code, detail))
         except urllib.error.URLError as e:
-            raise RuntimeError(
-                "Cannot reach inference service: {}".format(e.reason)
-            )
+            raise RuntimeError("Cannot reach inference service: {}".format(e.reason))
+
+    def set_native_size(self, height: int, width: int) -> None:
+        """Set the native (pre-padding) image dimensions.
+
+        When set, predict_text() will crop the stored image to these dimensions
+        before uploading, discarding reflect-padding added by the feature encoder.
+        SAM-3 will then zero-pad internally, avoiding mirror-image false detections.
+        """
+        self._native_size = (height, width)
 
     def reset_image(self) -> None:
         """Clear stored image state."""
         self._last_image_np = None
         self.is_image_set = False
         self.original_size = None
+        self._native_size = None
 
     def cleanup(self) -> None:
         """Release resources (compatibility with existing cleanup calls)."""

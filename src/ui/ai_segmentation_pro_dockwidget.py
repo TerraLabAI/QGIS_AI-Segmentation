@@ -220,6 +220,19 @@ class AISegmentationProDockWidget(QDockWidget):
         score_layout.addWidget(self.score_threshold_spinbox)
         pro_ctrl_layout.addLayout(score_layout)
 
+        # Max objects (max_masks)
+        max_obj_layout = QHBoxLayout()
+        max_obj_label = QLabel(tr("Max. objects"))
+        max_obj_label.setStyleSheet("font-size: 12px; color: palette(text);")
+        self.max_objects_spinbox = QSpinBox()
+        self.max_objects_spinbox.setRange(1, 32)
+        self.max_objects_spinbox.setValue(10)
+        self.max_objects_spinbox.setMinimumWidth(80)
+        max_obj_layout.addWidget(max_obj_label)
+        max_obj_layout.addStretch()
+        max_obj_layout.addWidget(self.max_objects_spinbox)
+        pro_ctrl_layout.addLayout(max_obj_layout)
+
         self.pro_controls_container.setVisible(False)
         self.main_layout.addWidget(self.pro_controls_container)
 
@@ -350,6 +363,9 @@ class AISegmentationProDockWidget(QDockWidget):
 
     def get_score_threshold(self) -> float:
         return self.score_threshold_spinbox.value() / 100.0
+
+    def get_max_objects(self) -> int:
+        return self.max_objects_spinbox.value()
 
     def get_pro_text_prompt(self) -> str:
         data = self._category_combo.currentData()
