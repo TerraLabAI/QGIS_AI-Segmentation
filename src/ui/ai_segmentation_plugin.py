@@ -571,7 +571,7 @@ class AISegmentationPlugin:
         try:
             if self._shortcut_filter is not None:
                 try:
-                    self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+                    QApplication.instance().removeEventFilter(self._shortcut_filter)
                 except RuntimeError:
                     pass
                 self._shortcut_filter = None
@@ -1238,7 +1238,7 @@ class AISegmentationPlugin:
             self._shortcut_filter = _ShortcutFilter(self)
         # Install on mainWindow (not app) to avoid SIGSEGV from
         # application-level filter receiving events for deleted C++ objects.
-        self.iface.mainWindow().installEventFilter(self._shortcut_filter)
+        QApplication.instance().installEventFilter(self._shortcut_filter)
 
         # Show tutorial notification for first-time users
         self._show_tutorial_notification()
@@ -1729,7 +1729,7 @@ class AISegmentationPlugin:
         # Remove keyboard shortcut filter
         try:
             if self._shortcut_filter is not None:
-                self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+                QApplication.instance().removeEventFilter(self._shortcut_filter)
         except (RuntimeError, AttributeError):
             pass
 
@@ -1775,7 +1775,7 @@ class AISegmentationPlugin:
 
         if self._shortcut_filter is not None:
             try:
-                self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+                QApplication.instance().removeEventFilter(self._shortcut_filter)
             except RuntimeError:
                 pass
         self._stopping_segmentation = True
@@ -2196,6 +2196,13 @@ class AISegmentationPlugin:
         self._current_crop_info = crop_info
         self._encoding_in_progress = False
 
+        # Restore keyboard focus to canvas after encoding (dock widget
+        # updates during encoding can steal focus, breaking shortcuts).
+        try:
+            self.iface.mapCanvas().setFocus()
+        except RuntimeError:
+            pass
+
         QgsMessageLog.logMessage(
             "Encoded crop: bounds={}, shape={}".format(
                 crop_info['bounds'], crop_info['img_shape']),
@@ -2317,6 +2324,10 @@ class AISegmentationPlugin:
             )
             return
 
+        # Check crop status BEFORE adding to active points, so the zoom
+        # detection sees the true "no active points" state after a save.
+        crop_status = self._check_crop_status(raster_pt)
+
         # Save current mask state for undo before modifying anything
         self._mask_state_history.append({
             'mask': self.current_mask,
@@ -2338,8 +2349,6 @@ class AISegmentationPlugin:
         )
 
         # On-demand encoding: encode crop if needed
-        crop_status = self._check_crop_status(raster_pt)
-
         if crop_status != "ok":
             if not self._handle_reencode(crop_status, raster_pt):
                 self.prompts.undo()
@@ -2387,6 +2396,9 @@ class AISegmentationPlugin:
             )
             return
 
+        # Check crop status BEFORE adding to active points (same reason as positive)
+        crop_status = self._check_crop_status(raster_pt)
+
         # Save current mask state for undo before modifying anything
         self._mask_state_history.append({
             'mask': self.current_mask,
@@ -2406,8 +2418,6 @@ class AISegmentationPlugin:
         )
 
         # Re-encode if needed (zoom changed or point outside crop)
-        crop_status = self._check_crop_status(raster_pt)
-
         if crop_status != "ok":
             if not self._handle_reencode(crop_status, raster_pt):
                 self.prompts.undo()
@@ -2578,6 +2588,13 @@ class AISegmentationPlugin:
             self._update_mask_visualization()
         else:
             self._clear_mask_visualization()
+
+        # Restore focus to canvas after prediction (dock widget updates
+        # above can steal keyboard focus, breaking S/Ctrl+Z shortcuts).
+        try:
+            self.iface.mapCanvas().setFocus()
+        except RuntimeError:
+            pass
 
     def _update_mask_visualization(self):
         if self.mask_rubber_band is None:
