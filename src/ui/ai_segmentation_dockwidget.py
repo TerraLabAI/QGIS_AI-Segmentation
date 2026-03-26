@@ -18,16 +18,200 @@ from qgis.PyQt.QtWidgets import (
     QStyle,
     QSizePolicy,
     QScrollArea,
+    QComboBox,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
-from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
+from qgis.PyQt.QtGui import QDesktopServices, QKeySequence, QStandardItem
 from qgis.PyQt.QtWidgets import QShortcut
-from qgis.core import QgsMapLayerProxyModel, QgsProject
-
-from qgis.gui import QgsMapLayerComboBox
+from qgis.core import QgsMapLayerProxyModel, QgsProject, QgsLayerTree
 
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
+
+
+class LayerTreeComboBox(QComboBox):
+    """Drop-down that mirrors the QGIS Layer panel order with group headers.
+
+    Only visible raster layers are selectable.  Group names appear as
+    non-selectable, indented headers.  Auto-refreshes on layer add/remove,
+    visibility toggle, and tree reorder.
+    """
+
+    layerChanged = pyqtSignal(object)  # emits QgsMapLayer or None
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._current_layer_id = None  # track selection across refreshes
+        self._layer_ids = []  # ordered list of selectable layer IDs
+        self._refreshing = False
+
+        self.currentIndexChanged.connect(self._on_index_changed)
+
+        # Connect to project signals for auto-refresh
+        proj = QgsProject.instance()
+        proj.layersAdded.connect(self._schedule_refresh)
+        proj.layersRemoved.connect(self._schedule_refresh)
+
+        root = proj.layerTreeRoot()
+        root.visibilityChanged.connect(self._schedule_refresh)
+        root.addedChildren.connect(self._schedule_refresh)
+        root.removedChildren.connect(self._schedule_refresh)
+
+        # Debounce refresh (group visibility fires per-node)
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self._refresh)
+
+        # Initial population
+        self._refresh()
+
+    # -- public API (matches QgsMapLayerComboBox interface) --
+
+    def currentLayer(self):
+        """Return the currently selected QgsMapLayer, or None."""
+        idx = self.currentIndex()
+        if idx < 0:
+            return None
+        layer_id = self.itemData(idx)
+        if layer_id is None:
+            return None
+        return QgsProject.instance().mapLayer(layer_id)
+
+    def setLayer(self, layer):
+        """Programmatically select a layer."""
+        if layer is None:
+            return
+        target_id = layer.id()
+        for i in range(self.count()):
+            if self.itemData(i) == target_id:
+                self.setCurrentIndex(i)
+                return
+
+    def count_layers(self):
+        """Return the number of selectable (non-header) items."""
+        return len(self._layer_ids)
+
+    def cleanup(self):
+        """Disconnect project signals."""
+        try:
+            proj = QgsProject.instance()
+            proj.layersAdded.disconnect(self._schedule_refresh)
+            proj.layersRemoved.disconnect(self._schedule_refresh)
+            root = proj.layerTreeRoot()
+            root.visibilityChanged.disconnect(self._schedule_refresh)
+            root.addedChildren.disconnect(self._schedule_refresh)
+            root.removedChildren.disconnect(self._schedule_refresh)
+        except (TypeError, RuntimeError):
+            pass
+        try:
+            self._refresh_timer.stop()
+        except RuntimeError:
+            pass
+
+    # -- internals --
+
+    def _schedule_refresh(self, *_args):
+        """Debounced refresh (100 ms)."""
+        self._refresh_timer.start(100)
+
+    def _refresh(self):
+        """Rebuild the combo items from the layer tree."""
+        self._refreshing = True
+        prev_id = self._current_layer_id
+        self.clear()
+        self._layer_ids = []
+
+        root = QgsProject.instance().layerTreeRoot()
+        self._traverse(root, depth=0)
+
+        # Restore previous selection
+        restored = False
+        if prev_id:
+            for i in range(self.count()):
+                if self.itemData(i) == prev_id:
+                    self.setCurrentIndex(i)
+                    restored = True
+                    break
+
+        # If not restored, pick first selectable item
+        if not restored:
+            for i in range(self.count()):
+                if self.itemData(i) is not None:
+                    self.setCurrentIndex(i)
+                    break
+
+        self._refreshing = False
+
+        # Emit if selection actually changed
+        new_layer = self.currentLayer()
+        new_id = new_layer.id() if new_layer else None
+        if new_id != prev_id:
+            self._current_layer_id = new_id
+            self.layerChanged.emit(new_layer)
+
+    def _has_visible_rasters(self, node):
+        """Check if a tree node has any visible raster layer descendants."""
+        for child in node.children():
+            if QgsLayerTree.isLayer(child):
+                layer = child.layer()
+                if (layer and layer.type() == layer.RasterLayer
+                        and child.isVisible()):
+                    return True
+            elif QgsLayerTree.isGroup(child):
+                if child.isVisible() and self._has_visible_rasters(child):
+                    return True
+        return False
+
+    def _traverse(self, node, depth):
+        """Recursively walk the layer tree and add items."""
+        from qgis.core import QgsApplication, QgsIconUtils
+        for child in node.children():
+            if QgsLayerTree.isGroup(child):
+                # Skip invisible groups
+                if not child.isVisible():
+                    continue
+                # Skip groups with no visible raster children
+                if not self._has_visible_rasters(child):
+                    continue
+                # Add group header with the same folder icon as QGIS Layers panel
+                group_name = child.name()
+                prefix = "   " * max(0, depth)
+                folder_icon = QgsApplication.getThemeIcon("/mActionFolder.svg")
+                if folder_icon.isNull():
+                    folder_icon = self.style().standardIcon(
+                        QStyle.StandardPixmap.SP_DirIcon)
+                self.addItem(folder_icon, "{}{}".format(prefix, group_name))
+                idx = self.count() - 1
+                item = self.model().item(idx)
+                if item:
+                    item.setEnabled(False)
+                    item.setSelectable(False)
+                # Recurse into group
+                self._traverse(child, depth + 1)
+
+            elif QgsLayerTree.isLayer(child):
+                layer = child.layer()
+                if layer is None:
+                    continue
+                if layer.type() != layer.RasterLayer:
+                    continue
+                if not child.isVisible():
+                    continue
+                # Add selectable layer with raster icon
+                prefix = "   " * max(0, depth)
+                layer_icon = QgsIconUtils.iconRaster()
+                self.addItem(layer_icon, "{}{}".format(prefix, layer.name()), layer.id())
+                self._layer_ids.append(layer.id())
+
+    def _on_index_changed(self, index):
+        """Handle user selection change."""
+        if self._refreshing:
+            return
+        layer = self.currentLayer()
+        layer_id = layer.id() if layer else None
+        if layer_id != self._current_layer_id:
+            self._current_layer_id = layer_id
+            self.layerChanged.emit(layer)
 
 from ..core.activation_manager import (  # noqa: E402
     is_plugin_activated,
@@ -49,7 +233,7 @@ class AISegmentationDockWidget(QDockWidget):
     save_polygon_requested = pyqtSignal()
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
-    refine_settings_changed = pyqtSignal(int, int, bool, int)  # expand, simplify, fill_holes, min_area
+    refine_settings_changed = pyqtSignal(int, int, int, bool, int)  # simplify, smooth, expand, fill_holes, min_area
     batch_mode_changed = pyqtSignal(bool)  # Batch mode is always on
 
     def __init__(self, parent=None):
@@ -104,9 +288,17 @@ class AISegmentationDockWidget(QDockWidget):
         self._refine_debounce_timer.setSingleShot(True)
         self._refine_debounce_timer.timeout.connect(self._emit_refine_changed)
 
+        # Debounce timer for layer visibility changes (fires per-node in groups)
+        self._visibility_debounce_timer = QTimer(self)
+        self._visibility_debounce_timer.setSingleShot(True)
+        self._visibility_debounce_timer.timeout.connect(self._update_ui_state)
+
         # Connect to project layer signals for dynamic updates
         QgsProject.instance().layersAdded.connect(self._on_layers_added)
         QgsProject.instance().layersRemoved.connect(self._on_layers_removed)
+        # Refresh layer dropdown when layer visibility is toggled (debounced)
+        QgsProject.instance().layerTreeRoot().visibilityChanged.connect(
+            self._on_layer_visibility_changed)
 
         # Update UI state
         self._update_full_ui()
@@ -356,10 +548,7 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(layer_label)
         self.layer_label = layer_label
 
-        self.layer_combo = QgsMapLayerComboBox()
-        self.layer_combo.setFilters(QgsMapLayerProxyModel.RasterLayer)
-        self.layer_combo.setAllowEmptyLayer(False)
-        self.layer_combo.setShowCrs(False)
+        self.layer_combo = LayerTreeComboBox()
         self.layer_combo.layerChanged.connect(self._on_layer_changed)
         self.layer_combo.setToolTip(tr("Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)"))
         layout.addWidget(self.layer_combo)
@@ -591,9 +780,49 @@ class AISegmentationDockWidget(QDockWidget):
         """)
         refine_content_layout = QVBoxLayout(self.refine_content_widget)
         refine_content_layout.setContentsMargins(10, 10, 10, 10)
-        refine_content_layout.setSpacing(8)
+        refine_content_layout.setSpacing(6)
 
-        # 1. Expand/Contract: SpinBox with +/- buttons (-1000 to +1000)
+        # ── Outline section ──
+        outline_label = QLabel("── " + tr("Outline") + " ──")
+        outline_label.setStyleSheet(
+            "font-size: 11px; color: palette(mid); font-weight: bold; "
+            "background: transparent; border: none; padding-top: 2px;")
+        refine_content_layout.addWidget(outline_label)
+
+        # 1. Simplify outline: SpinBox (0 to 1000) - reduces small variations
+        simplify_layout = QHBoxLayout()
+        simplify_label = QLabel(tr("Simplify outline:"))
+        simplify_label.setToolTip(tr("Reduce small variations in the outline (0 = no change)"))
+        self.simplify_spinbox = QSpinBox()
+        self.simplify_spinbox.setRange(0, 1000)
+        self.simplify_spinbox.setValue(3)  # Default to 3 for smoother outlines
+        self.simplify_spinbox.setMinimumWidth(80)
+        simplify_layout.addWidget(simplify_label)
+        simplify_layout.addStretch()
+        simplify_layout.addWidget(self.simplify_spinbox)
+        refine_content_layout.addLayout(simplify_layout)
+
+        # 2. Smooth outline: SpinBox (0 to 1000) - corner smoothing (0 = off)
+        smooth_layout = QHBoxLayout()
+        smooth_label = QLabel(tr("Smooth outline:"))
+        smooth_label.setToolTip(tr("Apply corner smoothing to reduce jagged edges (0 = no change)"))
+        self.smooth_spinbox = QSpinBox()
+        self.smooth_spinbox.setRange(0, 1000)
+        self.smooth_spinbox.setValue(0)  # Default: no smoothing
+        self.smooth_spinbox.setMinimumWidth(80)
+        smooth_layout.addWidget(smooth_label)
+        smooth_layout.addStretch()
+        smooth_layout.addWidget(self.smooth_spinbox)
+        refine_content_layout.addLayout(smooth_layout)
+
+        # ── Selection section ──
+        selection_label = QLabel("── " + tr("Selection") + " ──")
+        selection_label.setStyleSheet(
+            "font-size: 11px; color: palette(mid); font-weight: bold; "
+            "background: transparent; border: none; padding-top: 8px;")
+        refine_content_layout.addWidget(selection_label)
+
+        # 3. Expand/Contract: SpinBox with +/- buttons (-1000 to +1000)
         expand_layout = QHBoxLayout()
         expand_label = QLabel(tr("Expand/Contract:"))
         expand_label.setToolTip(tr("Positive = expand outward, Negative = shrink inward"))
@@ -607,20 +836,7 @@ class AISegmentationDockWidget(QDockWidget):
         expand_layout.addWidget(self.expand_spinbox)
         refine_content_layout.addLayout(expand_layout)
 
-        # 2. Simplify outline: SpinBox (0 to 1000) - reduces small variations in the outline
-        simplify_layout = QHBoxLayout()
-        simplify_label = QLabel(tr("Simplify outline:"))
-        simplify_label.setToolTip(tr("Reduce small variations in the outline (0 = no change)"))
-        self.simplify_spinbox = QSpinBox()
-        self.simplify_spinbox.setRange(0, 1000)
-        self.simplify_spinbox.setValue(3)  # Default to 3 for smoother outlines
-        self.simplify_spinbox.setMinimumWidth(80)
-        simplify_layout.addWidget(simplify_label)
-        simplify_layout.addStretch()
-        simplify_layout.addWidget(self.simplify_spinbox)
-        refine_content_layout.addLayout(simplify_layout)
-
-        # 3. Fill holes: Checkbox - fills interior holes in the mask
+        # 4. Fill holes: Checkbox - fills interior holes in the mask
         fill_holes_layout = QHBoxLayout()
         self.fill_holes_checkbox = QCheckBox(tr("Fill holes"))
         self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
@@ -629,7 +845,7 @@ class AISegmentationDockWidget(QDockWidget):
         fill_holes_layout.addStretch()
         refine_content_layout.addLayout(fill_holes_layout)
 
-        # 4. Remove small artifacts: SpinBox - minimum area threshold
+        # 5. Min. region size: SpinBox - minimum area threshold
         min_area_layout = QHBoxLayout()
         min_area_label = QLabel(tr("Min. region size:"))
         min_area_label.setToolTip(
@@ -655,8 +871,9 @@ class AISegmentationDockWidget(QDockWidget):
             self.refine_group.setMaximumHeight(_REFINE_COLLAPSED_HEIGHT)
 
         # Connect signals
-        self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
         self.simplify_spinbox.valueChanged.connect(self._on_refine_changed)
+        self.smooth_spinbox.valueChanged.connect(self._on_refine_changed)
+        self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
         self.fill_holes_checkbox.stateChanged.connect(self._on_refine_changed)
         self.min_area_spinbox.valueChanged.connect(self._on_refine_changed)
 
@@ -686,43 +903,51 @@ class AISegmentationDockWidget(QDockWidget):
     def _emit_refine_changed(self):
         """Emit the refine settings changed signal after debounce."""
         self.refine_settings_changed.emit(
-            self.expand_spinbox.value(),
             self.simplify_spinbox.value(),
+            self.smooth_spinbox.value(),
+            self.expand_spinbox.value(),
             self.fill_holes_checkbox.isChecked(),
             self.min_area_spinbox.value()
         )
 
     def reset_refine_sliders(self):
         """Reset refinement controls to default values without emitting signals."""
-        self.expand_spinbox.blockSignals(True)
         self.simplify_spinbox.blockSignals(True)
+        self.smooth_spinbox.blockSignals(True)
+        self.expand_spinbox.blockSignals(True)
         self.fill_holes_checkbox.blockSignals(True)
         self.min_area_spinbox.blockSignals(True)
 
+        self.simplify_spinbox.setValue(3)
+        self.smooth_spinbox.setValue(0)
         self.expand_spinbox.setValue(0)
-        self.simplify_spinbox.setValue(3)  # Default to 3
-        self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
-        self.min_area_spinbox.setValue(100)  # Default: remove small artifacts
+        self.fill_holes_checkbox.setChecked(False)
+        self.min_area_spinbox.setValue(100)
 
-        self.expand_spinbox.blockSignals(False)
         self.simplify_spinbox.blockSignals(False)
+        self.smooth_spinbox.blockSignals(False)
+        self.expand_spinbox.blockSignals(False)
         self.fill_holes_checkbox.blockSignals(False)
         self.min_area_spinbox.blockSignals(False)
 
-    def set_refine_values(self, expand: int, simplify: int, fill_holes: bool = False, min_area: int = 0):
+    def set_refine_values(self, simplify: int, smooth: int, expand: int,
+                          fill_holes: bool, min_area: int):
         """Set refine slider values without emitting signals."""
-        self.expand_spinbox.blockSignals(True)
         self.simplify_spinbox.blockSignals(True)
+        self.smooth_spinbox.blockSignals(True)
+        self.expand_spinbox.blockSignals(True)
         self.fill_holes_checkbox.blockSignals(True)
         self.min_area_spinbox.blockSignals(True)
 
-        self.expand_spinbox.setValue(expand)
         self.simplify_spinbox.setValue(simplify)
+        self.smooth_spinbox.setValue(smooth)
+        self.expand_spinbox.setValue(expand)
         self.fill_holes_checkbox.setChecked(fill_holes)
         self.min_area_spinbox.setValue(min_area)
 
-        self.expand_spinbox.blockSignals(False)
         self.simplify_spinbox.blockSignals(False)
+        self.smooth_spinbox.blockSignals(False)
+        self.expand_spinbox.blockSignals(False)
         self.fill_holes_checkbox.blockSignals(False)
         self.min_area_spinbox.blockSignals(False)
 
@@ -815,7 +1040,9 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_shortcuts_toggle(self):
         """Toggle shortcuts section visibility."""
         self._shortcuts_expanded = not self._shortcuts_expanded
-        self._shortcuts_content.setVisible(self._shortcuts_expanded)
+        # Defer visibility change to next event loop tick to avoid layout jitter
+        expanded = self._shortcuts_expanded
+        QTimer.singleShot(0, lambda: self._shortcuts_content.setVisible(expanded))
         arrow = "&#9660;" if self._shortcuts_expanded else "&#9654;"
         self._shortcuts_toggle.setText(
             '<a href="#" style="color: palette(text); '
@@ -990,6 +1217,10 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_layers_removed(self, layer_ids):
         """Handle layers removed from project."""
         self._update_ui_state()
+
+    def _on_layer_visibility_changed(self, node):
+        """Handle layer visibility toggle in the layer tree (debounced)."""
+        self._visibility_debounce_timer.start(100)
 
     def _on_start_clicked(self):
         layer = self.layer_combo.currentLayer()
@@ -1353,34 +1584,11 @@ class AISegmentationDockWidget(QDockWidget):
 
         return True
 
-    def _update_layer_filter(self):
-        """Update the layer combo to exclude non-georeferenced rasters."""
-        from qgis.core import QgsProject
-
-        excluded_layers = []
-        all_raster_count = 0
-
-        for layer in QgsProject.instance().mapLayers().values():
-            if layer.type() != layer.RasterLayer:
-                continue
-            all_raster_count += 1
-
-        self.layer_combo.setExceptedLayerList(excluded_layers)
-
-        # Update warning message
-        if all_raster_count == 0:
-            self.no_rasters_label.setText(
-                tr("No layer found. Add a raster or online layer to your project.")
-            )
-
     def _update_ui_state(self):
-        # Update layer filter first
-        self._update_layer_filter()
-
         layer = self.layer_combo.currentLayer()
         has_layer = layer is not None
 
-        has_rasters_available = self.layer_combo.count() > 0
+        has_rasters_available = self.layer_combo.count_layers() > 0
         self.no_rasters_widget.setVisible(not has_rasters_available and not self._segmentation_active)
         self.layer_combo.setVisible(has_rasters_available)
 
@@ -1413,6 +1621,10 @@ class AISegmentationDockWidget(QDockWidget):
     def cleanup_signals(self):
         """Disconnect project signals and clean up shortcuts/timers on plugin reload."""
         try:
+            self.layer_combo.cleanup()
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        try:
             QgsProject.instance().layersAdded.disconnect(self._on_layers_added)
         except (TypeError, RuntimeError):
             pass
@@ -1437,6 +1649,12 @@ class AISegmentationDockWidget(QDockWidget):
             self._refine_debounce_timer.blockSignals(True)
             self._refine_debounce_timer.stop()
             self._refine_debounce_timer.timeout.disconnect()
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        try:
+            self._visibility_debounce_timer.blockSignals(True)
+            self._visibility_debounce_timer.stop()
+            self._visibility_debounce_timer.timeout.disconnect()
         except (TypeError, RuntimeError, AttributeError):
             pass
 

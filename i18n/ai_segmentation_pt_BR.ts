@@ -326,6 +326,26 @@ export AI_SEGMENTATION_CACHE_DIR=/seu/caminho</translation>
         <source>0 = keep all.</source>
         <translation>0 = manter todos.</translation>
     </message>
+    <message>
+        <source>Smooth outline</source>
+        <translation>Suavizar contorno</translation>
+    </message>
+    <message>
+        <source>Smooth outline:</source>
+        <translation>Suavizar contorno:</translation>
+    </message>
+    <message>
+        <source>Apply corner smoothing to reduce jagged edges (0 = no change)</source>
+        <translation>Aplicar suavização de cantos para reduzir bordas serrilhadas (0 = sem alteração)</translation>
+    </message>
+    <message>
+        <source>Outline</source>
+        <translation>Contorno</translation>
+    </message>
+    <message>
+        <source>Selection</source>
+        <translation>Seleção</translation>
+    </message>
 
     <!-- Instructions -->
     <message>

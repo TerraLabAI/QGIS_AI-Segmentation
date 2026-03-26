@@ -326,6 +326,26 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <source>0 = keep all.</source>
         <translation>0 = mantener todos.</translation>
     </message>
+    <message>
+        <source>Smooth outline</source>
+        <translation>Suavizar contorno</translation>
+    </message>
+    <message>
+        <source>Smooth outline:</source>
+        <translation>Suavizar contorno:</translation>
+    </message>
+    <message>
+        <source>Apply corner smoothing to reduce jagged edges (0 = no change)</source>
+        <translation>Aplicar suavizado de esquinas para reducir bordes dentados (0 = sin cambios)</translation>
+    </message>
+    <message>
+        <source>Outline</source>
+        <translation>Contorno</translation>
+    </message>
+    <message>
+        <source>Selection</source>
+        <translation>Selección</translation>
+    </message>
 
     <!-- Instructions -->
     <message>

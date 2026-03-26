@@ -555,6 +555,16 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
         center_x + half_size, center_y + half_size
     )
 
+    QgsMessageLog.logMessage(
+        "Online crop request: center=({:.6f}, {:.6f}), mupp={:.6f}, "
+        "extent=({:.2f}, {:.2f}, {:.2f}, {:.2f}), CRS={}".format(
+            center_x, center_y, canvas_mupp,
+            extent.xMinimum(), extent.yMinimum(),
+            extent.xMaximum(), extent.yMaximum(),
+            layer.crs().authid()),
+        "AI Segmentation", level=Qgis.MessageLevel.Info
+    )
+
     try:
         provider.enableProviderResampling(True)
         original_method = provider.zoomedInResamplingMethod()
@@ -569,8 +579,8 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
         # We also re-fetch after getting a valid block to detect
         # mixed-resolution tiles (stale cache from different zoom).
         from qgis.core import QgsApplication
-        max_retries = 5
-        retry_delay = 0.8
+        max_retries = 8
+        retry_delay = 1.0
         block = None
         prev_data = None
         for attempt in range(max_retries):
@@ -591,13 +601,14 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
                         time.sleep(0.05)
                     continue
             if attempt < max_retries - 1:
+                delay = retry_delay * (1 + attempt * 0.5)  # Progressive: 1.0, 1.5, 2.0, ...
                 QgsMessageLog.logMessage(
                     "Online tile fetch attempt {} - "
                     "retrying in {:.1f}s...".format(
-                        attempt + 1, retry_delay),
+                        attempt + 1, delay),
                     "AI Segmentation", level=Qgis.MessageLevel.Warning
                 )
-                deadline = time.monotonic() + retry_delay
+                deadline = time.monotonic() + delay
                 while time.monotonic() < deadline:
                     QgsApplication.processEvents()
                     time.sleep(0.05)

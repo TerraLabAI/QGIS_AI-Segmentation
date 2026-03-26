@@ -1,6 +1,7 @@
 import math
 import os
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
@@ -190,6 +191,15 @@ class _ShortcutFilter(QObject):
         return False
 
 
+@dataclass
+class FrozenCropSession:
+    """A frozen crop session whose mask has been converted to a geographic polygon."""
+    polygon: QgsGeometry
+    points_positive: List[Tuple[float, float]] = field(default_factory=list)
+    points_negative: List[Tuple[float, float]] = field(default_factory=list)
+    crop_info: Optional[dict] = None
+
+
 class PromptManager:
     def __init__(self):
         self.positive_points: List[Tuple[float, float]] = []
@@ -277,16 +287,21 @@ class AISegmentationPlugin:
         self.current_transform_info = None
         self.current_low_res_mask = None  # For iterative refinement with negative points
         self.saved_polygons = []
+        self._mask_state_history: list = []  # Stack of mask states for per-point undo
+        self._frozen_sessions: List[FrozenCropSession] = []  # Frozen crop polygons
+        self._active_crop_points_positive: List[Tuple[float, float]] = []
+        self._active_crop_points_negative: List[Tuple[float, float]] = []
 
         self._initialized = False
         self._current_layer = None
         self._current_layer_name = ""
 
         # Refinement settings
+        self._refine_simplify = 3
+        self._refine_smooth = 0
         self._refine_expand = 0
-        self._refine_simplify = 3  # Default: matches dockwidget spinbox
-        self._refine_fill_holes = False  # Default: matches dockwidget checkbox
-        self._refine_min_area = 100  # Default: matches dockwidget spinbox
+        self._refine_fill_holes = False
+        self._refine_min_area = 100
 
         self._is_non_georeferenced_mode = False  # Track if current layer is non-georeferenced
         self._is_online_layer = False  # Track if current layer is online (WMS, XYZ, etc.)
@@ -1303,53 +1318,68 @@ class AISegmentationPlugin:
             self.dock_widget.reset_session()
 
     def _on_save_polygon(self):
-        """Save current mask as polygon."""
+        """Save current mask as polygon (including any frozen crop sessions)."""
         if self._encoding_in_progress:
             return
-        if self.current_mask is None or self.current_transform_info is None:
+        # Allow save if we have frozen sessions even without active mask
+        has_active = (self.current_mask is not None
+                      and self.current_transform_info is not None)
+        if not has_active and not self._frozen_sessions:
             return
 
         self._ensure_polygon_rubberband_sync()
 
-        from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
+        from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement, chaikin_smooth
 
-        # Apply all mask-level refinements for display (green shows with effects)
-        mask_for_display = self.current_mask
-        if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
-            mask_for_display = apply_mask_refinement(
-                self.current_mask,
-                expand_value=self._refine_expand,
-                fill_holes=self._refine_fill_holes,
-                min_area=self._refine_min_area
-            )
+        # Collect all geometry parts: frozen polygons + active mask
+        all_geoms = [s.polygon for s in self._frozen_sessions]
 
-        geometries = mask_to_polygons(mask_for_display, self.current_transform_info)
+        if has_active:
+            # Apply all mask-level refinements for display
+            mask_for_display = self.current_mask
+            if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
+                mask_for_display = apply_mask_refinement(
+                    self.current_mask,
+                    expand_value=self._refine_expand,
+                    fill_holes=self._refine_fill_holes,
+                    min_area=self._refine_min_area
+                )
 
-        if geometries:
-            combined = QgsGeometry.unaryUnion(geometries)
+            geometries = mask_to_polygons(mask_for_display, self.current_transform_info)
+            if geometries:
+                active_combined = QgsGeometry.unaryUnion(geometries)
+                if active_combined and not active_combined.isEmpty():
+                    # Apply simplification if enabled
+                    tolerance = self._compute_simplification_tolerance(
+                        self.current_transform_info, self._refine_simplify
+                    )
+                    if tolerance > 0:
+                        active_combined = active_combined.simplify(tolerance)
+                    # Apply Chaikin smoothing after simplification
+                    if self._refine_smooth > 0:
+                        active_combined = chaikin_smooth(
+                            active_combined, self._refine_smooth)
+                    all_geoms.append(active_combined)
+
+        if all_geoms:
+            combined = QgsGeometry.unaryUnion(all_geoms)
         else:
             combined = None
 
         if combined and not combined.isEmpty():
-            # Apply simplification if enabled
-            tolerance = self._compute_simplification_tolerance(
-                self.current_transform_info, self._refine_simplify
-            )
-            if tolerance > 0:
-                combined = combined.simplify(tolerance)
-
             # Store WKT (with effects), score, transform info, raw mask, points, and refine settings
             self.saved_polygons.append({
                 'geometry_wkt': combined.asWkt(),
                 'score': self.current_score,
                 'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
-                'raw_mask': self.current_mask.copy(),  # Store RAW mask for re-applying different settings
-                'points_positive': list(self.prompts.positive_points),  # Points for undo restoration
-                'points_negative': list(self.prompts.negative_points),  # Points for undo restoration
-                'refine_expand': self._refine_expand,  # Refine settings at save time
-                'refine_simplify': self._refine_simplify,  # Refine settings at save time
-                'refine_fill_holes': self._refine_fill_holes,  # Refine settings at save time
-                'refine_min_area': self._refine_min_area,  # Refine settings at save time
+                'raw_mask': self.current_mask.copy() if self.current_mask is not None else None,
+                'points_positive': list(self.prompts.positive_points),
+                'points_negative': list(self.prompts.negative_points),
+                'refine_simplify': self._refine_simplify,
+                'refine_smooth': self._refine_smooth,
+                'refine_expand': self._refine_expand,
+                'refine_fill_holes': self._refine_fill_holes,
+                'refine_min_area': self._refine_min_area,
             })
 
             saved_rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
@@ -1373,8 +1403,12 @@ class AISegmentationPlugin:
             # Note: We keep refinement settings in batch mode so the user can
             # apply the same expand/simplify to multiple masks
 
-        # Clear current state for next polygon
+        # Clear current state for next polygon (including frozen sessions)
         self.prompts.clear()
+        self._mask_state_history = []
+        self._frozen_sessions = []
+        self._active_crop_points_positive = []
+        self._active_crop_points_negative = []
         if self.map_tool:
             self.map_tool.clear_markers()
         self._clear_mask_visualization()
@@ -1398,17 +1432,21 @@ class AISegmentationPlugin:
 
     def _on_export_layer_impl(self):
         """Internal export implementation."""
-        from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
+        from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement, chaikin_smooth
 
         self._ensure_polygon_rubberband_sync()
 
-        if not self.saved_polygons and self.current_mask is None:
+        has_active = (self.current_mask is not None
+                      and self.current_transform_info is not None)
+        if not self.saved_polygons and not has_active and not self._frozen_sessions:
             return  # Nothing to export
 
         polygons_to_export = list(self.saved_polygons)
 
-        # Include current unsaved mask if exists (apply current refine settings)
-        if self.current_mask is not None and self.current_transform_info is not None:
+        # Build current unsaved geometry: frozen sessions + active mask
+        current_geoms = [s.polygon for s in self._frozen_sessions]
+
+        if has_active:
             mask_to_export = self.current_mask
             if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
                 mask_to_export = apply_mask_refinement(
@@ -1419,18 +1457,26 @@ class AISegmentationPlugin:
                 )
             geometries = mask_to_polygons(mask_to_export, self.current_transform_info)
             if geometries:
-                combined = QgsGeometry.unaryUnion(geometries)
-                if combined and not combined.isEmpty():
+                active_combined = QgsGeometry.unaryUnion(geometries)
+                if active_combined and not active_combined.isEmpty():
                     tolerance = self._compute_simplification_tolerance(
                         self.current_transform_info, self._refine_simplify
                     )
                     if tolerance > 0:
-                        combined = combined.simplify(tolerance)
-                    polygons_to_export.append({
-                        'geometry_wkt': combined.asWkt(),
-                        'score': self.current_score,
-                        'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
-                    })
+                        active_combined = active_combined.simplify(tolerance)
+                    if self._refine_smooth > 0:
+                        active_combined = chaikin_smooth(
+                            active_combined, self._refine_smooth)
+                    current_geoms.append(active_combined)
+
+        if current_geoms:
+            combined = QgsGeometry.unaryUnion(current_geoms)
+            if combined and not combined.isEmpty():
+                polygons_to_export.append({
+                    'geometry_wkt': combined.asWkt(),
+                    'score': self.current_score,
+                    'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
+                })
 
         self._stopping_segmentation = True
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
@@ -1719,16 +1765,18 @@ class AISegmentationPlugin:
         self._reset_session()
         self.dock_widget.reset_session()
 
-    def _on_refine_settings_changed(self, expand: int, simplify: int, fill_holes: bool, min_area: int):
+    def _on_refine_settings_changed(self, simplify: int, smooth: int, expand: int,
+                                     fill_holes: bool, min_area: int):
         """Handle refinement control changes."""
         QgsMessageLog.logMessage(
-            "Refine settings: expand={}, simplify={}, fill_holes={}, min_area={}".format(
-                expand, simplify, fill_holes, min_area),
+            "Refine settings: simplify={}, smooth={}, expand={}, fill_holes={}, min_area={}".format(
+                simplify, smooth, expand, fill_holes, min_area),
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )
-        self._refine_expand = expand
         self._refine_simplify = simplify
+        self._refine_smooth = smooth
+        self._refine_expand = expand
         self._refine_fill_holes = fill_holes
         self._refine_min_area = min_area
 
@@ -1795,24 +1843,31 @@ class AISegmentationPlugin:
         if not (in_x and in_y):
             return "outside_bounds"
 
-        # Detect significant zoom-in requiring higher resolution
-        if self._is_online_layer:
-            canvas = self.iface.mapCanvas()
-            current_canvas_mupp = canvas.mapUnitsPerPixel()
-            if self._current_crop_canvas_mupp and current_canvas_mupp > 0:
-                if current_canvas_mupp < 0.7 * self._current_crop_canvas_mupp:
-                    return "zoom_changed"
-                if current_canvas_mupp > 1.5 * self._current_crop_canvas_mupp:
-                    return "zoom_changed"
-        else:
-            if self._current_crop_canvas_mupp is not None:
+        # Detect significant zoom-in requiring higher resolution.
+        # Skip zoom re-encode when there are active points — re-encoding
+        # destroys the current mask via lossy 64x64 logit transfer.
+        # The existing crop is still valid (point is in bounds), so SAM
+        # can predict just fine on the current encoding.
+        has_active_points = (self._active_crop_points_positive
+                             or self._active_crop_points_negative)
+        if not has_active_points:
+            if self._is_online_layer:
                 canvas = self.iface.mapCanvas()
-                current_mupp = canvas.mapUnitsPerPixel()
-                if current_mupp > 0:
-                    if current_mupp < 0.7 * self._current_crop_canvas_mupp:
+                current_canvas_mupp = canvas.mapUnitsPerPixel()
+                if self._current_crop_canvas_mupp and current_canvas_mupp > 0:
+                    if current_canvas_mupp < 0.7 * self._current_crop_canvas_mupp:
                         return "zoom_changed"
-                    if current_mupp > 1.5 * self._current_crop_canvas_mupp:
+                    if current_canvas_mupp > 1.5 * self._current_crop_canvas_mupp:
                         return "zoom_changed"
+            else:
+                if self._current_crop_canvas_mupp is not None:
+                    canvas = self.iface.mapCanvas()
+                    current_mupp = canvas.mapUnitsPerPixel()
+                    if current_mupp > 0:
+                        if current_mupp < 0.7 * self._current_crop_canvas_mupp:
+                            return "zoom_changed"
+                        if current_mupp > 1.5 * self._current_crop_canvas_mupp:
+                            return "zoom_changed"
 
         return "ok"
 
@@ -2121,6 +2176,43 @@ class AISegmentationPlugin:
         )
         return True
 
+    def _freeze_active_crop(self):
+        """Freeze the current active crop's mask as a geographic polygon.
+
+        The polygon is stored in raster CRS (same as save/export) and added
+        to _frozen_sessions for composite display.
+        """
+        if self.current_mask is None or self.current_transform_info is None:
+            return
+        try:
+            from ..core.polygon_exporter import mask_to_polygons
+            geometries = mask_to_polygons(
+                self.current_mask, self.current_transform_info)
+            if geometries:
+                combined = QgsGeometry.unaryUnion(geometries)
+                if combined and not combined.isEmpty():
+                    session = FrozenCropSession(
+                        polygon=combined,
+                        points_positive=list(self._active_crop_points_positive),
+                        points_negative=list(self._active_crop_points_negative),
+                        crop_info=self._current_crop_info,
+                    )
+                    self._frozen_sessions.append(session)
+                    QgsMessageLog.logMessage(
+                        "Froze crop session #{} with {} points".format(
+                            len(self._frozen_sessions),
+                            len(session.points_positive) + len(session.points_negative)),
+                        "AI Segmentation", level=Qgis.MessageLevel.Info)
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                "Failed to freeze active crop: {}".format(str(e)),
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+
+        # Reset active crop tracking (mask/low_res cleared by caller)
+        self._active_crop_points_positive = []
+        self._active_crop_points_negative = []
+        self._mask_state_history = []
+
     def _handle_reencode(self, crop_status, raster_pt):
         """Handle re-encoding based on crop status. Returns True on success."""
         if crop_status == "no_crop":
@@ -2128,7 +2220,21 @@ class AISegmentationPlugin:
             initial_scale = self._compute_initial_scale_factor()
             return self._extract_and_encode_crop(raster_pt, mupp_override=initial_scale)
 
-        # outside_bounds: save old state, re-encode to fit all points
+        if crop_status == "outside_bounds":
+            # Composite per-crop: encode new crop FIRST (transactional),
+            # then freeze old crop only on success.
+            initial_scale = self._compute_initial_scale_factor()
+            if not self._extract_and_encode_crop(
+                    raster_pt, mupp_override=initial_scale):
+                return False
+
+            # Encode succeeded — safe to freeze old crop
+            self._freeze_active_crop()
+            self.current_mask = None
+            self.current_low_res_mask = None
+            return True
+
+        # zoom_changed: re-encode same crop at new resolution, keep all points
         old_crop_info = self._current_crop_info
         old_mask = self.current_mask
 
@@ -2183,10 +2289,18 @@ class AISegmentationPlugin:
             )
             return
 
+        # Save current mask state for undo before modifying anything
+        self._mask_state_history.append({
+            'mask': self.current_mask,
+            'score': self.current_score,
+            'transform_info': self.current_transform_info,
+        })
+
         # Register point in prompts immediately so it stays in sync with
         # the marker already added by canvasPressEvent.  This lets Cmd+Z
         # work at any time, even during the (blocking) encoding below.
         self.prompts.add_positive_point(raster_pt.x(), raster_pt.y())
+        self._active_crop_points_positive.append((raster_pt.x(), raster_pt.y()))
 
         QgsMessageLog.logMessage(
             "POSITIVE POINT at ({:.6f}, {:.6f})".format(
@@ -2201,6 +2315,10 @@ class AISegmentationPlugin:
         if crop_status != "ok":
             if not self._handle_reencode(crop_status, raster_pt):
                 self.prompts.undo()
+                if self._active_crop_points_positive:
+                    self._active_crop_points_positive.pop()
+                if self._mask_state_history:
+                    self._mask_state_history.pop()
                 if self.map_tool:
                     self.map_tool.remove_last_marker()
                 return
@@ -2239,8 +2357,16 @@ class AISegmentationPlugin:
             )
             return
 
+        # Save current mask state for undo before modifying anything
+        self._mask_state_history.append({
+            'mask': self.current_mask,
+            'score': self.current_score,
+            'transform_info': self.current_transform_info,
+        })
+
         # Register point in prompts immediately (sync with marker)
         self.prompts.add_negative_point(raster_pt.x(), raster_pt.y())
+        self._active_crop_points_negative.append((raster_pt.x(), raster_pt.y()))
 
         QgsMessageLog.logMessage(
             "NEGATIVE POINT at ({:.6f}, {:.6f})".format(
@@ -2255,6 +2381,10 @@ class AISegmentationPlugin:
         if crop_status != "ok":
             if not self._handle_reencode(crop_status, raster_pt):
                 self.prompts.undo()
+                if self._active_crop_points_negative:
+                    self._active_crop_points_negative.pop()
+                if self._mask_state_history:
+                    self._mask_state_history.pop()
                 if self.map_tool:
                     self.map_tool.remove_last_marker()
                 return
@@ -2262,11 +2392,19 @@ class AISegmentationPlugin:
         self._run_prediction()
 
     def _run_prediction(self):
-        """Run SAM prediction using all positive and negative points."""
-        from rasterio.transform import from_bounds as transform_from_bounds
+        """Run SAM prediction using active crop points only.
 
-        all_points = self.prompts.positive_points + self.prompts.negative_points
-        if not all_points:
+        When frozen sessions exist, only the active crop's points are sent
+        to SAM (frozen polygons are composited during visualization).
+        """
+        from rasterio.transform import from_bounds as transform_from_bounds
+        import numpy as np
+
+        # Use only active crop points for prediction (not frozen points)
+        active_pos = self._active_crop_points_positive
+        active_neg = self._active_crop_points_negative
+        all_active = active_pos + active_neg
+        if not all_active:
             return
 
         if self._current_crop_info is None:
@@ -2284,11 +2422,21 @@ class AISegmentationPlugin:
         img_clip_transform = transform_from_bounds(
             minx, miny, maxx, maxy, img_width, img_height)
 
-        point_coords, point_labels = self.prompts.get_points_for_predictor(
-            img_clip_transform)
+        # Build point arrays from active crop points only
+        from rasterio import transform as rio_transform
+        point_coords_list = []
+        point_labels_list = []
+        for x, y in active_pos:
+            row, col = rio_transform.rowcol(img_clip_transform, x, y)
+            point_coords_list.append([col, row])
+            point_labels_list.append(1)
+        for x, y in active_neg:
+            row, col = rio_transform.rowcol(img_clip_transform, x, y)
+            point_coords_list.append([col, row])
+            point_labels_list.append(0)
 
-        if point_coords is None:
-            return
+        point_coords = np.array(point_coords_list)
+        point_labels = np.array(point_labels_list)
 
         # Use previous low_res_mask for iterative refinement (includes
         # transferred mask context after zoom re-encode)
@@ -2296,11 +2444,11 @@ class AISegmentationPlugin:
         if self.current_low_res_mask is not None:
             mask_input = self.current_low_res_mask
 
-        # Use multimask only on the very first point of a new polygon
+        # Use multimask only on the very first point of a new polygon/crop
         # (more accurate initial selection). For subsequent points or
         # re-encoded crops with transferred mask, use single mask.
-        one_positive = len(self.prompts.positive_points) == 1
-        no_negatives = len(self.prompts.negative_points) == 0
+        one_positive = len(active_pos) == 1
+        no_negatives = len(active_neg) == 0
         is_first_point = one_positive and no_negatives and mask_input is None
         use_multimask = is_first_point
 
@@ -2404,7 +2552,11 @@ class AISegmentationPlugin:
             return
 
         if self.current_mask is None or self.current_transform_info is None:
-            self._clear_mask_visualization()
+            # No active mask — but may have frozen sessions to display
+            if self._frozen_sessions:
+                self._display_frozen_composite_with_extra()
+            else:
+                self._clear_mask_visualization()
             return
 
         try:
@@ -2414,13 +2566,14 @@ class AISegmentationPlugin:
 
             # Apply refinement to preview in both modes (refine affects current mask only)
             mask_to_display = self.current_mask
-            # Apply all mask-level refinements (fill holes, min area, expand/contract)
-            if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
+            # Apply mask-level refinements (fill holes, expand/contract, min region)
+            if (self._refine_fill_holes or self._refine_expand != 0
+                    or self._refine_min_area > 0):
                 mask_to_display = apply_mask_refinement(
                     self.current_mask,
                     expand_value=self._refine_expand,
                     fill_holes=self._refine_fill_holes,
-                    min_area=self._refine_min_area
+                    min_area=self._refine_min_area,
                 )
 
             # Detect disjoint regions and show/hide warning
@@ -2429,16 +2582,28 @@ class AISegmentationPlugin:
 
             geometries = mask_to_polygons(mask_to_display, self.current_transform_info)
 
+            # Build composite: frozen polygons + active mask polygons
+            all_geoms = [s.polygon for s in self._frozen_sessions]
+
             if geometries:
-                combined = QgsGeometry.unaryUnion(geometries)
-                if combined and not combined.isEmpty():
-                    # Apply simplification to preview in both modes
+                active_combined = QgsGeometry.unaryUnion(geometries)
+                if active_combined and not active_combined.isEmpty():
+                    # Apply simplification to active mask preview
                     tolerance = self._compute_simplification_tolerance(
                         self.current_transform_info, self._refine_simplify
                     )
                     if tolerance > 0:
-                        combined = combined.simplify(tolerance)
+                        active_combined = active_combined.simplify(tolerance)
+                    # Apply Chaikin smoothing to preview
+                    if self._refine_smooth > 0:
+                        from ..core.polygon_exporter import chaikin_smooth
+                        active_combined = chaikin_smooth(
+                            active_combined, self._refine_smooth)
+                    all_geoms.append(active_combined)
 
+            if all_geoms:
+                combined = QgsGeometry.unaryUnion(all_geoms)
+                if combined and not combined.isEmpty():
                     # Geometry is in raster CRS; transform to canvas CRS
                     self._transform_geometry_to_canvas_crs(combined)
                     self.mask_rubber_band.setToGeometry(combined, None)
@@ -2501,8 +2666,12 @@ class AISegmentationPlugin:
             self.dock_widget.set_saved_polygon_count(0)
             return
 
-        # Normal clear: just clear current mask points
+        # Normal clear: clear current mask points and frozen sessions
         self.prompts.clear()
+        self._mask_state_history = []
+        self._frozen_sessions = []
+        self._active_crop_points_positive = []
+        self._active_crop_points_negative = []
 
         if self.map_tool:
             self.map_tool.clear_markers()
@@ -2528,17 +2697,39 @@ class AISegmentationPlugin:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
 
-            # Clear prior mask logits so SAM predicts fresh from remaining points
-            self.current_low_res_mask = None
+            # Restore the exact mask state from before this point was added
+            state = (self._mask_state_history.pop()
+                     if self._mask_state_history else None)
+            if state:
+                self.current_mask = state['mask']
+                self.current_score = state['score']
+                self.current_transform_info = state['transform_info']
 
-            # Re-run prediction with remaining points
+            # Invalidate SAM logits and crop so next click re-encodes cleanly
+            self.current_low_res_mask = None
+            self._current_crop_info = None
+
+            # Also remove from per-crop point tracking
+            if result[0] == "positive" and self._active_crop_points_positive:
+                self._active_crop_points_positive.pop()
+            elif result[0] == "negative" and self._active_crop_points_negative:
+                self._active_crop_points_negative.pop()
+
             if self.prompts.point_count[0] + self.prompts.point_count[1] > 0:
-                self._run_prediction()
+                # Update visualization with restored mask (no re-prediction)
+                self._update_ui_after_prediction()
             else:
-                self.current_mask = None
-                self.current_score = 0.0
-                self._clear_mask_visualization()
-                self.dock_widget.set_point_count(0, 0)
+                # Active crop is empty — check if we can unfreeze a previous crop
+                if self._frozen_sessions:
+                    self._unfreeze_last_session()
+                else:
+                    self.current_mask = None
+                    self.current_score = 0.0
+                    self._clear_mask_visualization()
+                    self.dock_widget.set_point_count(0, 0)
+        elif self._frozen_sessions:
+            # No active points but have frozen sessions — unfreeze last one
+            self._unfreeze_last_session()
         elif len(self.saved_polygons) > 0:
             # No points in current mask, but have saved masks
             # Ask user if they want to restore the last saved mask
@@ -2553,6 +2744,83 @@ class AISegmentationPlugin:
             )
             if reply == QMessageBox.StandardButton.Yes:
                 self._restore_last_saved_mask()
+
+    def _unfreeze_last_session(self):
+        """Unfreeze the last frozen crop session back to active display.
+
+        The frozen polygon is displayed as the active mask. No re-encode is
+        performed — SAM state is invalidated and will re-encode on next click.
+        """
+        if not self._frozen_sessions:
+            return
+
+        session = self._frozen_sessions.pop()
+
+        # Clear active crop state
+        self.current_mask = None
+        self.current_score = 0.0
+        self.current_low_res_mask = None
+        self._current_crop_info = None  # Force re-encode on next click
+        self._mask_state_history = []
+
+        # Restore the frozen session's points to prompts and per-crop tracking
+        self.prompts.clear()
+        if self.map_tool:
+            self.map_tool.clear_markers()
+
+        # Re-add all points from remaining frozen sessions (for prompt count)
+        # Plus the unfrozen session's points
+        for fs in self._frozen_sessions:
+            for pt in fs.points_positive:
+                self.prompts.add_positive_point(pt[0], pt[1])
+            for pt in fs.points_negative:
+                self.prompts.add_negative_point(pt[0], pt[1])
+
+        self._active_crop_points_positive = list(session.points_positive)
+        self._active_crop_points_negative = list(session.points_negative)
+        for pt in session.points_positive:
+            self.prompts.add_positive_point(pt[0], pt[1])
+            if self.map_tool:
+                canvas_pt = self._transform_to_canvas_crs(QgsPointXY(pt[0], pt[1]))
+                self.map_tool.add_marker(canvas_pt, is_positive=True)
+        for pt in session.points_negative:
+            self.prompts.add_negative_point(pt[0], pt[1])
+            if self.map_tool:
+                canvas_pt = self._transform_to_canvas_crs(QgsPointXY(pt[0], pt[1]))
+                self.map_tool.add_marker(canvas_pt, is_positive=False)
+
+        # Display: frozen polygons + unfrozen session polygon as rubberband
+        # The unfrozen polygon becomes a "display-only" active state
+        # (no numpy mask — will re-encode on next click)
+        self._display_frozen_composite_with_extra(session.polygon)
+
+        pos_count, neg_count = self.prompts.point_count
+        self.dock_widget.set_point_count(pos_count, neg_count)
+
+        QgsMessageLog.logMessage(
+            "Unfroze crop session, {} frozen remaining".format(
+                len(self._frozen_sessions)),
+            "AI Segmentation", level=Qgis.MessageLevel.Info)
+
+    def _display_frozen_composite_with_extra(self, extra_polygon=None):
+        """Display all frozen polygons (+ optional extra) as the rubberband."""
+        if self.mask_rubber_band is None:
+            return
+
+        all_geoms = [s.polygon for s in self._frozen_sessions]
+        if extra_polygon is not None:
+            all_geoms.append(extra_polygon)
+
+        if not all_geoms:
+            self._clear_mask_visualization()
+            return
+
+        combined = QgsGeometry.unaryUnion(all_geoms)
+        if combined and not combined.isEmpty():
+            self._transform_geometry_to_canvas_crs(combined)
+            self.mask_rubber_band.setToGeometry(combined, None)
+        else:
+            self._clear_mask_visualization()
 
     def _restore_last_saved_mask(self):
         """Restore the last saved mask for editing in batch mode."""
@@ -2573,6 +2841,10 @@ class AISegmentationPlugin:
 
         # Clear current state first
         self.prompts.clear()
+        self._mask_state_history = []
+        self._frozen_sessions = []
+        self._active_crop_points_positive = []
+        self._active_crop_points_negative = []
         if self.map_tool:
             self.map_tool.clear_markers()
 
@@ -2599,15 +2871,17 @@ class AISegmentationPlugin:
         self.current_transform_info = last_polygon.get('transform_info')
 
         # Restore refine settings
-        self._refine_expand = last_polygon.get('refine_expand', 0)
         self._refine_simplify = last_polygon.get('refine_simplify', 3)
+        self._refine_smooth = last_polygon.get('refine_smooth', 0)
+        self._refine_expand = last_polygon.get('refine_expand', 0)
         self._refine_fill_holes = last_polygon.get('refine_fill_holes', False)
         self._refine_min_area = last_polygon.get('refine_min_area', 100)
 
         # Update UI sliders without emitting signals
         self.dock_widget.set_refine_values(
-            self._refine_expand,
             self._refine_simplify,
+            self._refine_smooth,
+            self._refine_expand,
             self._refine_fill_holes,
             self._refine_min_area
         )
@@ -2622,14 +2896,19 @@ class AISegmentationPlugin:
 
         QgsMessageLog.logMessage(
             f"Restored mask with {pos_count} positive, {neg_count} negative points. "
-            f"Refine: expand={self._refine_expand}, simplify={self._refine_simplify}, "
-            f"fill_holes={self._refine_fill_holes}, min_area={self._refine_min_area}",
+            f"Refine: simplify={self._refine_simplify}, smooth={self._refine_smooth}, "
+            f"expand={self._refine_expand}, fill_holes={self._refine_fill_holes}, "
+            f"min_area={self._refine_min_area}",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )
 
     def _reset_session(self):
         self.prompts.clear()
+        self._mask_state_history = []
+        self._frozen_sessions = []
+        self._active_crop_points_positive = []
+        self._active_crop_points_negative = []
         self.saved_polygons = []
 
         for rb in self.saved_rubber_bands:
@@ -2657,10 +2936,11 @@ class AISegmentationPlugin:
         self._is_online_layer = False
 
         # Reset refinement settings to defaults
+        self._refine_simplify = 3
+        self._refine_smooth = 0
         self._refine_expand = 0
-        self._refine_simplify = 3   # Default: matches dockwidget spinbox
-        self._refine_fill_holes = False  # Default: matches dockwidget checkbox
-        self._refine_min_area = 100  # Default: matches dockwidget spinbox
+        self._refine_fill_holes = False
+        self._refine_min_area = 100
 
         if self.dock_widget:
             self.dock_widget.set_point_count(0, 0)

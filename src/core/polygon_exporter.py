@@ -14,8 +14,69 @@ from qgis.core import (  # noqa: E402
     QgsPolygon,
     QgsLineString,
     QgsMessageLog,
+    QgsWkbTypes,
     Qgis,
 )
+
+
+def _chaikin_ring(ring, iterations: int):
+    """Apply Chaikin's corner-cutting to a single polygon ring.
+
+    Each iteration replaces each edge with two new vertices at 1/4 and 3/4
+    positions, progressively rounding corners while preserving shape.
+    """
+    pts = list(ring)
+    # Remove closing duplicate if present (will re-close at the end)
+    if len(pts) > 1 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    if len(pts) < 3:
+        return ring
+
+    for _ in range(iterations):
+        new_pts = []
+        n = len(pts)
+        for i in range(n):
+            p0 = pts[i]
+            p1 = pts[(i + 1) % n]
+            # Q = 3/4 * P0 + 1/4 * P1
+            new_pts.append(QgsPointXY(
+                0.75 * p0.x() + 0.25 * p1.x(),
+                0.75 * p0.y() + 0.25 * p1.y()))
+            # R = 1/4 * P0 + 3/4 * P1
+            new_pts.append(QgsPointXY(
+                0.25 * p0.x() + 0.75 * p1.x(),
+                0.25 * p0.y() + 0.75 * p1.y()))
+        pts = new_pts
+
+    # Close the ring
+    pts.append(pts[0])
+    return pts
+
+
+def chaikin_smooth(geometry: QgsGeometry, iterations: int = 2) -> QgsGeometry:
+    """Apply Chaikin's corner-cutting algorithm to smooth polygon edges.
+
+    Works on Polygon and MultiPolygon geometries.  Returns the original
+    geometry unchanged for non-polygon types or when iterations <= 0.
+    """
+    if geometry is None or geometry.isEmpty() or iterations <= 0:
+        return geometry
+    if geometry.type() != QgsWkbTypes.PolygonGeometry:
+        return geometry
+
+    if geometry.isMultipart():
+        multi = geometry.asMultiPolygon()
+        smoothed = []
+        for polygon in multi:
+            smoothed_rings = [_chaikin_ring(ring, iterations) for ring in polygon]
+            smoothed.append(smoothed_rings)
+        return QgsGeometry.fromMultiPolygonXY(smoothed)
+    else:
+        polygon = geometry.asPolygon()
+        if not polygon:
+            return geometry
+        smoothed_rings = [_chaikin_ring(ring, iterations) for ring in polygon]
+        return QgsGeometry.fromPolygonXY(smoothed_rings)
 
 
 def mask_to_polygons_rasterio(

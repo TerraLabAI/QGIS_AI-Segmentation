@@ -326,6 +326,26 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <source>0 = keep all.</source>
         <translation>0 = tout garder.</translation>
     </message>
+    <message>
+        <source>Smooth outline</source>
+        <translation>Lisser le contour</translation>
+    </message>
+    <message>
+        <source>Smooth outline:</source>
+        <translation>Lisser le contour :</translation>
+    </message>
+    <message>
+        <source>Apply corner smoothing to reduce jagged edges (0 = no change)</source>
+        <translation>Appliquer un lissage des coins pour réduire les bords en dents de scie (0 = aucun changement)</translation>
+    </message>
+    <message>
+        <source>Outline</source>
+        <translation>Contour</translation>
+    </message>
+    <message>
+        <source>Selection</source>
+        <translation>Sélection</translation>
+    </message>
 
     <!-- Instructions -->
     <message>
