@@ -187,6 +187,24 @@ class _ShortcutFilter(QObject):
         elif key == Qt.Key.Key_Escape:
             plugin._on_stop_segmentation()
             return True
+        elif key in (Qt.Key.Key_Left, Qt.Key.Key_Right,
+                     Qt.Key.Key_Up, Qt.Key.Key_Down):
+            canvas = plugin.iface.mapCanvas()
+            extent = canvas.extent()
+            dx = extent.width() * 0.25
+            dy = extent.height() * 0.25
+            cx, cy = canvas.center().x(), canvas.center().y()
+            if key == Qt.Key.Key_Left:
+                cx -= dx
+            elif key == Qt.Key.Key_Right:
+                cx += dx
+            elif key == Qt.Key.Key_Up:
+                cy += dy
+            elif key == Qt.Key.Key_Down:
+                cy -= dy
+            canvas.setCenter(QgsPointXY(cx, cy))
+            canvas.refresh()
+            return True
 
         return False
 
@@ -314,6 +332,7 @@ class AISegmentationPlugin:
         self._current_crop_canvas_mupp = None  # canvas mupp at encode time (zoom detection)
         self._current_crop_actual_mupp = None  # actual mupp used for the crop (may differ if zoomed out)
         self._current_crop_scale_factor = None  # scale_factor used for file-based crop
+        self._post_save_pending = False  # Next click starts fresh segmentation at current zoom
 
         self.deps_install_worker = None
         self.download_worker = None
@@ -551,9 +570,10 @@ class AISegmentationPlugin:
         # 0. Remove keyboard shortcut filter
         try:
             if self._shortcut_filter is not None:
-                app = QApplication.instance()
-                if app:
-                    app.removeEventFilter(self._shortcut_filter)
+                try:
+                    self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+                except RuntimeError:
+                    pass
                 self._shortcut_filter = None
         except (RuntimeError, AttributeError):
             pass
@@ -1216,9 +1236,9 @@ class AISegmentationPlugin:
         # after encoding/prediction because dock widget updates steal it).
         if self._shortcut_filter is None:
             self._shortcut_filter = _ShortcutFilter(self)
-        app = QApplication.instance()
-        if app:
-            app.installEventFilter(self._shortcut_filter)
+        # Install on mainWindow (not app) to avoid SIGSEGV from
+        # application-level filter receiving events for deleted C++ objects.
+        self.iface.mainWindow().installEventFilter(self._shortcut_filter)
 
         # Show tutorial notification for first-time users
         self._show_tutorial_notification()
@@ -1329,7 +1349,7 @@ class AISegmentationPlugin:
 
         self._ensure_polygon_rubberband_sync()
 
-        from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement, chaikin_smooth
+        from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
 
         # Collect all geometry parts: frozen polygons + active mask
         all_geoms = [s.polygon for s in self._frozen_sessions]
@@ -1355,10 +1375,10 @@ class AISegmentationPlugin:
                     )
                     if tolerance > 0:
                         active_combined = active_combined.simplify(tolerance)
-                    # Apply Chaikin smoothing after simplification
+                    # Apply corner rounding (QGIS native C++ Chaikin)
                     if self._refine_smooth > 0:
-                        active_combined = chaikin_smooth(
-                            active_combined, self._refine_smooth)
+                        active_combined = active_combined.smooth(
+                            self._refine_smooth, 0.25)
                     all_geoms.append(active_combined)
 
         if all_geoms:
@@ -1417,8 +1437,9 @@ class AISegmentationPlugin:
         self.current_low_res_mask = None
         self.dock_widget.set_point_count(0, 0)
 
-        # Keep crop info so clicks in the same area reuse the encoding
-        # (re-encode only happens when point falls outside current crop bounds)
+        # Keep crop info so clicks in the same area reuse the encoding,
+        # but flag that the next click should use tighter zoom thresholds.
+        self._post_save_pending = True
 
     def _on_export_layer(self):
         """Export all saved polygons + current unsaved mask to a new layer."""
@@ -1432,7 +1453,7 @@ class AISegmentationPlugin:
 
     def _on_export_layer_impl(self):
         """Internal export implementation."""
-        from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement, chaikin_smooth
+        from ..core.polygon_exporter import mask_to_polygons, apply_mask_refinement
 
         self._ensure_polygon_rubberband_sync()
 
@@ -1465,8 +1486,8 @@ class AISegmentationPlugin:
                     if tolerance > 0:
                         active_combined = active_combined.simplify(tolerance)
                     if self._refine_smooth > 0:
-                        active_combined = chaikin_smooth(
-                            active_combined, self._refine_smooth)
+                        active_combined = active_combined.smooth(
+                            self._refine_smooth, 0.25)
                     current_geoms.append(active_combined)
 
         if current_geoms:
@@ -1708,9 +1729,7 @@ class AISegmentationPlugin:
         # Remove keyboard shortcut filter
         try:
             if self._shortcut_filter is not None:
-                app = QApplication.instance()
-                if app:
-                    app.removeEventFilter(self._shortcut_filter)
+                self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
         except (RuntimeError, AttributeError):
             pass
 
@@ -1755,9 +1774,10 @@ class AISegmentationPlugin:
                 return
 
         if self._shortcut_filter is not None:
-            app = QApplication.instance()
-            if app:
-                app.removeEventFilter(self._shortcut_filter)
+            try:
+                self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+            except RuntimeError:
+                pass
         self._stopping_segmentation = True
         self.iface.mapCanvas().unsetMapTool(self.map_tool)
         self._restore_previous_map_tool()
@@ -1851,22 +1871,29 @@ class AISegmentationPlugin:
         has_active_points = (self._active_crop_points_positive
                              or self._active_crop_points_negative)
         if not has_active_points:
+            # After save, use tight thresholds so any meaningful zoom change
+            # triggers re-encode at the correct resolution.
+            if self._post_save_pending:
+                zoom_in_thresh = 0.92
+                zoom_out_thresh = 1.08
+            else:
+                zoom_in_thresh = 0.7
+                zoom_out_thresh = 1.5
+
             if self._is_online_layer:
                 canvas = self.iface.mapCanvas()
                 current_canvas_mupp = canvas.mapUnitsPerPixel()
                 if self._current_crop_canvas_mupp and current_canvas_mupp > 0:
-                    if current_canvas_mupp < 0.7 * self._current_crop_canvas_mupp:
-                        return "zoom_changed"
-                    if current_canvas_mupp > 1.5 * self._current_crop_canvas_mupp:
+                    ratio = current_canvas_mupp / self._current_crop_canvas_mupp
+                    if ratio < zoom_in_thresh or ratio > zoom_out_thresh:
                         return "zoom_changed"
             else:
                 if self._current_crop_canvas_mupp is not None:
                     canvas = self.iface.mapCanvas()
                     current_mupp = canvas.mapUnitsPerPixel()
                     if current_mupp > 0:
-                        if current_mupp < 0.7 * self._current_crop_canvas_mupp:
-                            return "zoom_changed"
-                        if current_mupp > 1.5 * self._current_crop_canvas_mupp:
+                        ratio = current_mupp / self._current_crop_canvas_mupp
+                        if ratio < zoom_in_thresh or ratio > zoom_out_thresh:
                             return "zoom_changed"
 
         return "ok"
@@ -2215,6 +2242,7 @@ class AISegmentationPlugin:
 
     def _handle_reencode(self, crop_status, raster_pt):
         """Handle re-encoding based on crop status. Returns True on success."""
+        self._post_save_pending = False  # consumed
         if crop_status == "no_crop":
             self.current_low_res_mask = None
             initial_scale = self._compute_initial_scale_factor()
@@ -2248,7 +2276,7 @@ class AISegmentationPlugin:
             new_center = QgsPointXY(center_x, center_y)
         else:
             new_center = raster_pt
-            mupp_or_scale = None
+            mupp_or_scale = self._compute_initial_scale_factor()
         self.current_low_res_mask = None
         if not self._extract_and_encode_crop(
                 new_center, mupp_override=mupp_or_scale):
@@ -2322,6 +2350,8 @@ class AISegmentationPlugin:
                 if self.map_tool:
                     self.map_tool.remove_last_marker()
                 return
+        else:
+            self._post_save_pending = False
 
         self._run_prediction()
 
@@ -2388,6 +2418,8 @@ class AISegmentationPlugin:
                 if self.map_tool:
                     self.map_tool.remove_last_marker()
                 return
+        else:
+            self._post_save_pending = False
 
         self._run_prediction()
 
@@ -2594,11 +2626,10 @@ class AISegmentationPlugin:
                     )
                     if tolerance > 0:
                         active_combined = active_combined.simplify(tolerance)
-                    # Apply Chaikin smoothing to preview
+                    # Apply corner rounding (QGIS native C++ Chaikin)
                     if self._refine_smooth > 0:
-                        from ..core.polygon_exporter import chaikin_smooth
-                        active_combined = chaikin_smooth(
-                            active_combined, self._refine_smooth)
+                        active_combined = active_combined.smooth(
+                            self._refine_smooth, 0.25)
                     all_geoms.append(active_combined)
 
             if all_geoms:
@@ -2708,6 +2739,7 @@ class AISegmentationPlugin:
             # Invalidate SAM logits and crop so next click re-encodes cleanly
             self.current_low_res_mask = None
             self._current_crop_info = None
+            self._post_save_pending = False
 
             # Also remove from per-crop point tracking
             if result[0] == "positive" and self._active_crop_points_positive:
@@ -2761,6 +2793,7 @@ class AISegmentationPlugin:
         self.current_score = 0.0
         self.current_low_res_mask = None
         self._current_crop_info = None  # Force re-encode on next click
+        self._post_save_pending = False
         self._mask_state_history = []
 
         # Restore the frozen session's points to prompts and per-crop tracking
@@ -2926,6 +2959,7 @@ class AISegmentationPlugin:
         self.current_low_res_mask = None
 
         # Reset on-demand encoding state
+        self._post_save_pending = False
         self._current_crop_info = None
         self._current_raster_path = None
         self._current_crop_canvas_mupp = None
