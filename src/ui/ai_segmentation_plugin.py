@@ -38,7 +38,6 @@ from ..core.i18n import tr
 from ..core.prompt_manager import PromptManager
 from ..core.tile_manager import TileManager
 from ..workers.setup_workers import DepsInstallWorker, DownloadWorker, VerifyWorker
-from ..workers.tiled_detection_worker import TiledDetectionWorker
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
 from .ai_segmentation_pro_dockwidget import AISegmentationProDockWidget
@@ -3263,6 +3262,11 @@ class AISegmentationPlugin:
 
     def _on_zone_select(self):
         """Activate rectangle drawing tool on canvas."""
+        QgsMessageLog.logMessage(
+            "Zone selection tool activated",
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
         canvas = self.iface.mapCanvas()
         self._zone_selection_tool = ZoneSelectionMapTool(canvas)
         self._zone_selection_tool.zone_selected.connect(self._on_zone_drawn)
@@ -3271,6 +3275,16 @@ class AISegmentationPlugin:
     def _on_zone_drawn(self, rect):
         """User finished drawing a zone rectangle."""
         self._selected_zone = rect
+        QgsMessageLog.logMessage(
+            "Zone drawn: {:.2f},{:.2f} to {:.2f},{:.2f}".format(
+                rect.xMinimum(),
+                rect.yMinimum(),
+                rect.xMaximum(),
+                rect.yMaximum(),
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
         self.pro_dock_widget.set_zone_active(True)
         self._update_credit_estimate()
         # Restore previous map tool
@@ -3278,6 +3292,11 @@ class AISegmentationPlugin:
 
     def _on_zone_clear(self):
         """Reset to full image."""
+        QgsMessageLog.logMessage(
+            "Zone selection cleared — using full image",
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
         self._selected_zone = None
         if self._zone_selection_tool:
             self._zone_selection_tool.clear_selection()
@@ -3297,6 +3316,15 @@ class AISegmentationPlugin:
             pixel_height = layer.height()
 
         credits = self._tile_manager.estimate_credits(pixel_width, pixel_height)
+        QgsMessageLog.logMessage(
+            "Credit estimate: {}px x {}px = {} credits (tiles)".format(
+                pixel_width,
+                pixel_height,
+                credits,
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
         self.pro_dock_widget.set_credit_estimate(credits)
 
     def _zone_to_pixels(self, zone_rect, layer):
@@ -3312,6 +3340,24 @@ class AISegmentationPlugin:
 
     def _run_tiled_detection(self, text_prompt, tiles, layer):
         """Run tiled detection for large images or selected zones."""
+        from ..workers.tiled_detection_worker import TiledDetectionWorker
+
+        QgsMessageLog.logMessage(
+            "Starting tiled detection: prompt='{}', tiles={}, layer='{}'".format(
+                text_prompt,
+                len(tiles),
+                layer.name(),
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+        for i, (x, y, w, h) in enumerate(tiles):
+            QgsMessageLog.logMessage(
+                "  Tile {}: offset=({},{}) size={}x{}".format(i, x, y, w, h),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
+
         full_image = self._extract_full_zone_image(layer)
         if full_image is None:
             self.iface.messageBar().pushCritical(
@@ -3357,6 +3403,11 @@ class AISegmentationPlugin:
 
     def _on_tile_completed(self, tile_idx, detections):
         """Progressive display: show detections from this tile immediately."""
+        QgsMessageLog.logMessage(
+            "Tile {} completed: {} raw detections".format(tile_idx, len(detections)),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
         from ..core.polygon_exporter import (
             _iou,
             apply_mask_refinement,
@@ -3381,8 +3432,16 @@ class AISegmentationPlugin:
             existing_geoms = [
                 d["geom"] for d in self._pro_pending_detections if "geom" in d
             ]
-            is_dup = any(_iou(geom, ag) > 0.3 for ag in existing_geoms)
-            if is_dup:
+            max_iou = max((_iou(geom, ag) for ag in existing_geoms), default=0.0)
+            if max_iou > 0.3:
+                QgsMessageLog.logMessage(
+                    "  Tile {}: detection skipped (IoU={:.2f} > 0.3, duplicate)".format(
+                        tile_idx,
+                        max_iou,
+                    ),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Info,
+                )
                 continue
 
             # Apply simplification
@@ -3410,6 +3469,16 @@ class AISegmentationPlugin:
                     "geom": geom,
                 }
             )
+            QgsMessageLog.logMessage(
+                "  Tile {}: detection accepted (score={:.3f}, area={:.1f}, total={})".format(
+                    tile_idx,
+                    score,
+                    geom.area(),
+                    len(self._pro_pending_detections),
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
 
     def _on_tile_progress(self, current, total):
         """Update tile progress in dock."""
@@ -3417,6 +3486,14 @@ class AISegmentationPlugin:
 
     def _on_all_tiles_completed(self, all_detections):
         """All tiles processed."""
+        QgsMessageLog.logMessage(
+            "All tiles completed: {} raw detections, {} accepted after dedup".format(
+                len(all_detections),
+                len(self._pro_pending_detections),
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
         self.iface.messageBar().clearWidgets()
         self.pro_dock_widget.hide_tile_progress()
         count = len(self._pro_pending_detections)
@@ -3454,6 +3531,13 @@ class AISegmentationPlugin:
 
     def _on_tile_cancelled(self):
         """User cancelled tiled detection — discard partial results."""
+        QgsMessageLog.logMessage(
+            "Tiled detection cancelled — discarding {} detections".format(
+                len(self._pro_pending_detections),
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Warning,
+        )
         self.iface.messageBar().clearWidgets()
         self.pro_dock_widget.hide_tile_progress()
         for det in self._pro_pending_detections:
@@ -3498,7 +3582,32 @@ class AISegmentationPlugin:
                 win_w = min(int(zone.width() / px_size_x), src.width - col_off)
                 win_h = min(int(zone.height() / px_size_y), src.height - row_off)
 
+                QgsMessageLog.logMessage(
+                    "Zone extraction: raster {}x{}, pixel_size={:.6f}x{:.6f}, "
+                    "window=({},{} {}x{}), bands={}".format(
+                        src.width,
+                        src.height,
+                        px_size_x,
+                        px_size_y,
+                        col_off,
+                        row_off,
+                        win_w,
+                        win_h,
+                        src.count,
+                    ),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Info,
+                )
+
                 if win_w <= 0 or win_h <= 0:
+                    QgsMessageLog.logMessage(
+                        "Zone extraction: invalid window size {}x{}".format(
+                            win_w,
+                            win_h,
+                        ),
+                        "AI Segmentation",
+                        level=Qgis.MessageLevel.Warning,
+                    )
                     return None
 
                 window = Window(col_off, row_off, win_w, win_h)
@@ -3516,7 +3625,13 @@ class AISegmentationPlugin:
                 else:
                     rgb = np.transpose(bands[:3], (1, 2, 0))
 
-                return rgb.astype(np.uint8)
+                result = rgb.astype(np.uint8)
+                QgsMessageLog.logMessage(
+                    "Zone extraction complete: output shape={}".format(result.shape),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Info,
+                )
+                return result
 
         except Exception as e:
             QgsMessageLog.logMessage(

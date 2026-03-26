@@ -3,13 +3,14 @@
 import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Tuple
+from typing import TYPE_CHECKING, Dict, List, Tuple
 
-import numpy as np
 from qgis.PyQt.QtCore import QThread, pyqtSignal
 
-from ..core.pro_predictor import FalPredictor, decode_rle_to_mask
-from ..core.tile_manager import TileManager
+if TYPE_CHECKING:
+    import numpy as np
+
+    from ..core.tile_manager import TileManager
 
 logger = logging.getLogger("AISegmentation")
 
@@ -30,20 +31,19 @@ class TiledDetectionWorker(QThread):
 
     def __init__(
         self,
-        predictor: FalPredictor,
+        predictor,
         tiles: List[Tuple[int, int, int, int]],
-        full_image: np.ndarray,
+        full_image: "np.ndarray",
         text_prompt: str,
         max_masks: int,
         score_threshold: float,
         geo_transform_info: Dict,
-        tile_manager: TileManager,
+        tile_manager: "TileManager",
         max_workers: int = 4,
         parent=None,
     ):
         super().__init__(parent)
         self._fal_key = predictor._fal_key
-        self._predictor_class = type(predictor)
         self._tiles = tiles
         self._full_image = full_image
         self._text_prompt = text_prompt
@@ -62,6 +62,21 @@ class TiledDetectionWorker(QThread):
         """Execute parallel tile inference."""
         all_detections: List[Tuple[int, list]] = []
         total = len(self._tiles)
+
+        logger.info(
+            "TiledDetectionWorker starting: %d tiles, max_workers=%d, "
+            "prompt='%s', max_masks=%d, score_threshold=%.2f",
+            total,
+            self._max_workers,
+            self._text_prompt,
+            self._max_masks,
+            self._score_threshold,
+        )
+        logger.info(
+            "Full image shape: %s, geo_bbox: %s",
+            self._full_image.shape,
+            self._geo_transform_info.get("bbox"),
+        )
 
         try:
             with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
@@ -125,17 +140,33 @@ class TiledDetectionWorker(QThread):
             return (tile_idx, [])
 
         x, y, w, h = tile
+        logger.info(
+            "Tile %d: extracting crop at (%d,%d) size %dx%d", tile_idx, x, y, w, h
+        )
         crop = self._tile_manager.extract_tile_crop(self._full_image, x, y, w, h)
+        logger.info(
+            "Tile %d: crop shape=%s, dtype=%s", tile_idx, crop.shape, crop.dtype
+        )
 
         # Each thread gets its own predictor instance (no shared state)
-        predictor = self._predictor_class(self._fal_key)
+        from ..core.pro_predictor import FalPredictor
+
+        predictor = FalPredictor(self._fal_key)
         predictor.set_image_from_array(crop)
         predictor.set_native_size(h, w)
 
+        logger.info("Tile %d: calling predict_text...", tile_idx)
         result = predictor.predict_text(self._text_prompt, max_masks=self._max_masks)
+        logger.info(
+            "Tile %d: predict_text returned %d RLE masks",
+            tile_idx,
+            len(result.get("rle", [])),
+        )
 
         rle_list = result.get("rle", [])
         scores = result.get("scores", [])
+
+        from ..core.pro_predictor import decode_rle_to_mask
 
         detections: List = []
         for i, rle_str in enumerate(rle_list):
