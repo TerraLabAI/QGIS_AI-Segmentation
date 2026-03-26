@@ -2824,10 +2824,33 @@ class AISegmentationPlugin:
         from ..core.polygon_exporter import apply_mask_refinement, mask_to_polygons
 
         for det in self._pro_pending_detections:
-            mask = det["mask"]
             ti = det["transform_info"]
             rb = det.get("rb")
-            if rb is None or mask is None:
+            if rb is None:
+                continue
+
+            # Tiled detections store unsimplified geometry — use it directly.
+            # Re-converting from mask would lose merged tile contributions
+            # (mask covers only one tile, geom may span multiple tiles).
+            base_geom = det.get("geom_unsimplified")
+            if base_geom is not None:
+                geom = QgsGeometry(base_geom)
+                tolerance = self._compute_simplification_tolerance(
+                    ti, self._refine_simplify
+                )
+                if tolerance > 0:
+                    geom = geom.simplify(tolerance)
+                if geom.isEmpty():
+                    rb.reset(QgsWkbTypes.PolygonGeometry)
+                    continue
+                display_geom = QgsGeometry(geom)
+                self._transform_geometry_to_canvas_crs(display_geom)
+                rb.setToGeometry(display_geom, None)
+                continue
+
+            # Non-tiled detections: re-convert from mask (supports all refine params)
+            mask = det["mask"]
+            if mask is None:
                 continue
 
             # Apply mask refinement
@@ -3526,7 +3549,11 @@ class AISegmentationPlugin:
                     )
                     continue
 
-            # Apply simplification
+            # Store unsimplified geometry for re-rendering when
+            # the user adjusts the simplify slider later.
+            unsimplified_geom = QgsGeometry(geom)
+
+            # Apply simplification for initial display
             tolerance = self._compute_simplification_tolerance(
                 ti, self._refine_simplify
             )
@@ -3549,6 +3576,7 @@ class AISegmentationPlugin:
                     "transform_info": ti.copy(),
                     "rb": rb,
                     "geom": geom,
+                    "geom_unsimplified": unsimplified_geom,
                 }
             )
             QgsMessageLog.logMessage(
@@ -3591,13 +3619,15 @@ class AISegmentationPlugin:
             if ra != rb_:
                 parent[ra] = rb_
 
-        # Find all pairs that overlap
+            # Find all pairs that overlap — use unsimplified geometries
+
+        # for accurate intersection checks (simplified geoms may lose contact).
         for i in range(n):
-            gi = detections[i].get("geom")
+            gi = detections[i].get("geom_unsimplified", detections[i].get("geom"))
             if not gi or gi.isEmpty():
                 continue
             for j in range(i + 1, n):
-                gj = detections[j].get("geom")
+                gj = detections[j].get("geom_unsimplified", detections[j].get("geom"))
                 if not gj or gj.isEmpty():
                     continue
                 if gi.intersects(gj):
@@ -3638,9 +3668,10 @@ class AISegmentationPlugin:
                 merged.append(base)
                 continue
 
-            # Merge all geometries in this group
+            # Merge all geometries in this group — use unsimplified versions
+            # for accurate union (simplified geoms may have gaps/overlaps).
             geoms = [
-                detections[i]["geom"]
+                detections[i].get("geom_unsimplified", detections[i]["geom"])
                 for i in indices
                 if detections[i].get("geom") and not detections[i]["geom"].isEmpty()
             ]
@@ -3651,11 +3682,19 @@ class AISegmentationPlugin:
                 self._safe_remove_rubber_band(detections[i].get("rb"))
 
             # Create new rubber band for merged geometry
+            # Apply current simplification for display
+            display_simplified = QgsGeometry(merged_geom)
+            tolerance = self._compute_simplification_tolerance(
+                base["transform_info"], self._refine_simplify
+            )
+            if tolerance > 0:
+                display_simplified = display_simplified.simplify(tolerance)
+
             rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
             rb.setColor(QColor(0, 200, 100, 120))
             rb.setFillColor(QColor(0, 200, 100, 80))
             rb.setWidth(2)
-            display_geom = QgsGeometry(merged_geom)
+            display_geom = QgsGeometry(display_simplified)
             self._transform_geometry_to_canvas_crs(display_geom)
             rb.setToGeometry(display_geom, None)
 
@@ -3665,7 +3704,8 @@ class AISegmentationPlugin:
                     "score": base["score"],
                     "transform_info": base["transform_info"],
                     "rb": rb,
-                    "geom": merged_geom,
+                    "geom": display_simplified,
+                    "geom_unsimplified": QgsGeometry(merged_geom),
                 }
             )
 
