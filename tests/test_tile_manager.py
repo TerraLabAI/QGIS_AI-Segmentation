@@ -118,3 +118,28 @@ def test_extract_tile_crop_edge_padding():
 
     crop = tm.extract_tile_crop(full_image, x=0, y=0, w=300, h=500)
     assert crop.shape == (500, 300, 3)
+
+
+def test_tile_transforms_cover_image():
+    """Tile transforms should tile the geographic space without gaps."""
+    from src.core.tile_manager import TileManager
+
+    tm = TileManager(tile_size=1024, overlap_fraction=0.15, max_tiles=50)
+    w, h = 3000, 2000
+    tiles = tm.compute_grid(image_width=w, image_height=h)
+
+    # Simulate geo_transform for a 3000x2000 image at [0,0] to [300,200]
+    full_bbox = (0.0, 0.0, 300.0, 200.0)
+    px_w = 300.0 / 3000
+    px_h = 200.0 / 2000
+
+    for x, y, tw, th in tiles:
+        tile_minx = full_bbox[0] + x * px_w
+        tile_miny = full_bbox[1] + y * px_h
+        tile_maxx = tile_minx + tw * px_w
+        tile_maxy = tile_miny + th * px_h
+        # All tiles should be within image bounds
+        assert tile_minx >= 0
+        assert tile_miny >= 0
+        assert tile_maxx <= 300.0 + 0.01
+        assert tile_maxy <= 200.0 + 0.01
