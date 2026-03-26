@@ -90,3 +90,31 @@ def test_tiles_cover_full_image():
     max_y = max(y + th for x, y, tw, th in tiles)
     assert max_x >= w
     assert max_y >= h
+
+
+def test_extract_tile_crop():
+    """Should extract the correct sub-region from a full image array."""
+    import numpy as np
+
+    from src.core.tile_manager import TileManager
+
+    tm = TileManager(tile_size=4, overlap_fraction=0.0, max_tiles=50)
+    full_image = np.arange(64).reshape(8, 8).astype(np.uint8)
+    full_image_rgb = np.stack([full_image] * 3, axis=-1)
+
+    crop = tm.extract_tile_crop(full_image_rgb, x=2, y=3, w=4, h=4)
+    assert crop.shape == (4, 4, 3)
+    assert crop[0, 0, 0] == full_image[3, 2]
+
+
+def test_extract_tile_crop_edge_padding():
+    """Edge tiles smaller than tile_size should be returned as-is."""
+    import numpy as np
+
+    from src.core.tile_manager import TileManager
+
+    tm = TileManager(tile_size=1024, overlap_fraction=0.0, max_tiles=50)
+    full_image = np.zeros((500, 300, 3), dtype=np.uint8)
+
+    crop = tm.extract_tile_crop(full_image, x=0, y=0, w=300, h=500)
+    assert crop.shape == (500, 300, 3)

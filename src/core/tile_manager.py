@@ -58,3 +58,16 @@ class TileManager:
         if tiles is None:
             return -1
         return len(tiles)
+
+    def extract_tile_crop(self, image, x: int, y: int, w: int, h: int):
+        """Extract a tile crop from the full image array.
+
+        Args:
+            image: (H, W, 3) uint8 numpy array (full image at native resolution)
+            x, y: top-left pixel offset of the tile
+            w, h: tile dimensions in pixels
+
+        Returns:
+            (h, w, 3) uint8 numpy array
+        """
+        return image[y : y + h, x : x + w].copy()
