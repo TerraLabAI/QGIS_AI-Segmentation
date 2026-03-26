@@ -2638,6 +2638,16 @@ class AISegmentationPlugin:
         )
 
     def _reset_session(self):
+        import traceback
+
+        QgsMessageLog.logMessage(
+            "_reset_session called! _selected_zone was: {}\nStack: {}".format(
+                self._selected_zone,
+                "".join(traceback.format_stack()[-4:-1]),
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Warning,
+        )
         self.prompts.clear()
         self.saved_polygons = []
 
@@ -2671,11 +2681,13 @@ class AISegmentationPlugin:
         # Reset online layer state
         self._is_online_layer = False
 
-        # Reset zone selection / tiling state
-        self._selected_zone = None
-        if self._zone_selection_tool:
-            self._zone_selection_tool.clear_selection()
+        # Reset tiling worker (but preserve zone selection — it's user config, not session state)
+        if self._tiled_worker and self._tiled_worker.isRunning():
+            self._tiled_worker.cancel()
+            self._tiled_worker.wait(3000)
         self._tiled_worker = None
+        # NOTE: self._selected_zone is NOT cleared here — zone selection
+        # persists across detection runs until the user explicitly clears it
 
         # Reset refinement settings to defaults
         self._refine_expand = 0
@@ -2908,6 +2920,14 @@ class AISegmentationPlugin:
         self._pro_detection_batches = []
 
         # ── Tiling branch: check if we need multi-tile detection ──
+        QgsMessageLog.logMessage(
+            "_run_fal_detection: _selected_zone={}, type={}".format(
+                self._selected_zone,
+                type(self._selected_zone).__name__ if self._selected_zone else "None",
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
         if self._selected_zone:
             zone_in_layer_crs = self._reproject_zone_to_layer_crs(
                 self._selected_zone, raster_layer
