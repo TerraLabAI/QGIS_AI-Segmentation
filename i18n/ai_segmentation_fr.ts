@@ -303,8 +303,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Réduire les petites variations du contour (0 = aucun changement)</translation>
     </message>
     <message>
-        <source>Fill holes</source>
-        <translation>Combler les trous</translation>
+        <source>Fill holes:</source>
+        <translation>Remplir les trous :</translation>
     </message>
     <message>
         <source>Fill interior holes in the selection</source>
@@ -327,12 +327,12 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>0 = tout garder.</translation>
     </message>
     <message>
-        <source>Round corners</source>
-        <translation>Arrondir les coins</translation>
+        <source>Round corners:</source>
+        <translation>Arrondir les coins :</translation>
     </message>
     <message>
-        <source>Round corners for natural shapes like trees and bushes</source>
-        <translation>Arrondir les coins pour les formes naturelles comme les arbres et buissons</translation>
+        <source>Round corners for natural shapes like trees and bushes. Increase 'Simplify outline' for smoother results.</source>
+        <translation>Arrondir les coins pour des formes naturelles comme les arbres et buissons. Augmentez 'Simplifier le contour' pour un résultat plus lisse.</translation>
     </message>
     <message>
         <source>Outline</source>
@@ -509,20 +509,20 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>On va corriger votre problème :)</translation>
     </message>
     <message>
-        <source>Copy log to clipboard</source>
-        <translation>Copier le log</translation>
+        <source>1. Click to copy logs</source>
+        <translation>1. Cliquer pour copier les logs</translation>
     </message>
     <message>
-        <source>Copy email address</source>
-        <translation>Copier l'adresse email</translation>
+        <source>2. Click to send to {}</source>
+        <translation>2. Cliquer pour envoyer à {}</translation>
+    </message>
+    <message>
+        <source>Open email client</source>
+        <translation>Ouvrir le client email</translation>
     </message>
     <message>
         <source>Copied!</source>
         <translation>Copié !</translation>
-    </message>
-    <message>
-        <source>Email copied!</source>
-        <translation>Email copié !</translation>
     </message>
 
     <!-- SSL / Antivirus error titles -->
@@ -553,8 +553,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Pas de souci, le plugin utilise maintenant le mode CPU et tout fonctionne :) Si vous souhaitez qu'on corrige le support GPU pour votre config, envoyez-nous vos logs !</translation>
     </message>
     <message>
-        <source>Point is outside the raster image. Click inside the raster.</source>
-        <translation>Le point est en dehors de l'image raster. Cliquez à l'intérieur du raster.</translation>
+        <source>You clicked outside the area of &apos;{layer}&apos;. To segment a different layer, stop the current segmentation first.</source>
+        <translation>Vous avez cliqué en dehors de la zone de '{layer}'. Pour segmenter une autre couche, arrêtez d'abord la segmentation en cours.</translation>
     </message>
 
     <!-- Update notification -->
@@ -657,6 +657,18 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <source>For best accuracy, segment one element at a time.</source>
         <translation>Pour une meilleure precision, segmentez un element a la fois.</translation>
+    </message>
+    <message>
+        <source>Layer: {}</source>
+        <translation>Couche : {}</translation>
+    </message>
+    <message>
+        <source>Polygon saved! Click on another element to segment, or export your polygons.</source>
+        <translation>Polygone enregistré ! Cliquez sur un autre élément à segmenter, ou exportez vos polygones.</translation>
+    </message>
+    <message>
+        <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
+        <translation>Parties déconnectées détectées. Pour une meilleure précision, segmentez un élément à la fois.</translation>
     </message>
 
     <message>

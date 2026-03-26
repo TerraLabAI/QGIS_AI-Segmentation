@@ -303,8 +303,8 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Reducir pequeñas variaciones en el contorno (0 = sin cambios)</translation>
     </message>
     <message>
-        <source>Fill holes</source>
-        <translation>Rellenar huecos</translation>
+        <source>Fill holes:</source>
+        <translation>Rellenar huecos:</translation>
     </message>
     <message>
         <source>Fill interior holes in the selection</source>
@@ -327,12 +327,12 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>0 = mantener todos.</translation>
     </message>
     <message>
-        <source>Round corners</source>
-        <translation>Redondear esquinas</translation>
+        <source>Round corners:</source>
+        <translation>Redondear esquinas:</translation>
     </message>
     <message>
-        <source>Round corners for natural shapes like trees and bushes</source>
-        <translation>Redondear esquinas para formas naturales como árboles y arbustos</translation>
+        <source>Round corners for natural shapes like trees and bushes. Increase 'Simplify outline' for smoother results.</source>
+        <translation>Redondear esquinas para formas naturales como árboles y arbustos. Aumenta 'Simplificar contorno' para resultados más suaves.</translation>
     </message>
     <message>
         <source>Outline</source>
@@ -509,20 +509,20 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Solucionaremos tu problema :)</translation>
     </message>
     <message>
-        <source>Copy log to clipboard</source>
-        <translation>Copiar log</translation>
+        <source>1. Click to copy logs</source>
+        <translation>1. Clic para copiar logs</translation>
     </message>
     <message>
-        <source>Copy email address</source>
-        <translation>Copiar dirección de email</translation>
+        <source>2. Click to send to {}</source>
+        <translation>2. Clic para enviar a {}</translation>
+    </message>
+    <message>
+        <source>Open email client</source>
+        <translation>Abrir cliente de correo</translation>
     </message>
     <message>
         <source>Copied!</source>
         <translation>¡Copiado!</translation>
-    </message>
-    <message>
-        <source>Email copied!</source>
-        <translation>¡Email copiado!</translation>
     </message>
 
     <!-- SSL / Antivirus error titles -->
@@ -553,8 +553,8 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>No te preocupes, el plugin ahora usa el modo CPU y todo funciona :) Si quieres que arreglemos el soporte GPU para tu config, ¡envíanos tus logs!</translation>
     </message>
     <message>
-        <source>Point is outside the raster image. Click inside the raster.</source>
-        <translation>El punto está fuera de la imagen ráster. Haga clic dentro del ráster.</translation>
+        <source>You clicked outside the area of &apos;{layer}&apos;. To segment a different layer, stop the current segmentation first.</source>
+        <translation>Hiciste clic fuera del área de '{layer}'. Para segmentar otra capa, detén primero la segmentación actual.</translation>
     </message>
 
     <!-- Update notification -->
@@ -657,6 +657,18 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     <message>
         <source>For best accuracy, segment one element at a time.</source>
         <translation>Para mejor precision, segmenta un elemento a la vez.</translation>
+    </message>
+    <message>
+        <source>Layer: {}</source>
+        <translation>Capa: {}</translation>
+    </message>
+    <message>
+        <source>Polygon saved! Click on another element to segment, or export your polygons.</source>
+        <translation>Polígono guardado! Haz clic en otro elemento para segmentar, o exporta tus polígonos.</translation>
+    </message>
+    <message>
+        <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
+        <translation>Partes desconectadas detectadas. Para mayor precisión, segmenta un elemento a la vez.</translation>
     </message>
 
     <message>

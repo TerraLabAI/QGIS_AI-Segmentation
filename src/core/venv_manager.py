@@ -316,7 +316,8 @@ def _select_cuda_index(gpu_info: dict) -> Optional[str]:
     if compute_cap is not None:
         needs_cu128 = compute_cap >= _MIN_COMPUTE_CAP_FOR_CU128
     else:
-        # Fallback: name-based heuristic when compute_cap unavailable
+        # Best-effort fallback when compute_cap is unavailable.
+        # Matches RTX 5090, RTX 5080, etc. May need updating for future naming.
         needs_cu128 = "RTX 50" in gpu_name.upper()
 
     cuda_index = "cu128" if needs_cu128 else "cu121"
@@ -438,7 +439,11 @@ def _is_hash_mismatch(output: str) -> bool:
 
 
 def _get_pip_ssl_flags() -> List[str]:
-    """Get pip flags to bypass SSL verification for corporate proxies."""
+    """Get pip flags to bypass SSL verification for corporate proxies.
+
+    Note: --trusted-host may be deprecated in future pip versions (>= 21.0),
+    but is still needed for older pip on QGIS 3.22-3.28 bundled Python.
+    """
     return [
         "--trusted-host", "pypi.org",
         "--trusted-host", "pypi.python.org",

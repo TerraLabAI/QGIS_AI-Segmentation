@@ -168,6 +168,13 @@ class _ShortcutFilter(QObject):
         if isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit,
                                 QSpinBox, QDoubleSpinBox)):
             return False
+        # Don't intercept arrow keys in table/tree views (attribute table, etc.)
+        # but allow them on the map canvas (QGraphicsView subclass).
+        from qgis.PyQt.QtWidgets import (QAbstractItemView, QListView,
+                                          QTableView, QTreeView)
+        if isinstance(focused, (QAbstractItemView, QListView,
+                                QTableView, QTreeView)):
+            return False
 
         key = event.key()
         modifiers = event.modifiers()
@@ -305,7 +312,7 @@ class AISegmentationPlugin:
         self.current_transform_info = None
         self.current_low_res_mask = None  # For iterative refinement with negative points
         self.saved_polygons = []
-        self._mask_state_history: list = []  # Stack of mask states for per-point undo
+        self._mask_state_history: list = []  # Stack of mask states for per-point undo (capped at 30)
         self._frozen_sessions: List[FrozenCropSession] = []  # Frozen crop polygons
         self._active_crop_points_positive: List[Tuple[float, float]] = []
         self._active_crop_points_negative: List[Tuple[float, float]] = []
@@ -319,21 +326,20 @@ class AISegmentationPlugin:
         self._refine_smooth = 0
         self._refine_expand = 0
         self._refine_fill_holes = False
-        self._refine_min_area = 100
+        self._refine_min_area = 100  # Will be overridden by _compute_auto_min_area()
 
         self._is_non_georeferenced_mode = False  # Track if current layer is non-georeferenced
         self._is_online_layer = False  # Track if current layer is online (WMS, XYZ, etc.)
+        self._disjoint_warning_shown = False
 
         # On-demand encoding state
         self._current_crop_info = None  # dict with 'bounds', 'img_shape'
         self._current_raster_path = None
-        self._encoding_in_progress = False  # Guard against concurrent clicks
+        self._encoding_in_progress = False  # Guard against concurrent clicks (main/UI thread only)
         self._shortcut_filter = None  # Event filter for keyboard shortcuts
         self._current_crop_canvas_mupp = None  # canvas mupp at encode time (zoom detection)
         self._current_crop_actual_mupp = None  # actual mupp used for the crop (may differ if zoomed out)
         self._current_crop_scale_factor = None  # scale_factor used for file-based crop
-        self._post_save_pending = False  # Next click starts fresh segmentation at current zoom
-
         self.deps_install_worker = None
         self.download_worker = None
         self._verify_worker = None
@@ -571,7 +577,7 @@ class AISegmentationPlugin:
         try:
             if self._shortcut_filter is not None:
                 try:
-                    QApplication.instance().removeEventFilter(self._shortcut_filter)
+                    self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
                 except RuntimeError:
                     pass
                 self._shortcut_filter = None
@@ -628,13 +634,20 @@ class AISegmentationPlugin:
         except (TypeError, RuntimeError, AttributeError):
             pass
 
-        # 2. Cleanup predictor subprocess
+        # 2. Cleanup predictor subprocess (with timeout to avoid blocking unload)
         if self.predictor:
-            try:
-                self.predictor.cleanup()
-            except Exception:
-                pass
+            import threading
+            pred = self.predictor
             self.predictor = None
+            t = threading.Thread(target=lambda: pred.cleanup(), daemon=True)
+            t.start()
+            t.join(timeout=8)
+            if t.is_alive():
+                QgsMessageLog.logMessage(
+                    "Predictor cleanup did not finish within 8s",
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Warning
+                )
 
         # 3. Disconnect worker signals before termination to prevent callbacks on deleted UI
         for worker in [self.deps_install_worker, self.download_worker, self._verify_worker]:
@@ -1238,7 +1251,7 @@ class AISegmentationPlugin:
             self._shortcut_filter = _ShortcutFilter(self)
         # Install on mainWindow (not app) to avoid SIGSEGV from
         # application-level filter receiving events for deleted C++ objects.
-        QApplication.instance().installEventFilter(self._shortcut_filter)
+        self.iface.mainWindow().installEventFilter(self._shortcut_filter)
 
         # Show tutorial notification for first-time users
         self._show_tutorial_notification()
@@ -1437,9 +1450,7 @@ class AISegmentationPlugin:
         self.current_low_res_mask = None
         self.dock_widget.set_point_count(0, 0)
 
-        # Keep crop info so clicks in the same area reuse the encoding,
-        # but flag that the next click should use tighter zoom thresholds.
-        self._post_save_pending = True
+        # Keep crop info so clicks in the same area reuse the encoding.
 
     def _on_export_layer(self):
         """Export all saved polygons + current unsaved mask to a new layer."""
@@ -1543,6 +1554,9 @@ class AISegmentationPlugin:
                 crs = QgsCoordinateReferenceSystem(crs_str)
             else:
                 crs = QgsCoordinateReferenceSystem('EPSG:4326')
+                QgsMessageLog.logMessage(
+                    "CRS could not be determined, falling back to EPSG:4326",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning)
 
         # Determine output directory for GeoPackage file
         # Priority: 1) Project directory (if project is saved), 2) Raster source directory
@@ -1584,9 +1598,9 @@ class AISegmentationPlugin:
         # Add attributes
         pr = temp_layer.dataProvider()
         pr.addAttributes([
-            QgsField("id", QVariant.Int),
-            QgsField("score", QVariant.Double),
-            QgsField("area", QVariant.Double)
+            QgsField("id", QVariant.Type.Int),
+            QgsField("score", QVariant.Type.Double),
+            QgsField("area", QVariant.Type.Double)
         ])
         temp_layer.updateFields()
 
@@ -1729,7 +1743,7 @@ class AISegmentationPlugin:
         # Remove keyboard shortcut filter
         try:
             if self._shortcut_filter is not None:
-                QApplication.instance().removeEventFilter(self._shortcut_filter)
+                self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
         except (RuntimeError, AttributeError):
             pass
 
@@ -1768,14 +1782,14 @@ class AISegmentationPlugin:
                     tr("This will discard {count} polygon(s).").format(count=polygon_count),
                     tr("Use 'Export to layer' to keep them.")),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.Yes
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
         if self._shortcut_filter is not None:
             try:
-                QApplication.instance().removeEventFilter(self._shortcut_filter)
+                self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
             except RuntimeError:
                 pass
         self._stopping_segmentation = True
@@ -1786,11 +1800,11 @@ class AISegmentationPlugin:
         self.dock_widget.reset_session()
 
     def _on_refine_settings_changed(self, simplify: int, smooth: int, expand: int,
-                                     fill_holes: bool, min_area: int):
+                                     fill_holes: bool):
         """Handle refinement control changes."""
         QgsMessageLog.logMessage(
-            "Refine settings: simplify={}, smooth={}, expand={}, fill_holes={}, min_area={}".format(
-                simplify, smooth, expand, fill_holes, min_area),
+            "Refine settings: simplify={}, smooth={}, expand={}, fill_holes={}".format(
+                simplify, smooth, expand, fill_holes),
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )
@@ -1798,7 +1812,6 @@ class AISegmentationPlugin:
         self._refine_smooth = smooth
         self._refine_expand = expand
         self._refine_fill_holes = fill_holes
-        self._refine_min_area = min_area
 
         # In both modes: update current mask preview only
         # Saved masks (green) keep their own refine settings from when they were saved
@@ -1871,14 +1884,13 @@ class AISegmentationPlugin:
         has_active_points = (self._active_crop_points_positive
                              or self._active_crop_points_negative)
         if not has_active_points:
-            # After save, use tight thresholds so any meaningful zoom change
-            # triggers re-encode at the correct resolution.
-            if self._post_save_pending:
-                zoom_in_thresh = 0.92
-                zoom_out_thresh = 1.08
-            else:
-                zoom_in_thresh = 0.7
-                zoom_out_thresh = 1.5
+            # No active points — always use tight thresholds so any
+            # meaningful zoom change triggers re-encode at the correct
+            # resolution.  Loose thresholds (old 0.7/1.5) caused SAM to
+            # reuse a closer-zoom encoding when the user zoomed out,
+            # segmenting a small element instead of the full object.
+            zoom_in_thresh = 0.85
+            zoom_out_thresh = 1.15
 
             if self._is_online_layer:
                 canvas = self.iface.mapCanvas()
@@ -2043,6 +2055,32 @@ class AISegmentationPlugin:
             pass
         return 0.0
 
+    def _compute_auto_min_area(self):
+        """Compute min_area for artifact removal based on current crop scale.
+
+        SAM artifacts are small disconnected blobs (1-25 pixels) that appear
+        regardless of input content.  They get slightly larger when the input
+        image is heavily downsampled (high scale_factor = zoomed out).
+
+        Uses sqrt scaling for a gentle progression that stays well below the
+        size of any intentionally selected object (~50+ pixels).
+
+        Returns pixel count in the 1024x1024 SAM mask.
+        """
+        scale = self._current_crop_scale_factor
+        if scale is None or scale <= 0:
+            # Online layers or unknown: use the MUPP ratio as proxy
+            if (self._current_crop_actual_mupp
+                    and self._current_crop_canvas_mupp
+                    and self._current_crop_canvas_mupp > 0):
+                scale = max(1.0, self._current_crop_actual_mupp
+                            / self._current_crop_canvas_mupp * 2.0)
+            else:
+                scale = 1.0
+        # Gentle power curve centered on 100 (proven default).
+        # scale=0.5 → 85,  scale=1 → 100,  scale=4 → 152,  scale=8 → 187
+        return max(50, int(100 * max(0.6, scale) ** 0.3))
+
     def _compute_initial_scale_factor(self):
         """Compute initial scale_factor from canvas zoom for file-based rasters.
 
@@ -2196,6 +2234,9 @@ class AISegmentationPlugin:
         self._current_crop_info = crop_info
         self._encoding_in_progress = False
 
+        # Auto-compute min_area based on current crop scale
+        self._refine_min_area = self._compute_auto_min_area()
+
         # Restore keyboard focus to canvas after encoding (dock widget
         # updates during encoding can steal focus, breaking shortcuts).
         try:
@@ -2204,17 +2245,23 @@ class AISegmentationPlugin:
             pass
 
         QgsMessageLog.logMessage(
-            "Encoded crop: bounds={}, shape={}".format(
-                crop_info['bounds'], crop_info['img_shape']),
+            "Encoded crop: bounds={}, shape={}, auto_min_area={}".format(
+                crop_info['bounds'], crop_info['img_shape'],
+                self._refine_min_area),
             "AI Segmentation", level=Qgis.MessageLevel.Info
         )
         return True
 
-    def _freeze_active_crop(self):
+    def _freeze_active_crop(self, crop_info_override=None):
         """Freeze the current active crop's mask as a geographic polygon.
 
         The polygon is stored in raster CRS (same as save/export) and added
         to _frozen_sessions for composite display.
+
+        Args:
+            crop_info_override: If provided, use this instead of
+                self._current_crop_info (needed when the caller has already
+                overwritten _current_crop_info with a new crop).
         """
         if self.current_mask is None or self.current_transform_info is None:
             return
@@ -2229,7 +2276,7 @@ class AISegmentationPlugin:
                         polygon=combined,
                         points_positive=list(self._active_crop_points_positive),
                         points_negative=list(self._active_crop_points_negative),
-                        crop_info=self._current_crop_info,
+                        crop_info=crop_info_override if crop_info_override is not None else self._current_crop_info,
                     )
                     self._frozen_sessions.append(session)
                     QgsMessageLog.logMessage(
@@ -2249,7 +2296,6 @@ class AISegmentationPlugin:
 
     def _handle_reencode(self, crop_status, raster_pt):
         """Handle re-encoding based on crop status. Returns True on success."""
-        self._post_save_pending = False  # consumed
         if crop_status == "no_crop":
             self.current_low_res_mask = None
             initial_scale = self._compute_initial_scale_factor()
@@ -2258,13 +2304,16 @@ class AISegmentationPlugin:
         if crop_status == "outside_bounds":
             # Composite per-crop: encode new crop FIRST (transactional),
             # then freeze old crop only on success.
+            # Save old crop info before encoding overwrites it.
+            old_crop_info = self._current_crop_info
             initial_scale = self._compute_initial_scale_factor()
             if not self._extract_and_encode_crop(
                     raster_pt, mupp_override=initial_scale):
                 return False
 
-            # Encode succeeded — safe to freeze old crop
-            self._freeze_active_crop()
+            # Encode succeeded — safe to freeze old crop (pass old info
+            # since _extract_and_encode_crop already overwrote _current_crop_info)
+            self._freeze_active_crop(crop_info_override=old_crop_info)
             self.current_mask = None
             self.current_low_res_mask = None
             return True
@@ -2316,11 +2365,15 @@ class AISegmentationPlugin:
         if not self._is_point_in_raster_extent(raster_pt):
             if self.map_tool:
                 self.map_tool.remove_last_marker()
+            layer_name = ""
+            sel = self.dock_widget.layer_combo.currentLayer()
+            if sel:
+                layer_name = sel.name()
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("Point is outside the raster image. Click inside the raster."),
+                tr("You clicked outside the area of '{layer}'. To segment a different layer, stop the current segmentation first.").format(layer=layer_name),
                 level=Qgis.MessageLevel.Warning,
-                duration=4
+                duration=8
             )
             return
 
@@ -2329,8 +2382,11 @@ class AISegmentationPlugin:
         crop_status = self._check_crop_status(raster_pt)
 
         # Save current mask state for undo before modifying anything
+        # Cap at 30 entries (~30MB) to prevent unbounded memory growth.
+        if len(self._mask_state_history) >= 30:
+            self._mask_state_history.pop(0)
         self._mask_state_history.append({
-            'mask': self.current_mask,
+            'mask': self.current_mask.copy() if self.current_mask is not None else None,
             'score': self.current_score,
             'transform_info': self.current_transform_info,
         })
@@ -2359,8 +2415,6 @@ class AISegmentationPlugin:
                 if self.map_tool:
                     self.map_tool.remove_last_marker()
                 return
-        else:
-            self._post_save_pending = False
 
         self._run_prediction()
 
@@ -2388,11 +2442,15 @@ class AISegmentationPlugin:
         if not self._is_point_in_raster_extent(raster_pt):
             if self.map_tool:
                 self.map_tool.remove_last_marker()
+            layer_name = ""
+            sel = self.dock_widget.layer_combo.currentLayer()
+            if sel:
+                layer_name = sel.name()
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("Point is outside the raster image. Click inside the raster."),
+                tr("You clicked outside the area of '{layer}'. To segment a different layer, stop the current segmentation first.").format(layer=layer_name),
                 level=Qgis.MessageLevel.Warning,
-                duration=4
+                duration=8
             )
             return
 
@@ -2400,8 +2458,11 @@ class AISegmentationPlugin:
         crop_status = self._check_crop_status(raster_pt)
 
         # Save current mask state for undo before modifying anything
+        # Cap at 30 entries (~30MB) to prevent unbounded memory growth.
+        if len(self._mask_state_history) >= 30:
+            self._mask_state_history.pop(0)
         self._mask_state_history.append({
-            'mask': self.current_mask,
+            'mask': self.current_mask.copy() if self.current_mask is not None else None,
             'score': self.current_score,
             'transform_info': self.current_transform_info,
         })
@@ -2428,8 +2489,6 @@ class AISegmentationPlugin:
                 if self.map_tool:
                     self.map_tool.remove_last_marker()
                 return
-        else:
-            self._post_save_pending = False
 
         self._run_prediction()
 
@@ -2625,9 +2684,20 @@ class AISegmentationPlugin:
                     min_area=self._refine_min_area,
                 )
 
-            # Detect disjoint regions and show/hide warning
+            # Detect disjoint regions and show message bar warning
             region_count = count_significant_regions(mask_to_display)
-            self.dock_widget.set_disjoint_warning(region_count > 1)
+            is_disjoint = region_count > 1
+            if is_disjoint and not self._disjoint_warning_shown:
+                from qgis.core import Qgis
+                self.iface.messageBar().pushMessage(
+                    "AI Segmentation",
+                    tr("Disconnected parts detected. For best accuracy, segment one element at a time."),
+                    level=Qgis.MessageLevel.Warning,
+                    duration=6
+                )
+                self._disjoint_warning_shown = True
+            elif not is_disjoint:
+                self._disjoint_warning_shown = False
 
             geometries = mask_to_polygons(mask_to_display, self.current_transform_info)
 
@@ -2684,8 +2754,7 @@ class AISegmentationPlugin:
                 self.mask_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
             except RuntimeError:
                 self.mask_rubber_band = None
-        if self.dock_widget:
-            self.dock_widget.set_disjoint_warning(False)
+        self._disjoint_warning_shown = False
 
     @staticmethod
     def _make_qgs_rectangle(minx, miny, maxx, maxy):
@@ -2704,7 +2773,7 @@ class AISegmentationPlugin:
                     tr("This will delete all saved polygons."),
                     tr("Do you want to continue?")),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.Yes
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
@@ -2753,10 +2822,10 @@ class AISegmentationPlugin:
                 self.current_score = state['score']
                 self.current_transform_info = state['transform_info']
 
-            # Invalidate SAM logits and crop so next click re-encodes cleanly
+            # Invalidate SAM logits so next click re-predicts from scratch.
+            # Keep _current_crop_info so the next click in the same area
+            # can reuse the encoding (avoids expensive 3-8s re-encode).
             self.current_low_res_mask = None
-            self._current_crop_info = None
-            self._post_save_pending = False
 
             # Also remove from per-crop point tracking
             if result[0] == "positive" and self._active_crop_points_positive:
@@ -2789,7 +2858,7 @@ class AISegmentationPlugin:
                     tr("Warning: you are about to edit an already saved polygon."),
                     tr("Do you want to continue?")),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.Yes
             )
             if reply == QMessageBox.StandardButton.Yes:
                 self._restore_last_saved_mask()
@@ -2810,21 +2879,14 @@ class AISegmentationPlugin:
         self.current_score = 0.0
         self.current_low_res_mask = None
         self._current_crop_info = None  # Force re-encode on next click
-        self._post_save_pending = False
         self._mask_state_history = []
 
-        # Restore the frozen session's points to prompts and per-crop tracking
+        # Restore only the unfrozen session's points to prompts and markers.
+        # Frozen sessions' points are NOT added to prompts — they are already
+        # baked into frozen polygons and should not inflate the point count.
         self.prompts.clear()
         if self.map_tool:
             self.map_tool.clear_markers()
-
-        # Re-add all points from remaining frozen sessions (for prompt count)
-        # Plus the unfrozen session's points
-        for fs in self._frozen_sessions:
-            for pt in fs.points_positive:
-                self.prompts.add_positive_point(pt[0], pt[1])
-            for pt in fs.points_negative:
-                self.prompts.add_negative_point(pt[0], pt[1])
 
         self._active_crop_points_positive = list(session.points_positive)
         self._active_crop_points_negative = list(session.points_negative)
@@ -2933,7 +2995,6 @@ class AISegmentationPlugin:
             self._refine_smooth,
             self._refine_expand,
             self._refine_fill_holes,
-            self._refine_min_area
         )
 
         # Update visualization
@@ -2976,7 +3037,6 @@ class AISegmentationPlugin:
         self.current_low_res_mask = None
 
         # Reset on-demand encoding state
-        self._post_save_pending = False
         self._current_crop_info = None
         self._current_raster_path = None
         self._current_crop_canvas_mupp = None
@@ -2991,7 +3051,7 @@ class AISegmentationPlugin:
         self._refine_smooth = 0
         self._refine_expand = 0
         self._refine_fill_holes = False
-        self._refine_min_area = 100
+        self._refine_min_area = 100  # Will be overridden by _compute_auto_min_area()
 
         if self.dock_widget:
             self.dock_widget.set_point_count(0, 0)

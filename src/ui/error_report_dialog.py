@@ -7,6 +7,7 @@ Also provides a bug report dialog for user-initiated reports.
 import sys
 import os
 import platform
+import threading
 from collections import deque
 from datetime import datetime
 
@@ -28,6 +29,7 @@ TERRALAB_URL = "https://terra-lab.ai/ai-segmentation"
 
 # In-memory log buffer - captures AI Segmentation messages
 _log_buffer = deque(maxlen=100)
+_log_buffer_lock = threading.Lock()
 _log_collector_connected = False
 
 
@@ -45,15 +47,17 @@ def _anonymize_paths(text: str) -> str:
     if not text:
         return text
 
-    # macOS: /Users/<username>/...
-    text = re.sub(r'/Users/[^/\s]+/', '<USER>/', text)
+    # macOS: /Users/<username>/... (with or without trailing slash)
+    text = re.sub(r'/Users/[^/\s]+(?=/|$|\s)', '<USER>', text)
 
-    # Linux: /home/<username>/...
-    text = re.sub(r'/home/[^/\s]+/', '<USER>/', text)
+    # Linux: /home/<username>/... (with or without trailing slash)
+    text = re.sub(r'/home/[^/\s]+(?=/|$|\s)', '<USER>', text)
 
-    # Windows: C:\Users\<username>\... (and other drive letters)
-    # Handle forward slashes, backslashes, and mixed combinations
-    text = re.sub(r'[A-Za-z]:[/\\]Users[/\\][^/\\\s]+[/\\]', '<USER>/', text)
+    # Windows: C:\Users\<username>\... (and other drive letters, forward/back slashes)
+    text = re.sub(r'[A-Za-z]:[/\\]Users[/\\][^/\\\s]+(?=[/\\]|$|\s)', '<USER>', text)
+
+    # Windows UNC paths: \\server\Users\<username>\...
+    text = re.sub(r'\\\\[^\\]+\\Users\\[^/\\\s]+(?=[/\\]|$|\s)', '<USER>', text)
 
     return text
 
@@ -62,41 +66,45 @@ def start_log_collector():
     """Connect to QgsMessageLog to capture AI Segmentation messages.
     Call once at plugin startup."""
     global _log_collector_connected
-    if _log_collector_connected:
-        return
-    try:
-        from qgis.core import QgsApplication
-        QgsApplication.messageLog().messageReceived.connect(_on_log_message)
-        _log_collector_connected = True
-    except Exception:
-        pass
+    with _log_buffer_lock:
+        if _log_collector_connected:
+            return
+        try:
+            from qgis.core import QgsApplication
+            QgsApplication.messageLog().messageReceived.connect(_on_log_message)
+            _log_collector_connected = True
+        except Exception:
+            pass
 
 
 def stop_log_collector():
     """Disconnect from QgsMessageLog. Call on plugin unload."""
     global _log_collector_connected
-    if not _log_collector_connected:
-        return
-    try:
-        from qgis.core import QgsApplication
-        QgsApplication.messageLog().messageReceived.disconnect(_on_log_message)
-    except (TypeError, RuntimeError):
-        pass
-    _log_collector_connected = False
+    with _log_buffer_lock:
+        if not _log_collector_connected:
+            return
+        try:
+            from qgis.core import QgsApplication
+            QgsApplication.messageLog().messageReceived.disconnect(_on_log_message)
+        except (TypeError, RuntimeError):
+            pass
+        _log_collector_connected = False
 
 
 def _on_log_message(message, tag, level):
     """Callback for QgsMessageLog.messageReceived signal."""
     if tag == "AI Segmentation":
         timestamp = datetime.now().strftime("%H:%M:%S")
-        _log_buffer.append("[{}] {}".format(timestamp, message))
+        with _log_buffer_lock:
+            _log_buffer.append("[{}] {}".format(timestamp, message))
 
 
 def _get_recent_logs() -> str:
     """Return recent AI Segmentation log lines (with paths anonymized)."""
-    if not _log_buffer:
-        return "(No logs captured this session)"
-    logs = "\n".join(_log_buffer)
+    with _log_buffer_lock:
+        if not _log_buffer:
+            return "(No logs captured this session)"
+        logs = "\n".join(_log_buffer)
     return _anonymize_paths(logs)
 
 
@@ -183,7 +191,7 @@ def _collect_diagnostic_info(error_message: str) -> str:
             kwargs = get_subprocess_kwargs()
             result = subprocess.run(
                 [python_path, "-m", "pip", "list", "--format=columns"],
-                capture_output=True, text=True, timeout=15,
+                capture_output=True, text=True, timeout=5,
                 stdin=subprocess.DEVNULL, env=env, **kwargs
             )
             if result.returncode == 0:
@@ -280,7 +288,7 @@ class ErrorReportDialog(QDialog):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
         layout.setContentsMargins(16, 16, 16, 16)
 
         # Error message
@@ -296,33 +304,23 @@ class ErrorReportDialog(QDialog):
                 tr("We'll fix your issue :)"))
         )
         help_label.setWordWrap(True)
-        help_label.setStyleSheet("color: palette(text); margin-top: 6px;")
         layout.addWidget(help_label)
 
-        # Action buttons row
-        action_layout = QHBoxLayout()
-        action_layout.setSpacing(8)
-
-        # Copy logs button
-        self._copy_btn = QPushButton(tr("Copy log to clipboard"))
+        # Step 1: Copy logs button (full width)
+        self._copy_btn = QPushButton(tr("1. Click to copy logs"))
         self._copy_btn.clicked.connect(self._on_copy)
-        action_layout.addWidget(self._copy_btn)
+        layout.addWidget(self._copy_btn)
 
-        # Email button - copies the email address to clipboard
-        self._email_btn = QPushButton(SUPPORT_EMAIL)
-        self._email_btn.setToolTip(tr("Copy email address"))
-        self._email_btn.clicked.connect(self._on_copy_email)
-        action_layout.addWidget(self._email_btn)
+        # Arrow pointing down, centered
+        arrow_label = QLabel("\u25BC")
+        arrow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(arrow_label)
 
-        layout.addLayout(action_layout)
-
-        # TerraLab link (discreet, at the bottom)
-        link_label = QLabel(
-            '<a href="{}" style="color: palette(link);">terra-lab.ai</a>'.format(TERRALAB_URL)
-        )
-        link_label.setOpenExternalLinks(True)
-        link_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(link_label)
+        # Step 2: Email button (full width) - opens mailto link
+        self._email_btn = QPushButton(tr("2. Click to send to {}").format(SUPPORT_EMAIL))
+        self._email_btn.setToolTip(tr("Open email client"))
+        self._email_btn.clicked.connect(self._on_open_email)
+        layout.addWidget(self._email_btn)
 
     def _on_copy(self):
         """Copy diagnostic info to clipboard."""
@@ -330,15 +328,15 @@ class ErrorReportDialog(QDialog):
         clipboard.setText(self._diagnostic_info)
         self._copy_btn.setText(tr("Copied!"))
         from qgis.PyQt.QtCore import QTimer
-        QTimer.singleShot(2000, lambda: self._copy_btn.setText(tr("Copy log to clipboard")))
+        QTimer.singleShot(2000, lambda: self._copy_btn.setText(tr("1. Click to copy logs")))
 
-    def _on_copy_email(self):
-        """Copy support email address to clipboard."""
-        clipboard = QApplication.clipboard()
-        clipboard.setText(SUPPORT_EMAIL)
-        self._email_btn.setText(tr("Email copied!"))
-        from qgis.PyQt.QtCore import QTimer
-        QTimer.singleShot(2000, lambda: self._email_btn.setText(SUPPORT_EMAIL))
+    def _on_open_email(self):
+        """Open email client with support address."""
+        from urllib.parse import quote
+        from qgis.PyQt.QtCore import QUrl
+        from qgis.PyQt.QtGui import QDesktopServices
+        subject = quote("AI Segmentation - Bug Report")
+        QDesktopServices.openUrl(QUrl("mailto:{}?subject={}".format(SUPPORT_EMAIL, subject)))
 
 
 class BugReportDialog(QDialog):
@@ -360,7 +358,7 @@ class BugReportDialog(QDialog):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
         layout.setContentsMargins(16, 16, 16, 16)
 
         # Friendly message
@@ -372,30 +370,21 @@ class BugReportDialog(QDialog):
         msg_label.setWordWrap(True)
         layout.addWidget(msg_label)
 
-        # Action buttons row
-        action_layout = QHBoxLayout()
-        action_layout.setSpacing(8)
-
-        # Copy logs button
-        self._copy_btn = QPushButton(tr("Copy log to clipboard"))
+        # Step 1: Copy logs button (full width)
+        self._copy_btn = QPushButton(tr("1. Click to copy logs"))
         self._copy_btn.clicked.connect(self._on_copy)
-        action_layout.addWidget(self._copy_btn)
+        layout.addWidget(self._copy_btn)
 
-        # Email button - copies the email address to clipboard
-        self._email_btn = QPushButton(SUPPORT_EMAIL)
-        self._email_btn.setToolTip(tr("Copy email address"))
-        self._email_btn.clicked.connect(self._on_copy_email)
-        action_layout.addWidget(self._email_btn)
+        # Arrow pointing down, centered
+        arrow_label = QLabel("\u25BC")
+        arrow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(arrow_label)
 
-        layout.addLayout(action_layout)
-
-        # TerraLab link (discreet, at the bottom)
-        link_label = QLabel(
-            '<a href="{}" style="color: palette(link);">terra-lab.ai</a>'.format(TERRALAB_URL)
-        )
-        link_label.setOpenExternalLinks(True)
-        link_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(link_label)
+        # Step 2: Email button (full width) - opens mailto link
+        self._email_btn = QPushButton(tr("2. Click to send to {}").format(SUPPORT_EMAIL))
+        self._email_btn.setToolTip(tr("Open email client"))
+        self._email_btn.clicked.connect(self._on_open_email)
+        layout.addWidget(self._email_btn)
 
     def _on_copy(self):
         """Copy diagnostic info to clipboard."""
@@ -403,15 +392,15 @@ class BugReportDialog(QDialog):
         clipboard.setText(self._diagnostic_info)
         self._copy_btn.setText(tr("Copied!"))
         from qgis.PyQt.QtCore import QTimer
-        QTimer.singleShot(2000, lambda: self._copy_btn.setText(tr("Copy log to clipboard")))
+        QTimer.singleShot(2000, lambda: self._copy_btn.setText(tr("1. Click to copy logs")))
 
-    def _on_copy_email(self):
-        """Copy support email address to clipboard."""
-        clipboard = QApplication.clipboard()
-        clipboard.setText(SUPPORT_EMAIL)
-        self._email_btn.setText(tr("Email copied!"))
-        from qgis.PyQt.QtCore import QTimer
-        QTimer.singleShot(2000, lambda: self._email_btn.setText(SUPPORT_EMAIL))
+    def _on_open_email(self):
+        """Open email client with support address."""
+        from urllib.parse import quote
+        from qgis.PyQt.QtCore import QUrl
+        from qgis.PyQt.QtGui import QDesktopServices
+        subject = quote("AI Segmentation - Bug Report")
+        QDesktopServices.openUrl(QUrl("mailto:{}?subject={}".format(SUPPORT_EMAIL, subject)))
 
 
 def show_error_report(parent, error_title: str, error_message: str):
