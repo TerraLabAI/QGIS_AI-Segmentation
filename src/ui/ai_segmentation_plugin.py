@@ -3088,18 +3088,15 @@ class AISegmentationPlugin:
             )
             return
 
-        from ..core.polygon_exporter import apply_mask_refinement, mask_to_polygons
+        from ..core.polygon_exporter import (
+            _iou,
+            apply_mask_refinement,
+            mask_to_polygons,
+        )
 
         all_detections.sort(key=lambda x: x[1], reverse=True)
 
         IOU_THRESHOLD = 0.3
-
-        def _iou(g1, g2):
-            inter = g1.intersection(g2)
-            if inter.isEmpty():
-                return 0.0
-            union = g1.combine(g2)
-            return inter.area() / union.area() if union.area() > 0 else 0.0
 
         accepted_geoms = []
         batch_count = 0

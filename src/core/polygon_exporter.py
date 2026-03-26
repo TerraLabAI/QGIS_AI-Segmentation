@@ -615,3 +615,38 @@ def _numpy_erode(mask: np.ndarray, iterations: int) -> np.ndarray:
         eroded = center & up & down & left & right
         result = eroded.astype(np.uint8)
     return result
+
+
+def _iou(g1, g2):
+    """Intersection over Union for two QgsGeometry objects."""
+    inter = g1.intersection(g2)
+    if inter.isEmpty():
+        return 0.0
+    union_geom = g1.combine(g2)
+    if union_geom.area() == 0:
+        return 0.0
+    return inter.area() / union_geom.area()
+
+
+def deduplicate_geometries(geometries, iou_threshold=0.3):
+    """Remove duplicate geometries based on IoU overlap.
+
+    Args:
+        geometries: list of QgsGeometry, ordered by priority (first = highest)
+        iou_threshold: max IoU before considering a geometry as duplicate
+
+    Returns:
+        list of accepted QgsGeometry (deduplicated)
+    """
+    accepted = []
+    for geom in geometries:
+        if geom.isEmpty():
+            continue
+        is_dup = False
+        for ag in accepted:
+            if _iou(geom, ag) > iou_threshold:
+                is_dup = True
+                break
+        if not is_dup:
+            accepted.append(geom)
+    return accepted
