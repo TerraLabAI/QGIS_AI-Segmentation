@@ -63,6 +63,22 @@ pytest -k 'test_name'            # run single test
 # /sync-shared                   # sync src/shared/ with AI Canvas
 ```
 
+## Git Workflow
+
+**Commit after every logical change.** Do not batch multiple changes into one big commit. Each commit should be atomic and self-contained:
+
+- One bug fix = one commit
+- One new function/method = one commit
+- One refactor = one commit
+- Lint/format fix after a change = part of the same commit
+
+**Before every commit:**
+1. Run `ruff check` on changed files
+2. Run `ruff format` on changed files
+3. Write a conventional commit message (`fix:`, `feat:`, `refactor:`, `test:`, `docs:`)
+
+**Do NOT wait for the user to ask for a commit.** Commit proactively as you work, the same way a developer would. If you make a change, lint it and commit it immediately before moving on to the next change.
+
 ## Code Quality
 
 - Ruff for linting and formatting (see `ruff.toml`, line-length 88)
