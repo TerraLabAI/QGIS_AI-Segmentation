@@ -245,16 +245,12 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Démarrer AI Segmentation</translation>
     </message>
     <message>
-        <source>Save polygon</source>
-        <translation>Sauvegarder le polygone</translation>
+        <source>Undo</source>
+        <translation>Annuler</translation>
     </message>
     <message>
-        <source>Undo last point</source>
-        <translation>Annuler le dernier point</translation>
-    </message>
-    <message>
-        <source>Stop segmentation</source>
-        <translation>Arrêter la segmentation</translation>
+        <source>Stop</source>
+        <translation>Arrêter</translation>
     </message>
     <message>
         <source>Shortcuts</source>
@@ -275,8 +271,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
 
     <!-- Refine Section -->
     <message>
-        <source>Refine selection</source>
-        <translation>Affiner la sélection</translation>
+        <source>Refine polygons</source>
+        <translation>Affiner les polygones</translation>
     </message>
     <message>
         <source>Expand/Contract:</source>
@@ -686,20 +682,8 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Sélectionner le type d'objet :</translation>
     </message>
     <message>
-        <source>Select a category...</source>
-        <translation>Sélectionner une catégorie...</translation>
-    </message>
-    <message>
         <source>Other</source>
         <translation>Autre</translation>
-    </message>
-    <message>
-        <source>Describe the object...</source>
-        <translation>Décrire l'objet...</translation>
-    </message>
-    <message>
-        <source>Select an object...</source>
-        <translation>Sélectionner un objet...</translation>
     </message>
     <message>
         <source>Detecting objects (tile {current}/{total})...</source>
@@ -718,10 +702,6 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Objets max.</translation>
     </message>
     <message>
-        <source>Select an object type to detect</source>
-        <translation>Selectionnez un type d'objet a detecter</translation>
-    </message>
-    <message>
         <source>Click on one {prompt} as reference, then click Detect</source>
         <translation>Cliquez sur un(e) {prompt} comme reference, puis cliquez sur Detecter</translation>
     </message>
@@ -730,20 +710,28 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Reference definie. Cliquez sur Detecter pour trouver tous les {prompt}.</translation>
     </message>
     <message>
-        <source>{count} object(s) detected. Save or detect again.</source>
-        <translation>{count} objet(s) detecte(s). Sauvegardez ou relancez la detection.</translation>
-    </message>
-    <message>
         <source>Reference already set. Click Detect to proceed.</source>
         <translation>Reference deja definie. Cliquez sur Detecter pour continuer.</translation>
     </message>
     <message>
-        <source>Start AI Segmentation PRO</source>
-        <translation>Demarrer la segmentation IA PRO</translation>
-    </message>
-    <message>
         <source>Detect objects</source>
         <translation>Detecter les objets</translation>
+    </message>
+    <message>
+        <source>Search object to detect...</source>
+        <translation>Rechercher un objet à détecter...</translation>
+    </message>
+    <message>
+        <source>Detect objects ({credits} credits)</source>
+        <translation>Détecter les objets ({credits} crédits)</translation>
+    </message>
+    <message>
+        <source>{count} objects detected</source>
+        <translation>{count} objets détectés</translation>
+    </message>
+    <message>
+        <source>Right-click a polygon to remove it</source>
+        <translation>Clic droit sur un polygone pour le supprimer</translation>
     </message>
     <message>
         <source>Connecting to PRO server...</source>
@@ -876,12 +864,8 @@ Ajoutez FAL_KEY=votre_clé dans le fichier .env
         <translation>Utiliser l'image entière</translation>
     </message>
     <message>
-        <source>The larger the selected zone, the more credits are used.</source>
-        <translation>Plus la zone sélectionnée est grande, plus elle consomme de crédits.</translation>
-    </message>
-    <message>
-        <source>Estimated credits: {count}</source>
-        <translation>Crédits estimés : {count}</translation>
+        <source>The larger the zone, the more credits are used.</source>
+        <translation>Plus la zone est grande, plus de crédits sont utilisés.</translation>
     </message>
     <message>
         <source>Zone too large. Please reduce the selection.</source>

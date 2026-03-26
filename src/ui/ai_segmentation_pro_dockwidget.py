@@ -1,9 +1,9 @@
 from qgis.core import QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
-from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
+from qgis.PyQt.QtCore import QStringListModel, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
-    QComboBox,
+    QCompleter,
     QDockWidget,
     QFrame,
     QGroupBox,
@@ -25,28 +25,31 @@ from ..core.i18n import tr  # noqa: E402
 
 _REFINE_COLLAPSED_HEIGHT = 25
 
-
-_TAG_CATEGORIES = {
-    "Urban / Artificial": [
-        "Roof",
-        "Building",
-        "Warehouse",
-        "Solar panel",
-        "Car",
-        "Truck",
-        "Road",
-        "Parking",
-        "Railway",
-        "Greenhouse",
-    ],
-    "Natural / Vegetation": ["Tree", "Bush", "Grass", "Forest", "Crop", "Field"],
-    "Water & Land": ["River", "Pool", "Shadow"],
-}
+_KNOWN_OBJECTS = [
+    "Roof",
+    "Building",
+    "Warehouse",
+    "Solar panel",
+    "Car",
+    "Truck",
+    "Road",
+    "Parking",
+    "Railway",
+    "Greenhouse",
+    "Tree",
+    "Bush",
+    "Grass",
+    "Forest",
+    "Crop",
+    "Field",
+    "River",
+    "Pool",
+    "Shadow",
+]
 
 
 class AISegmentationProDockWidget(QDockWidget):
     start_pro_segmentation_requested = pyqtSignal(object)  # layer
-    save_polygon_requested = pyqtSignal()
     export_layer_requested = pyqtSignal()
     undo_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
@@ -130,6 +133,12 @@ class AISegmentationProDockWidget(QDockWidget):
         self.setTitleBarWidget(title_widget)
 
     def _setup_ui(self):
+        _neutral_btn = (
+            "QPushButton { background-color: rgba(128, 128, 128, 0.12);"
+            " padding: 6px 12px; border: 1px solid rgba(128, 128, 128, 0.2);"
+            " border-radius: 4px; }"
+        )
+
         # Layer combo
         self.layer_combo = QgsMapLayerComboBox()
         self.layer_combo.setFilters(QgsMapLayerProxyModel.Filter.RasterLayer)
@@ -169,16 +178,18 @@ class AISegmentationProDockWidget(QDockWidget):
         self.no_rasters_widget.setVisible(False)
         self.main_layout.addWidget(self.no_rasters_widget)
 
-        # Zone selection row
+        # Zone selection row (neutral buttons)
         zone_row = QHBoxLayout()
         self.zone_select_btn = QPushButton(tr("Select zone"))
         self.zone_select_btn.setToolTip(
             tr("Draw a rectangle to limit the segmentation area")
         )
+        self.zone_select_btn.setStyleSheet(_neutral_btn)
         self.zone_select_btn.clicked.connect(self.zone_select_requested.emit)
 
         self.zone_clear_btn = QPushButton(tr("Full image"))
         self.zone_clear_btn.setToolTip(tr("Use the entire image"))
+        self.zone_clear_btn.setStyleSheet(_neutral_btn)
         self.zone_clear_btn.clicked.connect(self.zone_clear_requested.emit)
         self.zone_clear_btn.setVisible(False)  # Hidden until a zone is drawn
 
@@ -186,138 +197,93 @@ class AISegmentationProDockWidget(QDockWidget):
         zone_row.addWidget(self.zone_clear_btn)
         self.main_layout.addLayout(zone_row)
 
-        # Credit estimation label
-        self.credit_label = QLabel("")
-        self.credit_label.setWordWrap(True)
-        self.credit_label.setStyleSheet("color: palette(text); font-size: 11px;")
-        self.main_layout.addWidget(self.credit_label)
+        # Autocomplete search field (replaces category + tag combos)
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText(tr("Search object to detect..."))
+        self._search_edit.setClearButtonEnabled(True)
 
-        # Explanatory text
-        self.credit_info_label = QLabel(
-            tr("The larger the selected zone, the more credits are used.")
-        )
-        self.credit_info_label.setWordWrap(True)
-        self.credit_info_label.setStyleSheet("color: palette(text); font-size: 11px;")
-        self.main_layout.addWidget(self.credit_info_label)
+        completer = QCompleter()
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        model = QStringListModel(_KNOWN_OBJECTS)
+        completer.setModel(model)
+        self._search_edit.setCompleter(completer)
+        self._search_edit.textChanged.connect(self._on_search_text_changed)
+        self.main_layout.addWidget(self._search_edit)
 
-        # Instructions label
-        self.instructions_label = QLabel("")
-        self.instructions_label.setWordWrap(True)
-        self.instructions_label.setStyleSheet(
-            "background-color: rgba(128, 128, 128, 0.08); "
-            "border: 1px solid rgba(128, 128, 128, 0.2); "
-            "border-radius: 4px; padding: 8px; color: palette(text); font-size: 12px;"
-        )
-        self.instructions_label.setVisible(False)
-        self.main_layout.addWidget(self.instructions_label)
-
-        # Start PRO button
-        self.start_pro_button = QPushButton(tr("Start AI Segmentation PRO"))
-        self.start_pro_button.setEnabled(False)
-        self.start_pro_button.clicked.connect(self._on_start_pro_clicked)
-        self.start_pro_button.setStyleSheet(
-            "QPushButton { background-color: #2e7d32; padding: 8px 16px; }"
-            "QPushButton:disabled { background-color: #c8e6c9; }"
-        )
-        self.main_layout.addWidget(self.start_pro_button)
-
-        # PRO controls container (visible during segmentation)
-        self.pro_controls_container = QWidget()
-        pro_ctrl_layout = QVBoxLayout(self.pro_controls_container)
-        pro_ctrl_layout.setContentsMargins(0, 4, 0, 4)
-        pro_ctrl_layout.setSpacing(6)
-
-        # Category combo
-        self._category_combo = QComboBox()
-        self._category_combo.addItem(tr("Select a category..."), None)
-        for cat in _TAG_CATEGORIES:
-            self._category_combo.addItem(cat, cat)
-        self._category_combo.addItem(tr("Other"), "other")
-        self._category_combo.currentIndexChanged.connect(self._on_category_changed)
-        pro_ctrl_layout.addWidget(self._category_combo)
-
-        # Tag combo (hidden until category chosen)
-        self._tag_combo = QComboBox()
-        self._tag_combo.setVisible(False)
-        self._tag_combo.currentIndexChanged.connect(self._on_tag_changed)
-        pro_ctrl_layout.addWidget(self._tag_combo)
-
-        # Free-text (shown for "Other")
-        self._custom_prompt_edit = QLineEdit()
-        self._custom_prompt_edit.setPlaceholderText(tr("Describe the object..."))
-        self._custom_prompt_edit.setVisible(False)
-        self._custom_prompt_edit.textChanged.connect(self._on_custom_prompt_changed)
-        pro_ctrl_layout.addWidget(self._custom_prompt_edit)
-
+        # Detect button (only green element — includes credit count)
+        self._credit_count = 0
         self.pro_detect_button = QPushButton(tr("Detect objects"))
-        self.pro_detect_button.setVisible(False)
+        self.pro_detect_button.setEnabled(False)
+        self.pro_detect_button.setStyleSheet(
+            "QPushButton { background-color: #4CAF50; padding: 8px 16px;"
+            " border-radius: 4px; }"
+            "QPushButton:disabled { background-color: rgba(128, 128, 128, 0.12); }"
+        )
         self.pro_detect_button.clicked.connect(self.pro_detect_requested)
-        pro_ctrl_layout.addWidget(self.pro_detect_button)
+        self.main_layout.addWidget(self.pro_detect_button)
 
-        # Min confidence (score threshold)
+        # Min confidence (score threshold) — default 25%
         score_layout = QHBoxLayout()
         score_label = QLabel(tr("Min. confidence"))
         score_label.setStyleSheet("font-size: 12px; color: palette(text);")
         self.score_threshold_spinbox = QSpinBox()
         self.score_threshold_spinbox.setRange(0, 100)
-        self.score_threshold_spinbox.setValue(0)
+        self.score_threshold_spinbox.setValue(25)
         self.score_threshold_spinbox.setSuffix(" %")
         self.score_threshold_spinbox.setMinimumWidth(80)
         score_layout.addWidget(score_label)
         score_layout.addStretch()
         score_layout.addWidget(self.score_threshold_spinbox)
-        pro_ctrl_layout.addLayout(score_layout)
+        self.main_layout.addLayout(score_layout)
 
-        # Max objects (max_masks)
-        max_obj_layout = QHBoxLayout()
-        max_obj_label = QLabel(tr("Max. objects"))
-        max_obj_label.setStyleSheet("font-size: 12px; color: palette(text);")
-        self.max_objects_spinbox = QSpinBox()
-        self.max_objects_spinbox.setRange(1, 32)
-        self.max_objects_spinbox.setValue(32)
-        self.max_objects_spinbox.setMinimumWidth(80)
-        max_obj_layout.addWidget(max_obj_label)
-        max_obj_layout.addStretch()
-        max_obj_layout.addWidget(self.max_objects_spinbox)
-        pro_ctrl_layout.addLayout(max_obj_layout)
-
-        self.pro_controls_container.setVisible(False)
-        self.main_layout.addWidget(self.pro_controls_container)
-
-        # Save polygon button
-        self.save_mask_button = QPushButton(tr("Save polygon") + "  (Shortcut: S)")
-        self.save_mask_button.clicked.connect(self.save_polygon_requested)
-        self.save_mask_button.setVisible(False)
-        self.save_mask_button.setEnabled(False)
-        self.save_mask_button.setStyleSheet(
-            "QPushButton { background-color: #1976d2; padding: 6px 12px; }"
-            "QPushButton:disabled { background-color: #b0bec5; }"
+        # Credit info hint
+        self.credit_info_label = QLabel(
+            tr("The larger the zone, the more credits are used.")
         )
-        self.save_mask_button.setToolTip(tr("Save current polygon to your session"))
-        self.main_layout.addWidget(self.save_mask_button)
+        self.credit_info_label.setWordWrap(True)
+        self.credit_info_label.setStyleSheet("color: palette(text); font-size: 11px;")
+        self.main_layout.addWidget(self.credit_info_label)
 
-        # Export button
+        # Post-detection status banner
+        self.status_banner = QLabel("")
+        self.status_banner.setWordWrap(True)
+        self.status_banner.setStyleSheet(
+            "background-color: rgba(128, 128, 128, 0.08); "
+            "border: 1px solid rgba(128, 128, 128, 0.2); "
+            "border-radius: 4px; padding: 8px; color: palette(text); font-size: 12px;"
+        )
+        self.status_banner.setVisible(False)
+        self.main_layout.addWidget(self.status_banner)
+
+        # Refine polygons panel (collapsed, post-detection only)
+        self._setup_refine_panel(self.main_layout)
+
+        # Export button (visible when polygons exist)
         self.export_button = QPushButton(tr("Export polygon to a layer"))
         self.export_button.clicked.connect(self.export_layer_requested)
         self.export_button.setVisible(False)
         self.export_button.setEnabled(False)
         self.export_button.setStyleSheet(
-            "QPushButton { background-color: #b0bec5; padding: 6px 12px; }"
+            "QPushButton { background-color: rgba(128, 128, 128, 0.12);"
+            " padding: 6px 12px; border-radius: 4px; }"
         )
         self.main_layout.addWidget(self.export_button)
 
-        # Secondary buttons (undo + stop)
+        # Secondary buttons (undo + stop) — neutral style
         self.secondary_buttons_widget = QWidget()
         secondary_layout = QHBoxLayout(self.secondary_buttons_widget)
         secondary_layout.setContentsMargins(0, 0, 0, 0)
         secondary_layout.setSpacing(4)
 
-        self.undo_button = QPushButton(tr("Undo last point"))
+        self.undo_button = QPushButton(tr("Undo"))
+        self.undo_button.setStyleSheet(_neutral_btn)
         self.undo_button.clicked.connect(self.undo_requested)
         self.undo_button.setEnabled(False)
         secondary_layout.addWidget(self.undo_button)
 
-        self.stop_button = QPushButton(tr("Stop segmentation"))
+        self.stop_button = QPushButton(tr("Stop"))
+        self.stop_button.setStyleSheet(_neutral_btn)
         self.stop_button.clicked.connect(self.stop_segmentation_requested)
         secondary_layout.addWidget(self.stop_button)
 
@@ -353,9 +319,6 @@ class AISegmentationProDockWidget(QDockWidget):
         self.disjoint_warning_widget.setVisible(False)
         self.main_layout.addWidget(self.disjoint_warning_widget)
 
-        # Refine selection panel (same as standard dock)
-        self._setup_refine_panel(self.main_layout)
-
         # Tile progress bar (hidden by default)
         self.tile_progress = QProgressBar()
         self.tile_progress.setVisible(False)
@@ -371,8 +334,6 @@ class AISegmentationProDockWidget(QDockWidget):
         self._segmentation_active = active
         self._update_button_visibility()
         self._update_ui_state()
-        if active:
-            self._update_detect_button()
 
     def set_point_count(self, positive: int, negative: int):
         self._positive_count = positive
@@ -383,7 +344,6 @@ class AISegmentationProDockWidget(QDockWidget):
             (has_detections or self._saved_polygon_count > 0)
             and self._segmentation_active
         )
-        self.save_mask_button.setEnabled(has_detections)
 
         if self._segmentation_active:
             self._update_export_button_style()
@@ -407,19 +367,14 @@ class AISegmentationProDockWidget(QDockWidget):
         self._segmentation_active = False
         self._saved_polygon_count = 0
         self._positive_count = 0
+        self._credit_count = 0
         self.disjoint_warning_widget.setVisible(False)
-        self._category_combo.setCurrentIndex(0)
-        self._tag_combo.setVisible(False)
-        self._custom_prompt_edit.setVisible(False)
-        self._custom_prompt_edit.clear()
-        self.pro_detect_button.setVisible(False)
+        self._search_edit.clear()
         self.score_threshold_spinbox.blockSignals(True)
-        self.score_threshold_spinbox.setValue(0)
+        self.score_threshold_spinbox.setValue(25)
         self.score_threshold_spinbox.blockSignals(False)
-        self.max_objects_spinbox.blockSignals(True)
-        self.max_objects_spinbox.setValue(32)
-        self.max_objects_spinbox.blockSignals(False)
         self.reset_refine_sliders()
+        self._update_detect_button_label()
         self._update_button_visibility()
         self._update_ui_state()
 
@@ -427,36 +382,41 @@ class AISegmentationProDockWidget(QDockWidget):
         return self.score_threshold_spinbox.value() / 100.0
 
     def get_max_objects(self) -> int:
-        return self.max_objects_spinbox.value()
+        """Max objects is no longer exposed in the UI — always return 32."""
+        return 32
 
     def get_pro_text_prompt(self) -> str:
-        data = self._category_combo.currentData()
-        if data == "other":
-            return self._custom_prompt_edit.text().strip().lower()
-        if data is not None and self._tag_combo.currentData() is not None:
-            return self._tag_combo.currentText().lower()
-        return ""
+        return self._search_edit.text().strip().lower()
 
     def is_activated(self) -> bool:
         return is_plugin_activated()
 
     # ── Private ──────────────────────────────────────────────────────────────
 
+    def _on_search_text_changed(self, text: str):
+        has_text = bool(text.strip())
+        activated = is_plugin_activated()
+        has_layer = self.layer_combo.currentLayer() is not None
+        self.pro_detect_button.setEnabled(has_text and activated and has_layer)
+
+    def _update_detect_button_label(self):
+        if self._credit_count > 0:
+            self.pro_detect_button.setText(
+                tr("Detect objects ({credits} credits)").format(
+                    credits=self._credit_count
+                )
+            )
+        else:
+            self.pro_detect_button.setText(tr("Detect objects"))
+
     def _update_button_visibility(self):
         if self._segmentation_active:
-            self.start_pro_button.hide()
-            self.instructions_label.show()
-            self.pro_controls_container.show()
-            self.save_mask_button.show()
-            self.save_mask_button.setEnabled(self._has_mask)
-            self.export_button.show()
+            self.status_banner.setVisible(self.status_banner.text() != "")
+            self.export_button.setVisible(self._saved_polygon_count > 0)
             self.secondary_buttons_widget.show()
-            self.refine_group.show()
+            self.refine_group.setVisible(self._saved_polygon_count > 0)
         else:
-            self.start_pro_button.show()
-            self.instructions_label.hide()
-            self.pro_controls_container.hide()
-            self.save_mask_button.hide()
+            self.status_banner.hide()
             self.export_button.hide()
             self.secondary_buttons_widget.hide()
             self.refine_group.hide()
@@ -472,17 +432,14 @@ class AISegmentationProDockWidget(QDockWidget):
 
         if count > 0:
             self.export_button.setEnabled(True)
+            self.export_button.setVisible(True)
             self.export_button.setStyleSheet(
-                "QPushButton { background-color: #4CAF50; padding: 6px 12px; }"
+                "QPushButton { background-color: #66BB6A; padding: 6px 12px;"
+                " border-radius: 4px; }"
             )
         else:
             self.export_button.setEnabled(False)
-            self.export_button.setStyleSheet(
-                "QPushButton { background-color: #b0bec5; padding: 6px 12px; }"
-            )
-
-    def _update_instructions(self):
-        self.instructions_label.setText(tr("Select an object type to detect"))
+            self.export_button.setVisible(False)
 
     def _update_ui_state(self):
         has_rasters = self.layer_combo.count() > 0
@@ -491,73 +448,46 @@ class AISegmentationProDockWidget(QDockWidget):
         )
         self.layer_combo.setVisible(has_rasters)
 
-        layer = self.layer_combo.currentLayer()
-        has_layer = layer is not None
+        # Update detect button enabled state
+        has_text = bool(self._search_edit.text().strip())
         activated = is_plugin_activated()
-        self.start_pro_button.setEnabled(
-            has_layer and activated and not self._segmentation_active
-        )
-
-    def _on_category_changed(self, index: int):
-        data = self._category_combo.currentData()
-        if data is None:
-            self._tag_combo.setVisible(False)
-            self._custom_prompt_edit.setVisible(False)
-        elif data == "other":
-            self._tag_combo.setVisible(False)
-            self._custom_prompt_edit.setVisible(True)
-            self._custom_prompt_edit.setFocus()
-        else:
-            self._tag_combo.blockSignals(True)
-            self._tag_combo.clear()
-            self._tag_combo.addItem(tr("Select an object..."), None)
-            for tag in _TAG_CATEGORIES[data]:
-                self._tag_combo.addItem(tag, tag)
-            self._tag_combo.blockSignals(False)
-            self._tag_combo.setVisible(True)
-            self._custom_prompt_edit.setVisible(False)
-        self._update_detect_button()
-
-    def _on_tag_changed(self, index: int):
-        self._update_detect_button()
-
-    def _on_custom_prompt_changed(self, text: str):
-        self._update_detect_button()
+        has_layer = self.layer_combo.currentLayer() is not None
+        self.pro_detect_button.setEnabled(has_text and activated and has_layer)
 
     def set_reference_pending(self, prompt: str):
-        self.instructions_label.setText(
+        self.status_banner.setText(
             tr("Click on one {prompt} as reference, then click Detect").format(
                 prompt=prompt
             )
         )
+        self.status_banner.setVisible(True)
 
     def set_reference_set(self, prompt: str):
-        self.instructions_label.setText(
+        self.status_banner.setText(
             tr("Reference set. Click Detect to find all {prompt}.").format(
                 prompt=prompt
             )
         )
+        self.status_banner.setVisible(True)
 
     def set_batch_done(self, count: int):
-        self.instructions_label.setText(
-            tr("{count} object(s) detected. Save or detect again.").format(count=count)
+        self.status_banner.setText(
+            "{}\n{}".format(
+                tr("{count} objects detected").format(count=count),
+                tr("Right-click a polygon to remove it"),
+            )
         )
-
-    def _update_detect_button(self):
-        prompt = self.get_pro_text_prompt()
-        self.pro_detect_button.setVisible(bool(prompt))
-        if self._segmentation_active:
-            if prompt:
-                self.set_reference_pending(prompt)
-            else:
-                self._update_instructions()
+        self.status_banner.setVisible(True)
+        # Show refine and export after first detection
+        self.refine_group.setVisible(True)
+        self._update_export_button_style()
 
     def _on_layers_changed(self, *args):
         self._update_ui_state()
 
     def _setup_refine_panel(self, parent_layout):
         """Setup the collapsible Refine mask panel."""
-        self.refine_group = QGroupBox("▶ " + tr("Refine selection"))
+        self.refine_group = QGroupBox("▶ " + tr("Refine polygons"))
         self.refine_group.setCheckable(False)
         self.refine_group.setVisible(False)
         self.refine_group.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -680,7 +610,7 @@ class AISegmentationProDockWidget(QDockWidget):
         self._refine_expanded = not self._refine_expanded
         self.refine_content_widget.setVisible(self._refine_expanded)
         arrow = "▼" if self._refine_expanded else "▶"
-        self.refine_group.setTitle("{} ".format(arrow) + tr("Refine selection"))
+        self.refine_group.setTitle("{} ".format(arrow) + tr("Refine polygons"))
         if self._refine_expanded:
             self.refine_group.setMaximumHeight(16777215)
         else:
@@ -717,17 +647,22 @@ class AISegmentationProDockWidget(QDockWidget):
         self.min_area_spinbox.blockSignals(False)
 
     def set_credit_estimate(self, credits: int):
-        """Update the credit estimate display."""
+        """Update the credit count shown in the Detect button."""
         if credits < 0:
-            self.credit_label.setText(
+            self._credit_count = 0
+            self.credit_info_label.setText(
                 tr("Zone too large. Please reduce the selection.")
             )
-            self.credit_label.setStyleSheet("color: #f44336; font-size: 11px;")
+            self.credit_info_label.setStyleSheet("color: #f44336; font-size: 11px;")
         else:
-            self.credit_label.setText(
-                tr("Estimated credits: {count}").format(count=credits)
+            self._credit_count = credits
+            self.credit_info_label.setText(
+                tr("The larger the zone, the more credits are used.")
             )
-            self.credit_label.setStyleSheet("color: palette(text); font-size: 11px;")
+            self.credit_info_label.setStyleSheet(
+                "color: palette(text); font-size: 11px;"
+            )
+        self._update_detect_button_label()
 
     def set_zone_active(self, active: bool):
         """Toggle zone selection UI state."""
@@ -746,8 +681,3 @@ class AISegmentationProDockWidget(QDockWidget):
     def hide_tile_progress(self):
         """Hide the tile progress bar."""
         self.tile_progress.setVisible(False)
-
-    def _on_start_pro_clicked(self):
-        layer = self.layer_combo.currentLayer()
-        if layer:
-            self.start_pro_segmentation_requested.emit(layer)

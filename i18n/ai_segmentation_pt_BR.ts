@@ -245,16 +245,12 @@ export AI_SEGMENTATION_CACHE_DIR=/seu/caminho</translation>
         <translation>Iniciar AI Segmentation</translation>
     </message>
     <message>
-        <source>Save polygon</source>
-        <translation>Salvar polígono</translation>
+        <source>Undo</source>
+        <translation>Desfazer</translation>
     </message>
     <message>
-        <source>Undo last point</source>
-        <translation>Desfazer último ponto</translation>
-    </message>
-    <message>
-        <source>Stop segmentation</source>
-        <translation>Parar segmentação</translation>
+        <source>Stop</source>
+        <translation>Parar</translation>
     </message>
     <message>
         <source>Shortcuts</source>
@@ -275,8 +271,8 @@ export AI_SEGMENTATION_CACHE_DIR=/seu/caminho</translation>
 
     <!-- Refine Section -->
     <message>
-        <source>Refine selection</source>
-        <translation>Refinar seleção</translation>
+        <source>Refine polygons</source>
+        <translation>Refinar polígonos</translation>
     </message>
     <message>
         <source>Expand/Contract:</source>
@@ -686,20 +682,8 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <translation>Selecionar tipo de objeto:</translation>
     </message>
     <message>
-        <source>Select a category...</source>
-        <translation>Selecionar uma categoria...</translation>
-    </message>
-    <message>
         <source>Other</source>
         <translation>Outro</translation>
-    </message>
-    <message>
-        <source>Describe the object...</source>
-        <translation>Descrever o objeto...</translation>
-    </message>
-    <message>
-        <source>Select an object...</source>
-        <translation>Selecionar um objeto...</translation>
     </message>
     <message>
         <source>Detecting objects (tile {current}/{total})...</source>
@@ -718,10 +702,6 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <translation>Objetos máx.</translation>
     </message>
     <message>
-        <source>Select an object type to detect</source>
-        <translation>Selecione um tipo de objeto para detectar</translation>
-    </message>
-    <message>
         <source>Click on one {prompt} as reference, then click Detect</source>
         <translation>Clique em um(a) {prompt} como referencia, depois clique em Detectar</translation>
     </message>
@@ -730,16 +710,24 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <translation>Referencia definida. Clique em Detectar para encontrar todos os {prompt}.</translation>
     </message>
     <message>
-        <source>{count} object(s) detected. Save or detect again.</source>
-        <translation>{count} objeto(s) detectado(s). Salve ou detecte novamente.</translation>
-    </message>
-    <message>
         <source>Reference already set. Click Detect to proceed.</source>
         <translation>Referencia ja definida. Clique em Detectar para continuar.</translation>
     </message>
     <message>
-        <source>Start AI Segmentation PRO</source>
-        <translation>Iniciar segmentacao IA PRO</translation>
+        <source>Search object to detect...</source>
+        <translation>Pesquisar objeto a detectar...</translation>
+    </message>
+    <message>
+        <source>Detect objects ({credits} credits)</source>
+        <translation>Detectar objetos ({credits} créditos)</translation>
+    </message>
+    <message>
+        <source>{count} objects detected</source>
+        <translation>{count} objetos detectados</translation>
+    </message>
+    <message>
+        <source>Right-click a polygon to remove it</source>
+        <translation>Clique com o botão direito em um polígono para removê-lo</translation>
     </message>
     <message>
         <source>Detect objects</source>
@@ -876,12 +864,8 @@ na raiz do plugin.</translation>
         <translation>Usar a imagem completa</translation>
     </message>
     <message>
-        <source>The larger the selected zone, the more credits are used.</source>
-        <translation>Quanto maior a zona selecionada, mais créditos são utilizados.</translation>
-    </message>
-    <message>
-        <source>Estimated credits: {count}</source>
-        <translation>Créditos estimados: {count}</translation>
+        <source>The larger the zone, the more credits are used.</source>
+        <translation>Quanto maior a zona, mais créditos são utilizados.</translation>
     </message>
     <message>
         <source>Zone too large. Please reduce the selection.</source>

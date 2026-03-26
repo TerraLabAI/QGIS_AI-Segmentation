@@ -245,16 +245,12 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Iniciar AI Segmentation</translation>
     </message>
     <message>
-        <source>Save polygon</source>
-        <translation>Guardar polígono</translation>
+        <source>Undo</source>
+        <translation>Deshacer</translation>
     </message>
     <message>
-        <source>Undo last point</source>
-        <translation>Deshacer último punto</translation>
-    </message>
-    <message>
-        <source>Stop segmentation</source>
-        <translation>Detener segmentación</translation>
+        <source>Stop</source>
+        <translation>Detener</translation>
     </message>
     <message>
         <source>Shortcuts</source>
@@ -275,8 +271,8 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
 
     <!-- Refine Section -->
     <message>
-        <source>Refine selection</source>
-        <translation>Refinar selección</translation>
+        <source>Refine polygons</source>
+        <translation>Refinar polígonos</translation>
     </message>
     <message>
         <source>Expand/Contract:</source>
@@ -686,20 +682,8 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Seleccionar tipo de objeto:</translation>
     </message>
     <message>
-        <source>Select a category...</source>
-        <translation>Seleccionar una categoría...</translation>
-    </message>
-    <message>
         <source>Other</source>
         <translation>Otro</translation>
-    </message>
-    <message>
-        <source>Describe the object...</source>
-        <translation>Describir el objeto...</translation>
-    </message>
-    <message>
-        <source>Select an object...</source>
-        <translation>Seleccionar un objeto...</translation>
     </message>
     <message>
         <source>Detecting objects (tile {current}/{total})...</source>
@@ -718,10 +702,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Objetos máx.</translation>
     </message>
     <message>
-        <source>Select an object type to detect</source>
-        <translation>Seleccione un tipo de objeto para detectar</translation>
-    </message>
-    <message>
         <source>Click on one {prompt} as reference, then click Detect</source>
         <translation>Haga clic en un(a) {prompt} como referencia, luego haga clic en Detectar</translation>
     </message>
@@ -730,16 +710,8 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Referencia establecida. Haga clic en Detectar para encontrar todos los {prompt}.</translation>
     </message>
     <message>
-        <source>{count} object(s) detected. Save or detect again.</source>
-        <translation>{count} objeto(s) detectado(s). Guarde o detecte de nuevo.</translation>
-    </message>
-    <message>
         <source>Reference already set. Click Detect to proceed.</source>
         <translation>Referencia ya establecida. Haga clic en Detectar para continuar.</translation>
-    </message>
-    <message>
-        <source>Start AI Segmentation PRO</source>
-        <translation>Iniciar segmentacion IA PRO</translation>
     </message>
     <message>
         <source>Detect objects</source>
@@ -876,12 +848,8 @@ en la raíz del plugin.</translation>
         <translation>Usar la imagen completa</translation>
     </message>
     <message>
-        <source>The larger the selected zone, the more credits are used.</source>
-        <translation>Cuanto mayor sea la zona seleccionada, más créditos se utilizan.</translation>
-    </message>
-    <message>
-        <source>Estimated credits: {count}</source>
-        <translation>Créditos estimados: {count}</translation>
+        <source>The larger the zone, the more credits are used.</source>
+        <translation>Cuanto más grande sea la zona, más créditos se utilizan.</translation>
     </message>
     <message>
         <source>Zone too large. Please reduce the selection.</source>
@@ -890,6 +858,22 @@ en la raíz del plugin.</translation>
     <message>
         <source>Redraw zone</source>
         <translation>Redibujar zona</translation>
+    </message>
+    <message>
+        <source>Search object to detect...</source>
+        <translation>Buscar objeto a detectar...</translation>
+    </message>
+    <message>
+        <source>Detect objects ({credits} credits)</source>
+        <translation>Detectar objetos ({credits} créditos)</translation>
+    </message>
+    <message>
+        <source>{count} objects detected</source>
+        <translation>{count} objetos detectados</translation>
+    </message>
+    <message>
+        <source>Right-click a polygon to remove it</source>
+        <translation>Clic derecho en un polígono para eliminarlo</translation>
     </message>
 </context>
 </TS>

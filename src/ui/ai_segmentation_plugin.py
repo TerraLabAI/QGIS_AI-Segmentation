@@ -384,7 +384,6 @@ class AISegmentationPlugin:
         self.pro_dock_widget.start_pro_segmentation_requested.connect(
             self._on_start_pro_segmentation
         )
-        self.pro_dock_widget.save_polygon_requested.connect(self._on_save_polygon)
         self.pro_dock_widget.export_layer_requested.connect(self._on_export_layer)
         self.pro_dock_widget.clear_points_requested.connect(self._on_clear_points)
         self.pro_dock_widget.undo_requested.connect(self._on_undo)
@@ -2962,13 +2961,19 @@ class AISegmentationPlugin:
             level=Qgis.MessageLevel.Info,
         )
 
+        # Auto-start PRO session on first Detect click
         if not self._active_dock or not self.predictor:
-            QgsMessageLog.logMessage(
-                "_run_fal_detection: ABORT — missing dock or predictor",
-                "AI Segmentation",
-                level=Qgis.MessageLevel.Warning,
-            )
-            return
+            layer = self.pro_dock_widget.layer_combo.currentLayer()
+            if layer:
+                self._on_start_pro_segmentation(layer)
+            if not self._active_dock or not self.predictor:
+                QgsMessageLog.logMessage(
+                    "_run_fal_detection: ABORT — missing dock or predictor"
+                    " (auto-start failed)",
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Warning,
+                )
+                return
         text_prompt = self._active_dock.get_pro_text_prompt()
         if not text_prompt:
             QgsMessageLog.logMessage(
