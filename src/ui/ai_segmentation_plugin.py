@@ -3537,6 +3537,120 @@ class AISegmentationPlugin:
         """Update tile progress in dock."""
         self.pro_dock_widget.set_tile_progress(current, total)
 
+    def _merge_overlapping_detections(self):
+        """Merge overlapping polygons from different tiles into single detections.
+
+        Uses a union-find approach: any two polygons that intersect get merged.
+        After merging, rubber bands are recreated for the merged geometries.
+        """
+        detections = self._pro_pending_detections
+        if len(detections) < 2:
+            return
+
+        n = len(detections)
+        # Union-Find to group overlapping polygons
+        parent = list(range(n))
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a, b):
+            ra, rb_ = find(a), find(b)
+            if ra != rb_:
+                parent[ra] = rb_
+
+        # Find all pairs that overlap
+        for i in range(n):
+            gi = detections[i].get("geom")
+            if not gi or gi.isEmpty():
+                continue
+            for j in range(i + 1, n):
+                gj = detections[j].get("geom")
+                if not gj or gj.isEmpty():
+                    continue
+                if gi.intersects(gj):
+                    union(i, j)
+
+        # Group detections by their root
+        from collections import defaultdict
+
+        groups = defaultdict(list)
+        for i in range(n):
+            groups[find(i)].append(i)
+
+        # Check if any merging is needed
+        merge_count = sum(1 for g in groups.values() if len(g) > 1)
+        if merge_count == 0:
+            QgsMessageLog.logMessage(
+                "Merge pass: no overlapping polygons found",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
+            return
+
+        QgsMessageLog.logMessage(
+            "Merge pass: {} groups with overlaps, merging...".format(merge_count),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+
+        # Build merged detections
+        merged = []
+        for root, indices in groups.items():
+            # Take the highest-score detection as the base
+            best_idx = max(indices, key=lambda i: detections[i].get("score", 0))
+            base = detections[best_idx]
+
+            if len(indices) == 1:
+                # No merge needed, keep as-is
+                merged.append(base)
+                continue
+
+            # Merge all geometries in this group
+            geoms = [
+                detections[i]["geom"]
+                for i in indices
+                if detections[i].get("geom") and not detections[i]["geom"].isEmpty()
+            ]
+            merged_geom = QgsGeometry.unaryUnion(geoms)
+
+            # Remove old rubber bands for all entries in this group
+            for i in indices:
+                self._safe_remove_rubber_band(detections[i].get("rb"))
+
+            # Create new rubber band for merged geometry
+            rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
+            rb.setColor(QColor(0, 200, 100, 120))
+            rb.setFillColor(QColor(0, 200, 100, 80))
+            rb.setWidth(2)
+            display_geom = QgsGeometry(merged_geom)
+            self._transform_geometry_to_canvas_crs(display_geom)
+            rb.setToGeometry(display_geom, None)
+
+            merged.append(
+                {
+                    "mask": base["mask"],
+                    "score": base["score"],
+                    "transform_info": base["transform_info"],
+                    "rb": rb,
+                    "geom": merged_geom,
+                }
+            )
+
+            QgsMessageLog.logMessage(
+                "  Merged {} polygons into 1 (area={:.1f})".format(
+                    len(indices),
+                    merged_geom.area(),
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
+
+        self._pro_pending_detections = merged
+
     def _on_all_tiles_completed(self, all_detections):
         """All tiles processed."""
         QgsMessageLog.logMessage(
@@ -3547,6 +3661,21 @@ class AISegmentationPlugin:
             "AI Segmentation",
             level=Qgis.MessageLevel.Info,
         )
+
+        # Merge overlapping polygons from adjacent tiles
+        before_merge = len(self._pro_pending_detections)
+        self._merge_overlapping_detections()
+        after_merge = len(self._pro_pending_detections)
+        if before_merge != after_merge:
+            QgsMessageLog.logMessage(
+                "Merge reduced {} detections to {}".format(
+                    before_merge,
+                    after_merge,
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
+
         self.iface.messageBar().clearWidgets()
         self.pro_dock_widget.hide_tile_progress()
         count = len(self._pro_pending_detections)
