@@ -443,6 +443,7 @@ class AISegmentationPlugin:
             self.deps_install_worker,
             self.download_worker,
             self._verify_worker,
+            self._tiled_worker,
         ]:
             if worker and worker.isRunning():
                 if hasattr(worker, "cancel"):
