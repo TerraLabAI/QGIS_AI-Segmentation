@@ -36,7 +36,9 @@ from qgis.PyQt.QtWidgets import (
 
 from ..core.i18n import tr
 from ..core.prompt_manager import PromptManager
+from ..core.tile_manager import TileManager
 from ..workers.setup_workers import DepsInstallWorker, DownloadWorker, VerifyWorker
+from ..workers.tiled_detection_worker import TiledDetectionWorker
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
 from .ai_segmentation_pro_dockwidget import AISegmentationProDockWidget
@@ -46,6 +48,7 @@ from .error_report_dialog import (
     stop_log_collector,
 )
 from .shortcut_filter import ShortcutFilter
+from .zone_selection_maptool import ZoneSelectionMapTool
 
 # QSettings keys for tutorial flags
 SETTINGS_KEY_TUTORIAL_SHOWN = "AI_Segmentation/tutorial_simple_shown"
@@ -157,6 +160,14 @@ class AISegmentationPlugin:
         # PRO mode state
         self._pro_pending_detections = []  # list of {mask, score, transform_info, rb}
         self._pro_detection_batches = []  # list of int (size of each batch)
+
+        # Tiling / zone selection state
+        self._tile_manager = TileManager(
+            tile_size=1024, overlap_fraction=0.15, max_tiles=50
+        )
+        self._zone_selection_tool = None
+        self._selected_zone = None  # QgsRectangle or None (full image)
+        self._tiled_worker = None
 
     @property
     def _active_dock(self):
@@ -347,6 +358,8 @@ class AISegmentationPlugin:
             self._on_stop_segmentation
         )
         self.pro_dock_widget.pro_detect_requested.connect(self._run_fal_detection)
+        self.pro_dock_widget.zone_select_requested.connect(self._on_zone_select)
+        self.pro_dock_widget.zone_clear_requested.connect(self._on_zone_clear)
         self.pro_dock_widget.refine_settings_changed.connect(
             self._on_refine_settings_changed
         )
@@ -1671,6 +1684,11 @@ class AISegmentationPlugin:
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
+        # Cancel any running tiled detection
+        if self._tiled_worker and self._tiled_worker.isRunning():
+            self._tiled_worker.cancel()
+            self._tiled_worker.wait(5000)
+
         if self._shortcut_filter is not None:
             app = QApplication.instance()
             if app:
@@ -2653,6 +2671,12 @@ class AISegmentationPlugin:
         # Reset online layer state
         self._is_online_layer = False
 
+        # Reset zone selection / tiling state
+        self._selected_zone = None
+        if self._zone_selection_tool:
+            self._zone_selection_tool.clear_selection()
+        self._tiled_worker = None
+
         # Reset refinement settings to defaults
         self._refine_expand = 0
         self._refine_simplify = 3  # Default: matches dockwidget spinbox
@@ -2883,6 +2907,27 @@ class AISegmentationPlugin:
         self._pro_pending_detections = []
         self._pro_detection_batches = []
 
+        # ── Tiling branch: check if we need multi-tile detection ──
+        if self._selected_zone:
+            pixel_w, pixel_h = self._zone_to_pixels(self._selected_zone, raster_layer)
+        else:
+            pixel_w, pixel_h = raster_layer.width(), raster_layer.height()
+
+        tiles = self._tile_manager.compute_grid(pixel_w, pixel_h)
+
+        if tiles is None:
+            self.iface.messageBar().pushWarning(
+                "AI Segmentation",
+                tr("Zone too large. Please reduce the selection."),
+            )
+            return
+
+        if len(tiles) > 1 or self._selected_zone is not None:
+            # Multi-tile or zone-selected flow — use tiled worker
+            self._run_tiled_detection(text_prompt, tiles, raster_layer)
+            return
+
+        # ── Single tile, no zone — use existing flow unchanged ──
         canvas = self.iface.mapCanvas()
         canvas_extent = canvas.extent()
         canvas_center = canvas_extent.center()
@@ -3212,6 +3257,290 @@ class AISegmentationPlugin:
                 level=Qgis.MessageLevel.Success,
                 duration=5,
             )
+
+    # ── Zone selection and tiled detection ────────────────────────────────
+
+    def _on_zone_select(self):
+        """Activate rectangle drawing tool on canvas."""
+        canvas = self.iface.mapCanvas()
+        self._zone_selection_tool = ZoneSelectionMapTool(canvas)
+        self._zone_selection_tool.zone_selected.connect(self._on_zone_drawn)
+        canvas.setMapTool(self._zone_selection_tool)
+
+    def _on_zone_drawn(self, rect):
+        """User finished drawing a zone rectangle."""
+        self._selected_zone = rect
+        self.pro_dock_widget.set_zone_active(True)
+        self._update_credit_estimate()
+        # Restore previous map tool
+        self.iface.mapCanvas().unsetMapTool(self._zone_selection_tool)
+
+    def _on_zone_clear(self):
+        """Reset to full image."""
+        self._selected_zone = None
+        if self._zone_selection_tool:
+            self._zone_selection_tool.clear_selection()
+        self.pro_dock_widget.set_zone_active(False)
+        self._update_credit_estimate()
+
+    def _update_credit_estimate(self):
+        """Compute and display credit estimate based on current zone."""
+        layer = self.pro_dock_widget.layer_combo.currentLayer()
+        if not layer:
+            return
+
+        if self._selected_zone:
+            pixel_width, pixel_height = self._zone_to_pixels(self._selected_zone, layer)
+        else:
+            pixel_width = layer.width()
+            pixel_height = layer.height()
+
+        credits = self._tile_manager.estimate_credits(pixel_width, pixel_height)
+        self.pro_dock_widget.set_credit_estimate(credits)
+
+    def _zone_to_pixels(self, zone_rect, layer):
+        """Convert a geographic QgsRectangle to pixel dimensions for a raster layer."""
+        extent = layer.extent()
+        if extent.width() == 0 or extent.height() == 0:
+            return 1, 1
+        px_w = extent.width() / layer.width()
+        px_h = extent.height() / layer.height()
+        pixel_width = int(zone_rect.width() / px_w)
+        pixel_height = int(zone_rect.height() / px_h)
+        return max(1, pixel_width), max(1, pixel_height)
+
+    def _run_tiled_detection(self, text_prompt, tiles, layer):
+        """Run tiled detection for large images or selected zones."""
+        full_image = self._extract_full_zone_image(layer)
+        if full_image is None:
+            self.iface.messageBar().pushCritical(
+                "AI Segmentation",
+                tr("Failed to extract zone image"),
+            )
+            return
+
+        geo_transform = self._compute_zone_geo_transform(layer)
+
+        self._tiled_worker = TiledDetectionWorker(
+            predictor=self.predictor,
+            tiles=tiles,
+            full_image=full_image,
+            text_prompt=text_prompt,
+            max_masks=(
+                self._active_dock.get_max_objects()
+                if hasattr(self._active_dock, "get_max_objects")
+                else 10
+            ),
+            score_threshold=(
+                self._active_dock.get_score_threshold() if self._active_dock else 0.0
+            ),
+            geo_transform_info=geo_transform,
+            tile_manager=self._tile_manager,
+        )
+        self._tiled_worker.tile_completed.connect(self._on_tile_completed)
+        self._tiled_worker.all_completed.connect(self._on_all_tiles_completed)
+        self._tiled_worker.progress.connect(self._on_tile_progress)
+        self._tiled_worker.error.connect(self._on_tile_error)
+        self._tiled_worker.cancelled.connect(self._on_tile_cancelled)
+
+        self.pro_dock_widget.set_tile_progress(0, len(tiles))
+        self.iface.messageBar().pushMessage(
+            tr("AI Segmentation"),
+            tr("Detecting '{prompt}' across {n} tile(s)...").format(
+                prompt=text_prompt, n=len(tiles)
+            ),
+            level=Qgis.MessageLevel.Info,
+            duration=0,
+        )
+        self._tiled_worker.start()
+
+    def _on_tile_completed(self, tile_idx, detections):
+        """Progressive display: show detections from this tile immediately."""
+        from ..core.polygon_exporter import (
+            _iou,
+            apply_mask_refinement,
+            mask_to_polygons,
+        )
+
+        for mask, score, ti in detections:
+            refined = apply_mask_refinement(
+                mask,
+                expand_value=self._refine_expand,
+                fill_holes=self._refine_fill_holes,
+                min_area=self._refine_min_area,
+            )
+            polys = mask_to_polygons(refined, ti)
+            if not polys:
+                continue
+            geom = QgsGeometry.unaryUnion(polys)
+            if not geom or geom.isEmpty():
+                continue
+
+            # Check IoU against existing accepted detections
+            existing_geoms = [
+                d["geom"] for d in self._pro_pending_detections if "geom" in d
+            ]
+            is_dup = any(_iou(geom, ag) > 0.3 for ag in existing_geoms)
+            if is_dup:
+                continue
+
+            # Apply simplification
+            tolerance = self._compute_simplification_tolerance(
+                ti, self._refine_simplify
+            )
+            if tolerance > 0:
+                geom = geom.simplify(tolerance)
+
+            # Create rubber band for progressive display
+            rb = QgsRubberBand(self.iface.mapCanvas(), QgsWkbTypes.PolygonGeometry)
+            rb.setColor(QColor(0, 200, 100, 120))
+            rb.setFillColor(QColor(0, 200, 100, 80))
+            rb.setWidth(2)
+            display_geom = QgsGeometry(geom)
+            self._transform_geometry_to_canvas_crs(display_geom)
+            rb.setToGeometry(display_geom, None)
+
+            self._pro_pending_detections.append(
+                {
+                    "mask": mask,
+                    "score": score,
+                    "transform_info": ti.copy(),
+                    "rb": rb,
+                    "geom": geom,
+                }
+            )
+
+    def _on_tile_progress(self, current, total):
+        """Update tile progress in dock."""
+        self.pro_dock_widget.set_tile_progress(current, total)
+
+    def _on_all_tiles_completed(self, all_detections):
+        """All tiles processed."""
+        self.iface.messageBar().clearWidgets()
+        self.pro_dock_widget.hide_tile_progress()
+        count = len(self._pro_pending_detections)
+        if self._active_dock:
+            self._active_dock.set_point_count(count, 0)
+            if count > 0:
+                self._pro_detection_batches.append(count)
+                self._active_dock.set_batch_done(count)
+                self._active_dock.set_mask_available(True)
+        if count > 0:
+            self.iface.messageBar().pushMessage(
+                tr("AI Segmentation"),
+                tr("{n} object(s) detected. Review and save.").format(n=count),
+                level=Qgis.MessageLevel.Success,
+                duration=5,
+            )
+        else:
+            self.iface.messageBar().pushMessage(
+                tr("AI Segmentation"),
+                tr("No objects found."),
+                level=Qgis.MessageLevel.Info,
+                duration=5,
+            )
+
+    def _on_tile_error(self, msg):
+        """Tiled detection failed."""
+        self.iface.messageBar().clearWidgets()
+        self.pro_dock_widget.hide_tile_progress()
+        QgsMessageLog.logMessage(
+            "Tiled detection failed: {}".format(msg),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Critical,
+        )
+        self.iface.messageBar().pushCritical("AI Segmentation", msg)
+
+    def _on_tile_cancelled(self):
+        """User cancelled tiled detection — discard partial results."""
+        self.iface.messageBar().clearWidgets()
+        self.pro_dock_widget.hide_tile_progress()
+        for det in self._pro_pending_detections:
+            self._safe_remove_rubber_band(det.get("rb"))
+        self._pro_pending_detections.clear()
+        if self._active_dock:
+            self._active_dock.set_point_count(0, 0)
+
+    def _extract_full_zone_image(self, layer):
+        """Read the selected zone at native resolution.
+
+        Returns (H, W, 3) uint8 numpy array, or None on error.
+        """
+        import numpy as np
+
+        try:
+            import rasterio
+            from rasterio.windows import Window
+        except ImportError:
+            QgsMessageLog.logMessage(
+                "rasterio not available for zone extraction",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Critical,
+            )
+            return None
+
+        raster_path = layer.source()
+        extent = layer.extent()
+
+        if self._selected_zone:
+            zone = self._selected_zone
+        else:
+            zone = extent
+
+        try:
+            with rasterio.open(raster_path) as src:
+                px_size_x = extent.width() / src.width
+                px_size_y = extent.height() / src.height
+
+                col_off = max(0, int((zone.xMinimum() - extent.xMinimum()) / px_size_x))
+                row_off = max(0, int((extent.yMaximum() - zone.yMaximum()) / px_size_y))
+                win_w = min(int(zone.width() / px_size_x), src.width - col_off)
+                win_h = min(int(zone.height() / px_size_y), src.height - row_off)
+
+                if win_w <= 0 or win_h <= 0:
+                    return None
+
+                window = Window(col_off, row_off, win_w, win_h)
+
+                band_count = min(src.count, 3)
+                bands = src.read(
+                    list(range(1, band_count + 1)),
+                    window=window,
+                )
+
+                if band_count == 1:
+                    rgb = np.stack([bands[0]] * 3, axis=-1)
+                elif band_count == 2:
+                    rgb = np.stack([bands[0], bands[1], bands[0]], axis=-1)
+                else:
+                    rgb = np.transpose(bands[:3], (1, 2, 0))
+
+                return rgb.astype(np.uint8)
+
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                "Zone extraction failed: {}".format(str(e)),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Critical,
+            )
+            return None
+
+    def _compute_zone_geo_transform(self, layer):
+        """Compute the geographic bbox and pixel dimensions for the selected zone."""
+        if self._selected_zone:
+            rect = self._selected_zone
+        else:
+            rect = layer.extent()
+        pixel_w, pixel_h = self._zone_to_pixels(rect, layer)
+        return {
+            "bbox": (
+                rect.xMinimum(),
+                rect.yMinimum(),
+                rect.xMaximum(),
+                rect.yMaximum(),
+            ),
+            "img_shape": (pixel_h, pixel_w),
+        }
 
     def _on_pro_layer_combo_changed(self, layer):
         """Handle layer selection change in the PRO dock combo box."""
