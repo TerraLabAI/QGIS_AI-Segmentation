@@ -279,6 +279,41 @@ class AISegmentationPlugin:
         pixel_size = bbox_width / width_pixels
         return pixel_size * simplify_value * 0.5
 
+    @staticmethod
+    def _geom_fill_holes(geom):
+        """Remove interior rings (holes) from a polygon geometry."""
+        if geom.isMultipart():
+            parts = geom.asMultiPolygon()
+            filled = []
+            for polygon in parts:
+                if polygon:
+                    # Keep only the exterior ring (first ring), drop holes
+                    filled.append([polygon[0]])
+            if filled:
+                result = QgsGeometry.fromMultiPolygonXY(filled)
+                return result if result and not result.isEmpty() else geom
+            return geom
+        else:
+            polygon = geom.asPolygon()
+            if polygon:
+                # Keep only exterior ring
+                result = QgsGeometry.fromPolygonXY([polygon[0]])
+                return result if result and not result.isEmpty() else geom
+            return geom
+
+    @staticmethod
+    def _geom_remove_small_parts(geom, min_area):
+        """Remove polygon parts smaller than min_area (in geographic units²)."""
+        if not geom.isMultipart():
+            return geom if geom.area() >= min_area else QgsGeometry()
+        parts = geom.asMultiPolygon()
+        kept = [p for p in parts if QgsGeometry.fromPolygonXY(p).area() >= min_area]
+        if not kept:
+            return QgsGeometry()
+        if len(kept) == 1:
+            return QgsGeometry.fromPolygonXY(kept[0])
+        return QgsGeometry.fromMultiPolygonXY(kept)
+
     def initGui(self):
         start_log_collector()
 
@@ -2835,11 +2870,36 @@ class AISegmentationPlugin:
             base_geom = det.get("geom_unsimplified")
             if base_geom is not None:
                 geom = QgsGeometry(base_geom)
+
+                # Apply geometric equivalents of mask refinement params.
+                # Compute pixel size in geographic units for conversion.
+                bbox = ti.get("bbox", [0, 0, 1, 1])
+                img_w = max(ti.get("img_shape", (1024, 1024))[1], 1)
+                pixel_size = (bbox[2] - bbox[0]) / img_w
+
+                # Fill holes: remove interior rings from polygons
+                if self._refine_fill_holes:
+                    geom = self._geom_fill_holes(geom)
+
+                # Min area: remove small polygon parts
+                if self._refine_min_area > 0:
+                    min_geo_area = self._refine_min_area * pixel_size * pixel_size
+                    geom = self._geom_remove_small_parts(geom, min_geo_area)
+
+                # Expand/contract: buffer by N pixels in geographic units
+                if self._refine_expand != 0:
+                    buf_dist = self._refine_expand * pixel_size
+                    buffered = geom.buffer(buf_dist, 5)
+                    if buffered and not buffered.isEmpty():
+                        geom = buffered
+
+                # Simplify
                 tolerance = self._compute_simplification_tolerance(
                     ti, self._refine_simplify
                 )
                 if tolerance > 0:
                     geom = geom.simplify(tolerance)
+
                 if geom.isEmpty():
                     rb.reset(QgsWkbTypes.PolygonGeometry)
                     continue
