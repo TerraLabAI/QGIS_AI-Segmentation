@@ -145,10 +145,12 @@ class TiledDetectionWorker(QThread):
         )
         crop = self._tile_manager.extract_tile_crop(self._full_image, x, y, w, h)
 
-        # Pad non-square crops to square with reflect padding.
+        # Pad non-square crops to square with zero padding.
         # SAM-3 may internally process at a fixed square resolution;
         # sending non-square images can cause RLE dimension mismatches
         # that produce diagonal mask artifacts.
+        # Using zero (black) padding instead of reflect — reflect creates
+        # mirrored content that confuses SAM into false detections at edges.
         import numpy as np
 
         pad_size = max(h, w)
@@ -156,7 +158,8 @@ class TiledDetectionWorker(QThread):
             crop = np.pad(
                 crop,
                 ((0, pad_size - h), (0, pad_size - w), (0, 0)),
-                mode="reflect",
+                mode="constant",
+                constant_values=0,
             )
             logger.info(
                 "Tile %d: padded %dx%d -> %dx%d (square)",
