@@ -1,14 +1,16 @@
 from qgis.core import QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDockWidget,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -18,12 +20,11 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-from ..core.activation_manager import (  # noqa: E402
-    get_pro_api_key,
-    is_plugin_activated,
-    set_pro_api_key,
-)
+from ..core.activation_manager import is_plugin_activated  # noqa: E402
 from ..core.i18n import tr  # noqa: E402
+
+_REFINE_COLLAPSED_HEIGHT = 25
+
 
 _TAG_CATEGORIES = {
     "Urban / Artificial": [
@@ -51,6 +52,11 @@ class AISegmentationProDockWidget(QDockWidget):
     stop_segmentation_requested = pyqtSignal()
     pro_detect_requested = pyqtSignal()
     clear_points_requested = pyqtSignal()
+    refine_settings_changed = pyqtSignal(
+        int, int, bool, int
+    )  # expand, simplify, fill_holes, min_area
+    zone_select_requested = pyqtSignal()  # User wants to draw a zone
+    zone_clear_requested = pyqtSignal()  # User wants to reset to full image
 
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation PRO by TerraLab"), parent)
@@ -65,6 +71,12 @@ class AISegmentationProDockWidget(QDockWidget):
         self._has_mask = False
         self._saved_polygon_count = 0
         self._positive_count = 0  # batch detection count in PRO mode
+        self._refine_expanded = False
+
+        # Debounce timer for refinement sliders
+        self._refine_debounce_timer = QTimer(self)
+        self._refine_debounce_timer.setSingleShot(True)
+        self._refine_debounce_timer.timeout.connect(self._emit_refine_changed)
 
         self.main_widget = QWidget()
         self.main_layout = QVBoxLayout(self.main_widget)
@@ -157,6 +169,37 @@ class AISegmentationProDockWidget(QDockWidget):
         self.no_rasters_widget.setVisible(False)
         self.main_layout.addWidget(self.no_rasters_widget)
 
+        # Zone selection row
+        zone_row = QHBoxLayout()
+        self.zone_select_btn = QPushButton(tr("Select zone"))
+        self.zone_select_btn.setToolTip(
+            tr("Draw a rectangle to limit the segmentation area")
+        )
+        self.zone_select_btn.clicked.connect(self.zone_select_requested.emit)
+
+        self.zone_clear_btn = QPushButton(tr("Full image"))
+        self.zone_clear_btn.setToolTip(tr("Use the entire image"))
+        self.zone_clear_btn.clicked.connect(self.zone_clear_requested.emit)
+        self.zone_clear_btn.setVisible(False)  # Hidden until a zone is drawn
+
+        zone_row.addWidget(self.zone_select_btn)
+        zone_row.addWidget(self.zone_clear_btn)
+        self.main_layout.addLayout(zone_row)
+
+        # Credit estimation label
+        self.credit_label = QLabel("")
+        self.credit_label.setWordWrap(True)
+        self.credit_label.setStyleSheet("color: palette(text); font-size: 11px;")
+        self.main_layout.addWidget(self.credit_label)
+
+        # Explanatory text
+        self.credit_info_label = QLabel(
+            tr("The larger the selected zone, the more credits are used.")
+        )
+        self.credit_info_label.setWordWrap(True)
+        self.credit_info_label.setStyleSheet("color: palette(text); font-size: 11px;")
+        self.main_layout.addWidget(self.credit_info_label)
+
         # Instructions label
         self.instructions_label = QLabel("")
         self.instructions_label.setWordWrap(True)
@@ -217,13 +260,26 @@ class AISegmentationProDockWidget(QDockWidget):
         score_label.setStyleSheet("font-size: 12px; color: palette(text);")
         self.score_threshold_spinbox = QSpinBox()
         self.score_threshold_spinbox.setRange(0, 100)
-        self.score_threshold_spinbox.setValue(30)
+        self.score_threshold_spinbox.setValue(0)
         self.score_threshold_spinbox.setSuffix(" %")
         self.score_threshold_spinbox.setMinimumWidth(80)
         score_layout.addWidget(score_label)
         score_layout.addStretch()
         score_layout.addWidget(self.score_threshold_spinbox)
         pro_ctrl_layout.addLayout(score_layout)
+
+        # Max objects (max_masks)
+        max_obj_layout = QHBoxLayout()
+        max_obj_label = QLabel(tr("Max. objects"))
+        max_obj_label.setStyleSheet("font-size: 12px; color: palette(text);")
+        self.max_objects_spinbox = QSpinBox()
+        self.max_objects_spinbox.setRange(1, 32)
+        self.max_objects_spinbox.setValue(32)
+        self.max_objects_spinbox.setMinimumWidth(80)
+        max_obj_layout.addWidget(max_obj_label)
+        max_obj_layout.addStretch()
+        max_obj_layout.addWidget(self.max_objects_spinbox)
+        pro_ctrl_layout.addLayout(max_obj_layout)
 
         self.pro_controls_container.setVisible(False)
         self.main_layout.addWidget(self.pro_controls_container)
@@ -297,28 +353,15 @@ class AISegmentationProDockWidget(QDockWidget):
         self.disjoint_warning_widget.setVisible(False)
         self.main_layout.addWidget(self.disjoint_warning_widget)
 
-        # API key settings
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        self.main_layout.addWidget(separator)
+        # Refine selection panel (same as standard dock)
+        self._setup_refine_panel(self.main_layout)
 
-        api_key_label = QLabel(tr("API Key"))
-        api_key_label.setStyleSheet("font-size: 11px; color: palette(text);")
-        self.main_layout.addWidget(api_key_label)
-
-        api_key_row = QHBoxLayout()
-        self._api_key_edit = QLineEdit()
-        self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._api_key_edit.setPlaceholderText(tr("Enter your tl_pro_... key"))
-        self._api_key_edit.setText(get_pro_api_key())
-        api_key_row.addWidget(self._api_key_edit)
-
-        api_key_save_btn = QPushButton(tr("Save"))
-        api_key_save_btn.setFixedWidth(60)
-        api_key_save_btn.clicked.connect(self._on_save_api_key)
-        api_key_row.addWidget(api_key_save_btn)
-        self.main_layout.addLayout(api_key_row)
+        # Tile progress bar (hidden by default)
+        self.tile_progress = QProgressBar()
+        self.tile_progress.setVisible(False)
+        self.tile_progress.setTextVisible(True)
+        self.tile_progress.setFormat("Tile %v/%m")
+        self.main_layout.addWidget(self.tile_progress)
 
         self.main_layout.addStretch()
 
@@ -371,13 +414,20 @@ class AISegmentationProDockWidget(QDockWidget):
         self._custom_prompt_edit.clear()
         self.pro_detect_button.setVisible(False)
         self.score_threshold_spinbox.blockSignals(True)
-        self.score_threshold_spinbox.setValue(30)
+        self.score_threshold_spinbox.setValue(0)
         self.score_threshold_spinbox.blockSignals(False)
+        self.max_objects_spinbox.blockSignals(True)
+        self.max_objects_spinbox.setValue(32)
+        self.max_objects_spinbox.blockSignals(False)
+        self.reset_refine_sliders()
         self._update_button_visibility()
         self._update_ui_state()
 
     def get_score_threshold(self) -> float:
         return self.score_threshold_spinbox.value() / 100.0
+
+    def get_max_objects(self) -> int:
+        return self.max_objects_spinbox.value()
 
     def get_pro_text_prompt(self) -> str:
         data = self._category_combo.currentData()
@@ -401,6 +451,7 @@ class AISegmentationProDockWidget(QDockWidget):
             self.save_mask_button.setEnabled(self._has_mask)
             self.export_button.show()
             self.secondary_buttons_widget.show()
+            self.refine_group.show()
         else:
             self.start_pro_button.show()
             self.instructions_label.hide()
@@ -408,6 +459,7 @@ class AISegmentationProDockWidget(QDockWidget):
             self.save_mask_button.hide()
             self.export_button.hide()
             self.secondary_buttons_widget.hide()
+            self.refine_group.hide()
 
     def _update_export_button_style(self):
         count = self._saved_polygon_count
@@ -503,24 +555,199 @@ class AISegmentationProDockWidget(QDockWidget):
     def _on_layers_changed(self, *args):
         self._update_ui_state()
 
-    def _on_start_pro_clicked(self):
-        api_key = get_pro_api_key()
+    def _setup_refine_panel(self, parent_layout):
+        """Setup the collapsible Refine mask panel."""
+        self.refine_group = QGroupBox("▶ " + tr("Refine selection"))
+        self.refine_group.setCheckable(False)
+        self.refine_group.setVisible(False)
+        self.refine_group.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.refine_group.mousePressEvent = self._on_refine_group_clicked
+        self.refine_group.setStyleSheet("""
+            QGroupBox {
+                background-color: transparent;
+                border: none;
+                border-radius: 0px;
+                margin: 0px;
+                padding: 0px;
+                padding-top: 20px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: padding;
+                subcontrol-position: top left;
+                padding: 2px 4px;
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        refine_layout = QVBoxLayout(self.refine_group)
+        refine_layout.setSpacing(0)
+        refine_layout.setContentsMargins(0, 0, 0, 0)
 
-        if not api_key:
-            QMessageBox.warning(
-                self,
-                tr("PRO API Key Missing"),
-                tr(
-                    "PRO API key is not configured.\n\n"
-                    "Enter your API key in the PRO settings panel."
-                ),
+        self.refine_content_widget = QWidget()
+        self.refine_content_widget.setObjectName("refineContentWidget")
+        self.refine_content_widget.setStyleSheet("""
+            QWidget#refineContentWidget {
+                background-color: rgba(128, 128, 128, 0.08);
+                border: 1px solid rgba(128, 128, 128, 0.2);
+                border-radius: 4px;
+            }
+            QLabel {
+                background: transparent;
+                border: none;
+            }
+        """)
+        refine_content_layout = QVBoxLayout(self.refine_content_widget)
+        refine_content_layout.setContentsMargins(10, 10, 10, 10)
+        refine_content_layout.setSpacing(8)
+
+        # Expand/Contract
+        expand_layout = QHBoxLayout()
+        expand_label = QLabel(tr("Expand/Contract:"))
+        expand_label.setToolTip(
+            tr("Positive = expand outward, Negative = shrink inward")
+        )
+        self.expand_spinbox = QSpinBox()
+        self.expand_spinbox.setRange(-1000, 1000)
+        self.expand_spinbox.setValue(0)
+        self.expand_spinbox.setSuffix(" px")
+        self.expand_spinbox.setMinimumWidth(80)
+        expand_layout.addWidget(expand_label)
+        expand_layout.addStretch()
+        expand_layout.addWidget(self.expand_spinbox)
+        refine_content_layout.addLayout(expand_layout)
+
+        # Simplify outline
+        simplify_layout = QHBoxLayout()
+        simplify_label = QLabel(tr("Simplify outline:"))
+        simplify_label.setToolTip(
+            tr("Reduce small variations in the outline (0 = no change)")
+        )
+        self.simplify_spinbox = QSpinBox()
+        self.simplify_spinbox.setRange(0, 1000)
+        self.simplify_spinbox.setValue(3)
+        self.simplify_spinbox.setMinimumWidth(80)
+        simplify_layout.addWidget(simplify_label)
+        simplify_layout.addStretch()
+        simplify_layout.addWidget(self.simplify_spinbox)
+        refine_content_layout.addLayout(simplify_layout)
+
+        # Fill holes
+        fill_holes_layout = QHBoxLayout()
+        self.fill_holes_checkbox = QCheckBox(tr("Fill holes"))
+        self.fill_holes_checkbox.setChecked(False)
+        self.fill_holes_checkbox.setToolTip(tr("Fill interior holes in the selection"))
+        fill_holes_layout.addWidget(self.fill_holes_checkbox)
+        fill_holes_layout.addStretch()
+        refine_content_layout.addLayout(fill_holes_layout)
+
+        # Min. region size
+        min_area_layout = QHBoxLayout()
+        min_area_label = QLabel(tr("Min. region size:"))
+        min_area_label.setToolTip(
+            "{}\n{}\n{}".format(
+                tr("Remove disconnected regions smaller than this area (in pixels²)."),
+                tr("Example: 100 = ~10x10 pixel regions, 900 = ~30x30."),
+                tr("0 = keep all."),
             )
-            return
+        )
+        self.min_area_spinbox = QSpinBox()
+        self.min_area_spinbox.setRange(0, 100000)
+        self.min_area_spinbox.setValue(100)
+        self.min_area_spinbox.setSuffix(" px²")
+        self.min_area_spinbox.setSingleStep(50)
+        self.min_area_spinbox.setMinimumWidth(80)
+        min_area_layout.addWidget(min_area_label)
+        min_area_layout.addStretch()
+        min_area_layout.addWidget(self.min_area_spinbox)
+        refine_content_layout.addLayout(min_area_layout)
 
+        refine_layout.addWidget(self.refine_content_widget)
+        self.refine_content_widget.setVisible(self._refine_expanded)
+        if not self._refine_expanded:
+            self.refine_group.setMaximumHeight(_REFINE_COLLAPSED_HEIGHT)
+
+        self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
+        self.simplify_spinbox.valueChanged.connect(self._on_refine_changed)
+        self.fill_holes_checkbox.stateChanged.connect(self._on_refine_changed)
+        self.min_area_spinbox.valueChanged.connect(self._on_refine_changed)
+
+        parent_layout.addWidget(self.refine_group)
+
+    def _on_refine_group_clicked(self, event):
+        """Toggle the refine panel expanded/collapsed state."""
+        if event.pos().y() > _REFINE_COLLAPSED_HEIGHT:
+            return
+        self._refine_expanded = not self._refine_expanded
+        self.refine_content_widget.setVisible(self._refine_expanded)
+        arrow = "▼" if self._refine_expanded else "▶"
+        self.refine_group.setTitle("{} ".format(arrow) + tr("Refine selection"))
+        if self._refine_expanded:
+            self.refine_group.setMaximumHeight(16777215)
+        else:
+            self.refine_group.setMaximumHeight(_REFINE_COLLAPSED_HEIGHT)
+
+    def _on_refine_changed(self, value=None):
+        """Handle refine control changes with debounce."""
+        self._refine_debounce_timer.start(150)
+
+    def _emit_refine_changed(self):
+        """Emit the refine settings changed signal after debounce."""
+        self.refine_settings_changed.emit(
+            self.expand_spinbox.value(),
+            self.simplify_spinbox.value(),
+            self.fill_holes_checkbox.isChecked(),
+            self.min_area_spinbox.value(),
+        )
+
+    def reset_refine_sliders(self):
+        """Reset refinement controls to default values without emitting signals."""
+        self.expand_spinbox.blockSignals(True)
+        self.simplify_spinbox.blockSignals(True)
+        self.fill_holes_checkbox.blockSignals(True)
+        self.min_area_spinbox.blockSignals(True)
+
+        self.expand_spinbox.setValue(0)
+        self.simplify_spinbox.setValue(3)
+        self.fill_holes_checkbox.setChecked(False)
+        self.min_area_spinbox.setValue(100)
+
+        self.expand_spinbox.blockSignals(False)
+        self.simplify_spinbox.blockSignals(False)
+        self.fill_holes_checkbox.blockSignals(False)
+        self.min_area_spinbox.blockSignals(False)
+
+    def set_credit_estimate(self, credits: int):
+        """Update the credit estimate display."""
+        if credits < 0:
+            self.credit_label.setText(
+                tr("Zone too large. Please reduce the selection.")
+            )
+            self.credit_label.setStyleSheet("color: #f44336; font-size: 11px;")
+        else:
+            self.credit_label.setText(
+                tr("Estimated credits: {count}").format(count=credits)
+            )
+            self.credit_label.setStyleSheet("color: palette(text); font-size: 11px;")
+
+    def set_zone_active(self, active: bool):
+        """Toggle zone selection UI state."""
+        self.zone_clear_btn.setVisible(active)
+        if active:
+            self.zone_select_btn.setText(tr("Redraw zone"))
+        else:
+            self.zone_select_btn.setText(tr("Select zone"))
+
+    def set_tile_progress(self, current: int, total: int):
+        """Update tile progress bar."""
+        self.tile_progress.setMaximum(total)
+        self.tile_progress.setValue(current)
+        self.tile_progress.setVisible(total > 1)
+
+    def hide_tile_progress(self):
+        """Hide the tile progress bar."""
+        self.tile_progress.setVisible(False)
+
+    def _on_start_pro_clicked(self):
         layer = self.layer_combo.currentLayer()
         if layer:
             self.start_pro_segmentation_requested.emit(layer)
-
-    def _on_save_api_key(self):
-        set_pro_api_key(self._api_key_edit.text())
-        QMessageBox.information(self, tr("API Key"), tr("API key saved."))

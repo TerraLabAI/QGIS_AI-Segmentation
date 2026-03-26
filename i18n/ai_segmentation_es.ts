@@ -714,6 +714,10 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Confianza min.</translation>
     </message>
     <message>
+        <source>Max. objects</source>
+        <translation>Objetos máx.</translation>
+    </message>
+    <message>
         <source>Select an object type to detect</source>
         <translation>Seleccione un tipo de objeto para detectar</translation>
     </message>
@@ -828,6 +832,64 @@ Introduce tu clave API en el panel de configuración PRO.</translation>
     <message>
         <source>API key saved.</source>
         <translation>Clave API guardada.</translation>
+    </message>
+    <message>
+        <source>No API key configured.
+
+Add FAL_KEY=your_key to the .env file
+at the plugin root directory.</source>
+        <translation>Clave API no configurada.
+
+Agregue FAL_KEY=su_clave al archivo .env
+en la raíz del plugin.</translation>
+    </message>
+    <message>
+        <source>Detecting &apos;{prompt}&apos;...</source>
+        <translation>Detectando &apos;{prompt}&apos;...</translation>
+    </message>
+    <message>
+        <source>No objects found for &apos;{prompt}&apos;.</source>
+        <translation>No se encontraron objetos para &apos;{prompt}&apos;.</translation>
+    </message>
+    <message>
+        <source>{n} object(s) detected. Review and save.</source>
+        <translation>{n} objeto(s) detectado(s). Revise y guarde.</translation>
+    </message>
+    <message>
+        <source>Detection Error</source>
+        <translation>Error de detección</translation>
+    </message>
+    <message>
+        <source>Select zone</source>
+        <translation>Seleccionar zona</translation>
+    </message>
+    <message>
+        <source>Full image</source>
+        <translation>Imagen completa</translation>
+    </message>
+    <message>
+        <source>Draw a rectangle to limit the segmentation area</source>
+        <translation>Dibuje un rectángulo para limitar el área de segmentación</translation>
+    </message>
+    <message>
+        <source>Use the entire image</source>
+        <translation>Usar la imagen completa</translation>
+    </message>
+    <message>
+        <source>The larger the selected zone, the more credits are used.</source>
+        <translation>Cuanto mayor sea la zona seleccionada, más créditos se utilizan.</translation>
+    </message>
+    <message>
+        <source>Estimated credits: {count}</source>
+        <translation>Créditos estimados: {count}</translation>
+    </message>
+    <message>
+        <source>Zone too large. Please reduce the selection.</source>
+        <translation>Zona demasiado grande. Por favor, reduzca la selección.</translation>
+    </message>
+    <message>
+        <source>Redraw zone</source>
+        <translation>Redibujar zona</translation>
     </message>
 </context>
 </TS>
