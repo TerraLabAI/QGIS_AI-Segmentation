@@ -213,12 +213,29 @@ class TiledDetectionWorker(QThread):
         px_w = (full_bbox[2] - full_bbox[0]) / full_w
         px_h = (full_bbox[3] - full_bbox[1]) / full_h
 
+        # X: pixel col 0 is at xMin, increases rightward
         tile_minx = full_bbox[0] + tile_x * px_w
-        tile_miny = full_bbox[1] + tile_y * px_h
         tile_maxx = tile_minx + tile_w * px_w
-        tile_maxy = tile_miny + tile_h * px_h
+
+        # Y: pixel row 0 is at yMax (top of raster), increases downward
+        # So tile_y=0 → top of bbox (yMax), tile_y increases → move toward yMin
+        tile_maxy = full_bbox[3] - tile_y * px_h
+        tile_miny = tile_maxy - tile_h * px_h
+
+        logger.info(
+            "Tile transform: pixel(%d,%d %dx%d) -> geo(%.4f,%.4f,%.4f,%.4f)",
+            tile_x,
+            tile_y,
+            tile_w,
+            tile_h,
+            tile_minx,
+            tile_miny,
+            tile_maxx,
+            tile_maxy,
+        )
 
         return {
             "bbox": (tile_minx, tile_miny, tile_maxx, tile_maxy),
             "img_shape": (tile_h, tile_w),
+            "crs": base.get("crs"),
         }

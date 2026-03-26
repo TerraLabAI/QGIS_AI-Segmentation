@@ -2909,7 +2909,10 @@ class AISegmentationPlugin:
 
         # ── Tiling branch: check if we need multi-tile detection ──
         if self._selected_zone:
-            pixel_w, pixel_h = self._zone_to_pixels(self._selected_zone, raster_layer)
+            zone_in_layer_crs = self._reproject_zone_to_layer_crs(
+                self._selected_zone, raster_layer
+            )
+            pixel_w, pixel_h = self._zone_to_pixels(zone_in_layer_crs, raster_layer)
         else:
             pixel_w, pixel_h = raster_layer.width(), raster_layer.height()
 
@@ -3310,7 +3313,10 @@ class AISegmentationPlugin:
             return
 
         if self._selected_zone:
-            pixel_width, pixel_height = self._zone_to_pixels(self._selected_zone, layer)
+            zone_in_layer_crs = self._reproject_zone_to_layer_crs(
+                self._selected_zone, layer
+            )
+            pixel_width, pixel_height = self._zone_to_pixels(zone_in_layer_crs, layer)
         else:
             pixel_width = layer.width()
             pixel_height = layer.height()
@@ -3327,8 +3333,35 @@ class AISegmentationPlugin:
         )
         self.pro_dock_widget.set_credit_estimate(credits)
 
+    def _reproject_zone_to_layer_crs(self, zone_rect, layer):
+        """Reproject a zone rectangle from canvas CRS to layer CRS if needed.
+
+        Returns a QgsRectangle in layer CRS coordinates.
+        """
+        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        layer_crs = layer.crs()
+        if canvas_crs != layer_crs and canvas_crs.isValid() and layer_crs.isValid():
+            xform = QgsCoordinateTransform(canvas_crs, layer_crs, QgsProject.instance())
+            zone_rect = xform.transformBoundingBox(zone_rect)
+            QgsMessageLog.logMessage(
+                "Zone reprojected from {} to {}: {:.2f},{:.2f} to {:.2f},{:.2f}".format(
+                    canvas_crs.authid(),
+                    layer_crs.authid(),
+                    zone_rect.xMinimum(),
+                    zone_rect.yMinimum(),
+                    zone_rect.xMaximum(),
+                    zone_rect.yMaximum(),
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
+        return zone_rect
+
     def _zone_to_pixels(self, zone_rect, layer):
-        """Convert a geographic QgsRectangle to pixel dimensions for a raster layer."""
+        """Convert a geographic QgsRectangle to pixel dimensions for a raster layer.
+
+        zone_rect must be in layer CRS coordinates.
+        """
         extent = layer.extent()
         if extent.width() == 0 or extent.height() == 0:
             return 1, 1
@@ -3568,7 +3601,7 @@ class AISegmentationPlugin:
         extent = layer.extent()
 
         if self._selected_zone:
-            zone = self._selected_zone
+            zone = self._reproject_zone_to_layer_crs(self._selected_zone, layer)
         else:
             zone = extent
 
@@ -3642,13 +3675,24 @@ class AISegmentationPlugin:
             return None
 
     def _compute_zone_geo_transform(self, layer):
-        """Compute the geographic bbox and pixel dimensions for the selected zone."""
+        """Compute the geographic bbox and pixel dimensions for the selected zone.
+
+        Returns transform_info dict with bbox in layer CRS and the layer's CRS authid.
+        """
         if self._selected_zone:
-            rect = self._selected_zone
+            rect = self._reproject_zone_to_layer_crs(self._selected_zone, layer)
         else:
             rect = layer.extent()
         pixel_w, pixel_h = self._zone_to_pixels(rect, layer)
-        return {
+
+        crs_value = None
+        try:
+            if layer.crs().isValid():
+                crs_value = layer.crs().authid()
+        except RuntimeError:
+            pass
+
+        transform = {
             "bbox": (
                 rect.xMinimum(),
                 rect.yMinimum(),
@@ -3656,7 +3700,23 @@ class AISegmentationPlugin:
                 rect.yMaximum(),
             ),
             "img_shape": (pixel_h, pixel_w),
+            "crs": crs_value,
         }
+        QgsMessageLog.logMessage(
+            "Zone geo_transform: bbox=({:.2f},{:.2f},{:.2f},{:.2f}), "
+            "shape={}x{}, crs={}".format(
+                rect.xMinimum(),
+                rect.yMinimum(),
+                rect.xMaximum(),
+                rect.yMaximum(),
+                pixel_h,
+                pixel_w,
+                crs_value,
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+        return transform
 
     def _on_pro_layer_combo_changed(self, layer):
         """Handle layer selection change in the PRO dock combo box."""
