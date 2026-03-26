@@ -859,5 +859,37 @@ na raiz do plugin.</translation>
         <source>Detection Error</source>
         <translation>Erro de detecção</translation>
     </message>
+    <message>
+        <source>Select zone</source>
+        <translation>Selecionar zona</translation>
+    </message>
+    <message>
+        <source>Full image</source>
+        <translation>Imagem completa</translation>
+    </message>
+    <message>
+        <source>Draw a rectangle to limit the segmentation area</source>
+        <translation>Desenhe um retângulo para limitar a área de segmentação</translation>
+    </message>
+    <message>
+        <source>Use the entire image</source>
+        <translation>Usar a imagem completa</translation>
+    </message>
+    <message>
+        <source>The larger the selected zone, the more credits are used.</source>
+        <translation>Quanto maior a zona selecionada, mais créditos são utilizados.</translation>
+    </message>
+    <message>
+        <source>Estimated credits: {count}</source>
+        <translation>Créditos estimados: {count}</translation>
+    </message>
+    <message>
+        <source>Zone too large. Please reduce the selection.</source>
+        <translation>Zona muito grande. Por favor, reduza a seleção.</translation>
+    </message>
+    <message>
+        <source>Redraw zone</source>
+        <translation>Redesenhar zona</translation>
+    </message>
 </context>
 </TS>

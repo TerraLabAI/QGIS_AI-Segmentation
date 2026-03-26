@@ -10,6 +10,7 @@ from qgis.PyQt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -54,6 +55,8 @@ class AISegmentationProDockWidget(QDockWidget):
     refine_settings_changed = pyqtSignal(
         int, int, bool, int
     )  # expand, simplify, fill_holes, min_area
+    zone_select_requested = pyqtSignal()  # User wants to draw a zone
+    zone_clear_requested = pyqtSignal()  # User wants to reset to full image
 
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation PRO by TerraLab"), parent)
@@ -165,6 +168,37 @@ class AISegmentationProDockWidget(QDockWidget):
 
         self.no_rasters_widget.setVisible(False)
         self.main_layout.addWidget(self.no_rasters_widget)
+
+        # Zone selection row
+        zone_row = QHBoxLayout()
+        self.zone_select_btn = QPushButton(tr("Select zone"))
+        self.zone_select_btn.setToolTip(
+            tr("Draw a rectangle to limit the segmentation area")
+        )
+        self.zone_select_btn.clicked.connect(self.zone_select_requested.emit)
+
+        self.zone_clear_btn = QPushButton(tr("Full image"))
+        self.zone_clear_btn.setToolTip(tr("Use the entire image"))
+        self.zone_clear_btn.clicked.connect(self.zone_clear_requested.emit)
+        self.zone_clear_btn.setVisible(False)  # Hidden until a zone is drawn
+
+        zone_row.addWidget(self.zone_select_btn)
+        zone_row.addWidget(self.zone_clear_btn)
+        self.main_layout.addLayout(zone_row)
+
+        # Credit estimation label
+        self.credit_label = QLabel("")
+        self.credit_label.setWordWrap(True)
+        self.credit_label.setStyleSheet("color: palette(text); font-size: 11px;")
+        self.main_layout.addWidget(self.credit_label)
+
+        # Explanatory text
+        self.credit_info_label = QLabel(
+            tr("The larger the selected zone, the more credits are used.")
+        )
+        self.credit_info_label.setWordWrap(True)
+        self.credit_info_label.setStyleSheet("color: palette(text); font-size: 11px;")
+        self.main_layout.addWidget(self.credit_info_label)
 
         # Instructions label
         self.instructions_label = QLabel("")
@@ -321,6 +355,13 @@ class AISegmentationProDockWidget(QDockWidget):
 
         # Refine selection panel (same as standard dock)
         self._setup_refine_panel(self.main_layout)
+
+        # Tile progress bar (hidden by default)
+        self.tile_progress = QProgressBar()
+        self.tile_progress.setVisible(False)
+        self.tile_progress.setTextVisible(True)
+        self.tile_progress.setFormat("Tile %v/%m")
+        self.main_layout.addWidget(self.tile_progress)
 
         self.main_layout.addStretch()
 
@@ -674,6 +715,37 @@ class AISegmentationProDockWidget(QDockWidget):
         self.simplify_spinbox.blockSignals(False)
         self.fill_holes_checkbox.blockSignals(False)
         self.min_area_spinbox.blockSignals(False)
+
+    def set_credit_estimate(self, credits: int):
+        """Update the credit estimate display."""
+        if credits < 0:
+            self.credit_label.setText(
+                tr("Zone too large. Please reduce the selection.")
+            )
+            self.credit_label.setStyleSheet("color: #f44336; font-size: 11px;")
+        else:
+            self.credit_label.setText(
+                tr("Estimated credits: {count}").format(count=credits)
+            )
+            self.credit_label.setStyleSheet("color: palette(text); font-size: 11px;")
+
+    def set_zone_active(self, active: bool):
+        """Toggle zone selection UI state."""
+        self.zone_clear_btn.setVisible(active)
+        if active:
+            self.zone_select_btn.setText(tr("Redraw zone"))
+        else:
+            self.zone_select_btn.setText(tr("Select zone"))
+
+    def set_tile_progress(self, current: int, total: int):
+        """Update tile progress bar."""
+        self.tile_progress.setMaximum(total)
+        self.tile_progress.setValue(current)
+        self.tile_progress.setVisible(total > 1)
+
+    def hide_tile_progress(self):
+        """Hide the tile progress bar."""
+        self.tile_progress.setVisible(False)
 
     def _on_start_pro_clicked(self):
         layer = self.layer_combo.currentLayer()
