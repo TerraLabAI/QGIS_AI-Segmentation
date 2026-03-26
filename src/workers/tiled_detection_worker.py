@@ -144,6 +144,29 @@ class TiledDetectionWorker(QThread):
             "Tile %d: extracting crop at (%d,%d) size %dx%d", tile_idx, x, y, w, h
         )
         crop = self._tile_manager.extract_tile_crop(self._full_image, x, y, w, h)
+
+        # Pad non-square crops to square with reflect padding.
+        # SAM-3 may internally process at a fixed square resolution;
+        # sending non-square images can cause RLE dimension mismatches
+        # that produce diagonal mask artifacts.
+        import numpy as np
+
+        pad_size = max(h, w)
+        if h != pad_size or w != pad_size:
+            crop = np.pad(
+                crop,
+                ((0, pad_size - h), (0, pad_size - w), (0, 0)),
+                mode="reflect",
+            )
+            logger.info(
+                "Tile %d: padded %dx%d -> %dx%d (square)",
+                tile_idx,
+                w,
+                h,
+                pad_size,
+                pad_size,
+            )
+
         logger.info(
             "Tile %d: crop shape=%s, dtype=%s", tile_idx, crop.shape, crop.dtype
         )
@@ -153,7 +176,8 @@ class TiledDetectionWorker(QThread):
 
         predictor = FalPredictor(self._fal_key)
         predictor.set_image_from_array(crop)
-        predictor.set_native_size(h, w)
+        # Send the full square image — do NOT crop back to native size
+        predictor.set_native_size(pad_size, pad_size)
 
         logger.info("Tile %d: calling predict_text...", tile_idx)
         result = predictor.predict_text(self._text_prompt, max_masks=self._max_masks)
@@ -166,14 +190,21 @@ class TiledDetectionWorker(QThread):
         rle_list = result.get("rle", [])
         scores = result.get("scores", [])
 
+        # Decode RLE at the actually-sent dimensions (square),
+        # then crop mask back to original tile dimensions
         from ..core.pro_predictor import decode_rle_to_mask
+
+        sent_h = result.get("_sent_h", pad_size)
+        sent_w = result.get("_sent_w", pad_size)
 
         detections: List = []
         for i, rle_str in enumerate(rle_list):
             score = scores[i] if i < len(scores) else 0.0
             if score < self._score_threshold:
                 continue
-            mask = decode_rle_to_mask(rle_str, h, w)
+            mask = decode_rle_to_mask(rle_str, sent_h, sent_w)
+            # Crop mask back to original tile dimensions (remove padding)
+            mask = mask[:h, :w]
             tile_transform = self._make_tile_transform(x, y, w, h)
             detections.append((mask, score, tile_transform))
 

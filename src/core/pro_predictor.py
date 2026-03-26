@@ -32,10 +32,35 @@ def decode_rle_to_mask(rle_string: str, height: int, width: int) -> np.ndarray:
     Returns:
         Boolean numpy array of shape (height, width).
     """
-    flat = np.zeros(height * width, dtype=np.uint8)
+    import logging
+
+    logger = logging.getLogger("AISegmentation")
+
+    total = height * width
+    flat = np.zeros(total, dtype=np.uint8)
     tokens = rle_string.split()
     if not tokens:
         return flat.reshape((height, width)).astype(bool)
+
+    # Validate RLE dimensions match expected size
+    max_rle_end = 0
+    for i in range(0, len(tokens), 2):
+        offset = int(tokens[i])
+        count = int(tokens[i + 1])
+        end = offset + count
+        if end > max_rle_end:
+            max_rle_end = end
+
+    if max_rle_end > total:
+        logger.warning(
+            "RLE DIMENSION MISMATCH: max_offset=%d > expected_total=%d (%dx%d). "
+            "fal.ai returned mask for a larger grid.",
+            max_rle_end,
+            total,
+            width,
+            height,
+        )
+
     for i in range(0, len(tokens), 2):
         offset = int(tokens[i])
         count = int(tokens[i + 1])
@@ -291,6 +316,10 @@ class FalPredictor:
                     "AI Segmentation",
                     level=Qgis.MessageLevel.Info,
                 )
+                # Store the actually-sent image dimensions so callers can
+                # decode RLE at the correct size
+                result["_sent_h"] = img.shape[0]
+                result["_sent_w"] = img.shape[1]
                 return result
         except urllib.error.HTTPError as e:
             detail = ""
