@@ -66,6 +66,27 @@ class FalPredictor:
             level=Qgis.MessageLevel.Info,
         )
 
+    def set_image_from_array(self, image_array: np.ndarray) -> None:
+        """Set the image from a numpy array (H, W, 3) uint8.
+
+        Used by tiling workflow where crops are already in memory.
+        This is functionally equivalent to set_image() but provides
+        a clear API for the tiling use case.
+
+        Args:
+            image_array: RGB image array, shape (H, W, 3), dtype uint8.
+        """
+        self._last_image_np = image_array
+        self.original_size = (image_array.shape[0], image_array.shape[1])
+        self.is_image_set = True
+        QgsMessageLog.logMessage(
+            "FalPredictor: tile image stored ({}x{})".format(
+                image_array.shape[1], image_array.shape[0]
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+
     def _get_cdn_token(self) -> Optional[str]:
         """Exchange API key for a short-lived CDN Bearer token."""
         req = urllib.request.Request(
