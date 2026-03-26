@@ -3411,15 +3411,13 @@ class AISegmentationPlugin:
                 level=Qgis.MessageLevel.Info,
             )
 
-        full_image = self._extract_full_zone_image(layer)
-        if full_image is None:
+        full_image, geo_transform = self._extract_full_zone_image(layer)
+        if full_image is None or geo_transform is None:
             self.iface.messageBar().pushCritical(
                 "AI Segmentation",
                 tr("Failed to extract zone image"),
             )
             return
-
-        geo_transform = self._compute_zone_geo_transform(layer)
 
         self._tiled_worker = TiledDetectionWorker(
             predictor=self.predictor,
@@ -3729,9 +3727,15 @@ class AISegmentationPlugin:
             self._active_dock.set_point_count(0, 0)
 
     def _extract_full_zone_image(self, layer):
-        """Read the selected zone at native resolution.
+        """Read the selected zone at native resolution using rasterio.
 
-        Returns (H, W, 3) uint8 numpy array, or None on error.
+        Uses the rasterio affine transform for correct pixel-to-geo mapping,
+        which handles rotated rasters properly (unlike layer.extent()).
+
+        Returns:
+            tuple: (image_array, geo_info) where image_array is (H, W, 3) uint8
+                   and geo_info is a dict with 'bbox', 'img_shape', 'crs'.
+            Returns (None, None) on error.
         """
         import numpy as np
 
@@ -3744,29 +3748,54 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Critical,
             )
-            return None
+            return None, None
 
         raster_path = layer.source()
-        extent = layer.extent()
 
         if self._selected_zone:
             zone = self._reproject_zone_to_layer_crs(self._selected_zone, layer)
         else:
-            zone = extent
+            zone = None  # Full image
 
         try:
             with rasterio.open(raster_path) as src:
-                px_size_x = extent.width() / src.width
-                px_size_y = extent.height() / src.height
+                raster_transform = src.transform
+                # Use rasterio's affine transform for pixel size (handles rotation)
+                px_size_x = abs(raster_transform.a)
+                px_size_y = abs(raster_transform.e)
 
-                col_off = max(0, int((zone.xMinimum() - extent.xMinimum()) / px_size_x))
-                row_off = max(0, int((extent.yMaximum() - zone.yMaximum()) / px_size_y))
-                win_w = min(int(zone.width() / px_size_x), src.width - col_off)
-                win_h = min(int(zone.height() / px_size_y), src.height - row_off)
+                if zone is not None:
+                    # Convert zone geographic coords to pixel coords using
+                    # the rasterio transform (inverse)
+                    inv_transform = ~raster_transform
+                    # Geographic corners → pixel coords
+                    col_min, row_min = inv_transform * (
+                        zone.xMinimum(),
+                        zone.yMaximum(),
+                    )
+                    col_max, row_max = inv_transform * (
+                        zone.xMaximum(),
+                        zone.yMinimum(),
+                    )
+
+                    col_off = max(0, int(round(min(col_min, col_max))))
+                    row_off = max(0, int(round(min(row_min, row_max))))
+                    col_end = min(src.width, int(round(max(col_min, col_max))))
+                    row_end = min(src.height, int(round(max(row_min, row_max))))
+                    win_w = col_end - col_off
+                    win_h = row_end - row_off
+                else:
+                    # Full image
+                    col_off = 0
+                    row_off = 0
+                    win_w = src.width
+                    win_h = src.height
 
                 QgsMessageLog.logMessage(
-                    "Zone extraction: raster {}x{}, pixel_size={:.6f}x{:.6f}, "
-                    "window=({},{} {}x{}), bands={}".format(
+                    "Zone extraction: raster {}x{}, "
+                    "px_size={:.6f}x{:.6f}, "
+                    "window=({},{} {}x{}), bands={}, "
+                    "transform.a={:.6f} transform.e={:.6f}".format(
                         src.width,
                         src.height,
                         px_size_x,
@@ -3776,6 +3805,8 @@ class AISegmentationPlugin:
                         win_w,
                         win_h,
                         src.count,
+                        raster_transform.a,
+                        raster_transform.e,
                     ),
                     "AI Segmentation",
                     level=Qgis.MessageLevel.Info,
@@ -3783,14 +3814,11 @@ class AISegmentationPlugin:
 
                 if win_w <= 0 or win_h <= 0:
                     QgsMessageLog.logMessage(
-                        "Zone extraction: invalid window size {}x{}".format(
-                            win_w,
-                            win_h,
-                        ),
+                        "Zone extraction: invalid window {}x{}".format(win_w, win_h),
                         "AI Segmentation",
                         level=Qgis.MessageLevel.Warning,
                     )
-                    return None
+                    return None, None
 
                 window = Window(col_off, row_off, win_w, win_h)
 
@@ -3808,12 +3836,51 @@ class AISegmentationPlugin:
                     rgb = np.transpose(bands[:3], (1, 2, 0))
 
                 result = rgb.astype(np.uint8)
+
+                # Compute the actual geographic bbox of the window using
+                # the rasterio affine transform (handles rotation correctly)
+                win_transform = rasterio.windows.transform(window, raster_transform)
+                # Geographic coordinates of the 4 corners of the window
+                corners_geo = [
+                    win_transform * (0, 0),  # top-left
+                    win_transform * (win_w, 0),  # top-right
+                    win_transform * (win_w, win_h),  # bottom-right
+                    win_transform * (0, win_h),  # bottom-left
+                ]
+                xs = [c[0] for c in corners_geo]
+                ys = [c[1] for c in corners_geo]
+                geo_minx = min(xs)
+                geo_miny = min(ys)
+                geo_maxx = max(xs)
+                geo_maxy = max(ys)
+
+                crs_value = None
+                try:
+                    if layer.crs().isValid():
+                        crs_value = layer.crs().authid()
+                except RuntimeError:
+                    pass
+
+                geo_info = {
+                    "bbox": (geo_minx, geo_miny, geo_maxx, geo_maxy),
+                    "img_shape": (win_h, win_w),
+                    "crs": crs_value,
+                }
+
                 QgsMessageLog.logMessage(
-                    "Zone extraction complete: output shape={}".format(result.shape),
+                    "Zone extraction complete: shape={}, "
+                    "geo_bbox=({:.2f},{:.2f},{:.2f},{:.2f}), crs={}".format(
+                        result.shape,
+                        geo_minx,
+                        geo_miny,
+                        geo_maxx,
+                        geo_maxy,
+                        crs_value,
+                    ),
                     "AI Segmentation",
                     level=Qgis.MessageLevel.Info,
                 )
-                return result
+                return result, geo_info
 
         except Exception as e:
             QgsMessageLog.logMessage(
@@ -3821,51 +3888,7 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Critical,
             )
-            return None
-
-    def _compute_zone_geo_transform(self, layer):
-        """Compute the geographic bbox and pixel dimensions for the selected zone.
-
-        Returns transform_info dict with bbox in layer CRS and the layer's CRS authid.
-        """
-        if self._selected_zone:
-            rect = self._reproject_zone_to_layer_crs(self._selected_zone, layer)
-        else:
-            rect = layer.extent()
-        pixel_w, pixel_h = self._zone_to_pixels(rect, layer)
-
-        crs_value = None
-        try:
-            if layer.crs().isValid():
-                crs_value = layer.crs().authid()
-        except RuntimeError:
-            pass
-
-        transform = {
-            "bbox": (
-                rect.xMinimum(),
-                rect.yMinimum(),
-                rect.xMaximum(),
-                rect.yMaximum(),
-            ),
-            "img_shape": (pixel_h, pixel_w),
-            "crs": crs_value,
-        }
-        QgsMessageLog.logMessage(
-            "Zone geo_transform: bbox=({:.2f},{:.2f},{:.2f},{:.2f}), "
-            "shape={}x{}, crs={}".format(
-                rect.xMinimum(),
-                rect.yMinimum(),
-                rect.xMaximum(),
-                rect.yMaximum(),
-                pixel_h,
-                pixel_w,
-                crs_value,
-            ),
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Info,
-        )
-        return transform
+            return None, None
 
     def _on_pro_layer_combo_changed(self, layer):
         """Handle layer selection change in the PRO dock combo box."""
