@@ -3479,21 +3479,52 @@ class AISegmentationPlugin:
             if not geom or geom.isEmpty():
                 continue
 
-            # Check IoU against existing accepted detections
-            existing_geoms = [
-                d["geom"] for d in self._pro_pending_detections if "geom" in d
-            ]
-            max_iou = max((_iou(geom, ag) for ag in existing_geoms), default=0.0)
-            if max_iou > 0.3:
-                QgsMessageLog.logMessage(
-                    "  Tile {}: detection skipped (IoU={:.2f} > 0.3, duplicate)".format(
-                        tile_idx,
-                        max_iou,
-                    ),
-                    "AI Segmentation",
-                    level=Qgis.MessageLevel.Info,
-                )
-                continue
+            # Check IoU against existing accepted detections.
+            # When IoU > 0.3, keep the LARGER polygon — tiles processed
+            # in parallel may arrive in any order, so a partial detection
+            # can arrive before the full one.
+            best_iou = 0.0
+            best_iou_idx = -1
+            for det_i, det in enumerate(self._pro_pending_detections):
+                if "geom" not in det:
+                    continue
+                iou_val = _iou(geom, det["geom"])
+                if iou_val > best_iou:
+                    best_iou = iou_val
+                    best_iou_idx = det_i
+
+            if best_iou > 0.3:
+                existing = self._pro_pending_detections[best_iou_idx]
+                if geom.area() > existing["geom"].area():
+                    # New detection is larger — replace the existing one
+                    QgsMessageLog.logMessage(
+                        "  Tile {}: replacing smaller duplicate "
+                        "(IoU={:.2f}, new_area={:.1f} > old_area={:.1f})".format(
+                            tile_idx,
+                            best_iou,
+                            geom.area(),
+                            existing["geom"].area(),
+                        ),
+                        "AI Segmentation",
+                        level=Qgis.MessageLevel.Info,
+                    )
+                    self._safe_remove_rubber_band(existing.get("rb"))
+                    self._pro_pending_detections.pop(best_iou_idx)
+                    # Fall through to add the new, larger detection below
+                else:
+                    # Existing detection is larger — skip this one
+                    QgsMessageLog.logMessage(
+                        "  Tile {}: detection skipped "
+                        "(IoU={:.2f}, area={:.1f} <= existing {:.1f})".format(
+                            tile_idx,
+                            best_iou,
+                            geom.area(),
+                            existing["geom"].area(),
+                        ),
+                        "AI Segmentation",
+                        level=Qgis.MessageLevel.Info,
+                    )
+                    continue
 
             # Apply simplification
             tolerance = self._compute_simplification_tolerance(
