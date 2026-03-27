@@ -322,8 +322,7 @@ class AISegmentationPlugin:
         self.map_tool: Optional[AISegmentationMapTool] = None
         self.action: Optional[QAction] = None
         self.terralab_menu: Optional[QMenu] = None
-        self.check_update_action: Optional[QAction] = None
-        self.website_action: Optional[QAction] = None
+        self.terralab_toolbar = None
 
         self.predictor = None
         self.prompts = PromptManager()
@@ -501,32 +500,18 @@ class AISegmentationPlugin:
         )
         self.action.triggered.connect(self.toggle_dock_widget)
 
-        self.iface.addToolBarIcon(self.action)
+        from .terralab_toolbar import get_or_create_terralab_toolbar, add_action_to_toolbar
+        self.terralab_toolbar = get_or_create_terralab_toolbar(self.iface.mainWindow())
+        add_action_to_toolbar(self.terralab_toolbar, self.action, "ai-segmentation")
 
-        # Create TerraLab top-level menu in the menu bar
-        self.terralab_menu = QMenu("TerraLab", self.iface.mainWindow())
-        self.iface.mainWindow().menuBar().addMenu(self.terralab_menu)
-        self.terralab_menu.addAction(self.action)
-        self.terralab_menu.addSeparator()
-
-        update_icon = QIcon(":/images/themes/default/mActionRefresh.svg")
-        self.check_update_action = QAction(
-            update_icon,
-            tr("Check for Updates"),
-            self.iface.mainWindow()
+        from .terralab_menu import (
+            get_or_create_terralab_menu,
+            add_plugin_to_menu,
+            add_to_plugins_menu,
         )
-        self.check_update_action.triggered.connect(self._open_plugin_manager_update)
-        self.terralab_menu.addAction(self.check_update_action)
-
-        terralab_logo = str(self.plugin_dir / "resources" / "icons" / "terralab-logo.png")
-        website_icon = QIcon(terralab_logo) if os.path.exists(terralab_logo) else QIcon()
-        self.website_action = QAction(
-            website_icon,
-            tr("More from TerraLab..."),
-            self.iface.mainWindow()
-        )
-        self.website_action.triggered.connect(self._open_terralab_website)
-        self.terralab_menu.addAction(self.website_action)
+        self.terralab_menu = get_or_create_terralab_menu(self.iface.mainWindow())
+        add_plugin_to_menu(self.terralab_menu, self.action, "ai-segmentation")
+        add_to_plugins_menu(self.iface, self.action)
 
         self.dock_widget = AISegmentationDockWidget(self.iface.mainWindow())
 
@@ -708,26 +693,28 @@ class AISegmentationPlugin:
             self.action.triggered.disconnect(self.toggle_dock_widget)
         except (TypeError, RuntimeError, AttributeError):
             pass
+
+        from .terralab_menu import remove_plugin_from_menu, remove_from_plugins_menu
         try:
-            if self.check_update_action:
-                self.check_update_action.triggered.disconnect(
-                    self._open_plugin_manager_update)
-        except (TypeError, RuntimeError, AttributeError):
-            pass
-        try:
-            if self.website_action:
-                self.website_action.triggered.disconnect(
-                    self._open_terralab_website)
-        except (TypeError, RuntimeError, AttributeError):
+            remove_from_plugins_menu(self.iface, self.action)
+        except (RuntimeError, AttributeError):
             pass
         if self.terralab_menu:
-            self.iface.mainWindow().menuBar().removeAction(
-                self.terralab_menu.menuAction())
-            self.terralab_menu.deleteLater()
+            try:
+                remove_plugin_from_menu(
+                    self.terralab_menu, self.action, self.iface.mainWindow())
+            except (RuntimeError, AttributeError):
+                pass
             self.terralab_menu = None
-        self.check_update_action = None
-        self.website_action = None
-        self.iface.removeToolBarIcon(self.action)
+
+        from .terralab_toolbar import remove_action_from_toolbar
+        if self.terralab_toolbar:
+            try:
+                remove_action_from_toolbar(
+                    self.terralab_toolbar, self.action, self.iface.mainWindow())
+            except (RuntimeError, AttributeError):
+                pass
+            self.terralab_toolbar = None
 
         # 6. Remove dock widget
         if self.dock_widget:
@@ -836,19 +823,6 @@ class AISegmentationPlugin:
                 from qgis.PyQt.QtCore import QTimer
                 delay = self._update_check_delays[self._update_check_index]
                 QTimer.singleShot(delay, self._check_for_plugin_update)
-
-    def _open_plugin_manager_update(self):
-        """Open the QGIS Plugin Manager on the Upgradeable tab."""
-        try:
-            self.iface.pluginManagerInterface().showPluginManager(3)
-        except Exception:
-            pass
-
-    def _open_terralab_website(self):
-        """Open the TerraLab website in the default browser."""
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
-        QDesktopServices.openUrl(QUrl("https://terra-lab.ai"))
 
     def _check_checkpoint(self):
         try:

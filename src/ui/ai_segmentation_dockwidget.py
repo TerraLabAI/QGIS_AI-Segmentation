@@ -369,17 +369,21 @@ class AISegmentationDockWidget(QDockWidget):
     def _setup_title_bar(self):
         """Custom title bar with clickable TerraLab link and native buttons."""
         title_widget = QWidget()
-        title_layout = QHBoxLayout(title_widget)
-        title_layout.setContentsMargins(4, 0, 0, 0)
-        title_layout.setSpacing(0)
+        title_outer = QVBoxLayout(title_widget)
+        title_outer.setContentsMargins(0, 0, 0, 0)
+        title_outer.setSpacing(0)
+
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(4, 0, 0, 0)
+        title_row.setSpacing(0)
 
         title_label = QLabel(
             'AI Segmentation by '
-            '<a href="https://terra-lab.ai" style="color: #1976d2; text-decoration: underline;">TerraLab</a>'
+            '<a href="https://terra-lab.ai" style="color: #1976d2; text-decoration: none;">TerraLab</a>'
         )
         title_label.setOpenExternalLinks(True)
-        title_layout.addWidget(title_label)
-        title_layout.addStretch()
+        title_row.addWidget(title_label)
+        title_row.addStretch()
 
         icon_size = self.style().pixelMetric(QStyle.PixelMetric.PM_SmallIconSize)
 
@@ -388,14 +392,21 @@ class AISegmentationDockWidget(QDockWidget):
         float_btn.setFixedSize(icon_size + 4, icon_size + 4)
         float_btn.setAutoRaise(True)
         float_btn.clicked.connect(lambda: self.setFloating(not self.isFloating()))
-        title_layout.addWidget(float_btn)
+        title_row.addWidget(float_btn)
 
         close_btn = QToolButton()
         close_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton))
         close_btn.setFixedSize(icon_size + 4, icon_size + 4)
         close_btn.setAutoRaise(True)
         close_btn.clicked.connect(self.close)
-        title_layout.addWidget(close_btn)
+        title_row.addWidget(close_btn)
+
+        title_outer.addLayout(title_row)
+
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        title_outer.addWidget(separator)
 
         self.setTitleBarWidget(title_widget)
 
