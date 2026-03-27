@@ -265,16 +265,20 @@ export AI_SEGMENTATION_CACHE_DIR=/seu/caminho</translation>
         <translation>Navegação</translation>
     </message>
     <message>
-        <source>Hold Space</source>
-        <translation>Manter Espaço</translation>
+        <source>Space</source>
+        <translation>Espaço</translation>
     </message>
     <message>
-        <source>Pan the map</source>
-        <translation>Mover o mapa</translation>
+        <source>Hold and move to pan the map</source>
+        <translation>Manter e mover para deslocar o mapa</translation>
     </message>
     <message>
-        <source>Middle-click</source>
-        <translation>Clique do meio</translation>
+        <source>Middle mouse button</source>
+        <translation>Botão central do mouse</translation>
+    </message>
+    <message>
+        <source>Click and drag to pan the map</source>
+        <translation>Clicar e arrastar para deslocar o mapa</translation>
     </message>
     <message>
         <source>Shortcuts</source>

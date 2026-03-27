@@ -650,9 +650,10 @@ class AISegmentationDockWidget(QDockWidget):
         # Dynamic instruction label - styled as a card (slightly darker gray than refine panel)
         self.instructions_label = QLabel("")
         self.instructions_label.setWordWrap(True)
-        self.instructions_label.setMinimumHeight(0)
-        self.instructions_label.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        # Fixed height avoids visual glitch when text changes between states
+        self.instructions_label.setFixedHeight(70)
+        self.instructions_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.instructions_label.setStyleSheet("""
             QLabel {
                 background-color: rgba(128, 128, 128, 0.12);
@@ -1068,40 +1069,57 @@ class AISegmentationDockWidget(QDockWidget):
         from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
         undo_key = "Cmd+Z" if sys.platform == "darwin" else "Ctrl+Z"
 
+        key_style = (
+            "background-color: rgba(128,128,128,0.18);"
+            "border: 1px solid rgba(128,128,128,0.35);"
+            "border-radius: 3px;"
+            "padding: 1px 5px;"
+            "font-family: monospace;"
+        )
+        k = "<span style='{}'>{{}}</span>".format(key_style)
+
         shortcuts_html = (
-            "<table cellspacing='6'>"
-            "<tr><td colspan='2'><b>{seg_title}</b></td></tr>"
-            "<tr><td><code>G</code></td><td>{start}</td></tr>"
-            "<tr><td><code>S</code></td><td>{save}</td></tr>"
-            "<tr><td><code>Enter</code></td><td>{export}</td></tr>"
-            "<tr><td><code>{undo_key}</code></td><td>{undo}</td></tr>"
-            "<tr><td><code>Esc</code></td><td>{stop}</td></tr>"
-            "<tr><td colspan='2'>&nbsp;</td></tr>"
-            "<tr><td colspan='2'><b>{nav_title}</b></td></tr>"
-            "<tr><td><code>{space}</code></td><td>{pan}</td></tr>"
-            "<tr><td>{middle}</td><td>{pan}</td></tr>"
+            "<table cellspacing='4' cellpadding='2'>"
+            "<tr><td colspan='2' style='padding-bottom:2px;'>"
+            "<b>{seg_title}</b></td></tr>"
+            "<tr><td>{g}</td><td>{start}</td></tr>"
+            "<tr><td>{s}</td><td>{save}</td></tr>"
+            "<tr><td>{enter}</td><td>{export}</td></tr>"
+            "<tr><td>{undo}</td><td>{undo_text}</td></tr>"
+            "<tr><td>{esc}</td><td>{stop}</td></tr>"
+            "<tr><td colspan='2' style='padding-top:6px;padding-bottom:2px;'>"
+            "<b>{nav_title}</b></td></tr>"
+            "<tr><td>{space}</td><td>{space_desc}</td></tr>"
+            "<tr><td>{mouse}</td><td>{mouse_desc}</td></tr>"
             "</table>"
         ).format(
             seg_title=tr("Segmentation"),
+            g=k.format("G"),
             start=tr("Start AI Segmentation"),
+            s=k.format("S"),
             save=tr("Save polygon"),
+            enter=k.format("Enter"),
             export=tr("Export polygon to a layer"),
-            undo_key=undo_key,
-            undo=tr("Undo last point"),
+            undo=k.format(undo_key),
+            undo_text=tr("Undo last point"),
+            esc=k.format("Esc"),
             stop=tr("Stop segmentation"),
             nav_title=tr("Navigation"),
-            space=tr("Hold Space"),
-            pan=tr("Pan the map"),
-            middle=tr("Middle-click"),
+            space=k.format(tr("Space")),
+            space_desc=tr("Hold and move to pan the map"),
+            mouse=k.format(tr("Middle mouse button")),
+            mouse_desc=tr("Click and drag to pan the map"),
         )
 
         dlg = QDialog(self)
         dlg.setWindowTitle(tr("Shortcuts"))
         layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(16, 16, 16, 12)
         label = QLabel(shortcuts_html)
         label.setTextFormat(Qt.TextFormat.RichText)
         layout.addWidget(label)
         ok_btn = QPushButton("OK")
+        ok_btn.setFixedWidth(80)
         ok_btn.clicked.connect(dlg.accept)
         layout.addWidget(ok_btn, alignment=Qt.AlignmentFlag.AlignCenter)
         dlg.exec()

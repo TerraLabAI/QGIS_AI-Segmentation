@@ -265,16 +265,20 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Navegación</translation>
     </message>
     <message>
-        <source>Hold Space</source>
-        <translation>Mantener Espacio</translation>
+        <source>Space</source>
+        <translation>Espacio</translation>
     </message>
     <message>
-        <source>Pan the map</source>
-        <translation>Desplazar el mapa</translation>
+        <source>Hold and move to pan the map</source>
+        <translation>Mantener y mover para desplazar el mapa</translation>
     </message>
     <message>
-        <source>Middle-click</source>
-        <translation>Clic central</translation>
+        <source>Middle mouse button</source>
+        <translation>Botón central del ratón</translation>
+    </message>
+    <message>
+        <source>Click and drag to pan the map</source>
+        <translation>Clic y arrastrar para desplazar el mapa</translation>
     </message>
     <message>
         <source>Shortcuts</source>
