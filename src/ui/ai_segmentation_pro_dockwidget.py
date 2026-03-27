@@ -138,6 +138,12 @@ class AISegmentationProDockWidget(QDockWidget):
             " padding: 6px 12px; border: 1px solid rgba(128, 128, 128, 0.2);"
             " border-radius: 4px; }"
         )
+        self._zone_selected_btn = (
+            "QPushButton { background-color: rgba(66, 133, 244, 0.25);"
+            " padding: 6px 12px; border: 1px solid rgba(66, 133, 244, 0.6);"
+            " border-radius: 4px; color: palette(text); }"
+        )
+        self._zone_neutral_btn = _neutral_btn
 
         # Layer combo
         self.layer_combo = QgsMapLayerComboBox()
@@ -178,7 +184,7 @@ class AISegmentationProDockWidget(QDockWidget):
         self.no_rasters_widget.setVisible(False)
         self.main_layout.addWidget(self.no_rasters_widget)
 
-        # Zone selection row (neutral buttons)
+        # Zone selection row — both always visible, "Full image" selected by default
         zone_row = QHBoxLayout()
         self.zone_select_btn = QPushButton(tr("Select zone"))
         self.zone_select_btn.setToolTip(
@@ -189,9 +195,8 @@ class AISegmentationProDockWidget(QDockWidget):
 
         self.zone_clear_btn = QPushButton(tr("Full image"))
         self.zone_clear_btn.setToolTip(tr("Use the entire image"))
-        self.zone_clear_btn.setStyleSheet(_neutral_btn)
+        self.zone_clear_btn.setStyleSheet(self._zone_selected_btn)
         self.zone_clear_btn.clicked.connect(self.zone_clear_requested.emit)
-        self.zone_clear_btn.setVisible(False)  # Hidden until a zone is drawn
 
         zone_row.addWidget(self.zone_select_btn)
         zone_row.addWidget(self.zone_clear_btn)
@@ -670,12 +675,15 @@ class AISegmentationProDockWidget(QDockWidget):
         self._update_detect_button_label()
 
     def set_zone_active(self, active: bool):
-        """Toggle zone selection UI state."""
-        self.zone_clear_btn.setVisible(active)
+        """Toggle zone selection UI state and highlight the active choice."""
         if active:
             self.zone_select_btn.setText(tr("Redraw zone"))
+            self.zone_select_btn.setStyleSheet(self._zone_selected_btn)
+            self.zone_clear_btn.setStyleSheet(self._zone_neutral_btn)
         else:
             self.zone_select_btn.setText(tr("Select zone"))
+            self.zone_select_btn.setStyleSheet(self._zone_neutral_btn)
+            self.zone_clear_btn.setStyleSheet(self._zone_selected_btn)
 
     def set_tile_progress(self, current: int, total: int):
         """Update tile progress bar."""

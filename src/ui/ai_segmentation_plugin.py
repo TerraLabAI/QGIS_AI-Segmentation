@@ -3650,11 +3650,11 @@ class AISegmentationPlugin:
         )
 
         # Auto-start PRO session on first Detect click
-        if not self._active_dock or not self.predictor:
+        if self._active_mode != "pro" or not self.predictor:
             layer = self.pro_dock_widget.layer_combo.currentLayer()
             if layer:
                 self._on_start_pro_segmentation(layer)
-            if not self._active_dock or not self.predictor:
+            if self._active_mode != "pro" or not self.predictor:
                 QgsMessageLog.logMessage(
                     "_run_fal_detection: ABORT — missing dock or predictor"
                     " (auto-start failed)",
@@ -3662,7 +3662,7 @@ class AISegmentationPlugin:
                     level=Qgis.MessageLevel.Warning,
                 )
                 return
-        text_prompt = self._active_dock.get_pro_text_prompt()
+        text_prompt = self.pro_dock_widget.get_pro_text_prompt()
         if not text_prompt:
             QgsMessageLog.logMessage(
                 "_run_fal_detection: ABORT — empty text prompt",
