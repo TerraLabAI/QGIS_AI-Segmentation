@@ -422,9 +422,10 @@ class AISegmentationProDockWidget(QDockWidget):
     def _update_button_visibility(self):
         if self._segmentation_active:
             self.status_banner.setVisible(self.status_banner.text() != "")
-            self.export_button.setVisible(self._saved_polygon_count > 0)
+            has_results = self._saved_polygon_count > 0 or self._positive_count > 0
+            self.export_button.setVisible(has_results)
             self.secondary_buttons_widget.show()
-            self.refine_group.setVisible(self._saved_polygon_count > 0)
+            self.refine_group.setVisible(has_results)
         else:
             self.status_banner.hide()
             self.export_button.hide()

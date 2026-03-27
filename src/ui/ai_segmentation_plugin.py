@@ -1493,7 +1493,7 @@ class AISegmentationPlugin:
             self._previous_map_tool = current_tool
 
         self.iface.mapCanvas().setMapTool(self.map_tool)
-        self.dock_widget.set_segmentation_active(True)
+        self._active_dock.set_segmentation_active(True)
         # Status bar hint will be set by _update_status_hint via set_point_count
 
         # Install keyboard shortcut filter on the main window so shortcuts
