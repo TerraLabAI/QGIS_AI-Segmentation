@@ -326,6 +326,11 @@ class AISegmentationProDockWidget(QDockWidget):
         self.tile_progress.setFormat("Tile %v/%m")
         self.main_layout.addWidget(self.tile_progress)
 
+        # Debug: tile grid overlay toggle
+        self.tile_grid_button = QPushButton(tr("Show tile grid"))
+        self.tile_grid_button.setStyleSheet(_neutral_btn)
+        self.main_layout.addWidget(self.tile_grid_button)
+
         self.main_layout.addStretch()
 
     # ── Public interface (mirrors AISegmentationDockWidget for shared callsites) ──

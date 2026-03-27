@@ -875,5 +875,9 @@ en la raíz del plugin.</translation>
         <source>Right-click a polygon to remove it</source>
         <translation>Clic derecho en un polígono para eliminarlo</translation>
     </message>
+    <message>
+        <source>Show tile grid</source>
+        <translation>Mostrar grilla de tiles</translation>
+    </message>
 </context>
 </TS>

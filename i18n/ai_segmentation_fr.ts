@@ -734,6 +734,10 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Clic droit sur un polygone pour le supprimer</translation>
     </message>
     <message>
+        <source>Show tile grid</source>
+        <translation>Afficher la grille de tiles</translation>
+    </message>
+    <message>
         <source>Connecting to PRO server...</source>
         <translation>Connexion au serveur PRO...</translation>
     </message>

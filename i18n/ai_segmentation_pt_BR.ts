@@ -730,6 +730,10 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <translation>Clique com o botão direito em um polígono para removê-lo</translation>
     </message>
     <message>
+        <source>Show tile grid</source>
+        <translation>Mostrar grade de tiles</translation>
+    </message>
+    <message>
         <source>Detect objects</source>
         <translation>Detectar objetos</translation>
     </message>

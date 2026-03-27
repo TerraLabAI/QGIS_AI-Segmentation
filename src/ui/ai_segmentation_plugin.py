@@ -168,6 +168,11 @@ class AISegmentationPlugin:
         self._selected_zone = None  # QgsRectangle or None (full image)
         self._tiled_worker = None
 
+        # Debug tile grid overlay
+        from ..debug.tile_grid_overlay import TileGridOverlay
+
+        self._tile_grid_overlay = TileGridOverlay(self._tile_manager)
+
     @property
     def _active_dock(self):
         """Return the dock widget corresponding to the current active mode."""
@@ -399,6 +404,7 @@ class AISegmentationPlugin:
         self.pro_dock_widget.layer_combo.layerChanged.connect(
             self._on_pro_layer_combo_changed
         )
+        self.pro_dock_widget.tile_grid_button.clicked.connect(self._on_toggle_tile_grid)
         self.iface.addDockWidget(
             Qt.DockWidgetArea.RightDockWidgetArea, self.pro_dock_widget
         )
@@ -597,6 +603,21 @@ class AISegmentationPlugin:
     def _on_pro_dock_visibility_changed(self, visible: bool):
         if self.pro_action:
             self.pro_action.setChecked(visible)
+        if not visible:
+            self._tile_grid_overlay.hide()
+
+    def _on_toggle_tile_grid(self):
+        """Toggle the debug tile grid overlay on/off."""
+        if self._tile_grid_overlay.is_visible():
+            self._tile_grid_overlay.hide()
+            return
+        layer = self.pro_dock_widget.layer_combo.currentLayer()
+        if not layer:
+            return
+        zone = None
+        if self._selected_zone:
+            zone = self._reproject_zone_to_layer_crs(self._selected_zone, layer)
+        self._tile_grid_overlay.show(layer, zone)
 
     def _do_first_time_setup(self):
         QgsMessageLog.logMessage(
