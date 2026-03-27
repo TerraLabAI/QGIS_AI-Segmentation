@@ -21,7 +21,7 @@ from qgis.PyQt.QtWidgets import (
     QComboBox,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
-from qgis.PyQt.QtGui import QDesktopServices, QKeySequence, QStandardItem
+from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
 from qgis.PyQt.QtWidgets import QShortcut
 from qgis.core import QgsProject, QgsLayerTree
 
