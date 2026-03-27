@@ -534,10 +534,10 @@ class AISegmentationPlugin:
         """
         if simplify_value <= 0 or transform_info is None:
             return 0
-        bbox = transform_info.get("bbox", [0, 1, 0, 1])
+        bbox = transform_info.get("bbox", [0, 0, 1, 1])
         img_shape = transform_info.get("img_shape", (1024, 1024))
         width_pixels = max(img_shape[1], 1)
-        bbox_width = bbox[1] - bbox[0]
+        bbox_width = bbox[2] - bbox[0]
         if bbox_width == 0:
             return 0
         pixel_size = bbox_width / width_pixels

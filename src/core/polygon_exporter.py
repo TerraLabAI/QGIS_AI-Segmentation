@@ -116,7 +116,7 @@ def mask_to_polygons(
         img_shape = transform_info.get("img_shape")
 
         if bbox and img_shape:
-            minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
+            minx, miny, maxx, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
             height, width = img_shape
 
             transform = transform_from_bounds(minx, miny, maxx, maxy, width, height)
@@ -301,7 +301,7 @@ def pixel_to_map_coords(
     img_shape = transform_info.get("img_shape")
 
     if bbox and img_shape:
-        minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
+        minx, miny, maxx, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
         height, width = img_shape
 
         map_x = minx + (pixel_x / width) * (maxx - minx)
