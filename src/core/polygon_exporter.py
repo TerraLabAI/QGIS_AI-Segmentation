@@ -26,7 +26,7 @@ def mask_to_polygons_rasterio(
 ) -> List[QgsGeometry]:
     if mask is None or mask.sum() == 0:
         QgsMessageLog.logMessage(
-            "mask_to_polygons: Empty or None mask",
+            "mask_to_polygons_rasterio: Empty or None mask",
             "AI Segmentation",
             level=Qgis.MessageLevel.Warning,
         )
@@ -45,18 +45,38 @@ def mask_to_polygons_rasterio(
         )
 
         geometries = []
+        raw_count = 0
         for geojson_geom, value in shape_generator:
+            raw_count += 1
             if value == 0:
                 continue
 
-            geom = QgsGeometry.fromWkt(geojson_to_wkt(geojson_geom))
+            wkt = geojson_to_wkt(geojson_geom)
+            geom = QgsGeometry.fromWkt(wkt)
             if geom and not geom.isEmpty() and geom.isGeosValid():
                 if simplify_tolerance > 0:
                     geom = geom.simplify(simplify_tolerance)
                 geometries.append(geom)
+            else:
+                QgsMessageLog.logMessage(
+                    "mask_to_polygons_rasterio: INVALID geom — "
+                    "empty={}, valid={}, wkt_start='{}'".format(
+                        geom.isEmpty() if geom else "null",
+                        geom.isGeosValid() if geom else "null",
+                        wkt[:120] if wkt else "null",
+                    ),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Warning,
+                )
 
         QgsMessageLog.logMessage(
-            f"mask_to_polygons: Created {len(geometries)} polygons",
+            "mask_to_polygons_rasterio: raw_shapes={}, valid_geoms={}, "
+            "mask_sum={}, transform={}".format(
+                raw_count,
+                len(geometries),
+                int(mask_uint8.sum()),
+                transform,
+            ),
             "AI Segmentation",
             level=Qgis.MessageLevel.Info,
         )
@@ -101,6 +121,20 @@ def geojson_to_wkt(geojson: dict) -> str:
 def mask_to_polygons(
     mask: np.ndarray, transform_info: dict, simplify_tolerance: float = 0.0
 ) -> List[QgsGeometry]:
+    QgsMessageLog.logMessage(
+        "mask_to_polygons: mask_shape={}, mask_sum={}, mask_dtype={}, "
+        "transform_info_keys={}, bbox={}, img_shape={}, crs={}".format(
+            mask.shape if mask is not None else "None",
+            int(mask.sum()) if mask is not None else "None",
+            mask.dtype if mask is not None else "None",
+            list(transform_info.keys()) if transform_info else "None",
+            transform_info.get("bbox") if transform_info else "None",
+            transform_info.get("img_shape") if transform_info else "None",
+            transform_info.get("crs") if transform_info else "None",
+        ),
+        "AI Segmentation",
+        level=Qgis.MessageLevel.Info,
+    )
     if mask is None or mask.sum() == 0:
         QgsMessageLog.logMessage(
             f"mask_to_polygons: Empty or None mask (sum={mask.sum() if mask is not None else 'None'})",
@@ -112,6 +146,12 @@ def mask_to_polygons(
     try:
         from rasterio.transform import from_bounds as transform_from_bounds
 
+        QgsMessageLog.logMessage(
+            "mask_to_polygons: rasterio import OK",
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+
         bbox = transform_info.get("bbox")
         img_shape = transform_info.get("img_shape")
 
@@ -119,10 +159,49 @@ def mask_to_polygons(
             minx, miny, maxx, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
             height, width = img_shape
 
+            QgsMessageLog.logMessage(
+                "mask_to_polygons: using bbox path — "
+                "minx={:.6f}, miny={:.6f}, maxx={:.6f}, maxy={:.6f}, "
+                "width={}, height={}, mask_shape={}".format(
+                    minx, miny, maxx, maxy, width, height, mask.shape
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
+
             transform = transform_from_bounds(minx, miny, maxx, maxy, width, height)
+            QgsMessageLog.logMessage(
+                "mask_to_polygons: affine_transform={}".format(transform),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
             crs = transform_info.get("crs", "EPSG:4326")
 
-            return mask_to_polygons_rasterio(mask, transform, crs, simplify_tolerance)
+            result = mask_to_polygons_rasterio(mask, transform, crs, simplify_tolerance)
+            if result:
+                bb = result[0].boundingBox()
+                QgsMessageLog.logMessage(
+                    "mask_to_polygons: rasterio returned {} geoms, "
+                    "first_bbox=({:.6f},{:.6f},{:.6f},{:.6f}), "
+                    "first_area={:.6f}, first_wkt_len={}".format(
+                        len(result),
+                        bb.xMinimum(),
+                        bb.yMinimum(),
+                        bb.xMaximum(),
+                        bb.yMaximum(),
+                        result[0].area(),
+                        len(result[0].asWkt()),
+                    ),
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Info,
+                )
+            else:
+                QgsMessageLog.logMessage(
+                    "mask_to_polygons: rasterio returned EMPTY list!",
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Warning,
+                )
+            return result
 
         extent = transform_info.get("extent")
         original_size = transform_info.get("original_size")
@@ -142,9 +221,19 @@ def mask_to_polygons(
 
             return mask_to_polygons_rasterio(mask, transform, crs, simplify_tolerance)
 
+        QgsMessageLog.logMessage(
+            "mask_to_polygons: FALLBACK — no bbox or extent in transform_info",
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Warning,
+        )
         return mask_to_polygons_fallback(mask, transform_info, simplify_tolerance)
 
-    except ImportError:
+    except ImportError as ie:
+        QgsMessageLog.logMessage(
+            "mask_to_polygons: RASTERIO IMPORT FAILED — {}. Using fallback.".format(ie),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Warning,
+        )
         return mask_to_polygons_fallback(mask, transform_info, simplify_tolerance)
     except Exception as e:
         import traceback

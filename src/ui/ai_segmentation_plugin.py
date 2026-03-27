@@ -3721,6 +3721,37 @@ class AISegmentationPlugin:
             )
             return
 
+        canvas = self.iface.mapCanvas()
+        canvas_ext = canvas.extent()
+        canvas_crs_id = canvas.mapSettings().destinationCrs().authid()
+        layer_crs_id = (
+            raster_layer.crs().authid() if raster_layer.crs().isValid() else "?"
+        )
+        QgsMessageLog.logMessage(
+            "ROUTING: tiles={}, zone={}, pixel={}x{}, "
+            "canvas_crs={}, layer_crs={}, "
+            "canvas_extent=({:.2f},{:.2f},{:.2f},{:.2f}), "
+            "raster_to_canvas_xform={}, "
+            "route={}".format(
+                len(tiles),
+                self._selected_zone is not None,
+                pixel_w,
+                pixel_h,
+                canvas_crs_id,
+                layer_crs_id,
+                canvas_ext.xMinimum(),
+                canvas_ext.yMinimum(),
+                canvas_ext.xMaximum(),
+                canvas_ext.yMaximum(),
+                self._raster_to_canvas_xform is not None,
+                "TILED"
+                if (len(tiles) > 1 or self._selected_zone is not None)
+                else "SINGLE",
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+
         if len(tiles) > 1 or self._selected_zone is not None:
             # Multi-tile or zone-selected flow — use tiled worker
             self._run_tiled_detection(text_prompt, tiles, raster_layer)
@@ -4064,6 +4095,44 @@ class AISegmentationPlugin:
         self._clear_mask_visualization()
         self.current_mask = None
         self.current_transform_info = None
+
+        # ── DIAGNOSTIC DUMP: single-tile detection results ──
+        canvas_ext = self.iface.mapCanvas().extent()
+        QgsMessageLog.logMessage(
+            "SINGLE-TILE FINAL: {} detections, "
+            "canvas_extent=({:.2f},{:.2f},{:.2f},{:.2f})".format(
+                batch_count,
+                canvas_ext.xMinimum(),
+                canvas_ext.yMinimum(),
+                canvas_ext.xMaximum(),
+                canvas_ext.yMaximum(),
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+        for i, det in enumerate(self._pro_pending_detections):
+            rb = det.get("rb")
+            ti = det.get("transform_info", {})
+            rb_scene = None
+            rb_visible = None
+            try:
+                rb_scene = rb.scene() is not None if rb else None
+                rb_visible = rb.isVisible() if rb else None
+            except RuntimeError:
+                rb_scene = "DELETED"
+            QgsMessageLog.logMessage(
+                "  DET[{}]: score={:.3f}, rb_scene={}, rb_visible={}, "
+                "ti_bbox={}, ti_img_shape={}".format(
+                    i,
+                    det.get("score", 0),
+                    rb_scene,
+                    rb_visible,
+                    ti.get("bbox"),
+                    ti.get("img_shape"),
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
 
         if batch_count > 0:
             self._pro_detection_batches.append(batch_count)
@@ -4652,6 +4721,54 @@ class AISegmentationPlugin:
                 self._pro_detection_batches.append(count)
                 self._active_dock.set_batch_done(count)
                 self._active_dock.set_mask_available(True)
+        # ── DIAGNOSTIC DUMP: final state of all detections ──
+        canvas_ext = self.iface.mapCanvas().extent()
+        QgsMessageLog.logMessage(
+            "FINAL STATE: {} detections, canvas_extent=({:.2f},{:.2f},{:.2f},{:.2f})".format(
+                count,
+                canvas_ext.xMinimum(),
+                canvas_ext.yMinimum(),
+                canvas_ext.xMaximum(),
+                canvas_ext.yMaximum(),
+            ),
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info,
+        )
+        for i, det in enumerate(self._pro_pending_detections):
+            rb = det.get("rb")
+            g = det.get("geom")
+            ti = det.get("transform_info", {})
+            rb_scene = None
+            rb_visible = None
+            try:
+                rb_scene = rb.scene() is not None if rb else None
+                rb_visible = rb.isVisible() if rb else None
+            except RuntimeError:
+                rb_scene = "DELETED"
+            g_bb = g.boundingBox() if g and not g.isEmpty() else None
+            QgsMessageLog.logMessage(
+                "  DET[{}]: score={:.3f}, rb_scene={}, rb_visible={}, "
+                "geom_empty={}, geom_area={:.4f}, "
+                "geom_bb=({:.4f},{:.4f},{:.4f},{:.4f}), "
+                "ti_bbox={}, ti_img_shape={}, ti_crs={}".format(
+                    i,
+                    det.get("score", 0),
+                    rb_scene,
+                    rb_visible,
+                    g.isEmpty() if g else "no_geom",
+                    g.area() if g and not g.isEmpty() else 0,
+                    g_bb.xMinimum() if g_bb else 0,
+                    g_bb.yMinimum() if g_bb else 0,
+                    g_bb.xMaximum() if g_bb else 0,
+                    g_bb.yMaximum() if g_bb else 0,
+                    ti.get("bbox"),
+                    ti.get("img_shape"),
+                    ti.get("crs"),
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
+
         if count > 0:
             self.iface.mapCanvas().refresh()
             self.iface.messageBar().pushMessage(
