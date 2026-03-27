@@ -4026,8 +4026,30 @@ class AISegmentationPlugin:
             rb.setFillColor(QColor(0, 200, 100, 80))
             rb.setWidth(2)
             display_geom = QgsGeometry(geom)
+            bbox_before = display_geom.boundingBox()
             self._transform_geometry_to_canvas_crs(display_geom)
+            bbox_after = display_geom.boundingBox()
             rb.setToGeometry(display_geom, None)
+            QgsMessageLog.logMessage(
+                "  det {}: RB created — geom_empty={}, "
+                "bbox_raster=({:.2f},{:.2f},{:.2f},{:.2f}), "
+                "bbox_canvas=({:.2f},{:.2f},{:.2f},{:.2f}), "
+                "scene={}".format(
+                    det_idx,
+                    display_geom.isEmpty(),
+                    bbox_before.xMinimum(),
+                    bbox_before.yMinimum(),
+                    bbox_before.xMaximum(),
+                    bbox_before.yMaximum(),
+                    bbox_after.xMinimum(),
+                    bbox_after.yMinimum(),
+                    bbox_after.xMaximum(),
+                    bbox_after.yMaximum(),
+                    rb.scene() is not None,
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
 
             self._pro_pending_detections.append(
                 {
@@ -4050,6 +4072,7 @@ class AISegmentationPlugin:
                 self._active_dock.set_point_count(pos, 0)
                 self._active_dock.set_batch_done(batch_count)
                 self._active_dock.set_mask_available(True)
+            self.iface.mapCanvas().refresh()
             self.iface.messageBar().pushMessage(
                 tr("AI Segmentation"),
                 tr("{n} object(s) detected. Review and save.").format(n=batch_count),
@@ -4150,6 +4173,8 @@ class AISegmentationPlugin:
             display_geom = QgsGeometry(geom)
             self._transform_geometry_to_canvas_crs(display_geom)
             rb.setToGeometry(display_geom, None)
+
+        self.iface.mapCanvas().refresh()
 
     # ── Zone selection and tiled detection ────────────────────────────────
 
@@ -4413,8 +4438,30 @@ class AISegmentationPlugin:
             rb.setFillColor(QColor(0, 200, 100, 80))
             rb.setWidth(2)
             display_geom = QgsGeometry(geom)
+            bbox_before = display_geom.boundingBox()
             self._transform_geometry_to_canvas_crs(display_geom)
+            bbox_after = display_geom.boundingBox()
             rb.setToGeometry(display_geom, None)
+            QgsMessageLog.logMessage(
+                "  Tile {}: RB — empty={}, "
+                "bbox_raster=({:.2f},{:.2f},{:.2f},{:.2f}), "
+                "bbox_canvas=({:.2f},{:.2f},{:.2f},{:.2f}), "
+                "scene={}".format(
+                    tile_idx,
+                    display_geom.isEmpty(),
+                    bbox_before.xMinimum(),
+                    bbox_before.yMinimum(),
+                    bbox_before.xMaximum(),
+                    bbox_before.yMaximum(),
+                    bbox_after.xMinimum(),
+                    bbox_after.yMinimum(),
+                    bbox_after.xMaximum(),
+                    bbox_after.yMaximum(),
+                    rb.scene() is not None,
+                ),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info,
+            )
 
             self._pro_pending_detections.append(
                 {
@@ -4436,6 +4483,8 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Info,
             )
+        # Progressive canvas refresh after each tile
+        self.iface.mapCanvas().refresh()
 
     def _on_tile_progress(self, current, total):
         """Update tile progress in dock."""
@@ -4566,6 +4615,8 @@ class AISegmentationPlugin:
             )
 
         self._pro_pending_detections = merged
+        if merge_count > 0:
+            self.iface.mapCanvas().refresh()
 
     def _on_all_tiles_completed(self, all_detections):
         """All tiles processed."""
@@ -4602,6 +4653,7 @@ class AISegmentationPlugin:
                 self._active_dock.set_batch_done(count)
                 self._active_dock.set_mask_available(True)
         if count > 0:
+            self.iface.mapCanvas().refresh()
             self.iface.messageBar().pushMessage(
                 tr("AI Segmentation"),
                 tr("{n} object(s) detected. Review and save.").format(n=count),
