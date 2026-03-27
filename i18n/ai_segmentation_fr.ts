@@ -559,12 +559,12 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
 
     <!-- Update notification -->
     <message>
-        <source>A new version is available (v{version}).</source>
-        <translation>Une nouvelle version est disponible (v{version}).</translation>
+        <source>Big update dropped — v{version} is here!</source>
+        <translation>Grosse mise à jour — la v{version} est là !</translation>
     </message>
     <message>
-        <source>Update now</source>
-        <translation>Mettre à jour</translation>
+        <source>Grab it now</source>
+        <translation>Fonce mettre à jour</translation>
     </message>
 
     <!-- Format conversion -->

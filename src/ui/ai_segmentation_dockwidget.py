@@ -962,9 +962,9 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.update_notification_label = QLabel("")
         self.update_notification_label.setStyleSheet(
-            "background-color: rgba(25, 118, 210, 0.08); "
-            "border: 1px solid rgba(25, 118, 210, 0.2); border-radius: 4px; "
-            "padding: 2px 8px; font-size: 10px; color: palette(text);"
+            "background-color: rgba(25, 118, 210, 0.15); "
+            "border: 2px solid rgba(25, 118, 210, 0.4); border-radius: 6px; "
+            "padding: 6px 12px; font-size: 12px; font-weight: bold; color: palette(text);"
         )
         self.update_notification_label.setOpenExternalLinks(False)
         self.update_notification_label.linkActivated.connect(
@@ -984,10 +984,10 @@ class AISegmentationDockWidget(QDockWidget):
             if plugin_data and plugin_data.get('status') == 'upgradeable':
                 available_version = plugin_data.get(
                     'version_available', '?')
-                text = '{} <a href="#update" style="color: #1976d2; font-weight: bold;">{}</a>'.format(
-                    tr("A new version is available (v{version}).").format(
+                text = '{} <a href="#update" style="color: #1976d2; font-weight: bold; font-size: 13px;">{}</a>'.format(
+                    tr("Big update dropped — v{version} is here!").format(
                         version=available_version),
-                    tr("Update now"))
+                    tr("Grab it now"))
                 self.update_notification_label.setText(text)
                 self.update_notification_widget.setVisible(True)
         except Exception:

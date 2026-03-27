@@ -1,9 +1,9 @@
 [general]
 name=AI Segmentation by TerraLab
-description=Segment buildings, vegetation, or any object in your raster using AI & export as vector polygons
+description=Segment buildings, vegetation, or any object in your raster using AI — smooth, refine & export as vector polygons
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-version=0.7.9
+version=0.8.0
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -18,7 +18,7 @@ about=
 
     • Precise: positive and negative click points control boundaries
 
-    • Refinable: expand, contract, simplify, smooth, fill holes
+    • Refinable: expand, contract, simplify, round corners, smooth outlines, fill holes
 
     • Fast: Real-time segmentation & optimized for your hardware
 

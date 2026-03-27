@@ -559,12 +559,12 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
 
     <!-- Update notification -->
     <message>
-        <source>A new version is available (v{version}).</source>
-        <translation>Una nueva version esta disponible (v{version}).</translation>
+        <source>Big update dropped — v{version} is here!</source>
+        <translation>Gran actualización — ¡la v{version} ya está aquí!</translation>
     </message>
     <message>
-        <source>Update now</source>
-        <translation>Actualizar ahora</translation>
+        <source>Grab it now</source>
+        <translation>Actualiza ahora</translation>
     </message>
 
     <!-- Format conversion -->
