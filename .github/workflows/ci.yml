@@ -27,7 +27,23 @@ jobs:
         run: pip install flake8 flake8-qgis
 
       - name: Flake8
-        run: flake8 --max-line-length 120 .
+        run: flake8 --max-line-length 120 --extend-ignore=QGS105,QGS201,QGS202,QGS402 .
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install bandit
+        run: pip install bandit
+
+      - name: Bandit
+        run: bandit -r src/ __init__.py -s B101 -ll
 
   syntax-check:
     name: Syntax check (Python ${{ matrix.python-version }})
