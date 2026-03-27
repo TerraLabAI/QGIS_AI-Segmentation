@@ -151,24 +151,24 @@ class TileGridOverlay:
 
     @staticmethod
     def _grid_style() -> QgsFillSymbol:
-        """Tile grid style: grey contour, no fill."""
+        """Tile grid style: yellow contour, no fill."""
         symbol = QgsFillSymbol.createSimple(
             {
                 "color": "0,0,0,0",
-                "outline_color": "#424242",
-                "outline_width": "0.3",
+                "outline_color": "#FFC107",
+                "outline_width": "0.5",
             }
         )
         return symbol
 
     @staticmethod
     def _overlap_style() -> QgsFillSymbol:
-        """Overlap zone style: semi-transparent grey fill."""
+        """Overlap zone style: semi-transparent orange fill."""
         symbol = QgsFillSymbol.createSimple(
             {
-                "color": "100,100,100,30",
-                "outline_color": "#757575",
-                "outline_width": "0.15",
+                "color": "255,152,0,40",
+                "outline_color": "#FF9800",
+                "outline_width": "0.3",
             }
         )
         return symbol
