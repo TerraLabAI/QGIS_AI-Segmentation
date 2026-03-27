@@ -21,7 +21,7 @@ venv_py3.9/
 venv_py3.12/
 
 # Internal planning docs — never commit
-docs/superpowers/
+docs/*
 
 # Local dev / debug artifacts — never commit
 .env.local
