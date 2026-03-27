@@ -126,7 +126,7 @@ class LayerTreeComboBox(QComboBox):
         self._layer_ids = []
 
         root = QgsProject.instance().layerTreeRoot()
-        self._traverse(root, depth=0)
+        self._traverse(root, depth=0, prefix="")
 
         # Restore previous selection
         restored = False
@@ -195,45 +195,81 @@ class LayerTreeComboBox(QComboBox):
                     return True
         return False
 
-    def _traverse(self, node, depth):
-        """Recursively walk the layer tree and add items."""
+    @staticmethod
+    def _make_tree_icon(tree_prefix, base_icon, icon_size=16):
+        """Create a composite icon: tree prefix chars drawn to the left of base_icon."""
+        from qgis.PyQt.QtGui import QPixmap, QPainter, QFont, QFontMetrics, QIcon
+        from qgis.PyQt.QtCore import QRect
+
+        font = QFont("monospace", 11)
+        fm = QFontMetrics(font)
+        prefix_width = fm.horizontalAdvance(tree_prefix)
+        total_width = prefix_width + icon_size
+
+        pixmap = QPixmap(total_width, icon_size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setFont(font)
+        painter.setPen(Qt.GlobalColor.gray)
+        # Vertically center text (baseline offset)
+        painter.drawText(0, icon_size - fm.descent() - 1, tree_prefix)
+        base_icon.paint(painter, QRect(prefix_width, 0, icon_size, icon_size))
+        painter.end()
+
+        return QIcon(pixmap)
+
+    def _traverse(self, node, depth, prefix=""):
+        """Recursively walk the layer tree and add items with tree indicators."""
         from qgis.core import QgsApplication, QgsIconUtils
+
+        # Pre-filter to visible groups with rasters and visible raster layers
+        visible_children = []
         for child in node.children():
             if QgsLayerTree.isGroup(child):
-                # Skip invisible groups
-                if not child.isVisible():
-                    continue
-                # Skip groups with no visible raster children
-                if not self._has_visible_rasters(child):
-                    continue
-                # Add group header with the same folder icon as QGIS Layers panel
+                if child.isVisible() and self._has_visible_rasters(child):
+                    visible_children.append(child)
+            elif QgsLayerTree.isLayer(child):
+                layer = child.layer()
+                if (layer and layer.type() == layer.RasterLayer
+                        and child.isVisible()):
+                    visible_children.append(child)
+
+        for i, child in enumerate(visible_children):
+            is_last = (i == len(visible_children) - 1)
+            connector = "\u2514\u2500 " if is_last else "\u251c\u2500 "
+            continuation = "   " if is_last else "\u2502  "
+
+            if QgsLayerTree.isGroup(child):
                 group_name = child.name()
-                prefix = "   " * max(0, depth)
                 folder_icon = QgsApplication.getThemeIcon("/mActionFolder.svg")
                 if folder_icon.isNull():
                     folder_icon = self.style().standardIcon(
                         QStyle.StandardPixmap.SP_DirIcon)
-                self.addItem(folder_icon, "{}{}".format(prefix, group_name))
+                if depth == 0:
+                    self.addItem(folder_icon, group_name)
+                else:
+                    tree_prefix = "{}{}".format(prefix, connector)
+                    composite = self._make_tree_icon(tree_prefix, folder_icon)
+                    self.addItem(composite, group_name)
                 idx = self.count() - 1
                 item = self.model().item(idx)
                 if item:
                     item.setEnabled(False)
                     item.setSelectable(False)
-                # Recurse into group
-                self._traverse(child, depth + 1)
+                # Recurse with updated prefix
+                child_prefix = prefix + continuation if depth > 0 else ""
+                self._traverse(child, depth + 1, child_prefix)
 
             elif QgsLayerTree.isLayer(child):
                 layer = child.layer()
-                if layer is None:
-                    continue
-                if layer.type() != layer.RasterLayer:
-                    continue
-                if not child.isVisible():
-                    continue
-                # Add selectable layer with raster icon
-                prefix = "   " * max(0, depth)
                 layer_icon = QgsIconUtils.iconRaster()
-                self.addItem(layer_icon, "{}{}".format(prefix, layer.name()), layer.id())
+                if depth == 0:
+                    self.addItem(layer_icon, layer.name(), layer.id())
+                else:
+                    tree_prefix = "{}{}".format(prefix, connector)
+                    composite = self._make_tree_icon(tree_prefix, layer_icon)
+                    self.addItem(composite, layer.name(), layer.id())
                 self._layer_ids.append(layer.id())
 
     def _on_index_changed(self, index):
@@ -765,7 +801,7 @@ class AISegmentationDockWidget(QDockWidget):
         outline_label.setStyleSheet(
             "font-size: 10px; color: palette(text); font-weight: bold; "
             "background: transparent; border: none; border-bottom: 1px solid palette(mid); "
-            "padding: 4px 0px 2px 0px; margin-bottom: 2px; letter-spacing: 1px;")
+            "padding: 8px 0px 4px 0px; margin-bottom: 4px; letter-spacing: 1px;")
         refine_content_layout.addWidget(outline_label)
 
         # 1. Simplify outline: SpinBox (0 to 1000) - reduces small variations
@@ -801,7 +837,7 @@ class AISegmentationDockWidget(QDockWidget):
         selection_label.setStyleSheet(
             "font-size: 10px; color: palette(text); font-weight: bold; "
             "background: transparent; border: none; border-bottom: 1px solid palette(mid); "
-            "padding: 8px 0px 2px 0px; margin-bottom: 2px; letter-spacing: 1px;")
+            "padding: 14px 0px 4px 0px; margin-bottom: 4px; letter-spacing: 1px;")
         refine_content_layout.addWidget(selection_label)
 
         # 3. Expand/Contract: SpinBox with +/- buttons (-1000 to +1000)
@@ -824,7 +860,7 @@ class AISegmentationDockWidget(QDockWidget):
         fill_label = QLabel(tr("Fill holes:"))
         fill_label.setToolTip(tr("Fill interior holes in the selection"))
         self.fill_holes_checkbox = QCheckBox()
-        self.fill_holes_checkbox.setChecked(False)
+        self.fill_holes_checkbox.setChecked(True)
         self.fill_holes_checkbox.setToolTip(fill_label.toolTip())
         fill_layout.addWidget(fill_label)
         fill_layout.addStretch()
@@ -1052,7 +1088,12 @@ class AISegmentationDockWidget(QDockWidget):
             undo=tr("Undo last point"),
             stop=tr("Stop segmentation"),
         )
-        QMessageBox.information(self, tr("Shortcuts"), text)
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        msg_box.setWindowTitle(tr("Shortcuts"))
+        msg_box.setText(text)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.exec()
 
     def _on_report_bug(self):
         """Open the bug report dialog."""

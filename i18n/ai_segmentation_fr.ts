@@ -553,8 +553,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Pas de souci, le plugin utilise maintenant le mode CPU et tout fonctionne :) Si vous souhaitez qu'on corrige le support GPU pour votre config, envoyez-nous vos logs !</translation>
     </message>
     <message>
-        <source>You clicked outside the area of &apos;{layer}&apos;. To segment a different layer, stop the current segmentation first.</source>
-        <translation>Vous avez cliqué en dehors de la zone de '{layer}'. Pour segmenter une autre couche, arrêtez d'abord la segmentation en cours.</translation>
+        <source>Outside &apos;{layer}&apos; area. Stop segmentation to switch layer.</source>
+        <translation>Hors de la zone '{layer}'. Arrêtez la segmentation pour changer de couche.</translation>
     </message>
 
     <!-- Update notification -->

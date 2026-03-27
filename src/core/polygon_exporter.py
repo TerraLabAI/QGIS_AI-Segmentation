@@ -348,21 +348,21 @@ def apply_mask_refinement(
     """
     result = mask.copy().astype(np.uint8)
 
-    # 1. Fill holes first (before other operations)
-    if fill_holes:
-        result = _fill_holes(result)
-
-    # 2. Remove small regions (artifacts/noise)
-    if min_area > 0:
-        result = _remove_small_regions(result, min_area)
-
-    # 3. Expand/Contract (dilation/erosion) using numpy
+    # 1. Expand/Contract first so fill-holes operates on the adjusted mask
     if expand_value != 0:
         iterations = abs(expand_value)
         if expand_value > 0:
             result = _numpy_dilate(result, iterations)
         else:
             result = _numpy_erode(result, iterations)
+
+    # 2. Fill holes (on already expanded/contracted mask)
+    if fill_holes:
+        result = _fill_holes(result)
+
+    # 3. Remove small regions (artifacts/noise)
+    if min_area > 0:
+        result = _remove_small_regions(result, min_area)
 
     return result
 

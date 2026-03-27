@@ -553,8 +553,8 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>No te preocupes, el plugin ahora usa el modo CPU y todo funciona :) Si quieres que arreglemos el soporte GPU para tu config, ¡envíanos tus logs!</translation>
     </message>
     <message>
-        <source>You clicked outside the area of &apos;{layer}&apos;. To segment a different layer, stop the current segmentation first.</source>
-        <translation>Hiciste clic fuera del área de '{layer}'. Para segmentar otra capa, detén primero la segmentación actual.</translation>
+        <source>Outside &apos;{layer}&apos; area. Stop segmentation to switch layer.</source>
+        <translation>Fuera del área '{layer}'. Detén la segmentación para cambiar de capa.</translation>
     </message>
 
     <!-- Update notification -->

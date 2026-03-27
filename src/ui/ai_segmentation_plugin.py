@@ -2130,7 +2130,8 @@ class AISegmentationPlugin:
             return False
         self._encoding_in_progress = True
 
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
+        QApplication.processEvents()
 
         try:
             return self._do_extract_and_encode(center_point, mupp_override)
@@ -2371,7 +2372,7 @@ class AISegmentationPlugin:
                 layer_name = sel.name()
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("You clicked outside the area of '{layer}'. To segment a different layer, stop the current segmentation first.").format(layer=layer_name),
+                tr("Outside '{layer}' area. Stop segmentation to switch layer.").format(layer=layer_name),
                 level=Qgis.MessageLevel.Warning,
                 duration=8
             )
@@ -2418,6 +2419,23 @@ class AISegmentationPlugin:
 
         self._run_prediction()
 
+        # Auto-revert if prediction produced an empty mask (no element detected)
+        if (self.current_mask is not None
+                and self.current_mask.sum() == 0
+                and self._mask_state_history):
+            self.prompts.undo()
+            if self._active_crop_points_positive:
+                self._active_crop_points_positive.pop()
+            state = self._mask_state_history.pop()
+            self.current_mask = state['mask']
+            self.current_score = state['score']
+            self.current_transform_info = state['transform_info']
+            self.current_low_res_mask = None
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            self._update_ui_after_prediction()
+            return
+
     def _on_negative_click(self, point):
         """Handle right-click: add negative point (exclude this area)."""
         if self.predictor is None:
@@ -2448,7 +2466,7 @@ class AISegmentationPlugin:
                 layer_name = sel.name()
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("You clicked outside the area of '{layer}'. To segment a different layer, stop the current segmentation first.").format(layer=layer_name),
+                tr("Outside '{layer}' area. Stop segmentation to switch layer.").format(layer=layer_name),
                 level=Qgis.MessageLevel.Warning,
                 duration=8
             )
@@ -2491,6 +2509,23 @@ class AISegmentationPlugin:
                 return
 
         self._run_prediction()
+
+        # Auto-revert if prediction produced an empty mask (no element detected)
+        if (self.current_mask is not None
+                and self.current_mask.sum() == 0
+                and self._mask_state_history):
+            self.prompts.undo()
+            if self._active_crop_points_negative:
+                self._active_crop_points_negative.pop()
+            state = self._mask_state_history.pop()
+            self.current_mask = state['mask']
+            self.current_score = state['score']
+            self.current_transform_info = state['transform_info']
+            self.current_low_res_mask = None
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            self._update_ui_after_prediction()
+            return
 
     def _run_prediction(self):
         """Run SAM prediction using active crop points only.
@@ -2687,7 +2722,8 @@ class AISegmentationPlugin:
             # Detect disjoint regions and show message bar warning
             region_count = count_significant_regions(mask_to_display)
             is_disjoint = region_count > 1
-            if is_disjoint and not self._disjoint_warning_shown:
+            has_multiple_positive = len(self._active_crop_points_positive) >= 2
+            if is_disjoint and not self._disjoint_warning_shown and has_multiple_positive:
                 from qgis.core import Qgis
                 self.iface.messageBar().pushMessage(
                     "AI Segmentation",
@@ -2696,8 +2732,6 @@ class AISegmentationPlugin:
                     duration=6
                 )
                 self._disjoint_warning_shown = True
-            elif not is_disjoint:
-                self._disjoint_warning_shown = False
 
             geometries = mask_to_polygons(mask_to_display, self.current_transform_info)
 
@@ -2754,7 +2788,6 @@ class AISegmentationPlugin:
                 self.mask_rubber_band.reset(QgsWkbTypes.PolygonGeometry)
             except RuntimeError:
                 self.mask_rubber_band = None
-        self._disjoint_warning_shown = False
 
     @staticmethod
     def _make_qgs_rectangle(minx, miny, maxx, maxy):
@@ -2776,11 +2809,21 @@ class AISegmentationPlugin:
                 QMessageBox.StandardButton.Yes
             )
             if reply != QMessageBox.StandardButton.Yes:
+                # Restore canvas focus after dialog
+                try:
+                    self.iface.mapCanvas().setFocus()
+                except RuntimeError:
+                    pass
                 return
             # User confirmed: reset entire session
             self._reset_session()
             self.dock_widget.set_point_count(0, 0)
             self.dock_widget.set_saved_polygon_count(0)
+            # Restore canvas focus after dialog
+            try:
+                self.iface.mapCanvas().setFocus()
+            except RuntimeError:
+                pass
             return
 
         # Normal clear: clear current mask points and frozen sessions
@@ -2862,6 +2905,11 @@ class AISegmentationPlugin:
             )
             if reply == QMessageBox.StandardButton.Yes:
                 self._restore_last_saved_mask()
+            # Restore canvas focus after dialog (prevents shortcuts from breaking)
+            try:
+                self.iface.mapCanvas().setFocus()
+            except RuntimeError:
+                pass
 
     def _unfreeze_last_session(self):
         """Unfreeze the last frozen crop session back to active display.
@@ -3020,6 +3068,7 @@ class AISegmentationPlugin:
         self._frozen_sessions = []
         self._active_crop_points_positive = []
         self._active_crop_points_negative = []
+        self._disjoint_warning_shown = False
         self.saved_polygons = []
 
         for rb in self.saved_rubber_bands:
