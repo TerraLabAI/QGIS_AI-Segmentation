@@ -4924,22 +4924,59 @@ class AISegmentationPlugin:
 
                 result = rgb.astype(np.uint8)
 
-                # Compute the actual geographic bbox of the window using
-                # the rasterio affine transform (handles rotation correctly)
-                win_transform = rasterio.windows.transform(window, raster_transform)
-                # Geographic coordinates of the 4 corners of the window
-                corners_geo = [
-                    win_transform * (0, 0),  # top-left
-                    win_transform * (win_w, 0),  # top-right
-                    win_transform * (win_w, win_h),  # bottom-right
-                    win_transform * (0, win_h),  # bottom-left
-                ]
-                xs = [c[0] for c in corners_geo]
-                ys = [c[1] for c in corners_geo]
-                geo_minx = min(xs)
-                geo_miny = min(ys)
-                geo_maxx = max(xs)
-                geo_maxy = max(ys)
+                # Compute the actual geographic bbox of the window.
+                # For non-georeferenced rasters (transform.e > 0), QGIS
+                # displays with Y=0 at top and Y=-height at bottom, but
+                # rasterio computes Y as positive downward. Use the QGIS
+                # layer extent to stay consistent with canvas coordinates.
+                y_flipped = raster_transform.e > 0
+
+                if y_flipped:
+                    # Non-georeferenced: use QGIS layer extent as ground truth
+                    ext = layer.extent()
+                    full_geo_minx = ext.xMinimum()
+                    full_geo_miny = ext.yMinimum()
+                    full_geo_maxx = ext.xMaximum()
+                    full_geo_maxy = ext.yMaximum()
+                    # Scale to window within the full raster
+                    px_w_geo = (full_geo_maxx - full_geo_minx) / src.width
+                    px_h_geo = (full_geo_maxy - full_geo_miny) / src.height
+                    geo_minx = full_geo_minx + col_off * px_w_geo
+                    geo_maxx = full_geo_minx + (col_off + win_w) * px_w_geo
+                    # Y: row 0 is at yMaximum, rows increase toward yMinimum
+                    geo_maxy = full_geo_maxy - row_off * px_h_geo
+                    geo_miny = full_geo_maxy - (row_off + win_h) * px_h_geo
+                    QgsMessageLog.logMessage(
+                        "Zone extraction: Y-flipped raster — "
+                        "layer_extent=({:.2f},{:.2f},{:.2f},{:.2f}), "
+                        "computed_bbox=({:.2f},{:.2f},{:.2f},{:.2f})".format(
+                            full_geo_minx,
+                            full_geo_miny,
+                            full_geo_maxx,
+                            full_geo_maxy,
+                            geo_minx,
+                            geo_miny,
+                            geo_maxx,
+                            geo_maxy,
+                        ),
+                        "AI Segmentation",
+                        level=Qgis.MessageLevel.Info,
+                    )
+                else:
+                    # Standard georeferenced: use rasterio affine transform
+                    win_transform = rasterio.windows.transform(window, raster_transform)
+                    corners_geo = [
+                        win_transform * (0, 0),  # top-left
+                        win_transform * (win_w, 0),  # top-right
+                        win_transform * (win_w, win_h),  # bottom-right
+                        win_transform * (0, win_h),  # bottom-left
+                    ]
+                    xs = [c[0] for c in corners_geo]
+                    ys = [c[1] for c in corners_geo]
+                    geo_minx = min(xs)
+                    geo_miny = min(ys)
+                    geo_maxx = max(xs)
+                    geo_maxy = max(ys)
 
                 crs_value = None
                 try:
