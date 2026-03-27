@@ -28,6 +28,7 @@ CACHE_DIR = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser("~
 VENV_DIR = os.path.join(CACHE_DIR, f'venv_{PYTHON_VERSION}')
 LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, 'libs')
 
+
 def _numpy_version_spec() -> str:
     """Return the numpy version constraint based on the Python version.
 

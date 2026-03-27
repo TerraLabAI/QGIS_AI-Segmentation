@@ -187,8 +187,8 @@ class LayerTreeComboBox(QComboBox):
         for child in node.children():
             if QgsLayerTree.isLayer(child):
                 layer = child.layer()
-                if (layer and layer.type() == layer.RasterLayer
-                        and child.isVisible()):
+                if (layer and layer.type() == layer.RasterLayer and
+                        child.isVisible()):
                     return True
             elif QgsLayerTree.isGroup(child):
                 if child.isVisible() and self._has_visible_rasters(child):
@@ -231,8 +231,8 @@ class LayerTreeComboBox(QComboBox):
                     visible_children.append(child)
             elif QgsLayerTree.isLayer(child):
                 layer = child.layer()
-                if (layer and layer.type() == layer.RasterLayer
-                        and child.isVisible()):
+                if (layer and layer.type() == layer.RasterLayer and
+                        child.isVisible()):
                     visible_children.append(child)
 
         for i, child in enumerate(visible_children):
@@ -281,6 +281,7 @@ class LayerTreeComboBox(QComboBox):
         if layer_id != self._current_layer_id:
             self._current_layer_id = layer_id
             self.layerChanged.emit(layer)
+
 
 from ..core.activation_manager import (  # noqa: E402
     is_plugin_activated,
@@ -1531,7 +1532,6 @@ class AISegmentationDockWidget(QDockWidget):
             )
 
         self.instructions_label.setText(text)
-
 
     def reset_session(self):
         self._has_mask = False
