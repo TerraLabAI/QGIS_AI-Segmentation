@@ -8,7 +8,6 @@ import urllib.request
 from typing import Optional, Tuple
 
 import numpy as np
-from PIL import Image as PILImage
 from qgis.core import Qgis, QgsMessageLog
 
 from .model_config import MEDIA_UPLOAD_URL, SAM3_INFERENCE_URL, STORAGE_TOKEN_URL
@@ -132,6 +131,8 @@ class FalPredictor:
         """Upload image to media CDN, return access URL or None on failure."""
         try:
             # Encode image as PNG bytes
+            from PIL import Image as PILImage
+
             pil_img = PILImage.fromarray(image_np)
             buf = io.BytesIO()
             pil_img.save(buf, format="PNG")
@@ -183,6 +184,8 @@ class FalPredictor:
 
     def _make_fallback_data_uri(self, image_np: np.ndarray) -> str:
         """Encode image as JPEG Q95 data URI (fallback when CDN is unavailable)."""
+        from PIL import Image as PILImage
+
         pil_img = PILImage.fromarray(image_np)
         buf = io.BytesIO()
         pil_img.save(buf, format="JPEG", quality=95)
