@@ -257,6 +257,26 @@ export AI_SEGMENTATION_CACHE_DIR=/seu/caminho</translation>
         <translation>Parar segmentação</translation>
     </message>
     <message>
+        <source>Segmentation</source>
+        <translation>Segmentação</translation>
+    </message>
+    <message>
+        <source>Navigation</source>
+        <translation>Navegação</translation>
+    </message>
+    <message>
+        <source>Hold Space</source>
+        <translation>Manter Espaço</translation>
+    </message>
+    <message>
+        <source>Pan the map</source>
+        <translation>Mover o mapa</translation>
+    </message>
+    <message>
+        <source>Middle-click</source>
+        <translation>Clique do meio</translation>
+    </message>
+    <message>
         <source>Shortcuts</source>
         <translation>Atalhos</translation>
     </message>
@@ -427,6 +447,18 @@ export AI_SEGMENTATION_CACHE_DIR=/seu/caminho</translation>
         <translation>Use 'Exportar para camada' para mantê-las.</translation>
     </message>
     <message>
+        <source>Leave Segmentation?</source>
+        <translation>Sair da segmentação?</translation>
+    </message>
+    <message>
+        <source>You can pan with the middle mouse button, spacebar, or arrow keys without leaving segmentation mode.</source>
+        <translation>Você pode navegar com o botão central do mouse, barra de espaço ou as teclas de seta sem sair do modo de segmentação.</translation>
+    </message>
+    <message>
+        <source>This will end the current segmentation session.</source>
+        <translation>Isso encerrará a sessão de segmentação atual.</translation>
+    </message>
+    <message>
         <source>Delete all saved polygons?</source>
         <translation>Excluir todos os polígonos salvos?</translation>
     </message>
@@ -553,8 +585,8 @@ export AI_SEGMENTATION_CACHE_DIR=/seu/caminho</translation>
         <translation>Sem problemas, o plugin agora usa o modo CPU e tudo funciona :) Se quiser que a gente corrija o suporte GPU para sua config, nos envie seus logs!</translation>
     </message>
     <message>
-        <source>Outside &apos;{layer}&apos; area. Stop segmentation to switch layer.</source>
-        <translation>Fora da área '{layer}'. Pare a segmentação para mudar de camada.</translation>
+        <source>Click is outside the &apos;{layer}&apos; raster. To segment another raster, stop the current segmentation first.</source>
+        <translation>O clique está fora do raster '{layer}'. Para segmentar outro raster, pare primeiro a segmentação atual.</translation>
     </message>
 
     <!-- Update notification -->

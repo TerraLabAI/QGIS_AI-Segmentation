@@ -19,14 +19,39 @@ from qgis.PyQt.QtWidgets import (
     QSizePolicy,
     QScrollArea,
     QComboBox,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
-from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
+from qgis.PyQt.QtGui import QDesktopServices, QIcon, QKeySequence
 from qgis.PyQt.QtWidgets import QShortcut
 from qgis.core import QgsProject, QgsLayerTree
 
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
+
+
+class _IndentDelegate(QStyledItemDelegate):
+    """Delegate that shifts icon+text to the right based on a depth role."""
+
+    DEPTH_ROLE = Qt.ItemDataRole.UserRole + 100
+    INDENT_PX = 20
+
+    def paint(self, painter, option, index):
+        depth = index.data(self.DEPTH_ROLE) or 0
+        shift = depth * self.INDENT_PX
+        if shift:
+            shifted = QStyleOptionViewItem(option)
+            shifted.rect = shifted.rect.adjusted(shift, 0, 0, 0)
+            super().paint(painter, shifted, index)
+        else:
+            super().paint(painter, option, index)
+
+    def sizeHint(self, option, index):
+        hint = super().sizeHint(option, index)
+        depth = index.data(self.DEPTH_ROLE) or 0
+        hint.setWidth(hint.width() + depth * self.INDENT_PX)
+        return hint
 
 
 class LayerTreeComboBox(QComboBox):
@@ -45,6 +70,9 @@ class LayerTreeComboBox(QComboBox):
         self._layer_ids = []  # ordered list of selectable layer IDs
         self._refreshing = False
 
+        from qgis.PyQt.QtCore import QSize
+        self.setIconSize(QSize(16, 16))
+        self.setItemDelegate(_IndentDelegate(self))
         self.currentIndexChanged.connect(self._on_index_changed)
 
         # Connect to project signals for auto-refresh
@@ -126,7 +154,7 @@ class LayerTreeComboBox(QComboBox):
         self._layer_ids = []
 
         root = QgsProject.instance().layerTreeRoot()
-        self._traverse(root, depth=0, prefix="")
+        self._traverse(root)
 
         # Restore previous selection
         restored = False
@@ -195,35 +223,10 @@ class LayerTreeComboBox(QComboBox):
                     return True
         return False
 
-    @staticmethod
-    def _make_tree_icon(tree_prefix, base_icon, icon_size=16):
-        """Create a composite icon: tree prefix chars drawn to the left of base_icon."""
-        from qgis.PyQt.QtGui import QPixmap, QPainter, QFont, QFontMetrics, QIcon
-        from qgis.PyQt.QtCore import QRect
-
-        font = QFont("monospace", 11)
-        fm = QFontMetrics(font)
-        prefix_width = fm.horizontalAdvance(tree_prefix)
-        total_width = prefix_width + icon_size
-
-        pixmap = QPixmap(total_width, icon_size)
-        pixmap.fill(Qt.GlobalColor.transparent)
-
-        painter = QPainter(pixmap)
-        painter.setFont(font)
-        painter.setPen(Qt.GlobalColor.gray)
-        # Vertically center text (baseline offset)
-        painter.drawText(0, icon_size - fm.descent() - 1, tree_prefix)
-        base_icon.paint(painter, QRect(prefix_width, 0, icon_size, icon_size))
-        painter.end()
-
-        return QIcon(pixmap)
-
-    def _traverse(self, node, depth, prefix=""):
-        """Recursively walk the layer tree and add items with tree indicators."""
+    def _traverse(self, node, depth=0):
+        """Recursively walk the layer tree and add items."""
         from qgis.core import QgsApplication, QgsIconUtils
 
-        # Pre-filter to visible groups with rasters and visible raster layers
         visible_children = []
         for child in node.children():
             if QgsLayerTree.isGroup(child):
@@ -235,41 +238,30 @@ class LayerTreeComboBox(QComboBox):
                         child.isVisible()):
                     visible_children.append(child)
 
-        for i, child in enumerate(visible_children):
-            is_last = (i == len(visible_children) - 1)
-            connector = "\u2514\u2500 " if is_last else "\u251c\u2500 "
-            continuation = "   " if is_last else "\u2502  "
-
+        depth_role = _IndentDelegate.DEPTH_ROLE
+        for child in visible_children:
             if QgsLayerTree.isGroup(child):
-                group_name = child.name()
                 folder_icon = QgsApplication.getThemeIcon("/mActionFolder.svg")
                 if folder_icon.isNull():
                     folder_icon = self.style().standardIcon(
                         QStyle.StandardPixmap.SP_DirIcon)
-                if depth == 0:
-                    self.addItem(folder_icon, group_name)
-                else:
-                    tree_prefix = "{}{}".format(prefix, connector)
-                    composite = self._make_tree_icon(tree_prefix, folder_icon)
-                    self.addItem(composite, group_name)
+                self.addItem(folder_icon, child.name())
                 idx = self.count() - 1
                 item = self.model().item(idx)
                 if item:
                     item.setEnabled(False)
                     item.setSelectable(False)
-                # Recurse with updated prefix
-                child_prefix = prefix + continuation if depth > 0 else ""
-                self._traverse(child, depth + 1, child_prefix)
+                    item.setData(depth, depth_role)
+                self._traverse(child, depth + 1)
 
             elif QgsLayerTree.isLayer(child):
                 layer = child.layer()
                 layer_icon = QgsIconUtils.iconRaster()
-                if depth == 0:
-                    self.addItem(layer_icon, layer.name(), layer.id())
-                else:
-                    tree_prefix = "{}{}".format(prefix, connector)
-                    composite = self._make_tree_icon(tree_prefix, layer_icon)
-                    self.addItem(composite, layer.name(), layer.id())
+                self.addItem(layer_icon, layer.name(), layer.id())
+                idx = self.count() - 1
+                item = self.model().item(idx)
+                if item:
+                    item.setData(depth, depth_role)
                 self._layer_ids.append(layer.id())
 
     def _on_index_changed(self, index):
@@ -1073,28 +1065,46 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _on_show_shortcuts(self):
         """Show keyboard shortcuts in a dialog."""
-        from qgis.PyQt.QtWidgets import QMessageBox
+        from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
         undo_key = "Cmd+Z" if sys.platform == "darwin" else "Ctrl+Z"
-        text = (
-            "G : {start}\n"
-            "S : {save}\n"
-            "Enter : {export}\n"
-            "{undo_key} : {undo}\n"
-            "Esc : {stop}"
+
+        shortcuts_html = (
+            "<table cellspacing='6'>"
+            "<tr><td colspan='2'><b>{seg_title}</b></td></tr>"
+            "<tr><td><code>G</code></td><td>{start}</td></tr>"
+            "<tr><td><code>S</code></td><td>{save}</td></tr>"
+            "<tr><td><code>Enter</code></td><td>{export}</td></tr>"
+            "<tr><td><code>{undo_key}</code></td><td>{undo}</td></tr>"
+            "<tr><td><code>Esc</code></td><td>{stop}</td></tr>"
+            "<tr><td colspan='2'>&nbsp;</td></tr>"
+            "<tr><td colspan='2'><b>{nav_title}</b></td></tr>"
+            "<tr><td><code>{space}</code></td><td>{pan}</td></tr>"
+            "<tr><td>{middle}</td><td>{pan}</td></tr>"
+            "</table>"
         ).format(
+            seg_title=tr("Segmentation"),
             start=tr("Start AI Segmentation"),
             save=tr("Save polygon"),
             export=tr("Export polygon to a layer"),
             undo_key=undo_key,
             undo=tr("Undo last point"),
             stop=tr("Stop segmentation"),
+            nav_title=tr("Navigation"),
+            space=tr("Hold Space"),
+            pan=tr("Pan the map"),
+            middle=tr("Middle-click"),
         )
-        msg_box = QMessageBox(self)
-        msg_box.setIcon(QMessageBox.Icon.Question)
-        msg_box.setWindowTitle(tr("Shortcuts"))
-        msg_box.setText(text)
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        msg_box.exec()
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("Shortcuts"))
+        layout = QVBoxLayout(dlg)
+        label = QLabel(shortcuts_html)
+        label.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(label)
+        ok_btn = QPushButton("OK")
+        ok_btn.clicked.connect(dlg.accept)
+        layout.addWidget(ok_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        dlg.exec()
 
     def _on_report_bug(self):
         """Open the bug report dialog."""

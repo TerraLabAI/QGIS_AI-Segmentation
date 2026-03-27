@@ -257,6 +257,26 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Arrêter la segmentation</translation>
     </message>
     <message>
+        <source>Segmentation</source>
+        <translation>Segmentation</translation>
+    </message>
+    <message>
+        <source>Navigation</source>
+        <translation>Navigation</translation>
+    </message>
+    <message>
+        <source>Hold Space</source>
+        <translation>Maintenir Espace</translation>
+    </message>
+    <message>
+        <source>Pan the map</source>
+        <translation>Déplacer la carte</translation>
+    </message>
+    <message>
+        <source>Middle-click</source>
+        <translation>Clic molette</translation>
+    </message>
+    <message>
         <source>Shortcuts</source>
         <translation>Raccourcis</translation>
     </message>
@@ -427,6 +447,18 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Utilisez « Exporter en couche » pour les conserver.</translation>
     </message>
     <message>
+        <source>Leave Segmentation?</source>
+        <translation>Quitter la segmentation ?</translation>
+    </message>
+    <message>
+        <source>You can pan with the middle mouse button, spacebar, or arrow keys without leaving segmentation mode.</source>
+        <translation>Vous pouvez naviguer avec le clic molette, la barre d'espace ou les flèches directionnelles sans quitter le mode segmentation.</translation>
+    </message>
+    <message>
+        <source>This will end the current segmentation session.</source>
+        <translation>Cela va mettre fin à la session de segmentation en cours.</translation>
+    </message>
+    <message>
         <source>Delete all saved polygons?</source>
         <translation>Supprimer tous les polygones sauvegardés ?</translation>
     </message>
@@ -553,8 +585,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Pas de souci, le plugin utilise maintenant le mode CPU et tout fonctionne :) Si vous souhaitez qu'on corrige le support GPU pour votre config, envoyez-nous vos logs !</translation>
     </message>
     <message>
-        <source>Outside &apos;{layer}&apos; area. Stop segmentation to switch layer.</source>
-        <translation>Hors de la zone '{layer}'. Arrêtez la segmentation pour changer de couche.</translation>
+        <source>Click is outside the &apos;{layer}&apos; raster. To segment another raster, stop the current segmentation first.</source>
+        <translation>Le clic est en dehors du raster '{layer}'. Pour segmenter un autre raster, arrêtez d'abord la segmentation en cours.</translation>
     </message>
 
     <!-- Update notification -->

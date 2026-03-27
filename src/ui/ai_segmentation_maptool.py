@@ -16,6 +16,7 @@ class AISegmentationMapTool(QgsMapTool):
     - Ctrl+Z: Undo last point
     - S: Save mask (Batch mode only)
     - Enter: Export to layer
+    - Hold Space + move: Pan the map (release to resume)
     """
 
     positive_click = pyqtSignal(QgsPointXY)
@@ -36,16 +37,23 @@ class AISegmentationMapTool(QgsMapTool):
         self.canvas = canvas
         self._active = False
         self._markers: List[QgsVertexMarker] = []
+        self._space_panning = False
+        self._pan_last_point = None
 
     def activate(self):
         super().activate()
         self._active = True
+        self._space_panning = False
+        self._pan_last_point = None
         self.canvas.setCursor(QCursor(Qt.CursorShape.CrossCursor))
 
     def deactivate(self):
         super().deactivate()
         self._active = False
-        self.clear_markers()
+        self._space_panning = False
+        self._pan_last_point = None
+        # Don't clear markers here — the plugin decides whether to keep them
+        # (e.g. when user is asked to confirm leaving segmentation mode).
         self.tool_deactivated.emit()
 
     def add_marker(self, point: QgsPointXY, is_positive: bool) -> QgsVertexMarker:
@@ -106,22 +114,49 @@ class AISegmentationMapTool(QgsMapTool):
         if not self._active:
             return
 
+        # Ignore clicks while Space-panning
+        if self._space_panning:
+            return
+
         point = self.toMapCoordinates(event.pos())
 
         if event.button() == Qt.MouseButton.LeftButton:
-            # Positive point - include this area
             self.add_marker(point, is_positive=True)
             self.positive_click.emit(point)
         elif event.button() == Qt.MouseButton.RightButton:
-            # Negative point - exclude this area
             self.add_marker(point, is_positive=False)
             self.negative_click.emit(point)
 
-    def canvasReleaseEvent(self, event):
-        pass
-
     def canvasMoveEvent(self, event):
-        pass
+        if not self._space_panning:
+            return
+
+        current = event.pos()
+        if self._pan_last_point is not None:
+            start_map = self.toMapCoordinates(self._pan_last_point)
+            end_map = self.toMapCoordinates(current)
+            center = self.canvas.center()
+            new_center = QgsPointXY(
+                center.x() + (start_map.x() - end_map.x()),
+                center.y() + (start_map.y() - end_map.y()),
+            )
+            self.canvas.setCenter(new_center)
+            self.canvas.refresh()
+        self._pan_last_point = current
+
+    def start_space_pan(self):
+        """Called when Space is pressed — enable temporary pan mode."""
+        self._space_panning = True
+        # Record current cursor position as pan reference
+        self._pan_last_point = self.canvas.mapFromGlobal(QCursor.pos())
+        self.canvas.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
+
+    def stop_space_pan(self):
+        """Called when Space is released — restore segmentation mode."""
+        self._space_panning = False
+        self._pan_last_point = None
+        if self._active:
+            self.canvas.setCursor(QCursor(Qt.CursorShape.CrossCursor))
 
     def wheelEvent(self, event):
         # Let the canvas handle wheel events for zoom

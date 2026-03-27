@@ -155,9 +155,30 @@ class _ShortcutFilter(QObject):
         self._plugin = plugin
 
     def eventFilter(self, obj, event):
-        if event.type() != QEvent.Type.KeyPress:
-            return False
+        event_type = event.type()
         plugin = self._plugin
+
+        # --- Space key: handle press AND release for temporary pan ---
+        # Also intercept ShortcutOverride to prevent QGIS from activating
+        # its own pan-tool shortcut when Space is pressed.
+        if event_type in (QEvent.Type.ShortcutOverride,
+                          QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
+            if (event.key() == Qt.Key.Key_Space and
+                    plugin.map_tool and
+                    not event.isAutoRepeat()):
+                if event_type == QEvent.Type.ShortcutOverride:
+                    if plugin.map_tool.isActive():
+                        event.accept()
+                        return True
+                elif event_type == QEvent.Type.KeyPress and plugin.map_tool.isActive():
+                    plugin.map_tool.start_space_pan()
+                    return True
+                elif event_type == QEvent.Type.KeyRelease:
+                    plugin.map_tool.stop_space_pan()
+                    return True
+
+        if event_type != QEvent.Type.KeyPress:
+            return False
         if not plugin.map_tool or not plugin.map_tool.isActive():
             return False
 
@@ -578,6 +599,9 @@ class AISegmentationPlugin:
             if self._shortcut_filter is not None:
                 try:
                     self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+                    canvas = self.iface.mapCanvas()
+                    canvas.viewport().removeEventFilter(self._shortcut_filter)
+                    canvas.removeEventFilter(self._shortcut_filter)
                 except RuntimeError:
                     pass
                 self._shortcut_filter = None
@@ -1244,14 +1268,17 @@ class AISegmentationPlugin:
         self.dock_widget.set_segmentation_active(True)
         # Status bar hint will be set by _update_status_hint via set_point_count
 
-        # Install keyboard shortcut filter on the main window so shortcuts
-        # work regardless of which widget has focus (the canvas loses focus
-        # after encoding/prediction because dock widget updates steal it).
+        # Install keyboard shortcut filter on both mainWindow and the canvas
+        # viewport.  mainWindow catches keys when focus is elsewhere (e.g.
+        # after dock widget updates steal focus).  The canvas viewport is
+        # needed to intercept ShortcutOverride for Space *before* QGIS
+        # activates its built-in pan-tool shortcut.
         if self._shortcut_filter is None:
             self._shortcut_filter = _ShortcutFilter(self)
-        # Install on mainWindow (not app) to avoid SIGSEGV from
-        # application-level filter receiving events for deleted C++ objects.
         self.iface.mainWindow().installEventFilter(self._shortcut_filter)
+        canvas = self.iface.mapCanvas()
+        canvas.viewport().installEventFilter(self._shortcut_filter)
+        canvas.installEventFilter(self._shortcut_filter)
 
         # Show tutorial notification for first-time users
         self._show_tutorial_notification()
@@ -1736,14 +1763,21 @@ class AISegmentationPlugin:
         # Add layer to project without adding to root
         QgsProject.instance().addMapLayer(layer, False)
 
-        # Add layer to the group
-        group.addLayer(layer)
+        # Add layer to the group and ensure it is visible
+        node = group.addLayer(layer)
+        if node is not None:
+            node.setItemVisibilityChecked(True)
+        group.setItemVisibilityChecked(True)
+        group.setExpanded(True)
 
     def _on_tool_deactivated(self):
-        # Remove keyboard shortcut filter
+        # Remove keyboard shortcut filter from all targets
         try:
             if self._shortcut_filter is not None:
                 self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+                canvas = self.iface.mapCanvas()
+                canvas.viewport().removeEventFilter(self._shortcut_filter)
+                canvas.removeEventFilter(self._shortcut_filter)
         except (RuntimeError, AttributeError):
             pass
 
@@ -1752,11 +1786,50 @@ class AISegmentationPlugin:
                 self.dock_widget.set_segmentation_active(False)
             return
 
-        # Silently reset session and deactivate
-        self._reset_session()
-        if self.dock_widget:
-            self.dock_widget.reset_session()
-        self._previous_map_tool = None
+        # User switched to another tool (pan, etc.) while segmenting.
+        # Ask for confirmation after the current event is processed so
+        # that the tool switch completes before we show a dialog.
+        from qgis.PyQt.QtCore import QTimer
+        QTimer.singleShot(0, self._confirm_leave_segmentation)
+
+    def _confirm_leave_segmentation(self):
+        """Ask user to confirm leaving segmentation mode."""
+        if self._stopping_segmentation:
+            return
+        if not self.map_tool or not self.dock_widget:
+            return
+
+        polygon_count = len(self.saved_polygons)
+        if self.current_mask is not None:
+            polygon_count += 1
+
+        if polygon_count > 0:
+            discard_line = "{}\n{}".format(
+                tr("This will discard {count} polygon(s).").format(count=polygon_count),
+                tr("Use 'Export to layer' to keep them."))
+        else:
+            discard_line = tr("This will end the current segmentation session.")
+
+        reply = QMessageBox.question(
+            self.iface.mainWindow(),
+            tr("Leave Segmentation?"),
+            "{}\n\n{}".format(
+                tr("You can pan with the middle mouse button, spacebar, "
+                   "or arrow keys without leaving segmentation mode."),
+                discard_line),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # User confirmed — reset session
+            self._reset_session()
+            if self.dock_widget:
+                self.dock_widget.reset_session()
+            self._previous_map_tool = None
+        else:
+            # User wants to stay — re-activate segmentation tool
+            self._activate_segmentation_tool()
 
     def _restore_previous_map_tool(self):
         """Restore the map tool that was active before segmentation started."""
@@ -1790,6 +1863,9 @@ class AISegmentationPlugin:
         if self._shortcut_filter is not None:
             try:
                 self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+                canvas = self.iface.mapCanvas()
+                canvas.viewport().removeEventFilter(self._shortcut_filter)
+                canvas.removeEventFilter(self._shortcut_filter)
             except RuntimeError:
                 pass
         self._stopping_segmentation = True
@@ -2372,7 +2448,7 @@ class AISegmentationPlugin:
                 layer_name = sel.name()
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("Outside '{layer}' area. Stop segmentation to switch layer.").format(layer=layer_name),
+                tr("Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.").format(layer=layer_name),
                 level=Qgis.MessageLevel.Warning,
                 duration=8
             )
@@ -2466,7 +2542,7 @@ class AISegmentationPlugin:
                 layer_name = sel.name()
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("Outside '{layer}' area. Stop segmentation to switch layer.").format(layer=layer_name),
+                tr("Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.").format(layer=layer_name),
                 level=Qgis.MessageLevel.Warning,
                 duration=8
             )
