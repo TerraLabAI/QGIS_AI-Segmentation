@@ -3,6 +3,9 @@ models/
 python3.*/
 
 __pycache__/
+
+.env
+.env.local
 */__pycache__/
 *.pyc
 *.pyo
@@ -14,17 +17,7 @@ __pycache__/
 python_standalone/
 .ai_segmentation_cache/
 
-.env
 .DS_Store
 libs/
 venv_py3.9/
 venv_py3.12/
-
-# Internal planning docs — never commit
-docs/*
-
-# Local dev / debug artifacts — never commit
-.env.local
-.debug/
-.ruff_cache/
-.pytest_cache/

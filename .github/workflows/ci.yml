@@ -23,14 +23,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install ruff
-        run: pip install ruff
+      - name: Install linters
+        run: pip install flake8 flake8-qgis
 
-      - name: Ruff check
-        run: ruff check src/ tests/
-
-      - name: Ruff format check
-        run: ruff format --check src/ tests/
+      - name: Flake8
+        run: flake8 .
 
   security:
     name: Security scan

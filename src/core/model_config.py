@@ -72,8 +72,8 @@ else:
     CHECKPOINT_SIZE_LABEL = "~375MB"
     MODEL_CFG = None  # SAM1 uses registry, no config file
 
-# SAM3 cloud-only
-SAM3_MODEL_NAME = "SAM 3"
+
+# PRO mode (SAM-3 serverless inference) endpoints
 SAM3_INFERENCE_URL = "https://fal.run/fal-ai/sam-3/image-rle"
 MEDIA_UPLOAD_URL = "https://v3.fal.media/files/upload"
 STORAGE_TOKEN_URL = "https://rest.fal.ai/storage/auth/token?storage_type=fal-cdn-v3"

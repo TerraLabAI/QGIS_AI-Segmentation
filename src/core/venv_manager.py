@@ -33,9 +33,21 @@ CACHE_DIR = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser(
 VENV_DIR = os.path.join(CACHE_DIR, f"venv_{PYTHON_VERSION}")
 LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, "libs")
 
+
+def _numpy_version_spec() -> str:
+    """Return the numpy version constraint based on the Python version.
+
+    Python 3.13+ has no numpy <2.0 wheel, so we allow numpy 2.x there.
+    Modern torch (>=2.1) supports numpy 2.x.
+    """
+    if sys.version_info >= (3, 13):
+        return ">=2.0.0,<3.0.0"
+    return ">=1.26.0,<2.0.0"
+
+
 REQUIRED_PACKAGES = [
     ("setuptools", ">=70.0"),
-    ("numpy", ">=1.26.0,<2.0.0"),
+    ("numpy", _numpy_version_spec()),
     ("torch", TORCH_MIN),
     ("torchvision", TORCHVISION_MIN),
     SAM_PACKAGE,
@@ -316,7 +328,8 @@ def _select_cuda_index(gpu_info: dict) -> Optional[str]:
     if compute_cap is not None:
         needs_cu128 = compute_cap >= _MIN_COMPUTE_CAP_FOR_CU128
     else:
-        # Fallback: name-based heuristic when compute_cap unavailable
+        # Best-effort fallback when compute_cap is unavailable.
+        # Matches RTX 5090, RTX 5080, etc. May need updating for future naming.
         needs_cu128 = "RTX 50" in gpu_name.upper()
 
     cuda_index = "cu128" if needs_cu128 else "cu121"
@@ -388,10 +401,10 @@ def cleanup_old_venv_directories() -> List[str]:
 
 def _check_gdal_available() -> Tuple[bool, str]:
     """
-    Check if GDAL system library is available (Linux only).
+    Check if GDAL system library is available (Linux and macOS).
     Returns (is_available, help_message).
     """
-    if sys.platform != "linux":
+    if sys.platform not in ("linux", "darwin"):
         return True, ""
 
     try:
@@ -406,6 +419,12 @@ def _check_gdal_available() -> Tuple[bool, str]:
             return True, f"GDAL {result.stdout.strip()} found"
         return False, ""
     except FileNotFoundError:
+        if sys.platform == "darwin":
+            return False, (
+                "GDAL library not found. Rasterio requires GDAL to be installed.\n"
+                "Please install GDAL:\n"
+                "  brew install gdal"
+            )
         return False, (
             "GDAL library not found. Rasterio requires GDAL to be installed.\n"
             "Please install GDAL:\n"
@@ -418,11 +437,12 @@ def _check_gdal_available() -> Tuple[bool, str]:
 
 
 _SSL_ERROR_PATTERNS = [
-    "ssl",
+    "ssl error",
+    "ssl:",
+    "sslerror",
+    "sslcertverificationerror",
     "certificate verify failed",
     "CERTIFICATE_VERIFY_FAILED",
-    "SSLError",
-    "SSLCertVerificationError",
     "tlsv1 alert",
     "unable to get local issuer certificate",
     "self signed certificate in certificate chain",
@@ -444,7 +464,11 @@ def _is_hash_mismatch(output: str) -> bool:
 
 
 def _get_pip_ssl_flags() -> List[str]:
-    """Get pip flags to bypass SSL verification for corporate proxies."""
+    """Get pip flags to bypass SSL verification for corporate proxies.
+
+    Note: --trusted-host may be deprecated in future pip versions (>= 21.0),
+    but is still needed for older pip on QGIS 3.22-3.28 bundled Python.
+    """
     return [
         "--trusted-host",
         "pypi.org",
@@ -1394,7 +1418,15 @@ def _repin_numpy(venv_dir: str):
 
     This is a safety net: the CUDA torch index may pull numpy 2.x as a
     transitive dependency, which breaks torchvision and other packages.
+    On Python 3.13+ numpy 2.x is expected, so skip the check.
     """
+    if sys.version_info >= (3, 13):
+        _log(
+            "Python >= 3.13: numpy 2.x is expected, skipping repin",
+            Qgis.MessageLevel.Info,
+        )
+        return
+
     python_path = get_venv_python_path(venv_dir)
     env = _get_clean_env_for_venv()
     subprocess_kwargs = _get_subprocess_kwargs()
@@ -1986,7 +2018,10 @@ def install_dependencies(
     )
     try:
         with os.fdopen(constraints_fd, "w", encoding="utf-8") as f:
-            f.write("numpy<2.0.0\n")
+            if sys.version_info >= (3, 13):
+                f.write("numpy<3.0.0\n")
+            else:
+                f.write("numpy<2.0.0\n")
         _log(
             f"Created pip constraints file: {constraints_path}", Qgis.MessageLevel.Info
         )
@@ -2073,6 +2108,10 @@ def install_dependencies(
             # is already installed in the venv at this point, skip isolation.
             if package_name in ("sam2", "segment-anything"):
                 pip_args.append("--no-build-isolation")
+            # Force binary-only for rasterio to prevent source builds that
+            # fail when gdal-config is missing (macOS Rosetta, etc.) (#186)
+            if package_name == "rasterio":
+                pip_args.extend(["--only-binary", "rasterio"])
             # Add SSL bypass flags upfront for corporate proxies (not just as retry)
             pip_args.extend(_get_pip_ssl_flags())
             if constraints_path:
@@ -2582,6 +2621,28 @@ def install_dependencies(
                         package_name, _get_vcpp_help()
                     )
 
+                # Check for rename/record errors (antivirus blocking on Windows) - before SSL
+                # because uv output may contain SSL_CERT_DIR warnings alongside rename errors
+                if sys.platform == "win32" and _is_rename_or_record_error(
+                    install_error_msg
+                ):
+                    help_msg = (
+                        "Failed to install {}: file rename blocked.\n\n"
+                        "This is typically caused by antivirus or security software "
+                        "scanning files during installation.\n\n"
+                        "Please try:\n"
+                        "  1. Temporarily disable real-time antivirus scanning\n"
+                        "  2. Add an exclusion for: {}\n"
+                        "  3. Restart QGIS and reinstall dependencies"
+                    ).format(package_name, CACHE_DIR)
+                    _log(help_msg, Qgis.MessageLevel.Warning)
+                    return (
+                        False,
+                        "Failed to install {}: blocked by antivirus (rename failed)".format(
+                            package_name
+                        ),
+                    )
+
                 # Check for SSL errors
                 if _is_ssl_error(install_error_msg):
                     _log(
@@ -2646,7 +2707,7 @@ def install_dependencies(
                         )
                     )
 
-                # Check for GDAL issues on Linux when rasterio fails
+                # Check for GDAL issues on Linux/macOS when rasterio fails
                 if package_name == "rasterio":
                     gdal_ok, gdal_help = _check_gdal_available()
                     if not gdal_ok and gdal_help:
@@ -2767,6 +2828,13 @@ def _get_clean_env_for_venv() -> dict:
     ]
     for var in vars_to_remove:
         env.pop(var, None)
+
+    # Remove SSL_CERT_DIR if it points to a non-existent directory.
+    # Invalid paths cause uv to emit "SSL_CERT_DIR" warnings that the
+    # error classifier would otherwise misread as real SSL errors (#184).
+    ssl_cert_dir = env.get("SSL_CERT_DIR", "")
+    if ssl_cert_dir and not os.path.isdir(ssl_cert_dir):
+        env.pop("SSL_CERT_DIR", None)
 
     env["PYTHONIOENCODING"] = "utf-8"
 

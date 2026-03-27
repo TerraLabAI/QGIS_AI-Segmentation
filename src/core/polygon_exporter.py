@@ -116,15 +116,8 @@ def mask_to_polygons(
         img_shape = transform_info.get("img_shape")
 
         if bbox and img_shape:
-            minx, miny, maxx, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
+            minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
             height, width = img_shape
-
-            # Clip to valid region: SAM returns crop_size×crop_size but only
-            # (height × width) corresponds to real raster data (rest is padding)
-            if mask.shape[0] > height or mask.shape[1] > width:
-                mask = mask[:height, :width]
-                if mask.sum() == 0:
-                    return []
 
             transform = transform_from_bounds(minx, miny, maxx, maxy, width, height)
             crs = transform_info.get("crs", "EPSG:4326")
@@ -141,12 +134,6 @@ def mask_to_polygons(
                 height, width = original_size[0], original_size[1]
             else:
                 height = width = original_size
-
-            # Clip to valid region (same padding issue applies to SAM2 cloud path)
-            if mask.shape[0] > height or mask.shape[1] > width:
-                mask = mask[:height, :width]
-                if mask.sum() == 0:
-                    return []
 
             transform = transform_from_bounds(x_min, y_min, x_max, y_max, width, height)
             crs = transform_info.get(
@@ -314,7 +301,7 @@ def pixel_to_map_coords(
     img_shape = transform_info.get("img_shape")
 
     if bbox and img_shape:
-        minx, miny, maxx, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
+        minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
         height, width = img_shape
 
         map_x = minx + (pixel_x / width) * (maxx - minx)
@@ -358,21 +345,21 @@ def apply_mask_refinement(
     """
     result = mask.copy().astype(np.uint8)
 
-    # 1. Fill holes first (before other operations)
-    if fill_holes:
-        result = _fill_holes(result)
-
-    # 2. Remove small regions (artifacts/noise)
-    if min_area > 0:
-        result = _remove_small_regions(result, min_area)
-
-    # 3. Expand/Contract (dilation/erosion) using numpy
+    # 1. Expand/Contract first so fill-holes operates on the adjusted mask
     if expand_value != 0:
         iterations = abs(expand_value)
         if expand_value > 0:
             result = _numpy_dilate(result, iterations)
         else:
             result = _numpy_erode(result, iterations)
+
+    # 2. Fill holes (on already expanded/contracted mask)
+    if fill_holes:
+        result = _fill_holes(result)
+
+    # 3. Remove small regions (artifacts/noise)
+    if min_area > 0:
+        result = _remove_small_regions(result, min_area)
 
     return result
 
@@ -406,7 +393,7 @@ def _fill_holes(mask: np.ndarray) -> np.ndarray:
 
     # Iteratively expand exterior into connected background pixels
     background = padded == 0
-    for _ in range(max(h, w)):  # Max iterations = image diagonal
+    for _ in range(min(max(h, w), 2048)):  # Capped to prevent excessive loops
         # Dilate exterior by 1 pixel in 4 directions using slicing
         expanded = exterior.copy()
         expanded[1:, :] |= exterior[:-1, :]
@@ -497,18 +484,17 @@ def _remove_small_regions(mask: np.ndarray, min_area: int) -> np.ndarray:
     return mask.copy()
 
 
-def count_significant_regions(mask: np.ndarray, min_ratio: float = 0.05) -> int:
-    """Count connected regions, ignoring small artifacts.
+def count_significant_regions(mask: np.ndarray, min_ratio: float = 0.01) -> int:
+    """Count connected regions, ignoring tiny artifacts.
 
     Only counts regions whose area is at least min_ratio * largest_region_area.
-    Uses a dilated mask to bridge tiny gaps (1px) before labeling,
-    so near-touching parts of the same element are not counted separately.
+    Uses a dilated mask to bridge 1px gaps before labeling.
     """
     if mask is None or mask.sum() == 0:
         return 0
 
-    # Dilate by 2px to bridge small gaps before counting
-    bridged = _numpy_dilate(mask.astype(np.uint8), 2)
+    # Dilate by 1px to bridge only hairline gaps
+    bridged = _numpy_dilate(mask.astype(np.uint8), 1)
 
     sizes = _label_region_sizes(bridged)
     if len(sizes) == 0:
@@ -615,38 +601,3 @@ def _numpy_erode(mask: np.ndarray, iterations: int) -> np.ndarray:
         eroded = center & up & down & left & right
         result = eroded.astype(np.uint8)
     return result
-
-
-def _iou(g1, g2):
-    """Intersection over Union for two QgsGeometry objects."""
-    inter = g1.intersection(g2)
-    if inter.isEmpty():
-        return 0.0
-    union_geom = g1.combine(g2)
-    if union_geom.area() == 0:
-        return 0.0
-    return inter.area() / union_geom.area()
-
-
-def deduplicate_geometries(geometries, iou_threshold=0.3):
-    """Remove duplicate geometries based on IoU overlap.
-
-    Args:
-        geometries: list of QgsGeometry, ordered by priority (first = highest)
-        iou_threshold: max IoU before considering a geometry as duplicate
-
-    Returns:
-        list of accepted QgsGeometry (deduplicated)
-    """
-    accepted = []
-    for geom in geometries:
-        if geom.isEmpty():
-            continue
-        is_dup = False
-        for ag in accepted:
-            if _iou(geom, ag) > iou_threshold:
-                is_dup = True
-                break
-        if not is_dup:
-            accepted.append(geom)
-    return accepted

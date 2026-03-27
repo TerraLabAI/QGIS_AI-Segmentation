@@ -1,12 +1,12 @@
 import os
 import sys
 
-from qgis.core import QgsMapLayerProxyModel
-from qgis.gui import QgsMapLayerComboBox
+from qgis.core import QgsLayerTree, QgsProject
 from qgis.PyQt.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDockWidget,
     QFrame,
     QGroupBox,
@@ -28,6 +28,263 @@ from qgis.PyQt.QtWidgets import (
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
 
+
+class LayerTreeComboBox(QComboBox):
+    """Drop-down that mirrors the QGIS Layer panel order with group headers.
+
+    Only visible raster layers are selectable.  Group names appear as
+    non-selectable, indented headers.  Auto-refreshes on layer add/remove,
+    visibility toggle, and tree reorder.
+    """
+
+    layerChanged = pyqtSignal(object)  # emits QgsMapLayer or None
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._current_layer_id = None  # track selection across refreshes
+        self._layer_ids = []  # ordered list of selectable layer IDs
+        self._refreshing = False
+
+        self.currentIndexChanged.connect(self._on_index_changed)
+
+        # Connect to project signals for auto-refresh
+        proj = QgsProject.instance()
+        proj.layersAdded.connect(self._schedule_refresh)
+        proj.layersRemoved.connect(self._schedule_refresh)
+
+        root = proj.layerTreeRoot()
+        root.visibilityChanged.connect(self._schedule_refresh)
+        root.addedChildren.connect(self._schedule_refresh)
+        root.removedChildren.connect(self._schedule_refresh)
+
+        # Debounce refresh (group visibility fires per-node)
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self._refresh)
+
+        # Initial population
+        self._refresh()
+
+    # -- public API (matches QgsMapLayerComboBox interface) --
+
+    def currentLayer(self):
+        """Return the currently selected QgsMapLayer, or None."""
+        idx = self.currentIndex()
+        if idx < 0:
+            return None
+        layer_id = self.itemData(idx)
+        if layer_id is None:
+            return None
+        return QgsProject.instance().mapLayer(layer_id)
+
+    def setLayer(self, layer):
+        """Programmatically select a layer."""
+        if layer is None:
+            return
+        target_id = layer.id()
+        for i in range(self.count()):
+            if self.itemData(i) == target_id:
+                self.setCurrentIndex(i)
+                return
+
+    def count_layers(self):
+        """Return the number of selectable (non-header) items."""
+        return len(self._layer_ids)
+
+    def cleanup(self):
+        """Disconnect project signals."""
+        try:
+            proj = QgsProject.instance()
+            proj.layersAdded.disconnect(self._schedule_refresh)
+            proj.layersRemoved.disconnect(self._schedule_refresh)
+            root = proj.layerTreeRoot()
+            root.visibilityChanged.disconnect(self._schedule_refresh)
+            root.addedChildren.disconnect(self._schedule_refresh)
+            root.removedChildren.disconnect(self._schedule_refresh)
+        except (TypeError, RuntimeError):
+            pass
+        try:
+            self.currentIndexChanged.disconnect(self._on_index_changed)
+        except (TypeError, RuntimeError):
+            pass
+        try:
+            self._refresh_timer.stop()
+        except RuntimeError:
+            pass
+
+    # -- internals --
+
+    def _schedule_refresh(self, *_args):
+        """Debounced refresh (100 ms)."""
+        self._refresh_timer.start(100)
+
+    def _refresh(self):
+        """Rebuild the combo items from the layer tree."""
+        self._refreshing = True
+        prev_id = self._current_layer_id
+        self.clear()
+        self._layer_ids = []
+
+        root = QgsProject.instance().layerTreeRoot()
+        self._traverse(root, depth=0, prefix="")
+
+        # Restore previous selection
+        restored = False
+        if prev_id:
+            for i in range(self.count()):
+                if self.itemData(i) == prev_id:
+                    self.setCurrentIndex(i)
+                    restored = True
+                    break
+
+        # If not restored, pick best raster: prefer one visible in current map view
+        if not restored:
+            best_idx = None
+            try:
+                from qgis.utils import iface
+
+                canvas_extent = iface.mapCanvas().extent()
+                canvas_crs = iface.mapCanvas().mapSettings().destinationCrs()
+                from qgis.core import QgsCoordinateTransform
+
+                for i in range(self.count()):
+                    layer_id = self.itemData(i)
+                    if layer_id is None:
+                        continue
+                    if best_idx is None:
+                        best_idx = i  # fallback: first selectable
+                    layer = QgsProject.instance().mapLayer(layer_id)
+                    if layer and layer.extent().isEmpty():
+                        continue
+                    # Transform layer extent to canvas CRS for comparison
+                    try:
+                        xform = QgsCoordinateTransform(
+                            layer.crs(), canvas_crs, QgsProject.instance()
+                        )
+                        layer_extent = xform.transformBoundingBox(layer.extent())
+                    except Exception:
+                        layer_extent = layer.extent()
+                    if layer_extent.intersects(canvas_extent):
+                        best_idx = i
+                        break  # topmost visible raster in current view
+            except Exception:
+                # Fallback: just pick first selectable
+                for i in range(self.count()):
+                    if self.itemData(i) is not None:
+                        best_idx = i
+                        break
+            if best_idx is not None:
+                self.setCurrentIndex(best_idx)
+
+        self._refreshing = False
+
+        # Emit if selection actually changed
+        new_layer = self.currentLayer()
+        new_id = new_layer.id() if new_layer else None
+        if new_id != prev_id:
+            self._current_layer_id = new_id
+            self.layerChanged.emit(new_layer)
+
+    def _has_visible_rasters(self, node):
+        """Check if a tree node has any visible raster layer descendants."""
+        for child in node.children():
+            if QgsLayerTree.isLayer(child):
+                layer = child.layer()
+                if layer and layer.type() == layer.RasterLayer and child.isVisible():
+                    return True
+            elif QgsLayerTree.isGroup(child):
+                if child.isVisible() and self._has_visible_rasters(child):
+                    return True
+        return False
+
+    @staticmethod
+    def _make_tree_icon(tree_prefix, base_icon, icon_size=16):
+        """Create a composite icon: tree prefix chars drawn to the left of base_icon."""
+        from qgis.PyQt.QtCore import QRect
+        from qgis.PyQt.QtGui import QFont, QFontMetrics, QIcon, QPainter, QPixmap
+
+        font = QFont("monospace", 11)
+        fm = QFontMetrics(font)
+        prefix_width = fm.horizontalAdvance(tree_prefix)
+        total_width = prefix_width + icon_size
+
+        pixmap = QPixmap(total_width, icon_size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setFont(font)
+        painter.setPen(Qt.GlobalColor.gray)
+        # Vertically center text (baseline offset)
+        painter.drawText(0, icon_size - fm.descent() - 1, tree_prefix)
+        base_icon.paint(painter, QRect(prefix_width, 0, icon_size, icon_size))
+        painter.end()
+
+        return QIcon(pixmap)
+
+    def _traverse(self, node, depth, prefix=""):
+        """Recursively walk the layer tree and add items with tree indicators."""
+        from qgis.core import QgsApplication, QgsIconUtils
+
+        # Pre-filter to visible groups with rasters and visible raster layers
+        visible_children = []
+        for child in node.children():
+            if QgsLayerTree.isGroup(child):
+                if child.isVisible() and self._has_visible_rasters(child):
+                    visible_children.append(child)
+            elif QgsLayerTree.isLayer(child):
+                layer = child.layer()
+                if layer and layer.type() == layer.RasterLayer and child.isVisible():
+                    visible_children.append(child)
+
+        for i, child in enumerate(visible_children):
+            is_last = i == len(visible_children) - 1
+            connector = "\u2514\u2500 " if is_last else "\u251c\u2500 "
+            continuation = "   " if is_last else "\u2502  "
+
+            if QgsLayerTree.isGroup(child):
+                group_name = child.name()
+                folder_icon = QgsApplication.getThemeIcon("/mActionFolder.svg")
+                if folder_icon.isNull():
+                    folder_icon = self.style().standardIcon(
+                        QStyle.StandardPixmap.SP_DirIcon
+                    )
+                if depth == 0:
+                    self.addItem(folder_icon, group_name)
+                else:
+                    tree_prefix = "{}{}".format(prefix, connector)
+                    composite = self._make_tree_icon(tree_prefix, folder_icon)
+                    self.addItem(composite, group_name)
+                idx = self.count() - 1
+                item = self.model().item(idx)
+                if item:
+                    item.setEnabled(False)
+                    item.setSelectable(False)
+                # Recurse with updated prefix
+                child_prefix = prefix + continuation if depth > 0 else ""
+                self._traverse(child, depth + 1, child_prefix)
+
+            elif QgsLayerTree.isLayer(child):
+                layer = child.layer()
+                layer_icon = QgsIconUtils.iconRaster()
+                if depth == 0:
+                    self.addItem(layer_icon, layer.name(), layer.id())
+                else:
+                    tree_prefix = "{}{}".format(prefix, connector)
+                    composite = self._make_tree_icon(tree_prefix, layer_icon)
+                    self.addItem(composite, layer.name(), layer.id())
+                self._layer_ids.append(layer.id())
+
+    def _on_index_changed(self, index):
+        """Handle user selection change."""
+        if self._refreshing:
+            return
+        layer = self.currentLayer()
+        layer_id = layer.id() if layer else None
+        if layer_id != self._current_layer_id:
+            self._current_layer_id = layer_id
+            self.layerChanged.emit(layer)
+
+
 from ..core.activation_manager import (  # noqa: E402
     activate_plugin,
     get_newsletter_url,
@@ -48,8 +305,8 @@ class AISegmentationDockWidget(QDockWidget):
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
     refine_settings_changed = pyqtSignal(
-        int, int, bool, int
-    )  # expand, simplify, fill_holes, min_area
+        int, int, int, bool
+    )  # simplify, smooth, expand, fill_holes
     batch_mode_changed = pyqtSignal(bool)  # Batch mode is always on
 
     def __init__(self, parent=None):
@@ -58,6 +315,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.setAllowedAreas(
             Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
         )
+        self.setMinimumWidth(260)
 
         self._setup_title_bar()
 
@@ -108,6 +366,19 @@ class AISegmentationDockWidget(QDockWidget):
         self._refine_debounce_timer.setSingleShot(True)
         self._refine_debounce_timer.timeout.connect(self._emit_refine_changed)
 
+        # Debounce timer for layer visibility changes (fires per-node in groups)
+        self._visibility_debounce_timer = QTimer(self)
+        self._visibility_debounce_timer.setSingleShot(True)
+        self._visibility_debounce_timer.timeout.connect(self._update_ui_state)
+
+        # Connect to project layer signals for dynamic updates
+        QgsProject.instance().layersAdded.connect(self._on_layers_added)
+        QgsProject.instance().layersRemoved.connect(self._on_layers_removed)
+        # Refresh layer dropdown when layer visibility is toggled (debounced)
+        QgsProject.instance().layerTreeRoot().visibilityChanged.connect(
+            self._on_layer_visibility_changed
+        )
+
         # Update UI state
         self._update_full_ui()
 
@@ -120,7 +391,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         title_label = QLabel(
             "AI Segmentation by "
-            '<a href="https://terra-lab.ai" style="color: #1976d2; text-decoration: none;">TerraLab</a>'
+            '<a href="https://terra-lab.ai" style="color: #1976d2; text-decoration: underline;">TerraLab</a>'
         )
         title_label.setOpenExternalLinks(True)
         title_layout.addWidget(title_label)
@@ -289,9 +560,10 @@ class AISegmentationDockWidget(QDockWidget):
 
             pixmap = QPixmap(banner_path)
             scaled = pixmap.scaledToWidth(
-                280, Qt.TransformationMode.SmoothTransformation
+                260, Qt.TransformationMode.SmoothTransformation
             )
             banner_label.setPixmap(scaled)
+            banner_label.setScaledContents(False)
         else:
             banner_label.setText("TerraLab")
             banner_label.setStyleSheet(
@@ -376,14 +648,12 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(layer_label)
         self.layer_label = layer_label
 
-        self.layer_combo = QgsMapLayerComboBox()
-        self.layer_combo.setFilters(QgsMapLayerProxyModel.RasterLayer)
-        self.layer_combo.setAllowEmptyLayer(False)
-        self.layer_combo.setShowCrs(False)
+        self.layer_combo = LayerTreeComboBox()
         self.layer_combo.layerChanged.connect(self._on_layer_changed)
         self.layer_combo.setToolTip(
             tr("Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)")
         )
+        self.layer_combo.setStyleSheet("QComboBox { color: palette(text); }")
         layout.addWidget(self.layer_combo)
 
         # Warning container with icon and text - yellow background with dark text
@@ -401,8 +671,9 @@ class AISegmentationDockWidget(QDockWidget):
         warning_icon_label = QLabel()
         style = self.no_rasters_widget.style()
         warning_icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
-        warning_icon_label.setPixmap(warning_icon.pixmap(16, 16))
-        warning_icon_label.setFixedSize(16, 16)
+        _ico = style.pixelMetric(QStyle.PixelMetric.PM_SmallIconSize)
+        warning_icon_label.setPixmap(warning_icon.pixmap(_ico, _ico))
+        warning_icon_label.setFixedSize(_ico, _ico)
         no_rasters_layout.addWidget(warning_icon_label, 0, Qt.AlignmentFlag.AlignTop)
 
         self.no_rasters_label = QLabel(
@@ -440,7 +711,7 @@ class AISegmentationDockWidget(QDockWidget):
         # Container for start button
         self.start_container = QWidget()
         start_layout = QVBoxLayout(self.start_container)
-        start_layout.setContentsMargins(0, 0, 0, 0)
+        start_layout.setContentsMargins(0, 8, 0, 0)
         start_layout.setSpacing(6)
 
         self.start_button = QPushButton(tr("Start AI Segmentation"))
@@ -452,8 +723,9 @@ class AISegmentationDockWidget(QDockWidget):
         )
         start_layout.addWidget(self.start_button)
 
-        # Keyboard shortcut G to start segmentation
+        # Keyboard shortcut G to start segmentation (scoped to dock + children)
         self.start_shortcut = QShortcut(QKeySequence("G"), self)
+        self.start_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.start_shortcut.activated.connect(self._on_start_shortcut)
 
         layout.addWidget(self.start_container)
@@ -490,7 +762,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.undo_button.setEnabled(False)
         self.undo_button.clicked.connect(self._on_undo_clicked)
         self.undo_button.setVisible(False)  # Hidden until segmentation starts
-        self.undo_button.setStyleSheet("QPushButton { padding: 4px 8px; }")
+        self.undo_button.setStyleSheet(
+            "QPushButton { color: white; padding: 4px 8px; }"
+        )
         secondary_layout.addWidget(self.undo_button, 1)  # stretch factor 1
 
         self.stop_button = QPushButton(tr("Stop segmentation"))
@@ -507,70 +781,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.secondary_buttons_widget.setLayout(secondary_layout)
         self.secondary_buttons_widget.setVisible(False)
         layout.addWidget(self.secondary_buttons_widget)
-
-        # Info box for segmentation mode (subtle blue style)
-        self.batch_info_widget = QWidget()
-        self.batch_info_widget.setStyleSheet(
-            "QWidget { background-color: rgba(100, 149, 237, 0.15); "
-            "border: 1px solid rgba(100, 149, 237, 0.3); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; }"
-        )
-        batch_info_layout = QHBoxLayout(self.batch_info_widget)
-        batch_info_layout.setContentsMargins(8, 6, 8, 6)
-        batch_info_layout.setSpacing(8)
-
-        # Info icon
-        batch_info_icon = QLabel()
-        style = self.batch_info_widget.style()
-        batch_icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation)
-        batch_info_icon.setPixmap(batch_icon.pixmap(14, 14))
-        batch_info_icon.setFixedSize(14, 14)
-        batch_info_layout.addWidget(batch_info_icon, 0, Qt.AlignmentFlag.AlignTop)
-
-        # Info text
-        info_msg = "{}\n{}".format(
-            tr("The AI model works best on one element at a time."),
-            tr("Save your polygon before selecting the next element."),
-        )
-        batch_info_text = QLabel(info_msg)
-        batch_info_text.setWordWrap(True)
-        batch_info_text.setStyleSheet("font-size: 11px; color: palette(text);")
-        batch_info_layout.addWidget(batch_info_text, 1)
-
-        self.batch_info_widget.setVisible(False)
-        layout.addWidget(self.batch_info_widget)
-
-        # Warning box for disjoint regions (yellow/orange style)
-        self.disjoint_warning_widget = QWidget()
-        self.disjoint_warning_widget.setStyleSheet(
-            "QWidget { background-color: rgba(255, 180, 50, 0.20); "
-            "border: 1px solid rgba(255, 180, 50, 0.4); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; }"
-        )
-        disjoint_layout = QHBoxLayout(self.disjoint_warning_widget)
-        disjoint_layout.setContentsMargins(8, 6, 8, 6)
-        disjoint_layout.setSpacing(8)
-
-        disjoint_icon = QLabel()
-        warn_icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
-        disjoint_icon.setPixmap(warn_icon.pixmap(14, 14))
-        disjoint_icon.setFixedSize(14, 14)
-        disjoint_layout.addWidget(disjoint_icon, 0, Qt.AlignmentFlag.AlignTop)
-
-        disjoint_msg = "{}\n{}".format(
-            tr("Disconnected parts detected in your polygon."),
-            tr("For best accuracy, segment one element at a time."),
-        )
-        disjoint_text = QLabel(disjoint_msg)
-        disjoint_text.setWordWrap(True)
-        disjoint_text.setStyleSheet("font-size: 11px; color: palette(text);")
-        disjoint_layout.addWidget(disjoint_text, 1)
-
-        self.disjoint_warning_widget.setVisible(False)
-        layout.addWidget(self.disjoint_warning_widget)
-
-        # Collapsible shortcuts section
-        self._setup_shortcuts_section(layout)
 
         self.main_layout.addWidget(self.seg_widget)
 
@@ -619,9 +829,60 @@ class AISegmentationDockWidget(QDockWidget):
         """)
         refine_content_layout = QVBoxLayout(self.refine_content_widget)
         refine_content_layout.setContentsMargins(10, 10, 10, 10)
-        refine_content_layout.setSpacing(8)
+        refine_content_layout.setSpacing(6)
 
-        # 1. Expand/Contract: SpinBox with +/- buttons (-1000 to +1000)
+        # ── Outline section ──
+        outline_label = QLabel(tr("Outline").upper())
+        outline_label.setStyleSheet(
+            "font-size: 10px; color: palette(text); font-weight: bold; "
+            "background: transparent; border: none; border-bottom: 1px solid palette(mid); "
+            "padding: 8px 0px 4px 0px; margin-bottom: 4px; letter-spacing: 1px;"
+        )
+        refine_content_layout.addWidget(outline_label)
+
+        # 1. Simplify outline: SpinBox (0 to 1000) - reduces small variations
+        simplify_layout = QHBoxLayout()
+        simplify_label = QLabel(tr("Simplify outline:"))
+        simplify_label.setToolTip(
+            tr("Reduce small variations in the outline (0 = no change)")
+        )
+        self.simplify_spinbox = QSpinBox()
+        self.simplify_spinbox.setRange(0, 1000)
+        self.simplify_spinbox.setValue(3)  # Default to 3 for smoother outlines
+        self.simplify_spinbox.setMinimumWidth(55)
+        self.simplify_spinbox.setMaximumWidth(70)
+        simplify_layout.addWidget(simplify_label)
+        simplify_layout.addStretch()
+        simplify_layout.addWidget(self.simplify_spinbox)
+        refine_content_layout.addLayout(simplify_layout)
+
+        # 2. Round corners: Label + Checkbox aligned right (like spinbox rows)
+        round_layout = QHBoxLayout()
+        round_label = QLabel(tr("Round corners:"))
+        round_label.setToolTip(
+            tr(
+                "Round corners for natural shapes like trees and bushes. "
+                "Increase 'Simplify outline' for smoother results."
+            )
+        )
+        self.round_corners_checkbox = QCheckBox()
+        self.round_corners_checkbox.setToolTip(round_label.toolTip())
+        self.round_corners_checkbox.setChecked(False)
+        round_layout.addWidget(round_label)
+        round_layout.addStretch()
+        round_layout.addWidget(self.round_corners_checkbox)
+        refine_content_layout.addLayout(round_layout)
+
+        # ── Selection section ──
+        selection_label = QLabel(tr("Selection").upper())
+        selection_label.setStyleSheet(
+            "font-size: 10px; color: palette(text); font-weight: bold; "
+            "background: transparent; border: none; border-bottom: 1px solid palette(mid); "
+            "padding: 14px 0px 4px 0px; margin-bottom: 4px; letter-spacing: 1px;"
+        )
+        refine_content_layout.addWidget(selection_label)
+
+        # 3. Expand/Contract: SpinBox with +/- buttons (-1000 to +1000)
         expand_layout = QHBoxLayout()
         expand_label = QLabel(tr("Expand/Contract:"))
         expand_label.setToolTip(
@@ -631,56 +892,24 @@ class AISegmentationDockWidget(QDockWidget):
         self.expand_spinbox.setRange(-1000, 1000)
         self.expand_spinbox.setValue(0)
         self.expand_spinbox.setSuffix(" px")
-        self.expand_spinbox.setMinimumWidth(80)
+        self.expand_spinbox.setMinimumWidth(55)
+        self.expand_spinbox.setMaximumWidth(70)
         expand_layout.addWidget(expand_label)
         expand_layout.addStretch()
         expand_layout.addWidget(self.expand_spinbox)
         refine_content_layout.addLayout(expand_layout)
 
-        # 2. Simplify outline: SpinBox (0 to 1000) - reduces small variations in the outline
-        simplify_layout = QHBoxLayout()
-        simplify_label = QLabel(tr("Simplify outline:"))
-        simplify_label.setToolTip(
-            tr("Reduce small variations in the outline (0 = no change)")
-        )
-        self.simplify_spinbox = QSpinBox()
-        self.simplify_spinbox.setRange(0, 1000)
-        self.simplify_spinbox.setValue(3)  # Default to 3 for smoother outlines
-        self.simplify_spinbox.setMinimumWidth(80)
-        simplify_layout.addWidget(simplify_label)
-        simplify_layout.addStretch()
-        simplify_layout.addWidget(self.simplify_spinbox)
-        refine_content_layout.addLayout(simplify_layout)
-
-        # 3. Fill holes: Checkbox - fills interior holes in the mask
-        fill_holes_layout = QHBoxLayout()
-        self.fill_holes_checkbox = QCheckBox(tr("Fill holes"))
-        self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
-        self.fill_holes_checkbox.setToolTip(tr("Fill interior holes in the selection"))
-        fill_holes_layout.addWidget(self.fill_holes_checkbox)
-        fill_holes_layout.addStretch()
-        refine_content_layout.addLayout(fill_holes_layout)
-
-        # 4. Remove small artifacts: SpinBox - minimum area threshold
-        min_area_layout = QHBoxLayout()
-        min_area_label = QLabel(tr("Min. region size:"))
-        min_area_label.setToolTip(
-            "{}\n{}\n{}".format(
-                tr("Remove disconnected regions smaller than this area (in pixels²)."),
-                tr("Example: 100 = ~10x10 pixel regions, 900 = ~30x30."),
-                tr("0 = keep all."),
-            )
-        )
-        self.min_area_spinbox = QSpinBox()
-        self.min_area_spinbox.setRange(0, 100000)
-        self.min_area_spinbox.setValue(100)  # Default: remove small artifacts
-        self.min_area_spinbox.setSuffix(" px²")
-        self.min_area_spinbox.setSingleStep(50)
-        self.min_area_spinbox.setMinimumWidth(80)
-        min_area_layout.addWidget(min_area_label)
-        min_area_layout.addStretch()
-        min_area_layout.addWidget(self.min_area_spinbox)
-        refine_content_layout.addLayout(min_area_layout)
+        # 4. Fill holes: Label + Checkbox aligned right (like spinbox rows)
+        fill_layout = QHBoxLayout()
+        fill_label = QLabel(tr("Fill holes:"))
+        fill_label.setToolTip(tr("Fill interior holes in the selection"))
+        self.fill_holes_checkbox = QCheckBox()
+        self.fill_holes_checkbox.setChecked(True)
+        self.fill_holes_checkbox.setToolTip(fill_label.toolTip())
+        fill_layout.addWidget(fill_label)
+        fill_layout.addStretch()
+        fill_layout.addWidget(self.fill_holes_checkbox)
+        refine_content_layout.addLayout(fill_layout)
 
         refine_layout.addWidget(self.refine_content_widget)
         self.refine_content_widget.setVisible(self._refine_expanded)
@@ -689,10 +918,10 @@ class AISegmentationDockWidget(QDockWidget):
             self.refine_group.setMaximumHeight(_REFINE_COLLAPSED_HEIGHT)
 
         # Connect signals
-        self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
         self.simplify_spinbox.valueChanged.connect(self._on_refine_changed)
+        self.round_corners_checkbox.stateChanged.connect(self._on_refine_changed)
+        self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
         self.fill_holes_checkbox.stateChanged.connect(self._on_refine_changed)
-        self.min_area_spinbox.valueChanged.connect(self._on_refine_changed)
 
         parent_layout.addWidget(self.refine_group)
 
@@ -704,18 +933,19 @@ class AISegmentationDockWidget(QDockWidget):
             return  # Click was on content, not title - ignore
 
         self._refine_expanded = not self._refine_expanded
-        self.refine_content_widget.setVisible(self._refine_expanded)
         arrow = "▼" if self._refine_expanded else "▶"
-        self.refine_group.setTitle(f"{arrow} " + tr("Refine selection"))
-        # Adjust size constraints to eliminate empty rectangle when collapsed
-        if self._refine_expanded:
-            self.refine_group.setMaximumHeight(
-                16777215
-            )  # QWIDGETSIZE_MAX  # Reset to default
+        self.refine_group.setTitle("{} ".format(arrow) + tr("Refine selection"))
+        # Defer visibility and height changes to next event loop tick to avoid layout glitch
+        expanded = self._refine_expanded
+        QTimer.singleShot(0, lambda: self._apply_refine_toggle(expanded))
+
+    def _apply_refine_toggle(self, expanded):
+        """Apply refine panel expand/collapse after event loop tick."""
+        self.refine_content_widget.setVisible(expanded)
+        if expanded:
+            self.refine_group.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
         else:
-            self.refine_group.setMaximumHeight(
-                _REFINE_COLLAPSED_HEIGHT
-            )  # Just enough for the title
+            self.refine_group.setMaximumHeight(_REFINE_COLLAPSED_HEIGHT)
 
     def _on_refine_changed(self, value=None):
         """Handle refine control changes with debounce."""
@@ -724,47 +954,47 @@ class AISegmentationDockWidget(QDockWidget):
     def _emit_refine_changed(self):
         """Emit the refine settings changed signal after debounce."""
         self.refine_settings_changed.emit(
-            self.expand_spinbox.value(),
             self.simplify_spinbox.value(),
+            2 if self.round_corners_checkbox.isChecked() else 0,
+            self.expand_spinbox.value(),
             self.fill_holes_checkbox.isChecked(),
-            self.min_area_spinbox.value(),
         )
 
     def reset_refine_sliders(self):
         """Reset refinement controls to default values without emitting signals."""
-        self.expand_spinbox.blockSignals(True)
         self.simplify_spinbox.blockSignals(True)
+        self.round_corners_checkbox.blockSignals(True)
+        self.expand_spinbox.blockSignals(True)
         self.fill_holes_checkbox.blockSignals(True)
-        self.min_area_spinbox.blockSignals(True)
 
+        self.simplify_spinbox.setValue(3)
+        self.round_corners_checkbox.setChecked(False)
         self.expand_spinbox.setValue(0)
-        self.simplify_spinbox.setValue(3)  # Default to 3
-        self.fill_holes_checkbox.setChecked(False)  # Default: no fill holes
-        self.min_area_spinbox.setValue(100)  # Default: remove small artifacts
+        self.fill_holes_checkbox.setChecked(False)
 
-        self.expand_spinbox.blockSignals(False)
         self.simplify_spinbox.blockSignals(False)
+        self.round_corners_checkbox.blockSignals(False)
+        self.expand_spinbox.blockSignals(False)
         self.fill_holes_checkbox.blockSignals(False)
-        self.min_area_spinbox.blockSignals(False)
 
     def set_refine_values(
-        self, expand: int, simplify: int, fill_holes: bool = False, min_area: int = 0
+        self, simplify: int, smooth: int, expand: int, fill_holes: bool
     ):
         """Set refine slider values without emitting signals."""
-        self.expand_spinbox.blockSignals(True)
         self.simplify_spinbox.blockSignals(True)
+        self.round_corners_checkbox.blockSignals(True)
+        self.expand_spinbox.blockSignals(True)
         self.fill_holes_checkbox.blockSignals(True)
-        self.min_area_spinbox.blockSignals(True)
 
-        self.expand_spinbox.setValue(expand)
         self.simplify_spinbox.setValue(simplify)
+        self.round_corners_checkbox.setChecked(smooth > 0)
+        self.expand_spinbox.setValue(expand)
         self.fill_holes_checkbox.setChecked(fill_holes)
-        self.min_area_spinbox.setValue(min_area)
 
-        self.expand_spinbox.blockSignals(False)
         self.simplify_spinbox.blockSignals(False)
+        self.round_corners_checkbox.blockSignals(False)
+        self.expand_spinbox.blockSignals(False)
         self.fill_holes_checkbox.blockSignals(False)
-        self.min_area_spinbox.blockSignals(False)
 
     def _setup_update_notification(self):
         """Setup the update notification label (hidden by default)."""
@@ -820,57 +1050,39 @@ class AISegmentationDockWidget(QDockWidget):
         except Exception:
             pass
 
-    def _setup_shortcuts_section(self, parent_layout):
-        """Setup the collapsible keyboard shortcuts section."""
-        self._shortcuts_expanded = False
-
-        self._shortcuts_toggle = QLabel(
-            '<a href="#" style="color: palette(text); '
-            'text-decoration: none; font-size: 11px;">'
-            "&#9654; " + tr("Shortcuts") + "</a>"
-        )
-        self._shortcuts_toggle.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self._shortcuts_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._shortcuts_toggle.linkActivated.connect(self._on_shortcuts_toggle)
-        parent_layout.addWidget(self._shortcuts_toggle)
-
-        undo_key = "Cmd+Z" if sys.platform == "darwin" else "Ctrl+Z"
-        self._shortcuts_content = QLabel(
-            "G : {start}\n"
-            "S : {save}\n"
-            "Enter : {export}\n"
-            "{undo_key} : {undo}\n"
-            "Esc : {stop}".format(
-                start=tr("Start AI Segmentation"),
-                save=tr("Save polygon"),
-                export=tr("Export polygon to a layer"),
-                undo_key=undo_key,
-                undo=tr("Undo last point"),
-                stop=tr("Stop segmentation"),
-            )
-        )
-        self._shortcuts_content.setStyleSheet(
-            "font-size: 11px; color: palette(text); padding: 4px 8px; margin: 0;"
-        )
-        self._shortcuts_content.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self._shortcuts_content.setVisible(False)
-        parent_layout.addWidget(self._shortcuts_content)
-
-    def _on_shortcuts_toggle(self):
-        """Toggle shortcuts section visibility."""
-        self._shortcuts_expanded = not self._shortcuts_expanded
-        self._shortcuts_content.setVisible(self._shortcuts_expanded)
-        arrow = "&#9660;" if self._shortcuts_expanded else "&#9654;"
-        self._shortcuts_toggle.setText(
-            '<a href="#" style="color: palette(text); '
-            'text-decoration: none; font-size: 11px;">'
-            "{} ".format(arrow)
-            + tr("Shortcuts")
-            + "</a>"
-        )
-
     def _setup_about_section(self):
-        """Setup the links section."""
+        """Setup the info box and links section."""
+        # Info box for segmentation mode (subtle blue style)
+        self.batch_info_widget = QWidget()
+        self.batch_info_widget.setStyleSheet(
+            "QWidget { background-color: rgba(100, 149, 237, 0.15); "
+            "border: 1px solid rgba(100, 149, 237, 0.3); border-radius: 4px; }"
+            "QLabel { background: transparent; border: none; }"
+        )
+        batch_info_layout = QHBoxLayout(self.batch_info_widget)
+        batch_info_layout.setContentsMargins(8, 6, 8, 6)
+        batch_info_layout.setSpacing(8)
+
+        batch_info_icon = QLabel()
+        style = self.batch_info_widget.style()
+        _ico = style.pixelMetric(QStyle.PixelMetric.PM_SmallIconSize)
+        batch_icon = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation)
+        batch_info_icon.setPixmap(batch_icon.pixmap(_ico, _ico))
+        batch_info_icon.setFixedSize(_ico, _ico)
+        batch_info_layout.addWidget(batch_info_icon, 0, Qt.AlignmentFlag.AlignTop)
+
+        info_msg = "{}\n{}".format(
+            tr("The AI model works best on one element at a time."),
+            tr("Save your polygon before selecting the next element."),
+        )
+        batch_info_text = QLabel(info_msg)
+        batch_info_text.setWordWrap(True)
+        batch_info_text.setStyleSheet("font-size: 11px; color: palette(text);")
+        batch_info_layout.addWidget(batch_info_text, 1)
+
+        self.batch_info_widget.setVisible(False)
+        self.main_layout.addWidget(self.batch_info_widget)
+
         # Simple horizontal layout for links, aligned right with larger font
         links_widget = QWidget()
         links_layout = QHBoxLayout(links_widget)
@@ -888,15 +1100,6 @@ class AISegmentationDockWidget(QDockWidget):
         report_link.linkActivated.connect(self._on_report_bug)
         links_layout.addWidget(report_link)
 
-        # Suggest feature button (styled as link)
-        suggest_link = QLabel(
-            '<a href="#" style="color: #1976d2;">' + tr("Suggest feature") + "</a>"
-        )
-        suggest_link.setStyleSheet("font-size: 13px;")
-        suggest_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        suggest_link.linkActivated.connect(self._on_suggest_feature)
-        links_layout.addWidget(suggest_link)
-
         # Tutorial link
         docs_link = QLabel(
             '<a href="https://terra-lab.ai/docs/ai-segmentation" style="color: #1976d2;">'
@@ -908,30 +1111,48 @@ class AISegmentationDockWidget(QDockWidget):
         docs_link.setCursor(Qt.CursorShape.PointingHandCursor)
         links_layout.addWidget(docs_link)
 
-        # About link
-        about_link = QLabel(
-            '<a href="https://terra-lab.ai/about" style="color: #1976d2;">'
-            + tr("About us")
-            + "</a>"
+        # Shortcuts link
+        shortcuts_link = QLabel(
+            '<a href="#" style="color: #1976d2;">' + tr("Shortcuts") + "</a>"
         )
-        about_link.setStyleSheet("font-size: 13px;")
-        about_link.setOpenExternalLinks(True)
-        about_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        links_layout.addWidget(about_link)
+        shortcuts_link.setStyleSheet("font-size: 13px;")
+        shortcuts_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        shortcuts_link.linkActivated.connect(self._on_show_shortcuts)
+        links_layout.addWidget(shortcuts_link)
 
         self.main_layout.addWidget(links_widget)
+
+    def _on_show_shortcuts(self):
+        """Show keyboard shortcuts in a dialog."""
+        from qgis.PyQt.QtWidgets import QMessageBox
+
+        undo_key = "Cmd+Z" if sys.platform == "darwin" else "Ctrl+Z"
+        text = (
+            "G : {start}\n"
+            "S : {save}\n"
+            "Enter : {export}\n"
+            "{undo_key} : {undo}\n"
+            "Esc : {stop}"
+        ).format(
+            start=tr("Start AI Segmentation"),
+            save=tr("Save polygon"),
+            export=tr("Export polygon to a layer"),
+            undo_key=undo_key,
+            undo=tr("Undo last point"),
+            stop=tr("Stop segmentation"),
+        )
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        msg_box.setWindowTitle(tr("Shortcuts"))
+        msg_box.setText(text)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.exec()
 
     def _on_report_bug(self):
         """Open the bug report dialog."""
         from .error_report_dialog import show_bug_report
 
         show_bug_report(self)
-
-    def _on_suggest_feature(self):
-        """Open the suggest a feature dialog."""
-        from .error_report_dialog import show_suggest_feature
-
-        show_suggest_feature(self)
 
     def is_batch_mode(self) -> bool:
         """Return whether batch mode is active (always True)."""
@@ -1048,6 +1269,10 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_layers_removed(self, layer_ids):
         """Handle layers removed from project."""
         self._update_ui_state()
+
+    def _on_layer_visibility_changed(self, node):
+        """Handle layer visibility toggle in the layer tree (debounced)."""
+        self._visibility_debounce_timer.start(100)
 
     def _on_start_clicked(self):
         layer = self.layer_combo.currentLayer()
@@ -1260,6 +1485,14 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _update_button_visibility(self):
         if self._segmentation_active:
+            # Hide label, lock combo (grayed out, no dropdown arrow)
+            self.layer_label.setVisible(False)
+            self.layer_combo.setEnabled(False)
+            self.layer_combo.setStyleSheet(
+                "QComboBox { color: palette(text); }"
+                "QComboBox::drop-down { width: 0px; border: none; }"
+            )
+
             self.start_container.setVisible(False)
             self.instructions_label.setVisible(True)
             self._update_instructions()
@@ -1287,7 +1520,11 @@ class AISegmentationDockWidget(QDockWidget):
             # Info box
             self.batch_info_widget.setVisible(True)
         else:
-            # Not segmenting - hide all segmentation buttons, show start controls
+            # Not segmenting - show label, unlock combo, restore dropdown arrow
+            self.layer_label.setVisible(True)
+            self.layer_combo.setEnabled(True)
+            self.layer_combo.setStyleSheet("QComboBox { color: palette(text); }")
+
             self.start_container.setVisible(True)
             self.instructions_label.setVisible(False)
             self.refine_group.setVisible(False)
@@ -1351,23 +1588,28 @@ class AISegmentationDockWidget(QDockWidget):
         """Update instruction text based on current segmentation state."""
         total = self._positive_count + self._negative_count
 
-        if total == 0:
+        if total == 0 and self._saved_polygon_count > 0:
+            # Already saved polygon(s), encourage next or export
+            text = (
+                tr(
+                    "Polygon saved! Click on another element to segment, "
+                    "or export your polygons."
+                )
+                + "\n\n"
+                "\U0001f7e2 " + tr("Left-click to select")
+            )
+        elif total == 0:
             text = (
                 tr("Click on the element you want to segment:") + "\n\n"
-                "🟢 " + tr("Left-click to select")
+                "\U0001f7e2 " + tr("Left-click to select")
             )
         else:
             text = (
-                "🟢 " + tr("Left-click to add more") + "\n"
-                "❌ " + tr("Right-click to exclude from selection")
+                "\U0001f7e2 " + tr("Left-click to add more") + "\n"
+                "\u274c " + tr("Right-click to exclude from selection")
             )
 
         self.instructions_label.setText(text)
-
-    def set_disjoint_warning(self, visible: bool):
-        self.disjoint_warning_widget.setVisible(visible)
-        if self._segmentation_active:
-            self.batch_info_widget.setVisible(not visible)
 
     def reset_session(self):
         self._has_mask = False
@@ -1376,7 +1618,6 @@ class AISegmentationDockWidget(QDockWidget):
         self._saved_polygon_count = 0
         self._positive_count = 0
         self._negative_count = 0
-        self.disjoint_warning_widget.setVisible(False)
         self.reset_refine_sliders()
         self._update_button_visibility()
         self._update_ui_state()
@@ -1427,38 +1668,16 @@ class AISegmentationDockWidget(QDockWidget):
 
         return True
 
-    def _update_layer_filter(self):
-        """Update the layer combo to exclude non-georeferenced rasters."""
-        from qgis.core import QgsProject
-
-        excluded_layers = []
-        all_raster_count = 0
-
-        for layer in QgsProject.instance().mapLayers().values():
-            if layer.type() != layer.RasterLayer:
-                continue
-            all_raster_count += 1
-
-        self.layer_combo.setExceptedLayerList(excluded_layers)
-
-        # Update warning message
-        if all_raster_count == 0:
-            self.no_rasters_label.setText(
-                tr("No layer found. Add a raster or online layer to your project.")
-            )
-
     def _update_ui_state(self):
-        # Update layer filter first
-        self._update_layer_filter()
-
         layer = self.layer_combo.currentLayer()
         has_layer = layer is not None
 
-        has_rasters_available = self.layer_combo.count() > 0
+        has_rasters_available = self.layer_combo.count_layers() > 0
         self.no_rasters_widget.setVisible(
             not has_rasters_available and not self._segmentation_active
         )
         self.layer_combo.setVisible(has_rasters_available)
+        self.layer_label.setVisible(not self._segmentation_active)
 
         deps_ok = self._dependencies_ok
         checkpoint_ok = self._checkpoint_ok
@@ -1485,6 +1704,51 @@ class AISegmentationDockWidget(QDockWidget):
         """Handle activation from dialog."""
         self._plugin_activated = True
         self._update_full_ui()
+
+    def cleanup_signals(self):
+        """Disconnect project signals and clean up shortcuts/timers on plugin reload."""
+        try:
+            self.layer_combo.cleanup()
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        try:
+            QgsProject.instance().layersAdded.disconnect(self._on_layers_added)
+        except (TypeError, RuntimeError):
+            pass
+        try:
+            QgsProject.instance().layersRemoved.disconnect(self._on_layers_removed)
+        except (TypeError, RuntimeError):
+            pass
+        # Clean up QShortcut to prevent stale callbacks
+        try:
+            self.start_shortcut.activated.disconnect()
+            self.start_shortcut.deleteLater()
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        # Stop timers first, then disconnect to avoid race conditions
+        try:
+            self._progress_timer.blockSignals(True)
+            self._progress_timer.stop()
+            self._progress_timer.timeout.disconnect()
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        try:
+            self._refine_debounce_timer.blockSignals(True)
+            self._refine_debounce_timer.stop()
+            self._refine_debounce_timer.timeout.disconnect()
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        try:
+            self._visibility_debounce_timer.blockSignals(True)
+            self._visibility_debounce_timer.stop()
+            self._visibility_debounce_timer.timeout.disconnect()
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+
+    def sizeHint(self):
+        from qgis.PyQt.QtCore import QSize
+
+        return QSize(300, 400)  # ← change 300 to adjust default width
 
     def is_activated(self) -> bool:
         """Check if the plugin is activated."""

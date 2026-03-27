@@ -28,13 +28,12 @@ _GDAL_ONLY_FORMATS = {
 ONLINE_PROVIDERS = frozenset(["wms", "wmts", "xyz", "arcgismapserver", "wcs"])
 
 
-def _normalize_to_uint8(bands, nodata_value=None, skip_stretch=False):
-    """Normalize a multi-band array to (H, W, 3) uint8.
+def _normalize_to_uint8(bands, nodata_value=None):
+    """Normalize a multi-band array to (H, W, 3) uint8 using per-band percentile stretch.
 
     Args:
         bands: numpy array of shape (C, H, W), any numeric dtype
         nodata_value: optional nodata value to mask before computing percentiles
-        skip_stretch: if True, skip percentile stretch (preserve natural colors)
 
     Returns:
         numpy array of shape (H, W, 3) uint8
@@ -66,11 +65,6 @@ def _normalize_to_uint8(bands, nodata_value=None, skip_stretch=False):
         valid_pixels = band[valid_mask]
 
         if valid_pixels.size == 0:
-            continue
-
-        if skip_stretch:
-            # Preserve natural colors: just clamp to uint8 range
-            result[b] = np.clip(band, 0, 255).astype(np.uint8)
             continue
 
         p2, p98 = np.percentile(valid_pixels, [2, 98])
@@ -253,13 +247,7 @@ def _needs_gdal_conversion(raster_path):
 
 
 def _read_crop_with_gdal(
-    raster_path,
-    center_x,
-    center_y,
-    crop_size,
-    scale_factor,
-    layer_extent,
-    skip_stretch=False,
+    raster_path, center_x, center_y, crop_size, scale_factor, layer_extent
 ):
     """Read a windowed crop directly from a GDAL-supported raster (JP2, ECW, etc.).
 
@@ -373,9 +361,7 @@ def _read_crop_with_gdal(
         ds = None
 
         tile_data = np.stack(bands, axis=0)
-        image_np = _normalize_to_uint8(
-            tile_data, nodata_value=nodata, skip_stretch=skip_stretch
-        )
+        image_np = _normalize_to_uint8(tile_data, nodata_value=nodata)
 
         if out_h < crop_size or out_w < crop_size:
             pad_bottom = crop_size - out_h
@@ -427,7 +413,6 @@ def extract_crop_from_raster(
     layer_crs_wkt=None,
     layer_extent=None,
     scale_factor=1.0,
-    skip_stretch=False,
 ):
     """Extract a crop_size x crop_size RGB crop centered on (center_x, center_y).
 
@@ -458,13 +443,7 @@ def extract_crop_from_raster(
     # Handle GDAL-only formats (JP2, ECW, etc.) with direct windowed read
     if _needs_gdal_conversion(raster_path):
         return _read_crop_with_gdal(
-            raster_path,
-            center_x,
-            center_y,
-            crop_size,
-            scale_factor,
-            layer_extent,
-            skip_stretch=skip_stretch,
+            raster_path, center_x, center_y, crop_size, scale_factor, layer_extent
         )
 
     try:
@@ -542,9 +521,7 @@ def extract_crop_from_raster(
                 out_w = actual_width
 
             nodata = src.nodata
-            image_np = _normalize_to_uint8(
-                tile_data, nodata_value=nodata, skip_stretch=skip_stretch
-            )
+            image_np = _normalize_to_uint8(tile_data, nodata_value=nodata)
 
             # Pad to full crop_size if crop was clipped at raster edge.
             # Uses reflect padding instead of black borders for better
@@ -579,18 +556,12 @@ def extract_crop_from_raster(
             level=Qgis.MessageLevel.Warning,
         )
         return _read_crop_with_gdal(
-            raster_path,
-            center_x,
-            center_y,
-            crop_size,
-            scale_factor,
-            layer_extent,
-            skip_stretch=skip_stretch,
+            raster_path, center_x, center_y, crop_size, scale_factor, layer_extent
         )
 
 
 def extract_crop_from_online_layer(
-    layer, center_x, center_y, canvas_mupp, crop_size=1024, skip_stretch=False
+    layer, center_x, center_y, canvas_mupp, crop_size=1024
 ):
     """Extract a crop_size x crop_size RGB crop from an online layer.
 
@@ -617,6 +588,22 @@ def extract_crop_from_online_layer(
         center_y + half_size,
     )
 
+    QgsMessageLog.logMessage(
+        "Online crop request: center=({:.6f}, {:.6f}), mupp={:.6f}, "
+        "extent=({:.2f}, {:.2f}, {:.2f}, {:.2f}), CRS={}".format(
+            center_x,
+            center_y,
+            canvas_mupp,
+            extent.xMinimum(),
+            extent.yMinimum(),
+            extent.xMaximum(),
+            extent.yMaximum(),
+            layer.crs().authid(),
+        ),
+        "AI Segmentation",
+        level=Qgis.MessageLevel.Info,
+    )
+
     try:
         provider.enableProviderResampling(True)
         original_method = provider.zoomedInResamplingMethod()
@@ -630,8 +617,8 @@ def extract_crop_from_online_layer(
         # mixed-resolution tiles (stale cache from different zoom).
         from qgis.core import QgsApplication
 
-        max_retries = 5
-        retry_delay = 0.8
+        max_retries = 8
+        retry_delay = 1.0
         block = None
         prev_data = None
         for attempt in range(max_retries):
@@ -652,14 +639,17 @@ def extract_crop_from_online_layer(
                         time.sleep(0.05)
                     continue
             if attempt < max_retries - 1:
+                delay = retry_delay * (
+                    1 + attempt * 0.5
+                )  # Progressive: 1.0, 1.5, 2.0, ...
                 QgsMessageLog.logMessage(
                     "Online tile fetch attempt {} - retrying in {:.1f}s...".format(
-                        attempt + 1, retry_delay
+                        attempt + 1, delay
                     ),
                     "AI Segmentation",
                     level=Qgis.MessageLevel.Warning,
                 )
-                deadline = time.monotonic() + retry_delay
+                deadline = time.monotonic() + delay
                 while time.monotonic() < deadline:
                     QgsApplication.processEvents()
                     time.sleep(0.05)
@@ -703,9 +693,7 @@ def extract_crop_from_online_layer(
                 nodata = provider.sourceNoDataValue(1)
             except Exception:
                 pass
-            image_np = _normalize_to_uint8(
-                bands_result, nodata_value=nodata, skip_stretch=skip_stretch
-            )
+            image_np = _normalize_to_uint8(bands_result, nodata_value=nodata)
 
         height = image_np.shape[0]
         width = image_np.shape[1]

@@ -194,8 +194,23 @@ class SamPredictor:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError(
-                        "Worker did not send ready within {}s".format(
-                            self._TIMEOUT_INIT
+                        "Worker did not send ready within {}s. "
+                        "The SAM model may be too slow to load on this machine. "
+                        "Try restarting QGIS and ensure no other heavy "
+                        "processes are running.".format(self._TIMEOUT_INIT)
+                    )
+
+                # Check subprocess is still alive before blocking on read
+                if self.process is not None and self.process.poll() is not None:
+                    exit_code = self.process.poll()
+                    stderr_output = self._read_stderr()
+                    raise RuntimeError(
+                        "Worker process died during initialization "
+                        "(exit code {}){}".format(
+                            exit_code,
+                            "\nWorker stderr: " + stderr_output[:500]
+                            if stderr_output
+                            else "",
                         )
                     )
 

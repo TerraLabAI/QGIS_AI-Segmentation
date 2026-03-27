@@ -1,4 +1,4 @@
-d<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
 <TS version="2.1" language="fr_FR">
 <context>
@@ -245,12 +245,16 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Démarrer AI Segmentation</translation>
     </message>
     <message>
-        <source>Undo</source>
-        <translation>Annuler</translation>
+        <source>Save polygon</source>
+        <translation>Sauvegarder le polygone</translation>
     </message>
     <message>
-        <source>Stop</source>
-        <translation>Arrêter</translation>
+        <source>Undo last point</source>
+        <translation>Annuler le dernier point</translation>
+    </message>
+    <message>
+        <source>Stop segmentation</source>
+        <translation>Arrêter la segmentation</translation>
     </message>
     <message>
         <source>Shortcuts</source>
@@ -259,6 +263,14 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
     <message>
         <source>Save current polygon to your session</source>
         <translation>Sauvegarder le polygone actuel dans votre session</translation>
+    </message>
+    <message>
+        <source>The AI model works best on one element at a time.</source>
+        <translation>Le modele IA fonctionne mieux sur un element a la fois.</translation>
+    </message>
+    <message>
+        <source>Save your polygon before selecting the next element.</source>
+        <translation>Sauvegardez votre polygone avant de selectionner le suivant.</translation>
     </message>
     <message>
         <source>Export polygon to a layer</source>
@@ -271,8 +283,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
 
     <!-- Refine Section -->
     <message>
-        <source>Refine polygons</source>
-        <translation>Affiner les polygones</translation>
+        <source>Refine selection</source>
+        <translation>Affiner la sélection</translation>
     </message>
     <message>
         <source>Expand/Contract:</source>
@@ -291,8 +303,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Réduire les petites variations du contour (0 = aucun changement)</translation>
     </message>
     <message>
-        <source>Fill holes</source>
-        <translation>Combler les trous</translation>
+        <source>Fill holes:</source>
+        <translation>Remplir les trous :</translation>
     </message>
     <message>
         <source>Fill interior holes in the selection</source>
@@ -313,6 +325,22 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
     <message>
         <source>0 = keep all.</source>
         <translation>0 = tout garder.</translation>
+    </message>
+    <message>
+        <source>Round corners:</source>
+        <translation>Arrondir les coins :</translation>
+    </message>
+    <message>
+        <source>Round corners for natural shapes like trees and bushes. Increase 'Simplify outline' for smoother results.</source>
+        <translation>Arrondir les coins pour des formes naturelles comme les arbres et buissons. Augmentez 'Simplifier le contour' pour un résultat plus lisse.</translation>
+    </message>
+    <message>
+        <source>Outline</source>
+        <translation>Contour</translation>
+    </message>
+    <message>
+        <source>Selection</source>
+        <translation>Sélection</translation>
     </message>
 
     <!-- Instructions -->
@@ -481,20 +509,20 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>On va corriger votre problème :)</translation>
     </message>
     <message>
-        <source>Copy log to clipboard</source>
-        <translation>Copier le log</translation>
+        <source>1. Click to copy logs</source>
+        <translation>1. Cliquer pour copier les logs</translation>
     </message>
     <message>
-        <source>Copy email address</source>
-        <translation>Copier l'adresse email</translation>
+        <source>2. Click to send to {}</source>
+        <translation>2. Cliquer pour envoyer à {}</translation>
+    </message>
+    <message>
+        <source>Open email client</source>
+        <translation>Ouvrir le client email</translation>
     </message>
     <message>
         <source>Copied!</source>
         <translation>Copié !</translation>
-    </message>
-    <message>
-        <source>Email copied!</source>
-        <translation>Email copié !</translation>
     </message>
 
     <!-- SSL / Antivirus error titles -->
@@ -525,8 +553,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Pas de souci, le plugin utilise maintenant le mode CPU et tout fonctionne :) Si vous souhaitez qu'on corrige le support GPU pour votre config, envoyez-nous vos logs !</translation>
     </message>
     <message>
-        <source>Point is outside the raster image. Click inside the raster.</source>
-        <translation>Le point est en dehors de l'image raster. Cliquez à l'intérieur du raster.</translation>
+        <source>Outside &apos;{layer}&apos; area. Stop segmentation to switch layer.</source>
+        <translation>Hors de la zone '{layer}'. Arrêtez la segmentation pour changer de couche.</translation>
     </message>
 
     <!-- Update notification -->
@@ -587,14 +615,6 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Erreur de prédiction</translation>
     </message>
     <message>
-        <source>Detection Error</source>
-        <translation>Erreur de détection</translation>
-    </message>
-    <message>
-        <source>Click on the map first to set an image before using text prediction.</source>
-        <translation>Cliquez d'abord sur la carte pour definir une image avant d'utiliser la prediction textuelle.</translation>
-    </message>
-    <message>
         <source>Segmentation failed</source>
         <translation>Échec de la segmentation</translation>
     </message>
@@ -638,6 +658,18 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <source>For best accuracy, segment one element at a time.</source>
         <translation>Pour une meilleure precision, segmentez un element a la fois.</translation>
     </message>
+    <message>
+        <source>Layer: {}</source>
+        <translation>Couche : {}</translation>
+    </message>
+    <message>
+        <source>Polygon saved! Click on another element to segment, or export your polygons.</source>
+        <translation>Polygone enregistré ! Cliquez sur un autre élément à segmenter, ou exportez vos polygones.</translation>
+    </message>
+    <message>
+        <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
+        <translation>Parties déconnectées détectées. Pour une meilleure précision, segmentez un élément à la fois.</translation>
+    </message>
 
     <message>
         <source>Updating...</source>
@@ -664,59 +696,7 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Reessayer</translation>
     </message>
 
-    <!-- PRO Section -->
-    <message>
-        <source>Standard</source>
-        <translation>Standard</translation>
-    </message>
-    <message>
-        <source>Cloud-powered AI segmentation</source>
-        <translation>Segmentation IA cloud</translation>
-    </message>
-    <message>
-        <source>AI Segmentation PRO by TerraLab</source>
-        <translation>AI Segmentation PRO by TerraLab</translation>
-    </message>
-    <message>
-        <source>Select object type:</source>
-        <translation>Sélectionner le type d'objet :</translation>
-    </message>
-    <message>
-        <source>Other</source>
-        <translation>Autre</translation>
-    </message>
-    <message>
-        <source>Detecting objects (tile {current}/{total})...</source>
-        <translation>Detection d'objets (tuile {current}/{total})...</translation>
-    </message>
-    <message>
-        <source>Detection resolution is coarse ({gsd:.1f} m/px). Zoom in for better tree detection.</source>
-        <translation>Resolution de detection grossiere ({gsd:.1f} m/px). Zoomez pour une meilleure detection des arbres.</translation>
-    </message>
-    <message>
-        <source>Min. confidence</source>
-        <translation>Confiance min.</translation>
-    </message>
-    <message>
-        <source>Max. objects</source>
-        <translation>Objets max.</translation>
-    </message>
-    <message>
-        <source>Click on one {prompt} as reference, then click Detect</source>
-        <translation>Cliquez sur un(e) {prompt} comme reference, puis cliquez sur Detecter</translation>
-    </message>
-    <message>
-        <source>Reference set. Click Detect to find all {prompt}.</source>
-        <translation>Reference definie. Cliquez sur Detecter pour trouver tous les {prompt}.</translation>
-    </message>
-    <message>
-        <source>Reference already set. Click Detect to proceed.</source>
-        <translation>Reference deja definie. Cliquez sur Detecter pour continuer.</translation>
-    </message>
-    <message>
-        <source>Detect objects</source>
-        <translation>Detecter les objets</translation>
-    </message>
+    <!-- PRO mode strings -->
     <message>
         <source>Search object to detect...</source>
         <translation>Rechercher un objet à détecter...</translation>
@@ -734,150 +714,24 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Clic droit sur un polygone pour le supprimer</translation>
     </message>
     <message>
+        <source>Refine polygons</source>
+        <translation>Affiner les polygones</translation>
+    </message>
+    <message>
         <source>Show tile grid</source>
         <translation>Afficher la grille de tiles</translation>
-    </message>
-    <message>
-        <source>Connecting to PRO server...</source>
-        <translation>Connexion au serveur PRO...</translation>
-    </message>
-    <message>
-        <source>Connecting to PRO server... (attempt {}/{})</source>
-        <translation>Connexion au serveur PRO... (tentative {}/{})</translation>
-    </message>
-    <message>
-        <source>AI Segmentation PRO</source>
-        <translation>AI Segmentation PRO</translation>
-    </message>
-    <message>
-        <source>The AI Segmentation PRO server did not respond.
-
-This can happen during first startup (cold start) which takes 2-5 minutes.
-
-Please try again in a few minutes.</source>
-        <translation>Le serveur AI Segmentation PRO n'a pas répondu.
-
-Cela peut arriver lors du premier démarrage (cold start) qui prend 2-5 minutes.
-
-Veuillez réessayer dans quelques minutes.</translation>
-    </message>
-    <message>
-        <source>Could not connect to the PRO server.
-
-Check your internet connection and verify that the server URL is correct in model_config.py.</source>
-        <translation>Impossible de se connecter au serveur PRO.
-
-Vérifiez votre connexion Internet et que l'URL du serveur est correcte dans model_config.py.</translation>
-    </message>
-    <message>
-        <source>PRO server connection error.
-
-Check the QGIS logs for more details.</source>
-        <translation>Erreur de connexion au serveur PRO.
-
-Consultez les logs QGIS pour plus de détails.</translation>
-    </message>
-    <message>
-        <source>Text prompt cannot be empty</source>
-        <translation>Le texte ne peut pas etre vide</translation>
-    </message>
-    <message>
-        <source>Found {count} instance(s) for "{text}"</source>
-        <translation>{count} instance(s) trouvee(s) pour "{text}"</translation>
-    </message>
-    <message>
-        <source>No instances found for "{text}"</source>
-        <translation>Aucune instance trouvee pour "{text}"</translation>
-    </message>
-    <message>
-        <source>Invalid PRO API key.
-
-Go to the PRO settings to update your API key.</source>
-        <translation>Clé API PRO invalide.
-
-Allez dans les paramètres PRO pour mettre à jour votre clé.</translation>
-    </message>
-    <message>
-        <source>PRO API Key Missing</source>
-        <translation>Clé API PRO manquante</translation>
-    </message>
-    <message>
-        <source>PRO API key is not configured.
-
-Enter your API key in the PRO settings panel.</source>
-        <translation>La clé API PRO n&apos;est pas configurée.
-
-Entrez votre clé API dans le panneau des paramètres PRO.</translation>
-    </message>
-    <message>
-        <source>API Key</source>
-        <translation>Clé API</translation>
-    </message>
-    <message>
-        <source>Enter your tl_pro_... key</source>
-        <translation>Entrez votre clé tl_pro_...</translation>
-    </message>
-    <message>
-        <source>Save</source>
-        <translation>Enregistrer</translation>
-    </message>
-    <message>
-        <source>API key saved.</source>
-        <translation>Clé API enregistrée.</translation>
-    </message>
-    <message>
-        <source>No API key configured.
-
-Add FAL_KEY=your_key to the .env file
-at the plugin root directory.</source>
-        <translation>Clé API non configurée.
-
-Ajoutez FAL_KEY=votre_clé dans le fichier .env
-à la racine du plugin.</translation>
-    </message>
-    <message>
-        <source>Detecting &apos;{prompt}&apos;...</source>
-        <translation>Détection de &apos;{prompt}&apos;...</translation>
-    </message>
-    <message>
-        <source>No objects found for &apos;{prompt}&apos;.</source>
-        <translation>Aucun objet trouvé pour &apos;{prompt}&apos;.</translation>
-    </message>
-    <message>
-        <source>{n} object(s) detected. Review and save.</source>
-        <translation>{n} objet(s) détecté(s). Vérifiez et sauvegardez.</translation>
-    </message>
-    <message>
-        <source>Detection Error</source>
-        <translation>Erreur de détection</translation>
-    </message>
-    <message>
-        <source>Select zone</source>
-        <translation>Sélectionner une zone</translation>
-    </message>
-    <message>
-        <source>Full image</source>
-        <translation>Image entière</translation>
-    </message>
-    <message>
-        <source>Draw a rectangle to limit the segmentation area</source>
-        <translation>Dessinez un rectangle pour limiter la zone de segmentation</translation>
-    </message>
-    <message>
-        <source>Use the entire image</source>
-        <translation>Utiliser l'image entière</translation>
     </message>
     <message>
         <source>The larger the zone, the more credits are used.</source>
         <translation>Plus la zone est grande, plus de crédits sont utilisés.</translation>
     </message>
     <message>
-        <source>Zone too large. Please reduce the selection.</source>
-        <translation>Zone trop grande. Veuillez réduire la sélection.</translation>
+        <source>Detect objects</source>
+        <translation>Détecter les objets</translation>
     </message>
     <message>
-        <source>Redraw zone</source>
-        <translation>Redessiner la zone</translation>
+        <source>AI Segmentation PRO by TerraLab</source>
+        <translation>AI Segmentation PRO par TerraLab</translation>
     </message>
 </context>
 </TS>
