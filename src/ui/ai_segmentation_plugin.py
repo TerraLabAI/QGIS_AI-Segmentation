@@ -722,8 +722,12 @@ class AISegmentationPlugin:
             self.dock_widget.deleteLater()
             self.dock_widget = None
 
-        # 7. Unset map tool
+        # 7. Clear markers and unset map tool
         if self.map_tool:
+            try:
+                self.map_tool.clear_markers()
+            except (RuntimeError, AttributeError):
+                pass
             try:
                 if self.iface.mapCanvas().mapTool() == self.map_tool:
                     self.iface.mapCanvas().unsetMapTool(self.map_tool)
