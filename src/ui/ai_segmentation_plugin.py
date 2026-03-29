@@ -1,6 +1,7 @@
 import math
 import os
 import sys
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Tuple
@@ -1405,10 +1406,9 @@ class AISegmentationPlugin:
             combined = None
 
         if combined and not combined.isEmpty():
-            # Store WKT (with effects), score, transform info, raw mask, points, and refine settings
+            # Store WKT (with effects), transform info, raw mask, points, and refine settings
             self.saved_polygons.append({
                 'geometry_wkt': combined.asWkt(),
-                'score': self.current_score,
                 'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
                 'raw_mask': self.current_mask.copy() if self.current_mask is not None else None,
                 'points_positive': list(self.prompts.positive_points),
@@ -1511,7 +1511,6 @@ class AISegmentationPlugin:
             if combined and not combined.isEmpty():
                 polygons_to_export.append({
                     'geometry_wkt': combined.asWkt(),
-                    'score': self.current_score,
                     'transform_info': self.current_transform_info.copy() if self.current_transform_info else None,
                 })
 
@@ -1603,11 +1602,21 @@ class AISegmentationPlugin:
         # Add attributes
         pr = temp_layer.dataProvider()
         pr.addAttributes([
-            QgsField("id", QVariant.Type.Int),
-            QgsField("score", QVariant.Type.Double),
-            QgsField("area", QVariant.Type.Double)
+            QgsField("label", QVariant.Type.String),
+            QgsField("area", QVariant.Type.Double),
+            QgsField("raster_source", QVariant.Type.String),
+            QgsField("created_at", QVariant.Type.String),
         ])
         temp_layer.updateFields()
+
+        # Resolve metadata for all features
+        raster_name = ""
+        try:
+            if self._is_layer_valid() and self._current_layer:
+                raster_name = self._current_layer.name()
+        except RuntimeError:
+            pass
+        timestamp = datetime.now().isoformat(timespec='seconds')
 
         # Add features to temp layer
         features_to_add = []
@@ -1633,7 +1642,7 @@ class AISegmentationPlugin:
 
                 feature.setGeometry(geom)
                 area = geom.area()
-                feature.setAttributes([i + 1, polygon_data['score'], area])
+                feature.setAttributes(["", area, raster_name, timestamp])
                 features_to_add.append(feature)
 
         if not features_to_add:
