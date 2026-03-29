@@ -83,6 +83,7 @@ class LayerTreeComboBox(QComboBox):
         root.visibilityChanged.connect(self._schedule_refresh)
         root.addedChildren.connect(self._schedule_refresh)
         root.removedChildren.connect(self._schedule_refresh)
+        root.nameChanged.connect(self._schedule_refresh)
 
         # Debounce refresh (group visibility fires per-node)
         self._refresh_timer = QTimer(self)
@@ -128,6 +129,7 @@ class LayerTreeComboBox(QComboBox):
             root.visibilityChanged.disconnect(self._schedule_refresh)
             root.addedChildren.disconnect(self._schedule_refresh)
             root.removedChildren.disconnect(self._schedule_refresh)
+            root.nameChanged.disconnect(self._schedule_refresh)
         except (TypeError, RuntimeError):
             pass
         try:
