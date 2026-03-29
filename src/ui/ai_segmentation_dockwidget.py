@@ -308,7 +308,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._setup_title_bar()
 
         # Initialize state variables that are needed during UI setup
-        self._refine_expanded = False  # Refine panel collapsed state persisted in session
+        self._refine_expanded = True  # Refine panel expanded by default
 
         self.main_widget = QWidget()
         self.main_layout = QVBoxLayout(self.main_widget)
@@ -751,7 +751,7 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _setup_refine_panel(self, parent_layout):
         """Setup the collapsible Refine mask panel (collapsible via click on title)."""
-        self.refine_group = QGroupBox("▶ " + tr("Refine selection"))
+        self.refine_group = QGroupBox("▼ " + tr("Refine selection"))
         self.refine_group.setCheckable(False)  # No checkbox, just clickable title
         self.refine_group.setVisible(False)  # Hidden until segmentation active
         self.refine_group.setCursor(Qt.CursorShape.PointingHandCursor)
