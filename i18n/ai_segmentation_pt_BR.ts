@@ -708,6 +708,11 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
     </message>
 
     <message>
+        <source>No element detected at this point. Try clicking on a different area.</source>
+        <translation>Nenhum elemento detectado neste ponto. Tente clicar em uma área diferente.</translation>
+    </message>
+
+    <message>
         <source>Updating...</source>
         <translation>Atualizando...</translation>
     </message>

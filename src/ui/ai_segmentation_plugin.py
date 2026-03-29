@@ -163,9 +163,9 @@ class _ShortcutFilter(QObject):
         # its own pan-tool shortcut when Space is pressed.
         if event_type in (QEvent.Type.ShortcutOverride,
                           QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
-            if (event.key() == Qt.Key.Key_Space and
-                    plugin.map_tool and
-                    not event.isAutoRepeat()):
+            if (event.key() == Qt.Key.Key_Space
+                    and plugin.map_tool
+                    and not event.isAutoRepeat()):
                 if event_type == QEvent.Type.ShortcutOverride:
                     if plugin.map_tool.isActive():
                         event.accept()
@@ -203,8 +203,8 @@ class _ShortcutFilter(QObject):
         if key == Qt.Key.Key_Z and modifiers & Qt.KeyboardModifier.ControlModifier:
             plugin._on_undo()
             return True
-        elif (key == Qt.Key.Key_S and
-              not (modifiers & (Qt.KeyboardModifier.ControlModifier |
+        elif (key == Qt.Key.Key_S
+              and not (modifiers & (Qt.KeyboardModifier.ControlModifier |
                                 Qt.KeyboardModifier.AltModifier |
                                 Qt.KeyboardModifier.ShiftModifier))):
             plugin._on_save_polygon()
@@ -816,8 +816,8 @@ class AISegmentationPlugin:
         self.dock_widget.check_for_updates()
 
         # If notification is still hidden and we have retries left, schedule next
-        if (not self.dock_widget.update_notification_widget.isVisible() and
-                hasattr(self, '_update_check_delays')):
+        if (not self.dock_widget.update_notification_widget.isVisible()
+                and hasattr(self, '_update_check_delays')):
             self._update_check_index += 1
             if self._update_check_index < len(self._update_check_delays):
                 from qgis.PyQt.QtCore import QTimer
@@ -1356,8 +1356,8 @@ class AISegmentationPlugin:
         if self._encoding_in_progress:
             return
         # Allow save if we have frozen sessions even without active mask
-        has_active = (self.current_mask is not None and
-                      self.current_transform_info is not None)
+        has_active = (self.current_mask is not None
+                      and self.current_transform_info is not None)
         if not has_active and not self._frozen_sessions:
             return
 
@@ -1469,8 +1469,8 @@ class AISegmentationPlugin:
 
         self._ensure_polygon_rubberband_sync()
 
-        has_active = (self.current_mask is not None and
-                      self.current_transform_info is not None)
+        has_active = (self.current_mask is not None
+                      and self.current_transform_info is not None)
         if not self.saved_polygons and not has_active and not self._frozen_sessions:
             return  # Nothing to export
 
@@ -1931,8 +1931,8 @@ class AISegmentationPlugin:
         # destroys the current mask via lossy 64x64 logit transfer.
         # The existing crop is still valid (point is in bounds), so SAM
         # can predict just fine on the current encoding.
-        has_active_points = (self._active_crop_points_positive or
-                             self._active_crop_points_negative)
+        has_active_points = (self._active_crop_points_positive
+                             or self._active_crop_points_negative)
         if not has_active_points:
             # No active points — always use tight thresholds so any
             # meaningful zoom change triggers re-encode at the correct
@@ -2120,9 +2120,9 @@ class AISegmentationPlugin:
         scale = self._current_crop_scale_factor
         if scale is None or scale <= 0:
             # Online layers or unknown: use the MUPP ratio as proxy
-            if (self._current_crop_actual_mupp and
-                    self._current_crop_canvas_mupp and
-                    self._current_crop_canvas_mupp > 0):
+            if (self._current_crop_actual_mupp
+                    and self._current_crop_canvas_mupp
+                    and self._current_crop_canvas_mupp > 0):
                 scale = max(1.0, self._current_crop_actual_mupp /
                             self._current_crop_canvas_mupp * 2.0)
             else:
@@ -2470,9 +2470,9 @@ class AISegmentationPlugin:
         self._run_prediction()
 
         # Auto-revert if prediction produced an empty mask (no element detected)
-        if (self.current_mask is not None and
-                self.current_mask.sum() == 0 and
-                self._mask_state_history):
+        if (self.current_mask is not None
+                and self.current_mask.sum() == 0
+                and self._mask_state_history):
             self.prompts.undo()
             if self._active_crop_points_positive:
                 self._active_crop_points_positive.pop()
@@ -2484,6 +2484,12 @@ class AISegmentationPlugin:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
             self._update_ui_after_prediction()
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("No element detected at this point. Try clicking on a different area."),
+                level=Qgis.MessageLevel.Info,
+                duration=4
+            )
             return
 
     def _on_negative_click(self, point):
@@ -2561,9 +2567,9 @@ class AISegmentationPlugin:
         self._run_prediction()
 
         # Auto-revert if prediction produced an empty mask (no element detected)
-        if (self.current_mask is not None and
-                self.current_mask.sum() == 0 and
-                self._mask_state_history):
+        if (self.current_mask is not None
+                and self.current_mask.sum() == 0
+                and self._mask_state_history):
             self.prompts.undo()
             if self._active_crop_points_negative:
                 self._active_crop_points_negative.pop()
@@ -2575,6 +2581,12 @@ class AISegmentationPlugin:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
             self._update_ui_after_prediction()
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("No element detected at this point. Try clicking on a different area."),
+                level=Qgis.MessageLevel.Info,
+                duration=4
+            )
             return
 
     def _run_prediction(self):
@@ -2742,7 +2754,17 @@ class AISegmentationPlugin:
 
     def _update_mask_visualization(self):
         if self.mask_rubber_band is None:
-            return
+            # Recreate rubber band if it was lost (e.g. after RuntimeError)
+            try:
+                self.mask_rubber_band = QgsRubberBand(
+                    self.iface.mapCanvas(),
+                    QgsWkbTypes.PolygonGeometry
+                )
+                self.mask_rubber_band.setColor(QColor(0, 120, 255, 100))
+                self.mask_rubber_band.setStrokeColor(QColor(0, 80, 200))
+                self.mask_rubber_band.setWidth(2)
+            except Exception:
+                return
 
         if self.current_mask is None or self.current_transform_info is None:
             # No active mask — but may have frozen sessions to display
@@ -2760,8 +2782,8 @@ class AISegmentationPlugin:
             # Apply refinement to preview in both modes (refine affects current mask only)
             mask_to_display = self.current_mask
             # Apply mask-level refinements (fill holes, expand/contract, min region)
-            if (self._refine_fill_holes or self._refine_expand != 0 or
-                    self._refine_min_area > 0):
+            if (self._refine_fill_holes or self._refine_expand != 0
+                    or self._refine_min_area > 0):
                 mask_to_display = apply_mask_refinement(
                     self.current_mask,
                     expand_value=self._refine_expand,

@@ -215,8 +215,8 @@ class LayerTreeComboBox(QComboBox):
         for child in node.children():
             if QgsLayerTree.isLayer(child):
                 layer = child.layer()
-                if (layer and layer.type() == layer.RasterLayer and
-                        child.isVisible()):
+                if (layer and layer.type() == layer.RasterLayer
+                        and child.isVisible()):
                     return True
             elif QgsLayerTree.isGroup(child):
                 if child.isVisible() and self._has_visible_rasters(child):
@@ -234,8 +234,8 @@ class LayerTreeComboBox(QComboBox):
                     visible_children.append(child)
             elif QgsLayerTree.isLayer(child):
                 layer = child.layer()
-                if (layer and layer.type() == layer.RasterLayer and
-                        child.isVisible()):
+                if (layer and layer.type() == layer.RasterLayer
+                        and child.isVisible()):
                     visible_children.append(child)
 
         depth_role = _IndentDelegate.DEPTH_ROLE
@@ -504,9 +504,13 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.cancel_toggle)
 
         self.cancel_button = QPushButton(tr("Cancel"))
+        self.cancel_button.setObjectName("cancelBtn")
         self.cancel_button.clicked.connect(self._on_cancel_clicked)
         self.cancel_button.setVisible(False)
-        self.cancel_button.setStyleSheet("background-color: #d32f2f;")
+        self.cancel_button.setStyleSheet(
+            "QPushButton#cancelBtn { background-color: #d32f2f; color: white; font-weight: bold;"
+            " border: none; border-radius: 4px; padding: 6px 12px; }"
+        )
         layout.addWidget(self.cancel_button)
 
         if not USE_SAM2:
@@ -562,7 +566,7 @@ class AISegmentationDockWidget(QDockWidget):
         get_code_button.setCursor(Qt.CursorShape.PointingHandCursor)
         get_code_button.setStyleSheet(
             "QPushButton { background-color: #2e7d32; color: white; "
-            "font-weight: bold; border-radius: 4px; }"
+            "font-weight: bold; border: none; border-radius: 4px; }"
             "QPushButton:hover { background-color: #1b5e20; }"
         )
         get_code_button.clicked.connect(self._on_get_code_clicked)
@@ -588,7 +592,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.activate_button.setMinimumWidth(60)
         self.activate_button.setStyleSheet(
             "QPushButton { background-color: #1976d2; color: white; "
-            "font-weight: bold; border-radius: 4px; }"
+            "font-weight: bold; border: none; border-radius: 4px; }"
             "QPushButton:hover { background-color: #1565c0; }"
         )
         self.activate_button.clicked.connect(self._on_activate_clicked)
@@ -609,11 +613,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.main_layout.addWidget(self.activation_group)
 
     def _setup_segmentation_section(self):
-        self.seg_separator = QFrame()
-        self.seg_separator.setFrameShape(QFrame.Shape.HLine)
-        self.seg_separator.setFrameShadow(QFrame.Shadow.Sunken)
-        self.main_layout.addWidget(self.seg_separator)
-
         self.seg_widget = QWidget()
         layout = QVBoxLayout(self.seg_widget)
         layout.setContentsMargins(0, 8, 0, 0)
@@ -661,14 +660,13 @@ class AISegmentationDockWidget(QDockWidget):
         # Dynamic instruction label - styled as a card (slightly darker gray than refine panel)
         self.instructions_label = QLabel("")
         self.instructions_label.setWordWrap(True)
-        # Fixed height avoids visual glitch when text changes between states
-        self.instructions_label.setFixedHeight(70)
+        self.instructions_label.setMinimumHeight(70)
         self.instructions_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.instructions_label.setStyleSheet("""
             QLabel {
-                background-color: rgba(128, 128, 128, 0.12);
-                border: 1px solid rgba(128, 128, 128, 0.25);
+                background-color: rgba(255, 255, 255, 0.12);
+                border: 1px solid rgba(255, 255, 255, 0.25);
                 border-radius: 4px;
                 padding: 8px;
                 font-size: 12px;
@@ -685,11 +683,14 @@ class AISegmentationDockWidget(QDockWidget):
         start_layout.setSpacing(6)
 
         self.start_button = QPushButton(tr("Start AI Segmentation"))
+        self.start_button.setObjectName("startBtn")
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._on_start_clicked)
         self.start_button.setStyleSheet(
-            "QPushButton { background-color: #2e7d32; padding: 8px 16px; }"
-            "QPushButton:disabled { background-color: #c8e6c9; }"
+            "QPushButton#startBtn { background-color: #2e7d32; color: white; font-weight: bold;"
+            " border: none; border-radius: 4px; padding: 8px 16px; }"
+            "QPushButton#startBtn:disabled { background-color: #c8e6c9; color: #666;"
+            " border: none; border-radius: 4px; }"
         )
         start_layout.addWidget(self.start_button)
 
@@ -705,12 +706,15 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Primary action buttons (reduced height)
         self.save_mask_button = QPushButton(tr("Save polygon") + "  (Shortcut: S)")
+        self.save_mask_button.setObjectName("saveBtn")
         self.save_mask_button.clicked.connect(self._on_save_polygon_clicked)
         self.save_mask_button.setVisible(False)
         self.save_mask_button.setEnabled(False)
         self.save_mask_button.setStyleSheet(
-            "QPushButton { background-color: #1976d2; padding: 6px 12px; }"
-            "QPushButton:disabled { background-color: #b0bec5; }"
+            "QPushButton#saveBtn { background-color: #1976d2; color: white; font-weight: bold;"
+            " border: none; border-radius: 4px; padding: 6px 12px; }"
+            "QPushButton#saveBtn:disabled { background-color: #b0bec5; color: #666;"
+            " border: none; border-radius: 4px; }"
         )
         self.save_mask_button.setToolTip(
             tr("Save current polygon to your session")
@@ -718,11 +722,13 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(self.save_mask_button)
 
         self.export_button = QPushButton(tr("Export polygon to a layer"))
+        self.export_button.setObjectName("exportBtn")
         self.export_button.clicked.connect(self._on_export_clicked)
         self.export_button.setVisible(False)
         self.export_button.setEnabled(False)
         self.export_button.setStyleSheet(
-            "QPushButton { background-color: #b0bec5; padding: 6px 12px; }"
+            "QPushButton#exportBtn { background-color: #b0bec5; color: #666; font-weight: bold;"
+            " border: none; border-radius: 4px; padding: 6px 12px; }"
         )
         layout.addWidget(self.export_button)
 
@@ -731,19 +737,25 @@ class AISegmentationDockWidget(QDockWidget):
         secondary_layout.setSpacing(8)
 
         self.undo_button = QPushButton(tr("Undo last point"))
+        self.undo_button.setObjectName("undoBtn")
         self.undo_button.setEnabled(False)
         self.undo_button.clicked.connect(self._on_undo_clicked)
         self.undo_button.setVisible(False)  # Hidden until segmentation starts
         self.undo_button.setStyleSheet(
-            "QPushButton { color: white; padding: 4px 8px; }"
+            "QPushButton#undoBtn { background-color: #757575; color: white; font-weight: bold;"
+            " border: none; border-radius: 4px; padding: 4px 8px; }"
+            "QPushButton#undoBtn:disabled { background-color: #757575; color: rgba(255,255,255,0.5);"
+            " border: none; border-radius: 4px; padding: 4px 8px; }"
         )
         secondary_layout.addWidget(self.undo_button, 1)  # stretch factor 1
 
         self.stop_button = QPushButton(tr("Stop segmentation"))
+        self.stop_button.setObjectName("stopBtn")
         self.stop_button.clicked.connect(self._on_stop_clicked)
         self.stop_button.setVisible(False)  # Hidden until segmentation starts
         self.stop_button.setStyleSheet(
-            "QPushButton { background-color: #757575; padding: 4px 8px; }"
+            "QPushButton#stopBtn { background-color: #757575; color: white; font-weight: bold;"
+            " border: none; border-radius: 4px; padding: 4px 8px; }"
         )
         secondary_layout.addWidget(self.stop_button, 1)  # stretch factor 1 for same width
 
@@ -1048,7 +1060,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Report a bug button (styled as link)
         report_link = QLabel(
-            '<a href="#" style="color: #1976d2;">' + tr("Report a bug") + '</a>'
+            '<a href="#" style="color: #42a5f5;">' + tr("Report a bug") + '</a>'
         )
         report_link.setStyleSheet("font-size: 13px;")
         report_link.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1057,7 +1069,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Tutorial link
         docs_link = QLabel(
-            '<a href="https://terra-lab.ai/docs/ai-segmentation" style="color: #1976d2;">' + tr("Tutorial") + '</a>'
+            '<a href="https://terra-lab.ai/docs/ai-segmentation" style="color: #42a5f5;">' + tr("Tutorial") + '</a>'
         )
         docs_link.setStyleSheet("font-size: 13px;")
         docs_link.setOpenExternalLinks(True)
@@ -1066,7 +1078,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Shortcuts link
         shortcuts_link = QLabel(
-            '<a href="#" style="color: #1976d2;">' + tr("Shortcuts") + '</a>'
+            '<a href="#" style="color: #42a5f5;">' + tr("Shortcuts") + '</a>'
         )
         shortcuts_link.setStyleSheet("font-size: 13px;")
         shortcuts_link.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1187,7 +1199,6 @@ class AISegmentationDockWidget(QDockWidget):
         # Segmentation section: only show if fully set up + activated
         show_segmentation = setup_complete and self._plugin_activated
         self.seg_widget.setVisible(show_segmentation)
-        self.seg_separator.setVisible(show_segmentation)
 
         # Welcome section: hide when setup is complete
         self.welcome_widget.setVisible(not setup_complete)
@@ -1521,12 +1532,14 @@ class AISegmentationDockWidget(QDockWidget):
         if count > 0:
             self.export_button.setEnabled(True)
             self.export_button.setStyleSheet(
-                "QPushButton { background-color: #4CAF50; padding: 6px 12px; }"
+                "QPushButton#exportBtn { background-color: #4CAF50; color: white; font-weight: bold;"
+                " border: none; border-radius: 4px; padding: 6px 12px; }"
             )
         else:
             self.export_button.setEnabled(False)
             self.export_button.setStyleSheet(
-                "QPushButton { background-color: #b0bec5; padding: 6px 12px; }"
+                "QPushButton#exportBtn { background-color: #b0bec5; color: #666; font-weight: bold;"
+                " border: none; border-radius: 4px; padding: 6px 12px; }"
             )
 
     def set_point_count(self, positive: int, negative: int):
