@@ -355,8 +355,8 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Redondear esquinas:</translation>
     </message>
     <message>
-        <source>Smoothing iterations for natural shapes like trees and bushes. 0 = off, higher = smoother corners.</source>
-        <translation>Iteraciones de suavizado para formas naturales como árboles y arbustos. 0 = desactivado, mayor = esquinas más suaves.</translation>
+        <source>Round corners for natural shapes like trees and bushes. Increase 'Simplify outline' for smoother results.</source>
+        <translation>Redondear esquinas para formas naturales como árboles y arbustos. Aumenta 'Simplificar contorno' para resultados más suaves.</translation>
     </message>
     <message>
         <source>Outline</source>

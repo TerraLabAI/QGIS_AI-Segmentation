@@ -355,8 +355,8 @@ export AI_SEGMENTATION_CACHE_DIR=/seu/caminho</translation>
         <translation>Arredondar cantos:</translation>
     </message>
     <message>
-        <source>Smoothing iterations for natural shapes like trees and bushes. 0 = off, higher = smoother corners.</source>
-        <translation>Iterações de suavização para formas naturais como árvores e arbustos. 0 = desativado, maior = cantos mais suaves.</translation>
+        <source>Round corners for natural shapes like trees and bushes. Increase 'Simplify outline' for smoother results.</source>
+        <translation>Arredondar cantos para formas naturais como árvores e arbustos. Aumente 'Simplificar contorno' para resultados mais suaves.</translation>
     </message>
     <message>
         <source>Outline</source>
