@@ -926,7 +926,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.simplify_spinbox.setValue(3)
         self.round_corners_checkbox.setChecked(False)
         self.expand_spinbox.setValue(0)
-        self.fill_holes_checkbox.setChecked(False)
+        self.fill_holes_checkbox.setChecked(True)
 
         self.simplify_spinbox.blockSignals(False)
         self.round_corners_checkbox.blockSignals(False)
