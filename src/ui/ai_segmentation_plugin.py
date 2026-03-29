@@ -322,6 +322,7 @@ class AISegmentationPlugin:
         self.map_tool: Optional[AISegmentationMapTool] = None
         self.action: Optional[QAction] = None
         self.terralab_menu: Optional[QMenu] = None
+        self.terralab_toolbar = None
 
         self.predictor = None
         self.prompts = PromptManager()
@@ -499,7 +500,9 @@ class AISegmentationPlugin:
         )
         self.action.triggered.connect(self.toggle_dock_widget)
 
-        self.iface.addToolBarIcon(self.action)
+        from .terralab_toolbar import get_or_create_terralab_toolbar, add_action_to_toolbar
+        self.terralab_toolbar = get_or_create_terralab_toolbar(self.iface)
+        add_action_to_toolbar(self.terralab_toolbar, self.action, "ai-segmentation")
 
         from .terralab_menu import (
             get_or_create_terralab_menu,
@@ -704,10 +707,14 @@ class AISegmentationPlugin:
                 pass
             self.terralab_menu = None
 
-        try:
-            self.iface.removeToolBarIcon(self.action)
-        except (RuntimeError, AttributeError):
-            pass
+        from .terralab_toolbar import remove_action_from_toolbar
+        if self.terralab_toolbar:
+            try:
+                remove_action_from_toolbar(
+                    self.terralab_toolbar, self.action, self.iface.mainWindow())
+            except (RuntimeError, AttributeError):
+                pass
+            self.terralab_toolbar = None
 
         # 6. Remove dock widget
         if self.dock_widget:

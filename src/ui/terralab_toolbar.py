@@ -3,34 +3,21 @@
 SHARED: keep in sync with the copy in the sibling TerraLab plugin.
 """
 
-from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import QToolBar
 
 _TOOLBAR_OBJECT_NAME = "TerraLabToolbar"
-_TOOLBAR_TITLE = "TerraLab Toolbar"
+_TOOLBAR_TITLE = "TerraLab"
 
 
-def _last_row_has_space(main_window, extra_width=80):
-    """Check if the last toolbar row has enough space for our toolbar."""
-    last_row_width = 0
-    for tb in main_window.findChildren(QToolBar):
-        if tb.isVisible() and main_window.toolBarArea(tb) == Qt.TopToolBarArea:
-            if main_window.toolBarBreak(tb):
-                last_row_width = 0  # new row starts here
-            last_row_width += tb.sizeHint().width()
-    return last_row_width + extra_width < main_window.width()
-
-
-def get_or_create_terralab_toolbar(main_window):
-    """Find existing TerraLab toolbar or create one, on last row if space allows."""
+def get_or_create_terralab_toolbar(iface):
+    """Find existing TerraLab toolbar or create one via iface.addToolBar()."""
+    main_window = iface.mainWindow()
     for tb in main_window.findChildren(QToolBar):
         if tb.objectName() == _TOOLBAR_OBJECT_NAME:
             return tb
-    toolbar = QToolBar(_TOOLBAR_TITLE, main_window)
+    toolbar = QToolBar(_TOOLBAR_TITLE)
     toolbar.setObjectName(_TOOLBAR_OBJECT_NAME)
-    if not _last_row_has_space(main_window):
-        main_window.addToolBarBreak(Qt.TopToolBarArea)
-    main_window.addToolBar(Qt.TopToolBarArea, toolbar)
+    iface.addToolBar(toolbar)
     return toolbar
 
 
