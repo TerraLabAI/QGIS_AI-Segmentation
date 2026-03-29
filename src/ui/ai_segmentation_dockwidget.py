@@ -911,7 +911,7 @@ class AISegmentationDockWidget(QDockWidget):
         """Emit the refine settings changed signal after debounce."""
         self.refine_settings_changed.emit(
             self.simplify_spinbox.value(),
-            2 if self.round_corners_checkbox.isChecked() else 0,
+            5 if self.round_corners_checkbox.isChecked() else 0,
             self.expand_spinbox.value(),
             self.fill_holes_checkbox.isChecked(),
         )
