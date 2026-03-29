@@ -103,7 +103,7 @@ class ActivationDialog(QDialog):
         get_code_button.setCursor(Qt.CursorShape.PointingHandCursor)
         get_code_button.setStyleSheet(
             "QPushButton { background-color: #2e7d32; color: white; "
-            "font-weight: bold; font-size: 13px; border: none; border-radius: 4px; }"
+            "font-weight: bold; font-size: 13px; border-radius: 4px; }"
             "QPushButton:hover { background-color: #1b5e20; }"
         )
         get_code_button.clicked.connect(self._on_get_code_clicked)
@@ -139,9 +139,9 @@ class ActivationDialog(QDialog):
         self.activate_button.setMinimumWidth(80)
         self.activate_button.setStyleSheet(
             "QPushButton { background-color: #1976d2; color: white; "
-            "font-weight: bold; font-size: 12px; border: none; border-radius: 4px; }"
+            "font-weight: bold; font-size: 12px; border-radius: 4px; }"
             "QPushButton:hover { background-color: #1565c0; }"
-            "QPushButton:disabled { background-color: #b0bec5; color: #666; border: none; }"
+            "QPushButton:disabled { background-color: #b0bec5; }"
         )
         self.activate_button.clicked.connect(self._on_activate_clicked)
         code_layout.addWidget(self.activate_button)
