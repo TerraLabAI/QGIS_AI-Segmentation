@@ -6,7 +6,7 @@ SHARED: keep in sync with the copy in the sibling TerraLab plugin.
 from qgis.PyQt.QtWidgets import QToolBar
 
 _TOOLBAR_OBJECT_NAME = "TerraLabToolbar"
-_TOOLBAR_TITLE = "TerraLab"
+_TOOLBAR_TITLE = "TerraLab Toolbar"
 
 
 def get_or_create_terralab_toolbar(iface):
