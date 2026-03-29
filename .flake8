@@ -1,0 +1,4 @@
+[flake8]
+# W503 (line break before binary operator) conflicts with W504 and with PEP 8's
+# recommendation. Ignore W503; W504 violations are fixed in code.
+extend-ignore = W503

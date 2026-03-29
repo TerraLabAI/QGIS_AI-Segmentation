@@ -16,14 +16,13 @@ from qgis.PyQt.QtWidgets import (
     QCheckBox,
     QToolButton,
     QStyle,
-    QSizePolicy,
     QScrollArea,
     QComboBox,
     QStyledItemDelegate,
     QStyleOptionViewItem,
 )
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
-from qgis.PyQt.QtGui import QDesktopServices, QIcon, QKeySequence
+from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
 from qgis.PyQt.QtWidgets import QShortcut
 from qgis.core import QgsProject, QgsLayerTree
 

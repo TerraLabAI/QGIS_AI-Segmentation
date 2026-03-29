@@ -204,9 +204,9 @@ class _ShortcutFilter(QObject):
             plugin._on_undo()
             return True
         elif (key == Qt.Key.Key_S
-              and not (modifiers & (Qt.KeyboardModifier.ControlModifier |
-                                Qt.KeyboardModifier.AltModifier |
-                                Qt.KeyboardModifier.ShiftModifier))):
+              and not (modifiers & (Qt.KeyboardModifier.ControlModifier
+                                    | Qt.KeyboardModifier.AltModifier
+                                    | Qt.KeyboardModifier.ShiftModifier))):
             plugin._on_save_polygon()
             return True
         elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -2123,8 +2123,8 @@ class AISegmentationPlugin:
             if (self._current_crop_actual_mupp
                     and self._current_crop_canvas_mupp
                     and self._current_crop_canvas_mupp > 0):
-                scale = max(1.0, self._current_crop_actual_mupp /
-                            self._current_crop_canvas_mupp * 2.0)
+                scale = max(1.0, self._current_crop_actual_mupp
+                            / self._current_crop_canvas_mupp * 2.0)
             else:
                 scale = 1.0
         # Gentle power curve centered on 100 (proven default).
@@ -2422,7 +2422,7 @@ class AISegmentationPlugin:
                 layer_name = sel.name()
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.").format(layer=layer_name),
+                tr("Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.").format(layer=layer_name),  # noqa: E501
                 level=Qgis.MessageLevel.Warning,
                 duration=8
             )
@@ -2522,7 +2522,7 @@ class AISegmentationPlugin:
                 layer_name = sel.name()
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.").format(layer=layer_name),
+                tr("Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.").format(layer=layer_name),  # noqa: E501
                 level=Qgis.MessageLevel.Warning,
                 duration=8
             )
