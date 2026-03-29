@@ -818,18 +818,21 @@ class AISegmentationDockWidget(QDockWidget):
         simplify_layout.addWidget(self.simplify_spinbox)
         refine_content_layout.addLayout(simplify_layout)
 
-        # 2. Round corners: Label + Checkbox aligned right (like spinbox rows)
+        # 2. Round corners: Label + SpinBox (0-20)
         round_layout = QHBoxLayout()
         round_label = QLabel(tr("Round corners:"))
         round_label.setToolTip(
-            tr("Round corners for natural shapes like trees and bushes. "
-               "Increase 'Simplify outline' for smoother results."))
-        self.round_corners_checkbox = QCheckBox()
-        self.round_corners_checkbox.setToolTip(round_label.toolTip())
-        self.round_corners_checkbox.setChecked(False)
+            tr("Smoothing iterations for natural shapes like trees and bushes. "
+               "0 = off, higher = smoother corners."))
+        self.round_corners_spinbox = QSpinBox()
+        self.round_corners_spinbox.setRange(0, 20)
+        self.round_corners_spinbox.setValue(0)
+        self.round_corners_spinbox.setToolTip(round_label.toolTip())
+        self.round_corners_spinbox.setMinimumWidth(55)
+        self.round_corners_spinbox.setMaximumWidth(70)
         round_layout.addWidget(round_label)
         round_layout.addStretch()
-        round_layout.addWidget(self.round_corners_checkbox)
+        round_layout.addWidget(self.round_corners_spinbox)
         refine_content_layout.addLayout(round_layout)
 
         # ── Selection section ──
@@ -875,7 +878,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Connect signals
         self.simplify_spinbox.valueChanged.connect(self._on_refine_changed)
-        self.round_corners_checkbox.stateChanged.connect(self._on_refine_changed)
+        self.round_corners_spinbox.valueChanged.connect(self._on_refine_changed)
         self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
         self.fill_holes_checkbox.stateChanged.connect(self._on_refine_changed)
 
@@ -911,7 +914,7 @@ class AISegmentationDockWidget(QDockWidget):
         """Emit the refine settings changed signal after debounce."""
         self.refine_settings_changed.emit(
             self.simplify_spinbox.value(),
-            2 if self.round_corners_checkbox.isChecked() else 0,
+            self.round_corners_spinbox.value(),
             self.expand_spinbox.value(),
             self.fill_holes_checkbox.isChecked(),
         )
@@ -919,17 +922,17 @@ class AISegmentationDockWidget(QDockWidget):
     def reset_refine_sliders(self):
         """Reset refinement controls to default values without emitting signals."""
         self.simplify_spinbox.blockSignals(True)
-        self.round_corners_checkbox.blockSignals(True)
+        self.round_corners_spinbox.blockSignals(True)
         self.expand_spinbox.blockSignals(True)
         self.fill_holes_checkbox.blockSignals(True)
 
         self.simplify_spinbox.setValue(3)
-        self.round_corners_checkbox.setChecked(False)
+        self.round_corners_spinbox.setValue(0)
         self.expand_spinbox.setValue(0)
         self.fill_holes_checkbox.setChecked(False)
 
         self.simplify_spinbox.blockSignals(False)
-        self.round_corners_checkbox.blockSignals(False)
+        self.round_corners_spinbox.blockSignals(False)
         self.expand_spinbox.blockSignals(False)
         self.fill_holes_checkbox.blockSignals(False)
 
@@ -937,17 +940,17 @@ class AISegmentationDockWidget(QDockWidget):
                           fill_holes: bool):
         """Set refine slider values without emitting signals."""
         self.simplify_spinbox.blockSignals(True)
-        self.round_corners_checkbox.blockSignals(True)
+        self.round_corners_spinbox.blockSignals(True)
         self.expand_spinbox.blockSignals(True)
         self.fill_holes_checkbox.blockSignals(True)
 
         self.simplify_spinbox.setValue(simplify)
-        self.round_corners_checkbox.setChecked(smooth > 0)
+        self.round_corners_spinbox.setValue(smooth)
         self.expand_spinbox.setValue(expand)
         self.fill_holes_checkbox.setChecked(fill_holes)
 
         self.simplify_spinbox.blockSignals(False)
-        self.round_corners_checkbox.blockSignals(False)
+        self.round_corners_spinbox.blockSignals(False)
         self.expand_spinbox.blockSignals(False)
         self.fill_holes_checkbox.blockSignals(False)
 

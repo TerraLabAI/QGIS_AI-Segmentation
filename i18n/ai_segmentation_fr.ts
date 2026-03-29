@@ -355,8 +355,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Arrondir les coins :</translation>
     </message>
     <message>
-        <source>Round corners for natural shapes like trees and bushes. Increase 'Simplify outline' for smoother results.</source>
-        <translation>Arrondir les coins pour des formes naturelles comme les arbres et buissons. Augmentez 'Simplifier le contour' pour un résultat plus lisse.</translation>
+        <source>Smoothing iterations for natural shapes like trees and bushes. 0 = off, higher = smoother corners.</source>
+        <translation>Itérations de lissage pour les formes naturelles comme les arbres et buissons. 0 = désactivé, plus élevé = coins plus lisses.</translation>
     </message>
     <message>
         <source>Outline</source>
