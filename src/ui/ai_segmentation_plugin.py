@@ -1867,6 +1867,13 @@ class AISegmentationPlugin:
         # Saved masks (green) keep their own refine settings from when they were saved
         self._update_mask_visualization()
 
+        # Restore canvas focus so keyboard shortcuts (S, Ctrl+Z, etc.)
+        # work immediately after changing refine parameters.
+        try:
+            self.iface.mapCanvas().setFocus()
+        except RuntimeError:
+            pass
+
     def _transform_to_raster_crs(self, point):
         """Transform a QgsPointXY from canvas CRS to raster CRS.
 
