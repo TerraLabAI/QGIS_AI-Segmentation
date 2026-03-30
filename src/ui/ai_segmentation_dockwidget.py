@@ -730,7 +730,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.undo_button.clicked.connect(self._on_undo_clicked)
         self.undo_button.setVisible(False)  # Hidden until segmentation starts
         self.undo_button.setStyleSheet(
-            "QPushButton { background-color: #757575; padding: 4px 8px; }"
+            "QPushButton { background-color: #757575; color: white; padding: 4px 8px; }"
         )
         secondary_layout.addWidget(self.undo_button, 1)  # stretch factor 1
 
@@ -738,7 +738,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.stop_button.clicked.connect(self._on_stop_clicked)
         self.stop_button.setVisible(False)  # Hidden until segmentation starts
         self.stop_button.setStyleSheet(
-            "QPushButton { background-color: #757575; padding: 4px 8px; }"
+            "QPushButton { background-color: #757575; color: white; padding: 4px 8px; }"
         )
         secondary_layout.addWidget(self.stop_button, 1)  # stretch factor 1 for same width
 

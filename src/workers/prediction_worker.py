@@ -9,6 +9,24 @@ import base64
 _real_stdout = sys.stdout
 sys.stdout = sys.stderr
 
+# On Windows, register torch DLL directories in this subprocess.
+# os.add_dll_directory() calls from the parent process do not propagate,
+# so the subprocess must register them itself for c10.dll etc. to load.
+if sys.platform == "win32":
+    _site_packages = None
+    for p in sys.path:
+        if p.endswith("site-packages") and os.path.isdir(p):
+            _site_packages = p
+            break
+    if _site_packages:
+        for _subdir in ("torch\\lib", "torch\\bin", "torchvision"):
+            _dll_dir = os.path.join(_site_packages, _subdir)
+            if os.path.isdir(_dll_dir):
+                try:
+                    os.add_dll_directory(_dll_dir)
+                except OSError:
+                    pass
+
 try:
     import numpy as np  # noqa: E402
     import torch  # noqa: E402
@@ -28,8 +46,10 @@ except OSError as e:
         error_msg = {
             "type": "error",
             "message": "PyTorch DLL error (Windows): {}. "
-                       "This usually means Visual C++ Redistributables are missing. "
-                       "Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe".format(str(e))
+                       "Try: 1) Install Visual C++ Redistributables from "
+                       "https://aka.ms/vs/17/release/vc_redist.x64.exe "
+                       "2) If already installed, reinstall the plugin dependencies "
+                       "(Settings > Reinstall dependencies).".format(str(e))
         }
     else:
         error_msg = {
