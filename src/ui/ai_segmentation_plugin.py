@@ -771,6 +771,11 @@ class AISegmentationPlugin:
         self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
         self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
 
+        # Run setup immediately (before the dock is shown) so the user never
+        # sees the "Checking..." panel if deps are already installed.
+        self._initialized = True
+        self._do_first_time_setup()
+
     def toggle_dock_widget(self, checked: bool):
         self._ensure_dock_widget()
         if self.dock_widget:
