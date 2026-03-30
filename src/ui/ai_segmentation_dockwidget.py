@@ -790,27 +790,31 @@ class AISegmentationDockWidget(QDockWidget):
         # Content widget to show/hide - styled as a subtle bordered box
         self.refine_content_widget = QWidget()
         self.refine_content_widget.setObjectName("refineContentWidget")
-        self.refine_content_widget.setStyleSheet("""
-            QWidget#refineContentWidget {
+        _check_icon = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "icons", "check.svg"
+        ).replace("\\", "/")
+        self.refine_content_widget.setStyleSheet(f"""
+            QWidget#refineContentWidget {{
                 background-color: rgba(128, 128, 128, 0.08);
                 border: 1px solid rgba(128, 128, 128, 0.2);
                 border-radius: 4px;
-            }
-            QLabel {
+            }}
+            QLabel {{
                 background: transparent;
                 border: none;
-            }
-            QCheckBox::indicator {
+            }}
+            QCheckBox::indicator {{
                 width: 16px;
                 height: 16px;
-                border: 2px solid #9e9e9e;
+                border: 1px solid rgba(255, 255, 255, 0.18);
                 border-radius: 3px;
-                background-color: #bdbdbd;
-            }
-            QCheckBox::indicator:checked {
+                background-color: transparent;
+            }}
+            QCheckBox::indicator:checked {{
                 background-color: #1976d2;
-                border-color: #1565c0;
-            }
+                border-color: #1976d2;
+                image: url({_check_icon});
+            }}
         """)
         refine_content_layout = QVBoxLayout(self.refine_content_widget)
         refine_content_layout.setContentsMargins(10, 10, 10, 10)
