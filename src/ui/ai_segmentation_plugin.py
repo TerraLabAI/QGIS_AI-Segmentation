@@ -15,6 +15,13 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import Qt, QThread, QObject, pyqtSignal, QVariant, QSettings, QEvent
+try:
+    from qgis.PyQt.QtCore import QMetaType
+    _FIELD_TYPE_STRING = QMetaType.Type.QString
+    _FIELD_TYPE_DOUBLE = QMetaType.Type.Double
+except (ImportError, AttributeError):
+    _FIELD_TYPE_STRING = QVariant.String
+    _FIELD_TYPE_DOUBLE = QVariant.Double
 from qgis.core import (
     QgsProject,
     QgsRasterLayer,
@@ -320,6 +327,7 @@ class AISegmentationPlugin:
         self.plugin_dir = Path(__file__).parent.parent.parent
 
         self.dock_widget: Optional[AISegmentationDockWidget] = None
+        self._dock_created = False
         self.map_tool: Optional[AISegmentationMapTool] = None
         self.action: Optional[QAction] = None
         self.terralab_menu: Optional[QMenu] = None
@@ -514,23 +522,9 @@ class AISegmentationPlugin:
         add_plugin_to_menu(self.terralab_menu, self.action, "ai-segmentation")
         add_to_plugins_menu(self.iface, self.action)
 
-        self.dock_widget = AISegmentationDockWidget(self.iface.mainWindow())
-
-        self.dock_widget.install_requested.connect(self._on_install_requested)
-        self.dock_widget.cancel_install_requested.connect(self._on_cancel_install)
-        self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
-        self.dock_widget.save_polygon_requested.connect(self._on_save_polygon)
-        self.dock_widget.export_layer_requested.connect(self._on_export_layer)
-        self.dock_widget.clear_points_requested.connect(self._on_clear_points)
-        self.dock_widget.undo_requested.connect(self._on_undo)
-        self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
-        self.dock_widget.refine_settings_changed.connect(self._on_refine_settings_changed)
-        self.dock_widget.batch_mode_changed.connect(self._on_batch_mode_changed)
-        self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
-
-        self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
-        self.dock_widget.setVisible(False)
-        self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
+        # Defer dock widget creation to first toggle for fast plugin load
+        self.dock_widget = None
+        self._dock_created = False
 
         self.map_tool = AISegmentationMapTool(self.iface.mapCanvas())
         self.map_tool.positive_click.connect(self._on_positive_click)
@@ -747,7 +741,31 @@ class AISegmentationPlugin:
         # 9. Disconnect log collector signal
         stop_log_collector()
 
+    def _ensure_dock_widget(self):
+        """Create the dock widget on first use (deferred from initGui for speed)."""
+        if self._dock_created:
+            return
+        self._dock_created = True
+
+        self.dock_widget = AISegmentationDockWidget(self.iface.mainWindow())
+
+        self.dock_widget.install_requested.connect(self._on_install_requested)
+        self.dock_widget.cancel_install_requested.connect(self._on_cancel_install)
+        self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
+        self.dock_widget.save_polygon_requested.connect(self._on_save_polygon)
+        self.dock_widget.export_layer_requested.connect(self._on_export_layer)
+        self.dock_widget.clear_points_requested.connect(self._on_clear_points)
+        self.dock_widget.undo_requested.connect(self._on_undo)
+        self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
+        self.dock_widget.refine_settings_changed.connect(self._on_refine_settings_changed)
+        self.dock_widget.batch_mode_changed.connect(self._on_batch_mode_changed)
+        self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
+
+        self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
+        self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
+
     def toggle_dock_widget(self, checked: bool):
+        self._ensure_dock_widget()
         if self.dock_widget:
             self.dock_widget.setVisible(checked)
 
@@ -1602,10 +1620,10 @@ class AISegmentationPlugin:
         # Add attributes
         pr = temp_layer.dataProvider()
         pr.addAttributes([
-            QgsField("label", QVariant.Type.String),
-            QgsField("area", QVariant.Type.Double),
-            QgsField("raster_source", QVariant.Type.String),
-            QgsField("created_at", QVariant.Type.String),
+            QgsField("label", _FIELD_TYPE_STRING),
+            QgsField("area", _FIELD_TYPE_DOUBLE),
+            QgsField("raster_source", _FIELD_TYPE_STRING),
+            QgsField("created_at", _FIELD_TYPE_STRING),
         ])
         temp_layer.updateFields()
 
