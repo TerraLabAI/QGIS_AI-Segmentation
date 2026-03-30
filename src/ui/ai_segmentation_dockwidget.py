@@ -405,8 +405,8 @@ class AISegmentationDockWidget(QDockWidget):
         title_outer.addLayout(title_row)
 
         separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
+        separator.setFrameShape(getattr(QFrame, 'Shape', QFrame).HLine)
+        separator.setFrameShadow(getattr(QFrame, 'Shadow', QFrame).Sunken)
         title_outer.addWidget(separator)
 
         self.setTitleBarWidget(title_widget)
