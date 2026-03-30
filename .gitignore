@@ -20,3 +20,6 @@ venv_py3.9/
 venv_py3.12/
 .flake8
 .github/
+.claude/
+CLAUDE.md
+claude.md
