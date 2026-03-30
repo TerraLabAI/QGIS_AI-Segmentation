@@ -24,7 +24,7 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
 from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
 from qgis.PyQt.QtWidgets import QShortcut
-from qgis.core import QgsProject, QgsLayerTree
+from qgis.core import QgsProject, QgsLayerTree, QgsMessageLog, Qgis
 
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
@@ -790,9 +790,39 @@ class AISegmentationDockWidget(QDockWidget):
         # Content widget to show/hide - styled as a subtle bordered box
         self.refine_content_widget = QWidget()
         self.refine_content_widget.setObjectName("refineContentWidget")
-        _check_icon = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), "icons", "check.svg"
-        ).replace("\\", "/")
+
+        # Build checkbox indicator images at runtime so they match the
+        # current theme regardless of light/dark mode or Qt version.
+        from qgis.PyQt.QtGui import QPixmap, QPainter, QPen, QColor
+        _sz = 18
+        _bg = self.refine_content_widget.palette().color(
+            self.refine_content_widget.palette().currentColorGroup(),
+            self.refine_content_widget.backgroundRole(),
+        )
+        # Unchecked: plain background-colored square (invisible)
+        _pm_off = QPixmap(_sz, _sz)
+        _pm_off.fill(_bg)
+        # Checked: background + blue checkmark
+        _pm_on = QPixmap(_sz, _sz)
+        _pm_on.fill(_bg)
+        _painter = QPainter(_pm_on)
+        _painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        _pen = QPen(QColor("#1976d2"))
+        _pen.setWidthF(2.4)
+        _pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        _pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        _painter.setPen(_pen)
+        _painter.drawLine(3, 10, 7, 14)
+        _painter.drawLine(7, 14, 15, 4)
+        _painter.end()
+        # Save to temp files for the stylesheet
+        import tempfile
+        _dir = tempfile.mkdtemp(prefix="qgis_ai_seg_")
+        _path_off = os.path.join(_dir, "cb_off.png").replace("\\", "/")
+        _path_on = os.path.join(_dir, "cb_on.png").replace("\\", "/")
+        _pm_off.save(_path_off, "PNG")
+        _pm_on.save(_path_on, "PNG")
+
         self.refine_content_widget.setStyleSheet(f"""
             QWidget#refineContentWidget {{
                 background-color: rgba(128, 128, 128, 0.08);
@@ -803,17 +833,18 @@ class AISegmentationDockWidget(QDockWidget):
                 background: transparent;
                 border: none;
             }}
+            QCheckBox {{
+                background: transparent;
+            }}
             QCheckBox::indicator {{
-                width: 16px;
-                height: 16px;
-                border: 1px solid rgba(255, 255, 255, 0.18);
-                border-radius: 3px;
-                background-color: transparent;
+                width: {_sz}px;
+                height: {_sz}px;
+                border: none;
+                image: url({_path_off});
             }}
             QCheckBox::indicator:checked {{
-                background-color: #1976d2;
-                border-color: #1976d2;
-                image: url({_check_icon});
+                border: none;
+                image: url({_path_on});
             }}
         """)
         refine_content_layout = QVBoxLayout(self.refine_content_widget)
