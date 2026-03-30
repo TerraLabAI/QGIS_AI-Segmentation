@@ -507,7 +507,10 @@ class AISegmentationDockWidget(QDockWidget):
         self.cancel_button = QPushButton(tr("Cancel"))
         self.cancel_button.clicked.connect(self._on_cancel_clicked)
         self.cancel_button.setVisible(False)
-        self.cancel_button.setStyleSheet("background-color: #d32f2f; color: white;")
+        self.cancel_button.setStyleSheet(
+            "QPushButton { background-color: #d32f2f; color: #ffffff; }"
+            "QPushButton:hover { background-color: #b71c1c; color: #ffffff; }"
+        )
         layout.addWidget(self.cancel_button)
 
         if not USE_SAM2:
@@ -683,8 +686,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._on_start_clicked)
         self.start_button.setStyleSheet(
-            "QPushButton { background-color: #2e7d32; color: black; padding: 8px 16px; }"
-            "QPushButton:disabled { background-color: #c8e6c9; color: #666; }"
+            "QPushButton { background-color: #2e7d32; color: #000000; padding: 8px 16px; }"
+            "QPushButton:hover { background-color: #1b5e20; color: #000000; }"
+            "QPushButton:disabled { background-color: #c8e6c9; color: #666666; }"
         )
         start_layout.addWidget(self.start_button)
 
@@ -704,8 +708,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.save_mask_button.setVisible(False)
         self.save_mask_button.setEnabled(False)
         self.save_mask_button.setStyleSheet(
-            "QPushButton { background-color: #1976d2; color: black; padding: 6px 12px; }"
-            "QPushButton:disabled { background-color: #b0bec5; color: #666; }"
+            "QPushButton { background-color: #1976d2; color: #000000; padding: 6px 12px; }"
+            "QPushButton:hover { background-color: #1565c0; color: #000000; }"
+            "QPushButton:disabled { background-color: #b0bec5; color: #666666; }"
         )
         self.save_mask_button.setToolTip(
             tr("Save current polygon to your session")
@@ -717,7 +722,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.export_button.setVisible(False)
         self.export_button.setEnabled(False)
         self.export_button.setStyleSheet(
-            "QPushButton { background-color: #b0bec5; color: black; padding: 6px 12px; }"
+            "QPushButton { background-color: #b0bec5; color: #000000; padding: 6px 12px; }"
+            "QPushButton:hover { background-color: #90a4ae; color: #000000; }"
+            "QPushButton:disabled { background-color: #b0bec5; color: #666666; }"
         )
         layout.addWidget(self.export_button)
 
@@ -730,7 +737,8 @@ class AISegmentationDockWidget(QDockWidget):
         self.undo_button.clicked.connect(self._on_undo_clicked)
         self.undo_button.setVisible(False)  # Hidden until segmentation starts
         self.undo_button.setStyleSheet(
-            "QPushButton { background-color: #757575; color: black; padding: 4px 8px; }"
+            "QPushButton { background-color: #757575; color: #000000; padding: 4px 8px; }"
+            "QPushButton:hover { background-color: #616161; color: #000000; }"
         )
         secondary_layout.addWidget(self.undo_button, 1)  # stretch factor 1
 
@@ -738,7 +746,8 @@ class AISegmentationDockWidget(QDockWidget):
         self.stop_button.clicked.connect(self._on_stop_clicked)
         self.stop_button.setVisible(False)  # Hidden until segmentation starts
         self.stop_button.setStyleSheet(
-            "QPushButton { background-color: #757575; color: black; padding: 4px 8px; }"
+            "QPushButton { background-color: #757575; color: #000000; padding: 4px 8px; }"
+            "QPushButton:hover { background-color: #616161; color: #000000; }"
         )
         secondary_layout.addWidget(self.stop_button, 1)  # stretch factor 1 for same width
 
@@ -1526,12 +1535,13 @@ class AISegmentationDockWidget(QDockWidget):
         if count > 0:
             self.export_button.setEnabled(True)
             self.export_button.setStyleSheet(
-                "QPushButton { background-color: #4CAF50; color: black; padding: 6px 12px; }"
+                "QPushButton { background-color: #4CAF50; color: #000000; padding: 6px 12px; }"
+                "QPushButton:hover { background-color: #388E3C; color: #000000; }"
             )
         else:
             self.export_button.setEnabled(False)
             self.export_button.setStyleSheet(
-                "QPushButton { background-color: #b0bec5; color: black; padding: 6px 12px; }"
+                "QPushButton { background-color: #b0bec5; color: #666666; padding: 6px 12px; }"
             )
 
     def set_point_count(self, positive: int, negative: int):

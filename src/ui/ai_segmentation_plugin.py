@@ -15,13 +15,20 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import Qt, QThread, QObject, pyqtSignal, QVariant, QSettings, QEvent
+# Qt6 (QGIS 4.0) removed QVariant.Type; field types use QMetaType instead.
+# Qt5 (QGIS 3.x) has QVariant.String / QVariant.Double directly.
 try:
     from qgis.PyQt.QtCore import QMetaType
     _FIELD_TYPE_STRING = QMetaType.Type.QString
     _FIELD_TYPE_DOUBLE = QMetaType.Type.Double
 except (ImportError, AttributeError):
-    _FIELD_TYPE_STRING = QVariant.String
-    _FIELD_TYPE_DOUBLE = QVariant.Double
+    try:
+        _FIELD_TYPE_STRING = QVariant.String
+        _FIELD_TYPE_DOUBLE = QVariant.Double
+    except AttributeError:
+        # Last resort: raw enum int values (QString=10, Double=6)
+        _FIELD_TYPE_STRING = 10
+        _FIELD_TYPE_DOUBLE = 6
 from qgis.core import (
     QgsProject,
     QgsRasterLayer,
