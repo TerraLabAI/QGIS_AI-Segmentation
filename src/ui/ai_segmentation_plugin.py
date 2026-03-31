@@ -177,8 +177,8 @@ class _ShortcutFilter(QObject):
         if event_type in (QEvent.Type.ShortcutOverride,
                           QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
             if (event.key() == Qt.Key.Key_Space
-                    and plugin.map_tool
-                    and not event.isAutoRepeat()):
+                    and plugin.map_tool  # noqa: W503
+                    and not event.isAutoRepeat()):  # noqa: W503
                 if event_type == QEvent.Type.ShortcutOverride:
                     if plugin.map_tool.isActive():
                         event.accept()
@@ -217,9 +217,9 @@ class _ShortcutFilter(QObject):
             plugin._on_undo()
             return True
         elif (key == Qt.Key.Key_S
-              and not (modifiers & (Qt.KeyboardModifier.ControlModifier
-                                    | Qt.KeyboardModifier.AltModifier
-                                    | Qt.KeyboardModifier.ShiftModifier))):
+              and not (modifiers & (Qt.KeyboardModifier.ControlModifier  # noqa: W503
+                                    | Qt.KeyboardModifier.AltModifier  # noqa: W503
+                                    | Qt.KeyboardModifier.ShiftModifier))):  # noqa: W503
             plugin._on_save_polygon()
             return True
         elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -850,7 +850,7 @@ class AISegmentationPlugin:
 
         # If notification is still hidden and we have retries left, schedule next
         if (not self.dock_widget.update_notification_widget.isVisible()
-                and hasattr(self, '_update_check_delays')):
+                and hasattr(self, '_update_check_delays')):  # noqa: W503
             self._update_check_index += 1
             if self._update_check_index < len(self._update_check_delays):
                 from qgis.PyQt.QtCore import QTimer
@@ -1370,7 +1370,7 @@ class AISegmentationPlugin:
             return
         # Allow save if we have frozen sessions even without active mask
         has_active = (self.current_mask is not None
-                      and self.current_transform_info is not None)
+                      and self.current_transform_info is not None)  # noqa: W503
         if not has_active and not self._frozen_sessions:
             return
 
@@ -1482,7 +1482,7 @@ class AISegmentationPlugin:
         self._ensure_polygon_rubberband_sync()
 
         has_active = (self.current_mask is not None
-                      and self.current_transform_info is not None)
+                      and self.current_transform_info is not None)  # noqa: W503
         if not self.saved_polygons and not has_active and not self._frozen_sessions:
             return  # Nothing to export
 
@@ -1960,7 +1960,7 @@ class AISegmentationPlugin:
         # The existing crop is still valid (point is in bounds), so SAM
         # can predict just fine on the current encoding.
         has_active_points = (self._active_crop_points_positive
-                             or self._active_crop_points_negative)
+                             or self._active_crop_points_negative)  # noqa: W503
         if not has_active_points:
             # No active points — always use tight thresholds so any
             # meaningful zoom change triggers re-encode at the correct
@@ -2149,10 +2149,10 @@ class AISegmentationPlugin:
         if scale is None or scale <= 0:
             # Online layers or unknown: use the MUPP ratio as proxy
             if (self._current_crop_actual_mupp
-                    and self._current_crop_canvas_mupp
-                    and self._current_crop_canvas_mupp > 0):
+                    and self._current_crop_canvas_mupp  # noqa: W503
+                    and self._current_crop_canvas_mupp > 0):  # noqa: W503
                 scale = max(1.0, self._current_crop_actual_mupp
-                            / self._current_crop_canvas_mupp * 2.0)
+                            / self._current_crop_canvas_mupp * 2.0)  # noqa: W503
             else:
                 scale = 1.0
         # Gentle power curve centered on 100 (proven default).
@@ -2499,8 +2499,8 @@ class AISegmentationPlugin:
 
         # Auto-revert if prediction produced an empty mask (no element detected)
         if (self.current_mask is not None
-                and self.current_mask.sum() == 0
-                and self._mask_state_history):
+                and self.current_mask.sum() == 0  # noqa: W503
+                and self._mask_state_history):  # noqa: W503
             self.prompts.undo()
             if self._active_crop_points_positive:
                 self._active_crop_points_positive.pop()
@@ -2596,8 +2596,8 @@ class AISegmentationPlugin:
 
         # Auto-revert if prediction produced an empty mask (no element detected)
         if (self.current_mask is not None
-                and self.current_mask.sum() == 0
-                and self._mask_state_history):
+                and self.current_mask.sum() == 0  # noqa: W503
+                and self._mask_state_history):  # noqa: W503
             self.prompts.undo()
             if self._active_crop_points_negative:
                 self._active_crop_points_negative.pop()
@@ -2811,7 +2811,7 @@ class AISegmentationPlugin:
             mask_to_display = self.current_mask
             # Apply mask-level refinements (fill holes, expand/contract, min region)
             if (self._refine_fill_holes or self._refine_expand != 0
-                    or self._refine_min_area > 0):
+                    or self._refine_min_area > 0):  # noqa: W503
                 mask_to_display = apply_mask_refinement(
                     self.current_mask,
                     expand_value=self._refine_expand,

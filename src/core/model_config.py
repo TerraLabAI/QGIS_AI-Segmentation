@@ -30,8 +30,8 @@ IS_ROSETTA = _is_rosetta()
 
 _IS_MACOS_X86 = (
     sys.platform == "darwin"
-    and platform.machine() == "x86_64"
-    and not IS_ROSETTA
+    and platform.machine() == "x86_64"  # noqa: W503
+    and not IS_ROSETTA  # noqa: W503
 )
 
 # Under Rosetta, standalone Python will be ARM64 3.10+ -> SAM2
