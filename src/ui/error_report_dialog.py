@@ -155,28 +155,22 @@ def _collect_diagnostic_info(error_message: str) -> str:
         lines.append("QGIS: unknown")
     lines.append("")
 
-    # GPU info
-    lines.append("--- GPU ---")
+    # Device info
+    lines.append("--- Device ---")
     try:
         from ..core.venv_manager import ensure_venv_packages_available
         ensure_venv_packages_available()
         import torch
-        if torch.cuda.is_available():
-            count = torch.cuda.device_count()
-            for i in range(count):
-                gpu_name = torch.cuda.get_device_name(i)
-                gpu_mem = torch.cuda.get_device_properties(i).total_memory / (1024**3)
-                lines.append("CUDA {}: {} ({:.1f}GB)".format(i, gpu_name, gpu_mem))
-        elif sys.platform == "darwin" and hasattr(torch.backends, "mps"):
+        if sys.platform == "darwin" and hasattr(torch.backends, "mps"):
             if torch.backends.mps.is_available():
-                lines.append("GPU: Apple Silicon (MPS)")
+                lines.append("Device: Apple Silicon (MPS)")
             else:
-                lines.append("GPU: MPS not available")
+                lines.append("Device: CPU ({} cores)".format(os.cpu_count()))
         else:
-            lines.append("GPU: CPU only ({} cores)".format(os.cpu_count()))
+            lines.append("Device: CPU ({} cores)".format(os.cpu_count()))
         lines.append("PyTorch: {}".format(torch.__version__))
     except Exception:
-        lines.append("GPU: could not detect (dependencies not installed)")
+        lines.append("Device: could not detect (dependencies not installed)")
     lines.append("")
 
     # Installed packages

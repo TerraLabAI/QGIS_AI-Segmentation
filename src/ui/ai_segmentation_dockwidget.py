@@ -24,7 +24,7 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
 from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
 from qgis.PyQt.QtWidgets import QShortcut
-from qgis.core import QgsProject, QgsLayerTree, QgsMessageLog, Qgis
+from qgis.core import QgsProject, QgsLayerTree
 
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
@@ -345,8 +345,6 @@ class AISegmentationDockWidget(QDockWidget):
         self._last_percent = 0
         self._last_percent_time = None
         self._creep_counter = 0
-        self._is_cuda_install = False
-
         # Debounce timer for refinement sliders
         self._refine_debounce_timer = QTimer(self)
         self._refine_debounce_timer.setSingleShot(True)
@@ -467,19 +465,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_button.clicked.connect(self._on_install_clicked)
         self.install_button.setVisible(False)
         layout.addWidget(self.install_button)
-
-        self.gpu_info_box = QLabel("")
-        self.gpu_info_box.setWordWrap(True)
-        self.gpu_info_box.setStyleSheet(
-            "background-color: rgba(46, 125, 50, 0.08);"
-            "border: 1px solid rgba(46, 125, 50, 0.25);"
-            "border-radius: 4px;"
-            "padding: 8px;"
-            "font-size: 11px;"
-            "color: palette(text);"
-        )
-        self.gpu_info_box.setVisible(False)
-        layout.addWidget(self.gpu_info_box)
 
         self.install_path_label = QLabel(
             tr("Install path: {}").format(CACHE_DIR))
@@ -1325,14 +1310,6 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_stop_clicked(self):
         self.stop_segmentation_requested.emit()
 
-    def update_gpu_info(self):
-        """GPU info display disabled (CPU-only mode)."""
-        return
-
-    def get_cuda_enabled(self) -> bool:
-        """Always CPU-only. GPU code kept for future reactivation."""
-        return False
-
     def set_dependency_status(self, ok: bool, message: str):
         self._dependencies_ok = ok
 
@@ -1345,7 +1322,6 @@ class AISegmentationDockWidget(QDockWidget):
             self.cancel_button.setVisible(False)
             self.setup_progress.setVisible(False)
             self.setup_progress_label.setVisible(False)
-            self.gpu_info_box.setVisible(False)
         else:
             is_update = "updating" in message.lower() or "upgrading" in message.lower()
             is_dll_error = "dll" in message.lower() and "failed" in message.lower()
@@ -1397,7 +1373,7 @@ class AISegmentationDockWidget(QDockWidget):
 
                 if blended_speed > 0:
                     remaining = remaining_pct / blended_speed
-                    max_remaining = 900 if self._is_cuda_install else 480
+                    max_remaining = 480
                     remaining = min(remaining, max_remaining)
                     if remaining > 60:
                         time_info = " (~{} min left)".format(int(remaining / 60))
@@ -1419,7 +1395,6 @@ class AISegmentationDockWidget(QDockWidget):
             self._last_percent = 0
             self._last_percent_time = None
             self._creep_counter = 0
-            self._is_cuda_install = False
             self.setup_progress.setValue(0)
             self.setup_progress.setVisible(True)
             self.setup_progress_label.setVisible(True)

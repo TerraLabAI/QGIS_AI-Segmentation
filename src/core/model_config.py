@@ -55,6 +55,10 @@ else:
     if _IS_MACOS_X86:
         TORCH_MIN = ">=2.0.0,<=2.2.2"
         TORCHVISION_MIN = ">=0.15.0,<=0.17.2"
+    elif sys.version_info < (3, 10):
+        # PyTorch dropped Python 3.9 support in 2.6.0; pin to last compatible release.
+        TORCH_MIN = ">=2.0.0,<2.6.0"
+        TORCHVISION_MIN = ">=0.15.0,<0.21.0"
     else:
         TORCH_MIN = ">=2.0.0"
         TORCHVISION_MIN = ">=0.15.0"
@@ -67,3 +71,14 @@ else:
     CHECKPOINT_SHA256 = "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"  # noqa: S105, E501  # pragma: allowlist secret
     CHECKPOINT_SIZE_LABEL = "~375MB"
     MODEL_CFG = None  # SAM1 uses registry, no config file
+
+# Known-good torch versions for Windows DLL fallback.
+# Newer torch releases (2.10+) can fail with WinError 1114 / c10.dll
+# on some Windows 10/11 machines. After a nuke-reinstall fails, we
+# retry with these pinned versions.
+if sys.platform == "win32":
+    TORCH_WINDOWS_FALLBACK = "==2.5.1"
+    TORCHVISION_WINDOWS_FALLBACK = "==0.20.1"
+else:
+    TORCH_WINDOWS_FALLBACK = None
+    TORCHVISION_WINDOWS_FALLBACK = None

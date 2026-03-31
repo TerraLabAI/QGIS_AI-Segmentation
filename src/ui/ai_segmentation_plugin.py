@@ -89,10 +89,9 @@ class DepsInstallWorker(QThread):
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, cuda_enabled: bool = False, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
         self._cancelled = False
-        self._cuda_enabled = cuda_enabled
 
     def cancel(self):
         self._cancelled = True
@@ -103,7 +102,6 @@ class DepsInstallWorker(QThread):
             success, message = create_venv_and_install(
                 progress_callback=lambda percent, msg: self.progress.emit(percent, msg),
                 cancel_check=lambda: self._cancelled,
-                cuda_enabled=self._cuda_enabled
             )
             self.finished.emit(success, message)
         except Exception as e:
@@ -826,8 +824,8 @@ class AISegmentationPlugin:
                     "AI Segmentation",
                     level=Qgis.MessageLevel.Info
                 )
-                # Auto-trigger install for upgrades and CUDA upgrades
-                if "GPU acceleration" in message or "need updating" in message:
+                # Auto-trigger install for upgrades
+                if "need updating" in message:
                     self._on_install_requested()
 
         except Exception as e:
@@ -983,7 +981,7 @@ class AISegmentationPlugin:
 
         self.dock_widget.set_install_progress(0, "Preparing installation...")
 
-        self.deps_install_worker = DepsInstallWorker(cuda_enabled=False)
+        self.deps_install_worker = DepsInstallWorker()
         self.deps_install_worker.progress.connect(self._on_deps_install_progress)
         self.deps_install_worker.finished.connect(self._on_deps_install_finished)
         self.deps_install_worker.start()
@@ -1010,26 +1008,6 @@ class AISegmentationPlugin:
             return
 
         if success:
-            # GPU driver too old: just show a simple message bar, no error dialog
-            if "DRIVER_TOO_OLD" in message:
-                self.iface.messageBar().pushMessage(
-                    "AI Segmentation",
-                    tr("Using CPU mode (GPU driver needs update)."),
-                    level=Qgis.MessageLevel.Info,
-                    duration=10,
-                )
-            elif "CUDA_FALLBACK" in message:
-                self.dock_widget.install_button.setEnabled(False)
-                fallback_msg = "{}\n\n{}".format(
-                    tr("Your GPU was detected but CUDA installation didn't work."),
-                    tr("No worries, the plugin now uses CPU mode and everything works fine :) "
-                       "If you'd like us to fix GPU support for your setup, send us your logs!"))
-                show_error_report(
-                    self.iface.mainWindow(),
-                    tr("GPU mode failed, using CPU"),
-                    fallback_msg
-                )
-
             # Run verification + device detection off main thread
             self.dock_widget.set_install_progress(80, tr("Verifying installation..."))
             self._verify_worker = VerifyWorker()

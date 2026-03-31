@@ -68,31 +68,6 @@ def get_optimal_device():  # -> torch.device
     return _cached_device
 
 
-def _configure_cuda_optimizations():
-    import torch
-
-    try:
-        torch.backends.cudnn.enabled = True
-        torch.backends.cudnn.benchmark = True
-
-        if hasattr(torch.backends.cudnn, 'allow_tf32'):
-            torch.backends.cudnn.allow_tf32 = True
-        if hasattr(torch, 'set_float32_matmul_precision'):
-            torch.set_float32_matmul_precision('high')
-
-        QgsMessageLog.logMessage(
-            "CUDA optimizations enabled: cudnn.benchmark=True",
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Info
-        )
-    except Exception as e:
-        QgsMessageLog.logMessage(
-            "Failed to configure CUDA optimizations: {}".format(e),
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Warning
-        )
-
-
 def _configure_mps_optimizations():
     os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
 
