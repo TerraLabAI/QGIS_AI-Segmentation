@@ -1609,7 +1609,7 @@ def install_dependencies(
                         progress_end=pkg_end,
                         progress_callback=progress_callback,
                         cancel_check=cancel_check,
-                        )
+                    )
 
                 # If "unable to create process" (broken pip shim), retry with pip.exe
                 # (skip when using uv - it doesn't have this issue)
@@ -1640,7 +1640,7 @@ def install_dependencies(
                             progress_end=pkg_end,
                             progress_callback=progress_callback,
                             cancel_check=cancel_check,
-                                )
+                        )
 
                 # If failed, check for SSL errors and retry with --trusted-host
                 if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
@@ -1671,7 +1671,7 @@ def install_dependencies(
                             progress_end=pkg_end,
                             progress_callback=progress_callback,
                             cancel_check=cancel_check,
-                                )
+                        )
 
                 # If failed, check for hash mismatch (corrupted cache) and retry
                 if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
@@ -1704,7 +1704,7 @@ def install_dependencies(
                             progress_end=pkg_end,
                             progress_callback=progress_callback,
                             cancel_check=cancel_check,
-                                )
+                        )
 
                 # If failed, check for network errors and retry after delay
                 if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
@@ -1739,7 +1739,7 @@ def install_dependencies(
                                 progress_end=pkg_end,
                                 progress_callback=progress_callback,
                                 cancel_check=cancel_check,
-                                        )
+                            )
                             if result.returncode == 0:
                                 break
 
@@ -1768,7 +1768,7 @@ def install_dependencies(
                             progress_end=pkg_end,
                             progress_callback=progress_callback,
                             cancel_check=cancel_check,
-                                )
+                        )
 
                 # If rename/RECORD error (stale dist-info on Windows), clean and force-reinstall
                 if result.returncode != 0 and package_name in ("torch", "torchvision"):
@@ -1813,7 +1813,7 @@ def install_dependencies(
                             progress_end=pkg_end,
                             progress_callback=progress_callback,
                             cancel_check=cancel_check,
-                                )
+                        )
 
                 if result.returncode == 0:
                     _log(f"✓ Successfully installed {package_spec}", Qgis.MessageLevel.Success)
