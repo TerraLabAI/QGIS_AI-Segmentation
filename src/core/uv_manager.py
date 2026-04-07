@@ -16,6 +16,7 @@ import zipfile
 import tempfile
 import shutil
 import stat
+import time
 from typing import Tuple, Optional, Callable
 from .model_config import IS_ROSETTA
 
@@ -126,11 +127,35 @@ def download_uv(
     if cancel_check and cancel_check():
         return False, "Download cancelled"
 
-    request = QgsBlockingNetworkRequest()
-    err = request.get(QNetworkRequest(QUrl(url)))
+    # Retry up to 3 times with exponential backoff for unstable networks
+    max_retries = 3
+    err = None
+    error_msg = ""
+    for attempt in range(max_retries):
+        if cancel_check and cancel_check():
+            return False, "Download cancelled"
+
+        request = QgsBlockingNetworkRequest()
+        err = request.get(QNetworkRequest(QUrl(url)))
+
+        if err == QgsBlockingNetworkRequest.NoError:
+            break
+
+        error_msg = request.errorMessage()
+        if attempt < max_retries - 1:
+            wait = 5 * (2 ** attempt)  # 5, 10s
+            _log(
+                "uv download failed (attempt {}/{}): {}. "
+                "Retrying in {}s...".format(
+                    attempt + 1, max_retries, error_msg, wait),
+                Qgis.MessageLevel.Warning
+            )
+            if progress_callback:
+                progress_callback(
+                    0, "Network error, retrying in {}s...".format(wait))
+            time.sleep(wait)
 
     if err != QgsBlockingNetworkRequest.NoError:
-        error_msg = request.errorMessage()
         _log("uv download failed: {}".format(error_msg), Qgis.MessageLevel.Warning)
         return False, "uv download failed: {}".format(error_msg)
 

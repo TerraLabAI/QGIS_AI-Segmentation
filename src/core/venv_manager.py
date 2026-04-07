@@ -1049,6 +1049,9 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
                 continue
             elif arg == "--prefer-binary":
                 continue
+            elif arg in ("--retries", "--timeout"):
+                skip_next = True  # skip flag and its value
+                continue
             elif arg == "--no-cache-dir":
                 cmd.append("--no-cache")
                 continue
@@ -1522,6 +1525,8 @@ def install_dependencies(
                 "--no-warn-script-location",
                 "--disable-pip-version-check",
                 "--prefer-binary",  # Prefer pre-built wheels to avoid C extension build issues
+                "--retries", "10",  # More retries for unstable networks (default 5)
+                "--timeout", "30",  # Longer timeout per connection attempt (default 15)
             ]
             # sam2/segment-anything list torch as a build dependency.
             # Without --no-build-isolation pip creates a separate env and

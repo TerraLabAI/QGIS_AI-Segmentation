@@ -15,6 +15,7 @@ import tarfile
 import zipfile
 import tempfile
 import shutil
+import time
 from typing import Tuple, Optional, Callable
 
 from qgis.core import QgsMessageLog, Qgis, QgsBlockingNetworkRequest
@@ -272,22 +273,48 @@ def download_python_standalone(
         if cancel_check and cancel_check():
             return False, "Download cancelled"
 
-        # Use QGIS network manager for proxy-aware downloads
-        request = QgsBlockingNetworkRequest()
+        # Use QGIS network manager for proxy-aware downloads with retry
         qurl = QUrl(url)
 
         if progress_callback:
             progress_callback(5, "Connecting to download server...")
 
-        # Perform the download (blocking)
-        err = request.get(QNetworkRequest(qurl))
+        # Retry up to 3 times with exponential backoff for unstable networks
+        max_retries = 3
+        err = None
+        error_msg = ""
+        for attempt in range(max_retries):
+            if cancel_check and cancel_check():
+                return False, "Download cancelled"
 
-        if err != QgsBlockingNetworkRequest.NoError:
+            request = QgsBlockingNetworkRequest()
+            err = request.get(QNetworkRequest(qurl))
+
+            if err == QgsBlockingNetworkRequest.NoError:
+                break
+
             error_msg = request.errorMessage()
             if "404" in error_msg or "Not Found" in error_msg:
+                # No point retrying a 404
                 error_msg = f"Python {python_version} not available for this platform. URL: {url}"
-            else:
-                error_msg = f"Download failed: {error_msg}"
+                _log(error_msg, Qgis.MessageLevel.Critical)
+                return False, error_msg
+
+            if attempt < max_retries - 1:
+                wait = 5 * (2 ** attempt)  # 5, 10s
+                _log(
+                    "Download failed (attempt {}/{}): {}. "
+                    "Retrying in {}s...".format(
+                        attempt + 1, max_retries, error_msg, wait),
+                    Qgis.MessageLevel.Warning
+                )
+                if progress_callback:
+                    progress_callback(
+                        5, "Network error, retrying in {}s...".format(wait))
+                time.sleep(wait)
+
+        if err != QgsBlockingNetworkRequest.NoError:
+            error_msg = f"Download failed: {error_msg}"
             _log(error_msg, Qgis.MessageLevel.Critical)
             return False, error_msg
 
