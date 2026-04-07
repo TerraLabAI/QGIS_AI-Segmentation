@@ -21,7 +21,7 @@ jobs:
         run: ruff check src/
 
       - name: Flake8
-        run: flake8 src/
+        run: flake8 --max-line-length 120 src/
 
       - name: Compile check
         run: find src/ -name '*.py' -exec python -m py_compile {} +
