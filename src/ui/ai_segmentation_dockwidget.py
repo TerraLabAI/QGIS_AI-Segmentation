@@ -279,7 +279,10 @@ class LayerTreeComboBox(QComboBox):
 from ..core.activation_manager import (  # noqa: E402
     is_plugin_activated,
     activate_plugin,
-    get_newsletter_url,
+    get_shared_email,
+    save_shared_email,
+    get_newsletter_url_with_email,
+    get_tutorial_url,
 )
 from ..core.i18n import tr  # noqa: E402
 from ..core.model_config import USE_SAM2, _IS_MACOS_X86  # noqa: E402
@@ -545,17 +548,29 @@ class AISegmentationDockWidget(QDockWidget):
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
-        # Get code button
-        get_code_button = QPushButton(tr("Get my verification code"))
-        get_code_button.setMinimumHeight(30)
-        get_code_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        get_code_button.setStyleSheet(
+        # Email input
+        self.activation_email_input = QLineEdit()
+        self.activation_email_input.setPlaceholderText("your@email.com")
+        self.activation_email_input.setMinimumHeight(28)
+        shared_email = get_shared_email()
+        if shared_email:
+            self.activation_email_input.setText(shared_email)
+        self.activation_email_input.textChanged.connect(self._on_activation_email_changed)
+        layout.addWidget(self.activation_email_input)
+
+        # Get code button - disabled until email entered
+        self.get_code_button = QPushButton(tr("Get my verification code"))
+        self.get_code_button.setMinimumHeight(30)
+        self.get_code_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.get_code_button.setStyleSheet(
             "QPushButton { background-color: #2e7d32; color: white; "
             "font-weight: bold; border-radius: 4px; }"
             "QPushButton:hover { background-color: #1b5e20; }"
+            "QPushButton:disabled { background-color: #b0bec5; }"
         )
-        get_code_button.clicked.connect(self._on_get_code_clicked)
-        layout.addWidget(get_code_button)
+        self.get_code_button.setEnabled(bool(shared_email and "@" in shared_email))
+        self.get_code_button.clicked.connect(self._on_get_code_clicked)
+        layout.addWidget(self.get_code_button)
 
         # Code input section - compact
         code_label = QLabel(tr("Then paste your code:"))
@@ -1090,9 +1105,9 @@ class AISegmentationDockWidget(QDockWidget):
         report_link.linkActivated.connect(self._on_report_bug)
         links_layout.addWidget(report_link)
 
-        # Tutorial link
+        # Tutorial link (server-driven URL)
         docs_link = QLabel(
-            '<a href="https://terra-lab.ai/docs/ai-segmentation" style="color: #1976d2;">' + tr("Tutorial") + '</a>'
+            '<a href="' + get_tutorial_url() + '" style="color: #1976d2;">' + tr("Tutorial") + '</a>'
         )
         docs_link.setStyleSheet("font-size: 13px;")
         docs_link.setOpenExternalLinks(True)
@@ -1183,9 +1198,17 @@ class AISegmentationDockWidget(QDockWidget):
         """Set batch mode programmatically. Batch is always on."""
         pass
 
+    def _on_activation_email_changed(self, text: str):
+        """Enable/disable the get code button based on email validity."""
+        self.get_code_button.setEnabled("@" in text.strip())
+
     def _on_get_code_clicked(self):
-        """Open the newsletter signup page in the default browser."""
-        QDesktopServices.openUrl(QUrl(get_newsletter_url()))
+        """Save email and open the verification page with email pre-filled."""
+        email = self.activation_email_input.text().strip()
+        if email and "@" in email:
+            save_shared_email(email)
+        url = get_newsletter_url_with_email(email)
+        QDesktopServices.openUrl(QUrl(url))
 
     def _on_activate_clicked(self):
         """Attempt to activate the plugin with the entered code."""
@@ -1210,9 +1233,9 @@ class AISegmentationDockWidget(QDockWidget):
         """Display a message in the activation section."""
         self.activation_message_label.setText(text)
         if is_error:
-            self.activation_message_label.setStyleSheet("color: #d32f2f; font-size: 11px;")
+            self.activation_message_label.setStyleSheet("color: #ef5350; font-size: 11px;")
         else:
-            self.activation_message_label.setStyleSheet("color: #2e7d32; font-size: 11px;")
+            self.activation_message_label.setStyleSheet("color: #66bb6a; font-size: 11px;")
         self.activation_message_label.setVisible(True)
 
     def _update_full_ui(self):

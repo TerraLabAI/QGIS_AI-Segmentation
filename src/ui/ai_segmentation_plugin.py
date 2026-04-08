@@ -1292,8 +1292,8 @@ class AISegmentationPlugin:
             return
         settings.setValue(SETTINGS_KEY_TUTORIAL_SHOWN, True)
 
-        tutorial_url = ("https://www.youtube.com/playlist"
-                        "?list=PL4hCF043nAUW2iIxALNUzy1fKHcCWwDsv&jct=GTA3Fx8pJzuTLPPivC9RRQ")
+        from ..core.activation_manager import get_tutorial_url
+        tutorial_url = get_tutorial_url()
         message = '{} <a href="{}">{}</a>'.format(
             tr('New to AI Segmentation?'),
             tutorial_url,
