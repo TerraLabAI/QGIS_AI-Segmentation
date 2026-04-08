@@ -5,10 +5,11 @@ Handles plugin activation state using QSettings.
 
 import json
 from typing import Tuple, Optional
-from urllib.request import urlopen, Request
-from urllib.error import URLError
 
-from qgis.core import QgsSettings
+from qgis.core import QgsSettings, QgsNetworkAccessManager
+from qgis.core import QgsBlockingNetworkRequest
+from qgis.PyQt.QtNetwork import QNetworkRequest
+from qgis.PyQt.QtCore import QUrl
 
 # Hardcoded fallback codes (used when server is unreachable)
 _FALLBACK_CODES = ["fromage", "baguette"]
@@ -35,12 +36,17 @@ def _fetch_server_config() -> Optional[dict]:
     try:
         if not _CONFIG_URL.startswith("https://"):
             return None
-        req = Request(_CONFIG_URL, headers={"Accept": "application/json"})
-        with urlopen(req, timeout=5) as resp:  # noqa: S310
-            data = json.loads(resp.read().decode("utf-8"))
-            _cached_config = data
-            return data
-    except (URLError, json.JSONDecodeError, OSError):
+        req = QNetworkRequest(QUrl(_CONFIG_URL))
+        req.setRawHeader(b"Accept", b"application/json")
+        blocker = QgsBlockingNetworkRequest()
+        err = blocker.get(req)
+        if err != QgsBlockingNetworkRequest.NoError:
+            return None
+        reply = blocker.reply()
+        data = json.loads(bytes(reply.content()).decode("utf-8"))
+        _cached_config = data
+        return data
+    except (json.JSONDecodeError, Exception):
         return None
 
 
