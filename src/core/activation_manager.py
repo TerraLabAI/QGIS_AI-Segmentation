@@ -33,8 +33,10 @@ def _fetch_server_config() -> Optional[dict]:
     if _cached_config is not None:
         return _cached_config
     try:
+        if not _CONFIG_URL.startswith("https://"):
+            return None
         req = Request(_CONFIG_URL, headers={"Accept": "application/json"})
-        with urlopen(req, timeout=5) as resp:
+        with urlopen(req, timeout=5) as resp:  # noqa: S310
             data = json.loads(resp.read().decode("utf-8"))
             _cached_config = data
             return data
