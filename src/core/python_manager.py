@@ -142,11 +142,6 @@ def _create_python_symlinks(python_dir: str) -> None:
         _log("Created python3 symlink -> python{}.{}".format(major, minor))
 
 
-def get_standalone_dir() -> str:
-    """Get the directory where Python standalone is installed."""
-    return STANDALONE_DIR
-
-
 def get_standalone_python_path() -> str:
     """Get the path to the standalone Python executable."""
     python_dir = os.path.join(STANDALONE_DIR, "python")
@@ -507,16 +502,3 @@ def remove_standalone_python() -> Tuple[bool, str]:
         error_msg = f"Failed to remove: {str(e)}"
         _log(error_msg, Qgis.MessageLevel.Warning)
         return False, error_msg
-
-
-def get_standalone_status() -> Tuple[bool, str]:
-    """Get the status of the standalone Python installation."""
-    if not standalone_python_exists():
-        return False, "Python standalone not installed"
-
-    success, msg = verify_standalone_python()
-    if success:
-        python_version = get_python_full_version()
-        return True, f"Python {python_version} ready"
-    else:
-        return False, f"Python standalone incomplete: {msg}"

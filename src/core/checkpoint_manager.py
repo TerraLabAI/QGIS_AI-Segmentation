@@ -28,11 +28,6 @@ def get_checkpoints_dir() -> str:
     return CHECKPOINTS_DIR
 
 
-def get_features_dir() -> str:
-    os.makedirs(FEATURES_DIR, exist_ok=True)
-    return FEATURES_DIR
-
-
 def _migrate_old_cache_layout():
     """Migrate old flat cache dirs into the new raster/full/ subfolder layout.
 
@@ -498,22 +493,3 @@ def cleanup_legacy_sam1_data():
             QgsMessageLog.logMessage(
                 "Could not remove features cache: {}".format(e),
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
-
-
-def has_features_for_raster(raster_path: str, visible_extent: tuple = None) -> bool:
-    features_dir = get_raster_features_dir(raster_path, visible_extent)
-    csv_path = os.path.join(features_dir, os.path.basename(features_dir) + ".csv")
-    if not os.path.exists(csv_path):
-        return False
-    tif_files = [f for f in os.listdir(features_dir) if f.endswith('.tif')]
-    return len(tif_files) > 0
-
-
-def clear_features_for_raster(raster_path: str, visible_extent: tuple = None) -> bool:
-    features_dir = get_raster_features_dir(raster_path, visible_extent)
-    if os.path.exists(features_dir):
-        import shutil
-        shutil.rmtree(features_dir)
-        os.makedirs(features_dir, exist_ok=True)
-        return True
-    return False

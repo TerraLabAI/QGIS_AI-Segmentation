@@ -6,7 +6,7 @@ Handles plugin activation state using QSettings.
 import json
 from typing import Tuple, Optional
 
-from qgis.core import QgsSettings, QgsNetworkAccessManager
+from qgis.core import QgsSettings
 from qgis.core import QgsBlockingNetworkRequest
 from qgis.PyQt.QtNetwork import QNetworkRequest
 from qgis.PyQt.QtCore import QUrl
@@ -80,12 +80,6 @@ def activate_plugin(code: str) -> Tuple[bool, str]:
         return False, "Invalid code. Please check and try again."
 
 
-def deactivate_plugin():
-    """Deactivate the plugin (for testing purposes)."""
-    settings = QgsSettings()
-    settings.setValue(ACTIVATION_KEY, False)
-
-
 def get_newsletter_url() -> str:
     """Get the URL for the newsletter signup page."""
     config = _fetch_server_config()
@@ -100,11 +94,6 @@ def get_tutorial_url() -> str:
     if config and "tutorial_url" in config:
         return config["tutorial_url"]
     return "https://youtu.be/lbADk75l-mk?si=q6WnwyV2NcmQYuhI"
-
-
-def get_website_url() -> str:
-    """Get the main TerraLab website URL."""
-    return TERRALAB_WEBSITE
 
 
 def get_shared_email() -> str:
