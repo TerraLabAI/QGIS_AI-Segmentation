@@ -24,7 +24,7 @@ from qgis.PyQt.QtWidgets import (
 from ..core.i18n import tr
 
 SUPPORT_EMAIL = "yvann.barbot@terra-lab.ai"
-TERRALAB_URL = "https://terra-lab.ai/ai-segmentation"
+TERRALAB_URL = "https://terra-lab.ai/ai-segmentation?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=error_report"
 
 # In-memory log buffer - captures AI Segmentation messages
 _log_buffer = deque(maxlen=100)

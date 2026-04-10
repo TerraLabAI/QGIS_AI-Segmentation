@@ -9,7 +9,7 @@ from qgis.PyQt.QtCore import QUrl
 from qgis.PyQt.QtGui import QDesktopServices, QIcon
 from qgis.PyQt.QtWidgets import QMenu
 
-TERRALAB_URL = "https://terra-lab.ai"
+TERRALAB_URL = "https://terra-lab.ai?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=menu_more"
 _UTILITY_SEPARATOR = "_terralab_utility_sep"
 _PLUGINS_MENU_NAME = "TerraLab"
 

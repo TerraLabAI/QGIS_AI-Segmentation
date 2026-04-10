@@ -19,8 +19,8 @@ ACTIVATION_KEY = f"{SETTINGS_PREFIX}/activated"
 TERRALAB_PREFIX = "TerraLab"
 
 # TerraLab URLs
-TERRALAB_WEBSITE = "https://terra-lab.ai"
-TERRALAB_NEWSLETTER = "https://terra-lab.ai/mail-verification"
+TERRALAB_WEBSITE = "https://terra-lab.ai?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=website"
+TERRALAB_NEWSLETTER = "https://terra-lab.ai/mail-verification?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=get_code"
 _CONFIG_URL = f"{TERRALAB_WEBSITE}/api/plugin/config?product=ai-segmentation"
 
 # Server config cache (in-memory, one fetch per session)
@@ -111,5 +111,6 @@ def get_newsletter_url_with_email(email: str) -> str:
     from urllib.parse import urlencode
     base = get_newsletter_url()
     if email:
-        return f"{base}?{urlencode({'email': email, 'plugin': 'ai-segmentation'})}"
+        sep = "&" if "?" in base else "?"
+        return f"{base}{sep}{urlencode({'email': email, 'plugin': 'ai-segmentation'})}"
     return base
