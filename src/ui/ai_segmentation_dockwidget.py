@@ -134,7 +134,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         title_label = QLabel(
             'AI Segmentation by '
-            '<a href="https://terra-lab.ai" style="color: #1976d2; text-decoration: none;">TerraLab</a>'
+            '<a href="https://terra-lab.ai?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=title_link" style="color: #1976d2; text-decoration: none;">TerraLab</a>'
         )
         title_label.setOpenExternalLinks(True)
         title_row.addWidget(title_label)
