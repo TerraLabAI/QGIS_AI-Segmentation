@@ -8,7 +8,7 @@ QGIS AI Segmentation plugin by TerraLab — point-and-click AI segmentation on r
 
 Part of the TerraLab ecosystem:
 - **AI Segmentation** (this repo — PRIVATE dev) — local SAM inference
-- **AI Canvas** — image generation, same shared modules — `/Users/yvann/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Canvas`
+- **AI Edit** — image generation, same shared modules — `/Users/yvann/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Edit`
 - **terra-lab.ai** — Next.js website, activation service, billing — `/Users/yvann/Documents/GitHub/terralab-website`
 
 ## Dual-Repo Workflow
@@ -38,7 +38,7 @@ Plugin is GPL open-source. The community should only see clean abstracted code.
 
 ## Shared Modules
 
-- **`src/shared/`** must stay byte-identical with AI Canvas's `src/shared/`. Use `/sync-shared` before committing changes to shared modules
+- **`src/shared/`** must stay byte-identical with AI Edit's `src/shared/`. Use `/sync-shared` before committing changes to shared modules
 - Shared modules use `product_id` from `PRODUCTS` dict in `src/shared/constants.py` — never hardcode plugin-specific behavior in shared code
 
 ## Architecture

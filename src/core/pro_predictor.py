@@ -63,7 +63,7 @@ def decode_rle_to_mask(rle_string: str, height: int, width: int) -> np.ndarray:
     for i in range(0, len(tokens), 2):
         offset = int(tokens[i])
         count = int(tokens[i + 1])
-        flat[offset : offset + count] = 1
+        flat[offset:offset + count] = 1
     return flat.reshape((height, width)).astype(bool)
 
 

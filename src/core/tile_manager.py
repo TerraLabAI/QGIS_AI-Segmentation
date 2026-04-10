@@ -70,4 +70,4 @@ class TileManager:
         Returns:
             (h, w, 3) uint8 numpy array
         """
-        return image[y : y + h, x : x + w].copy()
+        return image[y:y + h, x:x + w].copy()
