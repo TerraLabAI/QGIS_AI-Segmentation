@@ -8,8 +8,12 @@ QGIS AI Segmentation plugin by TerraLab — point-and-click AI segmentation on r
 
 Part of the TerraLab ecosystem:
 - **AI Segmentation** (this repo — PRIVATE dev) — local SAM inference
-- **AI Edit** — image generation, same shared modules — `/Users/yvann/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Edit`
-- **terra-lab.ai** — Next.js website, activation service, billing — `/Users/yvann/Documents/GitHub/terralab-website`
+- **AI Edit** — image generation on map zones — `/Users/yvann/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Edit-Team` (or Conductor workspace)
+- **terra-lab.ai** — Next.js website, activation service, billing — `/Users/yvann/GitHub/terralab-website`
+
+## Design System
+
+The shared design system lives in this repo: `PLUGIN_DESIGN_SYSTEM.md`. It is the source of truth for UI conventions across all TerraLab QGIS plugins. AI Segmentation is the reference implementation — AI Edit follows these patterns.
 
 ## Dual-Repo Workflow
 
@@ -35,11 +39,6 @@ Plugin is GPL open-source. The community should only see clean abstracted code.
 - **Never mention in code/commits/comments**: inference provider names, Supabase, Stripe, specific model checkpoint names, API endpoint paths
 - **Production-safe logging**: NEVER log API URLs, model names, API keys. Only log dimensions, extents, CRS, timing, file paths
 - **Debug artifacts** (`.debug/`, `.env.local`): gitignored — never commit
-
-## Shared Modules
-
-- **`src/shared/`** must stay byte-identical with AI Edit's `src/shared/`. Use `/sync-shared` before committing changes to shared modules
-- Shared modules use `product_id` from `PRODUCTS` dict in `src/shared/constants.py` — never hardcode plugin-specific behavior in shared code
 
 ## Architecture
 
