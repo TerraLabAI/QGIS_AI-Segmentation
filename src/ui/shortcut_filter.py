@@ -72,9 +72,9 @@ class ShortcutFilter(QObject):
             plugin._on_undo()
             return True
         if (key == Qt.Key.Key_S
-              and not (modifiers & (Qt.KeyboardModifier.ControlModifier  # noqa: W503
-                                    | Qt.KeyboardModifier.AltModifier  # noqa: W503
-                                    | Qt.KeyboardModifier.ShiftModifier))):  # noqa: W503
+                and not (modifiers & (Qt.KeyboardModifier.ControlModifier  # noqa: W503
+                                      | Qt.KeyboardModifier.AltModifier  # noqa: W503
+                                      | Qt.KeyboardModifier.ShiftModifier))):  # noqa: W503
             plugin._on_save_polygon()
             return True
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -84,7 +84,7 @@ class ShortcutFilter(QObject):
             plugin._on_stop_segmentation()
             return True
         if key in (Qt.Key.Key_Left, Qt.Key.Key_Right,
-                     Qt.Key.Key_Up, Qt.Key.Key_Down):
+                   Qt.Key.Key_Up, Qt.Key.Key_Down):
             canvas = plugin.iface.mapCanvas()
             extent = canvas.extent()
             dx = extent.width() * 0.25

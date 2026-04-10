@@ -193,7 +193,6 @@ def get_download_url() -> str:
     return f"https://github.com/astral-sh/python-build-standalone/releases/download/{RELEASE_TAG}/{filename}"
 
 
-
 def download_python_standalone(
     progress_callback: Callable[[int, str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None

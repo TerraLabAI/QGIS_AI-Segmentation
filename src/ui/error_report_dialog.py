@@ -59,7 +59,6 @@ def _anonymize_paths(text: str) -> str:
     return re.sub(r"\\\\[^\\]+\\Users\\[^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text)
 
 
-
 def start_log_collector():
     """Connect to QgsMessageLog to capture AI Segmentation messages.
     Call once at plugin startup."""
