@@ -31,6 +31,7 @@ public  → TerraLabAI/QGIS_AI-Segmentation       (public open-source, release-o
 - Infrastructure names (Supabase, Stripe, Azure, specific cloud providers)
 - API endpoints, activation codes, internal URLs
 - Internal architecture decisions or cost/pricing details
+- **AI tooling files**: `CLAUDE.md`, `PLUGIN_DESIGN_SYSTEM.md`, `.claude/`, `ruff.toml`, and any AI agent config files — users must not know AI tools are used in development
 
 ## Open-Source Confidentiality
 
