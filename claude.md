@@ -43,48 +43,63 @@ Plugin is GPL open-source. The community should only see clean abstracted code.
 
 ## Architecture
 
-- `src/core/model_config.py`: ALL version-dependent constants (SAM1 vs SAM2). Single source of truth
+### Core modules (reusable across plugins)
+- `src/core/logging_utils.py` — shared QGIS log wrapper (`log()`)
+- `src/core/archive_utils.py` — safe tar/zip extraction with path traversal protection
+- `src/core/pip_diagnostics.py` — pip/uv error detection + user-facing help messages
+- `src/core/prompt_manager.py` — point annotation with undo history (`PromptManager`, `FrozenCropSession`)
+- `src/core/model_config.py` — ALL version-dependent constants (SAM1 vs SAM2). Single source of truth
+- `src/core/venv_manager.py` — venv lifecycle, dependency install, verification
+- `src/core/python_manager.py` — standalone Python download (astral-sh/python-build-standalone)
+- `src/core/uv_manager.py` — uv binary download for fast pip installs
+- `src/core/subprocess_utils.py` — clean env + cross-platform subprocess kwargs
+
+### UI modules (reusable across plugins)
+- `src/ui/layer_tree_combobox.py` — combo box mirroring QGIS Layer panel tree
+- `src/ui/background_workers.py` — QThread workers for install/download/verify
+- `src/ui/shortcut_filter.py` — global keyboard shortcut handler
+- `src/ui/error_report_dialog.py` — error/bug report dialogs with diagnostic info
+
+### Plugin-specific
+- `src/ui/ai_segmentation_plugin.py` — main plugin class, segmentation workflow
+- `src/ui/ai_segmentation_dockwidget.py` — dock widget UI
+- `src/workers/prediction_worker.py` — SAM subprocess (JSON-RPC protocol)
+
+### Key patterns
 - SAM2 (Python 3.10+, QGIS 3.34+) / SAM1 fallback (Python 3.9, QGIS 3.22/3.28)
 - Dependencies installed in isolated venv at `~/.qgis_ai_segmentation/venv_py3.*/`
-- `src/workers/prediction_worker.py` runs as subprocess in isolated venv — JSON over stdin/stdout, keep protocol stable
+- `prediction_worker.py` runs as subprocess in isolated venv — JSON over stdin/stdout, keep protocol stable
 - GPU/CUDA code exists but is NOT user-facing. Never mention GPU/CUDA in UI, issues, or descriptions
 - Plugin key in code must be `'AI_Segmentation'` (not the repo name)
-- Buttons hidden when not in segmentation mode (not disabled-but-visible), use `_update_button_visibility()`
 
 ## Commands
 
 ```bash
-ruff check src/ tests/           # lint
-ruff format src/ tests/          # format
-pytest tests/                    # run all tests
-pytest -k 'test_name'            # run single test
-# /verify                        # full check (lint + format + tests)
-# /release-public                # release to public repo
-# /sync-shared                   # sync src/shared/ with AI Canvas
+ruff check src/                      # lint (config in ruff.toml)
+find src/ -name '*.py' -exec python3 -m py_compile {} +  # compile check
+pytest tests/                        # run all tests
+pytest -k 'test_name'                # run single test
 ```
 
 ## Git Workflow
 
-**Commit after every logical change.** Do not batch multiple changes into one big commit. Each commit should be atomic and self-contained:
-
+**Commit after every logical change.** Each commit should be atomic:
 - One bug fix = one commit
-- One new function/method = one commit
 - One refactor = one commit
 - Lint/format fix after a change = part of the same commit
 
 **Before every commit:**
 1. Run `ruff check` on changed files
-2. Run `ruff format` on changed files
-3. Write a conventional commit message (`fix:`, `feat:`, `refactor:`, `test:`, `docs:`)
-
-**Do NOT wait for the user to ask for a commit.** Commit proactively as you work, the same way a developer would. If you make a change, lint it and commit it immediately before moving on to the next change.
+2. Write a conventional commit message (`fix:`, `feat:`, `refactor:`, `test:`, `docs:`)
 
 ## Code Quality
 
-- Ruff for linting and formatting (see `ruff.toml`, line-length 88)
+- **Ruff** for linting (see `ruff.toml`: line-length 120, target-version py39)
+- **`from __future__ import annotations`** in all files with type hints
+- Modern type hints: `list[x]` not `List[x]`, `x | None` not `Optional[x]`
 - Conventional commits: `fix:`, `feat:`, `refactor:`, `test:`, `docs:`
-- Python 3.9+ compat: `Tuple[bool, str]` from typing, not `tuple[bool, str]`
 - No unused imports (F401), no unused variables (F841)
+- `raise ... from err` in except clauses (B904)
 
 ## Terminology
 
@@ -99,7 +114,7 @@ Languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
 
 1. Wrap string with `tr()` from `..core.i18n`
 2. Add `<message>` block in ALL .ts files inside `<context><name>AISegmentation</name>`
-3. Use `.format()` for dynamic strings: `tr("Export {count} polygon(s)").format(count=5)`
+3. Use f-strings for dynamic strings: `tr("Export {count} polygon(s)").format(count=5)`
 4. Keep in English: "AI Segmentation", "SAM", "TerraLab", "Batch mode", "Export", "Checkpoint", package names
 
 ## Refine Panel Defaults (KEEP IN SYNC)
@@ -121,6 +136,8 @@ Languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
 - `encoding='utf-8'` on all `open()` calls
 - `blockSignals(True/False)` when setting widget values programmatically
 - Disconnect `QgsProject.instance()` signals in `unload()`
+- Event filters: NEVER install on `QApplication` — use `mainWindow.installEventFilter()`
+- Smooth/Round corners: Use `QgsGeometry.smooth()` (C++ native) not custom Python Chaikin
 
 ## Security
 
