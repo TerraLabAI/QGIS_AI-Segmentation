@@ -4,9 +4,10 @@ SHARED: keep in sync with the copy in the sibling TerraLab plugin.
 """
 
 import os
+
 from qgis.PyQt.QtCore import QUrl
-from qgis.PyQt.QtWidgets import QMenu
 from qgis.PyQt.QtGui import QDesktopServices, QIcon
+from qgis.PyQt.QtWidgets import QMenu
 
 TERRALAB_URL = "https://terra-lab.ai"
 _UTILITY_SEPARATOR = "_terralab_utility_sep"

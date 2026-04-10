@@ -5,23 +5,23 @@ Shows during dependency installation and prompts user to get activation code.
 
 from pathlib import Path
 
+from qgis.PyQt.QtCore import Qt, QUrl, pyqtSignal
+from qgis.PyQt.QtGui import QDesktopServices, QFont, QPixmap
 from qgis.PyQt.QtWidgets import (
     QDialog,
-    QVBoxLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
-    QFrame,
+    QVBoxLayout,
 )
-from qgis.PyQt.QtCore import Qt, pyqtSignal, QUrl
-from qgis.PyQt.QtGui import QPixmap, QDesktopServices, QFont
 
 from ..core.activation_manager import (
     activate_plugin,
+    get_newsletter_url_with_email,
     get_shared_email,
     save_shared_email,
-    get_newsletter_url_with_email,
 )
 from ..core.i18n import tr
 

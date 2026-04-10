@@ -6,60 +6,31 @@ the QGIS Python version, ensuring 100% compatibility.
 
 Source: https://github.com/astral-sh/python-build-standalone
 """
+from __future__ import annotations
 
 import os
-import sys
 import platform
-import subprocess
-import tarfile
-import zipfile
-import tempfile
 import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
 import time
-from typing import Tuple, Optional, Callable
+import zipfile
+from typing import Callable
 
-from qgis.core import QgsMessageLog, Qgis, QgsBlockingNetworkRequest
+from qgis.core import Qgis, QgsBlockingNetworkRequest
 from qgis.PyQt.QtCore import QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
+from .archive_utils import safe_extract_tar as _safe_extract_tar
+from .archive_utils import safe_extract_zip as _safe_extract_zip
+from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
-
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_DIR = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser("~/.qgis_ai_segmentation")
 STANDALONE_DIR = os.path.join(CACHE_DIR, "python_standalone")
-
-
-def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: str) -> None:
-    """Safely extract tar archive with path traversal protection."""
-    dest_dir = os.path.realpath(dest_dir)
-    # Python 3.12+ supports the filter parameter (suppresses DeprecationWarning)
-    use_filter = sys.version_info >= (3, 12)
-    for member in tar.getmembers():
-        if member.issym() or member.islnk():
-            continue
-        member_path = os.path.realpath(os.path.join(dest_dir, member.name))
-        if not member_path.startswith(dest_dir + os.sep) and member_path != dest_dir:
-            raise ValueError(f"Attempted path traversal in tar archive: {member.name}")
-        if use_filter:
-            try:
-                tar.extract(member, dest_dir, filter='data')
-            except (AttributeError, TypeError):
-                # Anaconda-patched Python may break filter='data' internally
-                # (e.g. ntpath.ALLOW_MISSING missing). Fall back to plain extract.
-                tar.extract(member, dest_dir)
-        else:
-            tar.extract(member, dest_dir)
-
-
-def _safe_extract_zip(zip_file: zipfile.ZipFile, dest_dir: str) -> None:
-    """Safely extract zip archive with path traversal protection."""
-    dest_dir = os.path.realpath(dest_dir)
-    for member in zip_file.namelist():
-        member_path = os.path.realpath(os.path.join(dest_dir, member))
-        if not member_path.startswith(dest_dir + os.sep) and member_path != dest_dir:
-            raise ValueError(f"Attempted path traversal in zip archive: {member}")
-        zip_file.extract(member, dest_dir)
 
 
 # Release tag from python-build-standalone
@@ -85,10 +56,6 @@ def is_nixos() -> bool:
     return os.path.exists("/etc/NIXOS") or bool(nix_env)
 
 
-def _log(message: str, level=Qgis.MessageLevel.Info):
-    QgsMessageLog.logMessage(message, "AI Segmentation", level=level)
-
-
 def _get_windows_antivirus_help(plugin_path: str) -> str:
     """
     Return help message for Windows antivirus issues.
@@ -99,11 +66,11 @@ def _get_windows_antivirus_help(plugin_path: str) -> str:
         "  1. Temporarily disable your antivirus (Windows Defender, etc.)\n"
         "  2. Add an exclusion for the QGIS plugins folder\n"
         "  3. Try the installation again\n"
-        "Folder to exclude: {}".format(plugin_path)
+        f"Folder to exclude: {plugin_path}"
     )
 
 
-def get_qgis_python_version() -> Tuple[int, int]:
+def get_qgis_python_version() -> tuple[int, int]:
     """Get the target Python version for the standalone interpreter.
 
     Under Rosetta, returns (3, 10) so we download ARM64 Python 3.10+
@@ -122,8 +89,7 @@ def get_python_full_version() -> str:
     # Fallback: use 3.13 (newest well-tested version) instead of X.Y.0
     # which likely doesn't exist in the release assets
     _log(
-        "Python {}.{} not in PYTHON_VERSIONS, falling back to 3.13".format(
-            version_tuple[0], version_tuple[1]),
+        f"Python {version_tuple[0]}.{version_tuple[1]} not in PYTHON_VERSIONS, falling back to 3.13",
         Qgis.MessageLevel.Warning)
     return PYTHON_VERSIONS[(3, 13)]
 
@@ -136,10 +102,10 @@ def _create_python_symlinks(python_dir: str) -> None:
         return
     # Find versioned binary like python3.12
     major, minor = get_qgis_python_version()
-    versioned = os.path.join(bin_dir, "python{}.{}".format(major, minor))
+    versioned = os.path.join(bin_dir, f"python{major}.{minor}")
     if os.path.exists(versioned):
-        os.symlink("python{}.{}".format(major, minor), python3_path)
-        _log("Created python3 symlink -> python{}.{}".format(major, minor))
+        os.symlink(f"python{major}.{minor}", python3_path)
+        _log(f"Created python3 symlink -> python{major}.{minor}")
 
 
 def get_standalone_python_path() -> str:
@@ -148,8 +114,7 @@ def get_standalone_python_path() -> str:
 
     if sys.platform == "win32":
         return os.path.join(python_dir, "python.exe")
-    else:
-        return os.path.join(python_dir, "bin", "python3")
+    return os.path.join(python_dir, "bin", "python3")
 
 
 def standalone_python_exists() -> bool:
@@ -191,18 +156,18 @@ def standalone_python_is_current() -> bool:
                 expected = get_qgis_python_version()
                 if installed != expected:
                     _log(
-                        "Standalone Python {}.{} doesn't match QGIS {}.{}".format(
-                            installed[0], installed[1], expected[0], expected[1]),
+                        f"Standalone Python {installed[0]}.{installed[1]} "
+                        f"doesn't match QGIS {expected[0]}.{expected[1]}",
                         Qgis.MessageLevel.Warning)
                     return False
                 return True
     except Exception as e:
-        _log("Failed to check standalone Python version: {}".format(e), Qgis.MessageLevel.Warning)
+        _log(f"Failed to check standalone Python version: {e}", Qgis.MessageLevel.Warning)
 
     return False
 
 
-def _get_platform_info() -> Tuple[str, str]:
+def _get_platform_info() -> tuple[str, str]:
     """Get platform and architecture info for download URL."""
     system = sys.platform
     machine = platform.machine().lower()
@@ -210,15 +175,13 @@ def _get_platform_info() -> Tuple[str, str]:
     if system == "darwin":
         if machine in ("arm64", "aarch64") or IS_ROSETTA:
             return ("aarch64-apple-darwin", ".tar.gz")
-        else:
-            return ("x86_64-apple-darwin", ".tar.gz")
-    elif system == "win32":
+        return ("x86_64-apple-darwin", ".tar.gz")
+    if system == "win32":
         return ("x86_64-pc-windows-msvc", ".tar.gz")
-    else:  # Linux
-        if machine in ("arm64", "aarch64"):
-            return ("aarch64-unknown-linux-gnu", ".tar.gz")
-        else:
-            return ("x86_64-unknown-linux-gnu", ".tar.gz")
+    # Linux
+    if machine in ("arm64", "aarch64"):
+        return ("aarch64-unknown-linux-gnu", ".tar.gz")
+    return ("x86_64-unknown-linux-gnu", ".tar.gz")
 
 
 def get_download_url() -> str:
@@ -227,15 +190,14 @@ def get_download_url() -> str:
     platform_str, ext = _get_platform_info()
 
     filename = f"cpython-{python_version}+{RELEASE_TAG}-{platform_str}-install_only{ext}"
-    url = f"https://github.com/astral-sh/python-build-standalone/releases/download/{RELEASE_TAG}/{filename}"
+    return f"https://github.com/astral-sh/python-build-standalone/releases/download/{RELEASE_TAG}/{filename}"
 
-    return url
 
 
 def download_python_standalone(
-    progress_callback: Optional[Callable[[int, str], None]] = None,
-    cancel_check: Optional[Callable[[], bool]] = None
-) -> Tuple[bool, str]:
+    progress_callback: Callable[[int, str], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None
+) -> tuple[bool, str]:
     """
     Download and install Python standalone using QGIS network manager.
 
@@ -298,14 +260,13 @@ def download_python_standalone(
             if attempt < max_retries - 1:
                 wait = 5 * (2 ** attempt)  # 5, 10s
                 _log(
-                    "Download failed (attempt {}/{}): {}. "
-                    "Retrying in {}s...".format(
-                        attempt + 1, max_retries, error_msg, wait),
+                    f"Download failed (attempt {attempt + 1}/{max_retries}): {error_msg}. "
+                    f"Retrying in {wait}s...",
                     Qgis.MessageLevel.Warning
                 )
                 if progress_callback:
                     progress_callback(
-                        5, "Network error, retrying in {}s...".format(wait))
+                        5, f"Network error, retrying in {wait}s...")
                 time.sleep(wait)
 
         if err != QgsBlockingNetworkRequest.NoError:
@@ -325,36 +286,35 @@ def download_python_standalone(
         min_expected = 10 * 1024 * 1024  # 10 MB
         if content_size < min_expected:
             _log(
-                "Download suspiciously small: {} bytes (expected >10 MB)".format(
-                    content_size), Qgis.MessageLevel.Warning)
+                f"Download suspiciously small: {content_size} bytes (expected >10 MB)", Qgis.MessageLevel.Warning)
             return False, (
-                "Download failed: file too small ({:.1f} MB). "
+                f"Download failed: file too small ({content_size / (1024 * 1024):.1f} MB). "
                 "A firewall or proxy may be blocking the download."
-            ).format(content_size / (1024 * 1024))
+            )
 
         if progress_callback:
             total_mb = content_size / (1024 * 1024)
             progress_callback(50, f"Downloaded {total_mb:.1f} MB, saving...")
 
         # Write content to temp file
-        with open(temp_path, 'wb') as f:
+        with open(temp_path, "wb") as f:
             f.write(content.data())
 
         # Validate archive magic bytes (catch proxy/firewall HTML pages)
-        with open(temp_path, 'rb') as f:
+        with open(temp_path, "rb") as f:
             magic = f.read(4)
-        is_gzip = magic[:2] == b'\x1f\x8b'
-        is_zip = magic[:2] == b'PK'
+        is_gzip = magic[:2] == b"\x1f\x8b"
+        is_zip = magic[:2] == b"PK"
         if not is_gzip and not is_zip:
             try:
                 preview_text = bytes(content.data()[:200]).decode(
-                    'utf-8', errors='replace')[:150]
+                    "utf-8", errors="replace")[:150]
             except Exception:
                 preview_text = "(binary data)"
             return False, (
                 "Download failed: file is not a valid archive. "
                 "A firewall or proxy may have returned an error page. "
-                "Preview: {}".format(preview_text)
+                f"Preview: {preview_text}"
             )
 
         _log(f"Download complete ({content_size} bytes), extracting...", Qgis.MessageLevel.Info)
@@ -391,10 +351,9 @@ def download_python_standalone(
                 progress_callback(100, f"✓ Python {python_version} installed")
             _log("Python standalone installed successfully", Qgis.MessageLevel.Success)
             return True, f"Python {python_version} installed successfully"
-        else:
-            # Clean up broken installation so _get_system_python() won't find it
-            remove_standalone_python()
-            return False, f"Verification failed: {verify_msg}"
+        # Clean up broken installation so _get_system_python() won't find it
+        remove_standalone_python()
+        return False, f"Verification failed: {verify_msg}"
 
     except InterruptedError:
         return False, "Download cancelled"
@@ -408,7 +367,7 @@ def download_python_standalone(
             if "denied" in error_lower or "access" in error_lower or "permission" in error_lower:
                 antivirus_help = _get_windows_antivirus_help(STANDALONE_DIR)
                 _log(antivirus_help, Qgis.MessageLevel.Warning)
-                error_msg = "{}\n\n{}".format(error_msg, antivirus_help)
+                error_msg = f"{error_msg}\n\n{antivirus_help}"
 
         return False, error_msg
     finally:
@@ -420,7 +379,7 @@ def download_python_standalone(
                 pass
 
 
-def verify_standalone_python() -> Tuple[bool, str]:
+def verify_standalone_python() -> tuple[bool, str]:
     """Verify that the standalone Python installation works."""
     python_path = get_standalone_python_path()
 
@@ -478,10 +437,9 @@ def verify_standalone_python() -> Tuple[bool, str]:
 
             _log(f"Verified Python standalone: {version_output}", Qgis.MessageLevel.Success)
             return True, f"Python {version_output} verified"
-        else:
-            error = result.stderr or "Unknown error"
-            _log(f"Python verification failed: {error}", Qgis.MessageLevel.Warning)
-            return False, f"Verification failed: {error[:100]}"
+        error = result.stderr or "Unknown error"
+        _log(f"Python verification failed: {error}", Qgis.MessageLevel.Warning)
+        return False, f"Verification failed: {error[:100]}"
 
     except subprocess.TimeoutExpired:
         return False, "Python verification timed out"
@@ -489,7 +447,7 @@ def verify_standalone_python() -> Tuple[bool, str]:
         return False, f"Verification error: {str(e)[:100]}"
 
 
-def remove_standalone_python() -> Tuple[bool, str]:
+def remove_standalone_python() -> tuple[bool, str]:
     """Remove the standalone Python installation."""
     if not os.path.exists(STANDALONE_DIR):
         return True, "Standalone Python not installed"

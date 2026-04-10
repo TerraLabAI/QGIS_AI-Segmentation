@@ -4,22 +4,22 @@ Minimal dialog: error message + copy logs + email contact + TerraLab link.
 Also provides a bug report dialog for user-initiated reports.
 """
 
-import sys
 import os
 import platform
+import re
+import sys
 import threading
 from collections import deque
 from datetime import datetime
 
+from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
+    QApplication,
     QDialog,
-    QVBoxLayout,
     QLabel,
     QPushButton,
-    QApplication,
+    QVBoxLayout,
 )
-from qgis.PyQt.QtCore import Qt
-import re
 
 from ..core.i18n import tr
 
@@ -47,18 +47,17 @@ def _anonymize_paths(text: str) -> str:
         return text
 
     # macOS: /Users/<username>/... (with or without trailing slash)
-    text = re.sub(r'/Users/[^/\s]+(?=/|$|\s)', '<USER>', text)
+    text = re.sub(r"/Users/[^/\s]+(?=/|$|\s)", "<USER>", text)
 
     # Linux: /home/<username>/... (with or without trailing slash)
-    text = re.sub(r'/home/[^/\s]+(?=/|$|\s)', '<USER>', text)
+    text = re.sub(r"/home/[^/\s]+(?=/|$|\s)", "<USER>", text)
 
     # Windows: C:\Users\<username>\... (and other drive letters, forward/back slashes)
-    text = re.sub(r'[A-Za-z]:[/\\]Users[/\\][^/\\\s]+(?=[/\\]|$|\s)', '<USER>', text)
+    text = re.sub(r"[A-Za-z]:[/\\]Users[/\\][^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text)
 
     # Windows UNC paths: \\server\Users\<username>\...
-    text = re.sub(r'\\\\[^\\]+\\Users\\[^/\\\s]+(?=[/\\]|$|\s)', '<USER>', text)
+    return re.sub(r"\\\\[^\\]+\\Users\\[^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text)
 
-    return text
 
 
 def start_log_collector():
@@ -95,7 +94,7 @@ def _on_log_message(message, tag, level):
     if tag == "AI Segmentation":
         timestamp = datetime.now().strftime("%H:%M:%S")
         with _log_buffer_lock:
-            _log_buffer.append("[{}] {}".format(timestamp, message))
+            _log_buffer.append(f"[{timestamp}] {message}")
 
 
 def _get_recent_logs() -> str:
@@ -127,7 +126,7 @@ def _collect_diagnostic_info(error_message: str) -> str:
         )
         metadata_path = os.path.join(plugin_dir, "metadata.txt")
         if os.path.exists(metadata_path):
-            with open(metadata_path, "r", encoding="utf-8") as f:
+            with open(metadata_path, encoding="utf-8") as f:
                 for line in f:
                     if line.startswith("version="):
                         lines.append("Version: {}".format(line.strip().split("=", 1)[1]))
@@ -138,18 +137,17 @@ def _collect_diagnostic_info(error_message: str) -> str:
 
     # System info
     lines.append("--- System ---")
-    lines.append("OS: {} ({} {})".format(sys.platform, platform.system(), platform.release()))
+    lines.append(f"OS: {sys.platform} ({platform.system()} {platform.release()})")
     from ..core.model_config import IS_ROSETTA
     arch_str = platform.machine()
     if IS_ROSETTA:
         arch_str += " (Rosetta on Apple Silicon)"
-    lines.append("Architecture: {}".format(arch_str))
-    lines.append("Python: {}.{}.{}".format(
-        sys.version_info.major, sys.version_info.minor, sys.version_info.micro))
+    lines.append(f"Architecture: {arch_str}")
+    lines.append(f"Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
 
     try:
         from qgis.core import Qgis
-        lines.append("QGIS: {}".format(Qgis.QGIS_VERSION))
+        lines.append(f"QGIS: {Qgis.QGIS_VERSION}")
     except Exception:
         lines.append("QGIS: unknown")
     lines.append("")
@@ -164,10 +162,10 @@ def _collect_diagnostic_info(error_message: str) -> str:
             if torch.backends.mps.is_available():
                 lines.append("Device: Apple Silicon (MPS)")
             else:
-                lines.append("Device: CPU ({} cores)".format(os.cpu_count()))
+                lines.append(f"Device: CPU ({os.cpu_count()} cores)")
         else:
-            lines.append("Device: CPU ({} cores)".format(os.cpu_count()))
-        lines.append("PyTorch: {}".format(torch.__version__))
+            lines.append(f"Device: CPU ({os.cpu_count()} cores)")
+        lines.append(f"PyTorch: {torch.__version__}")
     except Exception:
         lines.append("Device: could not detect (dependencies not installed)")
     lines.append("")
@@ -175,8 +173,8 @@ def _collect_diagnostic_info(error_message: str) -> str:
     # Installed packages
     lines.append("--- Packages ---")
     try:
-        from ..core.venv_manager import get_venv_python_path, venv_exists
         from ..core.subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
+        from ..core.venv_manager import get_venv_python_path, venv_exists
         if venv_exists():
             import subprocess
             python_path = get_venv_python_path()
@@ -195,7 +193,7 @@ def _collect_diagnostic_info(error_message: str) -> str:
         else:
             lines.append("Virtual environment not found")
     except Exception as e:
-        lines.append("Could not list packages: {}".format(str(e)[:100]))
+        lines.append(f"Could not list packages: {str(e)[:100]}")
     lines.append("")
 
     # Last encoded image info
@@ -216,29 +214,30 @@ def _collect_diagnostic_info(error_message: str) -> str:
 
                 csv_path = os.path.join(latest, folder_name + ".csv")
                 tif_count = len([
-                    f for f in os.listdir(latest) if f.endswith('.tif')
+                    f for f in os.listdir(latest) if f.endswith(".tif")
                 ])
-                lines.append("Tiles: {}".format(tif_count))
+                lines.append(f"Tiles: {tif_count}")
 
                 if os.path.exists(csv_path):
                     import csv as csv_mod
-                    with open(csv_path, "r", encoding="utf-8") as cf:
+                    with open(csv_path, encoding="utf-8") as cf:
                         reader = csv_mod.DictReader(cf)
                         rows = list(reader)
                     if rows:
                         first = rows[0]
                         crs_val = first.get("crs", "unknown")
                         res_val = first.get("res", "unknown")
-                        lines.append("CRS: {}".format(crs_val))
-                        lines.append("Resolution: {}".format(res_val))
+                        lines.append(f"CRS: {crs_val}")
+                        lines.append(f"Resolution: {res_val}")
 
                         all_minx = [float(r["minx"]) for r in rows]
                         all_maxx = [float(r["maxx"]) for r in rows]
                         all_miny = [float(r["miny"]) for r in rows]
                         all_maxy = [float(r["maxy"]) for r in rows]
-                        lines.append("Bounds: [{:.2f}, {:.2f}, {:.2f}, {:.2f}]".format(
-                            min(all_minx), max(all_maxx),
-                            min(all_miny), max(all_maxy)))
+                        lines.append(
+                            f"Bounds: [{min(all_minx):.2f}, {max(all_maxx):.2f}, "
+                            f"{min(all_miny):.2f}, {max(all_maxy):.2f}]"
+                        )
                 else:
                     lines.append("(CSV index not found)")
             else:
@@ -246,7 +245,7 @@ def _collect_diagnostic_info(error_message: str) -> str:
         else:
             lines.append("(No features directory)")
     except Exception as e:
-        lines.append("Could not read: {}".format(str(e)[:100]))
+        lines.append(f"Could not read: {str(e)[:100]}")
     lines.append("")
 
     # Recent logs from the in-memory buffer
@@ -326,10 +325,11 @@ class ErrorReportDialog(QDialog):
     def _on_open_email(self):
         """Open email client with support address."""
         from urllib.parse import quote
+
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
         subject = quote("AI Segmentation - Bug Report")
-        QDesktopServices.openUrl(QUrl("mailto:{}?subject={}".format(SUPPORT_EMAIL, subject)))
+        QDesktopServices.openUrl(QUrl(f"mailto:{SUPPORT_EMAIL}?subject={subject}"))
 
 
 class BugReportDialog(QDialog):
@@ -390,10 +390,11 @@ class BugReportDialog(QDialog):
     def _on_open_email(self):
         """Open email client with support address."""
         from urllib.parse import quote
+
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
         subject = quote("AI Segmentation - Bug Report")
-        QDesktopServices.openUrl(QUrl("mailto:{}?subject={}".format(SUPPORT_EMAIL, subject)))
+        QDesktopServices.openUrl(QUrl(f"mailto:{SUPPORT_EMAIL}?subject={subject}"))
 
 
 def show_error_report(parent, error_title: str, error_message: str):

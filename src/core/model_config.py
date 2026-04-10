@@ -48,8 +48,6 @@ if USE_SAM2:
     CHECKPOINT_FILENAME = "sam2.1_hiera_base_plus.pt"
     # SHA256 hash for checkpoint verification (not a secret)
     CHECKPOINT_SHA256 = "a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5"  # noqa: S105, E501  # pragma: allowlist secret
-    CHECKPOINT_SIZE_LABEL = "~323MB"
-    MODEL_CFG = "configs/sam2.1/sam2.1_hiera_b+.yaml"
 else:
     SAM_PACKAGE = ("segment-anything", ">=1.0")
     if _IS_MACOS_X86:
@@ -69,8 +67,6 @@ else:
     CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
     # SHA256 hash for checkpoint verification (not a secret)
     CHECKPOINT_SHA256 = "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"  # noqa: S105, E501  # pragma: allowlist secret
-    CHECKPOINT_SIZE_LABEL = "~375MB"
-    MODEL_CFG = None  # SAM1 uses registry, no config file
 
 # Known-good torch versions for Windows DLL fallback.
 # Newer torch releases (2.10+) can fail with WinError 1114 / c10.dll

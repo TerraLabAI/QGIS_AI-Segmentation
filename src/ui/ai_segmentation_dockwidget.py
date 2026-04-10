@@ -1,291 +1,44 @@
 import os
 import sys
 
-from qgis.PyQt.QtWidgets import (
-    QDockWidget,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QGroupBox,
-    QLabel,
-    QPushButton,
-    QProgressBar,
-    QFrame,
-    QLineEdit,
-    QSpinBox,
-    QCheckBox,
-    QToolButton,
-    QStyle,
-    QScrollArea,
-    QComboBox,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
-)
-from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer, QUrl
+from qgis.core import QgsProject
+from qgis.PyQt.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
-from qgis.PyQt.QtWidgets import QShortcut
-from qgis.core import QgsProject, QgsLayerTree
+from qgis.PyQt.QtWidgets import (
+    QCheckBox,
+    QDockWidget,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QShortcut,
+    QSpinBox,
+    QStyle,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from .layer_tree_combobox import LayerTreeComboBox
 
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
 
 
-class _IndentDelegate(QStyledItemDelegate):
-    """Delegate that shifts icon+text to the right based on a depth role."""
-
-    DEPTH_ROLE = Qt.ItemDataRole.UserRole + 100
-    INDENT_PX = 20
-
-    def paint(self, painter, option, index):
-        depth = index.data(self.DEPTH_ROLE) or 0
-        shift = depth * self.INDENT_PX
-        if shift:
-            shifted = QStyleOptionViewItem(option)
-            shifted.rect = shifted.rect.adjusted(shift, 0, 0, 0)
-            super().paint(painter, shifted, index)
-        else:
-            super().paint(painter, option, index)
-
-    def sizeHint(self, option, index):
-        hint = super().sizeHint(option, index)
-        depth = index.data(self.DEPTH_ROLE) or 0
-        hint.setWidth(hint.width() + depth * self.INDENT_PX)
-        return hint
-
-
-class LayerTreeComboBox(QComboBox):
-    """Drop-down that mirrors the QGIS Layer panel order with group headers.
-
-    Only visible raster layers are selectable.  Group names appear as
-    non-selectable, indented headers.  Auto-refreshes on layer add/remove,
-    visibility toggle, and tree reorder.
-    """
-
-    layerChanged = pyqtSignal(object)  # emits QgsMapLayer or None
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._current_layer_id = None  # track selection across refreshes
-        self._layer_ids = []  # ordered list of selectable layer IDs
-        self._refreshing = False
-
-        from qgis.PyQt.QtCore import QSize
-        self.setIconSize(QSize(16, 16))
-        self.setItemDelegate(_IndentDelegate(self))
-        self.currentIndexChanged.connect(self._on_index_changed)
-
-        # Connect to project signals for auto-refresh
-        proj = QgsProject.instance()
-        proj.layersAdded.connect(self._schedule_refresh)
-        proj.layersRemoved.connect(self._schedule_refresh)
-
-        root = proj.layerTreeRoot()
-        root.visibilityChanged.connect(self._schedule_refresh)
-        root.addedChildren.connect(self._schedule_refresh)
-        root.removedChildren.connect(self._schedule_refresh)
-        root.nameChanged.connect(self._schedule_refresh)
-
-        # Debounce refresh (group visibility fires per-node)
-        self._refresh_timer = QTimer(self)
-        self._refresh_timer.setSingleShot(True)
-        self._refresh_timer.timeout.connect(self._refresh)
-
-        # Initial population
-        self._refresh()
-
-    # -- public API (matches QgsMapLayerComboBox interface) --
-
-    def currentLayer(self):
-        """Return the currently selected QgsMapLayer, or None."""
-        idx = self.currentIndex()
-        if idx < 0:
-            return None
-        layer_id = self.itemData(idx)
-        if layer_id is None:
-            return None
-        return QgsProject.instance().mapLayer(layer_id)
-
-    def setLayer(self, layer):
-        """Programmatically select a layer."""
-        if layer is None:
-            return
-        target_id = layer.id()
-        for i in range(self.count()):
-            if self.itemData(i) == target_id:
-                self.setCurrentIndex(i)
-                return
-
-    def count_layers(self):
-        """Return the number of selectable (non-header) items."""
-        return len(self._layer_ids)
-
-    def cleanup(self):
-        """Disconnect project signals."""
-        try:
-            proj = QgsProject.instance()
-            proj.layersAdded.disconnect(self._schedule_refresh)
-            proj.layersRemoved.disconnect(self._schedule_refresh)
-            root = proj.layerTreeRoot()
-            root.visibilityChanged.disconnect(self._schedule_refresh)
-            root.addedChildren.disconnect(self._schedule_refresh)
-            root.removedChildren.disconnect(self._schedule_refresh)
-            root.nameChanged.disconnect(self._schedule_refresh)
-        except (TypeError, RuntimeError):
-            pass
-        try:
-            self.currentIndexChanged.disconnect(self._on_index_changed)
-        except (TypeError, RuntimeError):
-            pass
-        try:
-            self._refresh_timer.stop()
-        except RuntimeError:
-            pass
-
-    # -- internals --
-
-    def _schedule_refresh(self, *_args):
-        """Debounced refresh (100 ms)."""
-        self._refresh_timer.start(100)
-
-    def _refresh(self):
-        """Rebuild the combo items from the layer tree."""
-        self._refreshing = True
-        prev_id = self._current_layer_id
-        self.clear()
-        self._layer_ids = []
-
-        root = QgsProject.instance().layerTreeRoot()
-        self._traverse(root)
-
-        # Restore previous selection
-        restored = False
-        if prev_id:
-            for i in range(self.count()):
-                if self.itemData(i) == prev_id:
-                    self.setCurrentIndex(i)
-                    restored = True
-                    break
-
-        # If not restored, pick best raster: prefer one visible in current map view
-        if not restored:
-            best_idx = None
-            try:
-                from qgis.utils import iface
-                canvas_extent = iface.mapCanvas().extent()
-                canvas_crs = iface.mapCanvas().mapSettings().destinationCrs()
-                from qgis.core import QgsCoordinateTransform
-                for i in range(self.count()):
-                    layer_id = self.itemData(i)
-                    if layer_id is None:
-                        continue
-                    if best_idx is None:
-                        best_idx = i  # fallback: first selectable
-                    layer = QgsProject.instance().mapLayer(layer_id)
-                    if layer and layer.extent().isEmpty():
-                        continue
-                    # Transform layer extent to canvas CRS for comparison
-                    try:
-                        xform = QgsCoordinateTransform(
-                            layer.crs(), canvas_crs, QgsProject.instance())
-                        layer_extent = xform.transformBoundingBox(layer.extent())
-                    except Exception:
-                        layer_extent = layer.extent()
-                    if layer_extent.intersects(canvas_extent):
-                        best_idx = i
-                        break  # topmost visible raster in current view
-            except Exception:
-                # Fallback: just pick first selectable
-                for i in range(self.count()):
-                    if self.itemData(i) is not None:
-                        best_idx = i
-                        break
-            if best_idx is not None:
-                self.setCurrentIndex(best_idx)
-
-        self._refreshing = False
-
-        # Emit if selection actually changed
-        new_layer = self.currentLayer()
-        new_id = new_layer.id() if new_layer else None
-        if new_id != prev_id:
-            self._current_layer_id = new_id
-            self.layerChanged.emit(new_layer)
-
-    def _has_visible_rasters(self, node):
-        """Check if a tree node has any visible raster layer descendants."""
-        for child in node.children():
-            if QgsLayerTree.isLayer(child):
-                layer = child.layer()
-                if (layer and layer.type() == layer.RasterLayer
-                        and child.isVisible()):  # noqa: W503
-                    return True
-            elif QgsLayerTree.isGroup(child):
-                if child.isVisible() and self._has_visible_rasters(child):
-                    return True
-        return False
-
-    def _traverse(self, node, depth=0):
-        """Recursively walk the layer tree and add items."""
-        from qgis.core import QgsApplication, QgsIconUtils
-
-        visible_children = []
-        for child in node.children():
-            if QgsLayerTree.isGroup(child):
-                if child.isVisible() and self._has_visible_rasters(child):
-                    visible_children.append(child)
-            elif QgsLayerTree.isLayer(child):
-                layer = child.layer()
-                if (layer and layer.type() == layer.RasterLayer
-                        and child.isVisible()):  # noqa: W503
-                    visible_children.append(child)
-
-        depth_role = _IndentDelegate.DEPTH_ROLE
-        for child in visible_children:
-            if QgsLayerTree.isGroup(child):
-                folder_icon = QgsApplication.getThemeIcon("/mActionFolder.svg")
-                if folder_icon.isNull():
-                    folder_icon = self.style().standardIcon(
-                        QStyle.StandardPixmap.SP_DirIcon)
-                self.addItem(folder_icon, child.name())
-                idx = self.count() - 1
-                item = self.model().item(idx)
-                if item:
-                    item.setEnabled(False)
-                    item.setSelectable(False)
-                    item.setData(depth, depth_role)
-                self._traverse(child, depth + 1)
-
-            elif QgsLayerTree.isLayer(child):
-                layer = child.layer()
-                layer_icon = QgsIconUtils.iconRaster()
-                self.addItem(layer_icon, layer.name(), layer.id())
-                idx = self.count() - 1
-                item = self.model().item(idx)
-                if item:
-                    item.setData(depth, depth_role)
-                self._layer_ids.append(layer.id())
-
-    def _on_index_changed(self, index):
-        """Handle user selection change."""
-        if self._refreshing:
-            return
-        layer = self.currentLayer()
-        layer_id = layer.id() if layer else None
-        if layer_id != self._current_layer_id:
-            self._current_layer_id = layer_id
-            self.layerChanged.emit(layer)
-
-
 from ..core.activation_manager import (  # noqa: E402
-    is_plugin_activated,
     activate_plugin,
-    get_shared_email,
-    save_shared_email,
     get_newsletter_url_with_email,
+    get_shared_email,
     get_tutorial_url,
+    is_plugin_activated,
+    save_shared_email,
 )
 from ..core.i18n import tr  # noqa: E402
-from ..core.model_config import USE_SAM2, _IS_MACOS_X86  # noqa: E402
+from ..core.model_config import _IS_MACOS_X86, USE_SAM2  # noqa: E402
 from ..core.venv_manager import CACHE_DIR  # noqa: E402
 
 
@@ -406,8 +159,8 @@ class AISegmentationDockWidget(QDockWidget):
         title_outer.addLayout(title_row)
 
         separator = QFrame()
-        separator.setFrameShape(getattr(QFrame, 'Shape', QFrame).HLine)
-        separator.setFrameShadow(getattr(QFrame, 'Shadow', QFrame).Sunken)
+        separator.setFrameShape(getattr(QFrame, "Shape", QFrame).HLine)
+        separator.setFrameShadow(getattr(QFrame, "Shadow", QFrame).Sunken)
         title_outer.addWidget(separator)
 
         self.setTitleBarWidget(title_widget)
@@ -793,7 +546,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Build checkbox indicator images at runtime so they match the
         # current theme regardless of light/dark mode or Qt version.
-        from qgis.PyQt.QtGui import QPixmap, QPainter, QPen, QColor
+        from qgis.PyQt.QtGui import QColor, QPainter, QPen, QPixmap
         _sz = 18
         _bg = self.refine_content_widget.palette().color(
             self.refine_content_widget.palette().currentColorGroup(),
@@ -945,7 +698,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         self._refine_expanded = not self._refine_expanded
         arrow = "▼" if self._refine_expanded else "▶"
-        self.refine_group.setTitle("{} ".format(arrow) + tr("Refine selection"))
+        self.refine_group.setTitle(f"{arrow} " + tr("Refine selection"))
         # Defer visibility and height changes to next event loop tick to avoid layout glitch
         expanded = self._refine_expanded
         QTimer.singleShot(0, lambda: self._apply_refine_toggle(expanded))
@@ -1035,10 +788,10 @@ class AISegmentationDockWidget(QDockWidget):
         """Check if a newer version is available in the QGIS plugin repository."""
         try:
             from pyplugin_installer.installer_data import plugins
-            plugin_data = plugins.all().get('AI_Segmentation')
-            if plugin_data and plugin_data.get('status') == 'upgradeable':
+            plugin_data = plugins.all().get("AI_Segmentation")
+            if plugin_data and plugin_data.get("status") == "upgradeable":
                 available_version = plugin_data.get(
-                    'version_available', '?')
+                    "version_available", "?")
                 text = '{} <a href="#update" style="color: #1976d2; font-weight: bold; font-size: 13px;">{}</a>'.format(
                     tr("Big update dropped — v{version} is here!").format(
                         version=available_version),
@@ -1048,7 +801,7 @@ class AISegmentationDockWidget(QDockWidget):
         except Exception:
             pass  # No repo data yet, dev install, etc.
 
-    def _on_open_plugin_manager(self, link=None):
+    def _on_open_plugin_manager(self, _link=None):
         """Open the QGIS Plugin Manager on the Upgradeable tab (index 3)."""
         try:
             from qgis.utils import iface
@@ -1098,7 +851,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Report a bug button (styled as link)
         report_link = QLabel(
-            '<a href="#" style="color: #1976d2;">' + tr("Report a bug") + '</a>'
+            '<a href="#" style="color: #1976d2;">' + tr("Report a bug") + "</a>"
         )
         report_link.setStyleSheet("font-size: 13px;")
         report_link.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1107,7 +860,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Tutorial link (server-driven URL)
         docs_link = QLabel(
-            '<a href="' + get_tutorial_url() + '" style="color: #1976d2;">' + tr("Tutorial") + '</a>'
+            '<a href="' + get_tutorial_url() + '" style="color: #1976d2;">' + tr("Tutorial") + "</a>"
         )
         docs_link.setStyleSheet("font-size: 13px;")
         docs_link.setOpenExternalLinks(True)
@@ -1116,7 +869,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Shortcuts link
         shortcuts_link = QLabel(
-            '<a href="#" style="color: #1976d2;">' + tr("Shortcuts") + '</a>'
+            '<a href="#" style="color: #1976d2;">' + tr("Shortcuts") + "</a>"
         )
         shortcuts_link.setStyleSheet("font-size: 13px;")
         shortcuts_link.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1127,7 +880,7 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _on_show_shortcuts(self):
         """Show keyboard shortcuts in a dialog."""
-        from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
+        from qgis.PyQt.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout
         undo_key = "Cmd+Z" if sys.platform == "darwin" else "Ctrl+Z"
 
         key_style = (
@@ -1137,7 +890,7 @@ class AISegmentationDockWidget(QDockWidget):
             "padding: 1px 5px;"
             "font-family: monospace;"
         )
-        k = "<span style='{}'>{{}}</span>".format(key_style)
+        k = f"<span style='{key_style}'>{{}}</span>"
 
         shortcuts_html = (
             "<table cellspacing='4' cellpadding='2'>"
@@ -1194,7 +947,7 @@ class AISegmentationDockWidget(QDockWidget):
         """Return whether batch mode is active (always True)."""
         return True
 
-    def set_batch_mode(self, batch: bool):
+    def set_batch_mode(self, _batch: bool):
         """Set batch mode programmatically. Batch is always on."""
         pass
 
@@ -1303,7 +1056,7 @@ class AISegmentationDockWidget(QDockWidget):
                     self.layer_combo.setLayer(layer)
                     break
 
-    def _on_layers_removed(self, layer_ids):
+    def _on_layers_removed(self, _layer_ids):
         """Handle layers removed from project."""
         self._update_ui_state()
 
@@ -1399,15 +1152,15 @@ class AISegmentationDockWidget(QDockWidget):
                     max_remaining = 480
                     remaining = min(remaining, max_remaining)
                     if remaining > 60:
-                        time_info = " (~{} min left)".format(int(remaining / 60))
+                        time_info = f" (~{int(remaining / 60)} min left)"
                     elif remaining > 10:
-                        time_info = " (~{} sec left)".format(int(remaining))
+                        time_info = f" (~{int(remaining)} sec left)"
 
         if percent > self._last_percent:
             self._last_percent_time = now
             self._last_percent = percent
 
-        self.setup_progress_label.setText("{}{}".format(message, time_info))
+        self.setup_progress_label.setText(f"{message}{time_info}")
 
         is_update = self.install_button.text() in (
             tr("Update"), tr("Updating..."))
@@ -1649,7 +1402,7 @@ class AISegmentationDockWidget(QDockWidget):
         provider = layer.dataProvider()
         if provider is None:
             return False
-        return provider.name() in ('wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs')
+        return provider.name() in ("wms", "wmts", "xyz", "arcgismapserver", "wcs")
 
     def _is_layer_georeferenced(self, layer) -> bool:
         """Check if a raster layer is properly georeferenced."""
@@ -1660,7 +1413,7 @@ class AISegmentationDockWidget(QDockWidget):
         source = layer.source().lower()
 
         # PNG, JPG, BMP etc. without world files are not georeferenced
-        non_georef_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
+        non_georef_extensions = (".png", ".jpg", ".jpeg", ".bmp", ".gif")
 
         has_non_georef_ext = any(source.endswith(ext) for ext in non_georef_extensions)
 

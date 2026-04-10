@@ -1,8 +1,10 @@
-import sys
 import os
-from qgis.core import QgsMessageLog, Qgis
+import sys
+
+from qgis.core import Qgis, QgsMessageLog
 
 from .venv_manager import ensure_venv_packages_available
+
 ensure_venv_packages_available()
 
 _cached_device = None
@@ -23,16 +25,15 @@ def get_optimal_device():  # -> torch.device
                 "PyTorch DLL loading failed on Windows. "
                 "This usually means Visual C++ Redistributables are missing. "
                 "Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe\n"
-                "Error: {}".format(str(e))
+                f"Error: {str(e)}"
             )
             QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical)
             _cached_device = None
             _device_info = "Error: PyTorch DLL failed"
-            raise RuntimeError(error_msg)
-        else:
-            raise
+            raise RuntimeError(error_msg) from e
+        raise
     except ImportError as e:
-        error_msg = "Failed to import PyTorch: {}".format(str(e))
+        error_msg = f"Failed to import PyTorch: {str(e)}"
         QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical)
         raise
 
@@ -55,13 +56,13 @@ def get_optimal_device():  # -> torch.device
                 return _cached_device
         except Exception as e:
             QgsMessageLog.logMessage(
-                "MPS check failed: {}, falling back to CPU".format(e),
+                f"MPS check failed: {e}, falling back to CPU",
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Warning
             )
 
     _cached_device = torch.device("cpu")
-    _device_info = "CPU ({} cores)".format(os.cpu_count())
+    _device_info = f"CPU ({os.cpu_count()} cores)"
     _configure_cpu_optimizations()
     QgsMessageLog.logMessage(
         "Using CPU inference", "AI Segmentation", level=Qgis.MessageLevel.Info)
@@ -84,7 +85,7 @@ def _configure_cpu_optimizations():
 
     torch.set_num_threads(optimal_threads)
 
-    if hasattr(torch, 'set_num_interop_threads'):
+    if hasattr(torch, "set_num_interop_threads"):
         try:
             torch.set_num_interop_threads(max(2, optimal_threads // 2))
         except RuntimeError:

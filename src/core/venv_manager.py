@@ -1,21 +1,69 @@
+from __future__ import annotations
+
+import hashlib
+import os
+import platform
+import re
+import shutil
 import subprocess
 import sys
-import os
-import shutil
-import platform
 import tempfile
 import time
-import re
-import hashlib
-from typing import Tuple, Optional, Callable, List
+from typing import Callable
 
-from qgis.core import QgsMessageLog, Qgis
+from qgis.core import Qgis
 
-from .model_config import SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN, USE_SAM2, IS_ROSETTA
-from .uv_manager import (
-    uv_exists, get_uv_path, download_uv, verify_uv, remove_uv,
+from .logging_utils import log as _log
+from .model_config import IS_ROSETTA, SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN, USE_SAM2
+from .pip_diagnostics import (
+    get_crash_help as _get_crash_help,
 )
-
+from .pip_diagnostics import (
+    get_pip_antivirus_help as _get_pip_antivirus_help,
+)
+from .pip_diagnostics import (
+    get_pip_ssl_flags as _get_pip_ssl_flags,
+)
+from .pip_diagnostics import (
+    get_ssl_error_help,
+)
+from .pip_diagnostics import (
+    get_vcpp_help as _get_vcpp_help,
+)
+from .pip_diagnostics import (
+    is_antivirus_error as _is_antivirus_error,
+)
+from .pip_diagnostics import (
+    is_dll_init_error as _is_dll_init_error,
+)
+from .pip_diagnostics import (
+    is_hash_mismatch as _is_hash_mismatch,
+)
+from .pip_diagnostics import (
+    is_network_error as _is_network_error,
+)
+from .pip_diagnostics import (
+    is_proxy_auth_error as _is_proxy_auth_error,
+)
+from .pip_diagnostics import (
+    is_rename_or_record_error as _is_rename_or_record_error,
+)
+from .pip_diagnostics import (
+    is_ssl_error as _is_ssl_error,
+)
+from .pip_diagnostics import (
+    is_unable_to_create_process as _is_unable_to_create_process,
+)
+from .pip_diagnostics import (
+    is_windows_process_crash as _is_windows_process_crash,
+)
+from .uv_manager import (
+    download_uv,
+    get_uv_path,
+    remove_uv,
+    uv_exists,
+    verify_uv,
+)
 
 # Module-level uv state (set during create_venv_and_install)
 _uv_available = False
@@ -25,8 +73,8 @@ PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = PLUGIN_ROOT_DIR  # src/ directory
 PYTHON_VERSION = f"py{sys.version_info.major}.{sys.version_info.minor}"
 CACHE_DIR = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser("~/.qgis_ai_segmentation")
-VENV_DIR = os.path.join(CACHE_DIR, f'venv_{PYTHON_VERSION}')
-LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, 'libs')
+VENV_DIR = os.path.join(CACHE_DIR, f"venv_{PYTHON_VERSION}")
+LIBS_DIR = os.path.join(PLUGIN_ROOT_DIR, "libs")
 
 
 def _numpy_version_spec() -> str:
@@ -68,12 +116,12 @@ def _compute_deps_hash() -> str:
     return hashlib.md5(data, usedforsecurity=False).hexdigest()
 
 
-def _read_deps_hash() -> Optional[str]:
+def _read_deps_hash() -> str | None:
     """Read stored deps hash from the venv directory."""
     try:
-        with open(DEPS_HASH_FILE, "r", encoding="utf-8") as f:
+        with open(DEPS_HASH_FILE, encoding="utf-8") as f:
             return f.read().strip()
-    except (OSError, IOError):
+    except OSError:
         return None
 
 
@@ -86,12 +134,8 @@ def _write_deps_hash():
         with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(_compute_deps_hash())
         os.replace(tmp_path, DEPS_HASH_FILE)
-    except (OSError, IOError) as e:
-        _log("Failed to write deps hash: {}".format(e), Qgis.MessageLevel.Warning)
-
-
-def _log(message: str, level=Qgis.MessageLevel.Info):
-    QgsMessageLog.logMessage(message, "AI Segmentation", level=level)
+    except OSError as e:
+        _log(f"Failed to write deps hash: {e}", Qgis.MessageLevel.Warning)
 
 
 def _log_system_info():
@@ -121,7 +165,7 @@ def _log_system_info():
         _log(line, Qgis.MessageLevel.Info)
 
 
-def _check_rosetta_warning() -> Optional[str]:
+def _check_rosetta_warning() -> str | None:
     """
     On macOS ARM, detect if running under Rosetta (x86_64 emulation).
     Returns info message if Rosetta detected, None otherwise.
@@ -135,7 +179,7 @@ def _check_rosetta_warning() -> Optional[str]:
     )
 
 
-def cleanup_old_venv_directories() -> List[str]:
+def cleanup_old_venv_directories() -> list[str]:
     """
     Remove old venv_pyX.Y directories that don't match current Python version.
     Scans both the external cache dir (new location) and the plugin dir (legacy).
@@ -156,20 +200,18 @@ def cleanup_old_venv_directories() -> List[str]:
                     if os.path.isdir(old_path):
                         try:
                             shutil.rmtree(old_path)
-                            _log("Cleaned up old venv: {}".format(old_path),
+                            _log(f"Cleaned up old venv: {old_path}",
                                  Qgis.MessageLevel.Info)
                             removed.append(old_path)
                         except Exception as e:
-                            _log("Failed to remove old venv {}: {}".format(
-                                old_path, e), Qgis.MessageLevel.Warning)
+                            _log(f"Failed to remove old venv {old_path}: {e}", Qgis.MessageLevel.Warning)
         except Exception as e:
-            _log("Error scanning for old venvs in {}: {}".format(
-                scan_dir, e), Qgis.MessageLevel.Warning)
+            _log(f"Error scanning for old venvs in {scan_dir}: {e}", Qgis.MessageLevel.Warning)
 
     return removed
 
 
-def _check_gdal_available() -> Tuple[bool, str]:
+def _check_gdal_available() -> tuple[bool, str]:
     """
     Check if GDAL system library is available (Linux and macOS).
     Returns (is_available, help_message).
@@ -203,245 +245,9 @@ def _check_gdal_available() -> Tuple[bool, str]:
         return True, ""  # Assume OK if check fails
 
 
-_SSL_ERROR_PATTERNS = [
-    "ssl error",
-    "ssl:",
-    "sslerror",
-    "sslcertverificationerror",
-    "certificate verify failed",
-    "CERTIFICATE_VERIFY_FAILED",
-    "tlsv1 alert",
-    "unable to get local issuer certificate",
-    "self signed certificate in certificate chain",
-]
-
-
-def _is_ssl_error(stderr: str) -> bool:
-    """Detect SSL/certificate errors in pip output."""
-    stderr_lower = stderr.lower()
-    return any(pattern.lower() in stderr_lower for pattern in _SSL_ERROR_PATTERNS)
-
-
-def _is_hash_mismatch(output: str) -> bool:
-    """Detect pip hash mismatch errors (corrupted cache from interrupted download)."""
-    output_lower = output.lower()
-    has_mismatch = "do not match the hashes" in output_lower
-    has_hash_err = "hash mismatch" in output_lower
-    return has_mismatch or has_hash_err
-
-
-def _get_pip_ssl_flags() -> List[str]:
-    """Get pip flags to bypass SSL verification for corporate proxies.
-
-    Note: --trusted-host may be deprecated in future pip versions (>= 21.0),
-    but is still needed for older pip on QGIS 3.22-3.28 bundled Python.
-    """
-    return [
-        "--trusted-host", "pypi.org",
-        "--trusted-host", "pypi.python.org",
-        "--trusted-host", "files.pythonhosted.org",
-    ]
-
-
-def _is_ssl_module_missing(error_text: str) -> bool:
-    """Check if the error is about a missing SSL module (not a certificate issue)."""
-    lower = error_text.lower()
-    patterns = ["ssl module is not available", "no module named '_ssl'",
-                "ssl module", "importerror: _ssl"]
-    return any(p in lower for p in patterns)
-
-
 def _get_ssl_error_help(error_text: str = "") -> str:
-    """Get actionable help message for SSL errors.
-
-    Differentiates between SSL module missing (broken Python) and
-    SSL certificate errors (network/proxy).
-    """
-    if _is_ssl_module_missing(error_text):
-        return (
-            "Installation failed: Python's SSL module is not available.\n\n"
-            "This usually means the Python installation is incomplete or corrupted.\n"
-            "Please try:\n"
-            "  1. Delete the folder: {}\n"
-            "  2. Restart QGIS and try again\n"
-            "  3. If the issue persists, reinstall QGIS".format(CACHE_DIR)
-        )
-    return (
-        "Installation failed due to network restrictions.\n\n"
-        "Please contact your IT department to allow access to:\n"
-        "  - pypi.org\n"
-        "  - files.pythonhosted.org\n"
-        "  - download.pytorch.org\n\n"
-        "You can also try checking your proxy settings in QGIS "
-        "(Settings > Options > Network)."
-    )
-
-
-_NETWORK_ERROR_PATTERNS = [
-    "connectionreseterror",
-    "connection aborted",
-    "connection was forcibly closed",
-    "remotedisconnected",
-    "connectionerror",
-    "newconnectionerror",
-    "maxretryerror",
-    "protocolerror",
-    "readtimeouterror",
-    "connecttimeouterror",
-    "urlib3.exceptions",
-    "requests.exceptions.connectionerror",
-    "network is unreachable",
-    "temporary failure in name resolution",
-    "name or service not known",
-    "network timeout",
-    "failed to download",
-]
-
-
-def _is_network_error(output: str) -> bool:
-    """Detect transient network/connection errors in pip output."""
-    output_lower = output.lower()
-    # Exclude SSL errors — they have their own retry path
-    if _is_ssl_error(output):
-        return False
-    return any(p in output_lower for p in _NETWORK_ERROR_PATTERNS)
-
-
-def _is_proxy_auth_error(output: str) -> bool:
-    """Detect proxy authentication errors (HTTP 407)."""
-    output_lower = output.lower()
-    patterns = [
-        "407 proxy authentication",
-        "proxy authentication required",
-        "proxyerror",
-    ]
-    return any(p in output_lower for p in patterns)
-
-
-def _is_unable_to_create_process(output: str) -> bool:
-    """Detect 'unable to create process' errors on Windows (broken pip.exe shim)."""
-    return "unable to create process" in output.lower()
-
-
-def _is_dll_init_error(output: str) -> bool:
-    """Detect DLL initialization failures (missing VC++ Redistributables)."""
-    lower = output.lower()
-    patterns = [
-        "winerror 1114",
-        "dll initialization routine failed",
-        "dll load failed",
-        "_load_dll_libraries",
-    ]
-    return any(p in lower for p in patterns)
-
-
-def _get_vcpp_help() -> str:
-    """Get actionable help for DLL init errors (missing VC++ Redistributables)."""
-    msg = (
-        "A required DLL failed to initialize.\n\n"
-        "Try these steps in order:\n"
-        "  1. Install the latest VC++ Redistributable (x64):\n"
-        "     https://aka.ms/vs/17/release/vc_redist.x64.exe\n"
-        "  2. Restart your computer after installing\n"
-        "  3. If the error persists after reboot, click 'Reinstall Dependencies'\n"
-        "     to force a clean reinstall of PyTorch\n"
-        "  4. Check that no other Python (Anaconda, Miniconda, standalone Python)\n"
-        "     puts conflicting torch DLLs on your system PATH.\n"
-        "     Open a terminal and run: where python\n"
-        "     If you see multiple results, remove the extra ones from PATH"
-    )
-    return msg
-
-
-def _is_antivirus_error(stderr: str) -> bool:
-    """Detect antivirus/permission blocking in pip output."""
-    stderr_lower = stderr.lower()
-    patterns = [
-        "access is denied",
-        "winerror 5",
-        "winerror 225",
-        "permission denied",
-        "operation did not complete successfully because the file contains a virus",
-        "blocked by your administrator",
-        "blocked by group policy",
-        "application control policy",
-        "control de aplicaciones",
-        "applocker",
-        "blocked by your organization",
-    ]
-    return any(p in stderr_lower for p in patterns)
-
-
-def _get_pip_antivirus_help(venv_dir: str) -> str:
-    """Get actionable help message for antivirus blocking pip."""
-    steps = (
-        "Installation was blocked, likely by antivirus software "
-        "or security policy.\n\n"
-        "Please try:\n"
-        "  1. Temporarily disable real-time antivirus scanning\n"
-        "  2. Add an exclusion for the plugin folder:\n"
-        "     {}\n".format(venv_dir)
-    )
-    if sys.platform == "win32":
-        steps += (
-            "  3. Run QGIS as administrator "
-            "(right-click > Run as administrator)\n"
-            "  4. Try the installation again"
-        )
-    else:
-        steps += (
-            "  3. Check folder permissions: "
-            "chmod -R u+rwX \"{}\"\n"
-            "  4. Try the installation again".format(venv_dir)
-        )
-    return steps
-
-
-# Windows NTSTATUS crash codes (both signed and unsigned representations)
-_WINDOWS_CRASH_CODES = {
-    3221225477,   # 0xC0000005 unsigned - ACCESS_VIOLATION
-    -1073741819,  # 0xC0000005 signed   - ACCESS_VIOLATION
-    3221225725,   # 0xC00000FD unsigned - STACK_OVERFLOW
-    -1073741571,  # 0xC00000FD signed   - STACK_OVERFLOW
-    3221225781,   # 0xC0000135 unsigned - DLL_NOT_FOUND
-    -1073741515,  # 0xC0000135 signed   - DLL_NOT_FOUND
-}
-
-
-def _is_windows_process_crash(returncode: int) -> bool:
-    """Detect Windows process crashes (ACCESS_VIOLATION, STACK_OVERFLOW, etc.)."""
-    if sys.platform != "win32":
-        return False
-    return returncode in _WINDOWS_CRASH_CODES
-
-
-def _is_rename_or_record_error(output: str) -> bool:
-    """Detect dist-info rename/RECORD errors during torch upgrade on Windows."""
-    lower = output.lower()
-    if ("rename" in lower and "dist-info" in lower):
-        return True
-    if ("record" in lower and "dist-info" in lower):
-        return True
-    # uv may truncate "dist-info" from output
-    if ("failed to install" in lower and "failed to rename" in lower):
-        return True
-    return False
-
-
-def _get_crash_help(venv_dir: str) -> str:
-    """Get actionable help for Windows process crash during pip install."""
-    return (
-        "The installer process crashed unexpectedly (access violation).\n\n"
-        "This is usually caused by:\n"
-        "  - Antivirus software (Windows Defender, etc.) blocking pip\n"
-        "  - Corrupted virtual environment\n\n"
-        "Please try:\n"
-        "  1. Temporarily disable real-time antivirus scanning\n"
-        "  2. Add an exclusion for the plugin folder:\n"
-        "     {}\n"
-        "  3. Click 'Reinstall Dependencies' to recreate the environment\n"
-        "  4. If the issue persists, run QGIS as administrator"
-    ).format(venv_dir)
+    """Wrapper that passes CACHE_DIR to the shared SSL error help."""
+    return get_ssl_error_help(error_text, cache_dir=CACHE_DIR)
 
 
 def get_venv_dir() -> str:
@@ -454,19 +260,18 @@ def get_venv_site_packages(venv_dir: str = None) -> str:
 
     if sys.platform == "win32":
         return os.path.join(venv_dir, "Lib", "site-packages")
-    else:
-        # Detect actual Python version in venv (may differ from QGIS Python)
-        lib_dir = os.path.join(venv_dir, "lib")
-        if os.path.exists(lib_dir):
-            for entry in os.listdir(lib_dir):
-                if entry.startswith("python") and os.path.isdir(os.path.join(lib_dir, entry)):
-                    site_packages = os.path.join(lib_dir, entry, "site-packages")
-                    if os.path.exists(site_packages):
-                        return site_packages
+    # Detect actual Python version in venv (may differ from QGIS Python)
+    lib_dir = os.path.join(venv_dir, "lib")
+    if os.path.exists(lib_dir):
+        for entry in os.listdir(lib_dir):
+            if entry.startswith("python") and os.path.isdir(os.path.join(lib_dir, entry)):
+                site_packages = os.path.join(lib_dir, entry, "site-packages")
+                if os.path.exists(site_packages):
+                    return site_packages
 
-        # Fallback to QGIS Python version (for new venv creation)
-        py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
-        return os.path.join(venv_dir, "lib", py_version, "site-packages")
+    # Fallback to QGIS Python version (for new venv creation)
+    py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    return os.path.join(venv_dir, "lib", py_version, "site-packages")
 
 
 def _add_windows_dll_directories(site_packages: str) -> None:
@@ -486,8 +291,7 @@ def _add_windows_dll_directories(site_packages: str) -> None:
             try:
                 os.add_dll_directory(dll_dir)
             except OSError as exc:
-                _log("add_dll_directory({}) failed: {}".format(
-                    dll_dir, exc), Qgis.MessageLevel.Warning)
+                _log(f"add_dll_directory({dll_dir}) failed: {exc}", Qgis.MessageLevel.Warning)
             if dll_dir not in path_parts:
                 path_parts.insert(0, dll_dir)
     os.environ["PATH"] = os.pathsep.join(path_parts)
@@ -509,7 +313,7 @@ def _fix_proj_gdal_data(site_packages: str) -> None:
         if os.path.exists(proj_db):
             os.environ["PROJ_DATA"] = candidate
             os.environ["PROJ_LIB"] = candidate
-            _log("Set PROJ_DATA to venv: {}".format(candidate), Qgis.MessageLevel.Info)
+            _log(f"Set PROJ_DATA to venv: {candidate}", Qgis.MessageLevel.Info)
             break
 
     gdal_candidates = [
@@ -518,7 +322,7 @@ def _fix_proj_gdal_data(site_packages: str) -> None:
     for candidate in gdal_candidates:
         if os.path.isdir(candidate):
             os.environ["GDAL_DATA"] = candidate
-            _log("Set GDAL_DATA to venv: {}".format(candidate), Qgis.MessageLevel.Info)
+            _log(f"Set GDAL_DATA to venv: {candidate}", Qgis.MessageLevel.Info)
             break
 
 
@@ -561,8 +365,7 @@ def ensure_venv_packages_available():
                 del sys.modules["typing_extensions"]
                 import typing_extensions as new_te
                 _log(
-                    "Reloaded typing_extensions {} -> {} from venv".format(
-                        old_ver, new_te.__version__),
+                    f"Reloaded typing_extensions {old_ver} -> {new_te.__version__} from venv",
                     Qgis.MessageLevel.Info
                 )
         except Exception:
@@ -600,8 +403,8 @@ def ensure_venv_packages_available():
 
     qgis_ver = Qgis.QGIS_VERSION.split("-")[0]
     _log(
-        "QGIS {} with old numpy {} detected. "
-        "Forcing venv numpy/pandas...".format(qgis_ver, old_version),
+        f"QGIS {qgis_ver} with old numpy {old_version} detected. "
+        "Forcing venv numpy/pandas...",
         Qgis.MessageLevel.Info)
 
     removed_paths = []
@@ -643,19 +446,17 @@ def ensure_venv_packages_available():
         if new_ver == old_version and old_version != "not_loaded":
             _log(
                 "WARNING: numpy reload did not change version "
-                "(still {}). pandas may fail on this QGIS.".format(
-                    old_version),
+                f"(still {old_version}). pandas may fail on this QGIS.",
                 Qgis.MessageLevel.Warning)
         else:
             _log(
-                "Reloaded numpy {} -> {} from venv".format(
-                    old_version, new_ver),
+                f"Reloaded numpy {old_version} -> {new_ver} from venv",
                 Qgis.MessageLevel.Info)
 
     except Exception as e:
         _log(
-            "Failed to reload numpy: {}. "
-            "Plugin may not work on this QGIS version.".format(e),
+            f"Failed to reload numpy: {e}. "
+            "Plugin may not work on this QGIS version.",
             Qgis.MessageLevel.Warning)
 
     finally:
@@ -673,8 +474,7 @@ def get_venv_python_path(venv_dir: str = None) -> str:
 
     if sys.platform == "win32":
         return os.path.join(venv_dir, "Scripts", "python.exe")
-    else:
-        return os.path.join(venv_dir, "bin", "python3")
+    return os.path.join(venv_dir, "bin", "python3")
 
 
 def get_venv_pip_path(venv_dir: str = None) -> str:
@@ -683,11 +483,10 @@ def get_venv_pip_path(venv_dir: str = None) -> str:
 
     if sys.platform == "win32":
         return os.path.join(venv_dir, "Scripts", "pip.exe")
-    else:
-        return os.path.join(venv_dir, "bin", "pip")
+    return os.path.join(venv_dir, "bin", "pip")
 
 
-def _get_qgis_python() -> Optional[str]:
+def _get_qgis_python() -> str | None:
     """
     Get the path to QGIS's bundled Python on Windows.
 
@@ -725,9 +524,8 @@ def _get_qgis_python() -> Optional[str]:
         if result.returncode == 0:
             _log(f"QGIS Python verified: {result.stdout.strip()}", Qgis.MessageLevel.Info)
             return python_path
-        else:
-            _log(f"QGIS Python failed verification: {result.stderr}", Qgis.MessageLevel.Warning)
-            return None
+        _log(f"QGIS Python failed verification: {result.stderr}", Qgis.MessageLevel.Warning)
+        return None
     except Exception as e:
         _log(f"QGIS Python verification error: {e}", Qgis.MessageLevel.Warning)
         return None
@@ -742,8 +540,10 @@ def _get_system_python() -> str:
     (e.g. when anti-malware blocks the standalone download).
     """
     from .python_manager import (
-        standalone_python_exists, get_standalone_python_path,
-        verify_standalone_python, remove_standalone_python
+        get_standalone_python_path,
+        remove_standalone_python,
+        standalone_python_exists,
+        verify_standalone_python,
     )
 
     if standalone_python_exists():
@@ -752,19 +552,18 @@ def _get_system_python() -> str:
             python_path = get_standalone_python_path()
             _log(f"Using standalone Python: {python_path}", Qgis.MessageLevel.Info)
             return python_path
-        else:
-            _log(
-                "Standalone Python broken ({}), removing...".format(msg),
-                Qgis.MessageLevel.Warning
-            )
-            remove_standalone_python()
+        _log(
+            f"Standalone Python broken ({msg}), removing...",
+            Qgis.MessageLevel.Warning
+        )
+        remove_standalone_python()
 
     # On NixOS, use system Python (standalone binaries can't run)
     from .python_manager import is_nixos
     if is_nixos():
         python3 = shutil.which("python3")
         if python3:
-            _log("NixOS: using system Python: {}".format(python3), Qgis.MessageLevel.Info)
+            _log(f"NixOS: using system Python: {python3}", Qgis.MessageLevel.Info)
             return python3
 
     # On Windows, try QGIS's bundled Python as fallback
@@ -804,8 +603,8 @@ def _cleanup_partial_venv(venv_dir: str):
 
 def create_venv(
     venv_dir: str = None,
-    progress_callback: Optional[Callable[[int, str], None]] = None
-) -> Tuple[bool, str]:
+    progress_callback: Callable[[int, str], None] | None = None
+) -> tuple[bool, str]:
     if venv_dir is None:
         venv_dir = VENV_DIR
 
@@ -847,19 +646,16 @@ def create_venv(
                 if progress_callback:
                     progress_callback(20, "Virtual environment created (uv)")
                 return True, "Virtual environment created"
-            else:
-                error_msg = result.stderr or result.stdout or ""
-                _log("uv venv creation failed: {}".format(
-                    error_msg[:200]), Qgis.MessageLevel.Warning)
-                _cleanup_partial_venv(venv_dir)
-                # Fall through to standard venv creation
-                remove_uv()
-                _uv_available = False
-                _uv_path = None
-                _log("Falling back to python -m venv", Qgis.MessageLevel.Warning)
+            error_msg = result.stderr or result.stdout or ""
+            _log(f"uv venv creation failed: {error_msg[:200]}", Qgis.MessageLevel.Warning)
+            _cleanup_partial_venv(venv_dir)
+            # Fall through to standard venv creation
+            remove_uv()
+            _uv_available = False
+            _uv_path = None
+            _log("Falling back to python -m venv", Qgis.MessageLevel.Warning)
         except Exception as e:
-            _log("uv venv exception: {}, falling back to python -m venv".format(
-                e), Qgis.MessageLevel.Warning)
+            _log(f"uv venv exception: {e}, falling back to python -m venv", Qgis.MessageLevel.Warning)
             _cleanup_partial_venv(venv_dir)
             remove_uv()
             _uv_available = False
@@ -907,10 +703,10 @@ def create_venv(
                         ensurepip_ok = True
                     else:
                         err = ensurepip_result.stderr or ensurepip_result.stdout or ""
-                        _log("ensurepip failed: {}".format(err[:200]),
+                        _log(f"ensurepip failed: {err[:200]}",
                              Qgis.MessageLevel.Warning)
                 except Exception as e:
-                    _log("ensurepip exception: {}".format(e),
+                    _log(f"ensurepip exception: {e}",
                          Qgis.MessageLevel.Warning)
 
                 if not ensurepip_ok:
@@ -931,11 +727,10 @@ def create_venv(
             if progress_callback:
                 progress_callback(20, "Virtual environment created")
             return True, "Virtual environment created"
-        else:
-            error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
-            _log(f"Failed to create venv: {error_msg}", Qgis.MessageLevel.Critical)
-            _cleanup_partial_venv(venv_dir)
-            return False, f"Failed to create venv: {error_msg[:200]}"
+        error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
+        _log(f"Failed to create venv: {error_msg}", Qgis.MessageLevel.Critical)
+        _cleanup_partial_venv(venv_dir)
+        return False, f"Failed to create venv: {error_msg[:200]}"
 
     except subprocess.TimeoutExpired:
         _log("Venv creation timed out, retrying with --without-pip...", Qgis.MessageLevel.Warning)
@@ -962,26 +757,24 @@ def create_venv(
                     if progress_callback:
                         progress_callback(20, "Virtual environment created")
                     return True, "Virtual environment created"
-                else:
-                    err = ep_result.stderr or ep_result.stdout or ""
-                    _log("ensurepip failed: {}".format(err[:200]), Qgis.MessageLevel.Warning)
-                    if _uv_available and _uv_path:
-                        _log(
-                            "ensurepip unavailable but uv present, "
-                            "continuing without pip",
-                            Qgis.MessageLevel.Warning)
-                        if progress_callback:
-                            progress_callback(20, "Virtual environment created")
-                        return True, "Virtual environment created"
-                    _cleanup_partial_venv(venv_dir)
-                    return False, "Failed to bootstrap pip: {}".format(err[:200])
-            else:
-                err = result2.stderr or result2.stdout or ""
-                _log("Retry --without-pip failed: {}".format(err[:200]), Qgis.MessageLevel.Critical)
+                err = ep_result.stderr or ep_result.stdout or ""
+                _log(f"ensurepip failed: {err[:200]}", Qgis.MessageLevel.Warning)
+                if _uv_available and _uv_path:
+                    _log(
+                        "ensurepip unavailable but uv present, "
+                        "continuing without pip",
+                        Qgis.MessageLevel.Warning)
+                    if progress_callback:
+                        progress_callback(20, "Virtual environment created")
+                    return True, "Virtual environment created"
                 _cleanup_partial_venv(venv_dir)
-                return False, "Virtual environment creation timed out"
+                return False, f"Failed to bootstrap pip: {err[:200]}"
+            err = result2.stderr or result2.stdout or ""
+            _log(f"Retry --without-pip failed: {err[:200]}", Qgis.MessageLevel.Critical)
+            _cleanup_partial_venv(venv_dir)
+            return False, "Virtual environment creation timed out"
         except Exception as e2:
-            _log("Retry --without-pip exception: {}".format(e2), Qgis.MessageLevel.Critical)
+            _log(f"Retry --without-pip exception: {e2}", Qgis.MessageLevel.Critical)
             _cleanup_partial_venv(venv_dir)
             return False, "Virtual environment creation timed out"
     except FileNotFoundError:
@@ -1043,25 +836,21 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
             if skip_next:
                 skip_next = False
                 continue
-            if arg == "--disable-pip-version-check":
+            if arg == "--disable-pip-version-check" or arg == "--no-warn-script-location" or arg == "--prefer-binary":
                 continue
-            elif arg == "--no-warn-script-location":
-                continue
-            elif arg == "--prefer-binary":
-                continue
-            elif arg in ("--retries", "--timeout"):
+            if arg in ("--retries", "--timeout"):
                 skip_next = True  # skip flag and its value
                 continue
-            elif arg == "--no-cache-dir":
+            if arg == "--no-cache-dir":
                 cmd.append("--no-cache")
                 continue
-            elif arg == "--force-reinstall":
+            if arg == "--force-reinstall":
                 cmd.append("--reinstall")
                 continue
-            elif arg == "--trusted-host":
+            if arg == "--trusted-host":
                 cmd.append("--allow-insecure-host")
                 continue
-            elif arg == "--proxy":
+            if arg == "--proxy":
                 # uv uses HTTP_PROXY/HTTPS_PROXY env vars (already set)
                 skip_next = True
                 continue
@@ -1074,13 +863,6 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
         cmd.extend(["--python", _win_short_path(python_path)])
         return cmd
     return [python_path, "-m", "pip"] + pip_args
-
-
-def _build_uninstall_cmd(python_path: str, packages: list) -> list:
-    """Build an uninstall command using uv (if available) or pip."""
-    if _uv_available and _uv_path:
-        return [_uv_path, "pip", "uninstall", "--python", _win_short_path(python_path)] + packages
-    return [python_path, "-m", "pip", "uninstall", "-y"] + packages
 
 
 def _repin_numpy(venv_dir: str):
@@ -1114,7 +896,7 @@ def _repin_numpy(venv_dir: str):
         major = int(version_str.split(".")[0])
         if major >= 2:
             _log(
-                "numpy {} detected (>=2.0), forcing downgrade to <2.0.0...".format(version_str),
+                f"numpy {version_str} detected (>=2.0), forcing downgrade to <2.0.0...",
                 Qgis.MessageLevel.Warning
             )
             downgrade_args = [
@@ -1133,9 +915,9 @@ def _repin_numpy(venv_dir: str):
                 _log("numpy downgraded successfully to <2.0.0", Qgis.MessageLevel.Success)
             else:
                 err = downgrade_result.stderr or downgrade_result.stdout or ""
-                _log("numpy downgrade failed: {}".format(err[:200]), Qgis.MessageLevel.Warning)
+                _log(f"numpy downgrade failed: {err[:200]}", Qgis.MessageLevel.Warning)
     except Exception as e:
-        _log("numpy version check failed: {}".format(e), Qgis.MessageLevel.Warning)
+        _log(f"numpy version check failed: {e}", Qgis.MessageLevel.Warning)
 
 
 def _get_verification_timeout(package_name: str) -> int:
@@ -1147,12 +929,11 @@ def _get_verification_timeout(package_name: str) -> int:
     """
     if package_name == "torch":
         return 120
-    elif package_name in ("torchvision", "pandas"):
+    if package_name in ("torchvision", "pandas"):
         # pandas loads many .pyd C extensions on first import;
         # antivirus (Windows Defender) scans each one, easily exceeding 30s
         return 120
-    else:
-        return 30
+    return 30
 
 
 class _PipResult:
@@ -1164,7 +945,7 @@ class _PipResult:
         self.stderr = stderr
 
 
-def _parse_pip_download_line(line: str) -> Optional[str]:
+def _parse_pip_download_line(line: str) -> str | None:
     """
     Extract a human-readable status from a pip stdout/stderr line.
 
@@ -1194,13 +975,13 @@ def _parse_pip_download_line(line: str) -> Optional[str]:
         num = float(size_match.group(1))
         unit = size_match.group(2)
         if unit == "MB" and num >= 1000:
-            size = "{:.1f} GB".format(num / 1000)
+            size = f"{num / 1000:.1f} GB"
 
-    return "Downloading {} ({})".format(pkg_name, size)
+    return f"Downloading {pkg_name} ({size})"
 
 
 def _run_pip_install(
-    cmd: List[str],
+    cmd: list[str],
     timeout: int,
     env: dict,
     subprocess_kwargs: dict,
@@ -1209,8 +990,8 @@ def _run_pip_install(
     total_packages: int,
     progress_start: int,
     progress_end: int,
-    progress_callback: Optional[Callable[[int, str], None]] = None,
-    cancel_check: Optional[Callable[[], bool]] = None,
+    progress_callback: Callable[[int, str], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> _PipResult:
     """
     Run a pip install command with real-time progress updates.
@@ -1290,7 +1071,7 @@ def _run_pip_install(
 
             # Read last lines of stdout to find download progress
             try:
-                with open(stdout_path, "r", encoding="utf-8", errors="replace") as f:
+                with open(stdout_path, encoding="utf-8", errors="replace") as f:
                     # Read last 4KB to find recent lines
                     f.seek(0, 2)  # seek to end
                     file_size = f.tell()
@@ -1309,19 +1090,17 @@ def _run_pip_install(
 
             # Format elapsed time nicely
             if elapsed >= 60:
-                elapsed_str = "{}m {}s".format(elapsed // 60, elapsed % 60)
+                elapsed_str = f"{elapsed // 60}m {elapsed % 60}s"
             else:
-                elapsed_str = "{}s".format(elapsed)
+                elapsed_str = f"{elapsed}s"
 
             # Build progress message
             if last_download_status:
-                msg = "{}... {}".format(last_download_status, elapsed_str)
+                msg = f"{last_download_status}... {elapsed_str}"
             elif package_name == "torch":
-                msg = "Downloading PyTorch (~600 MB)... {}".format(
-                    elapsed_str)
+                msg = f"Downloading PyTorch (~600 MB)... {elapsed_str}"
             else:
-                msg = "Installing {}... {}".format(
-                    package_name, elapsed_str)
+                msg = f"Installing {package_name}... {elapsed_str}"
 
             # Interpolate progress within the package's range
             # Use logarithmic-ish curve: fast at start, slows down
@@ -1345,13 +1124,13 @@ def _run_pip_install(
 
         # Read full output
         try:
-            with open(stdout_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(stdout_path, encoding="utf-8", errors="replace") as f:
                 full_stdout = f.read()
         except Exception:
             full_stdout = ""
 
         try:
-            with open(stderr_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(stderr_path, encoding="utf-8", errors="replace") as f:
                 full_stderr = f.read()
         except Exception:
             full_stderr = ""
@@ -1393,9 +1172,9 @@ def _run_pip_install(
 
 def install_dependencies(
     venv_dir: str = None,
-    progress_callback: Optional[Callable[[int, str], None]] = None,
-    cancel_check: Optional[Callable[[], bool]] = None,
-) -> Tuple[bool, str]:
+    progress_callback: Callable[[int, str], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+) -> tuple[bool, str]:
     if venv_dir is None:
         venv_dir = VENV_DIR
 
@@ -1438,7 +1217,7 @@ def install_dependencies(
                     (upgrade_result.stderr or upgrade_result.stdout or "")[:200]),
                     Qgis.MessageLevel.Warning)
         except Exception as e:
-            _log("pip upgrade failed (non-critical): {}".format(str(e)[:200]),
+            _log(f"pip upgrade failed (non-critical): {str(e)[:200]}",
                  Qgis.MessageLevel.Warning)
 
     total_packages = len(REQUIRED_PACKAGES)
@@ -1509,13 +1288,11 @@ def install_dependencies(
                 if package_name == "torch":
                     progress_callback(
                         pkg_start,
-                        "Installing {} (~600MB)... ({}/{})".format(
-                            package_name, i + 1, total_packages))
+                        f"Installing {package_name} (~600MB)... ({i + 1}/{total_packages})")
                 else:
                     progress_callback(
                         pkg_start,
-                        "Installing {}... ({}/{})".format(
-                            package_name, i + 1, total_packages))
+                        f"Installing {package_name}... ({i + 1}/{total_packages})")
 
             _log(f"[{i + 1}/{total_packages}] Installing {package_spec}...", Qgis.MessageLevel.Info)
 
@@ -1590,15 +1367,14 @@ def install_dependencies(
                 # (skip when using uv - it doesn't have this issue)
                 if not _uv_available and _is_windows_process_crash(result.returncode):
                     _log(
-                        "Process crash detected (code {}), "
-                        "retrying with pip.exe...".format(result.returncode),
+                        f"Process crash detected (code {result.returncode}), "
+                        "retrying with pip.exe...",
                         Qgis.MessageLevel.Warning
                     )
                     if progress_callback:
                         progress_callback(
                             pkg_start,
-                            "Retrying {}... ({}/{})".format(
-                                package_name, i + 1, total_packages)
+                            f"Retrying {package_name}... ({i + 1}/{total_packages})"
                         )
 
                     fallback_cmd = [pip_path] + pip_args
@@ -1629,8 +1405,7 @@ def install_dependencies(
                         if progress_callback:
                             progress_callback(
                                 pkg_start,
-                                "Retrying {}... ({}/{})".format(
-                                    package_name, i + 1, total_packages)
+                                f"Retrying {package_name}... ({i + 1}/{total_packages})"
                             )
                         fallback_cmd = [pip_path] + pip_args
                         result = _run_pip_install(
@@ -1659,8 +1434,7 @@ def install_dependencies(
                         if progress_callback:
                             progress_callback(
                                 pkg_start,
-                                "SSL error, retrying {}... ({}/{})".format(
-                                    package_name, i + 1, total_packages)
+                                f"SSL error, retrying {package_name}... ({i + 1}/{total_packages})"
                             )
 
                         # Retry (SSL flags already in base_cmd)
@@ -1691,8 +1465,7 @@ def install_dependencies(
                         if progress_callback:
                             progress_callback(
                                 pkg_start,
-                                "Cache error, retrying {}... ({}/{})".format(
-                                    package_name, i + 1, total_packages)
+                                f"Cache error, retrying {package_name}... ({i + 1}/{total_packages})"
                             )
 
                         nocache_flag = "--no-cache" if _uv_available else "--no-cache-dir"
@@ -1719,15 +1492,14 @@ def install_dependencies(
                         for attempt in range(1, 5):  # up to 4 retries
                             wait = 5 * (2 ** (attempt - 1))  # 5, 10, 20, 40s
                             _log(
-                                "Network error detected, retrying in {}s "
-                                "(attempt {}/4)...".format(wait, attempt),
+                                f"Network error detected, retrying in {wait}s "
+                                f"(attempt {attempt}/4)...",
                                 Qgis.MessageLevel.Warning
                             )
                             if progress_callback:
                                 progress_callback(
                                     pkg_start,
-                                    "Network error, retry {}/4 in {}s...".format(
-                                        attempt, wait)
+                                    f"Network error, retry {attempt}/4 in {wait}s..."
                                 )
                             time.sleep(wait)
                             if cancel_check and cancel_check():
@@ -1755,8 +1527,8 @@ def install_dependencies(
                     no_dist = "no matching distribution" in err_lower
                     if no_dist:
                         _log(
-                            "No matching distribution for {}, "
-                            "retrying with --no-cache-dir...".format(package_name),
+                            f"No matching distribution for {package_name}, "
+                            "retrying with --no-cache-dir...",
                             Qgis.MessageLevel.Warning
                         )
                         nocache2 = "--no-cache" if _uv_available else "--no-cache-dir"
@@ -1780,8 +1552,8 @@ def install_dependencies(
                     error_output = result.stderr or result.stdout or ""
                     if _is_rename_or_record_error(error_output):
                         _log(
-                            "Stale dist-info detected for {}, cleaning and "
-                            "retrying with --force-reinstall...".format(package_name),
+                            f"Stale dist-info detected for {package_name}, cleaning and "
+                            "retrying with --force-reinstall...",
                             Qgis.MessageLevel.Warning
                         )
                         try:
@@ -1791,20 +1563,19 @@ def install_dependencies(
                                 import shutil as _shutil
                                 pattern = os.path.join(
                                     site_pkgs,
-                                    "{}-*.dist-info".format(package_name))
+                                    f"{package_name}-*.dist-info")
                                 for dist_dir in _glob.glob(pattern):
                                     _shutil.rmtree(dist_dir, ignore_errors=True)
-                                    _log("Removed stale {}".format(dist_dir),
+                                    _log(f"Removed stale {dist_dir}",
                                          Qgis.MessageLevel.Warning)
                         except Exception as exc:
-                            _log("Failed to clean dist-info: {}".format(exc),
+                            _log(f"Failed to clean dist-info: {exc}",
                                  Qgis.MessageLevel.Warning)
 
                         if progress_callback:
                             progress_callback(
                                 pkg_start,
-                                "Retrying {}... ({}/{})".format(
-                                    package_name, i + 1, total_packages))
+                                f"Retrying {package_name}... ({i + 1}/{total_packages})")
                         reinstall_cmd = base_cmd + ["--force-reinstall"]
                         result = _run_pip_install(
                             cmd=reinstall_cmd,
@@ -1842,42 +1613,38 @@ def install_dependencies(
 
             if install_failed:
                 # Log detailed pip output for debugging
-                _log("pip error output: {}".format(install_error_msg[:500]), Qgis.MessageLevel.Critical)
+                _log(f"pip error output: {install_error_msg[:500]}", Qgis.MessageLevel.Critical)
 
                 # Check for Windows process crash
                 if last_returncode is not None and _is_windows_process_crash(last_returncode):
                     _log(_get_crash_help(venv_dir), Qgis.MessageLevel.Warning)
-                    return False, "Failed to install {}: process crashed (code {})".format(
-                        package_name, last_returncode)
+                    return False, f"Failed to install {package_name}: process crashed (code {last_returncode})"
 
                 # Check for DLL load failure (missing system libraries)
                 is_dll_err = sys.platform == "win32" and _is_dll_init_error(install_error_msg)
                 if is_dll_err and package_name in ("torch", "torchvision"):
                     _log(_get_vcpp_help(), Qgis.MessageLevel.Warning)
-                    return False, "Failed to install {}: {}".format(
-                        package_name, _get_vcpp_help())
+                    return False, f"Failed to install {package_name}: {_get_vcpp_help()}"
 
                 # Check for rename/record errors (antivirus blocking on Windows) - before SSL
                 # because uv output may contain SSL_CERT_DIR warnings alongside rename errors
                 if sys.platform == "win32" and _is_rename_or_record_error(install_error_msg):
                     help_msg = (
-                        "Failed to install {}: file rename blocked.\n\n"
+                        f"Failed to install {package_name}: file rename blocked.\n\n"
                         "This is typically caused by antivirus or security software "
                         "scanning files during installation.\n\n"
                         "Please try:\n"
                         "  1. Temporarily disable real-time antivirus scanning\n"
-                        "  2. Add an exclusion for: {}\n"
+                        f"  2. Add an exclusion for: {CACHE_DIR}\n"
                         "  3. Restart QGIS and reinstall dependencies"
-                    ).format(package_name, CACHE_DIR)
+                    )
                     _log(help_msg, Qgis.MessageLevel.Warning)
-                    return False, "Failed to install {}: blocked by antivirus (rename failed)".format(
-                        package_name)
+                    return False, f"Failed to install {package_name}: blocked by antivirus (rename failed)"
 
                 # Check for SSL errors
                 if _is_ssl_error(install_error_msg):
                     _log(_get_ssl_error_help(install_error_msg), Qgis.MessageLevel.Warning)
-                    return False, "Failed to install {}: SSL error".format(
-                        package_name)
+                    return False, f"Failed to install {package_name}: SSL error"
 
                 # Check for proxy authentication errors (407)
                 if _is_proxy_auth_error(install_error_msg):
@@ -1888,8 +1655,7 @@ def install_dependencies(
                         "(User and Password fields).",
                         Qgis.MessageLevel.Warning
                     )
-                    return False, "Failed to install {}: proxy authentication required (407)".format(
-                        package_name)
+                    return False, f"Failed to install {package_name}: proxy authentication required (407)"
 
                 # Check for network/connection errors (after retries exhausted)
                 if _is_network_error(install_error_msg):
@@ -1899,30 +1665,27 @@ def install_dependencies(
                         "and firewall rules for pypi.org and files.pythonhosted.org.",
                         Qgis.MessageLevel.Warning
                     )
-                    return False, "Failed to install {}: network error".format(
-                        package_name)
+                    return False, f"Failed to install {package_name}: network error"
 
                 # Check for platform-unsupported wheels
                 if "no matching platform tag" in install_error_msg.lower():
                     return False, (
-                        "Failed to install {}: no wheels with a matching "
+                        f"Failed to install {package_name}: no wheels with a matching "
                         "platform tag for this OS/architecture."
-                    ).format(package_name)
+                    )
 
                 # Check for antivirus blocking
                 if _is_antivirus_error(install_error_msg):
                     _log(_get_pip_antivirus_help(venv_dir), Qgis.MessageLevel.Warning)
-                    return False, "Failed to install {}: blocked by antivirus or security policy".format(
-                        package_name)
+                    return False, f"Failed to install {package_name}: blocked by antivirus or security policy"
 
                 # Check for "unable to create process" (broken pip shim)
                 if _is_unable_to_create_process(install_error_msg):
                     return False, (
-                        "Failed to install {}: unable to create process.\n\n"
+                        f"Failed to install {package_name}: unable to create process.\n\n"
                         "Please try:\n"
-                        "  1. Delete the folder: {}\n"
-                        "  2. Restart QGIS and reinstall dependencies".format(
-                            package_name, CACHE_DIR)
+                        f"  1. Delete the folder: {CACHE_DIR}\n"
+                        "  2. Restart QGIS and reinstall dependencies"
                     )
 
                 # Check for GDAL issues on Linux/macOS when rasterio fails
@@ -1930,11 +1693,9 @@ def install_dependencies(
                     gdal_ok, gdal_help = _check_gdal_available()
                     if not gdal_ok and gdal_help:
                         _log(gdal_help, Qgis.MessageLevel.Warning)
-                        return False, "Failed to install {}: GDAL library not found".format(
-                            package_name)
+                        return False, f"Failed to install {package_name}: GDAL library not found"
 
-                return False, "Failed to install {}: {}".format(
-                    package_name, install_error_msg[:200])
+                return False, f"Failed to install {package_name}: {install_error_msg[:200]}"
 
         # Post-install numpy version safety net:
         # Check and force-downgrade if needed.
@@ -1963,15 +1724,16 @@ def install_dependencies(
                     break
 
 
-def _get_qgis_proxy_settings() -> Optional[str]:
+def _get_qgis_proxy_settings() -> str | None:
     """Read proxy configuration from QGIS settings.
 
     Returns a proxy URL string (with optional authentication)
     or None if proxy is not configured or disabled.
     """
     try:
-        from qgis.core import QgsSettings
         from urllib.parse import quote as url_quote
+
+        from qgis.core import QgsSettings
 
         settings = QgsSettings()
         enabled = settings.value("proxy/proxyEnabled", False, type=bool)
@@ -1994,15 +1756,15 @@ def _get_qgis_proxy_settings() -> Optional[str]:
             proxy_url += "@"
         proxy_url += host
         if port:
-            proxy_url += ":{}".format(port)
+            proxy_url += f":{port}"
 
         return proxy_url
     except Exception as e:
-        _log("Could not read QGIS proxy settings: {}".format(e), Qgis.MessageLevel.Warning)
+        _log(f"Could not read QGIS proxy settings: {e}", Qgis.MessageLevel.Warning)
         return None
 
 
-def _get_pip_proxy_args() -> List[str]:
+def _get_pip_proxy_args() -> list[str]:
     """Get pip --proxy argument if QGIS proxy is configured."""
     proxy_url = _get_qgis_proxy_settings()
     if proxy_url:
@@ -2018,10 +1780,10 @@ def _get_clean_env_for_venv() -> dict:
     env = os.environ.copy()
 
     vars_to_remove = [
-        'PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV',
-        'QGIS_PREFIX_PATH', 'QGIS_PLUGINPATH',
-        'PROJ_DATA', 'PROJ_LIB',
-        'GDAL_DATA', 'GDAL_DRIVER_PATH',
+        "PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV",
+        "QGIS_PREFIX_PATH", "QGIS_PLUGINPATH",
+        "PROJ_DATA", "PROJ_LIB",
+        "GDAL_DATA", "GDAL_DRIVER_PATH",
     ]
     for var in vars_to_remove:
         env.pop(var, None)
@@ -2059,8 +1821,8 @@ def _get_subprocess_kwargs() -> dict:
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = subprocess.SW_HIDE
-        kwargs['startupinfo'] = startupinfo
-        kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+        kwargs["startupinfo"] = startupinfo
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     return kwargs
 
 
@@ -2073,30 +1835,29 @@ def _get_verification_code(package_name: str) -> str:
     if package_name == "pandas":
         # Test that pandas C extensions work by creating a DataFrame
         return "import pandas as pd; df = pd.DataFrame({'a': [1, 2, 3]}); print(df.sum())"
-    elif package_name == "numpy":
+    if package_name == "numpy":
         # Test numpy array operations
         return "import numpy as np; a = np.array([1, 2, 3]); print(np.sum(a))"
-    elif package_name == "torch":
+    if package_name == "torch":
         # Test torch tensor creation
         return "import torch; t = torch.tensor([1, 2, 3]); print(t.sum())"
-    elif package_name == "rasterio":
+    if package_name == "rasterio":
         # Just import - rasterio needs a file to test fully
         return "import rasterio; print(rasterio.__version__)"
-    elif package_name == "sam2":
+    if package_name == "sam2":
         return "from sam2.build_sam import build_sam2; print('ok')"
-    elif package_name == "segment-anything":
+    if package_name == "segment-anything":
         return "from segment_anything import sam_model_registry; print('ok')"
-    elif package_name == "torchvision":
+    if package_name == "torchvision":
         return "import torchvision; print(torchvision.__version__)"
-    else:
-        import_name = package_name.replace("-", "_")
-        return f"import {import_name}"
+    import_name = package_name.replace("-", "_")
+    return f"import {import_name}"
 
 
 def verify_venv(
     venv_dir: str = None,
-    progress_callback: Optional[Callable[[int, str], None]] = None
-) -> Tuple[bool, str]:
+    progress_callback: Callable[[int, str], None] | None = None
+) -> tuple[bool, str]:
     if venv_dir is None:
         venv_dir = VENV_DIR
 
@@ -2133,8 +1894,7 @@ def verify_venv(
             if result.returncode != 0:
                 error_detail = result.stderr[:300] if result.stderr else result.stdout[:300]
                 _log(
-                    "Package {} verification failed: {}".format(
-                        package_name, error_detail),
+                    f"Package {package_name} verification failed: {error_detail}",
                     Qgis.MessageLevel.Warning
                 )
 
@@ -2142,14 +1902,14 @@ def verify_venv(
                 # as a conflicting DLL from another Python install may be the cause
                 if _is_dll_init_error(error_detail):
                     _log(
-                        "DLL init error for {}, attempting "
-                        "force-reinstall...".format(package_name),
+                        f"DLL init error for {package_name}, attempting "
+                        "force-reinstall...",
                         Qgis.MessageLevel.Warning
                     )
                     pkg_spec = package_name
                     for name, spec in REQUIRED_PACKAGES:
                         if name == package_name:
-                            pkg_spec = "{}{}".format(name, spec)
+                            pkg_spec = f"{name}{spec}"
                             break
                     reinstall_cmd = _build_install_cmd(
                         python_path,
@@ -2169,8 +1929,8 @@ def verify_venv(
                         )
                         if result2.returncode == 0:
                             _log(
-                                "Package {} fixed after "
-                                "force-reinstall".format(package_name),
+                                f"Package {package_name} fixed after "
+                                "force-reinstall",
                                 Qgis.MessageLevel.Success)
                             continue
                     except Exception:
@@ -2179,8 +1939,7 @@ def verify_venv(
                     # Nuclear option: delete torch dirs and reinstall fresh
                     _log(
                         "Force-reinstall did not fix DLL error for "
-                        "{}. Nuking and reinstalling...".format(
-                            package_name),
+                        f"{package_name}. Nuking and reinstalling...",
                         Qgis.MessageLevel.Warning
                     )
                     try:
@@ -2198,9 +1957,8 @@ def verify_venv(
                                             target, ignore_errors=True
                                         )
                         # Reinstall both packages
-                        torch_spec = "torch{}".format(TORCH_MIN)
-                        tv_spec = "torchvision{}".format(
-                            TORCHVISION_MIN)
+                        torch_spec = f"torch{TORCH_MIN}"
+                        tv_spec = f"torchvision{TORCHVISION_MIN}"
                         nuke_cmd = _build_install_cmd(
                             python_path,
                             ["install", "--prefer-binary",
@@ -2218,8 +1976,8 @@ def verify_venv(
                         )
                         if result3.returncode == 0:
                             _log(
-                                "Package {} fixed after nuke "
-                                "reinstall".format(package_name),
+                                f"Package {package_name} fixed after nuke "
+                                "reinstall",
                                 Qgis.MessageLevel.Success)
                             continue
                     except Exception:
@@ -2234,8 +1992,7 @@ def verify_venv(
                     if TORCH_WINDOWS_FALLBACK:
                         _log(
                             "Nuke reinstall did not fix DLL error. "
-                            "Trying pinned torch{} fallback...".format(
-                                TORCH_WINDOWS_FALLBACK),
+                            f"Trying pinned torch{TORCH_WINDOWS_FALLBACK} fallback...",
                             Qgis.MessageLevel.Warning
                         )
                         try:
@@ -2253,9 +2010,8 @@ def verify_venv(
                             fallback_cmd = _build_install_cmd(
                                 python_path,
                                 ["install", "--prefer-binary",
-                                 "torch{}".format(TORCH_WINDOWS_FALLBACK),
-                                 "torchvision{}".format(
-                                     TORCHVISION_WINDOWS_FALLBACK)])
+                                 f"torch{TORCH_WINDOWS_FALLBACK}",
+                                 f"torchvision{TORCHVISION_WINDOWS_FALLBACK}"])
                             subprocess.run(
                                 fallback_cmd,
                                 capture_output=True, text=True,
@@ -2269,10 +2025,8 @@ def verify_venv(
                             )
                             if result4.returncode == 0:
                                 _log(
-                                    "Package {} fixed with pinned "
-                                    "torch{} fallback".format(
-                                        package_name,
-                                        TORCH_WINDOWS_FALLBACK),
+                                    f"Package {package_name} fixed with pinned "
+                                    f"torch{TORCH_WINDOWS_FALLBACK} fallback",
                                     Qgis.MessageLevel.Success)
                                 continue
                         except Exception:
@@ -2280,8 +2034,7 @@ def verify_venv(
 
                     _log(_get_vcpp_help(), Qgis.MessageLevel.Warning)
                     return False, (
-                        "Package {} failed: {}".format(
-                            package_name, _get_vcpp_help())
+                        f"Package {package_name} failed: {_get_vcpp_help()}"
                     )
 
                 # Detect broken C extensions (antivirus may have quarantined .pyd files)
@@ -2296,15 +2049,15 @@ def verify_venv(
 
                 if is_broken:
                     _log(
-                        "Package {} has broken C extensions, "
-                        "attempting force-reinstall...".format(package_name),
+                        f"Package {package_name} has broken C extensions, "
+                        "attempting force-reinstall...",
                         Qgis.MessageLevel.Warning
                     )
                     # Find the version spec from REQUIRED_PACKAGES
                     pkg_spec = package_name
                     for name, spec in REQUIRED_PACKAGES:
                         if name == package_name:
-                            pkg_spec = "{}{}".format(name, spec)
+                            pkg_spec = f"{name}{spec}"
                             break
                     reinstall_cmd = [
                         python_path, "-m", "pip", "install",
@@ -2339,8 +2092,7 @@ def verify_venv(
                         )
                         if result2.returncode == 0:
                             _log(
-                                "Package {} fixed after force-reinstall".format(
-                                    package_name),
+                                f"Package {package_name} fixed after force-reinstall",
                                 Qgis.MessageLevel.Success
                             )
                             continue  # Move to next package
@@ -2354,18 +2106,16 @@ def verify_venv(
                     ]
                     if any(m in detail_lower for m in applocker_markers):
                         return False, (
-                            "Package {} is blocked by AppLocker or "
+                            f"Package {package_name} is blocked by AppLocker or "
                             "application control policy.\n\n"
                             "Ask your IT administrator to whitelist "
-                            "this folder:\n  {}\n\n"
+                            f"this folder:\n  {venv_dir}\n\n"
                             "Then restart QGIS and reinstall "
-                            "dependencies.".format(
-                                package_name, venv_dir)
+                            "dependencies."
                         )
                     return False, (
-                        "Package {} is broken (antivirus may be "
-                        "interfering): {}".format(
-                            package_name, error_detail[:200])
+                        f"Package {package_name} is broken (antivirus may be "
+                        f"interfering): {error_detail[:200]}"
                     )
 
                 if sys.platform == "win32":
@@ -2378,20 +2128,20 @@ def verify_venv(
                             "\n\nPlease try:\n"
                             "  1. Install Visual C++ "
                             "Redistributable:\n"
-                            "     {}\n"
+                            f"     {vcpp_url}\n"
                             "  2. Add an antivirus exclusion for "
                             "the plugin folder\n"
-                            "  3. Restart QGIS".format(vcpp_url)
+                            "  3. Restart QGIS"
                         )
                     else:
                         hint = (
                             "\n\nPlease try:\n"
                             "  1. Install Visual C++ "
                             "Redistributable:\n"
-                            "     {}\n"
+                            f"     {vcpp_url}\n"
                             "  2. Click 'Reinstall dependencies' "
                             "in the plugin panel\n"
-                            "  3. Restart QGIS".format(vcpp_url)
+                            "  3. Restart QGIS"
                         )
                 else:
                     hint = (
@@ -2400,15 +2150,13 @@ def verify_venv(
                         "in the plugin panel\n"
                         "  2. Restart QGIS"
                     )
-                return False, "Package {} is broken: {}{}".format(
-                    package_name, error_detail[:200], hint)
+                return False, f"Package {package_name} is broken: {error_detail[:200]}{hint}"
 
         except subprocess.TimeoutExpired:
             # Retry once - antivirus scanning .pyd files on first import
             # causes timeouts; the 2nd import is near-instant once cached
             _log(
-                "Verification of {} timed out ({}s), retrying...".format(
-                    package_name, pkg_timeout),
+                f"Verification of {package_name} timed out ({pkg_timeout}s), retrying...",
                 Qgis.MessageLevel.Info
             )
             try:
@@ -2427,8 +2175,7 @@ def verify_venv(
                         else result.stdout[:300]
                     )
                     _log(
-                        "Package {} verification failed on retry: {}".format(
-                            package_name, error_detail),
+                        f"Package {package_name} verification failed on retry: {error_detail}",
                         Qgis.MessageLevel.Warning
                     )
                     # Check for AppLocker on retry too
@@ -2439,40 +2186,36 @@ def verify_venv(
                     ]
                     if any(m in retry_lower for m in applocker_kw):
                         return False, (
-                            "Package {} is blocked by AppLocker "
+                            f"Package {package_name} is blocked by AppLocker "
                             "or application control policy.\n\n"
                             "Ask your IT administrator to "
                             "whitelist this folder:\n"
-                            "  {}\n\nThen restart QGIS and "
-                            "reinstall dependencies.".format(
-                                package_name, venv_dir)
+                            f"  {venv_dir}\n\nThen restart QGIS and "
+                            "reinstall dependencies."
                         )
-                    return False, "Package {} is broken: {}".format(
-                        package_name, error_detail[:200])
+                    return False, f"Package {package_name} is broken: {error_detail[:200]}"
             except subprocess.TimeoutExpired:
                 _log(
-                    "Verification of {} timed out twice".format(package_name),
+                    f"Verification of {package_name} timed out twice",
                     Qgis.MessageLevel.Warning
                 )
                 return False, (
-                    "Verification error: {} "
-                    "(timed out - antivirus may be blocking)".format(
-                        package_name)
+                    f"Verification error: {package_name} "
+                    "(timed out - antivirus may be blocking)"
                 )
             except Exception as e:
                 _log(
-                    "Failed to verify {} on retry: {}".format(
-                        package_name, str(e)),
+                    f"Failed to verify {package_name} on retry: {str(e)}",
                     Qgis.MessageLevel.Warning
                 )
-                return False, "Verification error: {}".format(package_name)
+                return False, f"Verification error: {package_name}"
 
         except Exception as e:
             _log(
-                "Failed to verify {}: {}".format(package_name, str(e)),
+                f"Failed to verify {package_name}: {str(e)}",
                 Qgis.MessageLevel.Warning
             )
-            return False, "Verification error: {}".format(package_name)
+            return False, f"Verification error: {package_name}"
 
     if progress_callback:
         progress_callback(100, "Verification complete")
@@ -2497,9 +2240,9 @@ def cleanup_old_libs() -> bool:
 
 
 def create_venv_and_install(
-    progress_callback: Optional[Callable[[int, str], None]] = None,
-    cancel_check: Optional[Callable[[], bool]] = None,
-) -> Tuple[bool, str]:
+    progress_callback: Callable[[int, str], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+) -> tuple[bool, str]:
     """
     Complete installation: download Python standalone + download uv + create venv + install packages.
 
@@ -2511,23 +2254,14 @@ def create_venv_and_install(
     - 95-100%: Verify installation
     """
     from .python_manager import (
-        standalone_python_exists,
-        standalone_python_is_current,
         download_python_standalone,
         get_python_full_version,
         remove_standalone_python,
+        standalone_python_exists,
+        standalone_python_is_current,
     )
 
     # Early Python version check (Issue #148)
-    if sys.version_info < (3, 9):
-        py_ver = "{}.{}.{}".format(
-            sys.version_info.major,
-            sys.version_info.minor,
-            sys.version_info.micro)
-        return False, (
-            "Python {} is too old. AI Segmentation requires "
-            "Python 3.9+.\nPlease upgrade to QGIS 3.22 or later.".format(py_ver)
-        )
 
     # Log system info for debugging
     _log_system_info()
@@ -2539,13 +2273,13 @@ def create_venv_and_install(
         with open(test_file, "w", encoding="utf-8") as f:
             f.write("ok")
         os.remove(test_file)
-    except (OSError, IOError) as e:
+    except OSError as e:
         hint = (
-            "Cannot write to install directory: {}\n"
-            "Error: {}\n\n"
+            f"Cannot write to install directory: {CACHE_DIR}\n"
+            f"Error: {e}\n\n"
             "Set the AI_SEGMENTATION_CACHE_DIR environment variable "
             "to a writable directory, then restart QGIS."
-        ).format(CACHE_DIR, e)
+        )
         _log(hint, Qgis.MessageLevel.Critical)
         return False, hint
 
@@ -2573,7 +2307,7 @@ def create_venv_and_install(
                 shutil.rmtree(VENV_DIR)
                 _log("Removed stale venv after Python version mismatch", Qgis.MessageLevel.Info)
             except Exception as e:
-                _log("Failed to remove stale venv: {}".format(e), Qgis.MessageLevel.Warning)
+                _log(f"Failed to remove stale venv: {e}", Qgis.MessageLevel.Warning)
 
     # Step 1: Download Python standalone if needed
     from .python_manager import is_nixos
@@ -2603,7 +2337,7 @@ def create_venv_and_install(
                     if qgis_python:
                         _log(
                             "Standalone Python download failed, "
-                            "falling back to QGIS Python: {}".format(msg),
+                            f"falling back to QGIS Python: {msg}",
                             Qgis.MessageLevel.Warning
                         )
                         if progress_callback:
@@ -2647,12 +2381,11 @@ def create_venv_and_install(
             else:
                 _uv_available = False
                 _uv_path = None
-                _log("uv download failed (non-fatal), using pip: {}".format(
-                    uv_msg), Qgis.MessageLevel.Warning)
+                _log(f"uv download failed (non-fatal), using pip: {uv_msg}", Qgis.MessageLevel.Warning)
         except Exception as e:
             _uv_available = False
             _uv_path = None
-            _log("uv download failed (non-fatal): {}".format(e), Qgis.MessageLevel.Warning)
+            _log(f"uv download failed (non-fatal): {e}", Qgis.MessageLevel.Warning)
         if progress_callback:
             progress_callback(13, "uv: {}".format(
                 "ready" if _uv_available else "unavailable, using pip"))
@@ -2715,7 +2448,7 @@ def create_venv_and_install(
     return True, "Virtual environment ready"
 
 
-def _quick_check_packages(venv_dir: str = None) -> Tuple[bool, str]:
+def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
     """
     Fast filesystem-based check that packages exist in the venv site-packages.
 
@@ -2727,7 +2460,7 @@ def _quick_check_packages(venv_dir: str = None) -> Tuple[bool, str]:
 
     site_packages = get_venv_site_packages(venv_dir)
     if not os.path.exists(site_packages):
-        _log("Quick check: site-packages not found: {}".format(site_packages),
+        _log(f"Quick check: site-packages not found: {site_packages}",
              Qgis.MessageLevel.Warning)
         return False, "site-packages directory not found"
 
@@ -2745,22 +2478,21 @@ def _quick_check_packages(venv_dir: str = None) -> Tuple[bool, str]:
     for package_name, dir_name in package_markers.items():
         pkg_dir = os.path.join(site_packages, dir_name)
         if not os.path.exists(pkg_dir):
-            _log("Quick check: {} not found at {}".format(
-                package_name, pkg_dir), Qgis.MessageLevel.Warning)
-            return False, "Package {} not found".format(package_name)
+            _log(f"Quick check: {package_name} not found at {pkg_dir}", Qgis.MessageLevel.Warning)
+            return False, f"Package {package_name} not found"
 
-    _log("Quick check: all packages found in {}".format(site_packages),
+    _log(f"Quick check: all packages found in {site_packages}",
          Qgis.MessageLevel.Info)
     return True, "All packages found"
 
 
-def get_venv_status() -> Tuple[bool, str]:
+def get_venv_status() -> tuple[bool, str]:
     """Get the status of the complete installation (Python standalone + venv)."""
-    from .python_manager import standalone_python_exists, get_python_full_version
+    from .python_manager import get_python_full_version, standalone_python_exists
 
     # Check for old libs/ installation
     if os.path.exists(LIBS_DIR):
-        _log("get_venv_status: old libs/ detected at {}".format(LIBS_DIR),
+        _log(f"get_venv_status: old libs/ detected at {LIBS_DIR}",
              Qgis.MessageLevel.Warning)
         return False, "Old installation detected. Migration required."
 
@@ -2772,7 +2504,7 @@ def get_venv_status() -> Tuple[bool, str]:
 
     # Check venv
     if not venv_exists():
-        _log("get_venv_status: venv not found at {}".format(VENV_DIR),
+        _log(f"get_venv_status: venv not found at {VENV_DIR}",
              Qgis.MessageLevel.Info)
         return False, "Virtual environment not configured"
 
@@ -2785,7 +2517,7 @@ def get_venv_status() -> Tuple[bool, str]:
         if stored_hash is not None and stored_hash != current_hash:
             _log(
                 "get_venv_status: deps hash mismatch "
-                "(stored={}, current={})".format(stored_hash, current_hash),
+                f"(stored={stored_hash}, current={current_hash})",
                 Qgis.MessageLevel.Warning
             )
             return False, "Dependencies need updating"
@@ -2814,7 +2546,7 @@ def get_venv_status() -> Tuple[bool, str]:
                         return False, "Package verification failed (torch import error)"
                 except Exception as exc:
                     _log(
-                        "get_venv_status: torch probe failed: {}".format(exc),
+                        f"get_venv_status: torch probe failed: {exc}",
                         Qgis.MessageLevel.Warning
                     )
                     return False, "Package verification failed"
@@ -2826,8 +2558,7 @@ def get_venv_status() -> Tuple[bool, str]:
             _write_deps_hash()
         python_version = get_python_full_version()
         _log("get_venv_status: ready (quick check passed)", Qgis.MessageLevel.Success)
-        return True, "Ready (Python {})".format(python_version)
-    else:
-        _log("get_venv_status: quick check failed: {}".format(msg),
-             Qgis.MessageLevel.Warning)
-        return False, "Virtual environment incomplete: {}".format(msg)
+        return True, f"Ready (Python {python_version})"
+    _log(f"get_venv_status: quick check failed: {msg}",
+         Qgis.MessageLevel.Warning)
+    return False, f"Virtual environment incomplete: {msg}"

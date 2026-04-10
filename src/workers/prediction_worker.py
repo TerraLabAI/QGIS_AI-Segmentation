@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-import sys
-import os
-import json
 import base64
+import json
+import os
+import sys
 
 # Redirect stdout to stderr during library imports to prevent
 # torch/sam2 print() calls from corrupting the JSON protocol.
@@ -34,8 +34,8 @@ except ImportError as e:
     sys.stdout = _real_stdout
     error_msg = {
         "type": "error",
-        "message": "Failed to import dependencies: {}. "
-                   "Please reinstall dependencies.".format(str(e))
+        "message": f"Failed to import dependencies: {str(e)}. "
+                   "Please reinstall dependencies."
     }
     print(json.dumps(error_msg), flush=True)
     sys.exit(1)
@@ -45,16 +45,16 @@ except OSError as e:
     if "shm.dll" in str(e) or "DLL" in str(e).upper():
         error_msg = {
             "type": "error",
-            "message": "PyTorch DLL error (Windows): {}. "
+            "message": f"PyTorch DLL error (Windows): {str(e)}. "
                        "Try: 1) Install Visual C++ Redistributables from "
                        "https://aka.ms/vs/17/release/vc_redist.x64.exe "
                        "2) If already installed, reinstall the plugin dependencies "
-                       "(Settings > Reinstall dependencies).".format(str(e))
+                       "(Settings > Reinstall dependencies)."
         }
     else:
         error_msg = {
             "type": "error",
-            "message": "Failed to load PyTorch: {}".format(str(e))
+            "message": f"Failed to load PyTorch: {str(e)}"
         }
     print(json.dumps(error_msg), flush=True)
     sys.exit(1)
@@ -74,11 +74,10 @@ SAM2_MODEL_CFG = "configs/sam2.1/sam2.1_hiera_b+.yaml"
 
 def build_sam2_model(checkpoint, device):
     """Build SAM 2.1 Base Plus model."""
-    model = build_sam2(
+    return build_sam2(
         SAM2_MODEL_CFG, checkpoint,
         device=str(device), mode="eval"
     )
-    return model
 
 
 def build_sam1_model(checkpoint, device):
@@ -106,7 +105,7 @@ def get_optimal_device():
     num_cores = os.cpu_count() or 4
     optimal_threads = max(4, num_cores // 2) if sys.platform == "darwin" else num_cores
     torch.set_num_threads(optimal_threads)
-    if hasattr(torch, 'set_num_interop_threads'):
+    if hasattr(torch, "set_num_interop_threads"):
         try:
             torch.set_num_interop_threads(max(2, optimal_threads // 2))
         except RuntimeError:
@@ -116,7 +115,7 @@ def get_optimal_device():
 
 def send_response(response_type, data):
     response = {"type": response_type, **data}
-    _real_stdout.write(json.dumps(response) + '\n')
+    _real_stdout.write(json.dumps(response) + "\n")
     _real_stdout.flush()
 
 
@@ -129,11 +128,11 @@ def send_ready():
 
 
 def encode_numpy_array(arr):
-    return base64.b64encode(arr.tobytes()).decode('utf-8')
+    return base64.b64encode(arr.tobytes()).decode("utf-8")
 
 
 def decode_numpy_array(b64_string, shape, dtype):
-    bytes_data = base64.b64decode(b64_string.encode('utf-8'))
+    bytes_data = base64.b64decode(b64_string.encode("utf-8"))
     arr = np.frombuffer(bytes_data, dtype=dtype)
     return arr.reshape(shape)
 
@@ -146,8 +145,7 @@ def _safe_readline():
     line = sys.stdin.readline()
     if len(line) > MAX_LINE_LENGTH:
         raise ValueError(
-            "Input line exceeds maximum length ({} bytes)".format(
-                MAX_LINE_LENGTH))
+            f"Input line exceeds maximum length ({MAX_LINE_LENGTH} bytes)")
     return line
 
 
@@ -165,7 +163,7 @@ def main():
             sys.exit(1)
         checkpoint_path = os.path.normpath(os.path.abspath(checkpoint_path))
         if not os.path.isfile(checkpoint_path):
-            send_error("Checkpoint file not found: {}".format(checkpoint_path))
+            send_error(f"Checkpoint file not found: {checkpoint_path}")
             sys.exit(1)
 
         device = get_optimal_device()
@@ -182,13 +180,11 @@ def main():
 
         device_label = str(device)
         if device.type == "cpu":
-            device_label = "cpu ({}t)".format(torch.get_num_threads())
+            device_label = f"cpu ({torch.get_num_threads()}t)"
         sys.stderr.write(
-            "[prediction_worker] {}, PyTorch={}, device={}, Python={}.{}.{}\n".format(
-                model_label, torch.__version__, device_label,
-                sys.version_info.major, sys.version_info.minor,
-                sys.version_info.micro
-            )
+            f"[prediction_worker] {model_label}, PyTorch={torch.__version__}, "
+            f"device={device_label}, "
+            f"Python={sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}\n"
         )
         sys.stderr.flush()
 
@@ -219,7 +215,7 @@ def main():
                         "original_size": list(original_size),
                     }
                     # SAM1 predictor exposes input_size via transform
-                    if not _USE_SAM2 and hasattr(predictor, 'input_size'):
+                    if not _USE_SAM2 and hasattr(predictor, "input_size"):
                         response_data["input_size"] = list(predictor.input_size)
 
                     send_response("image_set", response_data)
@@ -246,12 +242,12 @@ def main():
                     auto_best = (not multimask_output and mask_input is None)
                     effective_multimask = True if auto_best else multimask_output
 
-                    predict_kwargs = dict(
-                        point_coords=point_coords,
-                        point_labels=point_labels,
-                        mask_input=mask_input,
-                        multimask_output=effective_multimask,
-                    )
+                    predict_kwargs = {
+                        "point_coords": point_coords,
+                        "point_labels": point_labels,
+                        "mask_input": mask_input,
+                        "multimask_output": effective_multimask,
+                    }
                     if _USE_SAM2:
                         predict_kwargs["normalize_coords"] = True
 
@@ -293,17 +289,15 @@ def main():
                     break
 
                 else:
-                    send_error("Unknown action: {}".format(action))
+                    send_error(f"Unknown action: {action}")
 
             except Exception as e:
                 import traceback
-                send_error("Error processing request: {}\n{}".format(
-                    str(e), traceback.format_exc()))
+                send_error(f"Error processing request: {str(e)}\n{traceback.format_exc()}")
 
     except Exception as e:
         import traceback
-        send_error("Worker initialization failed: {}\n{}".format(
-            str(e), traceback.format_exc()))
+        send_error(f"Worker initialization failed: {str(e)}\n{traceback.format_exc()}")
         sys.exit(1)
 
 

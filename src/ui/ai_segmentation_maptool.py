@@ -1,9 +1,9 @@
-from typing import List
+from __future__ import annotations
 
-from qgis.PyQt.QtCore import Qt, pyqtSignal
-from qgis.PyQt.QtGui import QCursor, QColor
-from qgis.gui import QgsMapTool, QgsMapCanvas, QgsVertexMarker
 from qgis.core import QgsPointXY
+from qgis.gui import QgsMapCanvas, QgsMapTool, QgsVertexMarker
+from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtGui import QColor, QCursor
 
 
 class AISegmentationMapTool(QgsMapTool):
@@ -36,7 +36,7 @@ class AISegmentationMapTool(QgsMapTool):
         super().__init__(canvas)
         self.canvas = canvas
         self._active = False
-        self._markers: List[QgsVertexMarker] = []
+        self._markers: list[QgsVertexMarker] = []
         self._space_panning = False
         self._pan_last_point = None
 

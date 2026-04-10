@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Internationalization (i18n) support for AI Segmentation plugin.
 
@@ -9,7 +8,6 @@ Security: Uses defusedxml for safe XML parsing (no global monkey-patch).
 """
 
 import os
-
 import xml.etree.ElementTree as ET
 
 # Prefer defusedxml for safe XML parsing (no global monkey-patch)
@@ -116,9 +114,9 @@ def _load_translations():
 
     except Exception as e:
         try:
-            from qgis.core import QgsMessageLog, Qgis
+            from qgis.core import Qgis, QgsMessageLog
             QgsMessageLog.logMessage(
-                "Failed to load translations from {}: {}".format(ts_path, e),
+                f"Failed to load translations from {ts_path}: {e}",
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Warning
             )

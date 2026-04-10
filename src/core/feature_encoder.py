@@ -2,21 +2,20 @@ import os
 import time
 
 import numpy as np
-
-from qgis.core import QgsMessageLog, Qgis
+from qgis.core import Qgis, QgsMessageLog
 
 from .i18n import tr
 
 # Raster formats that pip-installed rasterio may not support reliably.
 # These go through GDAL windowed read instead.
 _GDAL_ONLY_FORMATS = {
-    '.ecw', '.sid', '.jp2', '.j2k', '.j2c',
-    '.nitf', '.ntf', '.img', '.hdf', '.hdf5', '.he5', '.nc',
-    '.gpkg',
+    ".ecw", ".sid", ".jp2", ".j2k", ".j2c",
+    ".nitf", ".ntf", ".img", ".hdf", ".hdf5", ".he5", ".nc",
+    ".gpkg",
 }
 
 # Online/remote raster providers that need rendering before encoding
-ONLINE_PROVIDERS = frozenset(['wms', 'wmts', 'xyz', 'arcgismapserver', 'wcs'])
+ONLINE_PROVIDERS = frozenset(["wms", "wmts", "xyz", "arcgismapserver", "wcs"])
 
 
 def _normalize_to_uint8(bands, nodata_value=None):
@@ -155,7 +154,7 @@ def _fetch_online_bands(provider, extent, width, height):
             image_np = np.stack(
                 [arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
             return image_np, True, None
-        return None, False, "Unsupported data type: {}".format(dt)
+        return None, False, f"Unsupported data type: {dt}"
 
     band_count = min(provider.bandCount(), 3)
     bands = []
@@ -195,9 +194,9 @@ def _render_layer_to_image(layer, extent, width, height):
         (image_np, error) where image_np is (H, W, 3) uint8 or None
     """
     try:
-        from qgis.core import QgsMapSettings, QgsMapRendererCustomPainterJob
-        from qgis.PyQt.QtGui import QImage, QPainter
+        from qgis.core import QgsMapRendererCustomPainterJob, QgsMapSettings
         from qgis.PyQt.QtCore import QSize
+        from qgis.PyQt.QtGui import QImage, QPainter
 
         img = QImage(QSize(width, height), QImage.Format.Format_RGB32)
         img.fill(0)
@@ -227,7 +226,7 @@ def _render_layer_to_image(layer, extent, width, height):
         return image_np, None
 
     except Exception as e:
-        return None, "Renderer fallback failed: {}".format(str(e))
+        return None, f"Renderer fallback failed: {str(e)}"
 
 
 def _needs_gdal_conversion(raster_path):
@@ -346,7 +345,7 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
             image_np = np.pad(
                 image_np,
                 ((0, pad_bottom), (0, pad_right), (0, 0)),
-                mode='reflect'
+                mode="reflect"
             )
 
         crop_minx = bounds_left + col_off * pixel_size_x
@@ -355,15 +354,14 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
         crop_miny = bounds_top - (row_off + actual_height) * pixel_size_y
 
         crop_info = {
-            'bounds': (crop_minx, crop_miny, crop_maxx, crop_maxy),
-            'img_shape': (out_h, out_w),
-            'col_off': col_off,
-            'row_off': row_off,
+            "bounds": (crop_minx, crop_miny, crop_maxx, crop_maxy),
+            "img_shape": (out_h, out_w),
+            "col_off": col_off,
+            "row_off": row_off,
         }
 
         QgsMessageLog.logMessage(
-            "Read {} crop directly via GDAL: {}x{} at ({}, {})".format(
-                ext, out_w, out_h, col_off, row_off),
+            f"Read {ext} crop directly via GDAL: {out_w}x{out_h} at ({col_off}, {row_off})",
             "AI Segmentation", level=Qgis.MessageLevel.Info
         )
         return image_np, crop_info, None
@@ -500,7 +498,7 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
                 image_np = np.pad(
                     image_np,
                     ((0, pad_bottom), (0, pad_right), (0, 0)),
-                    mode='reflect'
+                    mode="reflect"
                 )
 
             # Compute geo bounds for this crop (covers the full read area)
@@ -510,10 +508,10 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
             crop_miny = bounds_top - (row_off + actual_height) * pixel_size_y
 
             crop_info = {
-                'bounds': (crop_minx, crop_miny, crop_maxx, crop_maxy),
-                'img_shape': (out_h, out_w),
-                'col_off': col_off,
-                'row_off': row_off,
+                "bounds": (crop_minx, crop_miny, crop_maxx, crop_maxy),
+                "img_shape": (out_h, out_w),
+                "col_off": col_off,
+                "row_off": row_off,
             }
 
             return image_np, crop_info, None
@@ -521,7 +519,7 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
     except Exception as e:
         # Fallback to GDAL if rasterio fails (unsupported driver, etc.)
         QgsMessageLog.logMessage(
-            "rasterio failed ({}), trying GDAL fallback...".format(str(e)),
+            f"rasterio failed ({str(e)}), trying GDAL fallback...",
             "AI Segmentation", level=Qgis.MessageLevel.Warning
         )
         return _read_crop_with_gdal(
@@ -556,12 +554,9 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
     )
 
     QgsMessageLog.logMessage(
-        "Online crop request: center=({:.6f}, {:.6f}), mupp={:.6f}, "
-        "extent=({:.2f}, {:.2f}, {:.2f}, {:.2f}), CRS={}".format(
-            center_x, center_y, canvas_mupp,
-            extent.xMinimum(), extent.yMinimum(),
-            extent.xMaximum(), extent.yMaximum(),
-            layer.crs().authid()),
+        f"Online crop request: center=({center_x:.6f}, {center_y:.6f}), "
+        f"mupp={canvas_mupp:.6f}, extent=({extent.xMinimum():.2f}, {extent.yMinimum():.2f}, "
+        f"{extent.xMaximum():.2f}, {extent.yMaximum():.2f}), CRS={layer.crs().authid()}",
         "AI Segmentation", level=Qgis.MessageLevel.Info
     )
 
@@ -603,9 +598,8 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
             if attempt < max_retries - 1:
                 delay = retry_delay * (1 + attempt * 0.5)  # Progressive: 1.0, 1.5, 2.0, ...
                 QgsMessageLog.logMessage(
-                    "Online tile fetch attempt {} - "
-                    "retrying in {:.1f}s...".format(
-                        attempt + 1, delay),
+                    f"Online tile fetch attempt {attempt + 1} - "
+                    f"retrying in {delay:.1f}s...",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning
                 )
                 deadline = time.monotonic() + delay
@@ -623,8 +617,8 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
         # If provider fetch failed, try canvas renderer fallback
         if fetch_err is not None:
             QgsMessageLog.logMessage(
-                "Provider fetch failed ({}), trying renderer "
-                "fallback...".format(fetch_err),
+                f"Provider fetch failed ({fetch_err}), trying renderer "
+                "fallback...",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning
             )
             image_np, render_err = _render_layer_to_image(
@@ -658,9 +652,9 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
             )
 
         crop_info = {
-            'bounds': (extent.xMinimum(), extent.yMinimum(),
+            "bounds": (extent.xMinimum(), extent.yMinimum(),
                        extent.xMaximum(), extent.yMaximum()),
-            'img_shape': (height, width),
+            "img_shape": (height, width),
         }
 
         return image_np, crop_info, None

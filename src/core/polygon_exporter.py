@@ -1,29 +1,31 @@
-from typing import List, Tuple, TYPE_CHECKING
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import rasterio
 
 from .venv_manager import ensure_venv_packages_available
+
 ensure_venv_packages_available()
 
 import numpy as np  # noqa: E402
-
 from qgis.core import (  # noqa: E402
+    Qgis,
     QgsGeometry,
-    QgsPointXY,
-    QgsPolygon,
     QgsLineString,
     QgsMessageLog,
-    Qgis,
+    QgsPointXY,
+    QgsPolygon,
 )
 
 
 def mask_to_polygons_rasterio(
     mask: np.ndarray,
-    transform: 'rasterio.Affine',
+    transform: rasterio.Affine,
     crs: str,
     simplify_tolerance: float = 0.0
-) -> List[QgsGeometry]:
+) -> list[QgsGeometry]:
     if mask is None or mask.sum() == 0:
         QgsMessageLog.logMessage(
             "mask_to_polygons: Empty or None mask",
@@ -84,7 +86,7 @@ def geojson_to_wkt(geojson: dict) -> str:
             rings.append(f"({points})")
         return f"POLYGON({', '.join(rings)})"
 
-    elif geom_type == "MultiPolygon":
+    if geom_type == "MultiPolygon":
         polygons = []
         for polygon in coords:
             rings = []
@@ -101,7 +103,7 @@ def mask_to_polygons(
     mask: np.ndarray,
     transform_info: dict,
     simplify_tolerance: float = 0.0
-) -> List[QgsGeometry]:
+) -> list[QgsGeometry]:
     if mask is None or mask.sum() == 0:
         QgsMessageLog.logMessage(
             f"mask_to_polygons: Empty or None mask (sum={mask.sum() if mask is not None else 'None'})",
@@ -159,7 +161,7 @@ def mask_to_polygons_fallback(
     mask: np.ndarray,
     transform_info: dict,
     simplify_tolerance: float = 0.0
-) -> List[QgsGeometry]:
+) -> list[QgsGeometry]:
     try:
         contours = find_contours(mask)
 
@@ -180,7 +182,7 @@ def mask_to_polygons_fallback(
                 map_points.append(map_points[0])
 
             if len(map_points) >= 4:
-                line = QgsLineString([p for p in map_points])
+                line = QgsLineString(list(map_points))
                 polygon = QgsPolygon()
                 polygon.setExteriorRing(line)
                 geom = QgsGeometry(polygon)
@@ -203,7 +205,7 @@ def mask_to_polygons_fallback(
         return []
 
 
-def find_contours(mask: np.ndarray) -> List[List[Tuple[int, int]]]:
+def find_contours(mask: np.ndarray) -> list[list[tuple[int, int]]]:
     try:
         from skimage import measure
         raw_contours = measure.find_contours(mask.astype(float), 0.5)
@@ -219,8 +221,8 @@ def find_contours(mask: np.ndarray) -> List[List[Tuple[int, int]]]:
     contours = []
     h, w = mask.shape
     visited = np.zeros_like(mask, dtype=bool)
-    padded = np.pad(mask, 1, mode='constant', constant_values=0)
-    visited_pad = np.pad(visited, 1, mode='constant', constant_values=True)
+    padded = np.pad(mask, 1, mode="constant", constant_values=0)
+    visited_pad = np.pad(visited, 1, mode="constant", constant_values=True)
 
     directions = [
         (1, 0), (1, 1), (0, 1), (-1, 1),
@@ -250,8 +252,8 @@ def trace_contour(
     visited: np.ndarray,
     start_x: int,
     start_y: int,
-    directions: List[Tuple[int, int]]
-) -> List[Tuple[int, int]]:
+    directions: list[tuple[int, int]]
+) -> list[tuple[int, int]]:
     contour = [(start_x, start_y)]
     visited[start_y, start_x] = True
 
@@ -299,7 +301,7 @@ def pixel_to_map_coords(
     pixel_x: float,
     pixel_y: float,
     transform_info: dict
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     bbox = transform_info.get("bbox")
     img_shape = transform_info.get("img_shape")
 
@@ -562,7 +564,7 @@ def _numpy_dilate(mask: np.ndarray, iterations: int) -> np.ndarray:
 
     result = mask.copy()
     for _ in range(iterations):
-        padded = np.pad(result, 1, mode='constant', constant_values=0)
+        padded = np.pad(result, 1, mode="constant", constant_values=0)
         center = padded[1:-1, 1:-1]
         up = padded[:-2, 1:-1]
         down = padded[2:, 1:-1]
@@ -590,7 +592,7 @@ def _numpy_erode(mask: np.ndarray, iterations: int) -> np.ndarray:
 
     result = mask.copy()
     for _ in range(iterations):
-        padded = np.pad(result, 1, mode='constant', constant_values=0)
+        padded = np.pad(result, 1, mode="constant", constant_values=0)
         center = padded[1:-1, 1:-1]
         up = padded[:-2, 1:-1]
         down = padded[2:, 1:-1]

@@ -2,14 +2,13 @@
 Activation manager for the AI Segmentation plugin.
 Handles plugin activation state using QSettings.
 """
+from __future__ import annotations
 
 import json
-from typing import Tuple, Optional
 
-from qgis.core import QgsSettings
-from qgis.core import QgsBlockingNetworkRequest
-from qgis.PyQt.QtNetwork import QNetworkRequest
+from qgis.core import QgsBlockingNetworkRequest, QgsSettings
 from qgis.PyQt.QtCore import QUrl
+from qgis.PyQt.QtNetwork import QNetworkRequest
 
 # Hardcoded fallback codes (used when server is unreachable)
 _FALLBACK_CODES = ["fromage", "baguette"]
@@ -25,10 +24,10 @@ TERRALAB_NEWSLETTER = "https://terra-lab.ai/mail-verification"
 _CONFIG_URL = f"{TERRALAB_WEBSITE}/api/plugin/config?product=ai-segmentation"
 
 # Server config cache (in-memory, one fetch per session)
-_cached_config: Optional[dict] = None
+_cached_config: dict | None = None
 
 
-def _fetch_server_config() -> Optional[dict]:
+def _fetch_server_config() -> dict | None:
     """Fetch plugin config from server. Returns None on failure."""
     global _cached_config
     if _cached_config is not None:
@@ -64,7 +63,7 @@ def is_plugin_activated() -> bool:
     return settings.value(ACTIVATION_KEY, False, type=bool)
 
 
-def activate_plugin(code: str) -> Tuple[bool, str]:
+def activate_plugin(code: str) -> tuple[bool, str]:
     """
     Attempt to activate the plugin with the given code.
 
@@ -76,8 +75,7 @@ def activate_plugin(code: str) -> Tuple[bool, str]:
         settings = QgsSettings()
         settings.setValue(ACTIVATION_KEY, True)
         return True, "Plugin activated successfully!"
-    else:
-        return False, "Invalid code. Please check and try again."
+    return False, "Invalid code. Please check and try again."
 
 
 def get_newsletter_url() -> str:
