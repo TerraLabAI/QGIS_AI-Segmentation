@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Internationalization (i18n) support for AI Segmentation plugin.
 
@@ -48,17 +47,15 @@ def _load_translations():
         return
 
     # Find the translation file
-    plugin_dir = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
+    plugin_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     # Language fallbacks: map language variants to available translations
     # e.g., pt_PT (European Portuguese) -> pt_BR (Brazilian Portuguese)
     language_fallbacks = {
-        "pt": "pt_BR",  # Portuguese -> Brazilian Portuguese
-        "pt_PT": "pt_BR",  # European Portuguese -> Brazilian Portuguese
-        "es_MX": "es",  # Mexican Spanish -> Spanish
-        "es_AR": "es",  # Argentine Spanish -> Spanish
+        "pt": "pt_BR",      # Portuguese -> Brazilian Portuguese
+        "pt_PT": "pt_BR",   # European Portuguese -> Brazilian Portuguese
+        "es_MX": "es",      # Mexican Spanish -> Spanish
+        "es_AR": "es",      # Argentine Spanish -> Spanish
     }
 
     # Try full locale code first (e.g., pt_BR), then fall back to language code (e.g., pt)
@@ -118,11 +115,10 @@ def _load_translations():
     except Exception as e:
         try:
             from qgis.core import Qgis, QgsMessageLog
-
             QgsMessageLog.logMessage(
-                "Failed to load translations from {}: {}".format(ts_path, e),
+                f"Failed to load translations from {ts_path}: {e}",
                 "AI Segmentation",
-                level=Qgis.MessageLevel.Warning,
+                level=Qgis.MessageLevel.Warning
             )
         except Exception:
             pass

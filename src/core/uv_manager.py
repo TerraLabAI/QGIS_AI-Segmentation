@@ -6,6 +6,7 @@ Falls back to pip seamlessly if uv is unavailable.
 
 Source: https://github.com/astral-sh/uv
 """
+from __future__ import annotations
 
 import os
 import platform
@@ -15,22 +16,22 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import zipfile
-from typing import Callable, Optional, Tuple
+from typing import Callable
 
-from qgis.core import Qgis, QgsBlockingNetworkRequest, QgsMessageLog
+from qgis.core import Qgis, QgsBlockingNetworkRequest
 from qgis.PyQt.QtCore import QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
+from .archive_utils import safe_extract_tar as _safe_extract_tar
+from .archive_utils import safe_extract_zip as _safe_extract_zip
+from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
 
 CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
 UV_DIR = os.path.join(CACHE_DIR, "uv")
 UV_VERSION = "0.10.10"
-
-
-def _log(message: str, level=Qgis.MessageLevel.Info):
-    QgsMessageLog.logMessage(message, "AI Segmentation", level=level)
 
 
 def get_uv_path() -> str:
@@ -45,7 +46,7 @@ def uv_exists() -> bool:
     return os.path.isfile(get_uv_path())
 
 
-def _get_uv_platform_info() -> Tuple[str, str]:
+def _get_uv_platform_info() -> tuple[str, str]:
     """Returns (platform_triple, extension) for the uv download URL."""
     system = sys.platform
     machine = platform.machine().lower()
@@ -54,70 +55,44 @@ def _get_uv_platform_info() -> Tuple[str, str]:
         if machine in ("arm64", "aarch64") or IS_ROSETTA:
             return ("aarch64-apple-darwin", ".tar.gz")
         return ("x86_64-apple-darwin", ".tar.gz")
-    elif system == "win32":
+    if system == "win32":
         return ("x86_64-pc-windows-msvc", ".zip")
-    else:
-        if machine in ("arm64", "aarch64"):
-            return ("aarch64-unknown-linux-gnu", ".tar.gz")
-        return ("x86_64-unknown-linux-gnu", ".tar.gz")
+    if machine in ("arm64", "aarch64"):
+        return ("aarch64-unknown-linux-gnu", ".tar.gz")
+    return ("x86_64-unknown-linux-gnu", ".tar.gz")
 
 
 def _get_uv_download_url() -> str:
     """Build the GitHub release URL for uv."""
     triple, ext = _get_uv_platform_info()
-    return "https://github.com/astral-sh/uv/releases/download/{}/uv-{}{}".format(
-        UV_VERSION, triple, ext
+    return (
+        "https://github.com/astral-sh/uv/releases/download/"
+        f"{UV_VERSION}/uv-{triple}{ext}"
     )
 
 
-def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: str) -> None:
-    """Safely extract tar with path traversal + symlink/hardlink protection."""
-    dest_dir = os.path.realpath(dest_dir)
-    use_filter = sys.version_info >= (3, 12)
-    for member in tar.getmembers():
-        if member.issym() or member.islnk():
-            continue
-        member_path = os.path.realpath(os.path.join(dest_dir, member.name))
-        if not member_path.startswith(dest_dir + os.sep) and member_path != dest_dir:
-            raise ValueError("Path traversal in tar: {}".format(member.name))
-        if use_filter:
-            tar.extract(member, dest_dir, filter="data")
-        else:
-            tar.extract(member, dest_dir)
-
-
-def _safe_extract_zip(zip_file: zipfile.ZipFile, dest_dir: str) -> None:
-    """Safely extract zip with path traversal protection."""
-    dest_dir = os.path.realpath(dest_dir)
-    for member in zip_file.namelist():
-        member_path = os.path.realpath(os.path.join(dest_dir, member))
-        if not member_path.startswith(dest_dir + os.sep) and member_path != dest_dir:
-            raise ValueError("Path traversal in zip: {}".format(member))
-        zip_file.extract(member, dest_dir)
-
-
-def _find_file_in_dir(directory: str, filename: str) -> Optional[str]:
+def _find_file_in_dir(directory: str, filename: str) -> str | None:
     """Recursively find a file by name under directory."""
-    for root, dirs, files in os.walk(directory):
+    for root, _dirs, files in os.walk(directory):
         if filename in files:
             return os.path.join(root, filename)
     return None
 
 
 def download_uv(
-    progress_callback: Optional[Callable[[int, str], None]] = None,
-    cancel_check: Optional[Callable[[], bool]] = None,
-) -> Tuple[bool, str]:
+    progress_callback: Callable[[int, str], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None
+) -> tuple[bool, str]:
     """Download uv from GitHub releases using QgsBlockingNetworkRequest.
 
     Returns (success, message).
     """
     if uv_exists():
-        _log("uv already exists at {}".format(get_uv_path()))
+        _log(f"uv already exists at {get_uv_path()}")
         return True, "uv already installed"
 
     url = _get_uv_download_url()
-    _log("Downloading uv {} from: {}".format(UV_VERSION, url))
+    _log(f"Downloading uv {UV_VERSION} from: {url}")
 
     if progress_callback:
         progress_callback(0, "Downloading uv package installer...")
@@ -125,13 +100,36 @@ def download_uv(
     if cancel_check and cancel_check():
         return False, "Download cancelled"
 
-    request = QgsBlockingNetworkRequest()
-    err = request.get(QNetworkRequest(QUrl(url)))
+    # Retry up to 3 times with exponential backoff for unstable networks
+    max_retries = 3
+    err = None
+    error_msg = ""
+    for attempt in range(max_retries):
+        if cancel_check and cancel_check():
+            return False, "Download cancelled"
+
+        request = QgsBlockingNetworkRequest()
+        err = request.get(QNetworkRequest(QUrl(url)))
+
+        if err == QgsBlockingNetworkRequest.NoError:
+            break
+
+        error_msg = request.errorMessage()
+        if attempt < max_retries - 1:
+            wait = 5 * (2 ** attempt)  # 5, 10s
+            _log(
+                f"uv download failed (attempt {attempt + 1}/{max_retries}): {error_msg}. "
+                f"Retrying in {wait}s...",
+                Qgis.MessageLevel.Warning
+            )
+            if progress_callback:
+                progress_callback(
+                    0, f"Network error, retrying in {wait}s...")
+            time.sleep(wait)
 
     if err != QgsBlockingNetworkRequest.NoError:
-        error_msg = request.errorMessage()
-        _log("uv download failed: {}".format(error_msg), Qgis.MessageLevel.Warning)
-        return False, "uv download failed: {}".format(error_msg)
+        _log(f"uv download failed: {error_msg}", Qgis.MessageLevel.Warning)
+        return False, f"uv download failed: {error_msg}"
 
     if cancel_check and cancel_check():
         return False, "Download cancelled"
@@ -142,9 +140,7 @@ def download_uv(
 
     if progress_callback:
         size_mb = len(content_bytes) / (1024 * 1024)
-        progress_callback(
-            50, "Downloaded uv ({:.1f} MB), extracting...".format(size_mb)
-        )
+        progress_callback(50, f"Downloaded uv ({size_mb:.1f} MB), extracting...")
 
     _, ext = _get_uv_platform_info()
     suffix = ".zip" if ext == ".zip" else ".tar.gz"
@@ -182,14 +178,7 @@ def download_uv(
 
             # Set executable on Unix
             if sys.platform != "win32":
-                os.chmod(
-                    tmp_dest,
-                    stat.S_IRWXU
-                    | stat.S_IRGRP
-                    | stat.S_IXGRP
-                    | stat.S_IROTH
-                    | stat.S_IXOTH,
-                )
+                os.chmod(tmp_dest, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
 
             os.replace(tmp_dest, dest)
 
@@ -200,22 +189,18 @@ def download_uv(
             progress_callback(80, "Verifying uv...")
 
         if verify_uv():
-            _log(
-                "uv {} installed successfully".format(UV_VERSION),
-                Qgis.MessageLevel.Success,
-            )
+            _log(f"uv {UV_VERSION} installed successfully", Qgis.MessageLevel.Success)
             if progress_callback:
                 progress_callback(100, "uv ready")
-            return True, "uv {} installed".format(UV_VERSION)
-        else:
-            # Cleanup on verification failure
-            shutil.rmtree(UV_DIR, ignore_errors=True)
-            return False, "uv verification failed after download"
+            return True, f"uv {UV_VERSION} installed"
+        # Cleanup on verification failure
+        shutil.rmtree(UV_DIR, ignore_errors=True)
+        return False, "uv verification failed after download"
 
     except Exception as e:
-        _log("uv installation failed: {}".format(e), Qgis.MessageLevel.Warning)
+        _log(f"uv installation failed: {e}", Qgis.MessageLevel.Warning)
         shutil.rmtree(UV_DIR, ignore_errors=True)
-        return False, "uv installation failed: {}".format(str(e)[:200])
+        return False, f"uv installation failed: {str(e)[:200]}"
     finally:
         if os.path.exists(temp_path):
             try:
@@ -240,39 +225,32 @@ def verify_uv() -> bool:
 
         result = subprocess.run(
             [uv_path, "--version"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=15,
+            capture_output=True, text=True, encoding="utf-8", timeout=15,
             **kwargs,
         )
         if result.returncode == 0:
             version_out = result.stdout.strip()
-            _log("uv verified: {}".format(version_out))
+            _log(f"uv verified: {version_out}")
             # Check version matches expected UV_VERSION
             if UV_VERSION not in version_out:
                 _log(
-                    "uv version mismatch: expected {}, got '{}'. "
-                    "Re-downloading.".format(UV_VERSION, version_out),
-                    Qgis.MessageLevel.Warning,
+                    f"uv version mismatch: expected {UV_VERSION}, got '{version_out}'. "
+                    "Re-downloading.",
+                    Qgis.MessageLevel.Warning
                 )
                 shutil.rmtree(UV_DIR, ignore_errors=True)
                 return False
             return True
-        else:
-            _log(
-                "uv --version failed: {}".format(result.stderr or result.stdout),
-                Qgis.MessageLevel.Warning,
-            )
+        _log(f"uv --version failed: {result.stderr or result.stdout}", Qgis.MessageLevel.Warning)
     except Exception as e:
-        _log("uv verification failed: {}".format(e), Qgis.MessageLevel.Warning)
+        _log(f"uv verification failed: {e}", Qgis.MessageLevel.Warning)
 
     # Cleanup on failure
     shutil.rmtree(UV_DIR, ignore_errors=True)
     return False
 
 
-def remove_uv() -> Tuple[bool, str]:
+def remove_uv() -> tuple[bool, str]:
     """Remove the uv installation."""
     if not os.path.exists(UV_DIR):
         return True, "uv not installed"
@@ -281,5 +259,5 @@ def remove_uv() -> Tuple[bool, str]:
         _log("Removed uv installation", Qgis.MessageLevel.Success)
         return True, "uv removed"
     except Exception as e:
-        _log("Failed to remove uv: {}".format(e), Qgis.MessageLevel.Warning)
-        return False, "Failed to remove uv: {}".format(str(e)[:200])
+        _log(f"Failed to remove uv: {e}", Qgis.MessageLevel.Warning)
+        return False, f"Failed to remove uv: {str(e)[:200]}"

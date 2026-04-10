@@ -16,7 +16,6 @@ from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
     QApplication,
     QDialog,
-    QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
@@ -57,9 +56,8 @@ def _anonymize_paths(text: str) -> str:
     text = re.sub(r"[A-Za-z]:[/\\]Users[/\\][^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text)
 
     # Windows UNC paths: \\server\Users\<username>\...
-    text = re.sub(r"\\\\[^\\]+\\Users\\[^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text)
+    return re.sub(r"\\\\[^\\]+\\Users\\[^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text)
 
-    return text
 
 
 def start_log_collector():
@@ -71,7 +69,6 @@ def start_log_collector():
             return
         try:
             from qgis.core import QgsApplication
-
             QgsApplication.messageLog().messageReceived.connect(_on_log_message)
             _log_collector_connected = True
         except Exception:
@@ -86,7 +83,6 @@ def stop_log_collector():
             return
         try:
             from qgis.core import QgsApplication
-
             QgsApplication.messageLog().messageReceived.disconnect(_on_log_message)
         except (TypeError, RuntimeError):
             pass
@@ -98,7 +94,7 @@ def _on_log_message(message, tag, level):
     if tag == "AI Segmentation":
         timestamp = datetime.now().strftime("%H:%M:%S")
         with _log_buffer_lock:
-            _log_buffer.append("[{}] {}".format(timestamp, message))
+            _log_buffer.append(f"[{timestamp}] {message}")
 
 
 def _get_recent_logs() -> str:
@@ -130,12 +126,10 @@ def _collect_diagnostic_info(error_message: str) -> str:
         )
         metadata_path = os.path.join(plugin_dir, "metadata.txt")
         if os.path.exists(metadata_path):
-            with open(metadata_path, "r", encoding="utf-8") as f:
+            with open(metadata_path, encoding="utf-8") as f:
                 for line in f:
                     if line.startswith("version="):
-                        lines.append(
-                            "Version: {}".format(line.strip().split("=", 1)[1])
-                        )
+                        lines.append("Version: {}".format(line.strip().split("=", 1)[1]))
                         break
     except Exception:
         lines.append("Version: unknown")
@@ -143,78 +137,53 @@ def _collect_diagnostic_info(error_message: str) -> str:
 
     # System info
     lines.append("--- System ---")
-    lines.append(
-        "OS: {} ({} {})".format(sys.platform, platform.system(), platform.release())
-    )
+    lines.append(f"OS: {sys.platform} ({platform.system()} {platform.release()})")
     from ..core.model_config import IS_ROSETTA
-
     arch_str = platform.machine()
     if IS_ROSETTA:
         arch_str += " (Rosetta on Apple Silicon)"
-    lines.append("Architecture: {}".format(arch_str))
-    lines.append(
-        "Python: {}.{}.{}".format(
-            sys.version_info.major, sys.version_info.minor, sys.version_info.micro
-        )
-    )
+    lines.append(f"Architecture: {arch_str}")
+    lines.append(f"Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
 
     try:
         from qgis.core import Qgis
-
-        lines.append("QGIS: {}".format(Qgis.QGIS_VERSION))
+        lines.append(f"QGIS: {Qgis.QGIS_VERSION}")
     except Exception:
         lines.append("QGIS: unknown")
     lines.append("")
 
-    # GPU info
-    lines.append("--- GPU ---")
+    # Device info
+    lines.append("--- Device ---")
     try:
         from ..core.venv_manager import ensure_venv_packages_available
-
         ensure_venv_packages_available()
         import torch
-
-        if torch.cuda.is_available():
-            count = torch.cuda.device_count()
-            for i in range(count):
-                gpu_name = torch.cuda.get_device_name(i)
-                gpu_mem = torch.cuda.get_device_properties(i).total_memory / (1024**3)
-                lines.append("CUDA {}: {} ({:.1f}GB)".format(i, gpu_name, gpu_mem))
-        elif sys.platform == "darwin" and hasattr(torch.backends, "mps"):
+        if sys.platform == "darwin" and hasattr(torch.backends, "mps"):
             if torch.backends.mps.is_available():
-                lines.append("GPU: Apple Silicon (MPS)")
+                lines.append("Device: Apple Silicon (MPS)")
             else:
-                lines.append("GPU: MPS not available")
+                lines.append(f"Device: CPU ({os.cpu_count()} cores)")
         else:
-            lines.append("GPU: CPU only ({} cores)".format(os.cpu_count()))
-        lines.append("PyTorch: {}".format(torch.__version__))
+            lines.append(f"Device: CPU ({os.cpu_count()} cores)")
+        lines.append(f"PyTorch: {torch.__version__}")
     except Exception:
-        lines.append("GPU: could not detect (dependencies not installed)")
+        lines.append("Device: could not detect (dependencies not installed)")
     lines.append("")
 
     # Installed packages
     lines.append("--- Packages ---")
     try:
-        from ..core.subprocess_utils import (
-            get_clean_env_for_venv,
-            get_subprocess_kwargs,
-        )
+        from ..core.subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
         from ..core.venv_manager import get_venv_python_path, venv_exists
-
         if venv_exists():
             import subprocess
-
             python_path = get_venv_python_path()
             env = get_clean_env_for_venv()
             kwargs = get_subprocess_kwargs()
             result = subprocess.run(
                 [python_path, "-m", "pip", "list", "--format=columns"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                stdin=subprocess.DEVNULL,
-                env=env,
-                **kwargs,
+                capture_output=True, text=True, timeout=5,
+                stdin=subprocess.DEVNULL, env=env, **kwargs
             )
             if result.returncode == 0:
                 for pkg_line in result.stdout.strip().split("\n"):
@@ -224,14 +193,13 @@ def _collect_diagnostic_info(error_message: str) -> str:
         else:
             lines.append("Virtual environment not found")
     except Exception as e:
-        lines.append("Could not list packages: {}".format(str(e)[:100]))
+        lines.append(f"Could not list packages: {str(e)[:100]}")
     lines.append("")
 
     # Last encoded image info
     lines.append("--- Last Encoded Image ---")
     try:
         from ..core.checkpoint_manager import FEATURES_DIR
-
         if os.path.isdir(FEATURES_DIR):
             subdirs = [
                 os.path.join(FEATURES_DIR, d)
@@ -245,33 +213,30 @@ def _collect_diagnostic_info(error_message: str) -> str:
                 lines.append("Raster: xxx.tif")
 
                 csv_path = os.path.join(latest, folder_name + ".csv")
-                tif_count = len([f for f in os.listdir(latest) if f.endswith(".tif")])
-                lines.append("Tiles: {}".format(tif_count))
+                tif_count = len([
+                    f for f in os.listdir(latest) if f.endswith(".tif")
+                ])
+                lines.append(f"Tiles: {tif_count}")
 
                 if os.path.exists(csv_path):
                     import csv as csv_mod
-
-                    with open(csv_path, "r", encoding="utf-8") as cf:
+                    with open(csv_path, encoding="utf-8") as cf:
                         reader = csv_mod.DictReader(cf)
                         rows = list(reader)
                     if rows:
                         first = rows[0]
                         crs_val = first.get("crs", "unknown")
                         res_val = first.get("res", "unknown")
-                        lines.append("CRS: {}".format(crs_val))
-                        lines.append("Resolution: {}".format(res_val))
+                        lines.append(f"CRS: {crs_val}")
+                        lines.append(f"Resolution: {res_val}")
 
                         all_minx = [float(r["minx"]) for r in rows]
                         all_maxx = [float(r["maxx"]) for r in rows]
                         all_miny = [float(r["miny"]) for r in rows]
                         all_maxy = [float(r["maxy"]) for r in rows]
                         lines.append(
-                            "Bounds: [{:.2f}, {:.2f}, {:.2f}, {:.2f}]".format(
-                                min(all_minx),
-                                max(all_maxx),
-                                min(all_miny),
-                                max(all_maxy),
-                            )
+                            f"Bounds: [{min(all_minx):.2f}, {max(all_maxx):.2f}, "
+                            f"{min(all_miny):.2f}, {max(all_maxy):.2f}]"
                         )
                 else:
                     lines.append("(CSV index not found)")
@@ -280,7 +245,7 @@ def _collect_diagnostic_info(error_message: str) -> str:
         else:
             lines.append("(No features directory)")
     except Exception as e:
-        lines.append("Could not read: {}".format(str(e)[:100]))
+        lines.append(f"Could not read: {str(e)[:100]}")
     lines.append("")
 
     # Recent logs from the in-memory buffer
@@ -328,8 +293,7 @@ class ErrorReportDialog(QDialog):
         help_label = QLabel(
             "{}\n\n{}".format(
                 tr("Copy your logs with the button below and send them to our email."),
-                tr("We'll fix your issue :)"),
-            )
+                tr("We'll fix your issue :)"))
         )
         help_label.setWordWrap(True)
         layout.addWidget(help_label)
@@ -340,14 +304,12 @@ class ErrorReportDialog(QDialog):
         layout.addWidget(self._copy_btn)
 
         # Arrow pointing down, centered
-        arrow_label = QLabel("\u25bc")
+        arrow_label = QLabel("\u25BC")
         arrow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(arrow_label)
 
         # Step 2: Email button (full width) - opens mailto link
-        self._email_btn = QPushButton(
-            tr("2. Click to send to {}").format(SUPPORT_EMAIL)
-        )
+        self._email_btn = QPushButton(tr("2. Click to send to {}").format(SUPPORT_EMAIL))
         self._email_btn.setToolTip(tr("Open email client"))
         self._email_btn.clicked.connect(self._on_open_email)
         layout.addWidget(self._email_btn)
@@ -358,10 +320,7 @@ class ErrorReportDialog(QDialog):
         clipboard.setText(self._diagnostic_info)
         self._copy_btn.setText(tr("Copied!"))
         from qgis.PyQt.QtCore import QTimer
-
-        QTimer.singleShot(
-            2000, lambda: self._copy_btn.setText(tr("1. Click to copy logs"))
-        )
+        QTimer.singleShot(2000, lambda: self._copy_btn.setText(tr("1. Click to copy logs")))
 
     def _on_open_email(self):
         """Open email client with support address."""
@@ -369,11 +328,8 @@ class ErrorReportDialog(QDialog):
 
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
-
         subject = quote("AI Segmentation - Bug Report")
-        QDesktopServices.openUrl(
-            QUrl("mailto:{}?subject={}".format(SUPPORT_EMAIL, subject))
-        )
+        QDesktopServices.openUrl(QUrl(f"mailto:{SUPPORT_EMAIL}?subject={subject}"))
 
 
 class BugReportDialog(QDialog):
@@ -402,8 +358,7 @@ class BugReportDialog(QDialog):
         msg_label = QLabel(
             "{}\n\n{}".format(
                 tr("Something not working?"),
-                tr("Copy your logs and send them to us, we'll look into it :)"),
-            )
+                tr("Copy your logs and send them to us, we'll look into it :)"))
         )
         msg_label.setWordWrap(True)
         layout.addWidget(msg_label)
@@ -414,14 +369,12 @@ class BugReportDialog(QDialog):
         layout.addWidget(self._copy_btn)
 
         # Arrow pointing down, centered
-        arrow_label = QLabel("\u25bc")
+        arrow_label = QLabel("\u25BC")
         arrow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(arrow_label)
 
         # Step 2: Email button (full width) - opens mailto link
-        self._email_btn = QPushButton(
-            tr("2. Click to send to {}").format(SUPPORT_EMAIL)
-        )
+        self._email_btn = QPushButton(tr("2. Click to send to {}").format(SUPPORT_EMAIL))
         self._email_btn.setToolTip(tr("Open email client"))
         self._email_btn.clicked.connect(self._on_open_email)
         layout.addWidget(self._email_btn)
@@ -432,10 +385,7 @@ class BugReportDialog(QDialog):
         clipboard.setText(self._diagnostic_info)
         self._copy_btn.setText(tr("Copied!"))
         from qgis.PyQt.QtCore import QTimer
-
-        QTimer.singleShot(
-            2000, lambda: self._copy_btn.setText(tr("1. Click to copy logs"))
-        )
+        QTimer.singleShot(2000, lambda: self._copy_btn.setText(tr("1. Click to copy logs")))
 
     def _on_open_email(self):
         """Open email client with support address."""
@@ -443,11 +393,8 @@ class BugReportDialog(QDialog):
 
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
-
         subject = quote("AI Segmentation - Bug Report")
-        QDesktopServices.openUrl(
-            QUrl("mailto:{}?subject={}".format(SUPPORT_EMAIL, subject))
-        )
+        QDesktopServices.openUrl(QUrl(f"mailto:{SUPPORT_EMAIL}?subject={subject}"))
 
 
 def show_error_report(parent, error_title: str, error_message: str):
@@ -459,81 +406,4 @@ def show_error_report(parent, error_title: str, error_message: str):
 def show_bug_report(parent):
     """Convenience function to show the bug report dialog."""
     dialog = BugReportDialog(parent)
-    dialog.exec()
-
-
-CALENDLY_URL = "https://calendly.com/barbot-yvann/30min"
-
-
-class SuggestFeatureDialog(QDialog):
-    """Dialog for users to suggest features or share feedback."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(tr("Share Your Ideas"))
-        self.setModal(True)
-        self.setMinimumWidth(400)
-        self.setMaximumWidth(500)
-        self._setup_ui()
-
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(16, 16, 16, 16)
-
-        desc = tr(
-            "Tell us how AI Segmentation could work better"
-            " for your projects. Every suggestion helps us"
-            " build a more useful tool."
-        )
-        msg_label = QLabel("{}\n\n{}".format(tr("Share your ideas with us! :)"), desc))
-        msg_label.setWordWrap(True)
-        layout.addWidget(msg_label)
-
-        action_layout = QHBoxLayout()
-        action_layout.setSpacing(8)
-
-        # Email button
-        self._email_btn = QPushButton(SUPPORT_EMAIL)
-        self._email_btn.setToolTip(tr("Copy email address"))
-        self._email_btn.clicked.connect(self._on_copy_email)
-        action_layout.addWidget(self._email_btn)
-
-        # Take a call button
-        call_btn = QPushButton(tr("Take a call"))
-        call_btn.clicked.connect(self._on_take_call)
-        action_layout.addWidget(call_btn)
-
-        layout.addLayout(action_layout)
-
-        # TerraLab link
-        link_label = QLabel(
-            '<a href="{}" style="color: palette(link);">terra-lab.ai</a>'.format(
-                TERRALAB_URL
-            )
-        )
-        link_label.setOpenExternalLinks(True)
-        link_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(link_label)
-
-    def _on_copy_email(self):
-        """Copy support email address to clipboard."""
-        clipboard = QApplication.clipboard()
-        clipboard.setText(SUPPORT_EMAIL)
-        self._email_btn.setText(tr("Email copied!"))
-        from qgis.PyQt.QtCore import QTimer
-
-        QTimer.singleShot(2000, lambda: self._email_btn.setText(SUPPORT_EMAIL))
-
-    def _on_take_call(self):
-        """Open Calendly link in browser."""
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
-
-        QDesktopServices.openUrl(QUrl(CALENDLY_URL))
-
-
-def show_suggest_feature(parent):
-    """Convenience function to show the suggest feature dialog."""
-    dialog = SuggestFeatureDialog(parent)
     dialog.exec()

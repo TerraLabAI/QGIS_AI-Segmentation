@@ -3,7 +3,7 @@
 import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import TYPE_CHECKING
 
 from qgis.PyQt.QtCore import QThread, pyqtSignal
 
@@ -32,12 +32,12 @@ class TiledDetectionWorker(QThread):
     def __init__(
         self,
         predictor,
-        tiles: List[Tuple[int, int, int, int]],
+        tiles: list[tuple[int, int, int, int]],
         full_image: "np.ndarray",
         text_prompt: str,
         max_masks: int,
         score_threshold: float,
-        geo_transform_info: Dict,
+        geo_transform_info: dict,
         tile_manager: "TileManager",
         max_workers: int = 4,
         parent=None,
@@ -60,7 +60,7 @@ class TiledDetectionWorker(QThread):
 
     def run(self) -> None:
         """Execute parallel tile inference."""
-        all_detections: List[Tuple[int, list]] = []
+        all_detections: list[tuple[int, list]] = []
         total = len(self._tiles)
 
         logger.info(
@@ -110,7 +110,7 @@ class TiledDetectionWorker(QThread):
                 return
 
             # Flatten all detections into a single list
-            flat: List = []
+            flat: list = []
             for _idx, dets in sorted(all_detections, key=lambda x: x[0]):
                 flat.extend(dets)
 
@@ -125,8 +125,8 @@ class TiledDetectionWorker(QThread):
             self.error.emit(str(exc))
 
     def _process_tile(
-        self, tile_idx: int, tile: Tuple[int, int, int, int]
-    ) -> Tuple[int, list]:
+        self, tile_idx: int, tile: tuple[int, int, int, int]
+    ) -> tuple[int, list]:
         """Process a single tile: extract crop, run inference, decode masks.
 
         Args:
@@ -200,7 +200,7 @@ class TiledDetectionWorker(QThread):
         sent_h = result.get("_sent_h", pad_size)
         sent_w = result.get("_sent_w", pad_size)
 
-        detections: List = []
+        detections: list = []
         for i, rle_str in enumerate(rle_list):
             score = scores[i] if i < len(scores) else 0.0
             if score < self._score_threshold:
@@ -224,7 +224,7 @@ class TiledDetectionWorker(QThread):
 
     def _make_tile_transform(
         self, tile_x: int, tile_y: int, tile_w: int, tile_h: int
-    ) -> Dict:
+    ) -> dict:
         """Map tile pixel coordinates to geographic coordinates.
 
         Uses the full zone's geo_transform_info to compute the geographic

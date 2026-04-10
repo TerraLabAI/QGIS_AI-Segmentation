@@ -1,4 +1,6 @@
-from typing import TYPE_CHECKING, List, Tuple
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import rasterio
@@ -20,15 +22,15 @@ from qgis.core import (  # noqa: E402
 
 def mask_to_polygons_rasterio(
     mask: np.ndarray,
-    transform: "rasterio.Affine",
+    transform: rasterio.Affine,
     crs: str,
-    simplify_tolerance: float = 0.0,
-) -> List[QgsGeometry]:
+    simplify_tolerance: float = 0.0
+) -> list[QgsGeometry]:
     if mask is None or mask.sum() == 0:
         QgsMessageLog.logMessage(
-            "mask_to_polygons_rasterio: Empty or None mask",
+            "mask_to_polygons: Empty or None mask",
             "AI Segmentation",
-            level=Qgis.MessageLevel.Warning,
+            level=Qgis.MessageLevel.Warning
         )
         return []
 
@@ -45,51 +47,30 @@ def mask_to_polygons_rasterio(
         )
 
         geometries = []
-        raw_count = 0
         for geojson_geom, value in shape_generator:
-            raw_count += 1
             if value == 0:
                 continue
 
-            wkt = geojson_to_wkt(geojson_geom)
-            geom = QgsGeometry.fromWkt(wkt)
+            geom = QgsGeometry.fromWkt(geojson_to_wkt(geojson_geom))
             if geom and not geom.isEmpty() and geom.isGeosValid():
                 if simplify_tolerance > 0:
                     geom = geom.simplify(simplify_tolerance)
                 geometries.append(geom)
-            else:
-                QgsMessageLog.logMessage(
-                    "mask_to_polygons_rasterio: INVALID geom — "
-                    "empty={}, valid={}, wkt_start='{}'".format(
-                        geom.isEmpty() if geom else "null",
-                        geom.isGeosValid() if geom else "null",
-                        wkt[:120] if wkt else "null",
-                    ),
-                    "AI Segmentation",
-                    level=Qgis.MessageLevel.Warning,
-                )
 
         QgsMessageLog.logMessage(
-            "mask_to_polygons_rasterio: raw_shapes={}, valid_geoms={}, "
-            "mask_sum={}, transform={}".format(
-                raw_count,
-                len(geometries),
-                int(mask_uint8.sum()),
-                transform,
-            ),
+            f"mask_to_polygons: Created {len(geometries)} polygons",
             "AI Segmentation",
-            level=Qgis.MessageLevel.Info,
+            level=Qgis.MessageLevel.Info
         )
 
         return geometries
 
     except Exception as e:
         import traceback
-
         QgsMessageLog.logMessage(
             f"Failed to convert mask to polygons: {str(e)}\n{traceback.format_exc()}",
             "AI Segmentation",
-            level=Qgis.MessageLevel.Warning,
+            level=Qgis.MessageLevel.Warning
         )
         return []
 
@@ -105,7 +86,7 @@ def geojson_to_wkt(geojson: dict) -> str:
             rings.append(f"({points})")
         return f"POLYGON({', '.join(rings)})"
 
-    elif geom_type == "MultiPolygon":
+    if geom_type == "MultiPolygon":
         polygons = []
         for polygon in coords:
             rings = []
@@ -119,89 +100,32 @@ def geojson_to_wkt(geojson: dict) -> str:
 
 
 def mask_to_polygons(
-    mask: np.ndarray, transform_info: dict, simplify_tolerance: float = 0.0
-) -> List[QgsGeometry]:
-    QgsMessageLog.logMessage(
-        "mask_to_polygons: mask_shape={}, mask_sum={}, mask_dtype={}, "
-        "transform_info_keys={}, bbox={}, img_shape={}, crs={}".format(
-            mask.shape if mask is not None else "None",
-            int(mask.sum()) if mask is not None else "None",
-            mask.dtype if mask is not None else "None",
-            list(transform_info.keys()) if transform_info else "None",
-            transform_info.get("bbox") if transform_info else "None",
-            transform_info.get("img_shape") if transform_info else "None",
-            transform_info.get("crs") if transform_info else "None",
-        ),
-        "AI Segmentation",
-        level=Qgis.MessageLevel.Info,
-    )
+    mask: np.ndarray,
+    transform_info: dict,
+    simplify_tolerance: float = 0.0
+) -> list[QgsGeometry]:
     if mask is None or mask.sum() == 0:
         QgsMessageLog.logMessage(
             f"mask_to_polygons: Empty or None mask (sum={mask.sum() if mask is not None else 'None'})",
             "AI Segmentation",
-            level=Qgis.MessageLevel.Warning,
+            level=Qgis.MessageLevel.Warning
         )
         return []
 
     try:
         from rasterio.transform import from_bounds as transform_from_bounds
 
-        QgsMessageLog.logMessage(
-            "mask_to_polygons: rasterio import OK",
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Info,
-        )
-
         bbox = transform_info.get("bbox")
         img_shape = transform_info.get("img_shape")
 
         if bbox and img_shape:
-            minx, miny, maxx, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
+            minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
             height, width = img_shape
 
-            QgsMessageLog.logMessage(
-                "mask_to_polygons: using bbox path — "
-                "minx={:.6f}, miny={:.6f}, maxx={:.6f}, maxy={:.6f}, "
-                "width={}, height={}, mask_shape={}".format(
-                    minx, miny, maxx, maxy, width, height, mask.shape
-                ),
-                "AI Segmentation",
-                level=Qgis.MessageLevel.Info,
-            )
-
             transform = transform_from_bounds(minx, miny, maxx, maxy, width, height)
-            QgsMessageLog.logMessage(
-                "mask_to_polygons: affine_transform={}".format(transform),
-                "AI Segmentation",
-                level=Qgis.MessageLevel.Info,
-            )
             crs = transform_info.get("crs", "EPSG:4326")
 
-            result = mask_to_polygons_rasterio(mask, transform, crs, simplify_tolerance)
-            if result:
-                bb = result[0].boundingBox()
-                QgsMessageLog.logMessage(
-                    "mask_to_polygons: rasterio returned {} geoms, "
-                    "first_bbox=({:.6f},{:.6f},{:.6f},{:.6f}), "
-                    "first_area={:.6f}, first_wkt_len={}".format(
-                        len(result),
-                        bb.xMinimum(),
-                        bb.yMinimum(),
-                        bb.xMaximum(),
-                        bb.yMaximum(),
-                        result[0].area(),
-                        len(result[0].asWkt()),
-                    ),
-                    "AI Segmentation",
-                    level=Qgis.MessageLevel.Info,
-                )
-            else:
-                QgsMessageLog.logMessage(
-                    "mask_to_polygons: rasterio returned EMPTY list!",
-                    "AI Segmentation",
-                    level=Qgis.MessageLevel.Warning,
-                )
-            return result
+            return mask_to_polygons_rasterio(mask, transform, crs, simplify_tolerance)
 
         extent = transform_info.get("extent")
         original_size = transform_info.get("original_size")
@@ -215,40 +139,29 @@ def mask_to_polygons(
                 height = width = original_size
 
             transform = transform_from_bounds(x_min, y_min, x_max, y_max, width, height)
-            crs = transform_info.get(
-                "layer_crs", transform_info.get("crs", "EPSG:4326")
-            )
+            crs = transform_info.get("layer_crs", transform_info.get("crs", "EPSG:4326"))
 
             return mask_to_polygons_rasterio(mask, transform, crs, simplify_tolerance)
 
-        QgsMessageLog.logMessage(
-            "mask_to_polygons: FALLBACK — no bbox or extent in transform_info",
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Warning,
-        )
         return mask_to_polygons_fallback(mask, transform_info, simplify_tolerance)
 
-    except ImportError as ie:
-        QgsMessageLog.logMessage(
-            "mask_to_polygons: RASTERIO IMPORT FAILED — {}. Using fallback.".format(ie),
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Warning,
-        )
+    except ImportError:
         return mask_to_polygons_fallback(mask, transform_info, simplify_tolerance)
     except Exception as e:
         import traceback
-
         QgsMessageLog.logMessage(
             f"mask_to_polygons error: {str(e)}\n{traceback.format_exc()}",
             "AI Segmentation",
-            level=Qgis.MessageLevel.Warning,
+            level=Qgis.MessageLevel.Warning
         )
         return mask_to_polygons_fallback(mask, transform_info, simplify_tolerance)
 
 
 def mask_to_polygons_fallback(
-    mask: np.ndarray, transform_info: dict, simplify_tolerance: float = 0.0
-) -> List[QgsGeometry]:
+    mask: np.ndarray,
+    transform_info: dict,
+    simplify_tolerance: float = 0.0
+) -> list[QgsGeometry]:
     try:
         contours = find_contours(mask)
 
@@ -269,7 +182,7 @@ def mask_to_polygons_fallback(
                 map_points.append(map_points[0])
 
             if len(map_points) >= 4:
-                line = QgsLineString([p for p in map_points])
+                line = QgsLineString(list(map_points))
                 polygon = QgsPolygon()
                 polygon.setExteriorRing(line)
                 geom = QgsGeometry(polygon)
@@ -284,19 +197,17 @@ def mask_to_polygons_fallback(
 
     except Exception as e:
         import traceback
-
         QgsMessageLog.logMessage(
             f"Fallback polygon conversion failed: {str(e)}\n{traceback.format_exc()}",
             "AI Segmentation",
-            level=Qgis.MessageLevel.Warning,
+            level=Qgis.MessageLevel.Warning
         )
         return []
 
 
-def find_contours(mask: np.ndarray) -> List[List[Tuple[int, int]]]:
+def find_contours(mask: np.ndarray) -> list[list[tuple[int, int]]]:
     try:
         from skimage import measure
-
         raw_contours = measure.find_contours(mask.astype(float), 0.5)
         contours = []
         for contour in raw_contours:
@@ -313,7 +224,10 @@ def find_contours(mask: np.ndarray) -> List[List[Tuple[int, int]]]:
     padded = np.pad(mask, 1, mode="constant", constant_values=0)
     visited_pad = np.pad(visited, 1, mode="constant", constant_values=True)
 
-    directions = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
+    directions = [
+        (1, 0), (1, 1), (0, 1), (-1, 1),
+        (-1, 0), (-1, -1), (0, -1), (1, -1)
+    ]
 
     for y in range(1, h + 1):
         for x in range(1, w + 1):
@@ -338,8 +252,8 @@ def trace_contour(
     visited: np.ndarray,
     start_x: int,
     start_y: int,
-    directions: List[Tuple[int, int]],
-) -> List[Tuple[int, int]]:
+    directions: list[tuple[int, int]]
+) -> list[tuple[int, int]]:
     contour = [(start_x, start_y)]
     visited[start_y, start_x] = True
 
@@ -384,13 +298,15 @@ def trace_contour(
 
 
 def pixel_to_map_coords(
-    pixel_x: float, pixel_y: float, transform_info: dict
-) -> Tuple[float, float]:
+    pixel_x: float,
+    pixel_y: float,
+    transform_info: dict
+) -> tuple[float, float]:
     bbox = transform_info.get("bbox")
     img_shape = transform_info.get("img_shape")
 
     if bbox and img_shape:
-        minx, miny, maxx, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
+        minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
         height, width = img_shape
 
         map_x = minx + (pixel_x / width) * (maxx - minx)
@@ -417,9 +333,9 @@ def pixel_to_map_coords(
 
 def apply_mask_refinement(
     mask: np.ndarray,
-    expand_value: int = 0,  # -20 to +20 (pixels)
-    fill_holes: bool = False,  # Fill interior holes
-    min_area: int = 0,  # Remove regions smaller than this (pixels)
+    expand_value: int = 0,        # -20 to +20 (pixels)
+    fill_holes: bool = False,     # Fill interior holes
+    min_area: int = 0             # Remove regions smaller than this (pixels)
 ) -> np.ndarray:
     """
     Apply morphological operations to refine the mask.
@@ -462,7 +378,6 @@ def _fill_holes(mask: np.ndarray) -> np.ndarray:
     # Try scipy first - it's much faster (C implementation)
     try:
         from scipy import ndimage
-
         return ndimage.binary_fill_holes(mask).astype(np.uint8)
     except ImportError:
         pass
@@ -475,13 +390,13 @@ def _fill_holes(mask: np.ndarray) -> np.ndarray:
 
     # Start with border pixels as exterior (only background pixels)
     exterior = np.zeros_like(padded, dtype=bool)
-    exterior[0, :] = padded[0, :] == 0
-    exterior[-1, :] = padded[-1, :] == 0
-    exterior[:, 0] = padded[:, 0] == 0
-    exterior[:, -1] = padded[:, -1] == 0
+    exterior[0, :] = (padded[0, :] == 0)
+    exterior[-1, :] = (padded[-1, :] == 0)
+    exterior[:, 0] = (padded[:, 0] == 0)
+    exterior[:, -1] = (padded[:, -1] == 0)
 
     # Iteratively expand exterior into connected background pixels
-    background = padded == 0
+    background = (padded == 0)
     for _ in range(min(max(h, w), 2048)):  # Capped to prevent excessive loops
         # Dilate exterior by 1 pixel in 4 directions using slicing
         expanded = exterior.copy()
@@ -516,7 +431,6 @@ def _remove_small_regions(mask: np.ndarray, min_area: int) -> np.ndarray:
     # Try to use scipy if available (much faster - C implementation)
     try:
         from scipy import ndimage
-
         labeled, num_features = ndimage.label(mask)
         if num_features == 0:
             return mask.copy()
@@ -598,7 +512,6 @@ def _label_region_sizes(mask: np.ndarray) -> list:
     """Return list of region sizes (pixel counts) for each connected component."""
     try:
         from scipy import ndimage
-
         labeled, num_features = ndimage.label(mask)
         if num_features == 0:
             return []
@@ -642,11 +555,10 @@ def _numpy_dilate(mask: np.ndarray, iterations: int) -> np.ndarray:
     """
     try:
         from scipy.ndimage import binary_dilation
-
         struct = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
-        return binary_dilation(mask, structure=struct, iterations=iterations).astype(
-            np.uint8
-        )
+        return binary_dilation(
+            mask, structure=struct, iterations=iterations
+        ).astype(np.uint8)
     except ImportError:
         pass
 
@@ -671,11 +583,10 @@ def _numpy_erode(mask: np.ndarray, iterations: int) -> np.ndarray:
     """
     try:
         from scipy.ndimage import binary_erosion
-
         struct = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
-        return binary_erosion(mask, structure=struct, iterations=iterations).astype(
-            np.uint8
-        )
+        return binary_erosion(
+            mask, structure=struct, iterations=iterations
+        ).astype(np.uint8)
     except ImportError:
         pass
 
@@ -690,38 +601,3 @@ def _numpy_erode(mask: np.ndarray, iterations: int) -> np.ndarray:
         eroded = center & up & down & left & right
         result = eroded.astype(np.uint8)
     return result
-
-
-def _iou(g1, g2):
-    """Intersection over Union for two QgsGeometry objects."""
-    inter = g1.intersection(g2)
-    if inter.isEmpty():
-        return 0.0
-    union_geom = g1.combine(g2)
-    if union_geom.area() == 0:
-        return 0.0
-    return inter.area() / union_geom.area()
-
-
-def deduplicate_geometries(geometries, iou_threshold=0.3):
-    """Remove duplicate geometries based on IoU overlap.
-
-    Args:
-        geometries: list of QgsGeometry, ordered by priority (first = highest)
-        iou_threshold: max IoU before considering a geometry as duplicate
-
-    Returns:
-        list of accepted QgsGeometry (deduplicated)
-    """
-    accepted = []
-    for geom in geometries:
-        if geom.isEmpty():
-            continue
-        is_dup = False
-        for ag in accepted:
-            if _iou(geom, ag) > iou_threshold:
-                is_dup = True
-                break
-        if not is_dup:
-            accepted.append(geom)
-    return accepted

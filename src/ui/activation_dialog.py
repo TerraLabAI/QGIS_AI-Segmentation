@@ -19,7 +19,9 @@ from qgis.PyQt.QtWidgets import (
 
 from ..core.activation_manager import (
     activate_plugin,
-    get_newsletter_url,
+    get_newsletter_url_with_email,
+    get_shared_email,
+    save_shared_email,
 )
 from ..core.i18n import tr
 
@@ -46,19 +48,12 @@ class ActivationDialog(QDialog):
         layout.setSpacing(14)
         layout.setContentsMargins(24, 24, 24, 24)
 
-        # Banner section - using the TerraLab banner
+        # Banner section
         banner_label = QLabel()
-        banner_path = (
-            Path(__file__).parent.parent.parent
-            / "resources"
-            / "icons"
-            / "terralab-banner.png"
-        )
+        banner_path = Path(__file__).parent.parent.parent / "resources" / "icons" / "terralab-banner.png"
         if banner_path.exists():
             pixmap = QPixmap(str(banner_path))
-            scaled_pixmap = pixmap.scaledToWidth(
-                380, Qt.TransformationMode.SmoothTransformation
-            )
+            scaled_pixmap = pixmap.scaledToWidth(380, Qt.TransformationMode.SmoothTransformation)
             banner_label.setPixmap(scaled_pixmap)
         else:
             banner_label.setText("TerraLab")
@@ -69,8 +64,8 @@ class ActivationDialog(QDialog):
         banner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(banner_label)
 
-        # Title - friendly (uses palette for theme compatibility)
-        title_label = QLabel(tr("Thanks for trying our plugin!"))
+        # Title
+        title_label = QLabel(tr("Unlock Plugin"))
         title_font = QFont()
         title_font.setPointSize(14)
         title_font.setBold(True)
@@ -79,44 +74,36 @@ class ActivationDialog(QDialog):
         title_label.setStyleSheet("color: palette(text);")
         layout.addWidget(title_label)
 
-        # Description - clear about the email/code relationship
-        desc_label = QLabel(
-            tr(
-                "This plugin is in beta. We'd love to keep you updated when we release new versions and features."
-            )
-        )
-        desc_label.setWordWrap(True)
-        desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        desc_font = QFont()
-        desc_font.setPointSize(12)
-        desc_label.setFont(desc_font)
-        desc_label.setStyleSheet("color: palette(text);")
-        layout.addWidget(desc_label)
+        # Subtitle
+        subtitle_label = QLabel(tr("Enter your email to get a verification code."))
+        subtitle_label.setWordWrap(True)
+        subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle_label.setStyleSheet("color: palette(mid); font-size: 12px;")
+        layout.addWidget(subtitle_label)
 
-        # Clear instruction about the flow
-        flow_label = QLabel(
-            tr("Enter your email and you'll get a") + "<br>"
-            "<b>" + tr("Verification Code") + "</b> " + tr("to paste below.")
-        )
-        flow_label.setWordWrap(True)
-        flow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        flow_font = QFont()
-        flow_font.setPointSize(12)
-        flow_label.setFont(flow_font)
-        flow_label.setStyleSheet("color: palette(text);")
-        layout.addWidget(flow_label)
+        self.email_input = QLineEdit()
+        self.email_input.setPlaceholderText("your@email.com")
+        self.email_input.setMinimumHeight(36)
+        # Pre-fill from shared TerraLab email if available
+        shared_email = get_shared_email()
+        if shared_email:
+            self.email_input.setText(shared_email)
+        self.email_input.textChanged.connect(self._on_email_changed)
+        layout.addWidget(self.email_input)
 
-        # Get code button - clearer label
-        get_code_button = QPushButton(tr("Get my verification code"))
-        get_code_button.setMinimumHeight(40)
-        get_code_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        get_code_button.setStyleSheet(
+        # Get code button - disabled until email entered
+        self.get_code_button = QPushButton(tr("Get my verification code"))
+        self.get_code_button.setMinimumHeight(40)
+        self.get_code_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.get_code_button.setStyleSheet(
             "QPushButton { background-color: #2e7d32; color: white; "
             "font-weight: bold; font-size: 13px; border-radius: 4px; }"
             "QPushButton:hover { background-color: #1b5e20; }"
+            "QPushButton:disabled { background-color: #b0bec5; }"
         )
-        get_code_button.clicked.connect(self._on_get_code_clicked)
-        layout.addWidget(get_code_button)
+        self.get_code_button.setEnabled(bool(shared_email and "@" in shared_email))
+        self.get_code_button.clicked.connect(self._on_get_code_clicked)
+        layout.addWidget(self.get_code_button)
 
         # Separator
         sep = QFrame()
@@ -124,13 +111,8 @@ class ActivationDialog(QDialog):
         sep.setFrameShadow(QFrame.Shadow.Sunken)
         layout.addWidget(sep)
 
-        # Code input label (uses palette for theme compatibility)
-        code_label = QLabel(tr("Paste your verification code:"))
-        code_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        code_font = QFont()
-        code_font.setPointSize(11)
-        code_label.setFont(code_font)
-        code_label.setStyleSheet("color: palette(text);")
+        code_label = QLabel(tr("Then paste your code:"))
+        code_label.setStyleSheet("color: palette(text); font-size: 12px;")
         layout.addWidget(code_label)
 
         # Code input section
@@ -164,9 +146,17 @@ class ActivationDialog(QDialog):
         self.message_label.setVisible(False)
         layout.addWidget(self.message_label)
 
+    def _on_email_changed(self, text: str):
+        """Enable/disable the get code button based on email validity."""
+        self.get_code_button.setEnabled("@" in text.strip())
+
     def _on_get_code_clicked(self):
-        """Open the newsletter signup page in the default browser."""
-        QDesktopServices.openUrl(QUrl(get_newsletter_url()))
+        """Save email and open the verification page with email pre-filled."""
+        email = self.email_input.text().strip()
+        if email and "@" in email:
+            save_shared_email(email)
+        url = get_newsletter_url_with_email(email)
+        QDesktopServices.openUrl(QUrl(url))
         # Move focus to code input so Enter triggers Unlock, not this button
         self.code_input.setFocus()
 
@@ -184,7 +174,6 @@ class ActivationDialog(QDialog):
             self._show_message(tr("Unlocked!"), is_error=False)
             self.activated.emit()
             from qgis.PyQt.QtCore import QTimer
-
             QTimer.singleShot(600, self.accept)
         else:
             self._show_message(tr("Invalid code"), is_error=True)
@@ -195,7 +184,7 @@ class ActivationDialog(QDialog):
         """Display a message to the user."""
         self.message_label.setText(text)
         if is_error:
-            self.message_label.setStyleSheet("color: #d32f2f; font-size: 12px;")
+            self.message_label.setStyleSheet("color: #ef5350; font-size: 12px;")
         else:
-            self.message_label.setStyleSheet("color: #2e7d32; font-size: 12px;")
+            self.message_label.setStyleSheet("color: #66bb6a; font-size: 12px;")
         self.message_label.setVisible(True)

@@ -1,3 +1,0 @@
-[tool.bandit]
-exclude_dirs = ["__pycache__", "libs", "models"]
-skips = ["B101"]

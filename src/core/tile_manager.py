@@ -1,6 +1,6 @@
 """Adaptive tiling for PRO mode large-image segmentation."""
 
-from typing import List, Optional, Tuple
+from typing import Optional
 
 
 class TileManager:
@@ -21,7 +21,7 @@ class TileManager:
 
     def compute_grid(
         self, image_width: int, image_height: int
-    ) -> Optional[List[Tuple[int, int, int, int]]]:
+    ) -> Optional[list[tuple[int, int, int, int]]]:
         """Compute tile grid for an image.
 
         Returns:

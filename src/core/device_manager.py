@@ -25,21 +25,16 @@ def get_optimal_device():  # -> torch.device
                 "PyTorch DLL loading failed on Windows. "
                 "This usually means Visual C++ Redistributables are missing. "
                 "Download from: https://aka.ms/vs/17/release/vc_redist.x64.exe\n"
-                "Error: {}".format(str(e))
+                f"Error: {str(e)}"
             )
-            QgsMessageLog.logMessage(
-                error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical
-            )
+            QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical)
             _cached_device = None
             _device_info = "Error: PyTorch DLL failed"
-            raise RuntimeError(error_msg)
-        else:
-            raise
+            raise RuntimeError(error_msg) from e
+        raise
     except ImportError as e:
-        error_msg = "Failed to import PyTorch: {}".format(str(e))
-        QgsMessageLog.logMessage(
-            error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical
-        )
+        error_msg = f"Failed to import PyTorch: {str(e)}"
+        QgsMessageLog.logMessage(error_msg, "AI Segmentation", level=Qgis.MessageLevel.Critical)
         raise
 
     if sys.platform == "darwin":
@@ -56,48 +51,22 @@ def get_optimal_device():  # -> torch.device
                 QgsMessageLog.logMessage(
                     "Using MPS acceleration (Apple Silicon GPU)",
                     "AI Segmentation",
-                    level=Qgis.MessageLevel.Info,
+                    level=Qgis.MessageLevel.Info
                 )
                 return _cached_device
         except Exception as e:
             QgsMessageLog.logMessage(
-                "MPS check failed: {}, falling back to CPU".format(e),
+                f"MPS check failed: {e}, falling back to CPU",
                 "AI Segmentation",
-                level=Qgis.MessageLevel.Warning,
+                level=Qgis.MessageLevel.Warning
             )
 
     _cached_device = torch.device("cpu")
-    _device_info = "CPU ({} cores)".format(os.cpu_count())
+    _device_info = f"CPU ({os.cpu_count()} cores)"
     _configure_cpu_optimizations()
     QgsMessageLog.logMessage(
-        "Using CPU inference", "AI Segmentation", level=Qgis.MessageLevel.Info
-    )
+        "Using CPU inference", "AI Segmentation", level=Qgis.MessageLevel.Info)
     return _cached_device
-
-
-def _configure_cuda_optimizations():
-    import torch
-
-    try:
-        torch.backends.cudnn.enabled = True
-        torch.backends.cudnn.benchmark = True
-
-        if hasattr(torch.backends.cudnn, "allow_tf32"):
-            torch.backends.cudnn.allow_tf32 = True
-        if hasattr(torch, "set_float32_matmul_precision"):
-            torch.set_float32_matmul_precision("high")
-
-        QgsMessageLog.logMessage(
-            "CUDA optimizations enabled: cudnn.benchmark=True",
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Info,
-        )
-    except Exception as e:
-        QgsMessageLog.logMessage(
-            "Failed to configure CUDA optimizations: {}".format(e),
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Warning,
-        )
 
 
 def _configure_mps_optimizations():
@@ -125,7 +94,7 @@ def _configure_cpu_optimizations():
     QgsMessageLog.logMessage(
         f"CPU optimizations: {optimal_threads} threads",
         "AI Segmentation",
-        level=Qgis.MessageLevel.Info,
+        level=Qgis.MessageLevel.Info
     )
 
 

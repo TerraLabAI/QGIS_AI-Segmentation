@@ -5,7 +5,7 @@ Creates two temporary memory vector layers:
 - Overlap Zones: semi-transparent polygons where tiles overlap
 """
 
-from typing import List, Optional
+from typing import Optional
 
 from qgis.core import (
     QgsFeature,
@@ -105,11 +105,11 @@ class TileGridOverlay:
     def _create_layer(
         name: str,
         crs: str,
-        rects: List[QgsRectangle],
+        rects: list[QgsRectangle],
         symbol: QgsFillSymbol,
     ) -> QgsVectorLayer:
         """Create a memory vector layer with polygon features from rectangles."""
-        uri = "Polygon?crs={}".format(crs)
+        uri = f"Polygon?crs={crs}"
         vl = QgsVectorLayer(uri, name, "memory")
         pr = vl.dataProvider()
 
@@ -130,8 +130,8 @@ class TileGridOverlay:
 
     @staticmethod
     def _compute_overlaps(
-        rects: List[QgsRectangle],
-    ) -> List[QgsRectangle]:
+        rects: list[QgsRectangle],
+    ) -> list[QgsRectangle]:
         """Find intersection rectangles between all pairs of adjacent tiles."""
         overlaps = []
         seen = set()
@@ -152,23 +152,21 @@ class TileGridOverlay:
     @staticmethod
     def _grid_style() -> QgsFillSymbol:
         """Tile grid style: yellow contour, no fill."""
-        symbol = QgsFillSymbol.createSimple(
+        return QgsFillSymbol.createSimple(
             {
                 "color": "0,0,0,0",
                 "outline_color": "#FFC107",
                 "outline_width": "0.5",
             }
         )
-        return symbol
 
     @staticmethod
     def _overlap_style() -> QgsFillSymbol:
         """Overlap zone style: semi-transparent orange fill."""
-        symbol = QgsFillSymbol.createSimple(
+        return QgsFillSymbol.createSimple(
             {
                 "color": "255,152,0,40",
                 "outline_color": "#FF9800",
                 "outline_width": "0.3",
             }
         )
-        return symbol

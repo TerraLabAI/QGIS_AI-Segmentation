@@ -5,7 +5,7 @@ import io
 import json
 import urllib.error
 import urllib.request
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 from qgis.core import Qgis, QgsMessageLog
@@ -74,8 +74,8 @@ class FalPredictor:
         self._fal_key = fal_key
         self._last_image_np: Optional[np.ndarray] = None
         self.is_image_set = False
-        self.original_size: Optional[Tuple[int, int]] = None
-        self._native_size: Optional[Tuple[int, int]] = None
+        self.original_size: Optional[tuple[int, int]] = None
+        self._native_size: Optional[tuple[int, int]] = None
 
     def set_image(self, image_np: np.ndarray) -> None:
         """Store image locally for subsequent predict_text calls."""
@@ -83,9 +83,7 @@ class FalPredictor:
         self.original_size = (image_np.shape[0], image_np.shape[1])
         self.is_image_set = True
         QgsMessageLog.logMessage(
-            "FalPredictor: image stored ({}x{})".format(
-                image_np.shape[1], image_np.shape[0]
-            ),
+            f"FalPredictor: image stored ({image_np.shape[1]}x{image_np.shape[0]})",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info,
         )
@@ -104,9 +102,7 @@ class FalPredictor:
         self.original_size = (image_array.shape[0], image_array.shape[1])
         self.is_image_set = True
         QgsMessageLog.logMessage(
-            "FalPredictor: tile image stored ({}x{})".format(
-                image_array.shape[1], image_array.shape[0]
-            ),
+            f"FalPredictor: tile image stored ({image_array.shape[1]}x{image_array.shape[0]})",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info,
         )
@@ -117,7 +113,7 @@ class FalPredictor:
             STORAGE_TOKEN_URL,
             method="POST",
             headers={
-                "Authorization": "Key {}".format(self._fal_key),
+                "Authorization": f"Key {self._fal_key}",
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
@@ -155,7 +151,7 @@ class FalPredictor:
                 method="POST",
                 headers={
                     "Content-Type": "image/png",
-                    "Authorization": "Bearer {}".format(token),
+                    "Authorization": f"Bearer {token}",
                 },
             )
             with urllib.request.urlopen(req, timeout=_TIMEOUT_UPLOAD) as resp:
@@ -163,7 +159,7 @@ class FalPredictor:
                 url = result.get("access_url") or result.get("url", "")
                 if url:
                     QgsMessageLog.logMessage(
-                        "FalPredictor: CDN upload OK ({} bytes)".format(len(png_bytes)),
+                        f"FalPredictor: CDN upload OK ({len(png_bytes)} bytes)",
                         "AI Segmentation",
                         level=Qgis.MessageLevel.Info,
                     )
@@ -176,7 +172,7 @@ class FalPredictor:
                 return None
         except Exception as e:
             QgsMessageLog.logMessage(
-                "FalPredictor: CDN upload failed ({}), using fallback".format(e),
+                f"FalPredictor: CDN upload failed ({e}), using fallback",
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Warning,
             )
@@ -191,11 +187,11 @@ class FalPredictor:
         pil_img.save(buf, format="JPEG", quality=95)
         b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
         QgsMessageLog.logMessage(
-            "FalPredictor: using JPEG fallback ({} bytes)".format(len(buf.getvalue())),
+            f"FalPredictor: using JPEG fallback ({len(buf.getvalue())} bytes)",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info,
         )
-        return "data:image/jpeg;base64,{}".format(b64)
+        return f"data:image/jpeg;base64,{b64}"
 
     def predict_text(self, prompt: str, max_masks: int = 10) -> dict:
         """Send image + prompt to remote endpoint, return raw response dict.
@@ -214,25 +210,14 @@ class FalPredictor:
             if img.shape[0] != native_h or img.shape[1] != native_w:
                 img = img[:native_h, :native_w]
                 QgsMessageLog.logMessage(
-                    "FalPredictor: cropped padded image from {}x{} to native {}x{}".format(
-                        self._last_image_np.shape[1],
-                        self._last_image_np.shape[0],
-                        native_w,
-                        native_h,
-                    ),
+                    f"FalPredictor: cropped padded image from "
+                    f"{self._last_image_np.shape[1]}x{self._last_image_np.shape[0]} to native {native_w}x{native_h}",
                     "AI Segmentation",
                     level=Qgis.MessageLevel.Info,
                 )
         QgsMessageLog.logMessage(
-            "FalPredictor.predict_text: prompt='{}', max_masks={}, "
-            "img_shape={}, dtype={}, range=[{},{}]".format(
-                prompt,
-                max_masks,
-                img.shape,
-                img.dtype,
-                int(img.min()),
-                int(img.max()),
-            ),
+            f"FalPredictor.predict_text: prompt='{prompt}', max_masks={max_masks}, "
+            f"img_shape={img.shape}, dtype={img.dtype}, range=[{int(img.min())},{int(img.max())}]",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info,
         )
@@ -278,7 +263,7 @@ class FalPredictor:
             }
         ).encode("utf-8")
         QgsMessageLog.logMessage(
-            "FalPredictor: payload size = {} bytes".format(len(payload)),
+            f"FalPredictor: payload size = {len(payload)} bytes",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info,
         )
@@ -289,7 +274,7 @@ class FalPredictor:
             method="POST",
             headers={
                 "Content-Type": "application/json",
-                "Authorization": "Key {}".format(self._fal_key),
+                "Authorization": f"Key {self._fal_key}",
             },
         )
 
@@ -333,16 +318,16 @@ class FalPredictor:
             # 422 with "No masks" = empty result, not an error
             if e.code == 422 and "No masks" in detail:
                 QgsMessageLog.logMessage(
-                    "FalPredictor: no masks found for prompt '{}'".format(prompt),
+                    f"FalPredictor: no masks found for prompt '{prompt}'",
                     "AI Segmentation",
                     level=Qgis.MessageLevel.Info,
                 )
                 return {"rle": [], "scores": []}
             if e.code == 401:
-                raise RuntimeError("Invalid API key. Check FAL_KEY in .env")
-            raise RuntimeError("Inference error {}: {}".format(e.code, detail))
+                raise RuntimeError("Invalid API key. Check FAL_KEY in .env") from e
+            raise RuntimeError(f"Inference error {e.code}: {detail}") from e
         except urllib.error.URLError as e:
-            raise RuntimeError("Cannot reach inference service: {}".format(e.reason))
+            raise RuntimeError(f"Cannot reach inference service: {e.reason}") from e
 
     def set_native_size(self, height: int, width: int) -> None:
         """Set the native (pre-padding) image dimensions.

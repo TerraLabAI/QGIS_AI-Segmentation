@@ -257,6 +257,30 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Arrêter la segmentation</translation>
     </message>
     <message>
+        <source>Segmentation</source>
+        <translation>Segmentation</translation>
+    </message>
+    <message>
+        <source>Navigation</source>
+        <translation>Navigation</translation>
+    </message>
+    <message>
+        <source>Space</source>
+        <translation>Espace</translation>
+    </message>
+    <message>
+        <source>Hold and move to pan the map</source>
+        <translation>Maintenir et bouger pour déplacer la carte</translation>
+    </message>
+    <message>
+        <source>Middle mouse button</source>
+        <translation>Bouton central de la souris</translation>
+    </message>
+    <message>
+        <source>Click and drag to pan the map</source>
+        <translation>Cliquer et glisser pour déplacer la carte</translation>
+    </message>
+    <message>
         <source>Shortcuts</source>
         <translation>Raccourcis</translation>
     </message>
@@ -427,6 +451,18 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Utilisez « Exporter en couche » pour les conserver.</translation>
     </message>
     <message>
+        <source>Leave Segmentation?</source>
+        <translation>Quitter la segmentation ?</translation>
+    </message>
+    <message>
+        <source>You can pan with the middle mouse button, spacebar, or arrow keys without leaving segmentation mode.</source>
+        <translation>Vous pouvez naviguer avec le clic molette, la barre d'espace ou les flèches directionnelles sans quitter le mode segmentation.</translation>
+    </message>
+    <message>
+        <source>This will end the current segmentation session.</source>
+        <translation>Cela va mettre fin à la session de segmentation en cours.</translation>
+    </message>
+    <message>
         <source>Delete all saved polygons?</source>
         <translation>Supprimer tous les polygones sauvegardés ?</translation>
     </message>
@@ -553,18 +589,18 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Pas de souci, le plugin utilise maintenant le mode CPU et tout fonctionne :) Si vous souhaitez qu'on corrige le support GPU pour votre config, envoyez-nous vos logs !</translation>
     </message>
     <message>
-        <source>Outside &apos;{layer}&apos; area. Stop segmentation to switch layer.</source>
-        <translation>Hors de la zone '{layer}'. Arrêtez la segmentation pour changer de couche.</translation>
+        <source>Click is outside the &apos;{layer}&apos; raster. To segment another raster, stop the current segmentation first.</source>
+        <translation>Le clic est en dehors du raster '{layer}'. Pour segmenter un autre raster, arrêtez d'abord la segmentation en cours.</translation>
     </message>
 
     <!-- Update notification -->
     <message>
-        <source>A new version is available (v{version}).</source>
-        <translation>Une nouvelle version est disponible (v{version}).</translation>
+        <source>Big update dropped — v{version} is here!</source>
+        <translation>Grosse mise à jour — la v{version} est là !</translation>
     </message>
     <message>
-        <source>Update now</source>
-        <translation>Mettre à jour</translation>
+        <source>Grab it now</source>
+        <translation>Fonce mettre à jour</translation>
     </message>
 
     <!-- Format conversion -->
@@ -669,6 +705,11 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
         <translation>Parties déconnectées détectées. Pour une meilleure précision, segmentez un élément à la fois.</translation>
+    </message>
+
+    <message>
+        <source>No element detected at this point. Try clicking on a different area.</source>
+        <translation>Aucun élément détecté à cet endroit. Essayez de cliquer sur une autre zone.</translation>
     </message>
 
     <message>

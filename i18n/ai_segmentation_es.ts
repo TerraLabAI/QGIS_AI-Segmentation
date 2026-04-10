@@ -257,6 +257,30 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Detener segmentación</translation>
     </message>
     <message>
+        <source>Segmentation</source>
+        <translation>Segmentación</translation>
+    </message>
+    <message>
+        <source>Navigation</source>
+        <translation>Navegación</translation>
+    </message>
+    <message>
+        <source>Space</source>
+        <translation>Espacio</translation>
+    </message>
+    <message>
+        <source>Hold and move to pan the map</source>
+        <translation>Mantener y mover para desplazar el mapa</translation>
+    </message>
+    <message>
+        <source>Middle mouse button</source>
+        <translation>Botón central del ratón</translation>
+    </message>
+    <message>
+        <source>Click and drag to pan the map</source>
+        <translation>Clic y arrastrar para desplazar el mapa</translation>
+    </message>
+    <message>
         <source>Shortcuts</source>
         <translation>Atajos</translation>
     </message>
@@ -427,6 +451,18 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Use 'Exportar a capa' para conservarlas.</translation>
     </message>
     <message>
+        <source>Leave Segmentation?</source>
+        <translation>¿Salir de la segmentación?</translation>
+    </message>
+    <message>
+        <source>You can pan with the middle mouse button, spacebar, or arrow keys without leaving segmentation mode.</source>
+        <translation>Puede desplazarse con el botón central del ratón, la barra espaciadora o las teclas de flecha sin salir del modo de segmentación.</translation>
+    </message>
+    <message>
+        <source>This will end the current segmentation session.</source>
+        <translation>Esto finalizará la sesión de segmentación actual.</translation>
+    </message>
+    <message>
         <source>Delete all saved polygons?</source>
         <translation>¿Eliminar todos los polígonos guardados?</translation>
     </message>
@@ -553,18 +589,18 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>No te preocupes, el plugin ahora usa el modo CPU y todo funciona :) Si quieres que arreglemos el soporte GPU para tu config, ¡envíanos tus logs!</translation>
     </message>
     <message>
-        <source>Outside &apos;{layer}&apos; area. Stop segmentation to switch layer.</source>
-        <translation>Fuera del área '{layer}'. Detén la segmentación para cambiar de capa.</translation>
+        <source>Click is outside the &apos;{layer}&apos; raster. To segment another raster, stop the current segmentation first.</source>
+        <translation>El clic está fuera del raster '{layer}'. Para segmentar otro raster, detén primero la segmentación actual.</translation>
     </message>
 
     <!-- Update notification -->
     <message>
-        <source>A new version is available (v{version}).</source>
-        <translation>Una nueva version esta disponible (v{version}).</translation>
+        <source>Big update dropped — v{version} is here!</source>
+        <translation>Gran actualización — ¡la v{version} ya está aquí!</translation>
     </message>
     <message>
-        <source>Update now</source>
-        <translation>Actualizar ahora</translation>
+        <source>Grab it now</source>
+        <translation>Actualiza ahora</translation>
     </message>
 
     <!-- Format conversion -->
@@ -669,6 +705,11 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     <message>
         <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
         <translation>Partes desconectadas detectadas. Para mayor precisión, segmenta un elemento a la vez.</translation>
+    </message>
+
+    <message>
+        <source>No element detected at this point. Try clicking on a different area.</source>
+        <translation>No se detectó ningún elemento en este punto. Intenta hacer clic en otra área.</translation>
     </message>
 
     <message>

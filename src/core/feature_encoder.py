@@ -9,18 +9,8 @@ from .i18n import tr
 # Raster formats that pip-installed rasterio may not support reliably.
 # These go through GDAL windowed read instead.
 _GDAL_ONLY_FORMATS = {
-    ".ecw",
-    ".sid",
-    ".jp2",
-    ".j2k",
-    ".j2c",
-    ".nitf",
-    ".ntf",
-    ".img",
-    ".hdf",
-    ".hdf5",
-    ".he5",
-    ".nc",
+    ".ecw", ".sid", ".jp2", ".j2k", ".j2c",
+    ".nitf", ".ntf", ".img", ".hdf", ".hdf5", ".he5", ".nc",
     ".gpkg",
 }
 
@@ -57,7 +47,7 @@ def _normalize_to_uint8(bands, nodata_value=None):
         for b in range(bands.shape[0]):
             valid_mask = valid_mask & ~np.isnan(bands[b])
 
-    is_uint8 = bands.dtype == np.uint8
+    is_uint8 = (bands.dtype == np.uint8)
     result = np.zeros((3, bands.shape[1], bands.shape[2]), dtype=np.uint8)
 
     for b in range(3):
@@ -137,11 +127,11 @@ def _fetch_online_bands(provider, extent, width, height):
     is_argb32_pre = dt == Qgis.DataType.ARGB32_Premultiplied
     is_argb = is_argb32 or is_argb32_pre
     if is_argb:
-        arr = (
-            np.frombuffer(raw_data, dtype=np.uint8).reshape(block_h, block_w, 4).copy()
-        )
+        arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
+            block_h, block_w, 4).copy()
         # Qt BGRA byte order -> RGB
-        image_np = np.stack([arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
+        image_np = np.stack(
+            [arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
         return image_np, True, None
 
     # Map Qgis data types to numpy dtypes
@@ -159,20 +149,19 @@ def _fetch_online_bands(provider, extent, width, height):
     if np_dtype is None:
         # Unknown type: try ARGB32 interpretation as fallback
         if len(raw_data) == block_w * block_h * 4:
-            arr = (
-                np.frombuffer(raw_data, dtype=np.uint8)
-                .reshape(block_h, block_w, 4)
-                .copy()
-            )
-            image_np = np.stack([arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
+            arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
+                block_h, block_w, 4).copy()
+            image_np = np.stack(
+                [arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
             return image_np, True, None
-        return None, False, "Unsupported data type: {}".format(dt)
+        return None, False, f"Unsupported data type: {dt}"
 
     band_count = min(provider.bandCount(), 3)
     bands = []
 
     # First band already fetched
-    band1 = np.frombuffer(raw_data, dtype=np_dtype).reshape(block_h, block_w).copy()
+    band1 = np.frombuffer(raw_data, dtype=np_dtype).reshape(
+        block_h, block_w).copy()
     bands.append(band1)
 
     # Fetch remaining bands
@@ -181,11 +170,9 @@ def _fetch_online_bands(provider, extent, width, height):
         if b is not None and b.isValid():
             b_data = bytes(b.data())
             if len(b_data) > 0:
-                band_arr = (
-                    np.frombuffer(b_data, dtype=np_dtype)
-                    .reshape(block_h, block_w)
-                    .copy()
-                )
+                band_arr = np.frombuffer(
+                    b_data, dtype=np_dtype
+                ).reshape(block_h, block_w).copy()
                 bands.append(band_arr)
 
     bands_array = np.stack(bands, axis=0)
@@ -231,13 +218,15 @@ def _render_layer_to_image(layer, extent, width, height):
         img = img.convertToFormat(QImage.Format.Format_RGB32)
         ptr = img.bits()
         ptr.setsize(height * width * 4)
-        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(height, width, 4).copy()
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(
+            height, width, 4).copy()
         # BGRA -> RGB
-        image_np = np.stack([arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
+        image_np = np.stack(
+            [arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
         return image_np, None
 
     except Exception as e:
-        return None, "Renderer fallback failed: {}".format(str(e))
+        return None, f"Renderer fallback failed: {str(e)}"
 
 
 def _needs_gdal_conversion(raster_path):
@@ -246,9 +235,8 @@ def _needs_gdal_conversion(raster_path):
     return ext in _GDAL_ONLY_FORMATS
 
 
-def _read_crop_with_gdal(
-    raster_path, center_x, center_y, crop_size, scale_factor, layer_extent
-):
+def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
+                         scale_factor, layer_extent):
     """Read a windowed crop directly from a GDAL-supported raster (JP2, ECW, etc.).
 
     Instead of converting the entire file to GeoTIFF, reads only the needed
@@ -261,31 +249,23 @@ def _read_crop_with_gdal(
     try:
         from osgeo import gdal
     except ImportError:
-        return (
-            None,
-            None,
-            tr(
-                "{ext} format is not directly supported. "
-                "GDAL is not available.\n"
-                "Please convert your raster to GeoTIFF (.tif) before using "
-                "AI Segmentation."
-            ).format(ext=ext),
-        )
+        return None, None, tr(
+            "{ext} format is not directly supported. "
+            "GDAL is not available.\n"
+            "Please convert your raster to GeoTIFF (.tif) before using "
+            "AI Segmentation."
+        ).format(ext=ext)
 
     ds = None
     try:
         ds = gdal.Open(raster_path)
         if ds is None:
-            return (
-                None,
-                None,
-                tr(
-                    "Cannot open {ext} file. The format may not be supported "
-                    "by your QGIS installation.\n"
-                    "Please convert your raster to GeoTIFF (.tif) before using "
-                    "AI Segmentation."
-                ).format(ext=ext),
-            )
+            return None, None, tr(
+                "Cannot open {ext} file. The format may not be supported "
+                "by your QGIS installation.\n"
+                "Please convert your raster to GeoTIFF (.tif) before using "
+                "AI Segmentation."
+            ).format(ext=ext)
 
         raster_width = ds.RasterXSize
         raster_height = ds.RasterYSize
@@ -348,12 +328,8 @@ def _read_crop_with_gdal(
         for b_idx in range(1, num_bands + 1):
             band = ds.GetRasterBand(b_idx)
             data = band.ReadAsArray(
-                col_off,
-                row_off,
-                actual_width,
-                actual_height,
-                buf_xsize=out_w,
-                buf_ysize=out_h,
+                col_off, row_off, actual_width, actual_height,
+                buf_xsize=out_w, buf_ysize=out_h
             )
             bands.append(data)
 
@@ -367,7 +343,9 @@ def _read_crop_with_gdal(
             pad_bottom = crop_size - out_h
             pad_right = crop_size - out_w
             image_np = np.pad(
-                image_np, ((0, pad_bottom), (0, pad_right), (0, 0)), mode="reflect"
+                image_np,
+                ((0, pad_bottom), (0, pad_right), (0, 0)),
+                mode="reflect"
             )
 
         crop_minx = bounds_left + col_off * pixel_size_x
@@ -383,37 +361,24 @@ def _read_crop_with_gdal(
         }
 
         QgsMessageLog.logMessage(
-            "Read {} crop directly via GDAL: {}x{} at ({}, {})".format(
-                ext, out_w, out_h, col_off, row_off
-            ),
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Info,
+            f"Read {ext} crop directly via GDAL: {out_w}x{out_h} at ({col_off}, {row_off})",
+            "AI Segmentation", level=Qgis.MessageLevel.Info
         )
         return image_np, crop_info, None
 
     except Exception as e:
-        return (
-            None,
-            None,
-            tr(
-                "Failed to read {ext} file: {error}\n"
-                "Please convert your raster to GeoTIFF (.tif) manually."
-            ).format(ext=ext, error=str(e)),
-        )
+        return None, None, tr(
+            "Failed to read {ext} file: {error}\n"
+            "Please convert your raster to GeoTIFF (.tif) manually."
+        ).format(ext=ext, error=str(e))
 
     finally:
         ds = None
 
 
-def extract_crop_from_raster(
-    raster_path,
-    center_x,
-    center_y,
-    crop_size=1024,
-    layer_crs_wkt=None,
-    layer_extent=None,
-    scale_factor=1.0,
-):
+def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
+                             layer_crs_wkt=None, layer_extent=None,
+                             scale_factor=1.0):
     """Extract a crop_size x crop_size RGB crop centered on (center_x, center_y).
 
     Args:
@@ -443,7 +408,8 @@ def extract_crop_from_raster(
     # Handle GDAL-only formats (JP2, ECW, etc.) with direct windowed read
     if _needs_gdal_conversion(raster_path):
         return _read_crop_with_gdal(
-            raster_path, center_x, center_y, crop_size, scale_factor, layer_extent
+            raster_path, center_x, center_y, crop_size,
+            scale_factor, layer_extent
         )
 
     try:
@@ -505,7 +471,7 @@ def extract_crop_from_raster(
                 tile_data = src.read(
                     window=window,
                     out_shape=(src.count, out_h, out_w),
-                    resampling=Resampling.bilinear,
+                    resampling=Resampling.bilinear
                 )
             elif scale_factor < 1.0:
                 out_h = min(crop_size, max(1, int(actual_height / scale_factor)))
@@ -513,7 +479,7 @@ def extract_crop_from_raster(
                 tile_data = src.read(
                     window=window,
                     out_shape=(src.count, out_h, out_w),
-                    resampling=Resampling.bilinear,
+                    resampling=Resampling.bilinear
                 )
             else:
                 tile_data = src.read(window=window)
@@ -530,7 +496,9 @@ def extract_crop_from_raster(
                 pad_bottom = crop_size - out_h
                 pad_right = crop_size - out_w
                 image_np = np.pad(
-                    image_np, ((0, pad_bottom), (0, pad_right), (0, 0)), mode="reflect"
+                    image_np,
+                    ((0, pad_bottom), (0, pad_right), (0, 0)),
+                    mode="reflect"
                 )
 
             # Compute geo bounds for this crop (covers the full read area)
@@ -551,18 +519,17 @@ def extract_crop_from_raster(
     except Exception as e:
         # Fallback to GDAL if rasterio fails (unsupported driver, etc.)
         QgsMessageLog.logMessage(
-            "rasterio failed ({}), trying GDAL fallback...".format(str(e)),
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Warning,
+            f"rasterio failed ({str(e)}), trying GDAL fallback...",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning
         )
         return _read_crop_with_gdal(
-            raster_path, center_x, center_y, crop_size, scale_factor, layer_extent
+            raster_path, center_x, center_y, crop_size,
+            scale_factor, layer_extent
         )
 
 
-def extract_crop_from_online_layer(
-    layer, center_x, center_y, canvas_mupp, crop_size=1024
-):
+def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
+                                   crop_size=1024):
     """Extract a crop_size x crop_size RGB crop from an online layer.
 
     Args:
@@ -582,33 +549,24 @@ def extract_crop_from_online_layer(
 
     half_size = crop_size * canvas_mupp / 2.0
     extent = QgsRectangle(
-        center_x - half_size,
-        center_y - half_size,
-        center_x + half_size,
-        center_y + half_size,
+        center_x - half_size, center_y - half_size,
+        center_x + half_size, center_y + half_size
     )
 
     QgsMessageLog.logMessage(
-        "Online crop request: center=({:.6f}, {:.6f}), mupp={:.6f}, "
-        "extent=({:.2f}, {:.2f}, {:.2f}, {:.2f}), CRS={}".format(
-            center_x,
-            center_y,
-            canvas_mupp,
-            extent.xMinimum(),
-            extent.yMinimum(),
-            extent.xMaximum(),
-            extent.yMaximum(),
-            layer.crs().authid(),
-        ),
-        "AI Segmentation",
-        level=Qgis.MessageLevel.Info,
+        f"Online crop request: center=({center_x:.6f}, {center_y:.6f}), "
+        f"mupp={canvas_mupp:.6f}, extent=({extent.xMinimum():.2f}, {extent.yMinimum():.2f}, "
+        f"{extent.xMaximum():.2f}, {extent.yMaximum():.2f}), CRS={layer.crs().authid()}",
+        "AI Segmentation", level=Qgis.MessageLevel.Info
     )
 
     try:
         provider.enableProviderResampling(True)
         original_method = provider.zoomedInResamplingMethod()
-        provider.setZoomedInResamplingMethod(provider.ResamplingMethod.Bilinear)
-        provider.setZoomedOutResamplingMethod(provider.ResamplingMethod.Bilinear)
+        provider.setZoomedInResamplingMethod(
+            provider.ResamplingMethod.Bilinear)
+        provider.setZoomedOutResamplingMethod(
+            provider.ResamplingMethod.Bilinear)
 
         # Retry fetching tiles: when the user pans to a new area, the
         # provider cache may not have the tiles yet.  A short delay
@@ -616,7 +574,6 @@ def extract_crop_from_online_layer(
         # We also re-fetch after getting a valid block to detect
         # mixed-resolution tiles (stale cache from different zoom).
         from qgis.core import QgsApplication
-
         max_retries = 8
         retry_delay = 1.0
         block = None
@@ -639,15 +596,11 @@ def extract_crop_from_online_layer(
                         time.sleep(0.05)
                     continue
             if attempt < max_retries - 1:
-                delay = retry_delay * (
-                    1 + attempt * 0.5
-                )  # Progressive: 1.0, 1.5, 2.0, ...
+                delay = retry_delay * (1 + attempt * 0.5)  # Progressive: 1.0, 1.5, 2.0, ...
                 QgsMessageLog.logMessage(
-                    "Online tile fetch attempt {} - retrying in {:.1f}s...".format(
-                        attempt + 1, delay
-                    ),
-                    "AI Segmentation",
-                    level=Qgis.MessageLevel.Warning,
+                    f"Online tile fetch attempt {attempt + 1} - "
+                    f"retrying in {delay:.1f}s...",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning
                 )
                 deadline = time.monotonic() + delay
                 while time.monotonic() < deadline:
@@ -659,29 +612,21 @@ def extract_crop_from_online_layer(
 
         # Fetch bands using unified helper
         bands_result, is_argb, fetch_err = _fetch_online_bands(
-            provider, extent, crop_size, crop_size
-        )
+            provider, extent, crop_size, crop_size)
 
         # If provider fetch failed, try canvas renderer fallback
         if fetch_err is not None:
             QgsMessageLog.logMessage(
-                "Provider fetch failed ({}), trying renderer fallback...".format(
-                    fetch_err
-                ),
-                "AI Segmentation",
-                level=Qgis.MessageLevel.Warning,
+                f"Provider fetch failed ({fetch_err}), trying renderer "
+                "fallback...",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning
             )
             image_np, render_err = _render_layer_to_image(
-                layer, extent, crop_size, crop_size
-            )
+                layer, extent, crop_size, crop_size)
             if render_err is not None:
-                return (
-                    None,
-                    None,
-                    tr(
-                        "Failed to fetch tiles from the online layer. "
-                        "Check your network connection."
-                    ),
+                return None, None, tr(
+                    "Failed to fetch tiles from the online layer. "
+                    "Check your network connection."
                 )
         elif is_argb:
             # Already RGB uint8 (H, W, 3) from ARGB32 path
@@ -701,22 +646,14 @@ def extract_crop_from_online_layer(
         # Check for blank tiles
         total_sum = int(image_np.sum())
         if total_sum == 0:
-            return (
-                None,
-                None,
-                tr(
-                    "Online layer returned blank tiles for this area. "
-                    "Try panning to an area with data coverage."
-                ),
+            return None, None, tr(
+                "Online layer returned blank tiles for this area. "
+                "Try panning to an area with data coverage."
             )
 
         crop_info = {
-            "bounds": (
-                extent.xMinimum(),
-                extent.yMinimum(),
-                extent.xMaximum(),
-                extent.yMaximum(),
-            ),
+            "bounds": (extent.xMinimum(), extent.yMinimum(),
+                       extent.xMaximum(), extent.yMaximum()),
             "img_shape": (height, width),
         }
 

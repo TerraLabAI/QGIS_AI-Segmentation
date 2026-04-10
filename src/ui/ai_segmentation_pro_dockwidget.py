@@ -621,7 +621,7 @@ class AISegmentationProDockWidget(QDockWidget):
         self._refine_expanded = not self._refine_expanded
         self.refine_content_widget.setVisible(self._refine_expanded)
         arrow = "▼" if self._refine_expanded else "▶"
-        self.refine_group.setTitle("{} ".format(arrow) + tr("Refine polygons"))
+        self.refine_group.setTitle(f"{arrow} " + tr("Refine polygons"))
         if self._refine_expanded:
             self.refine_group.setMaximumHeight(16777215)
         else:
