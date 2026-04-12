@@ -19,8 +19,14 @@ ACTIVATION_KEY = f"{SETTINGS_PREFIX}/activated"
 TERRALAB_PREFIX = "TerraLab"
 
 # TerraLab URLs
-TERRALAB_WEBSITE = "https://terra-lab.ai?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=website"
-TERRALAB_NEWSLETTER = "https://terra-lab.ai/mail-verification?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=get_code"
+TERRALAB_WEBSITE = (
+    "https://terra-lab.ai"
+    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=website"
+)
+TERRALAB_NEWSLETTER = (
+    "https://terra-lab.ai/mail-verification"
+    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=get_code"
+)
 _CONFIG_URL = f"{TERRALAB_WEBSITE}/api/plugin/config?product=ai-segmentation"
 
 # Server config cache (in-memory, one fetch per session)

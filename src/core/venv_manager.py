@@ -22,7 +22,7 @@ from .pip_diagnostics import (
     get_pip_antivirus_help as _get_pip_antivirus_help,
 )
 from .pip_diagnostics import (
-    get_pip_ssl_flags as _get_pip_ssl_flags,
+    get_pip_ssl_bypass_flags as _get_pip_ssl_bypass_flags,
 )
 from .pip_diagnostics import (
     get_ssl_error_help,
@@ -371,9 +371,25 @@ def ensure_venv_packages_available():
         except Exception:
             _log("Failed to reload typing_extensions, torch may fail", Qgis.MessageLevel.Warning)
 
-    # FIX for QGIS bundling old numpy (< 1.22.4) incompatible with pandas >= 2.0
-    # Check numpy version directly instead of gating on QGIS version, because
-    # multiple QGIS releases (3.26-3.28.x) can ship old numpy. (issues #130/#133/#138)
+    # --- sys.modules / sys.path surgery for old QGIS numpy ---
+    #
+    # WHY:  QGIS 3.22-3.28 bundle numpy < 1.22.4 which is incompatible with
+    #        pandas >= 2.0 and modern torch. Without this fix, importing pandas
+    #        or torch fails on those QGIS versions. (issues #130/#133/#138)
+    #
+    # WHAT: If old numpy is detected, this block:
+    #        1. Deletes all numpy/pandas entries from sys.modules
+    #        2. Temporarily removes QGIS Python paths containing numpy from sys.path
+    #        3. Invalidates import caches so Python rescans directories
+    #        4. Re-imports numpy from the venv site-packages
+    #        5. Restores removed paths (in finally block, guaranteed)
+    #
+    # RISK: Modifies sys.path and sys.modules in the running QGIS process.
+    #        This can affect module resolution for other plugins in the same
+    #        session. The finally block ensures sys.path is always restored.
+    #
+    # REMOVE WHEN: Minimum supported QGIS is raised above 3.28.
+    #
     needs_numpy_fix = False
     old_version = "unknown"
     try:
@@ -828,6 +844,9 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
     """Build an install command using uv (if available) or pip.
 
     Translates pip flags to uv equivalents when _uv_available is True.
+    Note: --trusted-host is translated to --allow-insecure-host for uv,
+    which disables TLS verification. This should only be present in
+    pip_args during SSL error retry, never in the default install path.
     """
     if _uv_available and _uv_path:
         cmd = [_uv_path, "pip"]
@@ -902,7 +921,7 @@ def _repin_numpy(venv_dir: str):
             downgrade_args = [
                 "install", "--force-reinstall", "--no-deps",
                 "--disable-pip-version-check",
-            ] + _get_pip_ssl_flags() + [
+            ] + [
                 "numpy>=1.26.0,<2.0.0",
             ]
             downgrade_cmd = _build_install_cmd(python_path, downgrade_args)
@@ -1203,7 +1222,6 @@ def install_dependencies(
                 "--disable-pip-version-check",
                 "--no-warn-script-location",
             ]
-            upgrade_cmd.extend(_get_pip_ssl_flags())
             upgrade_result = subprocess.run(
                 upgrade_cmd,
                 capture_output=True, text=True, encoding="utf-8", timeout=120,
@@ -1315,8 +1333,9 @@ def install_dependencies(
             # fail when gdal-config is missing (macOS Rosetta, etc.) (#186)
             if package_name == "rasterio":
                 pip_args.extend(["--only-binary", "rasterio"])
-            # Add SSL bypass flags upfront for corporate proxies (not just as retry)
-            pip_args.extend(_get_pip_ssl_flags())
+            # SSL bypass flags (--trusted-host) are NOT added here by default.
+            # They are only applied on retry after an SSL error is detected,
+            # to avoid disabling TLS verification for all users.
             if constraints_path:
                 pip_args.extend(["--constraint", constraints_path])
             pip_args.extend(_get_pip_proxy_args())
@@ -1422,35 +1441,72 @@ def install_dependencies(
                             cancel_check=cancel_check,
                         )
 
-                # If failed, check for SSL errors and retry with --trusted-host
+                # If failed, check for SSL errors and retry with TLS bypass.
+                # Strategy: for uv, first try --system-certs (uses OS trust
+                # store, handles corporate proxy CAs safely). If that also
+                # fails, fall back to --allow-insecure-host (disables TLS
+                # verification entirely). For pip, use --trusted-host directly.
                 if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
                     error_output = result.stderr or result.stdout or ""
 
                     if _is_ssl_error(error_output):
-                        _log(
-                            "SSL error detected, retrying...",
-                            Qgis.MessageLevel.Warning
-                        )
-                        if progress_callback:
-                            progress_callback(
-                                pkg_start,
-                                f"SSL error, retrying {package_name}... ({i + 1}/{total_packages})"
+                        if _uv_available:
+                            # uv: try OS native certificate store first (safe)
+                            _log(
+                                "SSL error detected, retrying with system certificates...",
+                                Qgis.MessageLevel.Warning
+                            )
+                            if progress_callback:
+                                progress_callback(
+                                    pkg_start,
+                                    f"SSL error, retrying {package_name} (system certs)... ({i + 1}/{total_packages})"
+                                )
+                            ssl_cmd_safe = base_cmd + ["--system-certs"]
+                            result = _run_pip_install(
+                                cmd=ssl_cmd_safe,
+                                timeout=pkg_timeout,
+                                env=env,
+                                subprocess_kwargs=subprocess_kwargs,
+                                package_name=package_name,
+                                package_index=i,
+                                total_packages=total_packages,
+                                progress_start=pkg_start,
+                                progress_end=pkg_end,
+                                progress_callback=progress_callback,
+                                cancel_check=cancel_check,
                             )
 
-                        # Retry (SSL flags already in base_cmd)
-                        result = _run_pip_install(
-                            cmd=base_cmd,
-                            timeout=pkg_timeout,
-                            env=env,
-                            subprocess_kwargs=subprocess_kwargs,
-                            package_name=package_name,
-                            package_index=i,
-                            total_packages=total_packages,
-                            progress_start=pkg_start,
-                            progress_end=pkg_end,
-                            progress_callback=progress_callback,
-                            cancel_check=cancel_check,
-                        )
+                        # If still failing with SSL error (or pip), bypass TLS verification
+                        if result.returncode != 0:
+                            retry_output = result.stderr or result.stdout or ""
+                            if _is_ssl_error(retry_output) or not _uv_available:
+                                _log(
+                                    "SSL error persists, retrying with TLS verification bypass...",
+                                    Qgis.MessageLevel.Warning
+                                )
+                                if progress_callback:
+                                    progress_callback(
+                                        pkg_start,
+                                        f"SSL bypass retry for {package_name}... ({i + 1}/{total_packages})"
+                                    )
+                                # Build a new command with SSL bypass flags injected.
+                                # For uv: --trusted-host → --allow-insecure-host (via _build_install_cmd)
+                                # For pip: --trusted-host directly
+                                ssl_bypass_pip_args = list(pip_args) + _get_pip_ssl_bypass_flags()
+                                ssl_cmd_bypass = _build_install_cmd(python_path, ssl_bypass_pip_args)
+                                result = _run_pip_install(
+                                    cmd=ssl_cmd_bypass,
+                                    timeout=pkg_timeout,
+                                    env=env,
+                                    subprocess_kwargs=subprocess_kwargs,
+                                    package_name=package_name,
+                                    package_index=i,
+                                    total_packages=total_packages,
+                                    progress_start=pkg_start,
+                                    progress_end=pkg_end,
+                                    progress_callback=progress_callback,
+                                    cancel_check=cancel_check,
+                                )
 
                 # If failed, check for hash mismatch (corrupted cache) and retry
                 if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
@@ -2064,7 +2120,6 @@ def verify_venv(
                         "--force-reinstall", "--no-deps",
                         "--disable-pip-version-check",
                         "--prefer-binary",
-                    ] + _get_pip_ssl_flags() + [
                         pkg_spec,
                     ]
                     try:

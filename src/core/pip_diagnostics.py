@@ -37,11 +37,15 @@ def is_hash_mismatch(output: str) -> bool:
     return "do not match the hashes" in output_lower or "hash mismatch" in output_lower
 
 
-def get_pip_ssl_flags() -> list[str]:
-    """Get pip flags to bypass SSL verification for corporate proxies.
+def get_pip_ssl_bypass_flags() -> list[str]:
+    """Get pip flags to bypass SSL/TLS certificate verification.
 
-    Note: --trusted-host may be deprecated in future pip versions (>= 21.0),
-    but is still needed for older pip on QGIS 3.22-3.28 bundled Python.
+    WARNING: These flags disable TLS verification for the listed hosts,
+    exposing downloads to potential MITM attacks. Only use as a fallback
+    after a verified SSL error — never as default install flags.
+
+    Intended for users behind corporate proxies with custom CA certificates
+    that pip/uv cannot verify against their bundled certificate store.
     """
     return [
         "--trusted-host", "pypi.org",
