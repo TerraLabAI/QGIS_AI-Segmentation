@@ -11,6 +11,8 @@ Part of the TerraLab ecosystem:
 - **AI Edit** — image generation on map zones — `/Users/yvann/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/QGIS_AI-Edit-Team` (or Conductor workspace)
 - **terra-lab.ai** — Next.js website, activation service, billing — `/Users/yvann/GitHub/terralab-website`
 
+**Backend reference**: All API endpoints (auth, usage, generation, config) are implemented in the terralab-website repo. When investigating API behavior, response formats, or adding new endpoints, check the route handlers in `/Users/yvann/GitHub/terralab-website/src/app/api/`.
+
 ## Design System
 
 The shared design system lives in this repo: `PLUGIN_DESIGN_SYSTEM.md`. It is the source of truth for UI conventions across all TerraLab QGIS plugins. AI Segmentation is the reference implementation — AI Edit follows these patterns.
@@ -76,9 +78,18 @@ Plugin is GPL open-source. The community should only see clean abstracted code.
 
 ```bash
 ruff check src/                      # lint (config in ruff.toml)
+flake8 --max-line-length 120 src/    # flake8 lint
 find src/ -name '*.py' -exec python3 -m py_compile {} +  # compile check
 pytest tests/                        # run all tests
 pytest -k 'test_name'                # run single test
+```
+
+## Pre-push Checks
+
+No CI/CD pipeline. Run locally before every push:
+
+```bash
+ruff check src/ && flake8 --max-line-length 120 src/
 ```
 
 ## Git Workflow
