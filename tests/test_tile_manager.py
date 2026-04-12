@@ -55,7 +55,7 @@ def test_tiling_for_large_image():
     tiles = tm.compute_grid(image_width=2048, image_height=2048)
     assert len(tiles) > 1
     # Each tile should be at most 1024x1024
-    for x, y, w, h in tiles:
+    for _x, _y, w, h in tiles:
         assert w <= 1024
         assert h <= 1024
 
