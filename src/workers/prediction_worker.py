@@ -41,11 +41,26 @@ except ImportError as e:
     sys.exit(1)
 except OSError as e:
     sys.stdout = _real_stdout
-    # Catch Windows DLL loading errors (shm.dll, etc.)
-    if "shm.dll" in str(e) or "DLL" in str(e).upper():
+    err_str = str(e)
+    err_lower = err_str.lower()
+    # Detect Application Control / AppLocker blocking DLL loading
+    if any(m in err_lower for m in (
+        "application control", "applocker", "blocked by your organization",
+        "blocked by group policy",
+    )):
         error_msg = {
             "type": "error",
-            "message": f"PyTorch DLL error (Windows): {str(e)}. "
+            "message": (
+                "A security policy is blocking the AI engine.\n\n"
+                "Ask your IT administrator to whitelist the plugin's "
+                "Python environment folder, then restart QGIS."
+            ),
+        }
+    # Catch Windows DLL loading errors (shm.dll, etc.)
+    elif "shm.dll" in err_str or "DLL" in err_str.upper():
+        error_msg = {
+            "type": "error",
+            "message": f"PyTorch DLL error (Windows): {err_str}. "
                        "Try: 1) Install Visual C++ Redistributables from "
                        "https://aka.ms/vs/17/release/vc_redist.x64.exe "
                        "2) If already installed, reinstall the plugin dependencies "
@@ -54,7 +69,7 @@ except OSError as e:
     else:
         error_msg = {
             "type": "error",
-            "message": f"Failed to load PyTorch: {str(e)}"
+            "message": f"Failed to load PyTorch: {err_str}"
         }
     print(json.dumps(error_msg), flush=True)
     sys.exit(1)

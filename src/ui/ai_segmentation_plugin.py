@@ -6,29 +6,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from qgis.PyQt.QtCore import QSettings, Qt, QVariant
-from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import (
-    QAction,
-    QApplication,
-    QMenu,
-    QMessageBox,
-)
-
-# Qt6 (QGIS 4.0) removed QVariant.Type; field types use QMetaType instead.
-# Qt5 (QGIS 3.x) has QVariant.String / QVariant.Double directly.
-try:
-    from qgis.PyQt.QtCore import QMetaType
-    _FIELD_TYPE_STRING = QMetaType.Type.QString
-    _FIELD_TYPE_DOUBLE = QMetaType.Type.Double
-except (ImportError, AttributeError):
-    try:
-        _FIELD_TYPE_STRING = QVariant.String
-        _FIELD_TYPE_DOUBLE = QVariant.Double
-    except AttributeError:
-        # Last resort: raw enum int values (QString=10, Double=6)
-        _FIELD_TYPE_STRING = 10
-        _FIELD_TYPE_DOUBLE = 6
 from qgis.core import (
     Qgis,
     QgsCoordinateReferenceSystem,
@@ -46,7 +23,14 @@ from qgis.core import (
     QgsWkbTypes,
 )
 from qgis.gui import QgisInterface, QgsRubberBand
-from qgis.PyQt.QtGui import QColor
+from qgis.PyQt.QtCore import QSettings, Qt
+from qgis.PyQt.QtGui import QColor, QIcon
+from qgis.PyQt.QtWidgets import (
+    QAction,
+    QApplication,
+    QMenu,
+    QMessageBox,
+)
 
 from ..core.i18n import tr
 from ..core.prompt_manager import FrozenCropSession, PromptManager
@@ -55,6 +39,11 @@ from .ai_segmentation_maptool import AISegmentationMapTool
 from .background_workers import DepsInstallWorker, DownloadWorker, VerifyWorker
 from .error_report_dialog import show_error_report, start_log_collector, stop_log_collector
 from .shortcut_filter import ShortcutFilter
+
+# QgsField type constants — raw QVariant.Type int values work across
+# all Qt5/Qt6 and QGIS versions without SIP binding compatibility issues.
+_FIELD_TYPE_STRING = 10  # QVariant.String / QMetaType.QString
+_FIELD_TYPE_DOUBLE = 6   # QVariant.Double / QMetaType.Double
 
 # QSettings keys for tutorial flags
 SETTINGS_KEY_TUTORIAL_SHOWN = "AI_Segmentation/tutorial_simple_shown"

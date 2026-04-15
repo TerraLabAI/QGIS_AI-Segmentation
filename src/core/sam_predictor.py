@@ -11,6 +11,7 @@ import time
 import numpy as np
 from qgis.core import Qgis, QgsMessageLog
 
+from .pip_diagnostics import is_antivirus_error
 from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
 
 
@@ -110,6 +111,13 @@ class SamPredictor:
         if not line:
             exit_code = self.process.poll() if self.process else None
             stderr_output = self._read_stderr()
+            if stderr_output and is_antivirus_error(stderr_output):
+                raise RuntimeError(
+                    "A security policy is blocking the AI engine.\n\n"
+                    "Ask your IT administrator to whitelist "
+                    "this folder:\n"
+                    f"  {os.path.dirname(self.venv_python)}\n\n"
+                    "Then restart QGIS.")
             msg = "Worker process closed stdout unexpectedly"
             if exit_code is not None:
                 msg = f"{msg} (exit code {exit_code})"
@@ -203,6 +211,13 @@ class SamPredictor:
                 if self.process is not None and self.process.poll() is not None:
                     exit_code = self.process.poll()
                     stderr_output = self._read_stderr()
+                    if stderr_output and is_antivirus_error(stderr_output):
+                        raise RuntimeError(
+                            "A security policy is blocking the AI engine.\n\n"
+                            "Ask your IT administrator to whitelist "
+                            "this folder:\n"
+                            f"  {os.path.dirname(self.venv_python)}\n\n"
+                            "Then restart QGIS.")
                     raise RuntimeError(
                         "Worker process died during initialization "
                         "(exit code {}){}".format(
