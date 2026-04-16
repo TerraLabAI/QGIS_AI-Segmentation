@@ -5,16 +5,21 @@ PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def _cleanup_old_installation():
     """Clean up old libs/ installation if it exists."""
-    from .src.core.venv_manager import cleanup_old_libs
     try:
+        from .src.core.venv_manager import cleanup_old_libs
+
         cleanup_old_libs()
-    except Exception:
+    except (ImportError, Exception):
         pass
 
 
-_cleanup_old_installation()
+try:
+    _cleanup_old_installation()
+except Exception:
+    pass
 
 
 def classFactory(iface):
     from .src.ui.ai_segmentation_plugin import AISegmentationPlugin
+
     return AISegmentationPlugin(iface)
