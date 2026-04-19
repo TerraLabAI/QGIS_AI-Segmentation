@@ -736,43 +736,5 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <source>Retry</source>
         <translation>Tentar novamente</translation>
     </message>
-
-    <!-- PRO mode strings -->
-    <message>
-        <source>Search object to detect...</source>
-        <translation>Pesquisar objeto a detectar...</translation>
-    </message>
-    <message>
-        <source>Detect objects ({credits} credits)</source>
-        <translation>Detectar objetos ({credits} créditos)</translation>
-    </message>
-    <message>
-        <source>{count} objects detected</source>
-        <translation>{count} objetos detectados</translation>
-    </message>
-    <message>
-        <source>Right-click a polygon to remove it</source>
-        <translation>Clique com o botão direito em um polígono para removê-lo</translation>
-    </message>
-    <message>
-        <source>Refine polygons</source>
-        <translation>Refinar polígonos</translation>
-    </message>
-    <message>
-        <source>Show tile grid</source>
-        <translation>Mostrar grade de tiles</translation>
-    </message>
-    <message>
-        <source>The larger the zone, the more credits are used.</source>
-        <translation>Quanto maior a zona, mais créditos são utilizados.</translation>
-    </message>
-    <message>
-        <source>Detect objects</source>
-        <translation>Detectar objetos</translation>
-    </message>
-    <message>
-        <source>AI Segmentation PRO by TerraLab</source>
-        <translation>AI Segmentation PRO por TerraLab</translation>
-    </message>
 </context>
 </TS>
