@@ -107,6 +107,10 @@ class AISegmentationPlugin:
         self._current_layer = None
         self._current_layer_name = ""
 
+        # MCP/headless mode: when True, skip modal dialogs and cursors
+        self._headless = False
+        self._headless_error = None
+
         # Refinement settings
         self._refine_simplify = 3
         self._refine_smooth = 0
@@ -246,6 +250,9 @@ class AISegmentationPlugin:
         return pixel_size * simplify_value * 0.5
 
     def initGui(self):
+        from ..mcp_api import SegmentationMCPAPI
+        self.mcp_api = SegmentationMCPAPI(self)
+
         start_log_collector()
 
         icon_path = str(self.plugin_dir / "resources" / "icons" / "icon.png")
@@ -1951,13 +1958,15 @@ class AISegmentationPlugin:
             return False
         self._encoding_in_progress = True
 
-        QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
-        QApplication.processEvents()
+        if not self._headless:
+            QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
+            QApplication.processEvents()
 
         try:
             return self._do_extract_and_encode(center_point, mupp_override)
         finally:
-            QApplication.restoreOverrideCursor()
+            if not self._headless:
+                QApplication.restoreOverrideCursor()
 
     def _do_extract_and_encode(self, center_point, mupp_override):
         """Internal: does the actual crop extraction + SAM encoding."""
@@ -1992,6 +2001,9 @@ class AISegmentationPlugin:
             )
         elif not self._current_raster_path:
             self._encoding_in_progress = False
+            if self._headless:
+                self._headless_error = tr("No raster file path available. Please restart segmentation.")
+                return False
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Crop Error"),
@@ -2028,6 +2040,9 @@ class AISegmentationPlugin:
                 f"Crop extraction failed: {error}",
                 "AI Segmentation", level=Qgis.MessageLevel.Critical
             )
+            if self._headless:
+                self._headless_error = error
+                return False
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Crop Error"),
@@ -2044,6 +2059,9 @@ class AISegmentationPlugin:
                 f"Image encoding failed: {str(e)}",
                 "AI Segmentation", level=Qgis.MessageLevel.Critical
             )
+            if self._headless:
+                self._headless_error = str(e)
+                return False
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Encoding Error"),
@@ -2430,6 +2448,9 @@ class AISegmentationPlugin:
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Critical
             )
+            if self._headless:
+                self._headless_error = error_str
+                return
             if "DLL" in error_str or "Visual C++" in error_str:
                 msg_box = QMessageBox(self.iface.mainWindow())
                 msg_box.setIcon(QMessageBox.Icon.Critical)
