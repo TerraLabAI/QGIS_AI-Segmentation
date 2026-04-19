@@ -27,8 +27,8 @@ class AISegmentationMapTool(QgsMapTool):
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
 
-    POSITIVE_COLOR = QColor(0, 200, 0)    # Green for include
-    NEGATIVE_COLOR = QColor(220, 0, 0)    # Red for exclude
+    POSITIVE_COLOR = QColor(0, 200, 0)  # Green for include
+    NEGATIVE_COLOR = QColor(220, 0, 0)  # Red for exclude
     MARKER_SIZE = 10
     MARKER_PEN_WIDTH = 2
 

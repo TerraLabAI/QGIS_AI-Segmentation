@@ -1604,7 +1604,7 @@ def install_dependencies(
                         )
 
                 # If rename/RECORD error (stale dist-info on Windows), clean and force-reinstall
-                if result.returncode != 0 and package_name in ("torch", "torchvision"):
+                if result.returncode != 0 and package_name in ("numpy", "torch", "torchvision"):
                     error_output = result.stderr or result.stdout or ""
                     if _is_rename_or_record_error(error_output):
                         _log(
