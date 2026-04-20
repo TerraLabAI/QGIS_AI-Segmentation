@@ -974,7 +974,7 @@ class AISegmentationDockWidget(QDockWidget):
 
         msg = QLabel(
             tr("Bug, question, feature request?") + "\n"
-            + tr("We'd love to hear from you!")
+            + tr("We'd love to hear from you!")  # noqa: W503
         )
         msg.setWordWrap(True)
         lay.addWidget(msg)
