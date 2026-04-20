@@ -660,12 +660,21 @@ class AISegmentationDockWidget(QDockWidget):
         refine_content_layout.addLayout(fill_layout)
 
         # 5. Min area: remove small artifacts / noise regions (#12)
-        # Hidden from UI but kept functional — auto-computed by plugin code.
+        min_area_layout = QHBoxLayout()
+        min_area_label = QLabel(tr("Min area:"))
+        min_area_label.setToolTip(tr("Remove polygons smaller than this area (in pixels)"))
         self.min_area_spinbox = QSpinBox()
         self.min_area_spinbox.setRange(0, 100000)
         self.min_area_spinbox.setSingleStep(50)
         self.min_area_spinbox.setValue(200)
-        self.min_area_spinbox.setVisible(False)
+        self.min_area_spinbox.setSuffix(" px")
+        self.min_area_spinbox.setMinimumWidth(55)
+        self.min_area_spinbox.setMaximumWidth(80)
+        self.min_area_spinbox.setToolTip(min_area_label.toolTip())
+        min_area_layout.addWidget(min_area_label)
+        min_area_layout.addStretch()
+        min_area_layout.addWidget(self.min_area_spinbox)
+        refine_content_layout.addLayout(min_area_layout)
 
         refine_layout.addWidget(self.refine_content_widget)
         self.refine_content_widget.setVisible(self._refine_expanded)

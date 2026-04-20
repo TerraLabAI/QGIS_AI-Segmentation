@@ -269,6 +269,14 @@ export AI_SEGMENTATION_CACHE_DIR=/seu/caminho</translation>
         <translation>Preencher buracos internos na seleção</translation>
     </message>
     <message>
+        <source>Min area:</source>
+        <translation>Área mín:</translation>
+    </message>
+    <message>
+        <source>Remove polygons smaller than this area (in pixels)</source>
+        <translation>Remover polígonos menores que esta área (em pixels)</translation>
+    </message>
+    <message>
         <source>Round corners:</source>
         <translation>Arredondar cantos:</translation>
     </message>

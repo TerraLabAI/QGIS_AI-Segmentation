@@ -269,6 +269,14 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Combler les trous intérieurs de la sélection</translation>
     </message>
     <message>
+        <source>Min area:</source>
+        <translation>Surface min :</translation>
+    </message>
+    <message>
+        <source>Remove polygons smaller than this area (in pixels)</source>
+        <translation>Supprimer les polygones plus petits que cette surface (en pixels)</translation>
+    </message>
+    <message>
         <source>Round corners:</source>
         <translation>Arrondir les coins :</translation>
     </message>

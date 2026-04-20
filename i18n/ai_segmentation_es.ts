@@ -269,6 +269,14 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Rellenar huecos interiores en la selección</translation>
     </message>
     <message>
+        <source>Min area:</source>
+        <translation>Área mín:</translation>
+    </message>
+    <message>
+        <source>Remove polygons smaller than this area (in pixels)</source>
+        <translation>Eliminar polígonos menores que esta área (en píxeles)</translation>
+    </message>
+    <message>
         <source>Round corners:</source>
         <translation>Redondear esquinas:</translation>
     </message>
