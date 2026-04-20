@@ -1224,6 +1224,18 @@ class AISegmentationPlugin:
         self._exporting_in_progress = True
         try:
             self._on_export_layer_impl()
+        except Exception:
+            import traceback
+            QgsMessageLog.logMessage(
+                traceback.format_exc(),
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Critical
+            )
+            show_error_report(
+                self.iface.mainWindow(),
+                tr("Export Failed"),
+                tr("An unexpected error occurred during export. Please check the logs.")
+            )
         finally:
             self._exporting_in_progress = False
 
