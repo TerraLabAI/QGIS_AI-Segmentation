@@ -22,8 +22,16 @@ def get_or_create_terralab_toolbar(iface):
 
 
 def add_action_to_toolbar(toolbar, action, product_id):
-    """Add a plugin action alphabetically to the shared toolbar."""
+    """Add a plugin action alphabetically to the shared toolbar.
+
+    If an action with the same product_id already exists, the new one
+    replaces it (real plugin trumps cross-promo placeholder).
+    """
     action.setProperty("terralab_product_id", product_id)
+    for existing in toolbar.actions():
+        if existing.property("terralab_product_id") == product_id and existing is not action:
+            toolbar.removeAction(existing)
+            break
     for existing in toolbar.actions():
         if existing.text() > action.text():
             toolbar.insertAction(existing, action)

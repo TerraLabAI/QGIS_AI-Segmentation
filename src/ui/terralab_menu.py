@@ -54,6 +54,14 @@ def get_or_create_terralab_menu(main_window) -> QMenu:
 
 
 def add_plugin_to_menu(menu: QMenu, action, product_id: str):
+    action.setProperty("terralab_product_id", product_id)
+    # Remove existing action with same product_id (real plugin replaces promo)
+    for a in menu.actions():
+        if a.objectName() == _UTILITY_SEPARATOR:
+            break
+        if a.property("terralab_product_id") == product_id and a is not action:
+            menu.removeAction(a)
+            break
     sep_action = None
     plugin_actions = []
     for a in menu.actions():
@@ -107,6 +115,14 @@ def _get_or_create_plugins_submenu(iface) -> QMenu:
 
 def add_to_plugins_menu(iface, action):
     submenu = _get_or_create_plugins_submenu(iface)
+    product_id = action.property("terralab_product_id")
+    if product_id:
+        for a in submenu.actions():
+            if a.objectName() == _UTILITY_SEPARATOR:
+                break
+            if a.property("terralab_product_id") == product_id and a is not action:
+                submenu.removeAction(a)
+                break
     sep_action = None
     plugin_actions = []
     for a in submenu.actions():
