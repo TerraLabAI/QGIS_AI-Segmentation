@@ -27,10 +27,6 @@ about=
     • Multilingual: English, French, Portuguese, Spanish
 
 changelog=
-    1.0.0 - Unified TerraLab account (replaces activation code). Fixes: export
-    on QGIS 4.x, export auto-create output folder, CPU-only init on NVIDIA,
-    stale dist-info recovery generalized to all packages, clearer install UX.
-    New "AI Edit" shortcut in the TerraLab menu.
 
 
 tracker=https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues
