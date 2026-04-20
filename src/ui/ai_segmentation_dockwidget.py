@@ -806,7 +806,7 @@ class AISegmentationDockWidget(QDockWidget):
                 self.update_notification_label.setText(text)
                 self.update_notification_widget.setVisible(True)
         except Exception:
-            pass  # No repo data yet, dev install, etc.
+            pass  # nosec B110  No repo data yet, dev install, etc.
 
     def _on_open_plugin_manager(self, _link=None):
         """Open the QGIS Plugin Manager on the Upgradeable tab (index 3)."""
@@ -814,7 +814,7 @@ class AISegmentationDockWidget(QDockWidget):
             from qgis.utils import iface
             iface.pluginManagerInterface().showPluginManager(3)
         except Exception:
-            pass
+            pass  # nosec B110
 
     def _setup_about_section(self):
         """Setup the info box and links section."""

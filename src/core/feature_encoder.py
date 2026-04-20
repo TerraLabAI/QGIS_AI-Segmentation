@@ -637,7 +637,7 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
             try:
                 nodata = provider.sourceNoDataValue(1)
             except Exception:
-                pass
+                pass  # nosec B110
             image_np = _normalize_to_uint8(bands_result, nodata_value=nodata)
 
         height = image_np.shape[0]

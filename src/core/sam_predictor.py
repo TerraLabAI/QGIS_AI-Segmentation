@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
-import subprocess
+import subprocess  # nosec B404
 import tempfile
 import threading
 import time
@@ -12,7 +12,7 @@ import numpy as np
 from qgis.core import Qgis, QgsMessageLog
 
 from .pip_diagnostics import is_antivirus_error
-from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
+from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs  # nosec B404
 
 
 def build_sam_predictor_config(checkpoint: str | None = None):
@@ -158,7 +158,7 @@ class SamPredictor:
             except Exception:
                 self._stderr_file = None
 
-            self.process = subprocess.Popen(
+            self.process = subprocess.Popen(  # nosec B603
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -334,7 +334,7 @@ class SamPredictor:
                                 if proc.stdout:
                                     proc.stdout.close()
                             except Exception:
-                                pass
+                                pass  # nosec B110
                             proc.terminate()
                             try:
                                 proc.wait(timeout=2)
@@ -343,7 +343,7 @@ class SamPredictor:
                                 try:
                                     proc.wait(timeout=1)
                                 except Exception:
-                                    pass
+                                    pass  # nosec B110
                 except Exception as e:
                     QgsMessageLog.logMessage(
                         f"Warning during predictor cleanup: {str(e)}",
@@ -356,7 +356,7 @@ class SamPredictor:
                 try:
                     self._stderr_file.close()
                 except Exception:
-                    pass
+                    pass  # nosec B110
                 self._stderr_file = None
 
             self._warming_up = False

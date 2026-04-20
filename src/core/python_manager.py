@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import platform
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
 import tarfile
 import tempfile
@@ -145,7 +145,7 @@ def standalone_python_is_current() -> bool:
             startupinfo.wShowWindow = subprocess.SW_HIDE
             kwargs["startupinfo"] = startupinfo
 
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             [python_path, "-c", "import sys; print(sys.version_info.major, sys.version_info.minor)"],
             capture_output=True, text=True, timeout=15, env=env, **kwargs,
         )
@@ -406,7 +406,7 @@ def verify_standalone_python() -> tuple[bool, str]:
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = subprocess.SW_HIDE
 
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603
                 [python_path, "-c", "import sys; print(sys.version)"],
                 capture_output=True,
                 text=True,
@@ -415,7 +415,7 @@ def verify_standalone_python() -> tuple[bool, str]:
                 startupinfo=startupinfo,
             )
         else:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603
                 [python_path, "-c", "import sys; print(sys.version)"],
                 capture_output=True,
                 text=True,

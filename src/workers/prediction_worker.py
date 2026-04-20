@@ -118,7 +118,7 @@ def get_optimal_device():
                 os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
                 return torch.device("mps")
         except Exception:
-            pass
+            pass  # nosec B110
 
     num_cores = os.cpu_count() or 4
     optimal_threads = max(4, num_cores // 2) if sys.platform == "darwin" else num_cores

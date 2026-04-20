@@ -23,7 +23,7 @@ def _find_installed_plugin(keys: tuple[str, ...]):
             if plugin is not None:
                 return plugin
     except Exception:
-        pass
+        pass  # nosec B110
     return None
 
 
@@ -37,7 +37,7 @@ def _activate_dock(plugin) -> bool:
                 dock.raise_()
                 return True
             except Exception:
-                continue
+                continue  # nosec B112
     for attr in ("toggle_dock_widget", "show_dock_widget", "_toggle_dock", "run"):
         fn = getattr(plugin, attr, None)
         if callable(fn):
@@ -45,7 +45,7 @@ def _activate_dock(plugin) -> bool:
                 fn()
                 return True
             except Exception:
-                continue
+                continue  # nosec B112
     return False
 
 

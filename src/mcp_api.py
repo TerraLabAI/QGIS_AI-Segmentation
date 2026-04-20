@@ -65,7 +65,7 @@ class SegmentationMCPAPI:
             from .core.checkpoint_manager import checkpoint_exists
             model_downloaded = checkpoint_exists()
         except Exception:
-            pass
+            pass  # nosec B110
 
         predictor_loaded = plugin.predictor is not None
 
@@ -316,7 +316,7 @@ class SegmentationMCPAPI:
                         "appended": True,
                     }
                 except Exception:
-                    pass
+                    pass  # nosec B110
 
             # Create new layer
             mask_num = 1

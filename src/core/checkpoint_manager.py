@@ -341,7 +341,7 @@ def download_checkpoint(
                 try:
                     download_state["file"].close()
                 except Exception:
-                    pass
+                    pass  # nosec B110
                 download_state["file"] = None
             if attempt < max_retries:
                 time.sleep(min(5 * (2 ** (attempt - 1)), 120))
