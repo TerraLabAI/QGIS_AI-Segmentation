@@ -946,6 +946,7 @@ class AISegmentationDockWidget(QDockWidget):
         dlg.exec()
 
     def _on_contact_us(self, _link=None):
+        from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
         from qgis.PyQt.QtWidgets import QApplication, QDialog, QVBoxLayout as _VBox
 
