@@ -8,14 +8,28 @@ from qgis.PyQt.QtNetwork import QNetworkReply, QNetworkRequest
 
 _TIMEOUT_API = 30_000
 
-_PROXY_ERRORS = {
-    QNetworkReply.ProxyConnectionRefusedError,
-    QNetworkReply.ProxyConnectionClosedError,
-    QNetworkReply.ProxyNotFoundError,
-    QNetworkReply.ProxyTimeoutError,
-    QNetworkReply.ProxyAuthenticationRequiredError,
-    QNetworkReply.UnknownProxyError,
-}
+# Qt6 (QGIS 4) uses scoped enums; Qt5 uses flat. Resolve at import time.
+_NE = getattr(QNetworkReply, "NetworkError", QNetworkReply)
+_HostNotFound = getattr(_NE, "HostNotFoundError", getattr(QNetworkReply, "HostNotFoundError", None))
+_ConnRefused = getattr(_NE, "ConnectionRefusedError", getattr(QNetworkReply, "ConnectionRefusedError", None))
+_Timeout = getattr(_NE, "TimeoutError", getattr(QNetworkReply, "TimeoutError", None))
+_SslFailed = getattr(_NE, "SslHandshakeFailedError", getattr(QNetworkReply, "SslHandshakeFailedError", None))
+_ContentDenied = getattr(_NE, "ContentAccessDenied", getattr(QNetworkReply, "ContentAccessDenied", None))
+_AuthRequired = getattr(_NE, "AuthenticationRequiredError", getattr(QNetworkReply, "AuthenticationRequiredError", None))
+_UnknownNetwork = getattr(_NE, "UnknownNetworkError", getattr(QNetworkReply, "UnknownNetworkError", None))
+
+_PROXY_ERRORS = set(filter(None, [
+    getattr(_NE, "ProxyConnectionRefusedError", getattr(QNetworkReply, "ProxyConnectionRefusedError", None)),
+    getattr(_NE, "ProxyConnectionClosedError", getattr(QNetworkReply, "ProxyConnectionClosedError", None)),
+    getattr(_NE, "ProxyNotFoundError", getattr(QNetworkReply, "ProxyNotFoundError", None)),
+    getattr(_NE, "ProxyTimeoutError", getattr(QNetworkReply, "ProxyTimeoutError", None)),
+    getattr(_NE, "ProxyAuthenticationRequiredError", getattr(QNetworkReply, "ProxyAuthenticationRequiredError", None)),
+    getattr(_NE, "UnknownProxyError", getattr(QNetworkReply, "UnknownProxyError", None)),
+]))
+
+# QNetworkRequest.Attribute.HttpStatusCodeAttribute (Qt6) vs QNetworkRequest.HttpStatusCodeAttribute (Qt5)
+_Attr = getattr(QNetworkRequest, "Attribute", QNetworkRequest)
+_HTTP_STATUS_ATTR = getattr(_Attr, "HttpStatusCodeAttribute", getattr(QNetworkRequest, "HttpStatusCodeAttribute", None))
 
 
 def _log_warning(msg: str):
@@ -24,11 +38,11 @@ def _log_warning(msg: str):
 
 def _classify_network_error(blocker: QgsBlockingNetworkRequest) -> tuple[str, str]:
     reply = blocker.reply()
-    qt_error = reply.error() if reply else QNetworkReply.UnknownNetworkError
+    qt_error = reply.error() if reply else _UnknownNetwork
     error_string = blocker.errorMessage()
     http_status = None
-    if reply:
-        attr = reply.attribute(QNetworkRequest.HttpStatusCodeAttribute)
+    if reply and _HTTP_STATUS_ATTR is not None:
+        attr = reply.attribute(_HTTP_STATUS_ATTR)
         if attr is not None:
             http_status = int(attr)
     _log_warning(
@@ -36,20 +50,20 @@ def _classify_network_error(blocker: QgsBlockingNetworkRequest) -> tuple[str, st
         f"detail={error_string[:500]}"
     )
 
-    if qt_error == QNetworkReply.HostNotFoundError:
+    if qt_error == _HostNotFound:
         return "DNS_ERROR", "Cannot reach the server. Check your internet connection."
-    if qt_error == QNetworkReply.ConnectionRefusedError:
+    if qt_error == _ConnRefused:
         return "CONNECTION_REFUSED", "Server refused the connection."
-    if qt_error == QNetworkReply.TimeoutError:
+    if qt_error == _Timeout:
         return "TIMEOUT", "Request timed out. Check your connection or try again."
-    if qt_error == QNetworkReply.SslHandshakeFailedError:
+    if qt_error == _SslFailed:
         return "SSL_ERROR", "SSL certificate error. Your network may be blocking secure connections."
     if qt_error in _PROXY_ERRORS:
         return "PROXY_ERROR", (
             "Proxy connection failed. "
             "Check QGIS proxy settings (Settings > Options > Network)."
         )
-    if qt_error in (QNetworkReply.ContentAccessDenied, QNetworkReply.AuthenticationRequiredError):
+    if qt_error in (_ContentDenied, _AuthRequired):
         return "AUTH_ERROR", "Authentication failed. Please sign in again."
     return "NO_INTERNET", "Network error. Check your internet connection."
 
@@ -96,7 +110,8 @@ class TerraLabClient:
         url = f"{self.base_url}{path}"
         req = QNetworkRequest(QUrl(url))
         req.setRawHeader(b"Content-Type", b"application/json")
-        req.setTransferTimeout(timeout_ms)
+        if hasattr(req, "setTransferTimeout"):
+            req.setTransferTimeout(timeout_ms)
         if auth:
             for key, value in auth.items():
                 req.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
@@ -113,7 +128,7 @@ class TerraLabClient:
         if err != QgsBlockingNetworkRequest.NoError:
             reply = blocker.reply()
             if reply:
-                http_attr = reply.attribute(QNetworkRequest.HttpStatusCodeAttribute)
+                http_attr = reply.attribute(_HTTP_STATUS_ATTR)
                 if http_attr and int(http_attr) >= 400:
                     raw = bytes(reply.content()).decode("utf-8")
                     if raw:
@@ -125,7 +140,7 @@ class TerraLabClient:
             return {"error": msg, "code": code}
 
         reply = blocker.reply()
-        http_status = reply.attribute(QNetworkRequest.HttpStatusCodeAttribute)
+        http_status = reply.attribute(_HTTP_STATUS_ATTR)
         raw_body = bytes(reply.content()).decode("utf-8")
 
         if http_status and int(http_status) >= 400:
