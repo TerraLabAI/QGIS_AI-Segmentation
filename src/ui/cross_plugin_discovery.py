@@ -24,35 +24,53 @@ def _find_installed_plugin(keys: tuple[str, ...]):
     return None
 
 
-def _activate_ai_edit_dock(plugin) -> bool:
-    for attr in ("show_dock_widget", "toggle_dock_widget", "run", "activate"):
+def _activate_dock(plugin) -> bool:
+    """Try every known way to show a sibling plugin's dock widget."""
+    # Public toggle methods (AI Segmentation style)
+    for attr in ("toggle_dock_widget", "show_dock_widget", "run", "activate"):
         fn = getattr(plugin, attr, None)
         if callable(fn):
             try:
-                fn()
+                fn(True) if attr == "toggle_dock_widget" else fn()
                 return True
+            except TypeError:
+                try:
+                    fn()
+                    return True
+                except Exception:
+                    continue
             except Exception:
                 continue
-    dock = getattr(plugin, "dock_widget", None)
-    if dock is not None:
+    # Private toggle (AI Edit style: _toggle_dock)
+    toggle = getattr(plugin, "_toggle_dock", None)
+    if callable(toggle):
         try:
-            dock.show()
-            dock.raise_()
+            toggle()
             return True
         except Exception:
             pass
+    # Direct dock widget access (public or private)
+    for attr in ("dock_widget", "_dock_widget"):
+        dock = getattr(plugin, attr, None)
+        if dock is not None:
+            try:
+                dock.show()
+                dock.raise_()
+                return True
+            except Exception:
+                continue
     return False
 
 
 def make_ai_edit_action(parent, iface, label: str, tooltip: str,
                         icon: QIcon | None = None) -> QAction:
-    """Create a QAction that opens AI Edit if installed, else the plugin manager."""
+    """Create a QAction that opens AI Edit if installed, else the product page."""
     action = QAction(icon or QIcon(), label, parent)
     action.setToolTip(tooltip)
 
     def triggered():
         plugin = _find_installed_plugin(_AI_EDIT_KEYS)
-        if plugin is not None and _activate_ai_edit_dock(plugin):
+        if plugin is not None and _activate_dock(plugin):
             return
         QDesktopServices.openUrl(QUrl(_AI_EDIT_PRODUCT_URL))
 
