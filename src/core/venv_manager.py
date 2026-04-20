@@ -67,7 +67,7 @@ from .uv_manager import (
 
 # Module-level uv state (set during create_venv_and_install)
 _uv_available = False
-_uv_path = None  # type: Optional[str]
+_uv_path: str | None = None
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = PLUGIN_ROOT_DIR  # src/ directory
@@ -1603,8 +1603,8 @@ def install_dependencies(
                             cancel_check=cancel_check,
                         )
 
-                # If rename/RECORD error (stale dist-info on Windows), clean and force-reinstall
-                if result.returncode != 0 and package_name in ("numpy", "torch", "torchvision"):
+                # Stale dist-info rename/RECORD error applies to any package (#20).
+                if result.returncode != 0:
                     error_output = result.stderr or result.stdout or ""
                     if _is_rename_or_record_error(error_output):
                         _log(
@@ -1855,6 +1855,9 @@ def _get_clean_env_for_venv() -> dict:
 
     # Skip sam2 CUDA extension compilation (Python fallback works fine)
     env["SAM2_BUILD_CUDA"] = "0"
+
+    # CPU-only on NVIDIA hardware (#31). MPS is unaffected.
+    env["CUDA_VISIBLE_DEVICES"] = ""
 
     # Increase uv download timeout (default 30s too short for large wheels)
     env["UV_HTTP_TIMEOUT"] = "300"

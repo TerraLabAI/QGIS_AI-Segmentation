@@ -48,6 +48,22 @@ class DownloadWorker(QThread):
             self.finished.emit(False, str(e))
 
 
+class PredictorLoadWorker(QThread):
+    """Initializes the SAM predictor off the UI thread (#34)."""
+    finished = pyqtSignal(object, str)  # (predictor_or_None, err_msg)
+
+    def run(self):
+        try:
+            from ..core.checkpoint_manager import get_checkpoint_path
+            from ..core.sam_predictor import SamPredictor, build_sam_predictor_config
+            sam_config = build_sam_predictor_config(checkpoint=get_checkpoint_path())
+            predictor = SamPredictor(sam_config)
+            self.finished.emit(predictor, "")
+        except Exception as e:
+            import traceback
+            self.finished.emit(None, f"{e}\n{traceback.format_exc()}")
+
+
 class VerifyWorker(QThread):
     """Runs venv verification + device detection off the main thread."""
     finished = pyqtSignal(bool, str)  # (is_valid, message)

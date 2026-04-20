@@ -1,122 +1,137 @@
-"""
-Activation manager for the AI Segmentation plugin.
-Handles plugin activation state using QSettings.
-"""
+"""Activation manager for the AI Segmentation plugin."""
 from __future__ import annotations
 
-import json
+import uuid
 
-from qgis.core import QgsBlockingNetworkRequest, QgsSettings
-from qgis.PyQt.QtCore import QUrl
-from qgis.PyQt.QtNetwork import QNetworkRequest
+from qgis.core import QgsSettings
 
-# Hardcoded fallback codes (used when server is unreachable)
-_FALLBACK_CODES = ["fromage", "baguette"]
+PRODUCT_ID = "ai-segmentation"
 
-# QSettings keys
-SETTINGS_PREFIX = "AISegmentation"
-ACTIVATION_KEY = f"{SETTINGS_PREFIX}/activated"
-TERRALAB_PREFIX = "TerraLab"
+SETTINGS_PREFIX = "AISegmentation/"
+TERRALAB_PREFIX = "TerraLab/"
+DEVICE_ID_KEY = f"{TERRALAB_PREFIX}device_id"
 
-# TerraLab URLs
-TERRALAB_WEBSITE = (
-    "https://terra-lab.ai"
-    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=website"
+TUTORIAL_URL_FALLBACK = "https://youtu.be/lbADk75l-mk?si=q6WnwyV2NcmQYuhI"
+_SIGN_IN_BASE = (
+    "https://terra-lab.ai/login"
+    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
+    "&utm_content=sign_in&product=ai-segmentation"
 )
-TERRALAB_NEWSLETTER = (
-    "https://terra-lab.ai/mail-verification"
-    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=get_code"
-)
-_CONFIG_URL = f"{TERRALAB_WEBSITE}/api/plugin/config?product=ai-segmentation"
 
-# Server config cache (in-memory, one fetch per session)
 _cached_config: dict | None = None
 
 
-def _fetch_server_config() -> dict | None:
-    """Fetch plugin config from server. Returns None on failure."""
+def _client():
+    from ..api.terralab_client import TerraLabClient
+    return TerraLabClient()
+
+
+# -- session state ---------------------------------------------------------
+
+
+def get_auth_token(settings=None) -> str:
+    s = settings or QgsSettings()
+    return s.value(f"{SETTINGS_PREFIX}activation_key", "") or ""
+
+
+def save_auth_token(token: str, settings=None):
+    s = settings or QgsSettings()
+    s.setValue(f"{SETTINGS_PREFIX}activation_key", token.strip())
+    s.setValue(f"{SETTINGS_PREFIX}activated", True)
+
+
+def clear_auth(settings=None):
+    s = settings or QgsSettings()
+    s.setValue(f"{SETTINGS_PREFIX}activation_key", "")
+    s.setValue(f"{SETTINGS_PREFIX}activated", False)
+
+
+def is_plugin_activated(settings=None) -> bool:
+    return bool(get_auth_token(settings))
+
+
+def get_auth_header(settings=None) -> dict:
+    token = get_auth_token(settings)
+    if not token:
+        return {}
+    return {
+        "Authorization": f"Bearer {token}",
+        "X-Product-ID": PRODUCT_ID,
+    }
+
+
+# -- device id (stable per machine, shared across TerraLab plugins) --------
+
+
+def get_device_id(settings=None) -> str:
+    s = settings or QgsSettings()
+    device_id = s.value(DEVICE_ID_KEY, "")
+    if not device_id:
+        device_id = str(uuid.uuid4())
+        s.setValue(DEVICE_ID_KEY, device_id)
+    return device_id
+
+
+# -- server config ---------------------------------------------------------
+
+
+def get_server_config() -> dict:
     global _cached_config
     if _cached_config is not None:
         return _cached_config
     try:
-        if not _CONFIG_URL.startswith("https://"):
-            return None
-        req = QNetworkRequest(QUrl(_CONFIG_URL))
-        req.setRawHeader(b"Accept", b"application/json")
-        blocker = QgsBlockingNetworkRequest()
-        err = blocker.get(req)
-        if err != QgsBlockingNetworkRequest.NoError:
-            return None
-        reply = blocker.reply()
-        data = json.loads(bytes(reply.content()).decode("utf-8"))
-        _cached_config = data
-        return data
-    except (json.JSONDecodeError, Exception):
-        return None
+        result = _client().get_config(PRODUCT_ID)
+        if "error" not in result:
+            _cached_config = result
+            return result
+    except Exception:
+        pass
+    return {}
 
 
-def _get_unlock_codes() -> list:
-    """Get unlock codes from server config, falling back to hardcoded list."""
-    config = _fetch_server_config()
-    if config and "verification_codes" in config:
-        return [c.lower() for c in config["verification_codes"]]
-    return _FALLBACK_CODES
-
-
-def is_plugin_activated() -> bool:
-    """Check if the plugin has been activated."""
-    settings = QgsSettings()
-    return settings.value(ACTIVATION_KEY, False, type=bool)
-
-
-def activate_plugin(code: str) -> tuple[bool, str]:
-    """
-    Attempt to activate the plugin with the given code.
-
-    Returns:
-        (success, message) tuple
-    """
-    codes = _get_unlock_codes()
-    if code.strip().lower() in codes:
-        settings = QgsSettings()
-        settings.setValue(ACTIVATION_KEY, True)
-        return True, "Plugin activated successfully!"
-    return False, "Invalid code. Please check and try again."
-
-
-def get_newsletter_url() -> str:
-    """Get the URL for the newsletter signup page."""
-    config = _fetch_server_config()
-    if config and "newsletter_url" in config:
-        return config["newsletter_url"]
-    return TERRALAB_NEWSLETTER
+def clear_config_cache():
+    global _cached_config
+    _cached_config = None
 
 
 def get_tutorial_url() -> str:
-    """Get tutorial URL from server config, falling back to hardcoded default."""
-    config = _fetch_server_config()
+    config = get_server_config()
     if config and "tutorial_url" in config:
         return config["tutorial_url"]
-    return "https://youtu.be/lbADk75l-mk?si=q6WnwyV2NcmQYuhI"
+    return TUTORIAL_URL_FALLBACK
 
 
-def get_shared_email() -> str:
-    """Get email from shared TerraLab namespace (set by any plugin)."""
-    settings = QgsSettings()
-    return settings.value(f"{TERRALAB_PREFIX}/user_email", "")
+def get_sign_in_url() -> str:
+    return f"{_SIGN_IN_BASE}&device_id={get_device_id()}"
 
 
-def save_shared_email(email: str):
-    """Save email to shared TerraLab namespace for cross-plugin use."""
-    settings = QgsSettings()
-    settings.setValue(f"{TERRALAB_PREFIX}/user_email", email.strip())
+# -- activation key validation ---------------------------------------------
 
 
-def get_newsletter_url_with_email(email: str) -> str:
-    """Build newsletter URL with pre-filled email."""
-    from urllib.parse import urlencode
-    base = get_newsletter_url()
-    if email:
-        sep = "&" if "?" in base else "?"
-        return f"{base}{sep}{urlencode({'email': email, 'plugin': 'ai-segmentation'})}"
-    return base
+def validate_key_with_server(key: str) -> tuple[bool, str]:
+    key = (key or "").strip()
+    if not key:
+        return False, "Please enter your activation key."
+    if not key.startswith("tl_"):
+        return False, "Invalid key format. Keys start with tl_"
+
+    auth = {"Authorization": f"Bearer {key}", "X-Product-ID": PRODUCT_ID}
+    try:
+        result = _client().get_usage(auth=auth)
+    except Exception:
+        return False, "Cannot reach server. Check your internet connection."
+
+    if "error" in result:
+        code = (result.get("code") or "").strip().upper()
+        if code == "INVALID_KEY":
+            return False, "Invalid activation key."
+        if code == "SUBSCRIPTION_INACTIVE":
+            return False, "Subscription inactive. Check your account."
+        return False, result.get("error", "Validation failed.")
+
+    server_product = result.get("product_id", "")
+    if server_product and server_product != PRODUCT_ID:
+        return False, "This key belongs to a different product. Use your AI Segmentation key."
+
+    save_auth_token(key)
+    return True, "Activation key verified!"

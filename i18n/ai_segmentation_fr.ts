@@ -157,72 +157,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>AI Segmentation par TerraLab</translation>
     </message>
 
-    <!-- Activation Section -->
-    <message>
-        <source>Setup AI Segmentation by TerraLab</source>
-        <translation>Configuration AI Segmentation par TerraLab</translation>
-    </message>
-    <message>
-        <source>Unlock Plugin</source>
-        <translation>Activer le plugin</translation>
-    </message>
-    <message>
-        <source>Get my verification code</source>
-        <translation>Obtenir mon code</translation>
-    </message>
-    <message>
-        <source>Then paste your code:</source>
-        <translation>Puis collez votre code :</translation>
-    </message>
-    <message>
-        <source>Code</source>
-        <translation>Code</translation>
-    </message>
-    <message>
-        <source>Unlock</source>
-        <translation>Activer</translation>
-    </message>
-    <message>
-        <source>Enter your code</source>
-        <translation>Entrez votre code</translation>
-    </message>
-    <message>
-        <source>Unlocked!</source>
-        <translation>Activé !</translation>
-    </message>
-    <message>
-        <source>Invalid code</source>
-        <translation>Code invalide</translation>
-    </message>
-    <message>
-        <source>Thanks for trying our plugin!</source>
-        <translation>Merci d'essayer notre plugin !</translation>
-    </message>
-    <message>
-        <source>This plugin is in beta. We'd love to keep you updated when we release new versions and features.</source>
-        <translation>Ce plugin est en bêta. Nous aimerions vous tenir informé des nouvelles versions.</translation>
-    </message>
-    <message>
-        <source>Enter your email and you'll get a</source>
-        <translation>Entrez votre email pour recevoir un</translation>
-    </message>
-    <message>
-        <source>Verification Code</source>
-        <translation>Code de vérification</translation>
-    </message>
-    <message>
-        <source>to paste below.</source>
-        <translation>à coller ci-dessous.</translation>
-    </message>
-    <message>
-        <source>Paste your verification code:</source>
-        <translation>Collez votre code de vérification :</translation>
-    </message>
-    <message>
-        <source>Enter your verification code</source>
-        <translation>Entrez votre code de vérification</translation>
-    </message>
-
     <!-- Segmentation Section -->
     <message>
         <source>Select a Raster Layer to Segment:</source>
@@ -335,20 +269,12 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Combler les trous intérieurs de la sélection</translation>
     </message>
     <message>
-        <source>Min. region size:</source>
-        <translation>Taille min. région :</translation>
+        <source>Min area:</source>
+        <translation>Surface min :</translation>
     </message>
     <message>
-        <source>Remove disconnected regions smaller than this area (in pixels²).</source>
-        <translation>Supprimer les régions déconnectées plus petites que cette surface (en pixels²).</translation>
-    </message>
-    <message>
-        <source>Example: 100 = ~10x10 pixel regions, 900 = ~30x30.</source>
-        <translation>Exemple : 100 = régions ~10x10 px, 900 = ~30x30.</translation>
-    </message>
-    <message>
-        <source>0 = keep all.</source>
-        <translation>0 = tout garder.</translation>
+        <source>Remove polygons smaller than this area (in pixels)</source>
+        <translation>Supprimer les polygones plus petits que cette surface (en pixels)</translation>
     </message>
     <message>
         <source>Round corners:</source>
@@ -451,24 +377,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Utilisez « Exporter en couche » pour les conserver.</translation>
     </message>
     <message>
-        <source>Leave Segmentation?</source>
-        <translation>Quitter la segmentation ?</translation>
-    </message>
-    <message>
-        <source>You can pan with the middle mouse button, spacebar, or arrow keys without leaving segmentation mode.</source>
-        <translation>Vous pouvez naviguer avec le clic molette, la barre d'espace ou les flèches directionnelles sans quitter le mode segmentation.</translation>
-    </message>
-    <message>
         <source>This will end the current segmentation session.</source>
         <translation>Cela va mettre fin à la session de segmentation en cours.</translation>
-    </message>
-    <message>
-        <source>Delete all saved polygons?</source>
-        <translation>Supprimer tous les polygones sauvegardés ?</translation>
-    </message>
-    <message>
-        <source>This will delete all saved polygons.</source>
-        <translation>Cela va supprimer tous les polygones sauvegardés.</translation>
     </message>
     <message>
         <source>Do you want to continue?</source>
@@ -493,32 +403,32 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
 
     <!-- About Section -->
     <message>
-        <source>Report a bug</source>
-        <translation>Signaler un bug</translation>
+        <source>Contact us</source>
+        <translation>Nous contacter</translation>
     </message>
     <message>
-        <source>Suggest feature</source>
-        <translation>Suggérer une fonctionnalité</translation>
+        <source>Bug, question, feature request?</source>
+        <translation>Bug, question, demande de fonctionnalité ?</translation>
     </message>
     <message>
-        <source>Share your ideas with us! :)</source>
-        <translation>Partagez vos idees avec nous ! :)</translation>
+        <source>We'd love to hear from you!</source>
+        <translation>On serait ravis d'avoir de vos nouvelles !</translation>
     </message>
     <message>
-        <source>Tell us how AI Segmentation could work better for your projects. Every suggestion helps us build a more useful tool.</source>
-        <translation>Dites-nous comment AI Segmentation pourrait mieux fonctionner pour vos projets. Chaque suggestion nous aide a construire un outil plus utile.</translation>
+        <source>Copy email address</source>
+        <translation>Copier l'adresse email</translation>
     </message>
     <message>
-        <source>Take a call</source>
-        <translation>Prendre un appel</translation>
+        <source>or</source>
+        <translation>ou</translation>
+    </message>
+    <message>
+        <source>Book a video call</source>
+        <translation>Réserver un appel vidéo</translation>
     </message>
     <message>
         <source>Tutorial</source>
         <translation>Tutoriel</translation>
-    </message>
-    <message>
-        <source>About us</source>
-        <translation>A propos</translation>
     </message>
     <message>
         <source>Something not working?</source>
@@ -571,23 +481,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Installation bloquée</translation>
     </message>
 
-    <!-- GPU auto-detection -->
-    <message>
-        <source>GPU mode failed, using CPU</source>
-        <translation>Mode GPU échoué, utilisation du CPU</translation>
-    </message>
-    <message>
-        <source>Using CPU mode (GPU driver needs update).</source>
-        <translation>Utilisation du mode CPU (le pilote GPU nécessite une mise à jour).</translation>
-    </message>
-    <message>
-        <source>Your GPU was detected but CUDA installation didn't work.</source>
-        <translation>Votre GPU a été détecté mais l'installation CUDA n'a pas fonctionné.</translation>
-    </message>
-    <message>
-        <source>No worries, the plugin now uses CPU mode and everything works fine :) If you'd like us to fix GPU support for your setup, send us your logs!</source>
-        <translation>Pas de souci, le plugin utilise maintenant le mode CPU et tout fonctionne :) Si vous souhaitez qu'on corrige le support GPU pour votre config, envoyez-nous vos logs !</translation>
-    </message>
     <message>
         <source>Click is outside the &apos;{layer}&apos; raster. To segment another raster, stop the current segmentation first.</source>
         <translation>Le clic est en dehors du raster '{layer}'. Pour segmenter un autre raster, arrêtez d'abord la segmentation en cours.</translation>
@@ -683,10 +576,6 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Signaler un bug</translation>
     </message>
     <message>
-        <source>Share Your Ideas</source>
-        <translation>Partagez vos idees</translation>
-    </message>
-    <message>
         <source>Disconnected parts detected in your polygon.</source>
         <translation>Parties deconnectees detectees dans votre polygone.</translation>
     </message>
@@ -735,6 +624,164 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <source>Retry</source>
         <translation>Reessayer</translation>
+    </message>
+<!-- v1.0.0 strings -->
+    <message>
+        <source>Cannot Write Export</source>
+        <translation>Impossible d exporter</translation>
+    </message>
+    <message>
+        <source>Cannot create export directory '{path}': {reason}</source>
+        <translation>Impossible de creer le dossier d export '{path}' : {reason}</translation>
+    </message>
+    <message>
+        <source>The export directory '{path}' is not writable. Choose a different location.</source>
+        <translation>Le dossier d export '{path}' n est pas accessible en ecriture. Choisissez un autre emplacement.</translation>
+    </message>
+    <message>
+        <source>Loading AI model...</source>
+        <translation>Chargement du modele IA...</translation>
+    </message>
+    <message>
+        <source>SAM model ready</source>
+        <translation>Modele SAM pret</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation>Pret</translation>
+    </message>
+    <message>
+        <source>Model load failed</source>
+        <translation>Echec du chargement du modele</translation>
+    </message>
+    <message>
+        <source>Click landed outside the current element — segment one element at a time. Saving the current selection and starting a new one.</source>
+        <translation>Le clic se trouve hors de l element courant — segmentez un element a la fois. La selection en cours est enregistree, un nouvel element commence.</translation>
+    </message>
+    <message>
+        <source>New here?</source>
+        <translation>Nouveau ici ?</translation>
+    </message>
+    <message>
+        <source>Watch the tutorial</source>
+        <translation>Voir le tutoriel</translation>
+    </message>
+    <message>
+        <source>Network Connection Problem</source>
+        <translation>Probleme de connexion reseau</translation>
+    </message>
+    <message>
+        <source>Your connection appears unstable or blocked. Check: (1) your internet is working, (2) QGIS > Settings > Options > Network has a proxy configured if you are on a corporate network, (3) your firewall allows connections to pypi.org and files.pythonhosted.org.</source>
+        <translation>Votre connexion semble instable ou bloquee. Verifiez : (1) que votre Internet fonctionne, (2) que QGIS > Reglages > Options > Reseau contient un proxy si vous etes sur un reseau d entreprise, (3) que votre pare-feu autorise les connexions a pypi.org et files.pythonhosted.org.</translation>
+    </message>
+    <message>
+        <source>Sign in to TerraLab</source>
+        <translation>Se connecter a TerraLab</translation>
+    </message>
+    <message>
+        <source>Create your free account</source>
+        <translation>Créez votre compte gratuit</translation>
+    </message>
+    <message>
+        <source>AI Segmentation is free. Create a TerraLab account to get your activation key.</source>
+        <translation>AI Segmentation est gratuit. Créez un compte TerraLab pour obtenir votre clé d'activation.</translation>
+    </message>
+    <message>
+        <source>Create account (free)</source>
+        <translation>Créer un compte (gratuit)</translation>
+    </message>
+    <message>
+        <source>Sign in to get your key</source>
+        <translation>Connectez-vous pour obtenir votre cle</translation>
+    </message>
+    <message>
+        <source>Create your free TerraLab account or sign in, then copy your activation key from the dashboard.</source>
+        <translation>Creez votre compte TerraLab gratuit ou connectez-vous, puis copiez votre cle d activation depuis le tableau de bord.</translation>
+    </message>
+    <message>
+        <source>Activate</source>
+        <translation>Activer</translation>
+    </message>
+    <message>
+        <source>Please enter your activation key.</source>
+        <translation>Veuillez entrer votre cle d activation.</translation>
+    </message>
+    <message>
+        <source>Checking...</source>
+        <translation>Verification...</translation>
+    </message>
+    <message>
+        <source>Activation key verified!</source>
+        <translation>Cle d activation verifiee !</translation>
+    </message>
+    <message>
+        <source>Invalid activation key.</source>
+        <translation>Cle d activation invalide.</translation>
+    </message>
+    <message>
+        <source>Cannot reach server. Check your internet connection.</source>
+        <translation>Impossible de joindre le serveur. Verifiez votre connexion Internet.</translation>
+    </message>
+    <message>
+        <source>Signed in!</source>
+        <translation>Connecte !</translation>
+    </message>
+    <message>
+        <source>AI Edit</source>
+        <translation>AI Edit</translation>
+    </message>
+    <message>
+        <source>Generate imagery with AI on map zones (opens AI Edit plugin)</source>
+        <translation>Generez des images IA sur des zones de la carte (ouvre le plugin AI Edit)</translation>
+    </message>
+    <message>
+        <source>Right-click must be inside the current selection area.</source>
+        <translation>Le clic droit doit se situer dans la zone de selection courante.</translation>
+    </message>
+    <!-- Account Settings Dialog -->
+    <message>
+        <source>Account Settings</source>
+        <translation>Parametres du compte</translation>
+    </message>
+    <message>
+        <source>Loading account info...</source>
+        <translation>Chargement des informations du compte...</translation>
+    </message>
+    <message>
+        <source>Manage account on terra-lab.ai</source>
+        <translation>Gérer le compte sur terra-lab.ai</translation>
+    </message>
+    <message>
+        <source>Show</source>
+        <translation>Afficher</translation>
+    </message>
+    <message>
+        <source>Hide</source>
+        <translation>Masquer</translation>
+    </message>
+    <message>
+        <source>Change activation key</source>
+        <translation>Changer la cle d'activation</translation>
+    </message>
+    <message>
+        <source>Plan</source>
+        <translation>Plan</translation>
+    </message>
+    <message>
+        <source>Free</source>
+        <translation>Gratuit</translation>
+    </message>
+    <message>
+        <source>Canceled</source>
+        <translation>Annule</translation>
+    </message>
+    <message>
+        <source>Email</source>
+        <translation>Email</translation>
+    </message>
+    <message>
+        <source>Key</source>
+        <translation>Cle</translation>
     </message>
 </context>
 </TS>

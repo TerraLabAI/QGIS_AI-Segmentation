@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import threading
 import time
 from typing import Callable
 
@@ -30,106 +29,6 @@ OLD_CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
 def get_checkpoints_dir() -> str:
     os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
     return CHECKPOINTS_DIR
-
-
-def _migrate_old_cache_layout():
-    """Migrate old flat cache dirs into the new raster/full/ subfolder layout.
-
-    Old layout: features/rastername_hash/*.tif + rastername_hash.csv
-    New layout: features/rastername_hash/full/*.tif + full.csv
-
-    Only runs once per session (idempotent).
-    """
-    if not os.path.exists(FEATURES_DIR):
-        return
-
-    try:
-        for entry in os.listdir(FEATURES_DIR):
-            entry_path = os.path.join(FEATURES_DIR, entry)
-            if not os.path.isdir(entry_path):
-                continue
-            # Skip already-migrated dirs (contain only subdirs like full/, visible_*)
-            has_tif = any(f.endswith(".tif") for f in os.listdir(entry_path))
-            if not has_tif:
-                continue
-            # Old format detected: tif files directly in the raster folder
-            full_dir = os.path.join(entry_path, "full")
-            os.makedirs(full_dir, exist_ok=True)
-            for fname in os.listdir(entry_path):
-                if fname == "full":
-                    continue
-                src = os.path.join(entry_path, fname)
-                if os.path.isfile(src):
-                    # Rename old CSV to full.csv
-                    if fname.endswith(".csv"):
-                        dst = os.path.join(full_dir, "full.csv")
-                    else:
-                        dst = os.path.join(full_dir, fname)
-                    os.replace(src, dst)
-            QgsMessageLog.logMessage(
-                f"Migrated old cache folder: {entry}",
-                "AI Segmentation", level=Qgis.MessageLevel.Info)
-    except Exception as e:
-        QgsMessageLog.logMessage(
-            f"Cache migration warning: {e}",
-            "AI Segmentation", level=Qgis.MessageLevel.Warning)
-
-
-_cache_migrated = False
-_cache_migration_lock = threading.Lock()
-
-
-def _get_raster_base_dir(raster_path: str) -> str:
-    """Get the base cache directory for a raster (parent of full/ and visible_*/).
-
-    Structure: features/{sanitized_name}_{path_hash}/
-    The hash is based on the raster path only (not the extent).
-    """
-    import re
-
-    raster_filename = os.path.splitext(os.path.basename(raster_path))[0]
-
-    sanitized_name = re.sub(r"[^a-zA-Z0-9_-]", "_", raster_filename)
-    sanitized_name = sanitized_name[:40]
-    sanitized_name = sanitized_name.rstrip("_")
-
-    # MD5 is used here only for generating a short identifier, not for security
-    path_hash = hashlib.md5(
-        raster_path.encode(), usedforsecurity=False
-    ).hexdigest()[:8]
-
-    return os.path.join(FEATURES_DIR, f"{sanitized_name}_{path_hash}")
-
-
-def get_raster_features_dir(raster_path: str, visible_extent: tuple = None) -> str:
-    """Get the encoding cache directory for a raster.
-
-    Structure:
-      features/{rastername}_{path_hash}/full/          (full raster)
-      features/{rastername}_{path_hash}/visible_{hash}/ (visible area)
-
-    Each raster gets one parent folder, with subfolders for each encoding type.
-    """
-    global _cache_migrated
-    if not _cache_migrated:
-        with _cache_migration_lock:
-            if not _cache_migrated:
-                _migrate_old_cache_layout()
-                _cache_migrated = True
-
-    base_dir = _get_raster_base_dir(raster_path)
-
-    if visible_extent is None:
-        features_path = os.path.join(base_dir, "full")
-    else:
-        extent_str = f"{visible_extent[0]:.2f}_{visible_extent[1]:.2f}_{visible_extent[2]:.2f}_{visible_extent[3]:.2f}"
-        extent_hash = hashlib.md5(
-            extent_str.encode(), usedforsecurity=False
-        ).hexdigest()[:8]
-        features_path = os.path.join(base_dir, f"visible_{extent_hash}")
-
-    os.makedirs(features_path, exist_ok=True)
-    return features_path
 
 
 def get_checkpoint_path() -> str:
@@ -234,25 +133,39 @@ def download_checkpoint(
             "error": None,
             "file": None,
             "resume_offset": resume_offset,
+            "start_time": time.monotonic(),
         }
 
         def on_download_progress(received, total):
             download_state["bytes_received"] = received
             download_state["bytes_total"] = total
-            if progress_callback:
-                actual_received = resume_offset + received
-                actual_total = resume_offset + total if total > 0 else 0
-                if actual_total > 0:
-                    percent = int((actual_received / actual_total) * 90) + 5
-                    mb_recv = actual_received / (1024 * 1024)
-                    mb_tot = actual_total / (1024 * 1024)
-                    progress_callback(
-                        min(percent, 95),
-                        f"Downloading: {mb_recv:.1f} / {mb_tot:.1f} MB")
-                elif actual_received > 0:
-                    mb_recv = actual_received / (1024 * 1024)
-                    progress_callback(
-                        50, f"Downloading: {mb_recv:.1f} MB...")
+            if not progress_callback:
+                return
+            actual_received = resume_offset + received
+            actual_total = resume_offset + total if total > 0 else 0
+            elapsed = max(0.1, time.monotonic() - download_state["start_time"])
+            speed_mbs = (received / (1024 * 1024)) / elapsed if received > 0 else 0.0
+            retry_suffix = f" (retry {attempt}/{max_retries})" if attempt > 1 else ""
+
+            if actual_total > 0:
+                percent = int((actual_received / actual_total) * 90) + 5
+                mb_recv = actual_received / (1024 * 1024)
+                mb_tot = actual_total / (1024 * 1024)
+                remaining_bytes = max(0, (total - received))
+                eta_s = int(remaining_bytes / max(1.0, received / elapsed)) if received > 0 else 0
+                if eta_s >= 60:
+                    eta_str = f"~{eta_s // 60}m {eta_s % 60}s left"
+                else:
+                    eta_str = f"~{eta_s}s left"
+                progress_callback(
+                    min(percent, 95),
+                    f"Downloading: {mb_recv:.1f} / {mb_tot:.1f} MB "
+                    f"({speed_mbs:.1f} MB/s, {eta_str}){retry_suffix}")
+            elif actual_received > 0:
+                mb_recv = actual_received / (1024 * 1024)
+                progress_callback(
+                    50,
+                    f"Downloading: {mb_recv:.1f} MB ({speed_mbs:.1f} MB/s){retry_suffix}")
 
         def on_ready_read():
             data = reply.readAll()
