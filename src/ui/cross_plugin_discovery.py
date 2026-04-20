@@ -25,37 +25,23 @@ def _find_installed_plugin(keys: tuple[str, ...]):
 
 
 def _activate_dock(plugin) -> bool:
-    """Try every known way to show a sibling plugin's dock widget."""
-    # Public toggle methods (AI Segmentation style)
-    for attr in ("toggle_dock_widget", "show_dock_widget", "run", "activate"):
-        fn = getattr(plugin, attr, None)
-        if callable(fn):
-            try:
-                fn(True) if attr == "toggle_dock_widget" else fn()
-                return True
-            except TypeError:
-                try:
-                    fn()
-                    return True
-                except Exception:
-                    continue
-            except Exception:
-                continue
-    # Private toggle (AI Edit style: _toggle_dock)
-    toggle = getattr(plugin, "_toggle_dock", None)
-    if callable(toggle):
-        try:
-            toggle()
-            return True
-        except Exception:
-            pass
-    # Direct dock widget access (public or private)
+    """Ensure a sibling plugin's dock widget is visible."""
+    # Direct dock access first — show without toggling
     for attr in ("dock_widget", "_dock_widget"):
         dock = getattr(plugin, attr, None)
         if dock is not None:
             try:
                 dock.show()
                 dock.raise_()
+                return True
+            except Exception:
+                continue
+    # Fallback to toggle/show methods
+    for attr in ("toggle_dock_widget", "show_dock_widget", "_toggle_dock", "run"):
+        fn = getattr(plugin, attr, None)
+        if callable(fn):
+            try:
+                fn()
                 return True
             except Exception:
                 continue

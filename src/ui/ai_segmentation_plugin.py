@@ -593,10 +593,11 @@ class AISegmentationPlugin:
         self._initialized = True
         self._do_first_time_setup()
 
-    def toggle_dock_widget(self, checked: bool):
+    def toggle_dock_widget(self, checked: bool = True):
         self._ensure_dock_widget()
         if self.dock_widget:
-            self.dock_widget.setVisible(checked)
+            visible = self.dock_widget.isVisible()
+            self.dock_widget.setVisible(not visible)
 
     def _on_dock_visibility_changed(self, visible: bool):
         if self.action:
