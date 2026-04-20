@@ -854,10 +854,10 @@ class AISegmentationPlugin:
         QTimer.singleShot(2000, self._show_activation_popup_if_needed)
 
     def _show_activation_popup_if_needed(self):
-        """Show activation popup if not already activated (after deps+model ready)."""
+        """Update UI to show activation section if not yet activated."""
         from ..core.activation_manager import is_plugin_activated
         if not is_plugin_activated() and not self.dock_widget.is_activated():
-            self.dock_widget.show_activation_dialog()
+            self.dock_widget._update_full_ui()
 
     def _on_settings_clicked(self):
         from ..core.activation_manager import get_auth_header, get_auth_token, is_plugin_activated
@@ -876,11 +876,14 @@ class AISegmentationPlugin:
         dlg.exec()
 
     def _on_change_key_requested(self):
-        from ..core.activation_manager import clear_auth
+        from ..core.activation_manager import clear_auth, get_auth_token
+        current_key = get_auth_token()
         clear_auth()
         if self.dock_widget:
             self.dock_widget._plugin_activated = False
             self.dock_widget._update_full_ui()
+            if current_key:
+                self.dock_widget.panel_key_input.setText(current_key)
 
     def _on_deps_install_progress(self, percent: int, message: str):
         if not self.dock_widget:

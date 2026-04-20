@@ -171,7 +171,7 @@ class AccountSettingsDialog(QDialog):
 
         manage_label = QLabel(
             f'<a href="{_DASHBOARD_URL}" style="color: {BRAND_BLUE};">'
-            f'{tr("Manage subscription on terra-lab.ai")}</a>'
+            f'{tr("Manage account on terra-lab.ai")}</a>'
         )
         manage_label.setOpenExternalLinks(True)
         manage_label.setAlignment(_AlignCenter)

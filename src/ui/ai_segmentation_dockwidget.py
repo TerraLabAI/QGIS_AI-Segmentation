@@ -292,20 +292,21 @@ class AISegmentationDockWidget(QDockWidget):
         banner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(banner_label)
 
-        title_label = QLabel(tr("Sign in to continue"))
+        title_label = QLabel(tr("Create your free account"))
         title_label.setStyleSheet(
             "font-size: 13px; font-weight: bold; color: palette(text);")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
         subtitle = QLabel(tr(
-            "Create your free TerraLab account or sign in to get started."))
+            "AI Segmentation is free. Create a TerraLab account "
+            "to get your activation key."))
         subtitle.setWordWrap(True)
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet("font-size: 11px; color: palette(text);")
         layout.addWidget(subtitle)
 
-        sign_in_btn = QPushButton(tr("Sign in to TerraLab (free)"))
+        sign_in_btn = QPushButton(tr("Create account (free)"))
         sign_in_btn.setMinimumHeight(34)
         sign_in_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         sign_in_btn.setStyleSheet(
@@ -1053,10 +1054,9 @@ class AISegmentationDockWidget(QDockWidget):
         # Welcome section: hide when setup is complete
         self.welcome_widget.setVisible(not setup_complete)
 
-        # Activation section: show ONLY after setup complete, not activated, popup shown
+        # Activation section: show after setup complete when not yet activated
         not_activated = not self._plugin_activated
-        popup_shown = self._activation_popup_shown
-        show_activation = setup_complete and not_activated and popup_shown
+        show_activation = setup_complete and not_activated
         self.activation_group.setVisible(show_activation)
 
         if show_activation:
