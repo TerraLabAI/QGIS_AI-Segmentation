@@ -354,7 +354,7 @@ class AISegmentationPlugin:
             tr("Generate imagery with AI on map zones (opens AI Edit plugin)"),
             icon=ai_edit_icon,
         )
-        add_action_to_toolbar(self.terralab_toolbar, self.ai_edit_action, "ai-edit")
+        add_action_to_toolbar(self.terralab_toolbar, self.ai_edit_action, "ai-edit", is_cross_promo=True)
         add_plugin_to_menu(self.terralab_menu, self.ai_edit_action, "ai-edit")
         add_to_plugins_menu(self.iface, self.ai_edit_action)
 
