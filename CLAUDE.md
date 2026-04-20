@@ -92,6 +92,18 @@ No CI/CD pipeline. Run locally before every push:
 ruff check src/ && flake8 --max-line-length 120 src/
 ```
 
+## Pre-release Security Scan
+
+Run before every public release (`/release-public`). These are the same tools QGIS Plugin Repository uses to scan uploads — a CRITICAL finding blocks the plugin from being published.
+
+```bash
+bandit -r src/                  # security (B110/B112/B405/B603 suppressed with # nosec)
+detect-secrets scan src/        # hardcoded secrets detection
+flake8 --max-line-length 120 src/  # code quality (W503 suppressed with # noqa)
+```
+
+All three must pass with zero findings before releasing.
+
 ## Git Workflow
 
 **Commit after every logical change.** Each commit should be atomic:
