@@ -312,11 +312,14 @@ class AISegmentationPlugin:
 
         # Cross-plugin discovery: show AI Edit entry even when it's not installed (#30).
         from .cross_plugin_discovery import make_ai_edit_action
+        ai_edit_icon_path = str(self.plugin_dir / "resources" / "icons" / "ai_edit_icon.png")
+        ai_edit_icon = QIcon(ai_edit_icon_path) if os.path.exists(ai_edit_icon_path) else None
         self.ai_edit_action = make_ai_edit_action(
             self.iface.mainWindow(),
             self.iface,
             tr("AI Edit"),
             tr("Generate imagery with AI on map zones (opens AI Edit plugin)"),
+            icon=ai_edit_icon,
         )
         add_action_to_toolbar(self.terralab_toolbar, self.ai_edit_action, "ai-edit")
         add_plugin_to_menu(self.terralab_menu, self.ai_edit_action, "ai-edit")

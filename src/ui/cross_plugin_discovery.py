@@ -4,11 +4,10 @@ open the QGIS Plugin Manager.
 """
 from __future__ import annotations
 
-from qgis.PyQt.QtCore import QUrl
+from qgis.PyQt.QtCore import QTimer, QUrl
 from qgis.PyQt.QtGui import QDesktopServices, QIcon
-from qgis.PyQt.QtWidgets import QAction
+from qgis.PyQt.QtWidgets import QAction, QLineEdit
 
-# Plugin IDs the QGIS plugin system uses for the sibling plugin.
 _AI_EDIT_KEYS = ("AI_Edit", "QGIS_AI-Edit", "QGIS_AI-Edit-Team")
 _AI_EDIT_PLUGINS_URL = "https://plugins.qgis.org/plugins/AI_Edit/"
 
@@ -27,13 +26,26 @@ def _find_installed_plugin(keys: tuple[str, ...]):
 
 def _open_plugin_manager(iface, search_text: str):
     try:
-        iface.pluginManagerInterface().showPluginManager()
+        # Tab 0 = "All" — best for searching across installed and available
+        iface.pluginManagerInterface().showPluginManager(0)
     except Exception:
         QDesktopServices.openUrl(QUrl(_AI_EDIT_PLUGINS_URL))
         return
-    # Plugin Manager has no stable API to pre-fill the search field, so just
-    # open it and let the user see the TerraLab plugins.
-    _ = search_text
+
+    # Best-effort: find the search field in the Plugin Manager dialog and type the query.
+    def _fill_search():
+        try:
+            from qgis.PyQt.QtWidgets import QDialog
+            for dlg in iface.mainWindow().findChildren(QDialog):
+                if "pluginmanager" in type(dlg).__name__.lower() or "plugin" in (dlg.objectName() or "").lower():
+                    line_edits = dlg.findChildren(QLineEdit)
+                    if line_edits:
+                        line_edits[0].setText(search_text)
+                        return
+        except Exception:
+            pass
+
+    QTimer.singleShot(200, _fill_search)
 
 
 def _activate_ai_edit_dock(plugin) -> bool:
