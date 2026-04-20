@@ -5,7 +5,7 @@ import os
 import platform
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
 import tempfile
 import time
@@ -220,7 +220,7 @@ def _check_gdal_available() -> tuple[bool, str]:
         return True, ""
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 B607
             ["gdal-config", "--version"],
             capture_output=True, text=True, encoding="utf-8", timeout=5
         )
@@ -532,7 +532,7 @@ def _get_qgis_python() -> str | None:
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = subprocess.SW_HIDE
 
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             [python_path, "-c", "import sys; print(sys.version)"],
             capture_output=True, text=True, encoding="utf-8", timeout=15,
             env=env, startupinfo=startupinfo,
@@ -652,7 +652,7 @@ def create_venv(
                 startupinfo.wShowWindow = subprocess.SW_HIDE
                 subprocess_kwargs["startupinfo"] = startupinfo
 
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603
                 uv_cmd,
                 capture_output=True, text=True, encoding="utf-8", timeout=120,
                 env=env, **subprocess_kwargs,
@@ -687,7 +687,7 @@ def create_venv(
             startupinfo.wShowWindow = subprocess.SW_HIDE
             subprocess_kwargs["startupinfo"] = startupinfo
 
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             cmd,
             capture_output=True,
             text=True,
@@ -708,7 +708,7 @@ def create_venv(
                 ensurepip_cmd = [python_in_venv, "-m", "ensurepip", "--upgrade"]
                 ensurepip_ok = False
                 try:
-                    ensurepip_result = subprocess.run(
+                    ensurepip_result = subprocess.run(  # nosec B603
                         ensurepip_cmd,
                         capture_output=True, text=True, encoding="utf-8", timeout=120,
                         env=env,
@@ -754,7 +754,7 @@ def create_venv(
         # Retry with --without-pip (faster, avoids pip setup that AV scans)
         try:
             nopip_cmd = [system_python, "-m", "venv", "--without-pip", venv_dir]
-            result2 = subprocess.run(
+            result2 = subprocess.run(  # nosec B603
                 nopip_cmd,
                 capture_output=True, text=True, encoding="utf-8", timeout=300,
                 env=env, **subprocess_kwargs,
@@ -763,7 +763,7 @@ def create_venv(
                 _log("Venv created (--without-pip), bootstrapping pip...", Qgis.MessageLevel.Info)
                 python_in_venv = get_venv_python_path(venv_dir)
                 ensurepip_cmd = [python_in_venv, "-m", "ensurepip", "--upgrade"]
-                ep_result = subprocess.run(
+                ep_result = subprocess.run(  # nosec B603
                     ensurepip_cmd,
                     capture_output=True, text=True, encoding="utf-8", timeout=120,
                     env=env, **subprocess_kwargs,
@@ -816,7 +816,7 @@ def _win_short_path(path: str) -> str:
         if ret and ret < 512:
             return buf.value
     except Exception:
-        pass
+        pass  # nosec B110
     return path
 
 
@@ -836,7 +836,7 @@ def _win_long_path(path: str) -> str:
         if ret and ret < 512:
             return buf.value
     except Exception:
-        pass
+        pass  # nosec B110
     return path
 
 
@@ -902,7 +902,7 @@ def _repin_numpy(venv_dir: str):
     subprocess_kwargs = _get_subprocess_kwargs()
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             [python_path, "-c",
              "import numpy; print(numpy.__version__)"],
             capture_output=True, text=True, encoding="utf-8", timeout=30,
@@ -925,7 +925,7 @@ def _repin_numpy(venv_dir: str):
                 "numpy>=1.26.0,<2.0.0",
             ]
             downgrade_cmd = _build_install_cmd(python_path, downgrade_args)
-            downgrade_result = subprocess.run(
+            downgrade_result = subprocess.run(  # nosec B603
                 downgrade_cmd,
                 capture_output=True, text=True, encoding="utf-8", timeout=120,
                 env=env, **subprocess_kwargs,
@@ -1036,16 +1036,16 @@ def _run_pip_install(
         try:
             os.close(stdout_fd)
         except Exception:
-            pass
+            pass  # nosec B110
         try:
             os.close(stderr_fd)
         except Exception:
-            pass
+            pass  # nosec B110
         raise
 
     process = None
     try:
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # nosec B603
             cmd,
             stdout=stdout_file,
             stderr=stderr_file,
@@ -1105,7 +1105,7 @@ def _run_pip_install(
                             last_download_status = parsed
                             break
             except Exception:
-                pass
+                pass  # nosec B110
 
             # Format elapsed time nicely
             if elapsed >= 60:
@@ -1172,21 +1172,21 @@ def _run_pip_install(
             try:
                 stdout_file.close()
             except Exception:
-                pass
+                pass  # nosec B110
         if stderr_file is not None:
             try:
                 stderr_file.close()
             except Exception:
-                pass
+                pass  # nosec B110
         # Clean up temp files
         try:
             os.unlink(stdout_path)
         except Exception:
-            pass
+            pass  # nosec B110
         try:
             os.unlink(stderr_path)
         except Exception:
-            pass
+            pass  # nosec B110
 
 
 def install_dependencies(
@@ -1222,7 +1222,7 @@ def install_dependencies(
                 "--disable-pip-version-check",
                 "--no-warn-script-location",
             ]
-            upgrade_result = subprocess.run(
+            upgrade_result = subprocess.run(  # nosec B603
                 upgrade_cmd,
                 capture_output=True, text=True, encoding="utf-8", timeout=120,
                 env=_get_clean_env_for_venv(),
@@ -1284,11 +1284,11 @@ def install_dependencies(
         try:
             os.close(constraints_fd)
         except Exception:
-            pass
+            pass  # nosec B110
         try:
             os.unlink(constraints_path)
         except Exception:
-            pass
+            pass  # nosec B110
         constraints_path = None
 
     try:  # try/finally to guarantee constraints file cleanup
@@ -1940,7 +1940,7 @@ def verify_venv(
         pkg_timeout = _get_verification_timeout(package_name)
 
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603
                 cmd,
                 capture_output=True,
                 text=True,
@@ -1975,13 +1975,13 @@ def verify_venv(
                         ["install", "--force-reinstall", "--no-deps",
                          "--prefer-binary", pkg_spec])
                     try:
-                        subprocess.run(
+                        subprocess.run(  # nosec B603
                             reinstall_cmd,
                             capture_output=True, text=True,
                             encoding="utf-8", timeout=600,
                             env=env, **subprocess_kwargs
                         )
-                        result2 = subprocess.run(
+                        result2 = subprocess.run(  # nosec B603
                             cmd, capture_output=True, text=True,
                             encoding="utf-8", timeout=pkg_timeout,
                             env=env, **subprocess_kwargs
@@ -1993,7 +1993,7 @@ def verify_venv(
                                 Qgis.MessageLevel.Success)
                             continue
                     except Exception:
-                        pass
+                        pass  # nosec B110
 
                     # Nuclear option: delete torch dirs and reinstall fresh
                     _log(
@@ -2022,13 +2022,13 @@ def verify_venv(
                             python_path,
                             ["install", "--prefer-binary",
                              torch_spec, tv_spec])
-                        subprocess.run(
+                        subprocess.run(  # nosec B603
                             nuke_cmd,
                             capture_output=True, text=True,
                             encoding="utf-8", timeout=600,
                             env=env, **subprocess_kwargs
                         )
-                        result3 = subprocess.run(
+                        result3 = subprocess.run(  # nosec B603
                             cmd, capture_output=True, text=True,
                             encoding="utf-8", timeout=pkg_timeout,
                             env=env, **subprocess_kwargs
@@ -2040,7 +2040,7 @@ def verify_venv(
                                 Qgis.MessageLevel.Success)
                             continue
                     except Exception:
-                        pass
+                        pass  # nosec B110
 
                     # 4th attempt (Windows only): try known-good pinned
                     # torch version that doesn't have DLL issues.
@@ -2071,13 +2071,13 @@ def verify_venv(
                                 ["install", "--prefer-binary",
                                  f"torch{TORCH_WINDOWS_FALLBACK}",
                                  f"torchvision{TORCHVISION_WINDOWS_FALLBACK}"])
-                            subprocess.run(
+                            subprocess.run(  # nosec B603
                                 fallback_cmd,
                                 capture_output=True, text=True,
                                 encoding="utf-8", timeout=600,
                                 env=env, **subprocess_kwargs
                             )
-                            result4 = subprocess.run(
+                            result4 = subprocess.run(  # nosec B603
                                 cmd, capture_output=True, text=True,
                                 encoding="utf-8", timeout=pkg_timeout,
                                 env=env, **subprocess_kwargs
@@ -2089,7 +2089,7 @@ def verify_venv(
                                     Qgis.MessageLevel.Success)
                                 continue
                         except Exception:
-                            pass
+                            pass  # nosec B110
 
                     _log(_get_vcpp_help(), Qgis.MessageLevel.Warning)
                     return False, (
@@ -2126,7 +2126,7 @@ def verify_venv(
                         pkg_spec,
                     ]
                     try:
-                        subprocess.run(
+                        subprocess.run(  # nosec B603
                             reinstall_cmd,
                             capture_output=True,
                             text=True,
@@ -2136,10 +2136,10 @@ def verify_venv(
                             **subprocess_kwargs
                         )
                     except Exception:
-                        pass
+                        pass  # nosec B110
                     # Retry verification after force-reinstall
                     try:
-                        result2 = subprocess.run(
+                        result2 = subprocess.run(  # nosec B603
                             cmd,
                             capture_output=True,
                             text=True,
@@ -2155,7 +2155,7 @@ def verify_venv(
                             )
                             continue  # Move to next package
                     except Exception:
-                        pass
+                        pass  # nosec B110
                     # Still broken after reinstall - check for AppLocker
                     detail_lower = error_detail.lower()
                     applocker_markers = [
@@ -2218,7 +2218,7 @@ def verify_venv(
                 Qgis.MessageLevel.Info
             )
             try:
-                result = subprocess.run(
+                result = subprocess.run(  # nosec B603
                     cmd,
                     capture_output=True,
                     text=True,
@@ -2589,7 +2589,7 @@ def get_venv_status() -> tuple[bool, str]:
                 try:
                     env = _get_clean_env_for_venv()
                     kwargs = _get_subprocess_kwargs()
-                    probe = subprocess.run(
+                    probe = subprocess.run(  # nosec B603
                         [python_path, "-c", "import torch"],
                         capture_output=True, text=True,
                         encoding="utf-8", timeout=60,

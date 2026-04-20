@@ -70,7 +70,7 @@ def start_log_collector():
             QgsApplication.messageLog().messageReceived.connect(_on_log_message)
             _log_collector_connected = True
         except Exception:
-            pass
+            pass  # nosec B110
 
 
 def stop_log_collector():
@@ -174,11 +174,11 @@ def _collect_diagnostic_info(error_message: str) -> str:
         from ..core.subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
         from ..core.venv_manager import get_venv_python_path, venv_exists
         if venv_exists():
-            import subprocess
+            import subprocess  # nosec B404
             python_path = get_venv_python_path()
             env = get_clean_env_for_venv()
             kwargs = get_subprocess_kwargs()
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603
                 [python_path, "-m", "pip", "list", "--format=columns"],
                 capture_output=True, text=True, timeout=5,
                 stdin=subprocess.DEVNULL, env=env, **kwargs

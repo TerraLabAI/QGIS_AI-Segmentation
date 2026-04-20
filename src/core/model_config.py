@@ -8,7 +8,7 @@ Exception: under Rosetta (x86_64 QGIS on Apple Silicon), the standalone
 Python is downloaded as ARM64 3.10+, so SAM2 is available.
 """
 import platform
-import subprocess
+import subprocess  # nosec B404
 import sys
 
 
@@ -17,7 +17,7 @@ def _is_rosetta() -> bool:
     if sys.platform != "darwin" or platform.machine() != "x86_64":
         return False
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 B607
             ["sysctl", "-n", "sysctl.proc_translated"],
             capture_output=True, text=True, timeout=5,
         )

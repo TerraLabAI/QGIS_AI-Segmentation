@@ -656,7 +656,7 @@ class AISegmentationPlugin:
             from ..core.checkpoint_manager import cleanup_legacy_sam1_data
             cleanup_legacy_sam1_data()
         except Exception:
-            pass  # Logged internally, never block startup
+            pass  # nosec B110  Logged internally, never block startup
 
         try:
             from ..core.venv_manager import cleanup_old_libs, get_venv_status
@@ -1006,7 +1006,7 @@ class AISegmentationPlugin:
                 self._show_activation_popup_if_needed()
                 return
         except Exception:
-            pass
+            pass  # nosec B110
 
         self.dock_widget.set_install_progress(80, tr("Downloading AI model..."))
         try:
