@@ -948,7 +948,8 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_contact_us(self, _link=None):
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
-        from qgis.PyQt.QtWidgets import QApplication, QDialog, QVBoxLayout as _VBox
+        from qgis.PyQt.QtWidgets import QApplication, QDialog
+        from qgis.PyQt.QtWidgets import QVBoxLayout as _VBox
 
         calendly_url = "https://calendly.com/barbot-yvann/30min"
         support_email = "yvann.barbot@terra-lab.ai"

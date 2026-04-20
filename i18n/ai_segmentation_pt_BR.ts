@@ -395,8 +395,28 @@ export AI_SEGMENTATION_CACHE_DIR=/seu/caminho</translation>
 
     <!-- About Section -->
     <message>
-        <source>Report a bug</source>
-        <translation>Reportar um bug</translation>
+        <source>Contact us</source>
+        <translation>Fale conosco</translation>
+    </message>
+    <message>
+        <source>Bug, question, feature request?</source>
+        <translation>Bug, dúvida, sugestão de funcionalidade?</translation>
+    </message>
+    <message>
+        <source>We'd love to hear from you!</source>
+        <translation>Adoraríamos ouvir de você!</translation>
+    </message>
+    <message>
+        <source>Copy email address</source>
+        <translation>Copiar endereço de email</translation>
+    </message>
+    <message>
+        <source>or</source>
+        <translation>ou</translation>
+    </message>
+    <message>
+        <source>Book a video call</source>
+        <translation>Agendar uma videochamada</translation>
     </message>
     <message>
         <source>Tutorial</source>

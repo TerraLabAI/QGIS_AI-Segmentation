@@ -395,8 +395,28 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
 
     <!-- About Section -->
     <message>
-        <source>Report a bug</source>
-        <translation>Reportar un bug</translation>
+        <source>Contact us</source>
+        <translation>Contáctanos</translation>
+    </message>
+    <message>
+        <source>Bug, question, feature request?</source>
+        <translation>¿Bug, pregunta, solicitud de función?</translation>
+    </message>
+    <message>
+        <source>We'd love to hear from you!</source>
+        <translation>¡Nos encantaría saber de ti!</translation>
+    </message>
+    <message>
+        <source>Copy email address</source>
+        <translation>Copiar dirección de email</translation>
+    </message>
+    <message>
+        <source>or</source>
+        <translation>o</translation>
+    </message>
+    <message>
+        <source>Book a video call</source>
+        <translation>Reservar una videollamada</translation>
     </message>
     <message>
         <source>Tutorial</source>

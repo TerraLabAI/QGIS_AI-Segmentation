@@ -291,7 +291,6 @@ class AISegmentationPlugin:
             "AI Segmentation",
             self.iface.mainWindow()
         )
-        self.action.setCheckable(True)
         self.action.setToolTip(
             "AI Segmentation by TerraLab\n{}".format(
                 tr("Segment elements on raster images using AI"))
@@ -315,7 +314,11 @@ class AISegmentationPlugin:
         # Add "Settings" to TerraLab menu (deduplicated with AI Edit via objectName)
         self._settings_action = None
         self._owns_settings_action = False
-        existing = self.terralab_menu.findChild(QAction, "_terralab_settings_action")
+        existing = None
+        for a in self.terralab_menu.actions():
+            if a.objectName() == "_terralab_settings_action":
+                existing = a
+                break
         if existing:
             existing.triggered.connect(self._on_settings_clicked)
             self._settings_action = existing
@@ -622,28 +625,24 @@ class AISegmentationPlugin:
         self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
 
         self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
-        self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
         self._initialized = True
+        self._setup_done = True
+        self._do_first_time_setup()
 
-    def toggle_dock_widget(self, checked=None):
+    def toggle_dock_widget(self):
+        just_created = not self._dock_created
         self._ensure_dock_widget()
         if self.dock_widget:
-            if checked is None:
-                checked = not self.dock_widget.isVisible()
-            if checked:
+            if just_created or not self.dock_widget.isVisible():
                 self.dock_widget.show()
                 self.dock_widget.raise_()
+                QgsMessageLog.logMessage(
+                    f"Dock shown (first_create={just_created})",
+                    "AI Segmentation", level=Qgis.MessageLevel.Info)
             else:
                 self.dock_widget.hide()
-
-    def _on_dock_visibility_changed(self, visible: bool):
-        if self.action:
-            self.action.setChecked(visible)
-
-        if visible and not self._setup_done:
-            self._setup_done = True
-            from qgis.PyQt.QtCore import QTimer
-            QTimer.singleShot(0, self._do_first_time_setup)
+                QgsMessageLog.logMessage(
+                    "Dock hidden", "AI Segmentation", level=Qgis.MessageLevel.Info)
 
     def _do_first_time_setup(self):
         QgsMessageLog.logMessage(
