@@ -1,13 +1,4 @@
-"""TerraLab account state for the AI Segmentation plugin (v1.0.0).
-
-Uses the shared QSettings('TerraLab/*') namespace so a user signed in through
-AI Edit is recognised here without re-authentication, and vice versa.
-
-Backwards-compatible stubs kept:
-- is_plugin_activated() → true when a TerraLab token is stored.
-- get_tutorial_url() → fetched from /api/plugin/config, with fallback.
-- get_shared_email() / save_shared_email() → shared TerraLab email helpers.
-"""
+"""Activation manager for the AI Segmentation plugin."""
 from __future__ import annotations
 
 import uuid
@@ -16,18 +7,13 @@ from qgis.core import QgsSettings
 
 PRODUCT_ID = "ai-segmentation"
 
-TERRALAB_PREFIX = "TerraLab"
-AUTH_TOKEN_KEY = f"{TERRALAB_PREFIX}/auth/token"
-AUTH_EMAIL_KEY = f"{TERRALAB_PREFIX}/auth/email"
-AUTH_PRODUCT_KEY = f"{TERRALAB_PREFIX}/auth/product"
-SHARED_EMAIL_KEY = f"{TERRALAB_PREFIX}/user_email"
-DEVICE_ID_KEY = f"{TERRALAB_PREFIX}/device_id"
-
-_LEGACY_ACTIVATION_KEY = "AISegmentation/activated"
+SETTINGS_PREFIX = "AISegmentation/"
+TERRALAB_PREFIX = "TerraLab/"
+DEVICE_ID_KEY = f"{TERRALAB_PREFIX}device_id"
 
 TUTORIAL_URL_FALLBACK = "https://youtu.be/lbADk75l-mk?si=q6WnwyV2NcmQYuhI"
 _SIGN_IN_BASE = (
-    "https://terra-lab.ai/en/login"
+    "https://terra-lab.ai/login"
     "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
     "&utm_content=sign_in&product=ai-segmentation"
 )
@@ -40,34 +26,27 @@ def _client():
     return TerraLabClient()
 
 
-# -- session state (shared with AI Edit via QSettings prefix) --------------
+# -- session state ---------------------------------------------------------
 
 
 def get_auth_token(settings=None) -> str:
     s = settings or QgsSettings()
-    return s.value(AUTH_TOKEN_KEY, "") or ""
+    return s.value(f"{SETTINGS_PREFIX}activation_key", "") or ""
 
 
-def save_auth_token(token: str, email: str, product: str = PRODUCT_ID, settings=None):
+def save_auth_token(token: str, settings=None):
     s = settings or QgsSettings()
-    s.setValue(AUTH_TOKEN_KEY, token.strip())
-    s.setValue(AUTH_EMAIL_KEY, email.strip())
-    s.setValue(AUTH_PRODUCT_KEY, product)
-    if email:
-        s.setValue(SHARED_EMAIL_KEY, email.strip())
+    s.setValue(f"{SETTINGS_PREFIX}activation_key", token.strip())
+    s.setValue(f"{SETTINGS_PREFIX}activated", True)
 
 
 def clear_auth(settings=None):
     s = settings or QgsSettings()
-    s.setValue(AUTH_TOKEN_KEY, "")
-    s.setValue(AUTH_EMAIL_KEY, "")
-    s.setValue(AUTH_PRODUCT_KEY, "")
-    # Legacy key kept false so old builds don't re-trigger activation UI.
-    s.setValue(_LEGACY_ACTIVATION_KEY, False)
+    s.setValue(f"{SETTINGS_PREFIX}activation_key", "")
+    s.setValue(f"{SETTINGS_PREFIX}activated", False)
 
 
 def is_plugin_activated(settings=None) -> bool:
-    """Activated means: the user has a TerraLab auth token stored."""
     return bool(get_auth_token(settings))
 
 
@@ -81,20 +60,7 @@ def get_auth_header(settings=None) -> dict:
     }
 
 
-# -- shared TerraLab email (legacy key name kept) --------------------------
-
-
-def get_shared_email(settings=None) -> str:
-    s = settings or QgsSettings()
-    return s.value(SHARED_EMAIL_KEY, "") or ""
-
-
-def save_shared_email(email: str, settings=None):
-    s = settings or QgsSettings()
-    s.setValue(SHARED_EMAIL_KEY, email.strip())
-
-
-# -- device id (stable per machine) ----------------------------------------
+# -- device id (stable per machine, shared across TerraLab plugins) --------
 
 
 def get_device_id(settings=None) -> str:
@@ -106,7 +72,7 @@ def get_device_id(settings=None) -> str:
     return device_id
 
 
-# -- server config (tutorial URL, etc.) ------------------------------------
+# -- server config ---------------------------------------------------------
 
 
 def get_server_config() -> dict:
@@ -139,14 +105,10 @@ def get_sign_in_url() -> str:
     return f"{_SIGN_IN_BASE}&device_id={get_device_id()}"
 
 
-# -- activation key validation -----------------------------------------------
+# -- activation key validation ---------------------------------------------
 
 
 def validate_key_with_server(key: str) -> tuple[bool, str]:
-    """Validate an activation key against the server.
-
-    Returns (success, english_message) — caller wraps message with tr().
-    """
     key = (key or "").strip()
     if not key:
         return False, "Please enter your activation key."
@@ -167,5 +129,9 @@ def validate_key_with_server(key: str) -> tuple[bool, str]:
             return False, "Subscription inactive. Check your account."
         return False, result.get("error", "Validation failed.")
 
-    save_auth_token(key, result.get("email", ""), PRODUCT_ID)
+    server_product = result.get("product_id", "")
+    if server_product and server_product != PRODUCT_ID:
+        return False, "This key belongs to a different product. Use your AI Segmentation key."
+
+    save_auth_token(key)
     return True, "Activation key verified!"

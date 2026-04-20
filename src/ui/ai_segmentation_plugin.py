@@ -58,7 +58,7 @@ else:
     _FIELD_TYPE_DOUBLE = _QVariant.Double
 
 # QSettings keys for tutorial flags
-SETTINGS_KEY_TUTORIAL_SHOWN = "AI_Segmentation/tutorial_simple_shown"
+SETTINGS_KEY_TUTORIAL_SHOWN = "AISegmentation/tutorial_simple_shown"
 
 
 def _get_change_path_instructions():
@@ -127,6 +127,7 @@ class AISegmentationPlugin:
         self._active_crop_points_negative: list[tuple[float, float]] = []
 
         self._initialized = False
+        self._setup_done = False
         self._current_layer = None
         self._current_layer_name = ""
 
@@ -135,7 +136,7 @@ class AISegmentationPlugin:
         self._headless_error = None
 
         # Refinement settings (#12, #23: defaults tuned for ease-of-use)
-        self._refine_simplify = 3
+        self._refine_simplify = 10
         self._refine_smooth = 0
         self._refine_expand = 0
         self._refine_fill_holes = True
@@ -167,8 +168,8 @@ class AISegmentationPlugin:
 
         # CRS transforms (canvas CRS <-> raster CRS), created when features load.
         # None when both CRS are the same (no transform needed).
-        self._canvas_to_raster_xform = None  # type: Optional[QgsCoordinateTransform]
-        self._raster_to_canvas_xform = None  # type: Optional[QgsCoordinateTransform]
+        self._canvas_to_raster_xform: QgsCoordinateTransform | None = None
+        self._raster_to_canvas_xform: QgsCoordinateTransform | None = None
 
     @staticmethod
     def _safe_remove_rubber_band(rb):
@@ -302,6 +303,7 @@ class AISegmentationPlugin:
         add_action_to_toolbar(self.terralab_toolbar, self.action, "ai-segmentation")
 
         from .terralab_menu import (
+            _UTILITY_SEPARATOR,
             add_plugin_to_menu,
             add_to_plugins_menu,
             get_or_create_terralab_menu,
@@ -309,6 +311,34 @@ class AISegmentationPlugin:
         self.terralab_menu = get_or_create_terralab_menu(self.iface.mainWindow())
         add_plugin_to_menu(self.terralab_menu, self.action, "ai-segmentation")
         add_to_plugins_menu(self.iface, self.action)
+
+        # Add "Settings" to TerraLab menu (deduplicated with AI Edit via objectName)
+        self._settings_action = None
+        self._owns_settings_action = False
+        existing = self.terralab_menu.findChild(QAction, "_terralab_settings_action")
+        if existing:
+            existing.triggered.connect(self._on_settings_clicked)
+            self._settings_action = existing
+        else:
+            settings_icon = QIcon(":/images/themes/default/mActionOptions.svg")
+            self._settings_action = QAction(settings_icon, tr("Settings"), self.iface.mainWindow())
+            self._settings_action.setObjectName("_terralab_settings_action")
+            self._settings_action.setMenuRole(QAction.MenuRole.NoRole)
+            self._settings_action.triggered.connect(self._on_settings_clicked)
+            insert_before = None
+            found_sep = False
+            for a in self.terralab_menu.actions():
+                if a.objectName() == _UTILITY_SEPARATOR:
+                    found_sep = True
+                    continue
+                if found_sep:
+                    insert_before = a
+                    break
+            if insert_before:
+                self.terralab_menu.insertAction(insert_before, self._settings_action)
+            else:
+                self.terralab_menu.addAction(self._settings_action)
+            self._owns_settings_action = True
 
         # Cross-plugin discovery: show AI Edit entry even when it's not installed (#30).
         from .cross_plugin_discovery import make_ai_edit_action
@@ -409,11 +439,10 @@ class AISegmentationPlugin:
                 (self.dock_widget.start_segmentation_requested, self._on_start_segmentation),
                 (self.dock_widget.save_polygon_requested, self._on_save_polygon),
                 (self.dock_widget.export_layer_requested, self._on_export_layer),
-                (self.dock_widget.clear_points_requested, self._on_clear_points),
                 (self.dock_widget.undo_requested, self._on_undo),
                 (self.dock_widget.stop_segmentation_requested, self._on_stop_segmentation),
                 (self.dock_widget.refine_settings_changed, self._on_refine_settings_changed),
-                (self.dock_widget.batch_mode_changed, self._on_batch_mode_changed),
+                (self.dock_widget.settings_clicked, self._on_settings_clicked),
             ]
             for sig, slot in _dock_signals:
                 try:
@@ -491,6 +520,14 @@ class AISegmentationPlugin:
             self.action.triggered.disconnect(self.toggle_dock_widget)
         except (TypeError, RuntimeError, AttributeError):
             pass
+
+        # Remove settings action from menu (only if we created it)
+        if self._owns_settings_action and self._settings_action and self.terralab_menu:
+            try:
+                self.terralab_menu.removeAction(self._settings_action)
+            except (RuntimeError, AttributeError):
+                pass
+        self._settings_action = None
 
         from .terralab_menu import remove_from_plugins_menu, remove_plugin_from_menu
         try:
@@ -578,34 +615,35 @@ class AISegmentationPlugin:
         self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
         self.dock_widget.save_polygon_requested.connect(self._on_save_polygon)
         self.dock_widget.export_layer_requested.connect(self._on_export_layer)
-        self.dock_widget.clear_points_requested.connect(self._on_clear_points)
         self.dock_widget.undo_requested.connect(self._on_undo)
         self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
         self.dock_widget.refine_settings_changed.connect(self._on_refine_settings_changed)
-        self.dock_widget.batch_mode_changed.connect(self._on_batch_mode_changed)
+        self.dock_widget.settings_clicked.connect(self._on_settings_clicked)
         self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
 
         self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
         self.dock_widget.visibilityChanged.connect(self._on_dock_visibility_changed)
-
-        # Run setup immediately (before the dock is shown) so the user never
-        # sees the "Checking..." panel if deps are already installed.
         self._initialized = True
-        self._do_first_time_setup()
 
-    def toggle_dock_widget(self, checked: bool = True):
+    def toggle_dock_widget(self, checked=None):
         self._ensure_dock_widget()
         if self.dock_widget:
-            visible = self.dock_widget.isVisible()
-            self.dock_widget.setVisible(not visible)
+            if checked is None:
+                checked = not self.dock_widget.isVisible()
+            if checked:
+                self.dock_widget.show()
+                self.dock_widget.raise_()
+            else:
+                self.dock_widget.hide()
 
     def _on_dock_visibility_changed(self, visible: bool):
         if self.action:
             self.action.setChecked(visible)
 
-        if visible and not self._initialized:
-            self._initialized = True
-            self._do_first_time_setup()
+        if visible and not self._setup_done:
+            self._setup_done = True
+            from qgis.PyQt.QtCore import QTimer
+            QTimer.singleShot(0, self._do_first_time_setup)
 
     def _do_first_time_setup(self):
         QgsMessageLog.logMessage(
@@ -821,6 +859,29 @@ class AISegmentationPlugin:
         from ..core.activation_manager import is_plugin_activated
         if not is_plugin_activated() and not self.dock_widget.is_activated():
             self.dock_widget.show_activation_dialog()
+
+    def _on_settings_clicked(self):
+        from ..core.activation_manager import get_auth_header, get_auth_token, is_plugin_activated
+        if not is_plugin_activated():
+            return
+        from ..api.terralab_client import TerraLabClient
+        from .account_settings_dialog import AccountSettingsDialog
+        client = TerraLabClient()
+        dlg = AccountSettingsDialog(
+            client=client,
+            auth=get_auth_header(),
+            activation_key=get_auth_token(),
+            parent=self.iface.mainWindow(),
+        )
+        dlg.change_key_requested.connect(self._on_change_key_requested)
+        dlg.exec()
+
+    def _on_change_key_requested(self):
+        from ..core.activation_manager import clear_auth
+        clear_auth()
+        if self.dock_widget:
+            self.dock_widget._plugin_activated = False
+            self.dock_widget._update_full_ui()
 
     def _on_deps_install_progress(self, percent: int, message: str):
         if not self.dock_widget:
@@ -1090,7 +1151,6 @@ class AISegmentationPlugin:
 
         self.iface.mapCanvas().setMapTool(self.map_tool)
         self.dock_widget.set_segmentation_active(True)
-        # Status bar hint will be set by _update_status_hint via set_point_count
 
         # Install keyboard shortcut filter on both mainWindow and the canvas
         # viewport.  mainWindow catches keys when focus is elsewhere (e.g.
@@ -1142,10 +1202,6 @@ class AISegmentationPlugin:
             level=Qgis.MessageLevel.Info,
             duration=10
         )
-
-    def _on_batch_mode_changed(self, _batch: bool):
-        """Handle batch mode toggle (no-op, batch mode is always on)."""
-        pass
 
     def _on_layer_combo_changed(self, layer):
         """Handle layer selection change in the combo box."""
@@ -1663,49 +1719,16 @@ class AISegmentationPlugin:
             return
 
         # User switched to another tool (pan, etc.) while segmenting.
-        # Ask for confirmation after the current event is processed so
-        # that the tool switch completes before we show a dialog.
+        # Re-activate segmentation tool silently to prevent accidental exits.
         from qgis.PyQt.QtCore import QTimer
-        QTimer.singleShot(0, self._confirm_leave_segmentation)
+        QTimer.singleShot(0, self._return_to_segmentation)
 
-    def _confirm_leave_segmentation(self):
-        """Ask user to confirm leaving segmentation mode."""
+    def _return_to_segmentation(self):
         if self._stopping_segmentation:
             return
         if not self.map_tool or not self.dock_widget:
             return
-
-        polygon_count = len(self.saved_polygons)
-        if self.current_mask is not None:
-            polygon_count += 1
-
-        if polygon_count > 0:
-            discard_line = "{}\n{}".format(
-                tr("This will discard {count} polygon(s).").format(count=polygon_count),
-                tr("Use 'Export to layer' to keep them."))
-        else:
-            discard_line = tr("This will end the current segmentation session.")
-
-        reply = QMessageBox.question(
-            self.iface.mainWindow(),
-            tr("Leave Segmentation?"),
-            "{}\n\n{}".format(
-                tr("You can pan with the middle mouse button, spacebar, "
-                   "or arrow keys without leaving segmentation mode."),
-                discard_line),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            # User confirmed — reset session
-            self._reset_session()
-            if self.dock_widget:
-                self.dock_widget.reset_session()
-            self._previous_map_tool = None
-        else:
-            # User wants to stay — re-activate segmentation tool
-            self._activate_segmentation_tool()
+        self._activate_segmentation_tool()
 
     def _restore_previous_map_tool(self):
         """Restore the map tool that was active before segmentation started."""
@@ -2795,54 +2818,6 @@ class AISegmentationPlugin:
             except RuntimeError:
                 self.mask_rubber_band = None
 
-    def _on_clear_points(self):
-        """Handle Escape key - clear current mask or warn about saved masks."""
-        if len(self.saved_polygons) > 0:
-            # Batch mode with saved masks: warn user before clearing everything
-            reply = QMessageBox.warning(
-                self.iface.mainWindow(),
-                tr("Delete all saved polygons?"),
-                "{}\n{}".format(
-                    tr("This will delete all saved polygons."),
-                    tr("Do you want to continue?")),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                # Restore canvas focus after dialog
-                try:
-                    self.iface.mapCanvas().setFocus()
-                except RuntimeError:
-                    pass
-                return
-            # User confirmed: reset entire session
-            self._reset_session()
-            self.dock_widget.set_point_count(0, 0)
-            self.dock_widget.set_saved_polygon_count(0)
-            # Restore canvas focus after dialog
-            try:
-                self.iface.mapCanvas().setFocus()
-            except RuntimeError:
-                pass
-            return
-
-        # Normal clear: clear current mask points and frozen sessions
-        self.prompts.clear()
-        self._mask_state_history = []
-        self._frozen_sessions = []
-        self._active_crop_points_positive = []
-        self._active_crop_points_negative = []
-
-        if self.map_tool:
-            self.map_tool.clear_markers()
-
-        self._clear_mask_visualization()
-
-        self.current_mask = None
-        self.current_score = 0.0
-        self.current_low_res_mask = None
-        self.dock_widget.set_point_count(0, 0)
-
     def _on_undo(self):
         """Undo last point added, or restore last saved mask in batch mode."""
         # Check if we have points in current mask
@@ -3030,7 +3005,7 @@ class AISegmentationPlugin:
         self.current_transform_info = last_polygon.get("transform_info")
 
         # Restore refine settings
-        self._refine_simplify = last_polygon.get("refine_simplify", 3)
+        self._refine_simplify = last_polygon.get("refine_simplify", 10)
         self._refine_smooth = last_polygon.get("refine_smooth", 0)
         self._refine_expand = last_polygon.get("refine_expand", 0)
         self._refine_fill_holes = last_polygon.get("refine_fill_holes", True)
@@ -3096,7 +3071,7 @@ class AISegmentationPlugin:
         self._is_online_layer = False
 
         # Reset refinement settings to defaults (#12, #23)
-        self._refine_simplify = 3
+        self._refine_simplify = 10
         self._refine_smooth = 0
         self._refine_expand = 0
         self._refine_fill_holes = True

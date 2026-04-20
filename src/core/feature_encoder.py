@@ -418,7 +418,7 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
             raster_height = src.height
             raster_transform = src.transform
 
-            # Detect non-georeferenced mode (same logic as encoding_worker.py)
+            # Detect non-georeferenced mode
             use_layer_extent = False
             if layer_extent:
                 xmin_le, ymin_le, xmax_le, ymax_le = layer_extent

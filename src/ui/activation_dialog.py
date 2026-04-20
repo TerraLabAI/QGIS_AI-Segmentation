@@ -133,7 +133,7 @@ class ActivationDialog(QDialog):
             from qgis.PyQt.QtCore import QTimer
             QTimer.singleShot(600, self.accept)
         else:
-            self._show_message(tr(msg), is_error=True)
+            self._show_message(msg, is_error=True)
 
     def _show_message(self, text: str, is_error: bool = False):
         self.message_label.setText(text)

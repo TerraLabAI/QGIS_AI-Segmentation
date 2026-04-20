@@ -6,12 +6,8 @@ Pure data structure with no QGIS UI dependencies.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from qgis.core import QgsGeometry
-
-if TYPE_CHECKING:
-    import numpy
 
 
 @dataclass
@@ -64,26 +60,3 @@ class PromptManager:
     @property
     def point_count(self) -> tuple[int, int]:
         return len(self.positive_points), len(self.negative_points)
-
-    def get_points_for_predictor(self, transform) -> tuple[numpy.ndarray | None, numpy.ndarray | None]:
-        import numpy as np
-        from rasterio import transform as rio_transform
-
-        all_points = self.positive_points + self.negative_points
-        if not all_points:
-            return None, None
-
-        point_coords = []
-        point_labels = []
-
-        for x, y in self.positive_points:
-            row, col = rio_transform.rowcol(transform, x, y)
-            point_coords.append([col, row])
-            point_labels.append(1)
-
-        for x, y in self.negative_points:
-            row, col = rio_transform.rowcol(transform, x, y)
-            point_coords.append([col, row])
-            point_labels.append(0)
-
-        return np.array(point_coords), np.array(point_labels)

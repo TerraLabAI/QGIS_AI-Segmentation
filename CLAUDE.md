@@ -130,7 +130,7 @@ Languages: French (fr), Portuguese Brazil (pt_BR), Spanish (es).
 
 ## Refine Panel Defaults (KEEP IN SYNC)
 
-`expand=0, simplify=3, fill_holes=False, min_area=100`
+`expand=0, simplify=10, fill_holes=True, min_area=200`
 
 5 locations must match: plugin `__init__`, `_reset_session()`, `_restore_last_saved_mask` fallbacks, dockwidget `_setup_refine_panel`, `reset_refine_sliders`.
 

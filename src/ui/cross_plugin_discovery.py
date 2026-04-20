@@ -26,7 +26,6 @@ def _find_installed_plugin(keys: tuple[str, ...]):
 
 def _activate_dock(plugin) -> bool:
     """Ensure a sibling plugin's dock widget is visible."""
-    # Direct dock access first — show without toggling
     for attr in ("dock_widget", "_dock_widget"):
         dock = getattr(plugin, attr, None)
         if dock is not None:
@@ -36,7 +35,6 @@ def _activate_dock(plugin) -> bool:
                 return True
             except Exception:
                 continue
-    # Fallback to toggle/show methods
     for attr in ("toggle_dock_widget", "show_dock_widget", "_toggle_dock", "run"):
         fn = getattr(plugin, attr, None)
         if callable(fn):

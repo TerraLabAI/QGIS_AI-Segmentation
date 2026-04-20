@@ -67,7 +67,7 @@ from .uv_manager import (
 
 # Module-level uv state (set during create_venv_and_install)
 _uv_available = False
-_uv_path = None  # type: Optional[str]
+_uv_path: str | None = None
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = PLUGIN_ROOT_DIR  # src/ directory

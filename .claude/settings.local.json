@@ -111,7 +111,10 @@
       "Bash(grep -rn \"enable_inst_interactivity\\\\|SAM3InteractiveImagePredictor\\\\|Sam3Processor\" /Users/lilien/QGIS_AI-Segmentation-Pro/ --include=\"*.py\" 2>/dev/null | grep -v __pycache__)",
       "Bash(find /Users/lilien/QGIS_AI-Segmentation-Pro -maxdepth 2 -type f \\\\\\( -name \"*.sh\" -o -name \"*deploy*\" -o -name \"*build*\" \\\\\\) 2>/dev/null | head -20)",
       "WebFetch(domain:www.sieve.ai)",
-      "WebFetch(domain:pyimagesearch.com)"
+      "WebFetch(domain:pyimagesearch.com)",
+      "mcp__supabase__list_projects",
+      "mcp__supabase__list_tables",
+      "mcp__supabase__execute_sql"
     ]
   },
   "outputStyle": "Explanatory"

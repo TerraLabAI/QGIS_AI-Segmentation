@@ -45,14 +45,13 @@ class AISegmentationDockWidget(QDockWidget):
     install_requested = pyqtSignal()
     cancel_install_requested = pyqtSignal()
     start_segmentation_requested = pyqtSignal(object)
-    clear_points_requested = pyqtSignal()
     undo_requested = pyqtSignal()
     save_polygon_requested = pyqtSignal()
+    settings_clicked = pyqtSignal()
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
     # simplify, smooth, expand, fill_holes, min_area
     refine_settings_changed = pyqtSignal(int, int, int, bool, int)
-    batch_mode_changed = pyqtSignal(bool)  # Batch mode is always on
 
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation by TerraLab"), parent)
@@ -87,7 +86,6 @@ class AISegmentationDockWidget(QDockWidget):
         self._negative_count = 0
         self._plugin_activated = is_plugin_activated()
         self._activation_popup_shown = False  # Track if popup was shown
-        self._batch_mode = True  # Batch mode is now the only mode
         self._segmentation_layer_id = None  # Track which layer we're segmenting
         # Note: _refine_expanded is initialized before _setup_ui() call
 
@@ -604,7 +602,7 @@ class AISegmentationDockWidget(QDockWidget):
         simplify_label.setToolTip(tr("Reduce small variations in the outline (0 = no change)"))
         self.simplify_spinbox = QSpinBox()
         self.simplify_spinbox.setRange(0, 1000)
-        self.simplify_spinbox.setValue(3)  # Default to 3 for smoother outlines
+        self.simplify_spinbox.setValue(10)
         self.simplify_spinbox.setMinimumWidth(55)
         self.simplify_spinbox.setMaximumWidth(70)
         simplify_layout.addWidget(simplify_label)
@@ -727,7 +725,7 @@ class AISegmentationDockWidget(QDockWidget):
                   self.min_area_spinbox):
             w.blockSignals(True)
 
-        self.simplify_spinbox.setValue(3)
+        self.simplify_spinbox.setValue(10)
         self.round_corners_checkbox.setChecked(False)
         self.expand_spinbox.setValue(0)
         self.fill_holes_checkbox.setChecked(True)
@@ -848,14 +846,24 @@ class AISegmentationDockWidget(QDockWidget):
 
         links_layout.addStretch()  # Push links to the right
 
-        # Report a bug button (styled as link)
-        report_link = QLabel(
-            '<a href="#" style="color: #1976d2;">' + tr("Report a bug") + "</a>"
+        # Settings link (only visible when activated)
+        self._settings_link = QLabel(
+            '<a href="#" style="color: #1976d2;">' + tr("Settings") + "</a>"
         )
-        report_link.setStyleSheet("font-size: 13px;")
-        report_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        report_link.linkActivated.connect(self._on_report_bug)
-        links_layout.addWidget(report_link)
+        self._settings_link.setStyleSheet("font-size: 13px;")
+        self._settings_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._settings_link.linkActivated.connect(lambda _: self.settings_clicked.emit())
+        self._settings_link.setVisible(False)
+        links_layout.addWidget(self._settings_link)
+
+        # Contact us link
+        contact_link = QLabel(
+            '<a href="#" style="color: #1976d2;">' + tr("Contact us") + "</a>"
+        )
+        contact_link.setStyleSheet("font-size: 13px;")
+        contact_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        contact_link.linkActivated.connect(self._on_contact_us)
+        links_layout.addWidget(contact_link)
 
         # Tutorial link (server-driven URL)
         docs_link = QLabel(
@@ -937,18 +945,53 @@ class AISegmentationDockWidget(QDockWidget):
         layout.addWidget(ok_btn, alignment=Qt.AlignmentFlag.AlignCenter)
         dlg.exec()
 
-    def _on_report_bug(self):
-        """Open the bug report dialog."""
-        from .error_report_dialog import show_bug_report
-        show_bug_report(self)
+    def _on_contact_us(self, _link=None):
+        from qgis.PyQt.QtGui import QDesktopServices
+        from qgis.PyQt.QtWidgets import QApplication, QDialog, QVBoxLayout as _VBox
 
-    def is_batch_mode(self) -> bool:
-        """Return whether batch mode is active (always True)."""
-        return True
+        calendly_url = "https://calendly.com/barbot-yvann/30min"
+        support_email = "yvann.barbot@terra-lab.ai"
 
-    def set_batch_mode(self, _batch: bool):
-        """Set batch mode programmatically. Batch is always on."""
-        pass
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("Contact us"))
+        dlg.setMinimumWidth(350)
+        dlg.setMaximumWidth(450)
+        lay = _VBox(dlg)
+        lay.setSpacing(10)
+        lay.setContentsMargins(16, 16, 16, 16)
+
+        msg = QLabel(
+            tr("Bug, question, feature request?") + "\n"
+            + tr("We'd love to hear from you!")
+        )
+        msg.setWordWrap(True)
+        lay.addWidget(msg)
+
+        email_label = QLabel(f"<b>{support_email}</b>")
+        email_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        lay.addWidget(email_label)
+
+        copy_btn = QPushButton(tr("Copy email address"))
+        copy_btn.clicked.connect(
+            lambda: (
+                QApplication.clipboard().setText(support_email),
+                copy_btn.setText(tr("Copied!")),
+            )
+        )
+        lay.addWidget(copy_btn)
+
+        or_label = QLabel(tr("or"))
+        or_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        or_label.setStyleSheet("color: palette(text);")
+        lay.addWidget(or_label)
+
+        call_btn = QPushButton(tr("Book a video call"))
+        call_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(calendly_url))
+        )
+        lay.addWidget(call_btn)
+
+        dlg.exec()
 
     def _on_panel_sign_in_clicked(self):
         """Open TerraLab sign-in page in browser."""
@@ -1007,6 +1050,8 @@ class AISegmentationDockWidget(QDockWidget):
 
         if show_activation:
             self.welcome_widget.setVisible(False)
+
+        self._settings_link.setVisible(self._plugin_activated)
 
         self._update_ui_state()
 

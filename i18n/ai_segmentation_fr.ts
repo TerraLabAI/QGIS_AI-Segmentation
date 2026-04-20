@@ -157,72 +157,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>AI Segmentation par TerraLab</translation>
     </message>
 
-    <!-- Activation Section -->
-    <message>
-        <source>Setup AI Segmentation by TerraLab</source>
-        <translation>Configuration AI Segmentation par TerraLab</translation>
-    </message>
-    <message>
-        <source>Unlock Plugin</source>
-        <translation>Activer le plugin</translation>
-    </message>
-    <message>
-        <source>Get my verification code</source>
-        <translation>Obtenir mon code</translation>
-    </message>
-    <message>
-        <source>Then paste your code:</source>
-        <translation>Puis collez votre code :</translation>
-    </message>
-    <message>
-        <source>Code</source>
-        <translation>Code</translation>
-    </message>
-    <message>
-        <source>Unlock</source>
-        <translation>Activer</translation>
-    </message>
-    <message>
-        <source>Enter your code</source>
-        <translation>Entrez votre code</translation>
-    </message>
-    <message>
-        <source>Unlocked!</source>
-        <translation>Activé !</translation>
-    </message>
-    <message>
-        <source>Invalid code</source>
-        <translation>Code invalide</translation>
-    </message>
-    <message>
-        <source>Thanks for trying our plugin!</source>
-        <translation>Merci d'essayer notre plugin !</translation>
-    </message>
-    <message>
-        <source>This plugin is in beta. We'd love to keep you updated when we release new versions and features.</source>
-        <translation>Ce plugin est en bêta. Nous aimerions vous tenir informé des nouvelles versions.</translation>
-    </message>
-    <message>
-        <source>Enter your email and you'll get a</source>
-        <translation>Entrez votre email pour recevoir un</translation>
-    </message>
-    <message>
-        <source>Verification Code</source>
-        <translation>Code de vérification</translation>
-    </message>
-    <message>
-        <source>to paste below.</source>
-        <translation>à coller ci-dessous.</translation>
-    </message>
-    <message>
-        <source>Paste your verification code:</source>
-        <translation>Collez votre code de vérification :</translation>
-    </message>
-    <message>
-        <source>Enter your verification code</source>
-        <translation>Entrez votre code de vérification</translation>
-    </message>
-
     <!-- Segmentation Section -->
     <message>
         <source>Select a Raster Layer to Segment:</source>
@@ -335,22 +269,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Combler les trous intérieurs de la sélection</translation>
     </message>
     <message>
-        <source>Min. region size:</source>
-        <translation>Taille min. région :</translation>
-    </message>
-    <message>
-        <source>Remove disconnected regions smaller than this area (in pixels²).</source>
-        <translation>Supprimer les régions déconnectées plus petites que cette surface (en pixels²).</translation>
-    </message>
-    <message>
-        <source>Example: 100 = ~10x10 pixel regions, 900 = ~30x30.</source>
-        <translation>Exemple : 100 = régions ~10x10 px, 900 = ~30x30.</translation>
-    </message>
-    <message>
-        <source>0 = keep all.</source>
-        <translation>0 = tout garder.</translation>
-    </message>
-    <message>
         <source>Round corners:</source>
         <translation>Arrondir les coins :</translation>
     </message>
@@ -451,24 +369,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Utilisez « Exporter en couche » pour les conserver.</translation>
     </message>
     <message>
-        <source>Leave Segmentation?</source>
-        <translation>Quitter la segmentation ?</translation>
-    </message>
-    <message>
-        <source>You can pan with the middle mouse button, spacebar, or arrow keys without leaving segmentation mode.</source>
-        <translation>Vous pouvez naviguer avec le clic molette, la barre d'espace ou les flèches directionnelles sans quitter le mode segmentation.</translation>
-    </message>
-    <message>
         <source>This will end the current segmentation session.</source>
         <translation>Cela va mettre fin à la session de segmentation en cours.</translation>
-    </message>
-    <message>
-        <source>Delete all saved polygons?</source>
-        <translation>Supprimer tous les polygones sauvegardés ?</translation>
-    </message>
-    <message>
-        <source>This will delete all saved polygons.</source>
-        <translation>Cela va supprimer tous les polygones sauvegardés.</translation>
     </message>
     <message>
         <source>Do you want to continue?</source>
@@ -497,28 +399,8 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Signaler un bug</translation>
     </message>
     <message>
-        <source>Suggest feature</source>
-        <translation>Suggérer une fonctionnalité</translation>
-    </message>
-    <message>
-        <source>Share your ideas with us! :)</source>
-        <translation>Partagez vos idees avec nous ! :)</translation>
-    </message>
-    <message>
-        <source>Tell us how AI Segmentation could work better for your projects. Every suggestion helps us build a more useful tool.</source>
-        <translation>Dites-nous comment AI Segmentation pourrait mieux fonctionner pour vos projets. Chaque suggestion nous aide a construire un outil plus utile.</translation>
-    </message>
-    <message>
-        <source>Take a call</source>
-        <translation>Prendre un appel</translation>
-    </message>
-    <message>
         <source>Tutorial</source>
         <translation>Tutoriel</translation>
-    </message>
-    <message>
-        <source>About us</source>
-        <translation>A propos</translation>
     </message>
     <message>
         <source>Something not working?</source>
@@ -571,23 +453,6 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Installation bloquée</translation>
     </message>
 
-    <!-- GPU auto-detection -->
-    <message>
-        <source>GPU mode failed, using CPU</source>
-        <translation>Mode GPU échoué, utilisation du CPU</translation>
-    </message>
-    <message>
-        <source>Using CPU mode (GPU driver needs update).</source>
-        <translation>Utilisation du mode CPU (le pilote GPU nécessite une mise à jour).</translation>
-    </message>
-    <message>
-        <source>Your GPU was detected but CUDA installation didn't work.</source>
-        <translation>Votre GPU a été détecté mais l'installation CUDA n'a pas fonctionné.</translation>
-    </message>
-    <message>
-        <source>No worries, the plugin now uses CPU mode and everything works fine :) If you'd like us to fix GPU support for your setup, send us your logs!</source>
-        <translation>Pas de souci, le plugin utilise maintenant le mode CPU et tout fonctionne :) Si vous souhaitez qu'on corrige le support GPU pour votre config, envoyez-nous vos logs !</translation>
-    </message>
     <message>
         <source>Click is outside the &apos;{layer}&apos; raster. To segment another raster, stop the current segmentation first.</source>
         <translation>Le clic est en dehors du raster '{layer}'. Pour segmenter un autre raster, arrêtez d'abord la segmentation en cours.</translation>
@@ -683,10 +548,6 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Signaler un bug</translation>
     </message>
     <message>
-        <source>Share Your Ideas</source>
-        <translation>Partagez vos idees</translation>
-    </message>
-    <message>
         <source>Disconnected parts detected in your polygon.</source>
         <translation>Parties deconnectees detectees dans votre polygone.</translation>
     </message>
@@ -770,14 +631,6 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <translation>Le clic se trouve hors de l element courant — segmentez un element a la fois. La selection en cours est enregistree, un nouvel element commence.</translation>
     </message>
     <message>
-        <source>Remove small parts:</source>
-        <translation>Supprimer les petites zones :</translation>
-    </message>
-    <message>
-        <source>Drop connected regions smaller than this (pixels).</source>
-        <translation>Supprime les regions connectees plus petites que cela (en pixels).</translation>
-    </message>
-    <message>
         <source>New here?</source>
         <translation>Nouveau ici ?</translation>
     </message>
@@ -856,6 +709,51 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <source>Right-click must be inside the current selection area.</source>
         <translation>Le clic droit doit se situer dans la zone de selection courante.</translation>
+    </message>
+    <!-- Account Settings Dialog -->
+    <message>
+        <source>Account Settings</source>
+        <translation>Parametres du compte</translation>
+    </message>
+    <message>
+        <source>Loading account info...</source>
+        <translation>Chargement des informations du compte...</translation>
+    </message>
+    <message>
+        <source>Manage subscription on terra-lab.ai</source>
+        <translation>Gerer l'abonnement sur terra-lab.ai</translation>
+    </message>
+    <message>
+        <source>Show</source>
+        <translation>Afficher</translation>
+    </message>
+    <message>
+        <source>Hide</source>
+        <translation>Masquer</translation>
+    </message>
+    <message>
+        <source>Change activation key</source>
+        <translation>Changer la cle d'activation</translation>
+    </message>
+    <message>
+        <source>Plan</source>
+        <translation>Plan</translation>
+    </message>
+    <message>
+        <source>Free</source>
+        <translation>Gratuit</translation>
+    </message>
+    <message>
+        <source>Canceled</source>
+        <translation>Annule</translation>
+    </message>
+    <message>
+        <source>Email</source>
+        <translation>Email</translation>
+    </message>
+    <message>
+        <source>Key</source>
+        <translation>Cle</translation>
     </message>
 </context>
 </TS>
