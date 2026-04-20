@@ -9,7 +9,10 @@ from qgis.PyQt.QtGui import QDesktopServices, QIcon
 from qgis.PyQt.QtWidgets import QAction
 
 _AI_EDIT_KEYS = ("AI_Edit", "QGIS_AI-Edit", "QGIS_AI-Edit-Team")
-_AI_EDIT_PRODUCT_URL = "https://terra-lab.ai/ai-edit?utm_source=qgis&utm_medium=plugin&utm_campaign=ai_segmentation_cross_promo"
+_AI_EDIT_PRODUCT_URL = (
+    "https://terra-lab.ai/ai-edit"
+    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai_segmentation_cross_promo"
+)
 
 
 def _find_installed_plugin(keys: tuple[str, ...]):

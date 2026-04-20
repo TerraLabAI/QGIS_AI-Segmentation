@@ -89,10 +89,10 @@ class SegmentationMCPAPI:
         status["model_loaded"] = True
 
         # Check raster layer
-        raster_layer = getattr(plugin, '_current_layer', None)
+        raster_layer = getattr(plugin, "_current_layer", None)
         if raster_layer is None:
-            dock = getattr(plugin, 'dock_widget', None)
-            if dock and hasattr(dock, 'layer_combo'):
+            dock = getattr(plugin, "dock_widget", None)
+            if dock and hasattr(dock, "layer_combo"):
                 raster_layer = dock.layer_combo.currentLayer()
 
         if raster_layer is None:
@@ -105,7 +105,10 @@ class SegmentationMCPAPI:
                     "ready": False,
                     "state": "NO_RASTER_LAYER",
                     "model_loaded": True,
-                    "action_required": f"No raster layer selected. Available: {', '.join(available)}. Pass layer_name to ai_segment_detect or select one in the panel.",
+                    "action_required": (
+                        f"No raster layer selected. Available: {', '.join(available)}."
+                        " Pass layer_name to ai_segment_detect or select one in the panel."
+                    ),
                     "available_raster_layers": available,
                 })
             else:
@@ -148,8 +151,8 @@ class SegmentationMCPAPI:
         raster_pt = plugin._transform_to_raster_crs(point)
 
         # Check bounds for file-based layers
-        is_online = getattr(plugin, '_is_online_layer', False)
-        if not is_online and hasattr(plugin, '_is_point_in_raster_extent'):
+        is_online = getattr(plugin, "_is_online_layer", False)
+        if not is_online and hasattr(plugin, "_is_point_in_raster_extent"):
             if not plugin._is_point_in_raster_extent(raster_pt):
                 ext = raster_layer.extent()
                 return {
@@ -183,8 +186,8 @@ class SegmentationMCPAPI:
             minx, miny, maxx, maxy = crop_bounds
 
             try:
-                from rasterio.transform import from_bounds as transform_from_bounds
                 from rasterio import transform as rio_transform
+                from rasterio.transform import from_bounds as transform_from_bounds
                 img_clip_transform = transform_from_bounds(minx, miny, maxx, maxy, img_width, img_height)
                 row, col = rio_transform.rowcol(img_clip_transform, raster_pt.x(), raster_pt.y())
                 point_coords = np.array([[col, row]])
@@ -259,6 +262,7 @@ class SegmentationMCPAPI:
 
         except Exception as e:
             import traceback
+
             from qgis.core import Qgis, QgsMessageLog
             QgsMessageLog.logMessage(
                 f"MCP detect failed: {e}\n{traceback.format_exc()}",
@@ -389,7 +393,7 @@ class SegmentationMCPAPI:
         plugin = self._plugin
 
         # Already active on the right layer?
-        current = getattr(plugin, '_current_layer', None)
+        current = getattr(plugin, "_current_layer", None)
         if current is not None:
             try:
                 current.id()
@@ -410,8 +414,8 @@ class SegmentationMCPAPI:
             if target_layer is None:
                 return None, {"_error": f"Raster layer '{layer_name}' not found."}
         else:
-            dock = getattr(plugin, 'dock_widget', None)
-            if dock and hasattr(dock, 'layer_combo'):
+            dock = getattr(plugin, "dock_widget", None)
+            if dock and hasattr(dock, "layer_combo"):
                 target_layer = dock.layer_combo.currentLayer()
             if target_layer is None:
                 for lyr in QgsProject.instance().mapLayers().values():
@@ -427,14 +431,14 @@ class SegmentationMCPAPI:
             layer_name_safe = target_layer.name().replace(" ", "_")
             raster_path = os.path.normcase(target_layer.source())
 
-            if hasattr(plugin, '_reset_session'):
+            if hasattr(plugin, "_reset_session"):
                 plugin._reset_session()
 
             plugin._current_layer = target_layer
             plugin._current_layer_name = layer_name_safe
             plugin._is_online_layer = plugin._is_online_provider(target_layer)
 
-            if hasattr(plugin, '_is_layer_georeferenced'):
+            if hasattr(plugin, "_is_layer_georeferenced"):
                 plugin._is_non_georeferenced_mode = (
                     not plugin._is_online_layer and not plugin._is_layer_georeferenced(target_layer)
                 )
@@ -456,7 +460,7 @@ class SegmentationMCPAPI:
         except Exception as e:
             return None, {"_error": f"Failed to start session: {str(e)}"}
 
-        if getattr(plugin, '_current_layer', None) is None:
+        if getattr(plugin, "_current_layer", None) is None:
             return None, {"_error": "Session failed to start."}
 
         return plugin._current_layer, None

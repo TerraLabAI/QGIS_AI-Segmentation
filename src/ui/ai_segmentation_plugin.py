@@ -2380,7 +2380,6 @@ class AISegmentationPlugin:
         # detection sees the true "no active points" state after a save.
         crop_status = self._check_crop_status(raster_pt)
 
-
         # Save current mask state for undo before modifying anything
         # Cap at 30 entries (~30MB) to prevent unbounded memory growth.
         if len(self._mask_state_history) >= 30:

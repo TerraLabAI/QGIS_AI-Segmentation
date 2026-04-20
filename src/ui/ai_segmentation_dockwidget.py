@@ -1558,7 +1558,6 @@ class AISegmentationDockWidget(QDockWidget):
         except (TypeError, RuntimeError, AttributeError):
             pass
 
-
     def is_activated(self) -> bool:
         """Check if the plugin is activated."""
         return self._plugin_activated
