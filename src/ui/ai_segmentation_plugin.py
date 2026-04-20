@@ -323,6 +323,7 @@ class AISegmentationPlugin:
         )
         add_action_to_toolbar(self.terralab_toolbar, self.ai_edit_action, "ai-edit")
         add_plugin_to_menu(self.terralab_menu, self.ai_edit_action, "ai-edit")
+        add_to_plugins_menu(self.iface, self.ai_edit_action)
 
         # Defer dock widget creation to first toggle for fast plugin load
         self.dock_widget = None
@@ -496,6 +497,12 @@ class AISegmentationPlugin:
             remove_from_plugins_menu(self.iface, self.action)
         except (RuntimeError, AttributeError):
             pass
+        ai_edit_action = getattr(self, "ai_edit_action", None)
+        if ai_edit_action is not None:
+            try:
+                remove_from_plugins_menu(self.iface, ai_edit_action)
+            except (RuntimeError, AttributeError):
+                pass
         if self.terralab_menu:
             try:
                 remove_plugin_from_menu(
