@@ -40,10 +40,22 @@ from .background_workers import DepsInstallWorker, DownloadWorker, VerifyWorker
 from .error_report_dialog import show_error_report, start_log_collector, stop_log_collector
 from .shortcut_filter import ShortcutFilter
 
-# QgsField type constants — raw QVariant.Type int values work across
-# all Qt5/Qt6 and QGIS versions without SIP binding compatibility issues.
-_FIELD_TYPE_STRING = 10  # QVariant.String / QMetaType.QString
-_FIELD_TYPE_DOUBLE = 6   # QVariant.Double / QMetaType.Double
+# QGIS 4 rejects raw int for QgsField type arg (#25, #36); pick by version.
+try:
+    from qgis.core import Qgis as _Qgis
+    _QGIS_VERSION_INT = getattr(_Qgis, "QGIS_VERSION_INT", 0)
+except ImportError:
+    _QGIS_VERSION_INT = 0
+
+if _QGIS_VERSION_INT >= 40000:
+    from qgis.PyQt.QtCore import QMetaType as _QMetaType
+    # Qt6/PyQt6 scoped enums: QMetaType.Type.QString
+    _FIELD_TYPE_STRING = _QMetaType.Type.QString
+    _FIELD_TYPE_DOUBLE = _QMetaType.Type.Double
+else:
+    from qgis.PyQt.QtCore import QVariant as _QVariant
+    _FIELD_TYPE_STRING = _QVariant.String
+    _FIELD_TYPE_DOUBLE = _QVariant.Double
 
 # QSettings keys for tutorial flags
 SETTINGS_KEY_TUTORIAL_SHOWN = "AI_Segmentation/tutorial_simple_shown"
@@ -75,6 +87,17 @@ def _get_change_path_instructions():
         tr("To install in a different folder, set the environment "
            "variable AI_SEGMENTATION_CACHE_DIR:"),
         steps)
+
+
+def _probe_writable(directory: str) -> bool:
+    probe = os.path.join(directory, f".ai_seg_write_probe_{os.getpid()}")
+    try:
+        with open(probe, "w", encoding="utf-8") as f:
+            f.write("ok")
+        os.remove(probe)
+        return True
+    except OSError:
+        return False
 
 
 class AISegmentationPlugin:
@@ -111,12 +134,12 @@ class AISegmentationPlugin:
         self._headless = False
         self._headless_error = None
 
-        # Refinement settings
+        # Refinement settings (#12, #23: defaults tuned for ease-of-use)
         self._refine_simplify = 3
         self._refine_smooth = 0
         self._refine_expand = 0
-        self._refine_fill_holes = False
-        self._refine_min_area = 100  # Will be overridden by _compute_auto_min_area()
+        self._refine_fill_holes = True
+        self._refine_min_area = 200  # overridden by _compute_auto_min_area() × 2
 
         self._is_non_georeferenced_mode = False  # Track if current layer is non-georeferenced
         self._is_online_layer = False  # Track if current layer is online (WMS, XYZ, etc.)
@@ -133,6 +156,7 @@ class AISegmentationPlugin:
         self.deps_install_worker = None
         self.download_worker = None
         self._verify_worker = None
+        self._predictor_worker = None
 
         self.mask_rubber_band: QgsRubberBand | None = None
         self.saved_rubber_bands: list[QgsRubberBand] = []
@@ -286,6 +310,17 @@ class AISegmentationPlugin:
         add_plugin_to_menu(self.terralab_menu, self.action, "ai-segmentation")
         add_to_plugins_menu(self.iface, self.action)
 
+        # Cross-plugin discovery: show AI Edit entry even when it's not installed (#30).
+        from .cross_plugin_discovery import make_ai_edit_action
+        self.ai_edit_action = make_ai_edit_action(
+            self.iface.mainWindow(),
+            self.iface,
+            tr("AI Edit"),
+            tr("Generate imagery with AI on map zones (opens AI Edit plugin)"),
+        )
+        add_action_to_toolbar(self.terralab_toolbar, self.ai_edit_action, "ai-edit")
+        add_plugin_to_menu(self.terralab_menu, self.ai_edit_action, "ai-edit")
+
         # Defer dock widget creation to first toggle for fast plugin load
         self.dock_widget = None
         self._dock_created = False
@@ -415,7 +450,8 @@ class AISegmentationPlugin:
                 )
 
         # 3. Disconnect worker signals before termination to prevent callbacks on deleted UI
-        for worker in [self.deps_install_worker, self.download_worker, self._verify_worker]:
+        for worker in [self.deps_install_worker, self.download_worker, self._verify_worker,
+                       getattr(self, "_predictor_worker", None)]:
             if worker:
                 try:
                     if hasattr(worker, "progress"):
@@ -428,7 +464,8 @@ class AISegmentationPlugin:
                     pass
 
         # 4. Terminate workers with timeout
-        for worker in [self.deps_install_worker, self.download_worker, self._verify_worker]:
+        for worker in [self.deps_install_worker, self.download_worker, self._verify_worker,
+                       getattr(self, "_predictor_worker", None)]:
             if worker and worker.isRunning():
                 try:
                     worker.terminate()
@@ -443,6 +480,7 @@ class AISegmentationPlugin:
         self.deps_install_worker = None
         self.download_worker = None
         self._verify_worker = None
+        self._predictor_worker = None
 
         # 5. Disconnect action signal and remove menu/toolbar
         try:
@@ -461,6 +499,13 @@ class AISegmentationPlugin:
                     self.terralab_menu, self.action, self.iface.mainWindow())
             except (RuntimeError, AttributeError):
                 pass
+            ai_edit_action = getattr(self, "ai_edit_action", None)
+            if ai_edit_action is not None:
+                try:
+                    remove_plugin_from_menu(
+                        self.terralab_menu, ai_edit_action, self.iface.mainWindow())
+                except (RuntimeError, AttributeError):
+                    pass
             self.terralab_menu = None
 
         from .terralab_toolbar import remove_action_from_toolbar
@@ -470,7 +515,15 @@ class AISegmentationPlugin:
                     self.terralab_toolbar, self.action, self.iface.mainWindow())
             except (RuntimeError, AttributeError):
                 pass
+            ai_edit_action = getattr(self, "ai_edit_action", None)
+            if ai_edit_action is not None:
+                try:
+                    remove_action_from_toolbar(
+                        self.terralab_toolbar, ai_edit_action, self.iface.mainWindow())
+                except (RuntimeError, AttributeError):
+                    pass
             self.terralab_toolbar = None
+        self.ai_edit_action = None
 
         # 6. Remove dock widget
         if self.dock_widget:
@@ -638,28 +691,34 @@ class AISegmentationPlugin:
             )
 
     def _load_predictor(self):
-        try:
-            from ..core.checkpoint_manager import get_checkpoint_path
-            from ..core.sam_predictor import SamPredictor, build_sam_predictor_config
+        """Kick off predictor initialization in the background (#34)."""
+        from .background_workers import PredictorLoadWorker
+        if self.dock_widget:
+            self.dock_widget.set_checkpoint_status(True, tr("Loading AI model..."))
+        self._predictor_worker = PredictorLoadWorker()
+        self._predictor_worker.finished.connect(self._on_predictor_loaded)
+        self._predictor_worker.start()
 
-            checkpoint_path = get_checkpoint_path()
-            sam_config = build_sam_predictor_config(checkpoint=checkpoint_path)
-            self.predictor = SamPredictor(sam_config)
-
+    def _on_predictor_loaded(self, predictor, err_msg: str):
+        if predictor is None:
             QgsMessageLog.logMessage(
-                "SAM predictor initialized (subprocess mode)",
-                "AI Segmentation",
-                level=Qgis.MessageLevel.Info
-            )
-            self.dock_widget.set_checkpoint_status(True, "SAM ready (subprocess)")
-
-        except Exception as e:
-            import traceback
-            QgsMessageLog.logMessage(
-                f"Failed to initialize predictor: {str(e)}\n{traceback.format_exc()}",
+                f"Failed to initialize predictor: {err_msg}",
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Warning
             )
+            if self.dock_widget:
+                self.dock_widget.set_checkpoint_status(
+                    False, tr("Model load failed"))
+            return
+        self.predictor = predictor
+        QgsMessageLog.logMessage(
+            "SAM predictor initialized (subprocess mode)",
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Info
+        )
+        if self.dock_widget:
+            self.dock_widget.set_checkpoint_status(True, tr("SAM model ready"))
+            self.dock_widget.set_install_progress(100, tr("Ready"))
 
     def _show_device_info(self):
         """Detect and display which compute device will be used."""
@@ -789,6 +848,23 @@ class AISegmentationPlugin:
             ]):
                 error_title = tr("Installation Blocked")
                 error_msg = f"{error_msg}\n\n{_get_change_path_instructions()}"
+            elif any(p in msg_lower for p in [
+                "network error", "connection aborted", "connection reset",
+                "timed out", "timeout", "network connection failed",
+                "connection broken", "could not resolve",
+            ]):
+                error_title = tr("Network Connection Problem")
+                error_msg = "{}\n\n{}".format(
+                    error_msg,
+                    tr(
+                        "Your connection appears unstable or blocked. "
+                        "Check: (1) your internet is working, "
+                        "(2) QGIS > Settings > Options > Network has a proxy "
+                        "configured if you are on a corporate network, "
+                        "(3) your firewall allows connections to pypi.org "
+                        "and files.pythonhosted.org."
+                    ),
+                )
 
             show_error_report(
                 self.iface.mainWindow(),
@@ -851,8 +927,7 @@ class AISegmentationPlugin:
         from ..core.checkpoint_manager import checkpoint_exists
         try:
             if checkpoint_exists():
-                self.dock_widget.set_install_progress(100, "Done")
-                self.dock_widget.set_checkpoint_status(True, "SAM model ready")
+                self.dock_widget.set_install_progress(95, tr("Loading AI model..."))
                 self._load_predictor()
                 self._show_activation_popup_if_needed()
                 return
@@ -884,8 +959,7 @@ class AISegmentationPlugin:
         if not self.dock_widget:
             return
         if success:
-            self.dock_widget.set_install_progress(100, "Done")
-            self.dock_widget.set_checkpoint_status(True, "SAM model ready")
+            self.dock_widget.set_install_progress(95, tr("Loading AI model..."))
             self._load_predictor()
             self._show_activation_popup_if_needed()
         else:
@@ -1047,9 +1121,9 @@ class AISegmentationPlugin:
         from ..core.activation_manager import get_tutorial_url
         tutorial_url = get_tutorial_url()
         message = '{} <a href="{}">{}</a>'.format(
-            tr("New to AI Segmentation?"),
+            tr("New here?"),
             tutorial_url,
-            tr("Watch our tutorial"))
+            tr("Watch the tutorial"))
 
         self.iface.messageBar().pushMessage(
             "AI Segmentation",
@@ -1352,6 +1426,27 @@ class AISegmentationPlugin:
             # Fallback to user's home directory
             output_dir = str(Path.home())
 
+        # OGR/GDAL cannot create intermediate directories; do it here (#27).
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except OSError as e:
+            show_error_report(
+                self.iface.mainWindow(),
+                tr("Cannot Write Export"),
+                tr("Cannot create export directory '{path}': {reason}").format(
+                    path=output_dir, reason=str(e))
+            )
+            return
+
+        if not _probe_writable(output_dir):
+            show_error_report(
+                self.iface.mainWindow(),
+                tr("Cannot Write Export"),
+                tr("The export directory '{path}' is not writable. "
+                   "Choose a different location.").format(path=output_dir)
+            )
+            return
+
         # Create unique GeoPackage filename
         gpkg_path = os.path.join(output_dir, f"{layer_name}.gpkg")
         counter = 1
@@ -1418,6 +1513,17 @@ class AISegmentationPlugin:
                 features_to_add.append(feature)
 
         if not features_to_add:
+            QgsMessageLog.logMessage(
+                "Export aborted: no valid geometries produced from mask",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Warning
+            )
+            show_error_report(
+                self.iface.mainWindow(),
+                tr("Export Failed"),
+                tr("No valid polygons could be created from the selection. "
+                   "Try adjusting the refine settings or making a new selection.")
+            )
             return
 
         pr.addFeatures(features_to_add)
@@ -1635,10 +1741,11 @@ class AISegmentationPlugin:
         self.dock_widget.reset_session()
 
     def _on_refine_settings_changed(self, simplify: int, smooth: int, expand: int,
-                                    fill_holes: bool):
+                                    fill_holes: bool, min_area: int):
         """Handle refinement control changes."""
         QgsMessageLog.logMessage(
-            f"Refine settings: simplify={simplify}, smooth={smooth}, expand={expand}, fill_holes={fill_holes}",
+            f"Refine settings: simplify={simplify}, smooth={smooth}, "
+            f"expand={expand}, fill_holes={fill_holes}, min_area={min_area}",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )
@@ -1646,6 +1753,7 @@ class AISegmentationPlugin:
         self._refine_smooth = smooth
         self._refine_expand = expand
         self._refine_fill_holes = fill_holes
+        self._refine_min_area = min_area
 
         # In both modes: update current mask preview only
         # Saved masks (green) keep their own refine settings from when they were saved
@@ -1917,9 +2025,8 @@ class AISegmentationPlugin:
                             / self._current_crop_canvas_mupp * 2.0)  # noqa: W503
             else:
                 scale = 1.0
-        # Gentle power curve centered on 100 (proven default).
-        # scale=0.5 → 85,  scale=1 → 100,  scale=4 → 152,  scale=8 → 187
-        return max(50, int(100 * max(0.6, scale) ** 0.3))
+        # Power curve centered on 200 (bumped ×2 per #12 for cleaner defaults).
+        return max(100, int(200 * max(0.6, scale) ** 0.3))
 
     def _compute_initial_scale_factor(self):
         """Compute initial scale_factor from canvas zoom for file-based rasters.
@@ -2086,6 +2193,10 @@ class AISegmentationPlugin:
 
         # Auto-compute min_area based on current crop scale
         self._refine_min_area = self._compute_auto_min_area()
+        if self.dock_widget and hasattr(self.dock_widget, "min_area_spinbox"):
+            self.dock_widget.min_area_spinbox.blockSignals(True)
+            self.dock_widget.min_area_spinbox.setValue(self._refine_min_area)
+            self.dock_widget.min_area_spinbox.blockSignals(False)
 
         # Restore keyboard focus to canvas after encoding (dock widget
         # updates during encoding can steal focus, breaking shortcuts).
@@ -2151,18 +2262,21 @@ class AISegmentationPlugin:
             return self._extract_and_encode_crop(raster_pt, mupp_override=initial_scale)
 
         if crop_status == "outside_bounds":
-            # Composite per-crop: encode new crop FIRST (transactional),
-            # then freeze old crop only on success.
-            # Save old crop info before encoding overwrites it.
             old_crop_info = self._current_crop_info
+            old_history = list(self._mask_state_history)
             initial_scale = self._compute_initial_scale_factor()
             if not self._extract_and_encode_crop(
                     raster_pt, mupp_override=initial_scale):
                 return False
 
-            # Encode succeeded — safe to freeze old crop (pass old info
-            # since _extract_and_encode_crop already overwrote _current_crop_info)
             self._freeze_active_crop(crop_info_override=old_crop_info)
+            # Clear stale prompts from old crop (#11, #35). The click handler
+            # that called us will re-add the new point with correct polarity.
+            self.prompts.clear()
+            self._active_crop_points_positive = []
+            self._active_crop_points_negative = []
+            # Preserve history so the empty-mask rollback path still works.
+            self._mask_state_history = old_history
             self.current_mask = None
             self.current_low_res_mask = None
             return True
@@ -2230,6 +2344,7 @@ class AISegmentationPlugin:
         # detection sees the true "no active points" state after a save.
         crop_status = self._check_crop_status(raster_pt)
 
+
         # Save current mask state for undo before modifying anything
         # Cap at 30 entries (~30MB) to prevent unbounded memory growth.
         if len(self._mask_state_history) >= 30:
@@ -2240,11 +2355,12 @@ class AISegmentationPlugin:
             "transform_info": self.current_transform_info,
         })
 
-        # Register point in prompts immediately so it stays in sync with
-        # the marker already added by canvasPressEvent.  This lets Cmd+Z
-        # work at any time, even during the (blocking) encoding below.
-        self.prompts.add_positive_point(raster_pt.x(), raster_pt.y())
-        self._active_crop_points_positive.append((raster_pt.x(), raster_pt.y()))
+        # For outside_bounds, _handle_reencode now owns prompt registration.
+        # For every other status, register the point immediately so undo can
+        # find it even while a (blocking) encoding runs.
+        if crop_status != "outside_bounds":
+            self.prompts.add_positive_point(raster_pt.x(), raster_pt.y())
+            self._active_crop_points_positive.append((raster_pt.x(), raster_pt.y()))
 
         QgsMessageLog.logMessage(
             f"POSITIVE POINT at ({raster_pt.x():.6f}, {raster_pt.y():.6f})",
@@ -2255,14 +2371,20 @@ class AISegmentationPlugin:
         # On-demand encoding: encode crop if needed
         if crop_status != "ok":
             if not self._handle_reencode(crop_status, raster_pt):
-                self.prompts.undo()
-                if self._active_crop_points_positive:
-                    self._active_crop_points_positive.pop()
+                if crop_status != "outside_bounds":
+                    self.prompts.undo()
+                    if self._active_crop_points_positive:
+                        self._active_crop_points_positive.pop()
                 if self._mask_state_history:
                     self._mask_state_history.pop()
                 if self.map_tool:
                     self.map_tool.remove_last_marker()
                 return
+
+            # After outside_bounds reencode, add the new point (prompts were cleared).
+            if crop_status == "outside_bounds":
+                self.prompts.add_positive_point(raster_pt.x(), raster_pt.y())
+                self._active_crop_points_positive.append((raster_pt.x(), raster_pt.y()))
 
         self._run_prediction()
 
@@ -2325,11 +2447,21 @@ class AISegmentationPlugin:
             )
             return
 
-        # Check crop status BEFORE adding to active points (same reason as positive)
         crop_status = self._check_crop_status(raster_pt)
 
-        # Save current mask state for undo before modifying anything
-        # Cap at 30 entries (~30MB) to prevent unbounded memory growth.
+        # Negative points outside the current crop don't make sense — they're
+        # meant to refine the current selection, not start a new one.
+        if crop_status == "outside_bounds":
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("Right-click must be inside the current selection area."),
+                level=Qgis.MessageLevel.Info,
+                duration=4
+            )
+            return
+
         if len(self._mask_state_history) >= 30:
             self._mask_state_history.pop(0)
         self._mask_state_history.append({
@@ -2338,7 +2470,6 @@ class AISegmentationPlugin:
             "transform_info": self.current_transform_info,
         })
 
-        # Register point in prompts immediately (sync with marker)
         self.prompts.add_negative_point(raster_pt.x(), raster_pt.y())
         self._active_crop_points_negative.append((raster_pt.x(), raster_pt.y()))
 
@@ -2348,7 +2479,7 @@ class AISegmentationPlugin:
             level=Qgis.MessageLevel.Info
         )
 
-        # Re-encode if needed (zoom changed or point outside crop)
+        # Re-encode if needed (zoom changed)
         if crop_status != "ok":
             if not self._handle_reencode(crop_status, raster_pt):
                 self.prompts.undo()
@@ -2891,8 +3022,8 @@ class AISegmentationPlugin:
         self._refine_simplify = last_polygon.get("refine_simplify", 3)
         self._refine_smooth = last_polygon.get("refine_smooth", 0)
         self._refine_expand = last_polygon.get("refine_expand", 0)
-        self._refine_fill_holes = last_polygon.get("refine_fill_holes", False)
-        self._refine_min_area = last_polygon.get("refine_min_area", 100)
+        self._refine_fill_holes = last_polygon.get("refine_fill_holes", True)
+        self._refine_min_area = last_polygon.get("refine_min_area", 200)
 
         # Update UI sliders without emitting signals
         self.dock_widget.set_refine_values(
@@ -2900,6 +3031,7 @@ class AISegmentationPlugin:
             self._refine_smooth,
             self._refine_expand,
             self._refine_fill_holes,
+            self._refine_min_area,
         )
 
         # Update visualization
@@ -2952,12 +3084,12 @@ class AISegmentationPlugin:
         # Reset online layer state
         self._is_online_layer = False
 
-        # Reset refinement settings to defaults
+        # Reset refinement settings to defaults (#12, #23)
         self._refine_simplify = 3
         self._refine_smooth = 0
         self._refine_expand = 0
-        self._refine_fill_holes = False
-        self._refine_min_area = 100  # Will be overridden by _compute_auto_min_area()
+        self._refine_fill_holes = True
+        self._refine_min_area = 200  # overridden by _compute_auto_min_area() × 2
 
         if self.dock_widget:
             self.dock_widget.set_point_count(0, 0)

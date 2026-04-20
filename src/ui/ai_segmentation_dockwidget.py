@@ -2,8 +2,8 @@ import os
 import sys
 
 from qgis.core import QgsProject
-from qgis.PyQt.QtCore import Qt, QTimer, QUrl, pyqtSignal
-from qgis.PyQt.QtGui import QDesktopServices, QKeySequence
+from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
+from qgis.PyQt.QtGui import QKeySequence
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
     QDockWidget,
@@ -30,12 +30,10 @@ _REFINE_COLLAPSED_HEIGHT = 25
 
 
 from ..core.activation_manager import (  # noqa: E402
-    activate_plugin,
-    get_newsletter_url_with_email,
-    get_shared_email,
+    get_sign_in_url,
     get_tutorial_url,
     is_plugin_activated,
-    save_shared_email,
+    validate_key_with_server,
 )
 from ..core.i18n import tr  # noqa: E402
 from ..core.model_config import _IS_MACOS_X86, USE_SAM2  # noqa: E402
@@ -52,7 +50,8 @@ class AISegmentationDockWidget(QDockWidget):
     save_polygon_requested = pyqtSignal()
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
-    refine_settings_changed = pyqtSignal(int, int, int, bool)  # simplify, smooth, expand, fill_holes
+    # simplify, smooth, expand, fill_holes, min_area
+    refine_settings_changed = pyqtSignal(int, int, int, bool, int)
     batch_mode_changed = pyqtSignal(bool)  # Batch mode is always on
 
     def __init__(self, parent=None):
@@ -277,7 +276,6 @@ class AISegmentationDockWidget(QDockWidget):
         layout.setSpacing(8)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        # TerraLab banner
         banner_label = QLabel()
         banner_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(
@@ -296,66 +294,50 @@ class AISegmentationDockWidget(QDockWidget):
         banner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(banner_label)
 
-        # Title
-        title_label = QLabel(tr("Unlock Plugin"))
+        title_label = QLabel(tr("Sign in to continue"))
         title_label.setStyleSheet(
             "font-size: 13px; font-weight: bold; color: palette(text);")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
-        # Email input
-        self.activation_email_input = QLineEdit()
-        self.activation_email_input.setPlaceholderText("your@email.com")
-        self.activation_email_input.setMinimumHeight(28)
-        shared_email = get_shared_email()
-        if shared_email:
-            self.activation_email_input.setText(shared_email)
-        self.activation_email_input.textChanged.connect(self._on_activation_email_changed)
-        layout.addWidget(self.activation_email_input)
+        subtitle = QLabel(tr(
+            "Create your free TerraLab account or sign in to get started."))
+        subtitle.setWordWrap(True)
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setStyleSheet("font-size: 11px; color: palette(text);")
+        layout.addWidget(subtitle)
 
-        # Get code button - disabled until email entered
-        self.get_code_button = QPushButton(tr("Get my verification code"))
-        self.get_code_button.setMinimumHeight(30)
-        self.get_code_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.get_code_button.setStyleSheet(
+        sign_in_btn = QPushButton(tr("Sign in to TerraLab (free)"))
+        sign_in_btn.setMinimumHeight(34)
+        sign_in_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        sign_in_btn.setStyleSheet(
             "QPushButton { background-color: #2e7d32; color: white; "
             "font-weight: bold; border-radius: 4px; }"
             "QPushButton:hover { background-color: #1b5e20; }"
-            "QPushButton:disabled { background-color: #b0bec5; }"
         )
-        self.get_code_button.setEnabled(bool(shared_email and "@" in shared_email))
-        self.get_code_button.clicked.connect(self._on_get_code_clicked)
-        layout.addWidget(self.get_code_button)
+        sign_in_btn.clicked.connect(self._on_panel_sign_in_clicked)
+        layout.addWidget(sign_in_btn)
 
-        # Code input section - compact
-        code_label = QLabel(tr("Then paste your code:"))
-        code_label.setStyleSheet(
-            "font-size: 11px; margin-top: 2px; color: palette(text);")
-        layout.addWidget(code_label)
+        key_row = QHBoxLayout()
+        self.panel_key_input = QLineEdit()
+        self.panel_key_input.setPlaceholderText("tl_...")
+        self.panel_key_input.setMinimumHeight(28)
+        self.panel_key_input.returnPressed.connect(self._on_panel_activate_clicked)
+        key_row.addWidget(self.panel_key_input)
 
-        code_layout = QHBoxLayout()
-        code_layout.setSpacing(6)
-
-        self.activation_code_input = QLineEdit()
-        self.activation_code_input.setPlaceholderText(tr("Code"))
-        self.activation_code_input.setMinimumHeight(28)
-        self.activation_code_input.returnPressed.connect(self._on_activate_clicked)
-        code_layout.addWidget(self.activation_code_input)
-
-        self.activate_button = QPushButton(tr("Unlock"))
-        self.activate_button.setMinimumHeight(28)
-        self.activate_button.setMinimumWidth(60)
-        self.activate_button.setStyleSheet(
+        self.panel_activate_button = QPushButton(tr("Activate"))
+        self.panel_activate_button.setMinimumHeight(28)
+        self.panel_activate_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.panel_activate_button.setStyleSheet(
             "QPushButton { background-color: #1976d2; color: white; "
             "font-weight: bold; border-radius: 4px; }"
             "QPushButton:hover { background-color: #1565c0; }"
+            "QPushButton:disabled { background-color: #b0bec5; }"
         )
-        self.activate_button.clicked.connect(self._on_activate_clicked)
-        code_layout.addWidget(self.activate_button)
+        self.panel_activate_button.clicked.connect(self._on_panel_activate_clicked)
+        key_row.addWidget(self.panel_activate_button)
+        layout.addLayout(key_row)
 
-        layout.addLayout(code_layout)
-
-        # Error message label
         self.activation_message_label = QLabel("")
         self.activation_message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.activation_message_label.setWordWrap(True)
@@ -363,7 +345,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.activation_message_label.setStyleSheet("font-size: 11px;")
         layout.addWidget(self.activation_message_label)
 
-        # Hidden by default - only shown if popup closed without activation
         self.activation_group.setVisible(False)
         self.main_layout.addWidget(self.activation_group)
 
@@ -381,6 +362,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.layer_combo.layerChanged.connect(self._on_layer_changed)
         self.layer_combo.setToolTip(tr("Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)"))
         self.layer_combo.setStyleSheet("QComboBox { color: palette(text); }")
+        from qgis.PyQt.QtWidgets import QSizePolicy
+        self.layer_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.layer_combo.setMinimumWidth(0)
         layout.addWidget(self.layer_combo)
 
         # Warning container with icon and text - yellow background with dark text
@@ -677,6 +661,24 @@ class AISegmentationDockWidget(QDockWidget):
         fill_layout.addWidget(self.fill_holes_checkbox)
         refine_content_layout.addLayout(fill_layout)
 
+        # 5. Min area: remove small artifacts / noise regions (#12)
+        min_area_layout = QHBoxLayout()
+        min_area_label = QLabel(tr("Remove small parts:"))
+        min_area_label.setToolTip(
+            tr("Drop connected regions smaller than this (pixels)."))
+        self.min_area_spinbox = QSpinBox()
+        self.min_area_spinbox.setRange(0, 100000)
+        self.min_area_spinbox.setSingleStep(50)
+        self.min_area_spinbox.setValue(200)
+        self.min_area_spinbox.setSuffix(" px")
+        self.min_area_spinbox.setMinimumWidth(70)
+        self.min_area_spinbox.setMaximumWidth(90)
+        self.min_area_spinbox.setToolTip(min_area_label.toolTip())
+        min_area_layout.addWidget(min_area_label)
+        min_area_layout.addStretch()
+        min_area_layout.addWidget(self.min_area_spinbox)
+        refine_content_layout.addLayout(min_area_layout)
+
         refine_layout.addWidget(self.refine_content_widget)
         self.refine_content_widget.setVisible(self._refine_expanded)
         # Set initial max height constraint (collapsed by default)
@@ -688,6 +690,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.round_corners_checkbox.stateChanged.connect(self._on_refine_changed)
         self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
         self.fill_holes_checkbox.stateChanged.connect(self._on_refine_changed)
+        self.min_area_spinbox.valueChanged.connect(self._on_refine_changed)
 
         parent_layout.addWidget(self.refine_group)
 
@@ -724,42 +727,46 @@ class AISegmentationDockWidget(QDockWidget):
             5 if self.round_corners_checkbox.isChecked() else 0,
             self.expand_spinbox.value(),
             self.fill_holes_checkbox.isChecked(),
+            self.min_area_spinbox.value(),
         )
 
     def reset_refine_sliders(self):
         """Reset refinement controls to default values without emitting signals."""
-        self.simplify_spinbox.blockSignals(True)
-        self.round_corners_checkbox.blockSignals(True)
-        self.expand_spinbox.blockSignals(True)
-        self.fill_holes_checkbox.blockSignals(True)
+        for w in (self.simplify_spinbox, self.round_corners_checkbox,
+                  self.expand_spinbox, self.fill_holes_checkbox,
+                  self.min_area_spinbox):
+            w.blockSignals(True)
 
         self.simplify_spinbox.setValue(3)
         self.round_corners_checkbox.setChecked(False)
         self.expand_spinbox.setValue(0)
         self.fill_holes_checkbox.setChecked(True)
+        self.min_area_spinbox.setValue(200)
 
-        self.simplify_spinbox.blockSignals(False)
-        self.round_corners_checkbox.blockSignals(False)
-        self.expand_spinbox.blockSignals(False)
-        self.fill_holes_checkbox.blockSignals(False)
+        for w in (self.simplify_spinbox, self.round_corners_checkbox,
+                  self.expand_spinbox, self.fill_holes_checkbox,
+                  self.min_area_spinbox):
+            w.blockSignals(False)
 
     def set_refine_values(self, simplify: int, smooth: int, expand: int,
-                          fill_holes: bool):
+                          fill_holes: bool, min_area: int | None = None):
         """Set refine slider values without emitting signals."""
-        self.simplify_spinbox.blockSignals(True)
-        self.round_corners_checkbox.blockSignals(True)
-        self.expand_spinbox.blockSignals(True)
-        self.fill_holes_checkbox.blockSignals(True)
+        for w in (self.simplify_spinbox, self.round_corners_checkbox,
+                  self.expand_spinbox, self.fill_holes_checkbox,
+                  self.min_area_spinbox):
+            w.blockSignals(True)
 
         self.simplify_spinbox.setValue(simplify)
         self.round_corners_checkbox.setChecked(smooth > 0)
         self.expand_spinbox.setValue(expand)
         self.fill_holes_checkbox.setChecked(fill_holes)
+        if min_area is not None:
+            self.min_area_spinbox.setValue(min_area)
 
-        self.simplify_spinbox.blockSignals(False)
-        self.round_corners_checkbox.blockSignals(False)
-        self.expand_spinbox.blockSignals(False)
-        self.fill_holes_checkbox.blockSignals(False)
+        for w in (self.simplify_spinbox, self.round_corners_checkbox,
+                  self.expand_spinbox, self.fill_holes_checkbox,
+                  self.min_area_spinbox):
+            w.blockSignals(False)
 
     def _setup_update_notification(self):
         """Setup the update notification label (hidden by default)."""
@@ -953,36 +960,34 @@ class AISegmentationDockWidget(QDockWidget):
         """Set batch mode programmatically. Batch is always on."""
         pass
 
-    def _on_activation_email_changed(self, text: str):
-        """Enable/disable the get code button based on email validity."""
-        self.get_code_button.setEnabled("@" in text.strip())
+    def _on_panel_sign_in_clicked(self):
+        """Open TerraLab sign-in page in browser."""
+        from qgis.PyQt.QtCore import QUrl
+        from qgis.PyQt.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl(get_sign_in_url()))
 
-    def _on_get_code_clicked(self):
-        """Save email and open the verification page with email pre-filled."""
-        email = self.activation_email_input.text().strip()
-        if email and "@" in email:
-            save_shared_email(email)
-        url = get_newsletter_url_with_email(email)
-        QDesktopServices.openUrl(QUrl(url))
-
-    def _on_activate_clicked(self):
-        """Attempt to activate the plugin with the entered code."""
-        code = self.activation_code_input.text().strip()
-
-        if not code:
-            self._show_activation_message(tr("Enter your code"), is_error=True)
+    def _on_panel_activate_clicked(self):
+        """Validate the pasted activation key."""
+        key = self.panel_key_input.text().strip()
+        if not key:
+            self._show_activation_message(
+                tr("Please enter your activation key."), is_error=True)
             return
 
-        success, message = activate_plugin(code)
+        self.panel_activate_button.setEnabled(False)
+        self.panel_activate_button.setText(tr("Checking..."))
+
+        success, msg = validate_key_with_server(key)
+
+        self.panel_activate_button.setText(tr("Activate"))
+        self.panel_activate_button.setEnabled(True)
 
         if success:
             self._plugin_activated = True
-            self._show_activation_message(tr("Unlocked!"), is_error=False)
+            self._show_activation_message(tr(msg), is_error=False)
             self._update_full_ui()
         else:
-            self._show_activation_message(tr("Invalid code"), is_error=True)
-            self.activation_code_input.selectAll()
-            self.activation_code_input.setFocus()
+            self._show_activation_message(tr(msg), is_error=True)
 
     def _show_activation_message(self, text: str, is_error: bool = False):
         """Display a message in the activation section."""
@@ -1507,9 +1512,6 @@ class AISegmentationDockWidget(QDockWidget):
         except (TypeError, RuntimeError, AttributeError):
             pass
 
-    def sizeHint(self):
-        from qgis.PyQt.QtCore import QSize
-        return QSize(300, 400)  # ← change 300 to adjust default width
 
     def is_activated(self) -> bool:
         """Check if the plugin is activated."""

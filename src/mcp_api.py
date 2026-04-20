@@ -9,6 +9,7 @@ import os
 from datetime import datetime
 
 from qgis.core import (
+    Qgis,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
     QgsFeature,
@@ -22,10 +23,16 @@ from qgis.core import (
     QgsVectorFileWriter,
     QgsVectorLayer,
 )
-from qgis.PyQt.QtCore import QVariant
 
-_FIELD_TYPE_STRING = 10
-_FIELD_TYPE_DOUBLE = 6
+# QGIS 4 rejects raw int for QgsField type arg (#25, #36); pick by version.
+if getattr(Qgis, "QGIS_VERSION_INT", 0) >= 40000:
+    from qgis.PyQt.QtCore import QMetaType as _QMetaType
+    _FIELD_TYPE_STRING = _QMetaType.Type.QString
+    _FIELD_TYPE_DOUBLE = _QMetaType.Type.Double
+else:
+    from qgis.PyQt.QtCore import QVariant as _QVariant
+    _FIELD_TYPE_STRING = _QVariant.String
+    _FIELD_TYPE_DOUBLE = _QVariant.Double
 
 AISEG_KEYS = ["AI_Segmentation", "QGIS_AI-Segmentation", "QGIS_AI-Segmentation-Team"]
 AISEG_REGISTER_URL = "https://terra-lab.ai/ai-segmentation?utm_source=qgis&utm_medium=mcp&utm_campaign=ai-agent"
@@ -328,10 +335,10 @@ class SegmentationMCPAPI:
             temp_layer.setCrs(crs_obj)
             pr = temp_layer.dataProvider()
             pr.addAttributes([
-                QgsField("label", QVariant.String),
-                QgsField("area", QVariant.Double),
-                QgsField("raster_source", QVariant.String),
-                QgsField("created_at", QVariant.String),
+                QgsField("label", _FIELD_TYPE_STRING),
+                QgsField("area", _FIELD_TYPE_DOUBLE),
+                QgsField("raster_source", _FIELD_TYPE_STRING),
+                QgsField("created_at", _FIELD_TYPE_STRING),
             ])
             temp_layer.updateFields()
 

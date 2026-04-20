@@ -4,6 +4,9 @@ import json
 import os
 import sys
 
+# Plugin is CPU-only on NVIDIA; hide devices before torch imports (#31).
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
 # Redirect stdout to stderr during library imports to prevent
 # torch/sam2 print() calls from corrupting the JSON protocol.
 _real_stdout = sys.stdout

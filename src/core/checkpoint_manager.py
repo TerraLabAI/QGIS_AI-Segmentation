@@ -234,25 +234,39 @@ def download_checkpoint(
             "error": None,
             "file": None,
             "resume_offset": resume_offset,
+            "start_time": time.monotonic(),
         }
 
         def on_download_progress(received, total):
             download_state["bytes_received"] = received
             download_state["bytes_total"] = total
-            if progress_callback:
-                actual_received = resume_offset + received
-                actual_total = resume_offset + total if total > 0 else 0
-                if actual_total > 0:
-                    percent = int((actual_received / actual_total) * 90) + 5
-                    mb_recv = actual_received / (1024 * 1024)
-                    mb_tot = actual_total / (1024 * 1024)
-                    progress_callback(
-                        min(percent, 95),
-                        f"Downloading: {mb_recv:.1f} / {mb_tot:.1f} MB")
-                elif actual_received > 0:
-                    mb_recv = actual_received / (1024 * 1024)
-                    progress_callback(
-                        50, f"Downloading: {mb_recv:.1f} MB...")
+            if not progress_callback:
+                return
+            actual_received = resume_offset + received
+            actual_total = resume_offset + total if total > 0 else 0
+            elapsed = max(0.1, time.monotonic() - download_state["start_time"])
+            speed_mbs = (received / (1024 * 1024)) / elapsed if received > 0 else 0.0
+            retry_suffix = f" (retry {attempt}/{max_retries})" if attempt > 1 else ""
+
+            if actual_total > 0:
+                percent = int((actual_received / actual_total) * 90) + 5
+                mb_recv = actual_received / (1024 * 1024)
+                mb_tot = actual_total / (1024 * 1024)
+                remaining_bytes = max(0, (total - received))
+                eta_s = int(remaining_bytes / max(1.0, received / elapsed)) if received > 0 else 0
+                if eta_s >= 60:
+                    eta_str = f"~{eta_s // 60}m {eta_s % 60}s left"
+                else:
+                    eta_str = f"~{eta_s}s left"
+                progress_callback(
+                    min(percent, 95),
+                    f"Downloading: {mb_recv:.1f} / {mb_tot:.1f} MB "
+                    f"({speed_mbs:.1f} MB/s, {eta_str}){retry_suffix}")
+            elif actual_received > 0:
+                mb_recv = actual_received / (1024 * 1024)
+                progress_callback(
+                    50,
+                    f"Downloading: {mb_recv:.1f} MB ({speed_mbs:.1f} MB/s){retry_suffix}")
 
         def on_ready_read():
             data = reply.readAll()

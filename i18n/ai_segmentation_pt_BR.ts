@@ -736,5 +736,126 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <source>Retry</source>
         <translation>Tentar novamente</translation>
     </message>
+<!-- v1.0.0 strings -->
+    <message>
+        <source>Cannot Write Export</source>
+        <translation>Nao e possivel exportar</translation>
+    </message>
+    <message>
+        <source>Cannot create export directory '{path}': {reason}</source>
+        <translation>Nao foi possivel criar o diretorio de exportacao '{path}': {reason}</translation>
+    </message>
+    <message>
+        <source>The export directory '{path}' is not writable. Choose a different location.</source>
+        <translation>O diretorio de exportacao '{path}' nao permite escrita. Escolha outro local.</translation>
+    </message>
+    <message>
+        <source>Loading AI model...</source>
+        <translation>Carregando o modelo IA...</translation>
+    </message>
+    <message>
+        <source>SAM model ready</source>
+        <translation>Modelo SAM pronto</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation>Pronto</translation>
+    </message>
+    <message>
+        <source>Model load failed</source>
+        <translation>Falha ao carregar o modelo</translation>
+    </message>
+    <message>
+        <source>Click landed outside the current element — segment one element at a time. Saving the current selection and starting a new one.</source>
+        <translation>O clique ficou fora do elemento atual — segmente um elemento de cada vez. A selecao atual e salva e uma nova e iniciada.</translation>
+    </message>
+    <message>
+        <source>Remove small parts:</source>
+        <translation>Remover partes pequenas:</translation>
+    </message>
+    <message>
+        <source>Drop connected regions smaller than this (pixels).</source>
+        <translation>Remove regioes conectadas menores que isto (em pixels).</translation>
+    </message>
+    <message>
+        <source>New here?</source>
+        <translation>Novo por aqui?</translation>
+    </message>
+    <message>
+        <source>Watch the tutorial</source>
+        <translation>Ver o tutorial</translation>
+    </message>
+    <message>
+        <source>Network Connection Problem</source>
+        <translation>Problema de conexao de rede</translation>
+    </message>
+    <message>
+        <source>Your connection appears unstable or blocked. Check: (1) your internet is working, (2) QGIS > Settings > Options > Network has a proxy configured if you are on a corporate network, (3) your firewall allows connections to pypi.org and files.pythonhosted.org.</source>
+        <translation>Sua conexao parece instavel ou bloqueada. Verifique: (1) a Internet esta funcionando, (2) QGIS > Configuracoes > Opcoes > Rede tem um proxy se voce esta em uma rede corporativa, (3) seu firewall permite conexoes a pypi.org e files.pythonhosted.org.</translation>
+    </message>
+    <message>
+        <source>Sign in to TerraLab</source>
+        <translation>Entrar no TerraLab</translation>
+    </message>
+    <message>
+        <source>Sign in to continue</source>
+        <translation>Entre para continuar</translation>
+    </message>
+    <message>
+        <source>Create your free TerraLab account or sign in to get started.</source>
+        <translation>Crie sua conta gratuita TerraLab ou entre para comecar.</translation>
+    </message>
+    <message>
+        <source>Sign in to TerraLab (free)</source>
+        <translation>Entrar no TerraLab (gratuito)</translation>
+    </message>
+    <message>
+        <source>Sign in to get your key</source>
+        <translation>Entre para obter sua chave</translation>
+    </message>
+    <message>
+        <source>Create your free TerraLab account or sign in, then copy your activation key from the dashboard.</source>
+        <translation>Crie sua conta gratuita TerraLab ou entre, depois copie sua chave de ativacao do painel.</translation>
+    </message>
+    <message>
+        <source>Activate</source>
+        <translation>Ativar</translation>
+    </message>
+    <message>
+        <source>Please enter your activation key.</source>
+        <translation>Por favor, insira sua chave de ativacao.</translation>
+    </message>
+    <message>
+        <source>Checking...</source>
+        <translation>Verificando...</translation>
+    </message>
+    <message>
+        <source>Activation key verified!</source>
+        <translation>Chave de ativacao verificada!</translation>
+    </message>
+    <message>
+        <source>Invalid activation key.</source>
+        <translation>Chave de ativacao invalida.</translation>
+    </message>
+    <message>
+        <source>Cannot reach server. Check your internet connection.</source>
+        <translation>Nao foi possivel conectar ao servidor. Verifique sua conexao com a Internet.</translation>
+    </message>
+    <message>
+        <source>Signed in!</source>
+        <translation>Conectado!</translation>
+    </message>
+    <message>
+        <source>AI Edit</source>
+        <translation>AI Edit</translation>
+    </message>
+    <message>
+        <source>Generate imagery with AI on map zones (opens AI Edit plugin)</source>
+        <translation>Gere imagens de IA em zonas do mapa (abre o plugin AI Edit)</translation>
+    </message>
+    <message>
+        <source>Right-click must be inside the current selection area.</source>
+        <translation>O clique direito deve estar dentro da area de selecao atual.</translation>
+    </message>
 </context>
 </TS>
