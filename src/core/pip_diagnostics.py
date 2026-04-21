@@ -175,13 +175,44 @@ def get_vcpp_help() -> str:
 # Antivirus / permission errors
 # ---------------------------------------------------------------------------
 
+# Localized variants of "access is denied" from Windows error messages.
+# uv surfaces the raw OS message (in the user's system language), so our
+# English-only classifier was silently missing these cases (#bug-lukas).
+_ACCESS_DENIED_LOCALIZED = [
+    "access is denied",             # en
+    "zugriff verweigert",           # de
+    "acces refuse",                 # fr (no accents, defensive)
+    "accès refusé",                 # fr
+    "l'accès est refusé",           # fr (alt form)
+    "acceso denegado",              # es
+    "acesso negado",                # pt-BR / pt
+    "accesso negato",               # it
+    "toegang geweigerd",            # nl
+    "отказано в доступе",           # ru
+    "アクセスが拒否されました",       # ja
+    "拒绝访问",                       # zh-CN
+    "存取被拒",                       # zh-TW
+]
+
+
 def is_antivirus_error(stderr: str) -> bool:
-    """Detect antivirus/permission blocking in pip output."""
+    """Detect antivirus/permission blocking in pip/uv output.
+
+    Also catches corporate application-control policies (AppLocker, etc.)
+    and localized Windows "access denied" messages.
+    """
     stderr_lower = stderr.lower()
     patterns = [
-        "access is denied",
+        *_ACCESS_DENIED_LOCALIZED,
         "winerror 5",
         "winerror 225",
+        "winerror 110",        # ERROR_OPEN_FAILED — AV scan race on new wheel
+        "os error 5",          # uv format on Windows (distinct from winerror 5)
+        "os error 13",         # uv format on POSIX (EACCES)
+        # Windows text for ERROR_OPEN_FAILED; seen during install of fresh
+        # wheels (e.g. tqdm) when Defender holds the file during real-time
+        # scan. HRESULT 0x8007006E shows up as signed "os error -2147024786".
+        "cannot open the device or file",
         "permission denied",
         "operation did not complete successfully because the file contains a virus",
         "blocked by your administrator",
@@ -192,6 +223,61 @@ def is_antivirus_error(stderr: str) -> bool:
         "blocked by your organization",
     ]
     return any(p in stderr_lower for p in patterns)
+
+
+# Binary extensions whose presence in a "failed to remove" message points
+# to file-locking by the current process, not to antivirus interference.
+_BINARY_MODULE_EXTENSIONS = (".pyd", ".dll", ".so", ".dylib")
+
+
+def is_file_locked_error(output: str) -> bool:
+    """Detect native-module file-lock errors during package upgrade.
+
+    These occur when a .pyd/.dll/.so is already imported into the current
+    process — Windows and some filesystems refuse to delete an in-use
+    binary. The fix is to close the app holding the module (restart QGIS),
+    NOT to exclude the folder from antivirus.
+
+    Example (uv on Windows, German locale):
+        error: failed to remove file
+        `...\\site-packages\\torch/_C.cp312-win_amd64.pyd`:
+        Zugriff verweigert (os error 5)
+    """
+    lower = output.lower()
+    # "failed to remove" + a binary extension + any access-denied variant
+    has_remove_verb = (
+        "failed to remove" in lower
+        or "could not remove" in lower
+        or "unable to remove" in lower
+    )
+    if not has_remove_verb:
+        return False
+    has_binary_ext = any(ext in lower for ext in _BINARY_MODULE_EXTENSIONS)
+    if not has_binary_ext:
+        return False
+    if any(p in lower for p in _ACCESS_DENIED_LOCALIZED):
+        return True
+    return (
+        "os error 5" in lower
+        or "os error 13" in lower
+        or "winerror 5" in lower
+        or "permission denied" in lower
+    )
+
+
+def get_file_locked_help() -> str:
+    """Action-only instructions for file-lock errors (no diagnostic text)."""
+    return (
+        "How to fix this:\n\n"
+        "  1. Close all QGIS windows (File > Exit)\n"
+        "  2. Reopen QGIS\n"
+        "  3. Open the AI Segmentation panel — installation will resume\n\n"
+        "If it still fails after restarting QGIS:\n"
+        "  4. Uninstall the plugin "
+        "(Plugins > Manage and Install Plugins > Installed > AI Segmentation)\n"
+        "  5. Restart QGIS\n"
+        "  6. Reinstall the plugin"
+    )
 
 
 def get_pip_antivirus_help(venv_dir: str) -> str:

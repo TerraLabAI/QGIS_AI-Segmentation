@@ -923,10 +923,18 @@ class AISegmentationPlugin:
                 "unable to get local issuer",
             ]):
                 error_title = tr("SSL Certificate Error")
+            elif "file in use by qgis" in msg_lower:
+                # Native module (.pyd/.dll) locked by the running QGIS process
+                # during a torch upgrade — no dialog-splash of AV advice here,
+                # the actionable fix is just "restart QGIS".
+                from ..core.pip_diagnostics import get_file_locked_help
+                error_title = tr("Restart QGIS Required")
+                error_msg = get_file_locked_help()
             elif any(p in msg_lower for p in [
                 "access is denied", "winerror 5", "winerror 225",
                 "permission denied", "blocked",
                 "cannot write to install",
+                "cannot open the device or file",
             ]):
                 error_title = tr("Installation Blocked")
                 error_msg = f"{error_msg}\n\n{_get_change_path_instructions()}"
