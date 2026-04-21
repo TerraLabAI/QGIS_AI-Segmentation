@@ -406,6 +406,14 @@ class AISegmentationPlugin:
                 level=Qgis.MessageLevel.Info
             )
 
+        settings = QSettings()
+        if not settings.value("AISegmentation/dock_shown_once", False, type=bool):
+            settings.setValue("AISegmentation/dock_shown_once", True)
+            self._ensure_dock_widget()
+            if self.dock_widget:
+                self.dock_widget.show()
+                self.dock_widget.raise_()
+
     def unload(self):
         # 0. Remove keyboard shortcut filter
         try:
@@ -1776,6 +1784,25 @@ class AISegmentationPlugin:
         self._reset_session()
         self.dock_widget.reset_session()
 
+    def _safe_restore_canvas_focus(self):
+        """Restore keyboard focus to canvas unless the user is typing in a widget."""
+        try:
+            from qgis.PyQt.QtWidgets import (
+                QApplication,
+                QDoubleSpinBox,
+                QLineEdit,
+                QPlainTextEdit,
+                QSpinBox,
+                QTextEdit,
+            )
+            focused = QApplication.instance().focusWidget()
+            if isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit,
+                                    QSpinBox, QDoubleSpinBox)):
+                return
+            self.iface.mapCanvas().setFocus()
+        except (RuntimeError, AttributeError):
+            pass
+
     def _on_refine_settings_changed(self, simplify: int, smooth: int, expand: int,
                                     fill_holes: bool, min_area: int):
         """Handle refinement control changes."""
@@ -1795,12 +1822,7 @@ class AISegmentationPlugin:
         # Saved masks (green) keep their own refine settings from when they were saved
         self._update_mask_visualization()
 
-        # Restore canvas focus so keyboard shortcuts (S, Ctrl+Z, etc.)
-        # work immediately after changing refine parameters.
-        try:
-            self.iface.mapCanvas().setFocus()
-        except RuntimeError:
-            pass
+        self._safe_restore_canvas_focus()
 
     def _transform_to_raster_crs(self, point):
         """Transform a QgsPointXY from canvas CRS to raster CRS.
@@ -2234,12 +2256,7 @@ class AISegmentationPlugin:
             self.dock_widget.min_area_spinbox.setValue(self._refine_min_area)
             self.dock_widget.min_area_spinbox.blockSignals(False)
 
-        # Restore keyboard focus to canvas after encoding (dock widget
-        # updates during encoding can steal focus, breaking shortcuts).
-        try:
-            self.iface.mapCanvas().setFocus()
-        except RuntimeError:
-            pass
+        self._safe_restore_canvas_focus()
 
         QgsMessageLog.logMessage(
             "Encoded crop: bounds={}, shape={}, auto_min_area={}".format(
@@ -2707,12 +2724,7 @@ class AISegmentationPlugin:
         else:
             self._clear_mask_visualization()
 
-        # Restore focus to canvas after prediction (dock widget updates
-        # above can steal keyboard focus, breaking S/Ctrl+Z shortcuts).
-        try:
-            self.iface.mapCanvas().setFocus()
-        except RuntimeError:
-            pass
+        self._safe_restore_canvas_focus()
 
     def _update_mask_visualization(self):
         if self.mask_rubber_band is None:
@@ -2881,11 +2893,7 @@ class AISegmentationPlugin:
             )
             if reply == QMessageBox.StandardButton.Yes:
                 self._restore_last_saved_mask()
-            # Restore canvas focus after dialog (prevents shortcuts from breaking)
-            try:
-                self.iface.mapCanvas().setFocus()
-            except RuntimeError:
-                pass
+            self._safe_restore_canvas_focus()
 
     def _unfreeze_last_session(self):
         """Unfreeze the last frozen crop session back to active display.

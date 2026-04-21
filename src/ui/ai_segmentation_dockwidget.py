@@ -265,7 +265,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.main_layout.addWidget(self.setup_group)
 
     def _setup_activation_section(self):
-        """Setup the activation section - only shown if popup was closed without activating."""
+        """Setup the activation section with step-based layout (matches AI Edit)."""
         self.activation_group = QGroupBox()
         self.activation_group.setStyleSheet(
             "QGroupBox { border: none; margin: 0; padding: 0; }"
@@ -274,48 +274,33 @@ class AISegmentationDockWidget(QDockWidget):
         layout.setSpacing(8)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        banner_label = QLabel()
-        banner_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__)))),
-            "resources", "icons", "terralab-banner.png")
-        if os.path.exists(banner_path):
-            from qgis.PyQt.QtGui import QPixmap
-            pixmap = QPixmap(banner_path)
-            scaled = pixmap.scaledToWidth(260, Qt.TransformationMode.SmoothTransformation)
-            banner_label.setPixmap(scaled)
-            banner_label.setScaledContents(False)
-        else:
-            banner_label.setText("TerraLab")
-            banner_label.setStyleSheet(
-                "font-size: 16px; font-weight: bold; color: palette(text);")
-        banner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(banner_label)
-
-        title_label = QLabel(tr("Create your free account"))
-        title_label.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: palette(text);")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title_label)
-
-        subtitle = QLabel(tr(
-            "AI Segmentation is free. Create a TerraLab account "
-            "to get your activation key."))
-        subtitle.setWordWrap(True)
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setStyleSheet("font-size: 11px; color: palette(text);")
-        layout.addWidget(subtitle)
+        step1_label = QLabel(tr("1. Create your free account"))
+        step1_label.setStyleSheet(
+            "font-weight: bold; font-size: 12px; color: palette(text);")
+        layout.addWidget(step1_label)
 
         sign_in_btn = QPushButton(tr("Create account (free)"))
-        sign_in_btn.setMinimumHeight(34)
+        sign_in_btn.setMinimumHeight(36)
         sign_in_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         sign_in_btn.setStyleSheet(
-            "QPushButton { background-color: #2e7d32; color: white; "
-            "font-weight: bold; border-radius: 4px; }"
+            "QPushButton { background-color: #2e7d32; color: white;"
+            " font-weight: bold; }"
             "QPushButton:hover { background-color: #1b5e20; }"
+            "QPushButton:disabled { background-color: #b0bec5; }"
         )
         sign_in_btn.clicked.connect(self._on_panel_sign_in_clicked)
         layout.addWidget(sign_in_btn)
+
+        hint_label = QLabel(tr("Free forever — runs locally"))
+        hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hint_label.setWordWrap(True)
+        hint_label.setStyleSheet("font-size: 11px; color: palette(text);")
+        layout.addWidget(hint_label)
+
+        step2_label = QLabel(tr("2. Paste your AI Segmentation activation key"))
+        step2_label.setStyleSheet(
+            "font-weight: bold; font-size: 12px; color: palette(text);")
+        layout.addWidget(step2_label)
 
         key_row = QHBoxLayout()
         self.panel_key_input = QLineEdit()
@@ -328,8 +313,8 @@ class AISegmentationDockWidget(QDockWidget):
         self.panel_activate_button.setMinimumHeight(28)
         self.panel_activate_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.panel_activate_button.setStyleSheet(
-            "QPushButton { background-color: #1976d2; color: white; "
-            "font-weight: bold; border-radius: 4px; }"
+            "QPushButton { background-color: #1976d2; color: white;"
+            " font-weight: bold; }"
             "QPushButton:hover { background-color: #1565c0; }"
             "QPushButton:disabled { background-color: #b0bec5; }"
         )
