@@ -19,6 +19,9 @@ from .pip_diagnostics import (
     get_crash_help as _get_crash_help,
 )
 from .pip_diagnostics import (
+    get_file_locked_help as _get_file_locked_help,
+)
+from .pip_diagnostics import (
     get_pip_antivirus_help as _get_pip_antivirus_help,
 )
 from .pip_diagnostics import (
@@ -35,6 +38,9 @@ from .pip_diagnostics import (
 )
 from .pip_diagnostics import (
     is_dll_init_error as _is_dll_init_error,
+)
+from .pip_diagnostics import (
+    is_file_locked_error as _is_file_locked_error,
 )
 from .pip_diagnostics import (
     is_hash_mismatch as _is_hash_mismatch,
@@ -1681,6 +1687,17 @@ def install_dependencies(
                 if is_dll_err and package_name in ("torch", "torchvision"):
                     _log(_get_vcpp_help(), Qgis.MessageLevel.Warning)
                     return False, f"Failed to install {package_name}: {_get_vcpp_help()}"
+
+                # Check for native-module file-lock errors FIRST: a .pyd/.dll/.so
+                # that cannot be removed because it is loaded in the running
+                # QGIS process. Fix is "restart QGIS", NOT antivirus exclusion
+                # — so this must precede the antivirus/rename branches below.
+                if _is_file_locked_error(install_error_msg):
+                    _log(_get_file_locked_help(), Qgis.MessageLevel.Warning)
+                    return False, (
+                        f"Failed to install {package_name}: file in use by QGIS. "
+                        "Please close and reopen QGIS, then retry."
+                    )
 
                 # Check for rename/record errors (antivirus blocking on Windows) - before SSL
                 # because uv output may contain SSL_CERT_DIR warnings alongside rename errors
