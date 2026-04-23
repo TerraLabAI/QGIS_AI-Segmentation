@@ -329,15 +329,34 @@ class AISegmentationDockWidget(QDockWidget):
         self.activation_message_label.setStyleSheet("font-size: 11px;")
         layout.addWidget(self.activation_message_label)
 
-        # Optional diagnostics consent. Unchecked by default — must be an
-        # active opt-in. Decision persists via core.telemetry.set_consent.
-        self.panel_consent_checkbox = QCheckBox(
-            tr("Help improve the plugin by sending anonymous diagnostics "
-               "and error reports. No images, prompts, or clicks are ever sent.")
+        # Terms + Privacy consent. Unchecked by default — active opt-in.
+        # Decision persists via core.telemetry.set_consent.
+        _terms_url = (
+            "https://terra-lab.ai/terms-of-use"
+            "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=consent_terms"
         )
+        _privacy_url = (
+            "https://terra-lab.ai/privacy-policy"
+            "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=consent_privacy"
+        )
+        self.panel_consent_checkbox = QCheckBox()
         self.panel_consent_checkbox.setStyleSheet("font-size: 11px;")
         self.panel_consent_checkbox.setChecked(False)
-        layout.addWidget(self.panel_consent_checkbox)
+        consent_row = QHBoxLayout()
+        consent_row.setContentsMargins(0, 0, 0, 0)
+        consent_row.setSpacing(4)
+        consent_row.addWidget(self.panel_consent_checkbox, 0)
+        consent_label = QLabel(
+            tr('I agree to the <a href="{terms}">Terms</a> '
+               'and <a href="{privacy}">Privacy Policy</a>').format(
+                terms=_terms_url, privacy=_privacy_url
+            )
+        )
+        consent_label.setOpenExternalLinks(True)
+        consent_label.setWordWrap(True)
+        consent_label.setStyleSheet("font-size: 11px;")
+        consent_row.addWidget(consent_label, 1)
+        layout.addLayout(consent_row)
 
         self.activation_group.setVisible(False)
         self.main_layout.addWidget(self.activation_group)
