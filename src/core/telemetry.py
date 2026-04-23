@@ -156,8 +156,7 @@ def _send(event: str, properties: dict | None = None) -> bool:
         return False
     auth = _get_auth_header()
     if not auth:
-        # Never track an unactivated user — matches the "jamais quand le
-        # plugin n'est pas utilisé" rule + avoids any anonymous-identity debate.
+        # Never track an unactivated user rule + avoids any anonymous-identity debate.
         return False
     try:
         payload = json.dumps({
@@ -249,7 +248,6 @@ def track_plugin_error(
             from ..ui.error_report_dialog import _get_recent_logs
             tail_lines = _get_recent_logs().splitlines()[-20:]
             scrubbed = _scrub_payload_value("\n".join(tail_lines))
-            # Hard byte cap: PostHog silently drops oversized properties.
             props["last_log_lines"] = scrubbed.encode("utf-8")[:4096].decode(
                 "utf-8", errors="ignore"
             )

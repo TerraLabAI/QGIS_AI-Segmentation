@@ -397,8 +397,6 @@ class BugReportDialog(QDialog):
 
 def show_error_report(parent, error_title: str, error_message: str):
     """Convenience function to show the error report dialog."""
-    # Auto-capture the error to PostHog so we can triage without waiting for
-    # user-submitted bug reports. No-op if consent is missing.
     try:
         from ..core.telemetry import track_plugin_error
         stage = _infer_stage(error_title, error_message)
