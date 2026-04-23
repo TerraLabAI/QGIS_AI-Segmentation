@@ -32,7 +32,9 @@ _REFINE_COLLAPSED_HEIGHT = 25
 from ..core.activation_manager import (  # noqa: E402
     get_sign_up_url,
     get_tutorial_url,
+    has_tos_accepted,
     is_plugin_activated,
+    set_tos_accepted,
     validate_key_with_server,
 )
 from ..core.i18n import tr  # noqa: E402
@@ -329,35 +331,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.activation_message_label.setStyleSheet("font-size: 11px;")
         layout.addWidget(self.activation_message_label)
 
-        # Terms + Privacy consent. Unchecked by default — active opt-in.
-        # Decision persists via core.telemetry.set_consent.
-        _terms_url = (
-            "https://terra-lab.ai/terms-of-use"
-            "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=consent_terms"
-        )
-        _privacy_url = (
-            "https://terra-lab.ai/privacy-policy"
-            "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=consent_privacy"
-        )
-        self.panel_consent_checkbox = QCheckBox()
-        self.panel_consent_checkbox.setStyleSheet("font-size: 11px;")
-        self.panel_consent_checkbox.setChecked(False)
-        consent_row = QHBoxLayout()
-        consent_row.setContentsMargins(0, 0, 0, 0)
-        consent_row.setSpacing(4)
-        consent_row.addWidget(self.panel_consent_checkbox, 0)
-        consent_label = QLabel(
-            tr('I agree to the <a href="{terms}">Terms</a> '
-               'and <a href="{privacy}">Privacy Policy</a>').format(
-                terms=_terms_url, privacy=_privacy_url
-            )
-        )
-        consent_label.setOpenExternalLinks(True)
-        consent_label.setWordWrap(True)
-        consent_label.setStyleSheet("font-size: 11px;")
-        consent_row.addWidget(consent_label, 1)
-        layout.addLayout(consent_row)
-
         self.activation_group.setVisible(False)
         self.main_layout.addWidget(self.activation_group)
 
@@ -434,6 +407,39 @@ class AISegmentationDockWidget(QDockWidget):
         start_layout.setContentsMargins(0, 8, 0, 0)
         start_layout.setSpacing(6)
 
+        # Terms + Privacy consent — required to run a segmentation.
+        # Placed here (not on activation) so the user only sees it when they
+        # are about to actually use the service. Persisted via
+        # activation_manager.set_tos_accepted so we only ask once per machine.
+        _tos_terms_url = (
+            "https://terra-lab.ai/terms-of-use"
+            "?utm_source=qgis&utm_medium=plugin"
+            "&utm_campaign=ai-segmentation&utm_content=consent_terms"
+        )
+        _tos_privacy_url = (
+            "https://terra-lab.ai/privacy-policy"
+            "?utm_source=qgis&utm_medium=plugin"
+            "&utm_campaign=ai-segmentation&utm_content=consent_privacy"
+        )
+        self.tos_checkbox = QCheckBox()
+        self.tos_checkbox.setChecked(has_tos_accepted())
+        self.tos_checkbox.toggled.connect(self._on_tos_toggled)
+        tos_row = QHBoxLayout()
+        tos_row.setContentsMargins(0, 0, 0, 0)
+        tos_row.setSpacing(4)
+        tos_row.addWidget(self.tos_checkbox, 0)
+        self.tos_label = QLabel(
+            tr('I agree to the <a href="{terms}">Terms</a> '
+               'and <a href="{privacy}">Privacy Policy</a>').format(
+                terms=_tos_terms_url, privacy=_tos_privacy_url
+            )
+        )
+        self.tos_label.setOpenExternalLinks(True)
+        self.tos_label.setWordWrap(True)
+        self.tos_label.setStyleSheet("font-size: 11px;")
+        tos_row.addWidget(self.tos_label, 1)
+        start_layout.addLayout(tos_row)
+
         self.start_button = QPushButton(tr("Start AI Segmentation"))
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._on_start_clicked)
@@ -441,6 +447,9 @@ class AISegmentationDockWidget(QDockWidget):
             "QPushButton { background-color: #2e7d32; color: #000000; padding: 8px 16px; }"
             "QPushButton:hover { background-color: #1b5e20; color: #000000; }"
             "QPushButton:disabled { background-color: #c8e6c9; color: #666666; }"
+        )
+        self.start_button.setToolTip(
+            tr("Accept the Terms and Privacy Policy to enable segmentation.")
         )
         start_layout.addWidget(self.start_button)
 
@@ -1045,20 +1054,14 @@ class AISegmentationDockWidget(QDockWidget):
             self._plugin_activated = True
             self._show_activation_message(tr(msg), is_error=False)
             self._update_full_ui()
-            # Persist the consent choice captured below the key input, then
-            # backfill plugin_opened for this session if the dock was shown
-            # before the user activated.
+            # Telemetry fires only after Terms + Privacy are accepted at first
+            # segmentation (see _on_tos_toggled). Activation alone is not
+            # consent.
             try:
                 from ..core.telemetry import (
-                    set_consent,
                     track_plugin_activated,
                     track_plugin_opened,
                 )
-                consent_checked = bool(
-                    getattr(self, "panel_consent_checkbox", None)
-                    and self.panel_consent_checkbox.isChecked()
-                )
-                set_consent(consent_checked)
                 track_plugin_activated()
                 if not getattr(self, "_plugin_opened_emitted", False):
                     if track_plugin_opened():
@@ -1150,6 +1153,11 @@ class AISegmentationDockWidget(QDockWidget):
     def _on_layer_visibility_changed(self, node):
         """Handle layer visibility toggle in the layer tree (debounced)."""
         self._visibility_debounce_timer.start(100)
+
+    def _on_tos_toggled(self, checked: bool):
+        """Persist the Terms + Privacy acceptance and refresh gating."""
+        set_tos_accepted(checked)
+        self._update_ui_state()
 
     def _on_start_clicked(self):
         layer = self.layer_combo.currentLayer()
@@ -1529,7 +1537,8 @@ class AISegmentationDockWidget(QDockWidget):
         deps_ok = self._dependencies_ok
         checkpoint_ok = self._checkpoint_ok
         activated = self._plugin_activated
-        can_start = deps_ok and checkpoint_ok and has_layer and activated
+        tos_ok = has_tos_accepted()
+        can_start = deps_ok and checkpoint_ok and has_layer and activated and tos_ok
         self.start_button.setEnabled(can_start and not self._segmentation_active)
 
     def show_activation_dialog(self):

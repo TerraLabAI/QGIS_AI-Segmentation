@@ -55,6 +55,25 @@ def is_plugin_activated(settings=None) -> bool:
     return bool(get_auth_token(settings))
 
 
+# -- terms of service consent (required to run a segmentation) -------------
+
+
+def has_tos_accepted(settings=None) -> bool:
+    """True only after the user has explicitly accepted Terms + Privacy.
+
+    Stored separately from telemetry consent: ToS is mandatory to use the
+    service, telemetry is optional opt-in handled elsewhere.
+    """
+    s = settings or QgsSettings()
+    return bool(s.value(f"{SETTINGS_PREFIX}tos_accepted", False, type=bool))
+
+
+def set_tos_accepted(granted: bool, settings=None):
+    """Persist the user's Terms + Privacy acceptance decision."""
+    s = settings or QgsSettings()
+    s.setValue(f"{SETTINGS_PREFIX}tos_accepted", bool(granted))
+
+
 def get_auth_header(settings=None) -> dict:
     token = get_auth_token(settings)
     if not token:
