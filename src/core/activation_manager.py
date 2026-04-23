@@ -17,6 +17,11 @@ _SIGN_IN_BASE = (
     "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
     "&utm_content=sign_in&product=ai-segmentation"
 )
+_SIGN_UP_BASE = (
+    "https://terra-lab.ai/register"
+    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
+    "&utm_content=sign_up&product=ai-segmentation"
+)
 
 _cached_config: dict | None = None
 
@@ -103,6 +108,10 @@ def get_tutorial_url() -> str:
 
 def get_sign_in_url() -> str:
     return f"{_SIGN_IN_BASE}&device_id={get_device_id()}"
+
+
+def get_sign_up_url() -> str:
+    return f"{_SIGN_UP_BASE}&device_id={get_device_id()}"
 
 
 # -- activation key validation ---------------------------------------------

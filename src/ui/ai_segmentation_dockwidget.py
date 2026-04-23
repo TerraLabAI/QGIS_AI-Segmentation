@@ -30,7 +30,7 @@ _REFINE_COLLAPSED_HEIGHT = 25
 
 
 from ..core.activation_manager import (  # noqa: E402
-    get_sign_in_url,
+    get_sign_up_url,
     get_tutorial_url,
     is_plugin_activated,
     validate_key_with_server,
@@ -1020,10 +1020,10 @@ class AISegmentationDockWidget(QDockWidget):
         dlg.exec()
 
     def _on_panel_sign_in_clicked(self):
-        """Open TerraLab sign-in page in browser."""
+        """Open TerraLab sign-up page (button label is 'Create account')."""
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
-        QDesktopServices.openUrl(QUrl(get_sign_in_url()))
+        QDesktopServices.openUrl(QUrl(get_sign_up_url()))
 
     def _on_panel_activate_clicked(self):
         """Validate the pasted activation key."""
