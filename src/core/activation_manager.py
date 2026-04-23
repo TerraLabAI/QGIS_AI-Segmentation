@@ -74,6 +74,26 @@ def set_tos_accepted(granted: bool, settings=None):
     s.setValue(f"{SETTINGS_PREFIX}tos_accepted", bool(granted))
 
 
+def has_tos_locked(settings=None) -> bool:
+    """True once the user has run at least one segmentation with consent.
+
+    After the first successful Start click the Terms + Privacy gate is sealed
+    shut: we stop showing the checkbox and treat consent as permanently given,
+    even across plugin updates or fresh sessions. The reasoning is that by
+    running the service the user has already accepted the ToS in practice, so
+    re-prompting is pure friction.
+    """
+    s = settings or QgsSettings()
+    return bool(s.value(f"{SETTINGS_PREFIX}tos_locked", False, type=bool))
+
+
+def lock_tos():
+    """Seal the Terms + Privacy acceptance. Irreversible by design."""
+    s = QgsSettings()
+    s.setValue(f"{SETTINGS_PREFIX}tos_locked", True)
+    s.setValue(f"{SETTINGS_PREFIX}tos_accepted", True)
+
+
 def get_auth_header(settings=None) -> dict:
     token = get_auth_token(settings)
     if not token:

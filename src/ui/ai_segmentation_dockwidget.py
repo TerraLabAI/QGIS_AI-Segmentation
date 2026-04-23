@@ -33,7 +33,9 @@ from ..core.activation_manager import (  # noqa: E402
     get_sign_up_url,
     get_tutorial_url,
     has_tos_accepted,
+    has_tos_locked,
     is_plugin_activated,
+    lock_tos,
     set_tos_accepted,
     validate_key_with_server,
 )
@@ -410,8 +412,9 @@ class AISegmentationDockWidget(QDockWidget):
 
         # Terms + Privacy consent — required to run a segmentation.
         # Placed here (not on activation) so the user only sees it when they
-        # are about to actually use the service. Persisted via
-        # activation_manager.set_tos_accepted so we only ask once per machine.
+        # are about to actually use the service. Hidden permanently once the
+        # user has clicked Start for the first time (see lock_tos): at that
+        # point consent is considered irrevocably given.
         _tos_terms_url = (
             "https://terra-lab.ai/terms-of-use"
             "?utm_source=qgis&utm_medium=plugin"
@@ -422,12 +425,13 @@ class AISegmentationDockWidget(QDockWidget):
             "?utm_source=qgis&utm_medium=plugin"
             "&utm_campaign=ai-segmentation&utm_content=consent_privacy"
         )
+        self.tos_container = QWidget()
+        tos_row = QHBoxLayout(self.tos_container)
+        tos_row.setContentsMargins(0, 0, 0, 0)
+        tos_row.setSpacing(4)
         self.tos_checkbox = QCheckBox()
         self.tos_checkbox.setChecked(has_tos_accepted())
         self.tos_checkbox.toggled.connect(self._on_tos_toggled)
-        tos_row = QHBoxLayout()
-        tos_row.setContentsMargins(0, 0, 0, 0)
-        tos_row.setSpacing(4)
         tos_row.addWidget(self.tos_checkbox, 0)
         self.tos_label = QLabel(
             tr('I agree to the <a href="{terms}">Terms</a> '
@@ -439,7 +443,11 @@ class AISegmentationDockWidget(QDockWidget):
         self.tos_label.setWordWrap(True)
         self.tos_label.setStyleSheet("font-size: 11px;")
         tos_row.addWidget(self.tos_label, 1)
-        start_layout.addLayout(tos_row)
+        # If the user has already started a segmentation in the past, the
+        # consent is sealed and the row disappears forever.
+        if has_tos_locked():
+            self.tos_container.setVisible(False)
+        start_layout.addWidget(self.tos_container)
 
         self.start_button = QPushButton(tr("Start AI Segmentation"))
         self.start_button.setEnabled(False)
@@ -1145,8 +1153,15 @@ class AISegmentationDockWidget(QDockWidget):
 
     def _on_start_clicked(self):
         layer = self.layer_combo.currentLayer()
-        if layer:
-            self.start_segmentation_requested.emit(layer)
+        if not layer:
+            return
+        # First successful Start click seals the consent forever. Subsequent
+        # sessions (or plugin updates) will not re-display the checkbox.
+        if not has_tos_locked():
+            lock_tos()
+            if hasattr(self, "tos_container"):
+                self.tos_container.setVisible(False)
+        self.start_segmentation_requested.emit(layer)
 
     def _on_start_shortcut(self):
         """Handle G shortcut to start segmentation."""
@@ -1521,7 +1536,8 @@ class AISegmentationDockWidget(QDockWidget):
         deps_ok = self._dependencies_ok
         checkpoint_ok = self._checkpoint_ok
         activated = self._plugin_activated
-        tos_ok = has_tos_accepted()
+        # Once the ToS lock is set, consent is permanent — skip the accepted check.
+        tos_ok = has_tos_locked() or has_tos_accepted()
         can_start = deps_ok and checkpoint_ok and has_layer and activated and tos_ok
         self.start_button.setEnabled(can_start and not self._segmentation_active)
 
