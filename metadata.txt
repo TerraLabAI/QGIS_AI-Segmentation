@@ -29,6 +29,7 @@ about=
 changelog=
     1.0.2
     - Fix: "Create account" button now opens the sign-up page instead of the sign-in page.
+    - Require Terms + Privacy acceptance before first segmentation (checkbox above the Start button, persisted per machine).
 
 
 tracker=https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues
