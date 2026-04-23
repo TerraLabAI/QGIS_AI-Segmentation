@@ -30,9 +30,13 @@ _REFINE_COLLAPSED_HEIGHT = 25
 
 
 from ..core.activation_manager import (  # noqa: E402
-    get_sign_in_url,
+    get_sign_up_url,
     get_tutorial_url,
+    has_tos_accepted,
+    has_tos_locked,
     is_plugin_activated,
+    lock_tos,
+    set_tos_accepted,
     validate_key_with_server,
 )
 from ..core.i18n import tr  # noqa: E402
@@ -50,8 +54,9 @@ class AISegmentationDockWidget(QDockWidget):
     settings_clicked = pyqtSignal()
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
-    # simplify, smooth, expand, fill_holes, min_area
-    refine_settings_changed = pyqtSignal(int, int, int, bool, int)
+    # simplify, smooth, expand, fill_holes
+    # (min_area is auto-computed server-side and no longer in the UI)
+    refine_settings_changed = pyqtSignal(int, int, int, bool)
 
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation by TerraLab"), parent)
@@ -329,35 +334,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.activation_message_label.setStyleSheet("font-size: 11px;")
         layout.addWidget(self.activation_message_label)
 
-        # Terms + Privacy consent. Unchecked by default — active opt-in.
-        # Decision persists via core.telemetry.set_consent.
-        _terms_url = (
-            "https://terra-lab.ai/terms-of-use"
-            "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=consent_terms"
-        )
-        _privacy_url = (
-            "https://terra-lab.ai/privacy-policy"
-            "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=consent_privacy"
-        )
-        self.panel_consent_checkbox = QCheckBox()
-        self.panel_consent_checkbox.setStyleSheet("font-size: 11px;")
-        self.panel_consent_checkbox.setChecked(False)
-        consent_row = QHBoxLayout()
-        consent_row.setContentsMargins(0, 0, 0, 0)
-        consent_row.setSpacing(4)
-        consent_row.addWidget(self.panel_consent_checkbox, 0)
-        consent_label = QLabel(
-            tr('I agree to the <a href="{terms}">Terms</a> '
-               'and <a href="{privacy}">Privacy Policy</a>').format(
-                terms=_terms_url, privacy=_privacy_url
-            )
-        )
-        consent_label.setOpenExternalLinks(True)
-        consent_label.setWordWrap(True)
-        consent_label.setStyleSheet("font-size: 11px;")
-        consent_row.addWidget(consent_label, 1)
-        layout.addLayout(consent_row)
-
         self.activation_group.setVisible(False)
         self.main_layout.addWidget(self.activation_group)
 
@@ -434,6 +410,45 @@ class AISegmentationDockWidget(QDockWidget):
         start_layout.setContentsMargins(0, 8, 0, 0)
         start_layout.setSpacing(6)
 
+        # Terms + Privacy consent — required to run a segmentation.
+        # Placed here (not on activation) so the user only sees it when they
+        # are about to actually use the service. Hidden permanently once the
+        # user has clicked Start for the first time (see lock_tos): at that
+        # point consent is considered irrevocably given.
+        _tos_terms_url = (
+            "https://terra-lab.ai/terms-of-use"
+            "?utm_source=qgis&utm_medium=plugin"
+            "&utm_campaign=ai-segmentation&utm_content=consent_terms"
+        )
+        _tos_privacy_url = (
+            "https://terra-lab.ai/privacy-policy"
+            "?utm_source=qgis&utm_medium=plugin"
+            "&utm_campaign=ai-segmentation&utm_content=consent_privacy"
+        )
+        self.tos_container = QWidget()
+        tos_row = QHBoxLayout(self.tos_container)
+        tos_row.setContentsMargins(0, 0, 0, 0)
+        tos_row.setSpacing(4)
+        self.tos_checkbox = QCheckBox()
+        self.tos_checkbox.setChecked(has_tos_accepted())
+        self.tos_checkbox.toggled.connect(self._on_tos_toggled)
+        tos_row.addWidget(self.tos_checkbox, 0)
+        self.tos_label = QLabel(
+            tr('I agree to the <a href="{terms}">Terms</a> '
+               'and <a href="{privacy}">Privacy Policy</a>').format(
+                terms=_tos_terms_url, privacy=_tos_privacy_url
+            )
+        )
+        self.tos_label.setOpenExternalLinks(True)
+        self.tos_label.setWordWrap(True)
+        self.tos_label.setStyleSheet("font-size: 11px;")
+        tos_row.addWidget(self.tos_label, 1)
+        # If the user has already started a segmentation in the past, the
+        # consent is sealed and the row disappears forever.
+        if has_tos_locked():
+            self.tos_container.setVisible(False)
+        start_layout.addWidget(self.tos_container)
+
         self.start_button = QPushButton(tr("Start AI Segmentation"))
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._on_start_clicked)
@@ -441,6 +456,9 @@ class AISegmentationDockWidget(QDockWidget):
             "QPushButton { background-color: #2e7d32; color: #000000; padding: 8px 16px; }"
             "QPushButton:hover { background-color: #1b5e20; color: #000000; }"
             "QPushButton:disabled { background-color: #c8e6c9; color: #666666; }"
+        )
+        self.start_button.setToolTip(
+            tr("Accept the Terms and Privacy Policy to enable segmentation.")
         )
         start_layout.addWidget(self.start_button)
 
@@ -617,7 +635,7 @@ class AISegmentationDockWidget(QDockWidget):
         simplify_label.setToolTip(tr("Reduce small variations in the outline (0 = no change)"))
         self.simplify_spinbox = QSpinBox()
         self.simplify_spinbox.setRange(0, 1000)
-        self.simplify_spinbox.setValue(10)
+        self.simplify_spinbox.setValue(3)
         self.simplify_spinbox.setMinimumWidth(55)
         self.simplify_spinbox.setMaximumWidth(70)
         simplify_layout.addWidget(simplify_label)
@@ -674,22 +692,9 @@ class AISegmentationDockWidget(QDockWidget):
         fill_layout.addWidget(self.fill_holes_checkbox)
         refine_content_layout.addLayout(fill_layout)
 
-        # 5. Min area: remove small artifacts / noise regions (#12)
-        min_area_layout = QHBoxLayout()
-        min_area_label = QLabel(tr("Min area:"))
-        min_area_label.setToolTip(tr("Remove polygons smaller than this area (in pixels)"))
-        self.min_area_spinbox = QSpinBox()
-        self.min_area_spinbox.setRange(0, 100000)
-        self.min_area_spinbox.setSingleStep(50)
-        self.min_area_spinbox.setValue(200)
-        self.min_area_spinbox.setSuffix(" px")
-        self.min_area_spinbox.setMinimumWidth(55)
-        self.min_area_spinbox.setMaximumWidth(80)
-        self.min_area_spinbox.setToolTip(min_area_label.toolTip())
-        min_area_layout.addWidget(min_area_label)
-        min_area_layout.addStretch()
-        min_area_layout.addWidget(self.min_area_spinbox)
-        refine_content_layout.addLayout(min_area_layout)
+        # Min area was previously exposed here but is now auto-computed based
+        # on the crop scale (see plugin._compute_auto_min_area). Removing the
+        # spinbox keeps the refine panel focused on the controls users tune.
 
         refine_layout.addWidget(self.refine_content_widget)
         self.refine_content_widget.setVisible(self._refine_expanded)
@@ -702,7 +707,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.round_corners_checkbox.stateChanged.connect(self._on_refine_changed)
         self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
         self.fill_holes_checkbox.stateChanged.connect(self._on_refine_changed)
-        self.min_area_spinbox.valueChanged.connect(self._on_refine_changed)
 
         parent_layout.addWidget(self.refine_group)
 
@@ -739,45 +743,42 @@ class AISegmentationDockWidget(QDockWidget):
             5 if self.round_corners_checkbox.isChecked() else 0,
             self.expand_spinbox.value(),
             self.fill_holes_checkbox.isChecked(),
-            self.min_area_spinbox.value(),
         )
 
     def reset_refine_sliders(self):
         """Reset refinement controls to default values without emitting signals."""
         for w in (self.simplify_spinbox, self.round_corners_checkbox,
-                  self.expand_spinbox, self.fill_holes_checkbox,
-                  self.min_area_spinbox):
+                  self.expand_spinbox, self.fill_holes_checkbox):
             w.blockSignals(True)
 
-        self.simplify_spinbox.setValue(10)
+        self.simplify_spinbox.setValue(3)
         self.round_corners_checkbox.setChecked(False)
         self.expand_spinbox.setValue(0)
         self.fill_holes_checkbox.setChecked(True)
-        self.min_area_spinbox.setValue(200)
 
         for w in (self.simplify_spinbox, self.round_corners_checkbox,
-                  self.expand_spinbox, self.fill_holes_checkbox,
-                  self.min_area_spinbox):
+                  self.expand_spinbox, self.fill_holes_checkbox):
             w.blockSignals(False)
 
     def set_refine_values(self, simplify: int, smooth: int, expand: int,
                           fill_holes: bool, min_area: int | None = None):
-        """Set refine slider values without emitting signals."""
+        """Set refine slider values without emitting signals.
+
+        min_area is kept in the signature for backward compatibility with
+        stored polygon metadata but no longer touches the UI.
+        """
+        del min_area  # unused since the spinbox was removed
         for w in (self.simplify_spinbox, self.round_corners_checkbox,
-                  self.expand_spinbox, self.fill_holes_checkbox,
-                  self.min_area_spinbox):
+                  self.expand_spinbox, self.fill_holes_checkbox):
             w.blockSignals(True)
 
         self.simplify_spinbox.setValue(simplify)
         self.round_corners_checkbox.setChecked(smooth > 0)
         self.expand_spinbox.setValue(expand)
         self.fill_holes_checkbox.setChecked(fill_holes)
-        if min_area is not None:
-            self.min_area_spinbox.setValue(min_area)
 
         for w in (self.simplify_spinbox, self.round_corners_checkbox,
-                  self.expand_spinbox, self.fill_holes_checkbox,
-                  self.min_area_spinbox):
+                  self.expand_spinbox, self.fill_holes_checkbox):
             w.blockSignals(False)
 
     def _setup_update_notification(self):
@@ -1020,10 +1021,10 @@ class AISegmentationDockWidget(QDockWidget):
         dlg.exec()
 
     def _on_panel_sign_in_clicked(self):
-        """Open TerraLab sign-in page in browser."""
+        """Open TerraLab sign-up page (button label is 'Create account')."""
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
-        QDesktopServices.openUrl(QUrl(get_sign_in_url()))
+        QDesktopServices.openUrl(QUrl(get_sign_up_url()))
 
     def _on_panel_activate_clicked(self):
         """Validate the pasted activation key."""
@@ -1045,20 +1046,14 @@ class AISegmentationDockWidget(QDockWidget):
             self._plugin_activated = True
             self._show_activation_message(tr(msg), is_error=False)
             self._update_full_ui()
-            # Persist the consent choice captured below the key input, then
-            # backfill plugin_opened for this session if the dock was shown
-            # before the user activated.
+            # Telemetry fires only after Terms + Privacy are accepted at first
+            # segmentation (see _on_tos_toggled). Activation alone is not
+            # consent.
             try:
                 from ..core.telemetry import (
-                    set_consent,
                     track_plugin_activated,
                     track_plugin_opened,
                 )
-                consent_checked = bool(
-                    getattr(self, "panel_consent_checkbox", None)
-                    and self.panel_consent_checkbox.isChecked()
-                )
-                set_consent(consent_checked)
                 track_plugin_activated()
                 if not getattr(self, "_plugin_opened_emitted", False):
                     if track_plugin_opened():
@@ -1151,10 +1146,22 @@ class AISegmentationDockWidget(QDockWidget):
         """Handle layer visibility toggle in the layer tree (debounced)."""
         self._visibility_debounce_timer.start(100)
 
+    def _on_tos_toggled(self, checked: bool):
+        """Persist the Terms + Privacy acceptance and refresh gating."""
+        set_tos_accepted(checked)
+        self._update_ui_state()
+
     def _on_start_clicked(self):
         layer = self.layer_combo.currentLayer()
-        if layer:
-            self.start_segmentation_requested.emit(layer)
+        if not layer:
+            return
+        # First successful Start click seals the consent forever. Subsequent
+        # sessions (or plugin updates) will not re-display the checkbox.
+        if not has_tos_locked():
+            lock_tos()
+            if hasattr(self, "tos_container"):
+                self.tos_container.setVisible(False)
+        self.start_segmentation_requested.emit(layer)
 
     def _on_start_shortcut(self):
         """Handle G shortcut to start segmentation."""
@@ -1529,7 +1536,9 @@ class AISegmentationDockWidget(QDockWidget):
         deps_ok = self._dependencies_ok
         checkpoint_ok = self._checkpoint_ok
         activated = self._plugin_activated
-        can_start = deps_ok and checkpoint_ok and has_layer and activated
+        # Once the ToS lock is set, consent is permanent — skip the accepted check.
+        tos_ok = has_tos_locked() or has_tos_accepted()
+        can_start = deps_ok and checkpoint_ok and has_layer and activated and tos_ok
         self.start_button.setEnabled(can_start and not self._segmentation_active)
 
     def show_activation_dialog(self):

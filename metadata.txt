@@ -27,6 +27,11 @@ about=
     • Multilingual: English, French, Portuguese, Spanish
 
 changelog=
+    1.0.2
+    - Fix: "Create account" button now opens the sign-up page instead of the sign-in page.
+    - Require Terms + Privacy acceptance before first segmentation. The checkbox disappears permanently after the first Start click.
+    - Simplify outline default lowered from 10 to 3 for cleaner edges on small features.
+    - Remove Min area input from the refine panel (value is now auto-computed from crop scale).
 
 
 tracker=https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues

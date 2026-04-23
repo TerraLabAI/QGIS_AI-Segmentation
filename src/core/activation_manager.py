@@ -17,6 +17,11 @@ _SIGN_IN_BASE = (
     "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
     "&utm_content=sign_in&product=ai-segmentation"
 )
+_SIGN_UP_BASE = (
+    "https://terra-lab.ai/register"
+    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
+    "&utm_content=sign_up&product=ai-segmentation"
+)
 
 _cached_config: dict | None = None
 
@@ -48,6 +53,45 @@ def clear_auth(settings=None):
 
 def is_plugin_activated(settings=None) -> bool:
     return bool(get_auth_token(settings))
+
+
+# -- terms of service consent (required to run a segmentation) -------------
+
+
+def has_tos_accepted(settings=None) -> bool:
+    """True only after the user has explicitly accepted Terms + Privacy.
+
+    Stored separately from telemetry consent: ToS is mandatory to use the
+    service, telemetry is optional opt-in handled elsewhere.
+    """
+    s = settings or QgsSettings()
+    return bool(s.value(f"{SETTINGS_PREFIX}tos_accepted", False, type=bool))
+
+
+def set_tos_accepted(granted: bool, settings=None):
+    """Persist the user's Terms + Privacy acceptance decision."""
+    s = settings or QgsSettings()
+    s.setValue(f"{SETTINGS_PREFIX}tos_accepted", bool(granted))
+
+
+def has_tos_locked(settings=None) -> bool:
+    """True once the user has run at least one segmentation with consent.
+
+    After the first successful Start click the Terms + Privacy gate is sealed
+    shut: we stop showing the checkbox and treat consent as permanently given,
+    even across plugin updates or fresh sessions. The reasoning is that by
+    running the service the user has already accepted the ToS in practice, so
+    re-prompting is pure friction.
+    """
+    s = settings or QgsSettings()
+    return bool(s.value(f"{SETTINGS_PREFIX}tos_locked", False, type=bool))
+
+
+def lock_tos():
+    """Seal the Terms + Privacy acceptance. Irreversible by design."""
+    s = QgsSettings()
+    s.setValue(f"{SETTINGS_PREFIX}tos_locked", True)
+    s.setValue(f"{SETTINGS_PREFIX}tos_accepted", True)
 
 
 def get_auth_header(settings=None) -> dict:
@@ -103,6 +147,10 @@ def get_tutorial_url() -> str:
 
 def get_sign_in_url() -> str:
     return f"{_SIGN_IN_BASE}&device_id={get_device_id()}"
+
+
+def get_sign_up_url() -> str:
+    return f"{_SIGN_UP_BASE}&device_id={get_device_id()}"
 
 
 # -- activation key validation ---------------------------------------------
