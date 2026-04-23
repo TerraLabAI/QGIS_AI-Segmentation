@@ -136,7 +136,7 @@ class AISegmentationPlugin:
         self._headless_error = None
 
         # Refinement settings (#12, #23: defaults tuned for ease-of-use)
-        self._refine_simplify = 10
+        self._refine_simplify = 3
         self._refine_smooth = 0
         self._refine_expand = 0
         self._refine_fill_holes = True
@@ -1828,11 +1828,16 @@ class AISegmentationPlugin:
             pass
 
     def _on_refine_settings_changed(self, simplify: int, smooth: int, expand: int,
-                                    fill_holes: bool, min_area: int):
-        """Handle refinement control changes."""
+                                    fill_holes: bool):
+        """Handle refinement control changes.
+
+        min_area is no longer UI-controlled: it is auto-computed per crop in
+        _compute_auto_min_area() and never overwritten from the refine panel.
+        """
         QgsMessageLog.logMessage(
             f"Refine settings: simplify={simplify}, smooth={smooth}, "
-            f"expand={expand}, fill_holes={fill_holes}, min_area={min_area}",
+            f"expand={expand}, fill_holes={fill_holes}, "
+            f"min_area={self._refine_min_area} (auto)",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )
@@ -1840,7 +1845,6 @@ class AISegmentationPlugin:
         self._refine_smooth = smooth
         self._refine_expand = expand
         self._refine_fill_holes = fill_holes
-        self._refine_min_area = min_area
 
         # In both modes: update current mask preview only
         # Saved masks (green) keep their own refine settings from when they were saved
@@ -2273,12 +2277,9 @@ class AISegmentationPlugin:
         self._current_crop_info = crop_info
         self._encoding_in_progress = False
 
-        # Auto-compute min_area based on current crop scale
+        # Auto-compute min_area based on current crop scale. The value is not
+        # surfaced in the UI anymore — it is applied transparently.
         self._refine_min_area = self._compute_auto_min_area()
-        if self.dock_widget and hasattr(self.dock_widget, "min_area_spinbox"):
-            self.dock_widget.min_area_spinbox.blockSignals(True)
-            self.dock_widget.min_area_spinbox.setValue(self._refine_min_area)
-            self.dock_widget.min_area_spinbox.blockSignals(False)
 
         self._safe_restore_canvas_focus()
 
@@ -3038,7 +3039,7 @@ class AISegmentationPlugin:
         self.current_transform_info = last_polygon.get("transform_info")
 
         # Restore refine settings
-        self._refine_simplify = last_polygon.get("refine_simplify", 10)
+        self._refine_simplify = last_polygon.get("refine_simplify", 3)
         self._refine_smooth = last_polygon.get("refine_smooth", 0)
         self._refine_expand = last_polygon.get("refine_expand", 0)
         self._refine_fill_holes = last_polygon.get("refine_fill_holes", True)
@@ -3107,7 +3108,7 @@ class AISegmentationPlugin:
         self._is_online_layer = False
 
         # Reset refinement settings to defaults (#12, #23)
-        self._refine_simplify = 10
+        self._refine_simplify = 3
         self._refine_smooth = 0
         self._refine_expand = 0
         self._refine_fill_holes = True

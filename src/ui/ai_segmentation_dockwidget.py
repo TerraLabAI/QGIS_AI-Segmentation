@@ -52,8 +52,9 @@ class AISegmentationDockWidget(QDockWidget):
     settings_clicked = pyqtSignal()
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
-    # simplify, smooth, expand, fill_holes, min_area
-    refine_settings_changed = pyqtSignal(int, int, int, bool, int)
+    # simplify, smooth, expand, fill_holes
+    # (min_area is auto-computed server-side and no longer in the UI)
+    refine_settings_changed = pyqtSignal(int, int, int, bool)
 
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation by TerraLab"), parent)
@@ -626,7 +627,7 @@ class AISegmentationDockWidget(QDockWidget):
         simplify_label.setToolTip(tr("Reduce small variations in the outline (0 = no change)"))
         self.simplify_spinbox = QSpinBox()
         self.simplify_spinbox.setRange(0, 1000)
-        self.simplify_spinbox.setValue(10)
+        self.simplify_spinbox.setValue(3)
         self.simplify_spinbox.setMinimumWidth(55)
         self.simplify_spinbox.setMaximumWidth(70)
         simplify_layout.addWidget(simplify_label)
@@ -683,22 +684,9 @@ class AISegmentationDockWidget(QDockWidget):
         fill_layout.addWidget(self.fill_holes_checkbox)
         refine_content_layout.addLayout(fill_layout)
 
-        # 5. Min area: remove small artifacts / noise regions (#12)
-        min_area_layout = QHBoxLayout()
-        min_area_label = QLabel(tr("Min area:"))
-        min_area_label.setToolTip(tr("Remove polygons smaller than this area (in pixels)"))
-        self.min_area_spinbox = QSpinBox()
-        self.min_area_spinbox.setRange(0, 100000)
-        self.min_area_spinbox.setSingleStep(50)
-        self.min_area_spinbox.setValue(200)
-        self.min_area_spinbox.setSuffix(" px")
-        self.min_area_spinbox.setMinimumWidth(55)
-        self.min_area_spinbox.setMaximumWidth(80)
-        self.min_area_spinbox.setToolTip(min_area_label.toolTip())
-        min_area_layout.addWidget(min_area_label)
-        min_area_layout.addStretch()
-        min_area_layout.addWidget(self.min_area_spinbox)
-        refine_content_layout.addLayout(min_area_layout)
+        # Min area was previously exposed here but is now auto-computed based
+        # on the crop scale (see plugin._compute_auto_min_area). Removing the
+        # spinbox keeps the refine panel focused on the controls users tune.
 
         refine_layout.addWidget(self.refine_content_widget)
         self.refine_content_widget.setVisible(self._refine_expanded)
@@ -711,7 +699,6 @@ class AISegmentationDockWidget(QDockWidget):
         self.round_corners_checkbox.stateChanged.connect(self._on_refine_changed)
         self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
         self.fill_holes_checkbox.stateChanged.connect(self._on_refine_changed)
-        self.min_area_spinbox.valueChanged.connect(self._on_refine_changed)
 
         parent_layout.addWidget(self.refine_group)
 
@@ -748,45 +735,42 @@ class AISegmentationDockWidget(QDockWidget):
             5 if self.round_corners_checkbox.isChecked() else 0,
             self.expand_spinbox.value(),
             self.fill_holes_checkbox.isChecked(),
-            self.min_area_spinbox.value(),
         )
 
     def reset_refine_sliders(self):
         """Reset refinement controls to default values without emitting signals."""
         for w in (self.simplify_spinbox, self.round_corners_checkbox,
-                  self.expand_spinbox, self.fill_holes_checkbox,
-                  self.min_area_spinbox):
+                  self.expand_spinbox, self.fill_holes_checkbox):
             w.blockSignals(True)
 
-        self.simplify_spinbox.setValue(10)
+        self.simplify_spinbox.setValue(3)
         self.round_corners_checkbox.setChecked(False)
         self.expand_spinbox.setValue(0)
         self.fill_holes_checkbox.setChecked(True)
-        self.min_area_spinbox.setValue(200)
 
         for w in (self.simplify_spinbox, self.round_corners_checkbox,
-                  self.expand_spinbox, self.fill_holes_checkbox,
-                  self.min_area_spinbox):
+                  self.expand_spinbox, self.fill_holes_checkbox):
             w.blockSignals(False)
 
     def set_refine_values(self, simplify: int, smooth: int, expand: int,
                           fill_holes: bool, min_area: int | None = None):
-        """Set refine slider values without emitting signals."""
+        """Set refine slider values without emitting signals.
+
+        min_area is kept in the signature for backward compatibility with
+        stored polygon metadata but no longer touches the UI.
+        """
+        del min_area  # unused since the spinbox was removed
         for w in (self.simplify_spinbox, self.round_corners_checkbox,
-                  self.expand_spinbox, self.fill_holes_checkbox,
-                  self.min_area_spinbox):
+                  self.expand_spinbox, self.fill_holes_checkbox):
             w.blockSignals(True)
 
         self.simplify_spinbox.setValue(simplify)
         self.round_corners_checkbox.setChecked(smooth > 0)
         self.expand_spinbox.setValue(expand)
         self.fill_holes_checkbox.setChecked(fill_holes)
-        if min_area is not None:
-            self.min_area_spinbox.setValue(min_area)
 
         for w in (self.simplify_spinbox, self.round_corners_checkbox,
-                  self.expand_spinbox, self.fill_holes_checkbox,
-                  self.min_area_spinbox):
+                  self.expand_spinbox, self.fill_holes_checkbox):
             w.blockSignals(False)
 
     def _setup_update_notification(self):
