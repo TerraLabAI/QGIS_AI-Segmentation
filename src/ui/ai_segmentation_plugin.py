@@ -1158,6 +1158,10 @@ class AISegmentationPlugin:
         # user positions their first click (reduces first-click latency)
         self.predictor.warm_up()
 
+        # Mark the start time so segmentation_run telemetry can report duration.
+        import time as _time
+        self._segmentation_start_ts = _time.time()
+
         # Activate segmentation tool immediately (no pre-encoding)
         self._activate_segmentation_tool()
 
@@ -1356,6 +1360,18 @@ class AISegmentationPlugin:
             )
 
             self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
+
+            # Minimal telemetry: one event per successful segmentation run.
+            try:
+                import time as _time
+
+                from ..core.telemetry import track_segmentation_run
+                start_ts = getattr(self, "_segmentation_start_ts", None)
+                duration_ms = int((_time.time() - start_ts) * 1000) if start_ts else None
+                track_segmentation_run(success=True, duration_ms=duration_ms)
+                self._segmentation_start_ts = None
+            except Exception:
+                pass  # nosec B110
 
             # Note: We keep refinement settings in batch mode so the user can
             # apply the same expand/simplify to multiple masks
@@ -3055,6 +3071,9 @@ class AISegmentationPlugin:
         )
 
     def _reset_session(self):
+        # Clear the telemetry start timestamp so the next successful run does
+        # not attribute duration to an abandoned previous run.
+        self._segmentation_start_ts = None
         self.prompts.clear()
         self._mask_state_history = []
         self._frozen_sessions = []
