@@ -29,7 +29,7 @@ about=
 changelog=
     1.0.2
     - Fix: "Create account" button now opens the sign-up page instead of the sign-in page.
-    - Require Terms + Privacy acceptance before first segmentation (checkbox above the Start button, persisted per machine).
+    - Require Terms + Privacy acceptance before first segmentation. The checkbox disappears permanently after the first Start click.
     - Simplify outline default lowered from 10 to 3 for cleaner edges on small features.
     - Remove Min area input from the refine panel (value is now auto-computed from crop scale).
 
