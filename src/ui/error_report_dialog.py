@@ -397,8 +397,50 @@ class BugReportDialog(QDialog):
 
 def show_error_report(parent, error_title: str, error_message: str):
     """Convenience function to show the error report dialog."""
+    # Auto-capture the error to PostHog so we can triage without waiting for
+    # user-submitted bug reports. No-op if consent is missing.
+    try:
+        from ..core.telemetry import track_plugin_error
+        stage = _infer_stage(error_title, error_message)
+        first_line = (error_message or "").splitlines()[0] if error_message else ""
+        track_plugin_error(
+            stage=stage,
+            error_code=_short_code(error_title),
+            message=first_line,
+        )
+    except Exception:
+        pass  # nosec B110
+
     dialog = ErrorReportDialog(error_title, error_message, parent)
     dialog.exec()
+
+
+def _infer_stage(title: str, message: str) -> str:
+    """Heuristic mapping from error dialog title/message to a telemetry stage.
+
+    Stages: install | download | activate | segment | export | other.
+    """
+    haystack = f"{title} {message}".lower()
+    if any(k in haystack for k in ("venv", "pip", "install", "dependency", "dependencies")):
+        return "install"
+    if any(k in haystack for k in ("download", "checkpoint", "model")):
+        return "download"
+    if "activation" in haystack or "activate" in haystack:
+        return "activate"
+    if "export" in haystack:
+        return "export"
+    if any(k in haystack for k in ("segmentation", "segment", "mask", "predict")):
+        return "segment"
+    return "other"
+
+
+def _short_code(title: str) -> str:
+    """Compact, lowercase error_code from the dialog title."""
+    import re as _re
+    if not title:
+        return "unknown"
+    code = _re.sub(r"[^a-zA-Z0-9]+", "_", title).strip("_").lower()
+    return code[:40] or "unknown"
 
 
 def show_bug_report(parent):

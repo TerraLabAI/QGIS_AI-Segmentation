@@ -115,6 +115,8 @@ All three must pass with zero findings before releasing.
 1. Run `ruff check` on changed files
 2. Write a conventional commit message (`fix:`, `feat:`, `refactor:`, `test:`, `docs:`)
 
+**Multi-repo rule:** Do NOT auto-commit across the 3 TerraLab repos (this plugin, `QGIS_AI-Edit-Team`, `terralab-website`) without explicit user approval. The user wants to inspect diffs (often with a codex review pass) before any commit lands. Prepare and stage changes, then stop and surface them for review.
+
 ## Code Quality
 
 - **Ruff** for linting (see `ruff.toml`: line-length 120, target-version py39)

@@ -329,6 +329,16 @@ class AISegmentationDockWidget(QDockWidget):
         self.activation_message_label.setStyleSheet("font-size: 11px;")
         layout.addWidget(self.activation_message_label)
 
+        # Optional diagnostics consent. Unchecked by default — must be an
+        # active opt-in. Decision persists via core.telemetry.set_consent.
+        self.panel_consent_checkbox = QCheckBox(
+            tr("Help improve the plugin by sending anonymous diagnostics "
+               "and error reports. No images, prompts, or clicks are ever sent.")
+        )
+        self.panel_consent_checkbox.setStyleSheet("font-size: 11px;")
+        self.panel_consent_checkbox.setChecked(False)
+        layout.addWidget(self.panel_consent_checkbox)
+
         self.activation_group.setVisible(False)
         self.main_layout.addWidget(self.activation_group)
 
@@ -1016,6 +1026,26 @@ class AISegmentationDockWidget(QDockWidget):
             self._plugin_activated = True
             self._show_activation_message(tr(msg), is_error=False)
             self._update_full_ui()
+            # Persist the consent choice captured below the key input, then
+            # backfill plugin_opened for this session if the dock was shown
+            # before the user activated.
+            try:
+                from ..core.telemetry import (
+                    set_consent,
+                    track_plugin_activated,
+                    track_plugin_opened,
+                )
+                consent_checked = bool(
+                    getattr(self, "panel_consent_checkbox", None)
+                    and self.panel_consent_checkbox.isChecked()
+                )
+                set_consent(consent_checked)
+                track_plugin_activated()
+                if not getattr(self, "_plugin_opened_emitted", False):
+                    if track_plugin_opened():
+                        self._plugin_opened_emitted = True
+            except Exception:
+                pass  # nosec B110
         else:
             self._show_activation_message(tr(msg), is_error=True)
 
@@ -1546,3 +1576,22 @@ class AISegmentationDockWidget(QDockWidget):
     def is_activated(self) -> bool:
         """Check if the plugin is activated."""
         return self._plugin_activated
+
+    def showEvent(self, event):
+        """Emit plugin_opened once per session when the dock becomes visible.
+
+        Only fires post-activation (telemetry._send is a no-op otherwise),
+        so QGIS-open-the-app-but-never-click-the-dock never creates events.
+        We only flip the "emitted" flag on a real queued send; that way a
+        first-run user who activates + opts in later still gets one
+        plugin_opened for this session.
+        """
+        super().showEvent(event)
+        if getattr(self, "_plugin_opened_emitted", False):
+            return
+        try:
+            from ..core.telemetry import track_plugin_opened
+            if track_plugin_opened():
+                self._plugin_opened_emitted = True
+        except Exception:
+            pass  # nosec B110
