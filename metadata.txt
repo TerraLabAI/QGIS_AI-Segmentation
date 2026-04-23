@@ -26,10 +26,6 @@ about=
 
     • Multilingual: English, French, Portuguese, Spanish
 
-    Optional diagnostics: an opt-in checkbox at activation (off by default) lets
-    the plugin send anonymous usage counts and error reports so we can fix bugs.
-    No images, prompts, clicks, coordinates, or personal data are ever sent.
-
 changelog=
 
 
