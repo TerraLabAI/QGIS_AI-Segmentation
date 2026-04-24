@@ -3,6 +3,8 @@
 SHARED: keep in sync with the copy in the sibling TerraLab plugin.
 """
 
+from __future__ import annotations
+
 import os
 
 from qgis.PyQt.QtCore import QUrl

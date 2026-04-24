@@ -1,5 +1,7 @@
 """Safe archive extraction utilities with path traversal protection."""
 
+from __future__ import annotations
+
 import os
 import sys
 import tarfile

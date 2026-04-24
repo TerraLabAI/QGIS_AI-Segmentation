@@ -7,6 +7,8 @@ This ensures compliance with QGIS plugin repository rules (no binaries).
 Security: Uses defusedxml for safe XML parsing (no global monkey-patch).
 """
 
+from __future__ import annotations
+
 import os
 import xml.etree.ElementTree as ET  # nosec B405
 

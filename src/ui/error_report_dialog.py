@@ -4,6 +4,8 @@ Minimal dialog: error message + copy logs + email contact + TerraLab link.
 Also provides a bug report dialog for user-initiated reports.
 """
 
+from __future__ import annotations
+
 import os
 import platform
 import re
