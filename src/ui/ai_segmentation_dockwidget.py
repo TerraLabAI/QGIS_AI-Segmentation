@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import sys
 
@@ -1574,6 +1576,11 @@ class AISegmentationDockWidget(QDockWidget):
         try:
             QgsProject.instance().layersRemoved.disconnect(self._on_layers_removed)
         except (TypeError, RuntimeError):
+            pass
+        try:
+            QgsProject.instance().layerTreeRoot().visibilityChanged.disconnect(
+                self._on_layer_visibility_changed)
+        except (TypeError, RuntimeError, AttributeError):
             pass
         # Clean up QShortcut to prevent stale callbacks
         try:

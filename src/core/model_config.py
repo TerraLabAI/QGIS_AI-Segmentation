@@ -7,6 +7,8 @@ platforms or Python 3.9, we fall back to SAM1 (segment-anything / ViT-B).
 Exception: under Rosetta (x86_64 QGIS on Apple Silicon), the standalone
 Python is downloaded as ARM64 3.10+, so SAM2 is available.
 """
+from __future__ import annotations
+
 import platform
 import subprocess  # nosec B404
 import sys

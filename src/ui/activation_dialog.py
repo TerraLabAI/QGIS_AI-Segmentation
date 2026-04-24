@@ -3,6 +3,8 @@
 Opens the TerraLab website in the browser so the user can sign in and
 copy their activation key, then paste it back into the plugin.
 """
+from __future__ import annotations
+
 from pathlib import Path
 
 from qgis.PyQt.QtCore import Qt, QUrl, pyqtSignal
