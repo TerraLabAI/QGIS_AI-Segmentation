@@ -862,8 +862,13 @@ class AISegmentationPlugin:
         QTimer.singleShot(2000, self._show_activation_popup_if_needed)
 
     def _show_activation_popup_if_needed(self):
-        """Update UI to show activation section if not yet activated."""
-        from ..core.activation_manager import is_plugin_activated
+        """Re-validate stored key then show activation section if needed."""
+        from ..core.activation_manager import is_plugin_activated, revalidate_stored_key
+        if is_plugin_activated():
+            if not revalidate_stored_key():
+                self.dock_widget._plugin_activated = False
+                self.dock_widget._update_full_ui()
+                return
         if not is_plugin_activated() and not self.dock_widget.is_activated():
             self.dock_widget._update_full_ui()
 

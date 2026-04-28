@@ -183,3 +183,29 @@ def validate_key_with_server(key: str) -> tuple[bool, str]:
 
     save_auth_token(key)
     return True, "Activation key verified!"
+
+
+def revalidate_stored_key() -> bool:
+    """Re-check the stored activation key against the server.
+
+    Returns True if the key is still valid (or if no key is stored).
+    Returns False and clears auth if the server rejects the key.
+    Network errors are silently ignored (benefit of the doubt).
+    """
+    key = get_auth_token()
+    if not key:
+        return False
+
+    auth = {"Authorization": f"Bearer {key}", "X-Product-ID": PRODUCT_ID}
+    try:
+        result = _client().get_usage(auth=auth)
+    except Exception:
+        return True
+
+    if "error" in result:
+        code = (result.get("code") or "").strip().upper()
+        if code in ("INVALID_KEY", "SUBSCRIPTION_INACTIVE"):
+            clear_auth()
+            return False
+
+    return True
