@@ -3,7 +3,7 @@ name=AI Segmentation by TerraLab
 description=Segment buildings, vegetation, or any object in your raster using AI, refine & export as vector polygons
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-version=1.0.4
+version=1.0.6
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -27,15 +27,6 @@ about=
     • Multilingual: English, French, Portuguese, Spanish
 
 changelog=
-    1.0.4
-    - Fix: validate activation key against server on startup. Expired or revoked keys now show the activation panel instead of the segmentation UI.
-    - Fix: disconnect layerTreeRoot visibility signal on plugin unload.
-    1.0.2
-    - Fix: "Create account" button now opens the sign-up page instead of the sign-in page.
-    - Require Terms + Privacy acceptance before first segmentation. The checkbox disappears permanently after the first Start click.
-    - Simplify outline default lowered from 10 to 3 for cleaner edges on small features.
-    - Remove Min area input from the refine panel (value is now auto-computed from crop scale).
-
 
 
 tracker=https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues
