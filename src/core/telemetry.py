@@ -1,11 +1,13 @@
 """Minimal telemetry for AI Segmentation plugin.
 
 Design principles (do not deviate):
-- Only fires after the user has activated AND given consent. No telemetry
-  on QGIS startup, no background polling, no pre-activation tracking.
-- Four events only: plugin_opened, plugin_activated, segmentation_run,
-  plugin_error.
-- No PII, no image data, no click coordinates, no prompts, no layer names.
+- Lifecycle events (plugin_opened, plugin_activated, segmentation_run) ship as
+  soon as the plugin is activated. Their payload carries only OS, plugin
+  version, QGIS version, success bool, and durations — no PII.
+- `plugin_error` is the only event still gated, because its scrubbed message
+  field could carry path fragments. The gate is the existing ToS acceptance
+  the user gives via the dock checkbox before their first segmentation
+  (`tos_accepted` in activation_manager.py).
 - File paths are anonymized (<USER> placeholder) via error_report_dialog's
   _anonymize_paths before leaving the machine.
 - Errors in telemetry never affect plugin functionality (fail silently).
@@ -19,29 +21,18 @@ import platform
 import sys
 
 from qgis.core import Qgis, QgsBlockingNetworkRequest
-from qgis.PyQt.QtCore import QByteArray, QSettings, QThread, QUrl
+from qgis.PyQt.QtCore import QByteArray, QThread, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
 _TIMEOUT_MS = 5_000
-# Keep the same QSettings namespace as the rest of the plugin
-# (see src/core/activation_manager.py) so the whole plugin state
-# lives under one root.
-_SETTINGS_PREFIX = "AISegmentation/telemetry"
 
-
-# --- Consent --------------------------------------------------------------
-
-
-def has_consent() -> bool:
-    """True only after the user has explicitly accepted telemetry."""
-    s = QSettings()
-    return s.value(f"{_SETTINGS_PREFIX}/consent", False, type=bool)
-
-
-def set_consent(granted: bool):
-    """Persist user's telemetry choice."""
-    s = QSettings()
-    s.setValue(f"{_SETTINGS_PREFIX}/consent", bool(granted))
+# Lifecycle events without user-generated content. Ship without an explicit
+# consent flag so the funnel is observable.
+_NO_CONSENT_EVENTS = frozenset({
+    "plugin_opened",
+    "plugin_activated",
+    "segmentation_run",
+})
 
 
 # --- Payload helpers ------------------------------------------------------
@@ -150,14 +141,22 @@ def _on_worker_finished(worker: _TelemetryWorker):
 
 
 def _send(event: str, properties: dict | None = None) -> bool:
-    """Build payload + ship. No-op (returns False) if consent missing or plugin
-    not activated. Returns True once the background worker has been queued."""
-    if not has_consent():
-        return False
+    """Build payload + ship. Returns True once the background worker has been queued.
+
+    Lifecycle events in `_NO_CONSENT_EVENTS` ship as long as the plugin is
+    activated; everything else additionally requires the user to have
+    accepted the ToS (via the dock checkbox before first segmentation).
+    """
     auth = _get_auth_header()
     if not auth:
-        # Never track an unactivated user rule + avoids any anonymous-identity debate.
         return False
+    if event not in _NO_CONSENT_EVENTS:
+        try:
+            from .activation_manager import has_tos_accepted, has_tos_locked
+            if not (has_tos_accepted() or has_tos_locked()):
+                return False
+        except Exception:
+            return False
     try:
         payload = json.dumps({
             "event": event,

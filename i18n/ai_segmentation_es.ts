@@ -679,16 +679,28 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Iniciar sesion en TerraLab</translation>
     </message>
     <message>
-        <source>Create your free account</source>
-        <translation>Crea tu cuenta gratuita</translation>
+        <source>Two steps to start using AI Segmentation</source>
+        <translation>Dos pasos para empezar a usar AI Segmentation</translation>
     </message>
     <message>
-        <source>AI Segmentation is free. Create a TerraLab account to get your activation key.</source>
-        <translation>AI Segmentation es gratuito. Crea una cuenta TerraLab para obtener tu clave de activación.</translation>
+        <source>1. Sign up or sign in on terra-lab.ai to get your key</source>
+        <translation>1. Regístrate o inicia sesión en terra-lab.ai para obtener tu clave</translation>
     </message>
     <message>
-        <source>Create account (free)</source>
-        <translation>Crear cuenta (gratis)</translation>
+        <source>2. Paste your key below to activate</source>
+        <translation>2. Pega tu clave abajo para activar</translation>
+    </message>
+    <message>
+        <source>1. Sign up / Sign in</source>
+        <translation>1. Regístrate / Inicia sesión</translation>
+    </message>
+    <message>
+        <source>Get Your Key</source>
+        <translation>Obtener tu clave</translation>
+    </message>
+    <message>
+        <source>2. Paste your activation key</source>
+        <translation>2. Pega tu clave de activación</translation>
     </message>
     <message>
         <source>Sign in to get your key</source>

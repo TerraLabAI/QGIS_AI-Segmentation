@@ -436,10 +436,6 @@ class AISegmentationPlugin:
             except (TypeError, RuntimeError, AttributeError):
                 pass
             try:
-                self.dock_widget.visibilityChanged.disconnect(self._on_dock_visibility_changed)
-            except (TypeError, RuntimeError, AttributeError):
-                pass
-            try:
                 self.dock_widget.layer_combo.layerChanged.disconnect(self._on_layer_combo_changed)
             except (TypeError, RuntimeError, AttributeError):
                 pass

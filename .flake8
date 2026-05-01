@@ -1,5 +1,0 @@
-[flake8]
-max-line-length = 120
-# W503: line break before binary operator — conflicts with W504; PEP 8 prefers this style
-# QGS105: iface as argument is the standard QGIS plugin pattern
-extend-ignore = QGS105,W503

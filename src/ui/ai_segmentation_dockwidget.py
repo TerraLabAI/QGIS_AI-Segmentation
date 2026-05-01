@@ -281,12 +281,37 @@ class AISegmentationDockWidget(QDockWidget):
         layout.setSpacing(8)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        step1_label = QLabel(tr("1. Create your free account"))
+        self._setup_header = QLabel(tr("Two steps to start using AI Segmentation"))
+        self._setup_header.setStyleSheet(
+            "font-weight: bold; font-size: 13px; color: palette(text);")
+        layout.addWidget(self._setup_header)
+
+        self._setup_desc = QLabel(
+            tr("1. Sign up or sign in on terra-lab.ai to get your key")
+            + "\n"
+            + tr("2. Paste your key below to activate")
+        )
+        self._setup_desc.setWordWrap(True)
+        self._setup_desc.setStyleSheet(
+            "QLabel {"
+            " background-color: rgba(128, 128, 128, 0.12);"
+            " border: 1px solid rgba(128, 128, 128, 0.25);"
+            " border-radius: 4px;"
+            " padding: 8px;"
+            " font-size: 10px;"
+            " color: palette(text);"
+            "}"
+        )
+        layout.addWidget(self._setup_desc)
+
+        layout.addSpacing(12)
+
+        step1_label = QLabel(tr("1. Sign up / Sign in"))
         step1_label.setStyleSheet(
             "font-weight: bold; font-size: 12px; color: palette(text);")
         layout.addWidget(step1_label)
 
-        sign_in_btn = QPushButton(tr("Create account (free)"))
+        sign_in_btn = QPushButton(tr("Get Your Key"))
         sign_in_btn.setMinimumHeight(36)
         sign_in_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         sign_in_btn.setStyleSheet(
@@ -304,7 +329,9 @@ class AISegmentationDockWidget(QDockWidget):
         hint_label.setStyleSheet("font-size: 11px; color: palette(text);")
         layout.addWidget(hint_label)
 
-        step2_label = QLabel(tr("2. Paste your AI Segmentation activation key"))
+        layout.addSpacing(8)
+
+        step2_label = QLabel(tr("2. Paste your activation key"))
         step2_label.setStyleSheet(
             "font-weight: bold; font-size: 12px; color: palette(text);")
         layout.addWidget(step2_label)
@@ -432,6 +459,18 @@ class AISegmentationDockWidget(QDockWidget):
         tos_row.setContentsMargins(0, 0, 0, 0)
         tos_row.setSpacing(4)
         self.tos_checkbox = QCheckBox()
+        self.tos_checkbox.setStyleSheet(
+            "QCheckBox::indicator {"
+            "  width: 16px; height: 16px;"
+            "  border: 2px solid palette(text);"
+            "  border-radius: 3px;"
+            "  background-color: palette(base);"
+            "}"
+            "QCheckBox::indicator:checked {"
+            "  background-color: #1976d2;"
+            "  border-color: #1976d2;"
+            "}"
+        )
         self.tos_checkbox.setChecked(has_tos_accepted())
         self.tos_checkbox.toggled.connect(self._on_tos_toggled)
         tos_row.addWidget(self.tos_checkbox, 0)
@@ -443,7 +482,7 @@ class AISegmentationDockWidget(QDockWidget):
         )
         self.tos_label.setOpenExternalLinks(True)
         self.tos_label.setWordWrap(True)
-        self.tos_label.setStyleSheet("font-size: 11px;")
+        self.tos_label.setStyleSheet("font-size: 11px; color: palette(text);")
         tos_row.addWidget(self.tos_label, 1)
         # If the user has already started a segmentation in the past, the
         # consent is sealed and the row disappears forever.
@@ -1468,6 +1507,17 @@ class AISegmentationDockWidget(QDockWidget):
             )
 
         self.instructions_label.setText(text)
+
+    def closeEvent(self, event):
+        # Route the close-button (X) through the existing Stop flow when a
+        # session is active, so the user gets the discard-warning dialog
+        # instead of silently leaving the map tool armed without a panel.
+        if self._segmentation_active:
+            self.stop_segmentation_requested.emit()
+            if self._segmentation_active:
+                event.ignore()
+                return
+        super().closeEvent(event)
 
     def reset_session(self):
         self._has_mask = False

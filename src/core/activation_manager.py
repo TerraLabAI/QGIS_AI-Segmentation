@@ -1,11 +1,14 @@
 """Activation manager for the AI Segmentation plugin."""
 from __future__ import annotations
 
+import re
 import uuid
 
 from qgis.core import QgsSettings
 
 PRODUCT_ID = "ai-segmentation"
+
+_KEY_RE = re.compile(r"^tl_[0-9a-f]{32}$")
 
 SETTINGS_PREFIX = "AISegmentation/"
 TERRALAB_PREFIX = "TerraLab/"
@@ -160,8 +163,8 @@ def validate_key_with_server(key: str) -> tuple[bool, str]:
     key = (key or "").strip()
     if not key:
         return False, "Please enter your activation key."
-    if not key.startswith("tl_"):
-        return False, "Invalid key format. Keys start with tl_"
+    if not _KEY_RE.match(key):
+        return False, "Invalid key format. Keys look like tl_ followed by 32 characters."
 
     auth = {"Authorization": f"Bearer {key}", "X-Product-ID": PRODUCT_ID}
     try:

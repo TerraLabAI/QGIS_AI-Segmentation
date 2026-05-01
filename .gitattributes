@@ -1,9 +1,0 @@
-.github/         export-ignore
-.claude/         export-ignore
-tests/           export-ignore
-.flake8          export-ignore
-.gitignore       export-ignore
-.gitattributes   export-ignore
-CLAUDE.md        export-ignore
-pyproject.toml   export-ignore
-requirements.txt export-ignore
