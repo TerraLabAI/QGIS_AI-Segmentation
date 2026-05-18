@@ -55,10 +55,21 @@ def get_pip_ssl_bypass_flags() -> list[str]:
 
 
 def is_ssl_module_missing(error_text: str) -> bool:
-    """Check if the error is about a missing SSL module (not a certificate issue)."""
+    """Check if the error is about a missing SSL module (not a certificate issue).
+
+    Seen on Windows 7 + Python 3.9 QGIS shipments where the embedded Python
+    lacks `_ssl`, breaking all pip calls. The classifier-driven help text
+    nudges users toward reinstalling QGIS on a supported OS.
+    """
     lower = error_text.lower()
-    patterns = ["ssl module is not available", "no module named '_ssl'",
-                "ssl module", "importerror: _ssl"]
+    patterns = [
+        "ssl module is not available",
+        "no module named '_ssl'",
+        "ssl module",
+        "importerror: _ssl",
+        "can't connect to https url because the ssl module is not available",
+        "the ssl module in python is not available",
+    ]
     return any(p in lower for p in patterns)
 
 
@@ -110,6 +121,15 @@ _NETWORK_ERROR_PATTERNS = [
     "name or service not known",
     "network timeout",
     "failed to download",
+    # Localized DNS variants. Scoped to the plugin's officially supported
+    # locales (fr, pt-BR, es) — the OS-language error bubbles up via getaddrinfo
+    # even when the plugin UI is in English, so missing these silently
+    # mis-classifies real DNS failures as generic install errors.
+    "hôte inconnu",                # fr
+    "hote inconnu",                # fr (no accent, defensive)
+    "host non trouvé",             # fr (alt)
+    "host desconhecido",           # pt-BR
+    "host desconocido",            # es
 ]
 
 

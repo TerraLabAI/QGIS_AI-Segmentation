@@ -560,13 +560,23 @@ def _get_system_python() -> str:
     Uses the standalone Python downloaded by python_manager.
     On Windows, falls back to QGIS's bundled Python if standalone is unavailable
     (e.g. when anti-malware blocks the standalone download).
+
+    Exception: on unsupported Windows versions (7 / Vista / XP / Server 2003)
+    the QGIS-bundled Python is itself the broken-`_ssl` interpreter the user
+    is hitting, so falling back loops them back into the same SSL failure the
+    plugin reports. Short-circuit with the unsupported-OS message instead.
     """
     from .python_manager import (
         get_standalone_python_path,
+        is_unsupported_windows,
         remove_standalone_python,
         standalone_python_exists,
         verify_standalone_python,
     )
+
+    unsupported, why = is_unsupported_windows()
+    if unsupported:
+        raise RuntimeError(why)
 
     if standalone_python_exists():
         ok, msg = verify_standalone_python()

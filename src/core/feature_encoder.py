@@ -14,6 +14,7 @@ _GDAL_ONLY_FORMATS = {
     ".ecw", ".sid", ".jp2", ".j2k", ".j2c",
     ".nitf", ".ntf", ".img", ".hdf", ".hdf5", ".he5", ".nc",
     ".gpkg",
+    ".pdf",
 }
 
 # Online/remote raster providers that need rendering before encoding
@@ -244,7 +245,9 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
     Instead of converting the entire file to GeoTIFF, reads only the needed
     pixels using GDAL windowed access.
 
-    Returns (image_np, crop_info, error).
+    Returns (image_np, crop_info, error_msg, error_code). On success, error_msg
+    and error_code are both None. On failure error_code is a stable English
+    snake_case identifier safe for analytics aggregation across locales.
     """
     ext = os.path.splitext(raster_path)[1].upper()
 
@@ -256,9 +259,17 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
             "GDAL is not available.\n"
             "Please convert your raster to GeoTIFF (.tif) before using "
             "AI Segmentation."
-        ).format(ext=ext)
+        ).format(ext=ext), "crop_error_gdal_unavailable"
 
     ds = None
+    # rasterio bundles its own proj.db in site-packages, and we force
+    # PROJ_DATA/GDAL_DATA to point there so rasterio works in the venv.
+    # GDAL (from osgeo) has its own bundled data and will hit a
+    # "DATABASE.LAYOUT.VERSION.MINOR = N whereas a number >= M is expected"
+    # error when forced to read rasterio's older proj.db. Restore env after.
+    _proj_data_backup = os.environ.pop("PROJ_DATA", None)
+    _proj_lib_backup = os.environ.pop("PROJ_LIB", None)
+    _gdal_data_backup = os.environ.pop("GDAL_DATA", None)
     try:
         ds = gdal.Open(raster_path)
         if ds is None:
@@ -267,7 +278,7 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
                 "by your QGIS installation.\n"
                 "Please convert your raster to GeoTIFF (.tif) before using "
                 "AI Segmentation."
-            ).format(ext=ext)
+            ).format(ext=ext), "crop_error_unsupported_format"
 
         raster_width = ds.RasterXSize
         raster_height = ds.RasterYSize
@@ -310,11 +321,11 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
         actual_height = min(read_size, raster_height - row_off)
 
         if actual_width <= 0 or actual_height <= 0:
-            return None, None, "Click is outside the raster bounds"
+            return None, None, "Click is outside the raster bounds", "crop_error_outside_bounds"
 
         num_bands = min(ds.RasterCount, 3)
         if num_bands == 0:
-            return None, None, "Raster has no bands"
+            return None, None, "Raster has no bands", "crop_error_no_bands"
 
         if scale_factor > 1.0:
             out_h = max(1, min(crop_size, int(actual_height / scale_factor)))
@@ -366,16 +377,22 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
             f"Read {ext} crop directly via GDAL: {out_w}x{out_h} at ({col_off}, {row_off})",
             "AI Segmentation", level=Qgis.MessageLevel.Info
         )
-        return image_np, crop_info, None
+        return image_np, crop_info, None, None
 
     except Exception as e:
         return None, None, tr(
             "Failed to read {ext} file: {error}\n"
             "Please convert your raster to GeoTIFF (.tif) manually."
-        ).format(ext=ext, error=str(e))
+        ).format(ext=ext, error=str(e)), "crop_error_read_failed"
 
     finally:
         ds = None
+        if _proj_data_backup is not None:
+            os.environ["PROJ_DATA"] = _proj_data_backup
+        if _proj_lib_backup is not None:
+            os.environ["PROJ_LIB"] = _proj_lib_backup
+        if _gdal_data_backup is not None:
+            os.environ["GDAL_DATA"] = _gdal_data_backup
 
 
 def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
@@ -405,7 +422,7 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
         from rasterio.enums import Resampling
         from rasterio.windows import Window
     except ImportError:
-        return None, None, "rasterio is not available"
+        return None, None, "rasterio is not available", "crop_error_rasterio_unavailable"
 
     # Handle GDAL-only formats (JP2, ECW, etc.) with direct windowed read
     if _needs_gdal_conversion(raster_path):
@@ -461,7 +478,7 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
             actual_height = min(read_size, raster_height - row_off)
 
             if actual_width <= 0 or actual_height <= 0:
-                return None, None, "Click is outside the raster bounds"
+                return None, None, "Click is outside the raster bounds", "crop_error_outside_bounds"
 
             window = Window(col_off, row_off, actual_width, actual_height)
 
@@ -516,7 +533,7 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
                 "row_off": row_off,
             }
 
-            return image_np, crop_info, None
+            return image_np, crop_info, None, None
 
     except Exception as e:
         # Fallback to GDAL if rasterio fails (unsupported driver, etc.)
@@ -547,7 +564,7 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
 
     provider = layer.dataProvider()
     if provider is None:
-        return None, None, tr("Layer data provider is not available.")
+        return None, None, tr("Layer data provider is not available."), "crop_error_online_provider_unavailable"
 
     half_size = crop_size * canvas_mupp / 2.0
     extent = QgsRectangle(
@@ -629,7 +646,7 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
                 return None, None, tr(
                     "Failed to fetch tiles from the online layer. "
                     "Check your network connection."
-                )
+                ), "crop_error_online_fetch_failed"
         elif is_argb:
             # Already RGB uint8 (H, W, 3) from ARGB32 path
             image_np = bands_result
@@ -651,7 +668,7 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
             return None, None, tr(
                 "Online layer returned blank tiles for this area. "
                 "Try panning to an area with data coverage."
-            )
+            ), "crop_error_online_blank_tiles"
 
         crop_info = {
             "bounds": (extent.xMinimum(), extent.yMinimum(),
@@ -659,7 +676,7 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
             "img_shape": (height, width),
         }
 
-        return image_np, crop_info, None
+        return image_np, crop_info, None, None
 
     except Exception as e:
-        return None, None, str(e)
+        return None, None, str(e), "crop_error_online_exception"

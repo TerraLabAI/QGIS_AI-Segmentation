@@ -397,15 +397,22 @@ class BugReportDialog(QDialog):
         QDesktopServices.openUrl(QUrl(f"mailto:{SUPPORT_EMAIL}?subject={subject}"))
 
 
-def show_error_report(parent, error_title: str, error_message: str):
-    """Convenience function to show the error report dialog."""
+def show_error_report(parent, error_title: str, error_message: str, error_code: str = ""):
+    """Convenience function to show the error report dialog.
+
+    `error_code` should be a canonical English snake_case identifier
+    (e.g. "crop_error"). If omitted, falls back to `_short_code(error_title)`,
+    which leaks the QGIS locale into the analytics payload — callers should
+    pass an explicit code so dashboards aggregate cleanly across languages.
+    """
     try:
         from ..core.telemetry import track_plugin_error
         stage = _infer_stage(error_title, error_message)
         first_line = (error_message or "").splitlines()[0] if error_message else ""
+        code = error_code or _short_code(error_title)
         track_plugin_error(
             stage=stage,
-            error_code=_short_code(error_title),
+            error_code=code,
             message=first_line,
         )
     except Exception:
@@ -435,10 +442,19 @@ def _infer_stage(title: str, message: str) -> str:
 
 
 def _short_code(title: str) -> str:
-    """Compact, lowercase error_code from the dialog title."""
+    """Compact, lowercase error_code from the dialog title.
+
+    If the title contains non-ASCII characters it is almost certainly a
+    translated string (e.g. "Erreur d'extraction"). Returning a slug derived
+    from a translated title splits the same logical error across locales in
+    analytics. Surface that as `unknown_localized` so callers are nudged to
+    pass an explicit `error_code=` instead of silently polluting dashboards.
+    """
     import re as _re
     if not title:
         return "unknown"
+    if not title.isascii():
+        return "unknown_localized"
     code = _re.sub(r"[^a-zA-Z0-9]+", "_", title).strip("_").lower()
     return code[:40] or "unknown"
 

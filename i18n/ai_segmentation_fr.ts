@@ -431,6 +431,22 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Tutoriel</translation>
     </message>
     <message>
+        <source>Settings</source>
+        <translation>Paramètres</translation>
+    </message>
+    <message>
+        <source>Help</source>
+        <translation>Aide</translation>
+    </message>
+    <message>
+        <source>Terms</source>
+        <translation>Conditions</translation>
+    </message>
+    <message>
+        <source>Privacy</source>
+        <translation>Confidentialité</translation>
+    </message>
+    <message>
         <source>Something not working?</source>
         <translation>Quelque chose ne fonctionne pas ?</translation>
     </message>

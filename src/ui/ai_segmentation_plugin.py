@@ -918,12 +918,14 @@ class AISegmentationPlugin:
             self.dock_widget.set_dependency_status(False, tr("Installation failed"))
 
             error_title = tr("Installation Failed")
+            error_code = "installation_failed"
             msg_lower = message.lower() if message else ""
             if any(p in msg_lower for p in [
                 "ssl", "certificate verify", "sslerror",
                 "unable to get local issuer",
             ]):
                 error_title = tr("SSL Certificate Error")
+                error_code = "ssl_certificate_error"
             elif "file in use by qgis" in msg_lower:
                 # Native module (.pyd/.dll) locked by the running QGIS process
                 # during a torch upgrade — no dialog-splash of AV advice here,
@@ -931,6 +933,7 @@ class AISegmentationPlugin:
                 from ..core.pip_diagnostics import get_file_locked_help
                 error_title = tr("Restart QGIS Required")
                 error_msg = get_file_locked_help()
+                error_code = "restart_qgis_required"
             elif any(p in msg_lower for p in [
                 "access is denied", "winerror 5", "winerror 225",
                 "permission denied", "blocked",
@@ -939,6 +942,7 @@ class AISegmentationPlugin:
             ]):
                 error_title = tr("Installation Blocked")
                 error_msg = f"{error_msg}\n\n{_get_change_path_instructions()}"
+                error_code = "installation_blocked"
             elif any(p in msg_lower for p in [
                 "network error", "connection aborted", "connection reset",
                 "timed out", "timeout", "network connection failed",
@@ -956,11 +960,13 @@ class AISegmentationPlugin:
                         "and files.pythonhosted.org."
                     ),
                 )
+                error_code = "network_connection_problem"
 
             show_error_report(
                 self.iface.mainWindow(),
                 error_title,
-                error_msg
+                error_msg,
+                error_code=error_code,
             )
 
     def _on_verify_progress(self, percent: int, message: str):
@@ -1002,7 +1008,8 @@ class AISegmentationPlugin:
                 tr("Verification Failed"),
                 "{}\n{}".format(
                     tr("Virtual environment was created but verification failed:"),
-                    message))
+                    message),
+                error_code="verification_failed")
 
     def _on_cancel_install(self):
         if self.deps_install_worker and self.deps_install_worker.isRunning():
@@ -1063,7 +1070,8 @@ class AISegmentationPlugin:
                 tr("Download Failed"),
                 "{}\n{}".format(
                     tr("Failed to download model:"),
-                    message)
+                    message),
+                error_code="download_failed",
             )
 
     def _on_start_segmentation(self, layer: QgsRasterLayer):
@@ -1129,7 +1137,8 @@ class AISegmentationPlugin:
                             self.iface.mainWindow(),
                             tr("Invalid Layer"),
                             tr("Layer extent contains invalid coordinates "
-                               "(NaN/Inf). Check the raster file.")
+                               "(NaN/Inf). Check the raster file."),
+                            error_code="invalid_layer",
                         )
                         return
             except RuntimeError:
@@ -1410,7 +1419,8 @@ class AISegmentationPlugin:
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Export Failed"),
-                tr("An unexpected error occurred during export. Please check the logs.")
+                tr("An unexpected error occurred during export. Please check the logs."),
+                error_code="export_failed",
             )
         finally:
             self._exporting_in_progress = False
@@ -1536,7 +1546,8 @@ class AISegmentationPlugin:
                 self.iface.mainWindow(),
                 tr("Cannot Write Export"),
                 tr("Cannot create export directory '{path}': {reason}").format(
-                    path=output_dir, reason=str(e))
+                    path=output_dir, reason=str(e)),
+                error_code="cannot_write_export",
             )
             return
 
@@ -1545,7 +1556,8 @@ class AISegmentationPlugin:
                 self.iface.mainWindow(),
                 tr("Cannot Write Export"),
                 tr("The export directory '{path}' is not writable. "
-                   "Choose a different location.").format(path=output_dir)
+                   "Choose a different location.").format(path=output_dir),
+                error_code="cannot_write_export",
             )
             return
 
@@ -1562,7 +1574,8 @@ class AISegmentationPlugin:
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Layer Creation Failed"),
-                tr("Could not create the output layer.")
+                tr("Could not create the output layer."),
+                error_code="layer_creation_failed",
             )
             return
 
@@ -1624,7 +1637,8 @@ class AISegmentationPlugin:
                 self.iface.mainWindow(),
                 tr("Export Failed"),
                 tr("No valid polygons could be created from the selection. "
-                   "Try adjusting the refine settings or making a new selection.")
+                   "Try adjusting the refine settings or making a new selection."),
+                error_code="export_failed",
             )
             return
 
@@ -1654,7 +1668,8 @@ class AISegmentationPlugin:
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Export Failed"),
-                "{}\n{}".format(tr("Could not save layer to file:"), error[1])
+                "{}\n{}".format(tr("Could not save layer to file:"), error[1]),
+                error_code="export_failed",
             )
             return
 
@@ -1669,7 +1684,8 @@ class AISegmentationPlugin:
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Load Failed"),
-                "{}\n{}".format(tr("Layer was saved but could not be loaded:"), gpkg_path)
+                "{}\n{}".format(tr("Layer was saved but could not be loaded:"), gpkg_path),
+                error_code="load_failed",
             )
             return
 
@@ -2201,7 +2217,7 @@ class AISegmentationPlugin:
             self._current_crop_canvas_mupp = canvas_mupp
             actual_mupp = mupp_override or raster_mupp
             self._current_crop_actual_mupp = actual_mupp
-            image_np, crop_info, error = extract_crop_from_online_layer(
+            image_np, crop_info, error, error_code_from_crop = extract_crop_from_online_layer(
                 self._current_layer, raster_pt_x, raster_pt_y,
                 actual_mupp, crop_size=1024
             )
@@ -2213,7 +2229,8 @@ class AISegmentationPlugin:
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Crop Error"),
-                tr("No raster file path available. Please restart segmentation.")
+                tr("No raster file path available. Please restart segmentation."),
+                error_code="crop_error_no_path",
             )
             return False
         else:
@@ -2232,7 +2249,7 @@ class AISegmentationPlugin:
             scale_factor = mupp_override or 1.0
             self._current_crop_scale_factor = scale_factor
             self._current_crop_canvas_mupp = self.iface.mapCanvas().mapUnitsPerPixel()
-            image_np, crop_info, error = extract_crop_from_raster(
+            image_np, crop_info, error, error_code_from_crop = extract_crop_from_raster(
                 self._current_raster_path, raster_pt_x, raster_pt_y,
                 crop_size=1024,
                 layer_crs_wkt=layer_crs_wkt,
@@ -2252,7 +2269,8 @@ class AISegmentationPlugin:
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Crop Error"),
-                error
+                error,
+                error_code=error_code_from_crop or "crop_error_unknown",
             )
             return False
 
@@ -2271,7 +2289,8 @@ class AISegmentationPlugin:
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Encoding Error"),
-                str(e)
+                str(e),
+                error_code="encoding_error",
             )
             return False
 

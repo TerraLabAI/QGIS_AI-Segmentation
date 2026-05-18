@@ -431,6 +431,22 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Tutorial</translation>
     </message>
     <message>
+        <source>Settings</source>
+        <translation>Ajustes</translation>
+    </message>
+    <message>
+        <source>Help</source>
+        <translation>Ayuda</translation>
+    </message>
+    <message>
+        <source>Terms</source>
+        <translation>Términos</translation>
+    </message>
+    <message>
+        <source>Privacy</source>
+        <translation>Privacidad</translation>
+    </message>
+    <message>
         <source>Something not working?</source>
         <translation>¿Algo no funciona?</translation>
     </message>

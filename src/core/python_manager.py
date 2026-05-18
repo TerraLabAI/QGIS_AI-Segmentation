@@ -56,6 +56,29 @@ def is_nixos() -> bool:
     return os.path.exists("/etc/NIXOS") or bool(nix_env)
 
 
+def is_unsupported_windows() -> tuple[bool, str]:
+    """Detect Windows versions below the standalone Python's official support.
+
+    astral-sh/python-build-standalone targets Windows 8+ — Windows 7 binaries
+    boot but commonly miss runtime APIs (e.g. ssl module loading fails because
+    schannel-related symbols are absent in older kernel32), producing the
+    "Can't connect to HTTPS URL because the SSL module is not available"
+    failure observed in user reports. Detect early so we surface a clear
+    "OS not supported" message instead of letting the install loop on a
+    download that will never produce a working interpreter.
+    """
+    if sys.platform != "win32":
+        return False, ""
+    release = platform.release() or ""
+    if release in ("7", "Vista", "XP", "2003Server", "post2003"):
+        return True, (
+            f"Windows {release} is not supported by AI Segmentation. "
+            "The bundled Python interpreter requires Windows 8 or later. "
+            "Please upgrade to Windows 10 or 11."
+        )
+    return False, ""
+
+
 def _get_windows_antivirus_help(plugin_path: str) -> str:
     """
     Return help message for Windows antivirus issues.
@@ -209,6 +232,11 @@ def download_python_standalone(
     Returns:
         Tuple of (success: bool, message: str)
     """
+    unsupported, why = is_unsupported_windows()
+    if unsupported:
+        _log(why, Qgis.MessageLevel.Critical)
+        return False, why
+
     if standalone_python_exists():
         _log("Python standalone already exists", Qgis.MessageLevel.Info)
         return True, "Python standalone already installed"

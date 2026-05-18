@@ -14,6 +14,7 @@ from qgis.PyQt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -30,6 +31,27 @@ from .layer_tree_combobox import LayerTreeComboBox
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
 
+# Footer icon buttons (gear / question mark) — slim toolbuttons that mirror
+# AI Edit. Hover state is driven by a dynamic `hover` property rather than
+# Qt's :hover pseudo, because with InstantPopup menus Qt fails to fire a
+# Leave event once the menu closes, so the button stays tinted until the
+# next real mouse move. ``_FooterIconButton.set_hovered(False)`` resets it.
+_FOOTER_ICON_BTN_STYLE = (
+    "QToolButton { background: transparent; border: none; padding: 6px 10px;"
+    " font-size: 22px; font-weight: 600;"
+    " color: palette(text); border-radius: 4px; }"
+    'QToolButton[hover="true"] { background: rgba(128,128,128,0.15); }'
+    "QToolButton::menu-indicator { image: none; width: 0; }"
+)
+
+_FOOTER_MENU_STYLE = (
+    "QMenu { background: palette(base); border: 1px solid rgba(128,128,128,0.35);"
+    " border-radius: 6px; padding: 4px; }"
+    "QMenu::item { background: transparent; padding: 6px 14px; border-radius: 4px;"
+    " color: palette(text); }"
+    "QMenu::item:selected { background: rgba(128,128,128,0.18); }"
+)
+
 
 from ..core.activation_manager import (  # noqa: E402
     get_sign_up_url,
@@ -44,6 +66,37 @@ from ..core.activation_manager import (  # noqa: E402
 from ..core.i18n import tr  # noqa: E402
 from ..core.model_config import _IS_MACOS_X86, USE_SAM2  # noqa: E402
 from ..core.venv_manager import CACHE_DIR  # noqa: E402
+
+
+class _FooterIconButton(QToolButton):
+    """QToolButton whose hover tint is driven by an explicit ``hover``
+    dynamic property rather than Qt's :hover pseudo-state.
+
+    With InstantPopup menus, Qt fails to fire the synthetic Leave event
+    after the menu closes, so the button stays visually pressed/hovered
+    until the next real mouse move. Tracking hover ourselves lets us
+    force-reset it on ``menu.aboutToHide``.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setProperty("hover", False)
+
+    def set_hovered(self, hovered: bool) -> None:
+        if bool(self.property("hover")) == hovered:
+            return
+        self.setProperty("hover", hovered)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def enterEvent(self, event):  # noqa: N802
+        self.set_hovered(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):  # noqa: N802
+        self.set_hovered(False)
+        super().leaveEvent(event)
 
 
 class AISegmentationDockWidget(QDockWidget):
@@ -323,7 +376,7 @@ class AISegmentationDockWidget(QDockWidget):
         sign_in_btn.clicked.connect(self._on_panel_sign_in_clicked)
         layout.addWidget(sign_in_btn)
 
-        hint_label = QLabel(tr("Free forever — runs locally"))
+        hint_label = QLabel(tr("Free forever, runs locally"))
         hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint_label.setWordWrap(True)
         hint_label.setStyleSheet("font-size: 11px; color: palette(text);")
@@ -458,19 +511,11 @@ class AISegmentationDockWidget(QDockWidget):
         tos_row = QHBoxLayout(self.tos_container)
         tos_row.setContentsMargins(0, 0, 0, 0)
         tos_row.setSpacing(4)
+        # Use Qt's native QCheckBox rendering — the previous custom stylesheet
+        # only toggled the indicator's background colour without rendering a
+        # checkmark, so users couldn't tell at a glance whether the box was
+        # checked. Native rendering matches QGIS's own checkbox conventions.
         self.tos_checkbox = QCheckBox()
-        self.tos_checkbox.setStyleSheet(
-            "QCheckBox::indicator {"
-            "  width: 16px; height: 16px;"
-            "  border: 2px solid palette(text);"
-            "  border-radius: 3px;"
-            "  background-color: palette(base);"
-            "}"
-            "QCheckBox::indicator:checked {"
-            "  background-color: #1976d2;"
-            "  border-color: #1976d2;"
-            "}"
-        )
         self.tos_checkbox.setChecked(has_tos_accepted())
         self.tos_checkbox.toggled.connect(self._on_tos_toggled)
         tos_row.addWidget(self.tos_checkbox, 0)
@@ -904,52 +949,54 @@ class AISegmentationDockWidget(QDockWidget):
         self.batch_info_widget.setVisible(False)
         self.main_layout.addWidget(self.batch_info_widget)
 
-        # Simple horizontal layout for links, aligned right with larger font
-        links_widget = QWidget()
-        links_layout = QHBoxLayout(links_widget)
-        links_layout.setContentsMargins(0, 4, 0, 4)
-        links_layout.setSpacing(16)
+        # Footer icon row — mirrors AI Edit. Gear opens Account Settings
+        # (visible only when activated), help opens a popup with Tutorial /
+        # Shortcuts / Contact us. The contact / tutorial / shortcuts links
+        # previously sat as blue underlined labels but moved into the help
+        # menu so the bar matches AI Edit's compact look.
+        footer_widget = QWidget()
+        footer_row = QHBoxLayout(footer_widget)
+        footer_row.setContentsMargins(0, 4, 0, 4)
+        footer_row.setSpacing(6)
+        footer_row.addStretch()
 
-        links_layout.addStretch()  # Push links to the right
+        self._settings_btn = _FooterIconButton(footer_widget)
+        self._settings_btn.setText("⚙")  # U+2699 GEAR
+        self._settings_btn.setToolTip(tr("Settings"))
+        self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._settings_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._settings_btn.setStyleSheet(_FOOTER_ICON_BTN_STYLE)
+        self._settings_btn.clicked.connect(lambda: self.settings_clicked.emit())
+        self._settings_btn.setVisible(False)  # shown when activated
+        footer_row.addWidget(self._settings_btn)
 
-        # Settings link (only visible when activated)
-        self._settings_link = QLabel(
-            '<a href="#" style="color: #1976d2;">' + tr("Settings") + "</a>"
+        self._help_btn = _FooterIconButton(footer_widget)
+        self._help_btn.setText("?")
+        self._help_btn.setToolTip(tr("Help"))
+        self._help_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._help_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._help_btn.setStyleSheet(_FOOTER_ICON_BTN_STYLE)
+        self._help_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        help_menu = QMenu(self._help_btn)
+        help_menu.setStyleSheet(_FOOTER_MENU_STYLE)
+        help_menu.addAction(tr("Tutorial"), self._on_open_tutorial)
+        help_menu.addAction(tr("Shortcuts"), self._on_show_shortcuts)
+        help_menu.addAction(tr("Contact us"), self._on_contact_us)
+        self._help_btn.setMenu(help_menu)
+        # Force the hover tint off when the popup closes — Qt does not
+        # synthesise a Leave event in this case.
+        help_menu.aboutToHide.connect(
+            lambda btn=self._help_btn: (btn.setDown(False), btn.set_hovered(False))
         )
-        self._settings_link.setStyleSheet("font-size: 13px;")
-        self._settings_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._settings_link.linkActivated.connect(lambda _: self.settings_clicked.emit())
-        self._settings_link.setVisible(False)
-        links_layout.addWidget(self._settings_link)
+        footer_row.addWidget(self._help_btn)
 
-        # Contact us link
-        contact_link = QLabel(
-            '<a href="#" style="color: #1976d2;">' + tr("Contact us") + "</a>"
-        )
-        contact_link.setStyleSheet("font-size: 13px;")
-        contact_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        contact_link.linkActivated.connect(self._on_contact_us)
-        links_layout.addWidget(contact_link)
+        self.main_layout.addWidget(footer_widget)
 
-        # Tutorial link (server-driven URL)
-        docs_link = QLabel(
-            '<a href="' + get_tutorial_url() + '" style="color: #1976d2;">' + tr("Tutorial") + "</a>"
-        )
-        docs_link.setStyleSheet("font-size: 13px;")
-        docs_link.setOpenExternalLinks(True)
-        docs_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        links_layout.addWidget(docs_link)
-
-        # Shortcuts link
-        shortcuts_link = QLabel(
-            '<a href="#" style="color: #1976d2;">' + tr("Shortcuts") + "</a>"
-        )
-        shortcuts_link.setStyleSheet("font-size: 13px;")
-        shortcuts_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        shortcuts_link.linkActivated.connect(self._on_show_shortcuts)
-        links_layout.addWidget(shortcuts_link)
-
-        self.main_layout.addWidget(links_widget)
+    def _on_open_tutorial(self):
+        """Open the tutorial URL in the system browser."""
+        from qgis.PyQt.QtCore import QUrl
+        from qgis.PyQt.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl(get_tutorial_url()))
 
     def _on_show_shortcuts(self):
         """Show keyboard shortcuts in a dialog."""
@@ -1132,11 +1179,17 @@ class AISegmentationDockWidget(QDockWidget):
         if show_activation:
             self.welcome_widget.setVisible(False)
 
-        self._settings_link.setVisible(self._plugin_activated)
+        self._settings_btn.setVisible(self._plugin_activated)
 
         self._update_ui_state()
 
     def _on_install_clicked(self):
+        # Log on click receipt so users stuck on the install screen with no
+        # apparent reaction (observed on macOS 26) can prove the click event
+        # was actually delivered to Qt — separating UI-event regressions from
+        # signal-propagation or background-worker bugs.
+        from ..core.logging_utils import log as _log
+        _log("Install button clicked")
         self.install_button.setEnabled(False)
         self.install_requested.emit()
 
@@ -1341,9 +1394,24 @@ class AISegmentationDockWidget(QDockWidget):
             else:
                 self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
         else:
+            # Intermediate tick (1..99). The deps phase hides the bar via
+            # set_dependency_status once deps are validated; the very next
+            # callback then enters the model-download/load phase but never
+            # re-shows the progress UI, so users sat on "Dependencies ready"
+            # for several minutes with no visible activity. Re-asserting
+            # visibility here keeps the hand-off seamless.
+            self.setup_progress.setVisible(True)
+            self.setup_progress_label.setVisible(True)
             if self._current_progress < percent:
                 self._current_progress = percent
                 self.setup_progress.setValue(percent)
+            msg_lower = message.lower() if message else ""
+            if "loading" in msg_lower and "model" in msg_lower:
+                self.welcome_title.setText(tr("Loading AI model..."))
+            elif "downloading" in msg_lower and "model" in msg_lower:
+                self.welcome_title.setText(tr("Downloading AI model..."))
+            elif "verifying" in msg_lower:
+                self.welcome_title.setText(tr("Verifying installation..."))
 
     def _on_progress_tick(self):
         """Animate progress bar smoothly between updates."""
