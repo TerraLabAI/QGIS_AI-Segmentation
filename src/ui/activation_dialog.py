@@ -18,7 +18,7 @@ from qgis.PyQt.QtWidgets import (
     QVBoxLayout,
 )
 
-from ..core.activation_manager import get_sign_in_url, validate_key_with_server
+from ..core.activation_manager import get_sign_up_url, validate_key_with_server
 from ..core.i18n import tr
 
 
@@ -74,7 +74,7 @@ class ActivationDialog(QDialog):
         subtitle.setStyleSheet("color: palette(text); font-size: 11px;")
         layout.addWidget(subtitle)
 
-        self.sign_in_button = QPushButton(tr("Sign in to TerraLab (free)"))
+        self.sign_in_button = QPushButton(tr("Get Your Key"))
         self.sign_in_button.setMinimumHeight(40)
         self.sign_in_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.sign_in_button.setStyleSheet(
@@ -113,7 +113,10 @@ class ActivationDialog(QDialog):
         layout.addWidget(self.message_label)
 
     def _on_sign_in_clicked(self):
-        QDesktopServices.openUrl(QUrl(get_sign_in_url()))
+        # Users opening this dialog don't have an account yet by default. The
+        # /signup page exposes a Sign-in tab for the edge case of an
+        # existing user pasting their key from another machine.
+        QDesktopServices.openUrl(QUrl(get_sign_up_url()))
 
     def _on_activate_clicked(self):
         key = self.key_input.text().strip()

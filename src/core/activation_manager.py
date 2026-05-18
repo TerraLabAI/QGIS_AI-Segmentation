@@ -15,13 +15,8 @@ TERRALAB_PREFIX = "TerraLab/"
 DEVICE_ID_KEY = f"{TERRALAB_PREFIX}device_id"
 
 TUTORIAL_URL_FALLBACK = "https://youtu.be/lbADk75l-mk?si=q6WnwyV2NcmQYuhI"
-_SIGN_IN_BASE = (
-    "https://terra-lab.ai/login"
-    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
-    "&utm_content=sign_in&product=ai-segmentation"
-)
 _SIGN_UP_BASE = (
-    "https://terra-lab.ai/register"
+    "https://terra-lab.ai/signup"
     "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
     "&utm_content=sign_up&product=ai-segmentation"
 )
@@ -156,10 +151,6 @@ def get_tutorial_url() -> str:
     if config and "tutorial_url" in config:
         return config["tutorial_url"]
     return TUTORIAL_URL_FALLBACK
-
-
-def get_sign_in_url() -> str:
-    return f"{_SIGN_IN_BASE}&device_id={get_device_id()}"
 
 
 def get_sign_up_url() -> str:
