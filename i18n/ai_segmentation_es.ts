@@ -811,5 +811,31 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <source>Key</source>
         <translation>Clave</translation>
     </message>
+
+    <!-- Corrupt checkpoint recovery (#65) -->
+    <message>
+        <source>Model File Corrupted</source>
+        <translation>Archivo del modelo dañado</translation>
+    </message>
+    <message>
+        <source>Re-downloading Model</source>
+        <translation>Volviendo a descargar el modelo</translation>
+    </message>
+    <message>
+        <source>The AI model file was corrupted and is being re-downloaded. Please try your selection again once it finishes.</source>
+        <translation>El archivo del modelo de IA estaba dañado y se está volviendo a descargar. Vuelva a intentar su selección cuando termine.</translation>
+    </message>
+    <message>
+        <source>The AI model file is corrupted but could not be removed automatically. Please delete this folder and restart QGIS:</source>
+        <translation>El archivo del modelo de IA está dañado pero no se pudo eliminar automáticamente. Elimine esta carpeta y reinicie QGIS:</translation>
+    </message>
+    <message>
+        <source>Try full automatic segmentation</source>
+        <translation>Prueba la segmentación totalmente automática</translation>
+    </message>
+    <message>
+        <source>Opens AI Edit</source>
+        <translation>Abre AI Edit</translation>
+    </message>
 </context>
 </TS>

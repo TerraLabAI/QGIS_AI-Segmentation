@@ -49,6 +49,13 @@ def _activate_dock(plugin) -> bool:
     return False
 
 
+def open_ai_edit_page() -> None:
+    """Open the AI Edit product page in the browser — always the website, with
+    no installed-plugin detection. Used by the in-dock footer CTA.
+    """
+    QDesktopServices.openUrl(QUrl(_AI_EDIT_PRODUCT_URL))
+
+
 def make_ai_edit_action(parent, iface, label: str, tooltip: str,
                         icon: QIcon | None = None) -> QAction:
     """Create a QAction that opens AI Edit if installed, else the product page."""

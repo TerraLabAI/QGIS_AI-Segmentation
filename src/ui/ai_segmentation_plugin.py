@@ -1074,6 +1074,52 @@ class AISegmentationPlugin:
                 error_code="download_failed",
             )
 
+    def _recover_corrupt_checkpoint(self, deleted: bool) -> bool:
+        """Recover from a corrupt model checkpoint detected during encoding.
+
+        ``deleted`` reports whether the bad file was removed. When it was, we
+        kick off a fresh download (which re-verifies the hash and reloads the
+        predictor on success). When it could not be removed, we ask the user
+        to clear the cache folder manually. Always returns False so the caller
+        aborts the current encode. (#65)
+        """
+        from ..core.checkpoint_manager import get_checkpoints_dir
+
+        if not deleted:
+            msg = tr(
+                "The AI model file is corrupted but could not be removed "
+                "automatically. Please delete this folder and restart QGIS:"
+            ) + "\n" + get_checkpoints_dir()
+            if self._headless:
+                self._headless_error = msg
+                return False
+            show_error_report(
+                self.iface.mainWindow(),
+                tr("Model File Corrupted"),
+                msg,
+                error_code="checkpoint_corrupt",
+            )
+            return False
+
+        msg = tr(
+            "The AI model file was corrupted and is being re-downloaded. "
+            "Please try your selection again once it finishes."
+        )
+        if self._headless:
+            self._headless_error = msg
+            return False
+
+        from qgis.PyQt.QtWidgets import QMessageBox
+        QMessageBox.information(
+            self.iface.mainWindow(), tr("Re-downloading Model"), msg)
+        try:
+            self._auto_download_checkpoint()
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                f"Failed to re-download checkpoint after corruption: {e}",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        return False
+
     def _on_start_segmentation(self, layer: QgsRasterLayer):
         if self.predictor is None:
             QMessageBox.warning(
@@ -2283,6 +2329,15 @@ class AISegmentationPlugin:
                 f"Image encoding failed: {str(e)}",
                 "AI Segmentation", level=Qgis.MessageLevel.Critical
             )
+            # A corrupt model checkpoint makes every encode fail forever with a
+            # raw PyTorch traceback. Detect that, delete the bad file and
+            # re-download it (the download path re-verifies the hash). (#65)
+            from ..core.checkpoint_manager import (
+                delete_checkpoint,
+                is_corrupt_checkpoint_error,
+            )
+            if is_corrupt_checkpoint_error(str(e)):
+                return self._recover_corrupt_checkpoint(delete_checkpoint())
             if self._headless:
                 self._headless_error = str(e)
                 return False

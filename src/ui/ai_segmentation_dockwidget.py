@@ -52,6 +52,16 @@ _FOOTER_MENU_STYLE = (
     "QMenu::item:selected { background: rgba(128,128,128,0.18); }"
 )
 
+# Footer cross-promo CTA — same flat/transparent + hover-tint look as the gear
+# and help buttons, but sized for a label (11px) instead of a 22px glyph so the
+# text reads as a small button rather than dwarfing the icons beside it.
+_FOOTER_CTA_BTN_STYLE = (
+    "QToolButton { background: transparent; border: none; padding: 6px 10px;"
+    " font-size: 11px; font-weight: 600;"
+    " color: palette(text); border-radius: 4px; }"
+    'QToolButton[hover="true"] { background: rgba(128,128,128,0.15); }'
+)
+
 
 from ..core.activation_manager import (  # noqa: E402
     get_sign_up_url,
@@ -958,6 +968,22 @@ class AISegmentationDockWidget(QDockWidget):
         footer_row = QHBoxLayout(footer_widget)
         footer_row.setContentsMargins(0, 4, 0, 4)
         footer_row.setSpacing(6)
+
+        # Cross-promo CTA, pinned bottom-left (before the stretch) so it sits
+        # beside the gear/help icons without crowding them (#30). Always opens
+        # the AI Edit product page in the browser.
+        from .cross_plugin_discovery import open_ai_edit_page
+        self._ai_edit_btn = _FooterIconButton(footer_widget)
+        # 🍌 is AI Edit's brand glyph — prepended as a decorative icon (like the
+        # gear/help glyphs) and kept out of the translatable string.
+        self._ai_edit_btn.setText("🍌 " + tr("Try full automatic segmentation"))
+        self._ai_edit_btn.setToolTip(tr("Opens AI Edit"))
+        self._ai_edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ai_edit_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._ai_edit_btn.setStyleSheet(_FOOTER_CTA_BTN_STYLE)
+        self._ai_edit_btn.clicked.connect(lambda: open_ai_edit_page())
+        footer_row.addWidget(self._ai_edit_btn)
+
         footer_row.addStretch()
 
         self._settings_btn = _FooterIconButton(footer_widget)

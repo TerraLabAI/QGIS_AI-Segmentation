@@ -61,6 +61,49 @@ def verify_checkpoint_hash(filepath: str) -> bool:
         return False
 
 
+def is_corrupt_checkpoint_error(error_message: str | None) -> bool:
+    """Return True when an error indicates a corrupt checkpoint file.
+
+    The checkpoint is a torch ``.pt`` (a zip archive). When the file on disk
+    is truncated or damaged, ``torch.load`` raises errors whose text contains
+    one of the signatures below. We match on these so the plugin can delete
+    the bad file and re-download it instead of failing forever.
+    """
+    if not error_message:
+        return False
+    lowered = error_message.lower()
+    signatures = (
+        "pytorchstreamreader",
+        "failed finding central directory",
+        "checkpoint file is corrupted",
+        "central directory",
+        "not a zip archive",
+        "invalid load key",
+    )
+    return any(sig in lowered for sig in signatures)
+
+
+def delete_checkpoint() -> bool:
+    """Delete the on-disk checkpoint (e.g. when found corrupt).
+
+    Returns True if the file is gone afterwards (deleted or already absent),
+    False if it could not be removed.
+    """
+    path = get_checkpoint_path()
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            QgsMessageLog.logMessage(
+                "Removed corrupt checkpoint, will re-download",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        return True
+    except OSError as e:
+        QgsMessageLog.logMessage(
+            f"Could not remove corrupt checkpoint: {e}",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        return False
+
+
 def _replace_with_retry(src: str, dst: str, max_attempts: int = 5, delay: float = 2.0):
     """Rename src to dst, retrying on PermissionError (Windows antivirus lock)."""
     import gc

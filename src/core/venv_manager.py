@@ -104,6 +104,12 @@ REQUIRED_PACKAGES = [
     ("rasterio", ">=1.3.0"),
 ]
 
+# Packages we install but the plugin's own code never imports (pandas is a
+# leftover transitive dependency). If one of these fails verification — most
+# often a missing Visual C++ Redistributable on Windows, which a pip reinstall
+# cannot fix — we warn and continue instead of failing the whole install. (#66)
+NON_ESSENTIAL_PACKAGES = {"pandas"}
+
 DEPS_HASH_FILE = os.path.join(VENV_DIR, "deps_hash.txt")
 
 # Bump this when install logic changes significantly (e.g., --no-cache-dir,
@@ -631,6 +637,42 @@ def _cleanup_partial_venv(venv_dir: str):
             _log(f"Cleaned up partial venv: {venv_dir}", Qgis.MessageLevel.Info)
         except Exception:
             _log(f"Could not clean up partial venv: {venv_dir}", Qgis.MessageLevel.Warning)
+
+
+def _venv_is_functional(venv_dir: str = None) -> bool:
+    """Check that an existing venv is actually usable, not just present.
+
+    ``venv_exists`` only checks that the python executable file is there. A
+    venv left half-created by an interrupted run can have the executable but
+    no valid ``pyvenv.cfg`` — uv then refuses it ("No virtual environment or
+    system Python installation found for path ...; run `uv venv`") and the
+    whole install fails. Require both a valid venv marker AND a working
+    interpreter so a broken venv is detected and recreated. (#64)
+    """
+    if venv_dir is None:
+        venv_dir = VENV_DIR
+
+    python_path = get_venv_python_path(venv_dir)
+    if not os.path.exists(python_path):
+        return False
+    if not os.path.exists(os.path.join(venv_dir, "pyvenv.cfg")):
+        _log("Existing venv has no pyvenv.cfg (incomplete), will recreate",
+             Qgis.MessageLevel.Warning)
+        return False
+    try:
+        result = subprocess.run(  # nosec B603
+            [python_path, "-c", "pass"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+            env=_get_clean_env_for_venv(),
+            **_get_subprocess_kwargs(),
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError) as e:
+        _log(f"Existing venv interpreter is not runnable, will recreate: {e}",
+             Qgis.MessageLevel.Warning)
+        return False
 
 
 def create_venv(
@@ -1984,6 +2026,20 @@ def verify_venv(
                     Qgis.MessageLevel.Warning
                 )
 
+                # Non-essential packages (e.g. pandas) are not used by the
+                # plugin. A failure here is usually a missing Visual C++
+                # Redistributable that a reinstall cannot fix, so don't block
+                # the whole install — warn and move on. (#66)
+                if package_name in NON_ESSENTIAL_PACKAGES:
+                    _log(
+                        f"Package {package_name} is not required by the plugin; "
+                        "skipping it and continuing. If you need it, install the "
+                        "Microsoft Visual C++ Redistributable (x64) and restart "
+                        "QGIS.",
+                        Qgis.MessageLevel.Warning
+                    )
+                    continue
+
                 # DLL init error (WinError 1114) - try force-reinstall first,
                 # as a conflicting DLL from another Python install may be the cause
                 if _is_dll_init_error(error_detail):
@@ -2478,16 +2534,25 @@ def create_venv_and_install(
     if cancel_check and cancel_check():
         return False, "Installation cancelled"
 
-    # Step 2: Create virtual environment if needed
-    if venv_exists():
+    # Step 2: Create virtual environment if needed.
+    # A venv left broken/incomplete by an interrupted run still has its python
+    # executable, so venv_exists() returns True, but uv refuses it and the
+    # install fails. Recreate it instead of installing into a dead venv. (#64)
+    def venv_progress(percent, msg):
+        # Map 0-100 to 13-18
+        if progress_callback:
+            progress_callback(13 + int(percent * 0.05), msg)
+
+    if venv_exists() and _venv_is_functional():
         _log("Virtual environment already exists", Qgis.MessageLevel.Info)
         if progress_callback:
             progress_callback(18, "Virtual environment ready")
     else:
-        def venv_progress(percent, msg):
-            # Map 0-100 to 13-18
-            if progress_callback:
-                progress_callback(13 + int(percent * 0.05), msg)
+        if venv_exists():
+            _log(
+                "Existing virtual environment is broken or incomplete, "
+                "recreating it...", Qgis.MessageLevel.Warning)
+            _cleanup_partial_venv(VENV_DIR)
 
         success, msg = create_venv(progress_callback=venv_progress)
         if not success:
