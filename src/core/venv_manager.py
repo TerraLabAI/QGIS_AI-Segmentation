@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import glob
 import hashlib
 import os
 import platform
@@ -14,7 +15,7 @@ from typing import Callable
 from qgis.core import Qgis
 
 from .logging_utils import log as _log
-from .model_config import IS_ROSETTA, SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN, USE_SAM2
+from .model_config import IS_ROSETTA, SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN
 from .pip_diagnostics import (
     get_crash_help as _get_crash_help,
 )
@@ -63,6 +64,7 @@ from .pip_diagnostics import (
 from .pip_diagnostics import (
     is_windows_process_crash as _is_windows_process_crash,
 )
+from .subprocess_utils import get_clean_env_for_venv as _get_base_clean_env  # nosec B404
 from .uv_manager import (
     download_uv,
     get_uv_path,
@@ -100,17 +102,26 @@ REQUIRED_PACKAGES = [
     ("torch", TORCH_MIN),
     ("torchvision", TORCHVISION_MIN),
     SAM_PACKAGE,
-    ("pandas", ">=1.3.0"),
     ("rasterio", ">=1.3.0"),
 ]
 
-# Packages we install but the plugin's own code never imports (pandas is a
-# leftover transitive dependency). If one of these fails verification — most
-# often a missing Visual C++ Redistributable on Windows, which a pip reinstall
-# cannot fix — we warn and continue instead of failing the whole install. (#66)
+# Packages older venvs contain but the plugin never imports. pandas was
+# installed up to 1.1.0 as a leftover (44 MB on disk, zero imports in src/,
+# and a recurring Windows verification failure when the VC++ Redistributable
+# is missing, see #66). It is no longer installed; existing venvs keep their
+# copy harmlessly. If one of these fails verification we warn and continue.
 NON_ESSENTIAL_PACKAGES = {"pandas"}
 
+# Official CPU-only torch wheel index, used on Linux where PyPI's default
+# torch wheels bundle CUDA (multi-GB with nvidia-* dependencies).
+TORCH_CPU_INDEX_URL = "https://download.pytorch.org/whl/cpu"
+
 DEPS_HASH_FILE = os.path.join(VENV_DIR, "deps_hash.txt")
+
+# Marker written for the duration of create_venv_and_install. It only
+# survives a hard crash (QGIS killed mid-install); finding it on a later
+# run means the venv may be half-built and must be reinstalled.
+INSTALL_MARKER_FILE = os.path.join(CACHE_DIR, "install_in_progress")
 
 # Bump this when install logic changes significantly (e.g., --no-cache-dir,
 # new retry strategies) to force a dependency re-install on plugin update.
@@ -148,6 +159,31 @@ def _write_deps_hash():
         os.replace(tmp_path, DEPS_HASH_FILE)
     except OSError as e:
         _log(f"Failed to write deps hash: {e}", Qgis.MessageLevel.Warning)
+
+
+def _write_install_marker():
+    """Record that an install of the current venv is in progress."""
+    try:
+        with open(INSTALL_MARKER_FILE, "w", encoding="utf-8") as f:
+            f.write(os.path.basename(VENV_DIR))
+    except OSError as e:
+        _log(f"Could not write install marker: {e}", Qgis.MessageLevel.Warning)
+
+
+def _clear_install_marker():
+    try:
+        os.unlink(INSTALL_MARKER_FILE)
+    except OSError:
+        pass  # nosec B110
+
+
+def _install_marker_present() -> bool:
+    """True when a previous install of the current venv was interrupted by a crash."""
+    try:
+        with open(INSTALL_MARKER_FILE, encoding="utf-8") as f:
+            return f.read().strip() == os.path.basename(VENV_DIR)
+    except OSError:
+        return False
 
 
 def _log_system_info():
@@ -309,36 +345,112 @@ def _add_windows_dll_directories(site_packages: str) -> None:
     os.environ["PATH"] = os.pathsep.join(path_parts)
 
 
-def _fix_proj_gdal_data(site_packages: str) -> None:
-    """Point PROJ_DATA and GDAL_DATA to venv's bundled data files.
+_rasterio_data_scoped = False
 
-    QGIS sets PROJ_LIB to its own PROJ data, but the venv's pyproj/rasterio
-    may bundle a different version of proj.db. Without this fix, rasterio
-    CRS operations can fail or crash.
+
+def _scope_rasterio_data_paths() -> None:
+    """Point rasterio's own PROJ/GDAL at its bundled data, library-scoped.
+
+    QGIS exports PROJ_LIB/PROJ_DATA/GDAL_DATA for its own GIS stack, and
+    rasterio honors those env vars at import time, so without this its
+    bundled PROJ would read QGIS's proj.db (different schema version) and
+    CRS operations fail. The override must stay inside rasterio's own
+    GDAL/PROJ instance: writing os.environ instead poisons QGIS itself and
+    every other plugin in the process (PROJ failures observed in AI Edit
+    on Windows). Never mutate os.environ here.
     """
-    proj_candidates = [
-        os.path.join(site_packages, "pyproj", "proj_dir", "share", "proj"),
-        os.path.join(site_packages, "rasterio", "proj_data"),
-    ]
-    for candidate in proj_candidates:
-        proj_db = os.path.join(candidate, "proj.db")
-        if os.path.exists(proj_db):
-            os.environ["PROJ_DATA"] = candidate
-            os.environ["PROJ_LIB"] = candidate
-            _log(f"Set PROJ_DATA to venv: {candidate}", Qgis.MessageLevel.Info)
-            break
+    global _rasterio_data_scoped
+    if _rasterio_data_scoped:
+        return
+    try:
+        import rasterio
+        from rasterio._env import set_gdal_config, set_proj_data_search_path
+    except Exception as e:
+        _log(f"rasterio unavailable, GIS data paths not scoped: {e}",
+             Qgis.MessageLevel.Warning)
+        return
 
-    gdal_candidates = [
-        os.path.join(site_packages, "rasterio", "gdal_data"),
+    pkg_dir = os.path.dirname(os.path.abspath(rasterio.__file__))
+    try:
+        proj_dir = os.path.join(pkg_dir, "proj_data")
+        if os.path.exists(os.path.join(proj_dir, "proj.db")):
+            set_proj_data_search_path(proj_dir)
+            _log(f"Scoped rasterio PROJ data to {proj_dir}", Qgis.MessageLevel.Info)
+        gdal_dir = os.path.join(pkg_dir, "gdal_data")
+        if os.path.isdir(gdal_dir):
+            set_gdal_config("GDAL_DATA", gdal_dir)
+            _log(f"Scoped rasterio GDAL data to {gdal_dir}", Qgis.MessageLevel.Info)
+        _rasterio_data_scoped = True
+    except Exception as e:  # nosec B110
+        _log(f"Failed to scope rasterio data paths: {e}", Qgis.MessageLevel.Warning)
+
+
+def _repair_poisoned_environment() -> None:
+    """Undo global PROJ/GDAL env overrides left by plugin versions <= 1.1.0.
+
+    Older releases pointed PROJ_DATA/PROJ_LIB/GDAL_DATA at the venv for the
+    whole QGIS process. After a hot plugin upgrade those values are still in
+    os.environ and keep breaking QGIS and other plugins until restart.
+    """
+    token = os.path.normcase(CACHE_DIR)
+    poisoned = [
+        var for var in ("PROJ_DATA", "PROJ_LIB", "GDAL_DATA")
+        if token in os.path.normcase(os.environ.get(var, ""))
     ]
-    for candidate in gdal_candidates:
-        if os.path.isdir(candidate):
-            os.environ["GDAL_DATA"] = candidate
-            _log(f"Set GDAL_DATA to venv: {candidate}", Qgis.MessageLevel.Info)
-            break
+    if not poisoned:
+        return
+
+    qgis_proj_dir = None
+    try:
+        from qgis.core import QgsProjUtils
+        for path in QgsProjUtils.searchPaths():
+            if token in os.path.normcase(path):
+                continue
+            if os.path.exists(os.path.join(path, "proj.db")):
+                qgis_proj_dir = path
+                break
+    except Exception:  # nosec B110
+        pass
+    for var in ("PROJ_DATA", "PROJ_LIB"):
+        if var in poisoned:
+            if qgis_proj_dir:
+                os.environ[var] = qgis_proj_dir
+            else:
+                os.environ.pop(var, None)
+
+    if "GDAL_DATA" in poisoned:
+        gdal_candidates = []
+        try:
+            from qgis.core import QgsApplication
+            gdal_candidates.append(os.path.join(QgsApplication.prefixPath(), "share", "gdal"))
+            gdal_candidates.append(os.path.join(QgsApplication.pkgDataPath(), "gdal"))
+        except Exception:  # nosec B110
+            pass
+        osgeo4w_root = os.environ.get("OSGEO4W_ROOT")
+        if osgeo4w_root:
+            gdal_candidates.append(os.path.join(osgeo4w_root, "apps", "gdal", "share", "gdal"))
+            gdal_candidates.append(os.path.join(osgeo4w_root, "share", "gdal"))
+        qgis_gdal_dir = next(
+            (c for c in gdal_candidates if os.path.exists(os.path.join(c, "gdalvrt.xsd"))),
+            None,
+        )
+        if qgis_gdal_dir:
+            os.environ["GDAL_DATA"] = qgis_gdal_dir
+        else:
+            os.environ.pop("GDAL_DATA", None)
+
+    _log(
+        "Repaired PROJ/GDAL environment poisoned by an older plugin version: "
+        + ", ".join(poisoned),
+        Qgis.MessageLevel.Info,
+    )
 
 
 def ensure_venv_packages_available():
+    # Heal sessions where an older plugin version globally overrode
+    # PROJ/GDAL env vars (hot upgrade without QGIS restart).
+    _repair_poisoned_environment()
+
     if not venv_exists():
         _log("Venv does not exist, cannot load packages", Qgis.MessageLevel.Warning)
         return False
@@ -362,9 +474,6 @@ def ensure_venv_packages_available():
     # loader can find their native libraries when importing from a foreign venv.
     if sys.platform == "win32":
         _add_windows_dll_directories(site_packages)
-
-    # Fix PROJ_DATA/GDAL_DATA to point to venv's pyproj/rasterio data files.
-    _fix_proj_gdal_data(site_packages)
 
     # SAFE FIX for old QGIS with stale typing_extensions (missing TypeIs)
     # QGIS may load an old typing_extensions at startup that lacks TypeIs,
@@ -427,6 +536,9 @@ def ensure_venv_packages_available():
         needs_numpy_fix = False
 
     if not needs_numpy_fix:
+        # Importing rasterio pulls in numpy, so this must stay AFTER the
+        # numpy version check above.
+        _scope_rasterio_data_paths()
         return True
 
     qgis_ver = Qgis.QGIS_VERSION.split("-")[0]
@@ -493,6 +605,8 @@ def ensure_venv_packages_available():
             if p not in sys.path:
                 sys.path.append(p)
 
+    # After numpy surgery so rasterio's numpy import resolves to the venv copy.
+    _scope_rasterio_data_paths()
     return True
 
 
@@ -673,6 +787,61 @@ def _venv_is_functional(venv_dir: str = None) -> bool:
         _log(f"Existing venv interpreter is not runnable, will recreate: {e}",
              Qgis.MessageLevel.Warning)
         return False
+
+
+def _venv_base_python_ok(venv_dir: str = None) -> tuple[bool, str]:
+    """Check that pyvenv.cfg still points at an existing base interpreter.
+
+    A venv does not embed Python: its launcher re-executes the interpreter
+    recorded in the ``home`` line of pyvenv.cfg. When that base install was
+    deleted by a cleanup tool, or the recorded path is corrupt (a stray
+    quote has been seen in the field), every worker spawn dies with
+    "No Python at ..." while site-packages still look complete, so the
+    panel kept saying ready on an install that could never run.
+    Filesystem-only, no subprocess: safe from the main thread.
+    """
+    if venv_dir is None:
+        venv_dir = VENV_DIR
+
+    cfg_path = os.path.join(venv_dir, "pyvenv.cfg")
+    home = None
+    try:
+        with open(cfg_path, encoding="utf-8") as f:
+            for line in f:
+                key, sep, value = line.partition("=")
+                if sep and key.strip().lower() == "home":
+                    home = value.strip()
+                    break
+    except OSError as e:
+        return False, f"pyvenv.cfg unreadable: {e}"
+    if not home:
+        return False, "pyvenv.cfg has no home entry"
+    if '"' in home or "'" in home:
+        return False, f"pyvenv.cfg home path is corrupt: {home}"
+    if not os.path.isdir(home):
+        return False, f"venv base Python missing: {home}"
+    try:
+        entries = os.listdir(home)
+    except OSError:
+        entries = []
+    if not any(name.startswith("python") for name in entries):
+        return False, f"no python executable in venv base: {home}"
+    return True, "venv base Python present"
+
+
+def venv_needs_repair() -> bool:
+    """True when the venv exists but cannot actually run anymore.
+
+    Used by the UI to route a runtime worker-spawn failure to the
+    one-click repair path (reinstall recreates the venv in place).
+    """
+    if not venv_exists():
+        return False
+    base_ok, base_msg = _venv_base_python_ok()
+    if not base_ok:
+        _log(f"venv_needs_repair: {base_msg}", Qgis.MessageLevel.Warning)
+        return True
+    return not _venv_is_functional()
 
 
 def create_venv(
@@ -1008,8 +1177,8 @@ def _get_verification_timeout(package_name: str) -> int:
         return 120
     if package_name in ("torchvision", "pandas"):
         # pandas loads many .pyd C extensions on first import;
-        # antivirus (Windows Defender) scans each one, easily exceeding 30s
-        return 120
+        # antivirus (Windows Defender) scans each one, easily exceeding 120s
+        return 180
     return 30
 
 
@@ -1090,7 +1259,7 @@ def _run_pip_install(
         stdout_file = os.fdopen(stdout_fd, "w", encoding="utf-8")
         stderr_file = os.fdopen(stderr_fd, "w", encoding="utf-8")
     except Exception:
-        # If fdopen fails, close the raw fds and re-raise
+        # If fdopen fails, close the raw fds, remove the temp files, re-raise
         try:
             os.close(stdout_fd)
         except Exception:
@@ -1099,6 +1268,11 @@ def _run_pip_install(
             os.close(stderr_fd)
         except Exception:
             pass  # nosec B110
+        for leaked_path in (stdout_path, stderr_path):
+            try:
+                os.unlink(leaked_path)
+            except OSError:
+                pass  # nosec B110
         raise
 
     process = None
@@ -1192,6 +1366,10 @@ def _run_pip_install(
 
             if progress_callback:
                 progress_callback(interpolated, msg)
+
+        # Honor a cancellation that lands just as the process finishes
+        if cancel_check and cancel_check():
+            return _PipResult(-1, "", "Installation cancelled")
 
         # Process finished — close files before reading
         stdout_file.close()
@@ -1304,7 +1482,7 @@ def install_dependencies(
     # Name-based map so weights stay correct if REQUIRED_PACKAGES order changes.
     _wmap = {
         "numpy": 5, "torch": 30, "torchvision": 15,
-        "pandas": 10, "rasterio": 10,
+        "rasterio": 10,
     }
     _weights = [_wmap.get(name, 10) for name, _ in REQUIRED_PACKAGES]
     weight_total = sum(_weights)
@@ -1420,6 +1598,20 @@ def install_dependencies(
                 # Build install command (uv or pip depending on availability)
                 base_cmd = _build_install_cmd(python_path, pip_args)
 
+                # On Linux, PyPI's default torch wheels bundle CUDA and pull
+                # multi-GB nvidia-* dependencies. The official CPU index serves
+                # the same versions as ~180 MB CPU-only wheels. Windows and
+                # macOS wheels on PyPI are already CPU-only, so the extra
+                # index (and its proxy-block risk) stays Linux-only.
+                use_cpu_index = (
+                    package_name in ("torch", "torchvision")
+                    and sys.platform.startswith("linux")
+                )
+                if use_cpu_index:
+                    cpu_args = pip_args[:-1] + [
+                        "--index-url", TORCH_CPU_INDEX_URL, pip_args[-1]]
+                    base_cmd = _build_install_cmd(python_path, cpu_args)
+
                 # First attempt: pip install with real-time progress
                 result = _run_pip_install(
                     cmd=base_cmd,
@@ -1439,6 +1631,34 @@ def install_dependencies(
                 if result.returncode == -1 and "cancelled" in (result.stderr or "").lower():
                     _log("Installation cancelled by user", Qgis.MessageLevel.Warning)
                     return False, "Installation cancelled"
+
+                # CPU index unreachable (some corporate proxies whitelist
+                # pypi.org only): fall back to PyPI, then let the normal
+                # error handling judge that second attempt.
+                if use_cpu_index and result.returncode != 0:
+                    _log(
+                        "CPU wheel index failed for "
+                        f"{package_name} (code {result.returncode}), "
+                        "retrying from the default index...",
+                        Qgis.MessageLevel.Warning
+                    )
+                    base_cmd = _build_install_cmd(python_path, pip_args)
+                    result = _run_pip_install(
+                        cmd=base_cmd,
+                        timeout=pkg_timeout,
+                        env=env,
+                        subprocess_kwargs=subprocess_kwargs,
+                        package_name=package_name,
+                        package_index=i,
+                        total_packages=total_packages,
+                        progress_start=pkg_start,
+                        progress_end=pkg_end,
+                        progress_callback=progress_callback,
+                        cancel_check=cancel_check,
+                    )
+                    if result.returncode == -1 and "cancelled" in (result.stderr or "").lower():
+                        _log("Installation cancelled by user", Qgis.MessageLevel.Warning)
+                        return False, "Installation cancelled"
 
                 # If Windows process crash, retry with pip.exe as fallback
                 # (skip when using uv - it doesn't have this issue)
@@ -1865,6 +2085,18 @@ def _get_qgis_proxy_settings() -> str | None:
         if not enabled:
             return None
 
+        # pip/uv only speak HTTP proxies; SOCKS needs extra packages we
+        # don't ship, so fall back to a direct/environment connection.
+        proxy_type = settings.value("proxy/proxyType", "", type=str)
+        if proxy_type == "Socks5Proxy":
+            _log(
+                "QGIS is configured with a SOCKS5 proxy, which is not "
+                "supported for dependency installs. Trying a direct "
+                "connection instead.",
+                Qgis.MessageLevel.Warning
+            )
+            return None
+
         host = settings.value("proxy/proxyHost", "", type=str)
         if not host:
             return None
@@ -1902,25 +2134,9 @@ def _get_pip_proxy_args() -> list[str]:
 
 
 def _get_clean_env_for_venv() -> dict:
-    env = os.environ.copy()
-
-    vars_to_remove = [
-        "PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV",
-        "QGIS_PREFIX_PATH", "QGIS_PLUGINPATH",
-        "PROJ_DATA", "PROJ_LIB",
-        "GDAL_DATA", "GDAL_DRIVER_PATH",
-    ]
-    for var in vars_to_remove:
-        env.pop(var, None)
-
-    # Remove SSL_CERT_DIR if it points to a non-existent directory.
-    # Invalid paths cause uv to emit "SSL_CERT_DIR" warnings that the
-    # error classifier would otherwise misread as real SSL errors (#184).
-    ssl_cert_dir = env.get("SSL_CERT_DIR", "")
-    if ssl_cert_dir and not os.path.isdir(ssl_cert_dir):
-        env.pop("SSL_CERT_DIR", None)
-
-    env["PYTHONIOENCODING"] = "utf-8"
+    # Shared sanitization (QGIS/PROJ/GDAL vars, SSL_CERT_DIR) lives in
+    # subprocess_utils; install-specific extras are layered on top here.
+    env = _get_base_clean_env()
 
     # Skip sam2 CUDA extension compilation (Python fallback works fine)
     env["SAM2_BUILD_CUDA"] = "0"
@@ -1930,6 +2146,16 @@ def _get_clean_env_for_venv() -> dict:
 
     # Increase uv download timeout (default 30s too short for large wheels)
     env["UV_HTTP_TIMEOUT"] = "300"
+
+    # Corporate MITM proxies re-sign TLS with a company CA that uv's bundled
+    # Mozilla roots reject (pip >= 24.2 already trusts the OS store via
+    # truststore). Native TLS makes uv trust the same store as the rest of
+    # the machine. setdefault so a user override wins.
+    env.setdefault("UV_NATIVE_TLS", "1")
+
+    # More retries with backoff for unstable home/corporate connections
+    # (uv default is 3).
+    env.setdefault("UV_HTTP_RETRIES", "5")
 
     # Propagate QGIS proxy settings to environment for pip/network calls
     proxy_url = _get_qgis_proxy_settings()
@@ -1980,6 +2206,15 @@ def _get_verification_code(package_name: str) -> str:
         return "import torchvision; print(torchvision.__version__)"
     import_name = package_name.replace("-", "_")
     return f"import {import_name}"
+
+
+def _remove_torch_dirs(site_pkgs: str) -> None:
+    """Remove torch/torchvision dirs from site-packages, including .dist-info
+    and partial wheel leftovers, so a fresh reinstall starts clean."""
+    for pattern in ("torch*", "torchvision*"):
+        for target in glob.glob(os.path.join(site_pkgs, pattern)):
+            if os.path.isdir(target):
+                shutil.rmtree(target, ignore_errors=True)
 
 
 def verify_venv(
@@ -2085,19 +2320,7 @@ def verify_venv(
                         Qgis.MessageLevel.Warning
                     )
                     try:
-                        site_pkgs = get_venv_site_packages(venv_dir)
-                        for pkg_dir_name in (
-                            "torch", "torchvision",
-                        ):
-                            for d in os.listdir(site_pkgs):
-                                if d == pkg_dir_name or d.startswith(
-                                    pkg_dir_name + "-"
-                                ):
-                                    target = os.path.join(site_pkgs, d)
-                                    if os.path.isdir(target):
-                                        shutil.rmtree(
-                                            target, ignore_errors=True
-                                        )
+                        _remove_torch_dirs(get_venv_site_packages(venv_dir))
                         # Reinstall both packages
                         torch_spec = f"torch{TORCH_MIN}"
                         tv_spec = f"torchvision{TORCHVISION_MIN}"
@@ -2138,17 +2361,8 @@ def verify_venv(
                             Qgis.MessageLevel.Warning
                         )
                         try:
-                            site_pkgs = get_venv_site_packages(venv_dir)
-                            for pkg_dir_name in ("torch", "torchvision"):
-                                for d in os.listdir(site_pkgs):
-                                    if d == pkg_dir_name or d.startswith(
-                                        pkg_dir_name + "-"
-                                    ):
-                                        target = os.path.join(site_pkgs, d)
-                                        if os.path.isdir(target):
-                                            shutil.rmtree(
-                                                target, ignore_errors=True
-                                            )
+                            _remove_torch_dirs(
+                                get_venv_site_packages(venv_dir))
                             fallback_cmd = _build_install_cmd(
                                 python_path,
                                 ["install", "--prefer-binary",
@@ -2394,6 +2608,49 @@ def create_venv_and_install(
     - 18-95%:  Install packages (~800MB)
     - 95-100%: Verify installation
     """
+    # Disk space pre-flight: torch and its dependencies need several GB.
+    min_free_gb = 4.0
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        free_gb = shutil.disk_usage(CACHE_DIR).free / (1024 ** 3)
+    except OSError:
+        # Let the writability check inside the install flow report the real error
+        free_gb = None
+    if free_gb is not None and free_gb < min_free_gb:
+        hint = (
+            f"Not enough free disk space to install dependencies: "
+            f"{free_gb:.1f} GB available at {CACHE_DIR}, "
+            f"at least {min_free_gb:.0f} GB is required.\n\n"
+            "Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR "
+            "environment variable to a directory on a larger drive, "
+            "then restart QGIS."
+        )
+        _log(hint, Qgis.MessageLevel.Critical)
+        return False, hint
+
+    # A leftover marker means QGIS was killed mid-install: the venv may be
+    # half-built yet pass superficial checks, so rebuild it from scratch.
+    if _install_marker_present():
+        _log(
+            "Previous installation was interrupted, "
+            "recreating the virtual environment...",
+            Qgis.MessageLevel.Warning)
+        _cleanup_partial_venv(VENV_DIR)
+
+    _write_install_marker()
+    try:
+        return _create_venv_and_install(progress_callback, cancel_check)
+    finally:
+        # Any normal return or exception here is reported to the user; the
+        # marker only needs to survive a hard crash, where finally never runs.
+        _clear_install_marker()
+
+
+def _create_venv_and_install(
+    progress_callback: Callable[[int, str], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+) -> tuple[bool, str]:
+    """Run the actual install flow (see create_venv_and_install)."""
     from .python_manager import (
         download_python_standalone,
         get_python_full_version,
@@ -2614,15 +2871,14 @@ def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
              Qgis.MessageLevel.Warning)
         return False, "site-packages directory not found"
 
-    # Map package names to their expected directory names in site-packages
-    sam_marker = ("sam2", "sam2") if USE_SAM2 else ("segment-anything", "segment_anything")
+    # Expected import directories, derived from REQUIRED_PACKAGES so this
+    # check can never drift from what install_dependencies installs
+    # (a hardcoded copy of the list once kept demanding pandas after it was
+    # dropped). setuptools is skipped: not an install health signal.
     package_markers = {
-        "numpy": "numpy",
-        "torch": "torch",
-        "torchvision": "torchvision",
-        sam_marker[0]: sam_marker[1],
-        "pandas": "pandas",
-        "rasterio": "rasterio",
+        name: name.replace("-", "_")
+        for name, _spec in REQUIRED_PACKAGES
+        if name != "setuptools"
     }
 
     for package_name, dir_name in package_markers.items():
@@ -2646,6 +2902,13 @@ def get_venv_status() -> tuple[bool, str]:
              Qgis.MessageLevel.Warning)
         return False, "Old installation detected. Migration required."
 
+    # A crash mid-install leaves the marker behind; the venv may be
+    # half-built even if package directories look present.
+    if _install_marker_present():
+        _log("get_venv_status: previous installation was interrupted",
+             Qgis.MessageLevel.Warning)
+        return False, "Previous installation was interrupted"
+
     # Check Python standalone (skip on NixOS where system Python is used)
     from .python_manager import is_nixos
     if not standalone_python_exists() and not is_nixos():
@@ -2657,6 +2920,14 @@ def get_venv_status() -> tuple[bool, str]:
         _log(f"get_venv_status: venv not found at {VENV_DIR}",
              Qgis.MessageLevel.Info)
         return False, "Virtual environment not configured"
+
+    # The venv launcher needs the base Python recorded in pyvenv.cfg.
+    # If that install was deleted or the path is corrupt, packages look
+    # complete but nothing can run: route to Install, which recreates it.
+    base_ok, base_msg = _venv_base_python_ok()
+    if not base_ok:
+        _log(f"get_venv_status: {base_msg}", Qgis.MessageLevel.Warning)
+        return False, "Python runtime is damaged. Reinstall required."
 
     # Quick filesystem check (no subprocess, safe for main thread)
     is_present, msg = _quick_check_packages()

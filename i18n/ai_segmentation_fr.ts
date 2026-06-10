@@ -3,6 +3,68 @@
 <TS version="2.1" language="fr_FR">
 <context>
     <name>AISegmentation</name>
+    <!-- Account Settings: Dependencies -->
+    <message>
+        <source>Dependencies</source>
+        <translation>Dépendances</translation>
+    </message>
+    <message>
+        <source>Local AI model files stored on this computer.</source>
+        <translation>Fichiers du modèle IA stockés sur cet ordinateur.</translation>
+    </message>
+    <message>
+        <source>On disk</source>
+        <translation>Sur le disque</translation>
+    </message>
+    <message>
+        <source>Not installed</source>
+        <translation>Non installé</translation>
+    </message>
+    <message>
+        <source>Open folder</source>
+        <translation>Ouvrir le dossier</translation>
+    </message>
+    <!-- v1.2 strings previously missing from translations -->
+    <message>
+        <source>Accept the Terms and Privacy Policy to enable segmentation.</source>
+        <translation>Acceptez les Conditions et la Politique de confidentialité pour activer la segmentation.</translation>
+    </message>
+    <message>
+        <source>An unexpected error occurred during export. Please check the logs.</source>
+        <translation>Une erreur inattendue s'est produite lors de l'export. Veuillez consulter les journaux.</translation>
+    </message>
+    <message>
+        <source>I agree to the &lt;a href=&quot;{terms}&quot;&gt;Terms&lt;/a&gt; and &lt;a href=&quot;{privacy}&quot;&gt;Privacy Policy&lt;/a&gt;</source>
+        <translation>J'accepte les &lt;a href=&quot;{terms}&quot;&gt;Conditions&lt;/a&gt; et la &lt;a href=&quot;{privacy}&quot;&gt;Politique de confidentialité&lt;/a&gt;</translation>
+    </message>
+    <message>
+        <source>No valid polygons could be created from the selection. Try adjusting the refine settings or making a new selection.</source>
+        <translation>Aucun polygone valide n'a pu être créé à partir de la sélection. Essayez d'ajuster les réglages d'affinage ou de faire une nouvelle sélection.</translation>
+    </message>
+    <message>
+        <source>Repairing Installation</source>
+        <translation>Réparation de l'installation</translation>
+    </message>
+    <message>
+        <source>Repairing installation...</source>
+        <translation>Réparation de l'installation...</translation>
+    </message>
+    <message>
+        <source>Restart QGIS Required</source>
+        <translation>Redémarrage de QGIS requis</translation>
+    </message>
+    <message>
+        <source>Something went wrong with this click, so it was not applied. Please try again.</source>
+        <translation>Un problème est survenu avec ce clic, il n'a donc pas été appliqué. Veuillez réessayer.</translation>
+    </message>
+    <message>
+        <source>The Python runtime used by the AI engine is damaged (this can be caused by a disk cleanup tool or antivirus). It will now be repaired automatically. Please try your selection again once the repair finishes.</source>
+        <translation>L'environnement Python utilisé par le moteur d'IA est endommagé (cela peut être causé par un outil de nettoyage de disque ou un antivirus). Il va maintenant être réparé automatiquement. Veuillez réessayer votre sélection une fois la réparation terminée.</translation>
+    </message>
+    <message>
+        <source>Your polygons were added as a temporary layer so nothing is lost. You can also load the saved file manually from the path above.</source>
+        <translation>Vos polygones ont été ajoutés comme couche temporaire, rien n'est donc perdu. Vous pouvez aussi charger le fichier enregistré manuellement depuis le chemin ci-dessus.</translation>
+    </message>
     <!-- Welcome Section -->
     <message>
         <source>Click Install to set up AI Segmentation</source>
@@ -829,13 +891,113 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <source>The AI model file is corrupted but could not be removed automatically. Please delete this folder and restart QGIS:</source>
         <translation>Le fichier du modèle IA est corrompu mais n'a pas pu être supprimé automatiquement. Veuillez supprimer ce dossier et redémarrer QGIS :</translation>
     </message>
+
+    <!-- One-click sign-in (browser pairing, mirrors AI Edit) -->
     <message>
-        <source>Try full automatic segmentation</source>
-        <translation>Essayez la segmentation entièrement automatique</translation>
+        <source>Segment your map with AI</source>
+        <translation>Segmentez votre carte avec l'IA</translation>
     </message>
     <message>
-        <source>Opens AI Edit</source>
-        <translation>Ouvre AI Edit</translation>
+        <source>Sign in / Sign up to start</source>
+        <translation>Se connecter / S'inscrire pour commencer</translation>
+    </message>
+    <message>
+        <source>Sign in via your browser to start using AI Segmentation</source>
+        <translation>Connectez-vous via votre navigateur pour commencer à utiliser AI Segmentation</translation>
+    </message>
+    <message>
+        <source>Unlimited free plan, runs locally</source>
+        <translation>Plan gratuit illimité, fonctionne en local</translation>
+    </message>
+    <message>
+        <source>Waiting for you to sign in in your browser</source>
+        <translation>En attente de votre connexion dans le navigateur</translation>
+    </message>
+    <message>
+        <source>Open again</source>
+        <translation>Rouvrir</translation>
+    </message>
+    <message>
+        <source>Didn't open? Open the page again</source>
+        <translation>Rien ne s'est ouvert ? Rouvrir la page</translation>
+    </message>
+    <message>
+        <source>Use an activation key</source>
+        <translation>Utiliser une clé d'activation</translation>
+    </message>
+    <message>
+        <source>Paste your activation key</source>
+        <translation>Collez votre clé d'activation</translation>
+    </message>
+    <message>
+        <source>Couldn't open your browser. Use the manual key option below.</source>
+        <translation>Impossible d'ouvrir votre navigateur. Utilisez l'option de clé manuelle ci-dessous.</translation>
+    </message>
+    <message>
+        <source>Sign-in timed out. Click Connect to try again.</source>
+        <translation>Délai de connexion dépassé. Cliquez sur Connecter pour réessayer.</translation>
+    </message>
+    <message>
+        <source>Sign-in was cancelled in the browser. Click Connect to try again.</source>
+        <translation>La connexion a été annulée dans le navigateur. Cliquez sur Connecter pour réessayer.</translation>
+    </message>
+    <message>
+        <source>Unexpected response from the server. Please try again.</source>
+        <translation>Réponse inattendue du serveur. Veuillez réessayer.</translation>
+    </message>
+    <message>
+        <source>This account has no active AI Segmentation plan. Reactivate it on terra-lab.ai, then click Connect again.</source>
+        <translation>Ce compte n'a pas de plan AI Segmentation actif. Réactivez-le sur terra-lab.ai, puis cliquez sur Connecter.</translation>
+    </message>
+    <message>
+        <source>Connecting AI Segmentation</source>
+        <translation>Connexion d'AI Segmentation</translation>
+    </message>
+    <message>
+        <source>Cancelling sign-in</source>
+        <translation>Annulation de la connexion</translation>
+    </message>
+
+    <!-- Help menu / account settings (mirrors AI Edit) -->
+    <message>
+        <source>Help / Report a problem</source>
+        <translation>Aide / Signaler un problème</translation>
+    </message>
+    <message>
+        <source>Report a problem</source>
+        <translation>Signaler un problème</translation>
+    </message>
+    <message>
+        <source>Connected</source>
+        <translation>Connecté</translation>
+    </message>
+    <message>
+        <source>Sign out</source>
+        <translation>Se déconnecter</translation>
+    </message>
+    <message>
+        <source>Sign out of AI Segmentation?</source>
+        <translation>Se déconnecter d'AI Segmentation ?</translation>
+    </message>
+    <message>
+        <source>You can sign back in anytime from QGIS.</source>
+        <translation>Vous pourrez vous reconnecter à tout moment depuis QGIS.</translation>
+    </message>
+    <message>
+        <source>Active</source>
+        <translation>Actif</translation>
+    </message>
+    <message>
+        <source>Free Trial</source>
+        <translation>Essai gratuit</translation>
+    </message>
+    <message>
+        <source>Edit this map with AI</source>
+        <translation>Éditez cette carte avec l&apos;IA</translation>
+    </message>
+    <message>
+        <source>Transform imagery with AI Edit: remove clouds, add vegetation, change seasons</source>
+        <translation>Transformez l&apos;imagerie avec AI Edit : supprimez les nuages, ajoutez de la végétation, changez les saisons</translation>
     </message>
 </context>
 </TS>

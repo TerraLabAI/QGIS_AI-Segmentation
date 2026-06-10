@@ -15,6 +15,14 @@ from .pip_diagnostics import is_antivirus_error
 from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs  # nosec B404
 
 
+class SamWorkerError(RuntimeError):
+    """Error reported by the worker over the protocol.
+
+    The subprocess is still alive and usable: callers must NOT tear it
+    down, or every later click pays a full model reload.
+    """
+
+
 def build_sam_predictor_config(checkpoint: str | None = None):
     from .venv_manager import get_venv_dir, get_venv_python_path
 
@@ -432,12 +440,18 @@ class SamPredictor:
                 )
             elif response.get("type") == "error":
                 error_msg = response.get("message", "Unknown error")
-                raise RuntimeError(
+                raise SamWorkerError(
                     f"Worker error encoding image: {error_msg}")
             else:
                 raise RuntimeError(
                     f"Unexpected response: {response}")
 
+        except SamWorkerError as e:
+            # Worker is still healthy: keep it alive for the next attempt.
+            QgsMessageLog.logMessage(
+                f"Failed to encode image: {str(e)}",
+                "AI Segmentation", level=Qgis.MessageLevel.Critical)
+            raise
         except Exception as e:
             import traceback
             error_msg = f"Failed to encode image: {str(e)}\n{traceback.format_exc()}"
@@ -504,9 +518,16 @@ class SamPredictor:
 
             if response.get("type") == "error":
                 error_msg = response.get("message", "Unknown error")
-                raise RuntimeError(f"Worker prediction error: {error_msg}")
+                raise SamWorkerError(f"Worker prediction error: {error_msg}")
             raise RuntimeError(f"Unexpected response: {response}")
 
+        except SamWorkerError as e:
+            # Worker is still healthy: keep it alive (and the encoded image)
+            # so the user can simply click again.
+            QgsMessageLog.logMessage(
+                f"Prediction failed: {str(e)}",
+                "AI Segmentation", level=Qgis.MessageLevel.Critical)
+            raise
         except Exception as e:
             import traceback
             error_msg = f"Prediction failed: {str(e)}\n{traceback.format_exc()}"

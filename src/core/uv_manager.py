@@ -33,6 +33,9 @@ CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
 UV_DIR = os.path.join(CACHE_DIR, "uv")
 UV_VERSION = "0.10.10"
 
+# Inactivity timeout for the binary download (Qt 5.15+); generous for slow corporate links
+DOWNLOAD_TIMEOUT_MS = 300000
+
 
 def get_uv_path() -> str:
     """Path to the uv binary."""
@@ -109,9 +112,12 @@ def download_uv(
             return False, "Download cancelled"
 
         request = QgsBlockingNetworkRequest()
-        err = request.get(QNetworkRequest(QUrl(url)))
+        net_req = QNetworkRequest(QUrl(url))
+        if hasattr(net_req, "setTransferTimeout"):
+            net_req.setTransferTimeout(DOWNLOAD_TIMEOUT_MS)
+        err = request.get(net_req)
 
-        if err == QgsBlockingNetworkRequest.NoError:
+        if err == QgsBlockingNetworkRequest.ErrorCode.NoError:
             break
 
         error_msg = request.errorMessage()
@@ -127,7 +133,7 @@ def download_uv(
                     0, f"Network error, retrying in {wait}s...")
             time.sleep(wait)
 
-    if err != QgsBlockingNetworkRequest.NoError:
+    if err != QgsBlockingNetworkRequest.ErrorCode.NoError:
         _log(f"uv download failed: {error_msg}", Qgis.MessageLevel.Warning)
         return False, f"uv download failed: {error_msg}"
 

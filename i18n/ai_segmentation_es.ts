@@ -3,6 +3,68 @@
 <TS version="2.1" language="es">
 <context>
     <name>AISegmentation</name>
+    <!-- Account Settings: Dependencies -->
+    <message>
+        <source>Dependencies</source>
+        <translation>Dependencias</translation>
+    </message>
+    <message>
+        <source>Local AI model files stored on this computer.</source>
+        <translation>Archivos del modelo de IA almacenados en este equipo.</translation>
+    </message>
+    <message>
+        <source>On disk</source>
+        <translation>En disco</translation>
+    </message>
+    <message>
+        <source>Not installed</source>
+        <translation>No instalado</translation>
+    </message>
+    <message>
+        <source>Open folder</source>
+        <translation>Abrir carpeta</translation>
+    </message>
+    <!-- v1.2 strings previously missing from translations -->
+    <message>
+        <source>Accept the Terms and Privacy Policy to enable segmentation.</source>
+        <translation>Acepta los Términos y la Política de Privacidad para activar la segmentación.</translation>
+    </message>
+    <message>
+        <source>An unexpected error occurred during export. Please check the logs.</source>
+        <translation>Se produjo un error inesperado durante la exportación. Consulta los registros.</translation>
+    </message>
+    <message>
+        <source>I agree to the &lt;a href=&quot;{terms}&quot;&gt;Terms&lt;/a&gt; and &lt;a href=&quot;{privacy}&quot;&gt;Privacy Policy&lt;/a&gt;</source>
+        <translation>Acepto los &lt;a href=&quot;{terms}&quot;&gt;Términos&lt;/a&gt; y la &lt;a href=&quot;{privacy}&quot;&gt;Política de Privacidad&lt;/a&gt;</translation>
+    </message>
+    <message>
+        <source>No valid polygons could be created from the selection. Try adjusting the refine settings or making a new selection.</source>
+        <translation>No se pudieron crear polígonos válidos a partir de la selección. Prueba a ajustar los ajustes de refinado o a hacer una nueva selección.</translation>
+    </message>
+    <message>
+        <source>Repairing Installation</source>
+        <translation>Reparando la instalación</translation>
+    </message>
+    <message>
+        <source>Repairing installation...</source>
+        <translation>Reparando la instalación...</translation>
+    </message>
+    <message>
+        <source>Restart QGIS Required</source>
+        <translation>Se requiere reiniciar QGIS</translation>
+    </message>
+    <message>
+        <source>Something went wrong with this click, so it was not applied. Please try again.</source>
+        <translation>Algo salió mal con este clic, por lo que no se aplicó. Inténtalo de nuevo.</translation>
+    </message>
+    <message>
+        <source>The Python runtime used by the AI engine is damaged (this can be caused by a disk cleanup tool or antivirus). It will now be repaired automatically. Please try your selection again once the repair finishes.</source>
+        <translation>El entorno de Python que usa el motor de IA está dañado (esto puede deberse a una herramienta de limpieza de disco o a un antivirus). Se reparará automáticamente ahora. Vuelve a intentar tu selección cuando termine la reparación.</translation>
+    </message>
+    <message>
+        <source>Your polygons were added as a temporary layer so nothing is lost. You can also load the saved file manually from the path above.</source>
+        <translation>Tus polígonos se añadieron como una capa temporal, así que no se pierde nada. También puedes cargar el archivo guardado manualmente desde la ruta de arriba.</translation>
+    </message>
     <!-- Welcome Section -->
     <message>
         <source>Click Install to set up AI Segmentation</source>
@@ -829,13 +891,113 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <source>The AI model file is corrupted but could not be removed automatically. Please delete this folder and restart QGIS:</source>
         <translation>El archivo del modelo de IA está dañado pero no se pudo eliminar automáticamente. Elimine esta carpeta y reinicie QGIS:</translation>
     </message>
+
+    <!-- One-click sign-in (browser pairing, mirrors AI Edit) -->
     <message>
-        <source>Try full automatic segmentation</source>
-        <translation>Prueba la segmentación totalmente automática</translation>
+        <source>Segment your map with AI</source>
+        <translation>Segmenta tu mapa con IA</translation>
     </message>
     <message>
-        <source>Opens AI Edit</source>
-        <translation>Abre AI Edit</translation>
+        <source>Sign in / Sign up to start</source>
+        <translation>Inicia sesión / Regístrate para empezar</translation>
+    </message>
+    <message>
+        <source>Sign in via your browser to start using AI Segmentation</source>
+        <translation>Inicia sesión en tu navegador para empezar a usar AI Segmentation</translation>
+    </message>
+    <message>
+        <source>Unlimited free plan, runs locally</source>
+        <translation>Plan gratuito ilimitado, funciona en local</translation>
+    </message>
+    <message>
+        <source>Waiting for you to sign in in your browser</source>
+        <translation>Esperando a que inicies sesión en el navegador</translation>
+    </message>
+    <message>
+        <source>Open again</source>
+        <translation>Abrir de nuevo</translation>
+    </message>
+    <message>
+        <source>Didn't open? Open the page again</source>
+        <translation>¿No se abrió? Abrir la página de nuevo</translation>
+    </message>
+    <message>
+        <source>Use an activation key</source>
+        <translation>Usar una clave de activación</translation>
+    </message>
+    <message>
+        <source>Paste your activation key</source>
+        <translation>Pega tu clave de activación</translation>
+    </message>
+    <message>
+        <source>Couldn't open your browser. Use the manual key option below.</source>
+        <translation>No se pudo abrir el navegador. Usa la opción de clave manual de abajo.</translation>
+    </message>
+    <message>
+        <source>Sign-in timed out. Click Connect to try again.</source>
+        <translation>Tiempo de inicio de sesión agotado. Haz clic en Conectar para reintentar.</translation>
+    </message>
+    <message>
+        <source>Sign-in was cancelled in the browser. Click Connect to try again.</source>
+        <translation>El inicio de sesión se canceló en el navegador. Haz clic en Conectar para reintentar.</translation>
+    </message>
+    <message>
+        <source>Unexpected response from the server. Please try again.</source>
+        <translation>Respuesta inesperada del servidor. Inténtalo de nuevo.</translation>
+    </message>
+    <message>
+        <source>This account has no active AI Segmentation plan. Reactivate it on terra-lab.ai, then click Connect again.</source>
+        <translation>Esta cuenta no tiene un plan de AI Segmentation activo. Reactívalo en terra-lab.ai y vuelve a hacer clic en Conectar.</translation>
+    </message>
+    <message>
+        <source>Connecting AI Segmentation</source>
+        <translation>Conectando AI Segmentation</translation>
+    </message>
+    <message>
+        <source>Cancelling sign-in</source>
+        <translation>Cancelando el inicio de sesión</translation>
+    </message>
+
+    <!-- Help menu / account settings (mirrors AI Edit) -->
+    <message>
+        <source>Help / Report a problem</source>
+        <translation>Ayuda / Reportar un problema</translation>
+    </message>
+    <message>
+        <source>Report a problem</source>
+        <translation>Reportar un problema</translation>
+    </message>
+    <message>
+        <source>Connected</source>
+        <translation>Conectado</translation>
+    </message>
+    <message>
+        <source>Sign out</source>
+        <translation>Cerrar sesión</translation>
+    </message>
+    <message>
+        <source>Sign out of AI Segmentation?</source>
+        <translation>¿Cerrar sesión en AI Segmentation?</translation>
+    </message>
+    <message>
+        <source>You can sign back in anytime from QGIS.</source>
+        <translation>Puedes volver a iniciar sesión en cualquier momento desde QGIS.</translation>
+    </message>
+    <message>
+        <source>Active</source>
+        <translation>Activo</translation>
+    </message>
+    <message>
+        <source>Free Trial</source>
+        <translation>Prueba gratis</translation>
+    </message>
+    <message>
+        <source>Edit this map with AI</source>
+        <translation>Edita este mapa con IA</translation>
+    </message>
+    <message>
+        <source>Transform imagery with AI Edit: remove clouds, add vegetation, change seasons</source>
+        <translation>Transforma las imágenes con AI Edit: elimina nubes, añade vegetación, cambia las estaciones</translation>
     </message>
 </context>
 </TS>

@@ -16,6 +16,12 @@ def get_clean_env_for_venv() -> dict:
     ]
     for var in vars_to_remove:
         env.pop(var, None)
+    # Remove SSL_CERT_DIR if it points to a non-existent directory.
+    # Invalid paths cause tools like uv to emit "SSL_CERT_DIR" warnings that
+    # error classifiers would otherwise misread as real SSL errors (#184).
+    ssl_cert_dir = env.get("SSL_CERT_DIR", "")
+    if ssl_cert_dir and not os.path.isdir(ssl_cert_dir):
+        env.pop("SSL_CERT_DIR", None)
     env["PYTHONIOENCODING"] = "utf-8"
     return env
 

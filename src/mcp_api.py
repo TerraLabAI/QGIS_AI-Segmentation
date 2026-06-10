@@ -210,13 +210,15 @@ class SegmentationMCPAPI:
             # Select best mask (avoid full-crop masks)
             total_pixels = masks[0].shape[0] * masks[0].shape[1]
             mask_areas = [int(m.sum()) for m in masks]
-            small_enough = [i for i in range(len(scores)) if mask_areas[i] < 0.8 * total_pixels]
+            small_enough = [i for i in range(len(scores)) if 0 < mask_areas[i] < 0.8 * total_pixels]
             if small_enough:
                 best_idx = max(small_enough, key=lambda i: scores[i])
             else:
                 best_idx = min(range(len(scores)), key=lambda i: mask_areas[i])
 
-            mask = masks[best_idx]
+            # Keep only the real image area: reflect padding at raster edges
+            # would otherwise leak mirrored polygons outside the raster.
+            mask = masks[best_idx][:img_height, :img_width]
             score = float(scores[best_idx])
 
             if mask.sum() == 0:
@@ -297,16 +299,29 @@ class SegmentationMCPAPI:
                         existing_layer = lyr
                         break
 
+            from .core.layer_conventions import (
+                apply_output_conventions,
+                attribute_values_for_fields,
+                geodesic_area_m2,
+                repair_polygon,
+            )
+
             timestamp = datetime.now().isoformat(timespec="seconds")
 
             if existing_layer and existing_layer.dataProvider():
                 try:
                     g = QgsGeometry(geom)
+                    g = repair_polygon(g) or g
                     if not g.isMultipart():
                         g.convertToMultiType()
                     feature = QgsFeature(existing_layer.fields())
                     feature.setGeometry(g)
-                    feature.setAttributes(["", g.area(), raster_name, timestamp])
+                    # Match the layer's schema by field name so appending
+                    # works on layers created by any plugin version.
+                    feature.setAttributes(attribute_values_for_fields(
+                        existing_layer.fields(), g, existing_layer.crs(),
+                        raster_name, timestamp,
+                    ))
                     existing_layer.dataProvider().addFeatures([feature])
                     existing_layer.updateExtents()
                     existing_layer.triggerRepaint()
@@ -315,8 +330,12 @@ class SegmentationMCPAPI:
                         "file_path": existing_layer.source().split("|")[0],
                         "appended": True,
                     }
-                except Exception:
-                    pass  # nosec B110
+                except Exception as e:
+                    from qgis.core import QgsMessageLog
+                    QgsMessageLog.logMessage(
+                        f"Failed to append mask to existing layer, creating a new one: {e}",
+                        "AI Segmentation", level=Qgis.MessageLevel.Warning
+                    )
 
             # Create new layer
             mask_num = 1
@@ -337,21 +356,22 @@ class SegmentationMCPAPI:
 
             temp_layer = QgsVectorLayer("MultiPolygon", layer_name, "memory")
             temp_layer.setCrs(crs_obj)
+            # Minimal per-feature schema (editable label + geodesic measure);
+            # run-level provenance goes in the layer metadata, not per row.
             pr = temp_layer.dataProvider()
             pr.addAttributes([
                 QgsField("label", _FIELD_TYPE_STRING),
-                QgsField("area", _FIELD_TYPE_DOUBLE),
-                QgsField("raster_source", _FIELD_TYPE_STRING),
-                QgsField("created_at", _FIELD_TYPE_STRING),
+                QgsField("area_m2", _FIELD_TYPE_DOUBLE),
             ])
             temp_layer.updateFields()
 
             g = QgsGeometry(geom)
+            g = repair_polygon(g) or g
             if not g.isMultipart():
                 g.convertToMultiType()
             feature = QgsFeature(temp_layer.fields())
             feature.setGeometry(g)
-            feature.setAttributes(["", g.area(), raster_name, timestamp])
+            feature.setAttributes(["", geodesic_area_m2(g, crs_obj)])
             pr.addFeatures([feature])
             temp_layer.updateExtents()
 
@@ -362,7 +382,7 @@ class SegmentationMCPAPI:
                 temp_layer, gpkg_path,
                 QgsProject.instance().transformContext(), options
             )
-            if error[0] != QgsVectorFileWriter.NoError:
+            if error[0] != QgsVectorFileWriter.WriterError.NoError:
                 return {"_error": f"Failed to save GeoPackage: {error[1]}"}
 
             result_layer = QgsVectorLayer(gpkg_path, layer_name, "ogr")
@@ -375,6 +395,8 @@ class SegmentationMCPAPI:
                 "outline_width": "0.5",
             })
             result_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+            # Style + provenance stored with the .gpkg (survives reloads).
+            apply_output_conventions(result_layer, raster_name)
 
             group = root.findGroup(seg_group_name)
             if group is None:

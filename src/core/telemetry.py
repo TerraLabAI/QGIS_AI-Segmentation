@@ -186,11 +186,35 @@ def track_plugin_activated() -> bool:
     return _send("plugin_activated")
 
 
+_segmentation_run_sent_this_session = False
+
+
 def track_segmentation_run(success: bool, duration_ms: int | None = None) -> bool:
-    """Fire when a segmentation run completes (success = saved polygon)."""
+    """Fire when a segmentation run completes (success = saved polygon).
+
+    Sampled 1-in-10: power users click hundreds of times per session, making
+    this single event the bulk of the whole telemetry volume. The
+    sample_rate property lets insights re-weight counts (sum of sample_rate);
+    success/duration distributions stay statistically valid.
+
+    The first run of each QGIS session is always sent (sample_rate: 1):
+    funnels and retention only ask "did this user segment at all", and pure
+    sampling would miss most light users entirely (3 runs = 27% chance of
+    appearing). One extra event per user session is negligible volume."""
+    global _segmentation_run_sent_this_session
+    import random
+
+    if _segmentation_run_sent_this_session:
+        if random.random() >= 0.1:  # nosec B311 - sampling, not crypto
+            return True
+        sample_rate = 10
+    else:
+        _segmentation_run_sent_this_session = True
+        sample_rate = 1
     return _send(
         "segmentation_run",
-        {"success": bool(success), "duration_ms": duration_ms},
+        {"success": bool(success), "duration_ms": duration_ms,
+         "sample_rate": sample_rate},
     )
 
 

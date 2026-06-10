@@ -164,7 +164,15 @@ def download_checkpoint(
         resume_offset = 0
         if os.path.exists(temp_path):
             resume_offset = os.path.getsize(temp_path)
-            if resume_offset > 0:
+            if 0 < resume_offset < 1024 * 1024:
+                # Tiny partials are more likely an aborted handshake or a
+                # proxy error page than real data: restart from scratch.
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass  # nosec B110
+                resume_offset = 0
+            elif resume_offset > 0:
                 QgsMessageLog.logMessage(
                     f"Resuming download from {resume_offset / (1024 * 1024):.1f} MB",
                     "AI Segmentation", level=Qgis.MessageLevel.Info)
@@ -182,6 +190,9 @@ def download_checkpoint(
         def on_download_progress(received, total):
             download_state["bytes_received"] = received
             download_state["bytes_total"] = total
+            idle_timer = download_state.get("idle_timer")
+            if idle_timer is not None:
+                idle_timer.start()
             if not progress_callback:
                 return
             actual_received = resume_offset + received
@@ -253,10 +264,29 @@ def download_checkpoint(
             loop = QEventLoop()
             reply.finished.connect(loop.quit)
 
-            timeout = QTimer()
-            timeout.setSingleShot(True)
-            timeout.timeout.connect(loop.quit)
-            timeout.start(1200000)  # 20 minutes
+            # Two watchdogs instead of one absolute 20 min cutoff: a stalled
+            # server (connection open, zero bytes) aborts after 2 minutes of
+            # silence, while a slow but live connection gets up to 60 minutes.
+            def on_idle_timeout():
+                download_state["timeout_reason"] = "no data received for 2 minutes"
+                loop.quit()
+
+            def on_hard_timeout():
+                download_state["timeout_reason"] = "exceeded 60 minutes"
+                loop.quit()
+
+            idle_timeout = QTimer()
+            idle_timeout.setSingleShot(True)
+            idle_timeout.setInterval(120000)
+            idle_timeout.timeout.connect(on_idle_timeout)
+            download_state["idle_timer"] = idle_timeout
+            idle_timeout.start()
+
+            hard_timeout = QTimer()
+            hard_timeout.setSingleShot(True)
+            hard_timeout.setInterval(3600000)
+            hard_timeout.timeout.connect(on_hard_timeout)
+            hard_timeout.start()
 
             if progress_callback:
                 retry_msg = ""
@@ -271,15 +301,16 @@ def download_checkpoint(
 
             loop.exec()
 
-            # Check for timeout
-            if timeout.isActive():
-                timeout.stop()
-            else:
+            idle_timeout.stop()
+            hard_timeout.stop()
+            download_state["idle_timer"] = None
+
+            if download_state.get("timeout_reason"):
                 reply.abort()
                 reply.deleteLater()
                 download_state["file"].close()
                 download_state["file"] = None
-                last_error = "Download timed out after 20 minutes"
+                last_error = f"Download timed out ({download_state['timeout_reason']})"
                 if attempt < max_retries:
                     time.sleep(min(5 * (2 ** (attempt - 1)), 120))
                 continue

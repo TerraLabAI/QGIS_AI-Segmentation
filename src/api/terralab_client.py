@@ -99,6 +99,31 @@ class TerraLabClient:
     def get_config(self, product: str) -> dict:
         return self._request("GET", f"/api/plugin/config?product={product}")
 
+    def poll_pairing(self, code: str, timeout_ms: int = 10_000) -> dict:
+        """Poll whether a pairing code has been bound to an activation key.
+
+        Unauthenticated GET (the code itself is the bearer of trust). Returns
+        {"status": "pending" | "ready" | "not_found", ...} or {"error", "code"}
+        on a network/server failure (the caller retries those within a deadline).
+        """
+        from urllib.parse import quote
+        return self._request(
+            "GET",
+            f"/api/plugin/pair/poll?code={quote(code, safe='')}",
+            timeout_ms=timeout_ms,
+        )
+
+    def cancel_pairing(self, code: str) -> dict:
+        """Retire an abandoned pairing code server-side, so a later Confirm in
+        the browser shows expired instead of binding a key nobody polls for.
+
+        Unauthenticated POST (the code itself is the bearer of trust).
+        """
+        body = json.dumps({"code": code, "product": "ai-segmentation"}).encode("utf-8")
+        return self._request(
+            "POST", "/api/plugin/pair/cancel", body=body, timeout_ms=5_000
+        )
+
     def _request(
         self,
         method: str,
@@ -125,7 +150,7 @@ class TerraLabClient:
         else:
             return {"error": f"Unsupported method: {method}", "code": "CLIENT_ERROR"}
 
-        if err != QgsBlockingNetworkRequest.NoError:
+        if err != QgsBlockingNetworkRequest.ErrorCode.NoError:
             reply = blocker.reply()
             if reply:
                 http_attr = reply.attribute(_HTTP_STATUS_ATTR)

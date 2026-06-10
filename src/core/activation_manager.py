@@ -6,6 +6,19 @@ import uuid
 
 from qgis.core import QgsSettings
 
+from .auth_helper import (
+    clear_activation as _auth_clear_activation,
+)
+from .auth_helper import (
+    get_activation_key as _auth_get_activation_key,
+)
+from .auth_helper import (
+    migrate_legacy_key as _auth_migrate_legacy_key,
+)
+from .auth_helper import (
+    save_activation as _auth_save_activation,
+)
+
 PRODUCT_ID = "ai-segmentation"
 
 _KEY_RE = re.compile(r"^tl_[0-9a-f]{32}$")
@@ -30,6 +43,11 @@ PRIVACY_URL = (
     "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
     "&utm_content=settings_privacy"
 )
+DASHBOARD_URL = (
+    "https://terra-lab.ai/dashboard/ai-segmentation"
+    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
+    "&utm_content=dashboard"
+)
 
 _cached_config: dict | None = None
 
@@ -43,20 +61,24 @@ def _client():
 
 
 def get_auth_token(settings=None) -> str:
-    s = settings or QgsSettings()
-    return s.value(f"{SETTINGS_PREFIX}activation_key", "") or ""
+    return _auth_get_activation_key(settings)
 
 
 def save_auth_token(token: str, settings=None):
+    _auth_save_activation(token, settings)
     s = settings or QgsSettings()
-    s.setValue(f"{SETTINGS_PREFIX}activation_key", token.strip())
-    s.setValue(f"{SETTINGS_PREFIX}activated", True)
+    s.setValue(f"{SETTINGS_PREFIX}activated", bool((token or "").strip()))
 
 
 def clear_auth(settings=None):
+    _auth_clear_activation(settings)
     s = settings or QgsSettings()
-    s.setValue(f"{SETTINGS_PREFIX}activation_key", "")
     s.setValue(f"{SETTINGS_PREFIX}activated", False)
+
+
+def migrate_legacy_key(settings=None) -> bool:
+    """Move any QSettings-only key into QgsAuthManager. Idempotent."""
+    return _auth_migrate_legacy_key(settings)
 
 
 def is_plugin_activated(settings=None) -> bool:
@@ -106,10 +128,22 @@ def get_auth_header(settings=None) -> dict:
     token = get_auth_token(settings)
     if not token:
         return {}
-    return {
+    headers = {
         "Authorization": f"Bearer {token}",
         "X-Product-ID": PRODUCT_ID,
     }
+    # Anonymous per-machine hash so the server can apply the device limit.
+    # Best-effort: a hash failure must never strip auth.
+    try:
+        from .device_id import get_device_hash, get_device_platform
+
+        headers["X-Device-Hash"] = get_device_hash()
+        platform = get_device_platform()
+        if platform:
+            headers["X-Device-Platform"] = platform
+    except Exception:  # nosec B110
+        pass
+    return headers
 
 
 # -- device id (stable per machine, shared across TerraLab plugins) --------
@@ -165,10 +199,19 @@ def get_privacy_url() -> str:
     return PRIVACY_URL
 
 
+def get_dashboard_url() -> str:
+    return DASHBOARD_URL
+
+
 # -- activation key validation ---------------------------------------------
 
 
-def validate_key_with_server(key: str) -> tuple[bool, str]:
+def check_key_with_server(key: str) -> tuple[bool, str]:
+    """Validate a key against the server WITHOUT persisting anything.
+
+    Pure network + string work, so it is safe to call off the main thread
+    (QgsAuthManager writes must stay on the main thread).
+    """
     key = (key or "").strip()
     if not key:
         return False, "Please enter your activation key."
@@ -193,8 +236,20 @@ def validate_key_with_server(key: str) -> tuple[bool, str]:
     if server_product and server_product != PRODUCT_ID:
         return False, "This key belongs to a different product. Use your AI Segmentation key."
 
-    save_auth_token(key)
     return True, "Activation key verified!"
+
+
+def validate_key_with_server(key: str) -> tuple[bool, str]:
+    """Validate AND persist on success. Main thread only (settings write)."""
+    success, message = check_key_with_server(key)
+    if success:
+        save_auth_token(key)
+    return success, message
+
+
+def is_rejection_code(code: str) -> bool:
+    """True when a /usage error code means the stored key is no longer usable."""
+    return (code or "").strip().upper() in ("INVALID_KEY", "SUBSCRIPTION_INACTIVE")
 
 
 def revalidate_stored_key() -> bool:
@@ -203,6 +258,7 @@ def revalidate_stored_key() -> bool:
     Returns True if the key is still valid (or if no key is stored).
     Returns False and clears auth if the server rejects the key.
     Network errors are silently ignored (benefit of the doubt).
+    Main thread only (clears settings on rejection).
     """
     key = get_auth_token()
     if not key:
@@ -214,10 +270,8 @@ def revalidate_stored_key() -> bool:
     except Exception:
         return True
 
-    if "error" in result:
-        code = (result.get("code") or "").strip().upper()
-        if code in ("INVALID_KEY", "SUBSCRIPTION_INACTIVE"):
-            clear_auth()
-            return False
+    if "error" in result and is_rejection_code(result.get("code", "")):
+        clear_auth()
+        return False
 
     return True

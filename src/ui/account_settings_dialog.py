@@ -1,9 +1,17 @@
-"""Account Settings dialog for AI Segmentation plugin."""
+"""Account Settings dialog for AI Segmentation plugin.
+
+Mirrors AI Edit's Settings: an account chip (avatar + email + status) with a
+quiet inline Sign out link, a product card, a prominent Manage button, and a
+discreet legal footer. The activation key lives only in the web dashboard, so
+it is intentionally not shown here.
+"""
 from __future__ import annotations
 
-from qgis.PyQt.QtCore import Qt, QThread, QTimer, pyqtSignal
+import os
+
+from qgis.PyQt.QtCore import Qt, QThread, QUrl, pyqtSignal
+from qgis.PyQt.QtGui import QDesktopServices
 from qgis.PyQt.QtWidgets import (
-    QApplication,
     QDialog,
     QFrame,
     QGridLayout,
@@ -14,30 +22,57 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-from ..core.activation_manager import get_privacy_url, get_terms_url
+from ..core.activation_manager import (
+    get_dashboard_url,
+    get_privacy_url,
+    get_terms_url,
+)
 from ..core.i18n import tr
-
-BRAND_BLUE = "#1976d2"
-BRAND_GREEN = "#2e7d32"
-BRAND_RED = "#c62828"
+from .ai_segmentation_dockwidget import (
+    BRAND_BLUE,
+    BRAND_BLUE_HOVER,
+    BRAND_GREEN,
+    BRAND_GREEN_TEXT,
+    BRAND_RED,
+)
 
 PRODUCT_ID = "ai-segmentation"
 PRODUCT_NAME = "AI Segmentation"
 
-_DASHBOARD_URL = (
-    "https://terra-lab.ai/dashboard"
-    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation&utm_content=dashboard"
-)
-
 _STATUS_DISPLAY = {
-    "active": (tr("Active"), BRAND_GREEN),
+    "active": (tr("Active"), BRAND_GREEN_TEXT),
+    "trialing": (tr("Free Trial"), "#f57c00"),
     "canceled": (tr("Canceled"), BRAND_RED),
 }
 
 _LINK_BTN = (
     f"QPushButton {{ border: none; color: {BRAND_BLUE}; font-size: 11px;"
     f" text-decoration: underline; padding: 2px 4px; background: transparent; }}"
-    f"QPushButton:hover {{ color: #1565c0; }}"
+    f"QPushButton:hover {{ color: {BRAND_BLUE_HOVER}; }}"
+)
+
+# Prominent primary action: open the account dashboard on terra-lab.ai.
+_MANAGE_BTN = (
+    f"QPushButton {{ background-color: {BRAND_BLUE}; color: #ffffff;"
+    f" border: none; border-radius: 8px; padding: 9px 16px;"
+    f" font-size: 12px; font-weight: 600; }}"
+    f"QPushButton:hover {{ background-color: {BRAND_BLUE_HOVER}; }}"
+)
+
+# Compact sign-out link (sits inside the account chip, not a full-width button).
+_SIGNOUT_LINK = (
+    "QPushButton { border: none; background: transparent; color: palette(text);"
+    " font-size: 11px; text-decoration: underline; padding: 2px 4px; }"
+    f"QPushButton:hover {{ color: {BRAND_RED}; }}"
+)
+
+# Small outlined secondary button for minor actions inside a card (e.g. "Open
+# folder"), distinct from the prominent blue Manage button.
+_SECONDARY_BTN = (
+    "QPushButton { background: palette(base); color: palette(text);"
+    " border: 1px solid rgba(128,128,128,0.35); border-radius: 6px;"
+    " padding: 5px 12px; font-size: 11px; }"
+    "QPushButton:hover { border-color: rgba(128,128,128,0.65); }"
 )
 
 _CARD_STYLE = (
@@ -47,27 +82,6 @@ _CARD_STYLE = (
     "QLabel { background: transparent; border: none; }"
     "QPushButton { background: transparent; }"
 )
-
-# Qt5/Qt6 compat helpers
-try:
-    _AlignCenter = Qt.AlignmentFlag.AlignCenter
-except AttributeError:
-    _AlignCenter = Qt.AlignCenter
-
-try:
-    _PointingHandCursor = Qt.CursorShape.PointingHandCursor
-except AttributeError:
-    _PointingHandCursor = Qt.PointingHandCursor
-
-try:
-    _TextSelectableByMouse = Qt.TextInteractionFlag.TextSelectableByMouse
-except AttributeError:
-    _TextSelectableByMouse = Qt.TextSelectableByMouse
-
-try:
-    _FrameHLine = QFrame.Shape.HLine
-except AttributeError:
-    _FrameHLine = QFrame.HLine
 
 
 class _AccountLoaderWorker(QThread):
@@ -90,7 +104,7 @@ class _AccountLoaderWorker(QThread):
 
 class AccountSettingsDialog(QDialog):
 
-    change_key_requested = pyqtSignal()
+    sign_out_requested = pyqtSignal()
 
     def __init__(self, client, auth, activation_key, parent=None):
         super().__init__(parent)
@@ -99,8 +113,9 @@ class AccountSettingsDialog(QDialog):
         self.setMinimumWidth(400)
         self.setMaximumWidth(500)
 
-        self._activation_key = activation_key
-        self._key_visible = False
+        # ``activation_key`` is accepted for signature compatibility but no
+        # longer displayed; key management happens on the web dashboard.
+        del activation_key
         self._worker = None
 
         self._layout = QVBoxLayout(self)
@@ -108,7 +123,7 @@ class AccountSettingsDialog(QDialog):
         self._layout.setSpacing(12)
 
         self._loading_label = QLabel(tr("Loading account info..."))
-        self._loading_label.setAlignment(_AlignCenter)
+        self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._loading_label.setStyleSheet("color: palette(text); padding: 16px;")
         self._layout.addWidget(self._loading_label)
 
@@ -118,17 +133,26 @@ class AccountSettingsDialog(QDialog):
         error_layout.setSpacing(8)
         self._error_label = QLabel()
         self._error_label.setWordWrap(True)
-        self._error_label.setAlignment(_AlignCenter)
+        self._error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._error_label.setStyleSheet(f"color: {BRAND_RED}; padding: 12px;")
         error_layout.addWidget(self._error_label)
         self._retry_btn = QPushButton(tr("Retry"))
         self._retry_btn.setMaximumWidth(100)
         self._retry_btn.clicked.connect(self._fetch_account)
+        self._error_sign_out_btn = QPushButton(tr("Sign out"))
+        self._error_sign_out_btn.setStyleSheet(_LINK_BTN)
+        self._error_sign_out_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._error_sign_out_btn.clicked.connect(self._on_sign_out)
         retry_row = QHBoxLayout()
         retry_row.addStretch()
         retry_row.addWidget(self._retry_btn)
         retry_row.addStretch()
         error_layout.addLayout(retry_row)
+        signout_row = QHBoxLayout()
+        signout_row.addStretch()
+        signout_row.addWidget(self._error_sign_out_btn)
+        signout_row.addStretch()
+        error_layout.addLayout(signout_row)
         self._error_widget.setVisible(False)
         self._layout.addWidget(self._error_widget)
 
@@ -170,27 +194,31 @@ class AccountSettingsDialog(QDialog):
         if sub:
             self._content_layout.addWidget(self._build_subscription_card(sub))
 
-        manage_label = QLabel(
-            f'<a href="{_DASHBOARD_URL}" style="color: {BRAND_BLUE};">'
-            f'{tr("Manage account on terra-lab.ai")}</a>'
-        )
-        manage_label.setOpenExternalLinks(True)
-        manage_label.setAlignment(_AlignCenter)
-        manage_label.setStyleSheet("font-size: 11px; padding-top: 2px;")
-        self._content_layout.addWidget(manage_label)
+        self._content_layout.addWidget(self._build_dependencies_card())
 
-        # Permanent access to legal docs — the ToS consent checkbox only
-        # shows once before the first segmentation, so users need a route
-        # back to Terms and Privacy from inside the plugin afterwards.
+        # Discreet footer: thin top separator, small muted Terms / Privacy links.
+        footer = QFrame()
+        footer.setObjectName("legalFooter")
+        footer.setStyleSheet(
+            "QFrame#legalFooter { border: none;"
+            " border-top: 1px solid rgba(127,127,127,0.18); }"
+        )
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(0, 8, 0, 0)
+        footer_layout.setSpacing(0)
+        footer_layout.addStretch()
         legal_label = QLabel(
-            f'<a href="{get_terms_url()}" style="color: {BRAND_BLUE};">{tr("Terms")}</a>'
-            f' · '
-            f'<a href="{get_privacy_url()}" style="color: {BRAND_BLUE};">{tr("Privacy")}</a>'
+            f'<a href="{get_terms_url()}" style="color: rgba(128,128,128,0.85);'
+            f' text-decoration: none;">{tr("Terms")}</a>'
+            f' <span style="color: rgba(128,128,128,0.5);">·</span> '
+            f'<a href="{get_privacy_url()}" style="color: rgba(128,128,128,0.85);'
+            f' text-decoration: none;">{tr("Privacy")}</a>'
         )
         legal_label.setOpenExternalLinks(True)
-        legal_label.setAlignment(_AlignCenter)
-        legal_label.setStyleSheet("font-size: 11px; color: palette(text); padding-top: 2px;")
-        self._content_layout.addWidget(legal_label)
+        legal_label.setStyleSheet("font-size: 10px;")
+        footer_layout.addWidget(legal_label)
+        footer_layout.addStretch()
+        self._content_layout.addWidget(footer)
 
         self._content_widget.setVisible(True)
         self.adjustSize()
@@ -213,73 +241,62 @@ class AccountSettingsDialog(QDialog):
         card.setStyleSheet(_CARD_STYLE)
 
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(6)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
 
-        email_row = QHBoxLayout()
-        email_row.setSpacing(4)
-        email_lbl = QLabel(f"<b>{tr('Email')}</b>")
-        email_lbl.setStyleSheet("font-size: 12px; color: palette(text);")
-        email_row.addWidget(email_lbl)
-        email_row.addStretch()
-        email_val = QLabel(data.get("email", "\u2014"))
-        email_val.setTextInteractionFlags(_TextSelectableByMouse)
-        email_val.setStyleSheet("font-size: 12px; color: palette(text);")
-        email_row.addWidget(email_val)
-        email_copy = QPushButton(tr("Copy"))
-        email_copy.setStyleSheet(_LINK_BTN)
-        email_copy.setCursor(_PointingHandCursor)
-        email_copy.clicked.connect(
-            lambda: self._copy_text(data.get("email", ""), email_copy)
+        email = data.get("email", "-")
+
+        # A real account "chip": round avatar (first letter) + email + status.
+        chip = QFrame()
+        chip.setStyleSheet(
+            "QFrame { background: palette(base);"
+            " border: 1px solid rgba(128,128,128,0.25); border-radius: 8px; }"
+            "QLabel { background: transparent; border: none; }"
         )
-        email_row.addWidget(email_copy)
-        layout.addLayout(email_row)
+        chip_row = QHBoxLayout(chip)
+        chip_row.setContentsMargins(12, 10, 12, 10)
+        chip_row.setSpacing(11)
 
-        sep = QFrame()
-        sep.setFrameShape(_FrameHLine)
-        sep.setStyleSheet("color: rgba(128,128,128,0.2);")
-        sep.setFixedHeight(1)
-        layout.addWidget(sep)
-
-        key_row = QHBoxLayout()
-        key_row.setSpacing(4)
-        key_lbl = QLabel(f"<b>{tr('Key')}</b>")
-        key_lbl.setStyleSheet("font-size: 12px; color: palette(text);")
-        key_row.addWidget(key_lbl)
-        key_row.addStretch()
-        self._key_label = QLabel(self._masked_key())
-        self._key_label.setTextInteractionFlags(_TextSelectableByMouse)
-        self._key_label.setStyleSheet(
-            "font-size: 11px; font-family: monospace; color: palette(text);"
+        avatar = QLabel(email[:1].upper() if email and email != "-" else "?")
+        avatar.setFixedSize(38, 38)
+        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        avatar.setStyleSheet(
+            f"background: {BRAND_GREEN}; color: #14210A; border-radius: 19px;"
+            " font-size: 17px; font-weight: 700;"
         )
-        key_row.addWidget(self._key_label)
-        self._toggle_btn = QPushButton(tr("Show"))
-        self._toggle_btn.setStyleSheet(_LINK_BTN)
-        self._toggle_btn.setCursor(_PointingHandCursor)
-        self._toggle_btn.clicked.connect(self._toggle_key_visibility)
-        key_row.addWidget(self._toggle_btn)
-        self._copy_key_btn = QPushButton(tr("Copy"))
-        self._copy_key_btn.setStyleSheet(_LINK_BTN)
-        self._copy_key_btn.setCursor(_PointingHandCursor)
-        self._copy_key_btn.clicked.connect(
-            lambda: self._copy_text(self._activation_key, self._copy_key_btn)
+        chip_row.addWidget(avatar)
+
+        id_col = QVBoxLayout()
+        id_col.setSpacing(2)
+        email_val = QLabel(email)
+        email_val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        email_val.setStyleSheet(
+            "font-size: 13px; font-weight: 600; color: palette(text);"
         )
-        key_row.addWidget(self._copy_key_btn)
-        layout.addLayout(key_row)
+        id_col.addWidget(email_val)
+        status_lbl = QLabel("✓ " + tr("Connected"))
+        status_lbl.setStyleSheet(
+            f"font-size: 11px; font-weight: 600; color: {BRAND_GREEN_TEXT};"
+        )
+        id_col.addWidget(status_lbl)
+        chip_row.addLayout(id_col, 1)
 
-        change_row = QHBoxLayout()
-        change_row.addStretch()
-        change_btn = QPushButton(tr("Change activation key"))
-        change_btn.setStyleSheet(_LINK_BTN)
-        change_btn.setCursor(_PointingHandCursor)
-        change_btn.clicked.connect(self._on_change_key)
-        change_row.addWidget(change_btn)
-        layout.addLayout(change_row)
+        # Sign out is a quiet inline link on the right of the chip, not a heavy
+        # full-width button below the email.
+        sign_out_btn = QPushButton(tr("Sign out"))
+        sign_out_btn.setStyleSheet(_SIGNOUT_LINK)
+        sign_out_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        sign_out_btn.clicked.connect(self._on_sign_out)
+        chip_row.addWidget(sign_out_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
+        layout.addWidget(chip)
         return card
 
+    def _open_dashboard(self):
+        QDesktopServices.openUrl(QUrl(get_dashboard_url()))
+
     def _build_subscription_card(self, sub: dict) -> QFrame:
-        """AI Segmentation is free — show plan status only, no credits."""
+        """AI Segmentation is free - show plan status, no credits."""
         card = QFrame()
         card.setStyleSheet(_CARD_STYLE)
 
@@ -303,14 +320,102 @@ class AccountSettingsDialog(QDialog):
             status, (status.title(), BRAND_RED)
         )
         plan_status = QLabel(
-            f"{tr('Free')} \u00b7 <span style='color:{status_color};'>{status_text}</span>"
+            f"{tr('Free')} · <span style='color:{status_color};'>{status_text}</span>"
         )
         plan_status.setStyleSheet("font-size: 12px; color: palette(text);")
         grid.addWidget(plan_status, 0, 1)
 
         card_layout.addLayout(grid)
+        card_layout.addSpacing(4)
+
+        # Account management lives on the website (terra-lab.ai); the plugin
+        # only points there. Keeps billing and key handling out of the plugin.
+        manage_btn = QPushButton(tr("Manage account on terra-lab.ai") + "  ↗")
+        manage_btn.setStyleSheet(_MANAGE_BTN)
+        manage_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        manage_btn.setMinimumHeight(36)
+        manage_btn.clicked.connect(self._open_dashboard)
+        card_layout.addWidget(manage_btn)
 
         return card
+
+    def _build_dependencies_card(self) -> QFrame:
+        """Local AI dependencies: where they live, how big, and an Open button.
+
+        The isolated venv and model weights (~1 GB) live outside QGIS under the
+        user home. Surfacing the path + size + an Open button answers the common
+        support needs (disk space, antivirus exclusions, manual cleanup) without
+        the user having to hunt for a hidden folder.
+        """
+        from ..core.venv_manager import CACHE_DIR, VENV_DIR
+
+        card = QFrame()
+        card.setStyleSheet(_CARD_STYLE)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
+
+        title = QLabel(f"<b>{tr('Dependencies')}</b>")
+        title.setStyleSheet("font-size: 13px; color: palette(text);")
+        layout.addWidget(title)
+
+        caption = QLabel(tr("Local AI model files stored on this computer."))
+        caption.setWordWrap(True)
+        caption.setStyleSheet("font-size: 11px; color: palette(text);")
+        layout.addWidget(caption)
+
+        installed = os.path.isdir(VENV_DIR)
+        size_text = self._format_dir_size(CACHE_DIR) if installed else tr("Not installed")
+        info = QLabel(f"{tr('On disk')}: {size_text}")
+        info.setStyleSheet("font-size: 11px; color: rgba(128,128,128,0.9);")
+        layout.addWidget(info)
+
+        path_lbl = QLabel(CACHE_DIR)
+        path_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        path_lbl.setWordWrap(True)
+        path_lbl.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.7);")
+        layout.addWidget(path_lbl)
+
+        open_btn = QPushButton(tr("Open folder"))
+        open_btn.setStyleSheet(_SECONDARY_BTN)
+        open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        open_btn.clicked.connect(lambda: self._open_install_folder(CACHE_DIR))
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 2, 0, 0)
+        row.addStretch()
+        row.addWidget(open_btn)
+        layout.addLayout(row)
+
+        return card
+
+    @staticmethod
+    def _open_install_folder(path: str):
+        # The folder may not exist yet (deps never installed); fall back to the
+        # nearest existing parent so the button never silently does nothing.
+        target = path
+        while target and not os.path.isdir(target):
+            parent = os.path.dirname(target)
+            if parent == target:
+                break
+            target = parent
+        QDesktopServices.openUrl(QUrl.fromLocalFile(target))
+
+    @staticmethod
+    def _format_dir_size(path: str) -> str:
+        total = 0
+        try:
+            for root, _dirs, files in os.walk(path):
+                for name in files:
+                    try:
+                        total += os.path.getsize(os.path.join(root, name))
+                    except OSError:  # nosec B112
+                        continue
+        except OSError:
+            return "-"
+        mb = total / (1024 * 1024)
+        if mb >= 1024:
+            return f"{mb / 1024:.1f} GB"
+        return f"{mb:.0f} MB"
 
     # -- Helpers --
 
@@ -320,33 +425,30 @@ class AccountSettingsDialog(QDialog):
         label.setStyleSheet("font-size: 11px; color: palette(text);")
         return label
 
-    def _masked_key(self) -> str:
-        key = self._activation_key
-        if len(key) <= 8:
-            return key[:3] + "****"
-        return key[:6] + "****" + key[-4:]
+    def _on_sign_out(self):
+        from qgis.PyQt.QtWidgets import QMessageBox
 
-    def _toggle_key_visibility(self):
-        self._key_visible = not self._key_visible
-        if self._key_visible:
-            self._key_label.setText(self._activation_key)
-            self._toggle_btn.setText(tr("Hide"))
-        else:
-            self._key_label.setText(self._masked_key())
-            self._toggle_btn.setText(tr("Show"))
-
-    def _on_change_key(self):
-        self.change_key_requested.emit()
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(tr("Sign out"))
+        box.setText(tr("Sign out of AI Segmentation?"))
+        box.setInformativeText(tr("You can sign back in anytime from QGIS."))
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        if box.exec() != QMessageBox.StandardButton.Yes:
+            return
+        self.sign_out_requested.emit()
         self.accept()
 
-    def _copy_text(self, text: str, btn: QPushButton):
-        QApplication.clipboard().setText(text)
-        original = btn.text()
-        btn.setText(tr("Copied!"))
-        QTimer.singleShot(1500, lambda: btn.setText(original))
-
     def closeEvent(self, event):
+        # The account loader thread has no event loop, so quit() is a no-op.
+        # Wait gives the in-flight network call room to return; terminate is
+        # the last-resort exit when the network stack itself is wedged,
+        # otherwise QThread destruction would crash QGIS.
         if self._worker and self._worker.isRunning():
-            self._worker.quit()
-            self._worker.wait(2000)
+            if not self._worker.wait(6000):
+                self._worker.terminate()
+                self._worker.wait(1000)
         super().closeEvent(event)

@@ -27,6 +27,7 @@ from .archive_utils import safe_extract_tar as _safe_extract_tar
 from .archive_utils import safe_extract_zip as _safe_extract_zip
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
+from .uv_manager import DOWNLOAD_TIMEOUT_MS
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_DIR = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser("~/.qgis_ai_segmentation")
@@ -207,13 +208,30 @@ def _get_platform_info() -> tuple[str, str]:
     return ("x86_64-unknown-linux-gnu", ".tar.gz")
 
 
-def get_download_url() -> str:
-    """Construct the download URL for the standalone Python."""
+def get_download_urls() -> list[str]:
+    """Candidate download URLs for the standalone Python, preferred first.
+
+    install_only_stripped is the same build minus native debug symbols
+    (about half the download on Windows, a third of it on Linux); it is
+    what uv itself ships. Plain install_only stays as a fallback in case
+    a release or platform lacks the stripped variant.
+    """
     python_version = get_python_full_version()
     platform_str, ext = _get_platform_info()
+    base = (
+        "https://github.com/astral-sh/python-build-standalone/releases/download/"
+        f"{RELEASE_TAG}"
+    )
+    prefix = f"cpython-{python_version}+{RELEASE_TAG}-{platform_str}"
+    return [
+        f"{base}/{prefix}-install_only_stripped{ext}",
+        f"{base}/{prefix}-install_only{ext}",
+    ]
 
-    filename = f"cpython-{python_version}+{RELEASE_TAG}-{platform_str}-install_only{ext}"
-    return f"https://github.com/astral-sh/python-build-standalone/releases/download/{RELEASE_TAG}/{filename}"
+
+def get_download_url() -> str:
+    """Preferred download URL (kept for callers that want a single URL)."""
+    return get_download_urls()[0]
 
 
 def download_python_standalone(
@@ -241,10 +259,10 @@ def download_python_standalone(
         _log("Python standalone already exists", Qgis.MessageLevel.Info)
         return True, "Python standalone already installed"
 
-    url = get_download_url()
+    urls = get_download_urls()
     python_version = get_python_full_version()
 
-    _log(f"Downloading Python {python_version} from: {url}", Qgis.MessageLevel.Info)
+    _log(f"Downloading Python {python_version} from: {urls[0]}", Qgis.MessageLevel.Info)
 
     if progress_callback:
         progress_callback(0, f"Downloading Python {python_version}...")
@@ -257,46 +275,67 @@ def download_python_standalone(
         if cancel_check and cancel_check():
             return False, "Download cancelled"
 
-        # Use QGIS network manager for proxy-aware downloads with retry
-        qurl = QUrl(url)
-
         if progress_callback:
             progress_callback(5, "Connecting to download server...")
 
-        # Retry up to 3 times with exponential backoff for unstable networks
+        # Try each URL variant (stripped first, plain as fallback), each
+        # with up to 3 attempts and exponential backoff. QGIS network
+        # manager is used so QGIS proxy settings are respected.
         max_retries = 3
         err = None
         error_msg = ""
-        for attempt in range(max_retries):
-            if cancel_check and cancel_check():
-                return False, "Download cancelled"
+        request = None
+        for url_idx, url in enumerate(urls):
+            qurl = QUrl(url)
+            for attempt in range(max_retries):
+                if cancel_check and cancel_check():
+                    return False, "Download cancelled"
 
-            request = QgsBlockingNetworkRequest()
-            err = request.get(QNetworkRequest(qurl))
+                request = QgsBlockingNetworkRequest()
+                net_req = QNetworkRequest(qurl)
+                if hasattr(net_req, "setTransferTimeout"):
+                    net_req.setTransferTimeout(DOWNLOAD_TIMEOUT_MS)
+                err = request.get(net_req)
 
-            if err == QgsBlockingNetworkRequest.NoError:
+                if err == QgsBlockingNetworkRequest.ErrorCode.NoError:
+                    break
+
+                error_msg = request.errorMessage()
+                if "404" in error_msg or "Not Found" in error_msg:
+                    # No point retrying a 404; move on to the next variant
+                    break
+
+                if attempt < max_retries - 1:
+                    wait = 5 * (2 ** attempt)  # 5, 10s
+                    _log(
+                        f"Download failed (attempt {attempt + 1}/{max_retries}): {error_msg}. "
+                        f"Retrying in {wait}s...",
+                        Qgis.MessageLevel.Warning
+                    )
+                    if progress_callback:
+                        progress_callback(
+                            5, f"Network error, retrying in {wait}s...")
+                    time.sleep(wait)
+
+            if err == QgsBlockingNetworkRequest.ErrorCode.NoError:
                 break
 
-            error_msg = request.errorMessage()
-            if "404" in error_msg or "Not Found" in error_msg:
-                # No point retrying a 404
-                error_msg = f"Python {python_version} not available for this platform. URL: {url}"
+            is_404 = "404" in error_msg or "Not Found" in error_msg
+            if is_404:
+                if url_idx + 1 < len(urls):
+                    _log(
+                        f"Archive variant not published ({url}), "
+                        "trying the fallback variant...",
+                        Qgis.MessageLevel.Warning)
+                    continue
+                error_msg = (
+                    f"Python {python_version} not available for this platform. "
+                    f"URL: {url}"
+                )
                 _log(error_msg, Qgis.MessageLevel.Critical)
                 return False, error_msg
 
-            if attempt < max_retries - 1:
-                wait = 5 * (2 ** attempt)  # 5, 10s
-                _log(
-                    f"Download failed (attempt {attempt + 1}/{max_retries}): {error_msg}. "
-                    f"Retrying in {wait}s...",
-                    Qgis.MessageLevel.Warning
-                )
-                if progress_callback:
-                    progress_callback(
-                        5, f"Network error, retrying in {wait}s...")
-                time.sleep(wait)
-
-        if err != QgsBlockingNetworkRequest.NoError:
+        if err != QgsBlockingNetworkRequest.ErrorCode.NoError:
             error_msg = f"Download failed: {error_msg}"
             _log(error_msg, Qgis.MessageLevel.Critical)
             return False, error_msg

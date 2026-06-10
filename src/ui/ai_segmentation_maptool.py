@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from qgis.core import QgsPointXY
 from qgis.gui import QgsMapCanvas, QgsMapTool, QgsVertexMarker
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import QT_VERSION, Qt, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QCursor
 
 
@@ -118,7 +118,8 @@ class AISegmentationMapTool(QgsMapTool):
         if self._space_panning:
             return
 
-        point = self.toMapCoordinates(event.pos())
+        pt = event.position().toPoint() if QT_VERSION >= 0x060000 else event.pos()
+        point = self.toMapCoordinates(pt)
 
         if event.button() == Qt.MouseButton.LeftButton:
             self.add_marker(point, is_positive=True)
@@ -131,7 +132,7 @@ class AISegmentationMapTool(QgsMapTool):
         if not self._space_panning:
             return
 
-        current = event.pos()
+        current = event.position().toPoint() if QT_VERSION >= 0x060000 else event.pos()
         if self._pan_last_point is not None:
             start_map = self.toMapCoordinates(self._pan_last_point)
             end_map = self.toMapCoordinates(current)

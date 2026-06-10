@@ -273,18 +273,30 @@ def main():
                         masks, scores, low_res_masks = predictor.predict(
                             **predict_kwargs)
 
-                    # When auto-selecting best mask, pick the highest score
+                    # When auto-selecting best mask, prefer non-empty masks
+                    # below 80% of the crop (same convention as the caller's
+                    # first-click pick) so a whole-crop or empty candidate
+                    # never wins on score alone.
                     if auto_best and masks.shape[0] > 1:
-                        best_idx = int(np.argmax(scores))
+                        total = masks.shape[1] * masks.shape[2]
+                        areas = [int(m.sum()) for m in masks]
+                        candidates = [
+                            i for i in range(len(scores))
+                            if 0 < areas[i] < 0.8 * total
+                        ]
+                        if candidates:
+                            best_idx = max(
+                                candidates, key=lambda i: float(scores[i]))
+                        else:
+                            best_idx = int(np.argmax(scores))
                         masks = masks[best_idx:best_idx + 1]
                         scores = scores[best_idx:best_idx + 1]
                         low_res_masks = low_res_masks[best_idx:best_idx + 1]
 
-                    # Discard empty masks (all zeros with misleading scores)
-                    if masks.shape[0] == 1 and masks[0].sum() == 0:
-                        send_error("Segmentation produced an empty mask. "
-                                   "Try clicking closer to the target.")
-                        continue
+                    # Empty masks are a normal result ("nothing here"), not an
+                    # error: the caller reverts the click with a friendly
+                    # message. Reporting an error here used to kill the whole
+                    # worker session.
 
                     send_response("prediction", {
                         "masks": encode_numpy_array(masks),

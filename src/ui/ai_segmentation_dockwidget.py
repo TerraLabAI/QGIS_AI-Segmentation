@@ -4,7 +4,7 @@ import os
 import sys
 
 from qgis.core import QgsProject
-from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
+from qgis.PyQt.QtCore import QT_VERSION, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtGui import QKeySequence
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
@@ -31,16 +31,124 @@ from .layer_tree_combobox import LayerTreeComboBox
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
 
+# Brand colors (Material Design 2 - shared with AI Edit, same values).
+# Primary CTA buttons keep the material green; it reads as THE action color.
+# Every other green accent uses the TerraLab leaf green below.
+BTN_GREEN = "#43a047"
+BTN_GREEN_HOVER = "#2e7d32"
+BTN_GREEN_DISABLED = "#c8e6c9"
+
+# Brand accent green = the QGIS green (terralab-website --qgis-green). Lime
+# fills use BRAND_GREEN; green text on light backgrounds uses BRAND_GREEN_TEXT.
+BRAND_GREEN = "#8bac27"
+BRAND_GREEN_TEXT = "#4d7c0f"
+BRAND_BLUE = "#1e88e5"
+BRAND_BLUE_HOVER = "#1976d2"
+BRAND_RED = "#d32f2f"
+BRAND_RED_HOVER = "#b71c1c"
+BRAND_GRAY = "#757575"
+BRAND_GRAY_HOVER = "#616161"
+BRAND_DISABLED = "#b0bec5"
+DISABLED_TEXT = "#666666"
+ERROR_TEXT = "#ef5350"
+SUCCESS_TEXT = "#66bb6a"
+
+# Design-system QSS constants, identical to AI Edit (dock_widget.py).
+# border: none kills the native frame on dark themes; black text on the
+# mid-tone fills keeps AA contrast on both light and dark QGIS themes.
+_BTN_GREEN = (
+    f"QPushButton {{ background-color: {BTN_GREEN}; color: #000000;"
+    f" padding: 8px 16px; border: none; border-radius: 4px; }}"
+    f"QPushButton:hover {{ background-color: {BTN_GREEN_HOVER}; color: #000000; }}"
+    f"QPushButton:disabled {{ background-color: {BTN_GREEN_DISABLED};"
+    f" color: {DISABLED_TEXT}; }}"
+)
+
+_BTN_GREEN_AUTH = (
+    f"QPushButton {{ background-color: {BTN_GREEN}; color: #000000;"
+    f" border: none; border-radius: 4px; }}"
+    f"QPushButton:hover {{ background-color: {BTN_GREEN_HOVER}; }}"
+    f"QPushButton:disabled {{ background-color: {BRAND_DISABLED};"
+    f" color: {DISABLED_TEXT}; }}"
+)
+
+_BTN_BLUE = (
+    f"QPushButton {{ background-color: {BRAND_BLUE}; color: #000000;"
+    f" padding: 6px 12px; border: none; border-radius: 4px; }}"
+    f"QPushButton:hover {{ background-color: {BRAND_BLUE_HOVER}; color: #000000; }}"
+    f"QPushButton:disabled {{ background-color: {BRAND_DISABLED};"
+    f" color: {DISABLED_TEXT}; }}"
+)
+
+_BTN_BLUE_AUTH = (
+    f"QPushButton {{ background-color: {BRAND_BLUE}; color: #000000;"
+    f" border: none; border-radius: 4px; }}"
+    f"QPushButton:hover {{ background-color: {BRAND_BLUE_HOVER}; }}"
+    f"QPushButton:disabled {{ background-color: {BRAND_DISABLED}; }}"
+)
+
+_BTN_GRAY = (
+    f"QPushButton {{ background-color: {BRAND_GRAY}; color: #000000;"
+    f" padding: 4px 8px; border: none; border-radius: 4px; }}"
+    f"QPushButton:hover {{ background-color: {BRAND_GRAY_HOVER}; color: #000000; }}"
+    f"QPushButton:disabled {{ background-color: {BRAND_DISABLED}; color: {DISABLED_TEXT}; }}"
+)
+
+_BTN_RED = (
+    f"QPushButton {{ background-color: rgba(211,47,47,0.12); color: {BRAND_RED};"
+    f" padding: 6px 12px; border: none; border-radius: 4px; }}"
+    f"QPushButton:hover {{ background-color: rgba(211,47,47,0.22); }}"
+)
+
+_BTN_EXPORT_READY = (
+    f"QPushButton {{ background-color: {BTN_GREEN}; color: #000000;"
+    f" padding: 6px 12px; border: none; border-radius: 4px; }}"
+    f"QPushButton:hover {{ background-color: {BTN_GREEN_HOVER}; color: #000000; }}"
+)
+
+_BTN_EXPORT_DISABLED = (
+    f"QPushButton {{ background-color: {BRAND_DISABLED}; color: {DISABLED_TEXT};"
+    f" padding: 6px 12px; border: none; border-radius: 4px; }}"
+)
+
+# Compact filled buttons for the browser-handoff waiting state. Both carry a
+# soft tint (never transparent): neutral for "open again", red for "cancel".
+_BTN_PAIR_NEUTRAL = (
+    "QPushButton { background-color: rgba(128,128,128,0.16); color: palette(text);"
+    " border: none; border-radius: 4px; }"
+    "QPushButton:hover { background-color: rgba(128,128,128,0.28); }"
+)
+_BTN_PAIR_CANCEL = (
+    f"QPushButton {{ background-color: rgba(211,47,47,0.12); color: {BRAND_RED};"
+    f" border: none; border-radius: 4px; }}"
+    f"QPushButton:hover {{ background-color: rgba(211,47,47,0.22); }}"
+)
+
 # Footer icon buttons (gear / question mark) — slim toolbuttons that mirror
 # AI Edit. Hover state is driven by a dynamic `hover` property rather than
 # Qt's :hover pseudo, because with InstantPopup menus Qt fails to fire a
 # Leave event once the menu closes, so the button stays tinted until the
 # next real mouse move. ``_FooterIconButton.set_hovered(False)`` resets it.
+# The TerraLab leaf-green ``[active]`` tint marks "this menu is open".
 _FOOTER_ICON_BTN_STYLE = (
     "QToolButton { background: transparent; border: none; padding: 6px 10px;"
     " font-size: 22px; font-weight: 600;"
     " color: palette(text); border-radius: 4px; }"
     'QToolButton[hover="true"] { background: rgba(128,128,128,0.15); }'
+    'QToolButton[active="true"] { background: rgba(139, 172, 39, 0.55); }'
+    'QToolButton[active="true"][hover="true"] { background: rgba(139, 172, 39, 0.75); }'
+    "QToolButton::menu-indicator { image: none; width: 0; }"
+)
+
+# Help (question mark) hovers green — the leaf tint invites the user toward
+# Tutorial / Report a problem instead of reading as a neutral icon.
+_HELP_ICON_BTN_STYLE = (
+    "QToolButton { background: transparent; border: none; padding: 6px 10px;"
+    " font-size: 22px; font-weight: 600;"
+    " color: palette(text); border-radius: 4px; }"
+    'QToolButton[hover="true"] { background: rgba(139, 172, 39, 0.35); }'
+    'QToolButton[active="true"] { background: rgba(139, 172, 39, 0.55); }'
+    'QToolButton[active="true"][hover="true"] { background: rgba(139, 172, 39, 0.75); }'
     "QToolButton::menu-indicator { image: none; width: 0; }"
 )
 
@@ -64,14 +172,12 @@ _FOOTER_CTA_BTN_STYLE = (
 
 
 from ..core.activation_manager import (  # noqa: E402
-    get_sign_up_url,
     get_tutorial_url,
     has_tos_accepted,
     has_tos_locked,
     is_plugin_activated,
     lock_tos,
     set_tos_accepted,
-    validate_key_with_server,
 )
 from ..core.i18n import tr  # noqa: E402
 from ..core.model_config import _IS_MACOS_X86, USE_SAM2  # noqa: E402
@@ -91,14 +197,25 @@ class _FooterIconButton(QToolButton):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setProperty("hover", False)
+        self.setProperty("active", False)
+
+    def _repolish(self) -> None:
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
 
     def set_hovered(self, hovered: bool) -> None:
         if bool(self.property("hover")) == hovered:
             return
         self.setProperty("hover", hovered)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        self.update()
+        self._repolish()
+
+    def set_active(self, active: bool) -> None:
+        """Leaf-green tint while the attached menu is open (mirrors AI Edit)."""
+        if bool(self.property("active")) == active:
+            return
+        self.setProperty("active", active)
+        self._repolish()
 
     def enterEvent(self, event):  # noqa: N802
         self.set_hovered(True)
@@ -107,6 +224,36 @@ class _FooterIconButton(QToolButton):
     def leaveEvent(self, event):  # noqa: N802
         self.set_hovered(False)
         super().leaveEvent(event)
+
+
+class _Spinner(QWidget):
+    """A small rotating arc, the conventional 'busy' indicator. Driven by an
+    external QTimer calling ``advance()`` so one timer can be paused with the
+    section it belongs to. Mirrors AI Edit's pairing spinner."""
+
+    def __init__(self, diameter: int = 16, parent=None):
+        super().__init__(parent)
+        self._angle = 0
+        self._d = diameter
+        self.setFixedSize(diameter, diameter)
+
+    def advance(self):
+        self._angle = (self._angle + 30) % 360
+        self.update()
+
+    def paintEvent(self, event):  # noqa: N802 - Qt signature
+        from qgis.PyQt.QtCore import QRectF
+        from qgis.PyQt.QtGui import QColor, QPainter, QPen
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        margin = 2.0
+        rect = QRectF(margin, margin, self._d - 2 * margin, self._d - 2 * margin)
+        pen = QPen(QColor(BRAND_GREEN))
+        pen.setWidthF(2.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.drawArc(rect, int(-self._angle * 16), 270 * 16)
+        painter.end()
 
 
 class AISegmentationDockWidget(QDockWidget):
@@ -119,12 +266,17 @@ class AISegmentationDockWidget(QDockWidget):
     settings_clicked = pyqtSignal()
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
+    pairing_requested = pyqtSignal(str)        # one-click connect: emits the minted pairing code
+    pairing_cancel_requested = pyqtSignal(str)  # user cancelled the browser handoff (emits the code)
     # simplify, smooth, expand, fill_holes
     # (min_area is auto-computed server-side and no longer in the UI)
     refine_settings_changed = pyqtSignal(int, int, int, bool)
 
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation by TerraLab"), parent)
+        # A stable objectName lets QGIS persist and restore the dock's
+        # open/closed state and position across sessions (same as AI Edit).
+        self.setObjectName("AISegmentationDockWidget")
 
         self.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         self.setMinimumWidth(260)
@@ -156,6 +308,7 @@ class AISegmentationDockWidget(QDockWidget):
         self._negative_count = 0
         self._plugin_activated = is_plugin_activated()
         self._activation_popup_shown = False  # Track if popup was shown
+        self._key_validate_worker = None  # async manual-key validation
         self._segmentation_layer_id = None  # Track which layer we're segmenting
         # Note: _refine_expanded is initialized before _setup_ui() call
 
@@ -203,7 +356,7 @@ class AISegmentationDockWidget(QDockWidget):
             'AI Segmentation by '
             '<a href="https://terra-lab.ai?utm_source=qgis&utm_medium=plugin'
             '&utm_campaign=ai-segmentation&utm_content=title_link"'
-            ' style="color: #1976d2; text-decoration: none;">TerraLab</a>'
+            f' style="color: {BRAND_BLUE}; text-decoration: none;">TerraLab</a>'
         )
         title_label.setOpenExternalLinks(True)
         title_row.addWidget(title_label)
@@ -289,6 +442,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.install_button = QPushButton(tr("Install"))
         self.install_button.clicked.connect(self._on_install_clicked)
         self.install_button.setVisible(False)
+        self.install_button.setMinimumHeight(34)
+        self.install_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.install_button.setStyleSheet(_BTN_GREEN)
         layout.addWidget(self.install_button)
 
         self.install_path_label = QLabel(
@@ -299,7 +455,7 @@ class AISegmentationDockWidget(QDockWidget):
             "font-size: 10px;"
             "padding: 4px 6px;"
             "background-color: palette(base);"
-            "border: 1px solid palette(mid);"
+            "border: 1px solid rgba(128, 128, 128, 0.35);"
             "border-radius: 3px;"
         )
         layout.addWidget(self.install_path_label)
@@ -317,10 +473,7 @@ class AISegmentationDockWidget(QDockWidget):
         self.cancel_button = QPushButton(tr("Cancel"))
         self.cancel_button.clicked.connect(self._on_cancel_clicked)
         self.cancel_button.setVisible(False)
-        self.cancel_button.setStyleSheet(
-            "QPushButton { background-color: #d32f2f; color: #ffffff; }"
-            "QPushButton:hover { background-color: #b71c1c; color: #ffffff; }"
-        )
+        self.cancel_button.setStyleSheet(_BTN_RED)
         layout.addWidget(self.cancel_button)
 
         if not USE_SAM2:
@@ -335,7 +488,8 @@ class AISegmentationDockWidget(QDockWidget):
         self.main_layout.addWidget(self.setup_group)
 
     def _setup_activation_section(self):
-        """Setup the activation section with step-based layout (matches AI Edit)."""
+        """One-click browser sign-in (mirrors AI Edit), with a discreet
+        paste-a-key fallback for admins and browserless machines."""
         self.activation_group = QGroupBox()
         self.activation_group.setStyleSheet(
             "QGroupBox { border: none; margin: 0; padding: 0; }"
@@ -344,62 +498,133 @@ class AISegmentationDockWidget(QDockWidget):
         layout.setSpacing(8)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        self._setup_header = QLabel(tr("Two steps to start using AI Segmentation"))
+        layout.addSpacing(6)
+        # Header row: copy + brand logo at the end (AI Edit ends its header
+        # with the banana glyph; ours is the AI Segmentation mark).
+        header_row = QHBoxLayout()
+        header_row.setSpacing(7)
+        header_row.addStretch(1)
+        self._setup_header = QLabel(tr("Segment your map with AI"))
         self._setup_header.setStyleSheet(
-            "font-weight: bold; font-size: 13px; color: palette(text);")
-        layout.addWidget(self._setup_header)
+            "font-weight: 600; font-size: 14px; color: palette(text);")
+        header_row.addWidget(self._setup_header, 0, Qt.AlignmentFlag.AlignVCenter)
+        from qgis.PyQt.QtGui import QPixmap
+        _logo_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__)))),
+            "resources", "icons", "logo_title.png")
+        _logo_pm = QPixmap(_logo_path)
+        if not _logo_pm.isNull():
+            _dpr = self.devicePixelRatioF()
+            _logo_pm = _logo_pm.scaledToHeight(
+                int(18 * _dpr), Qt.TransformationMode.SmoothTransformation)
+            _logo_pm.setDevicePixelRatio(_dpr)
+            _logo_lbl = QLabel()
+            _logo_lbl.setPixmap(_logo_pm)
+            header_row.addWidget(_logo_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
+        header_row.addStretch(1)
+        layout.addLayout(header_row)
 
-        self._setup_desc = QLabel(
-            tr("1. Sign up or sign in on terra-lab.ai to get your key")
-            + "\n"
-            + tr("2. Paste your key below to activate")
+        layout.addSpacing(14)
+
+        # --- Primary: one tap to sign in (browser handoff, no copy-paste) ---
+        self._connect_section = QWidget()
+        connect_layout = QVBoxLayout(self._connect_section)
+        connect_layout.setContentsMargins(0, 0, 0, 0)
+        connect_layout.setSpacing(6)
+
+        self._connect_btn = QPushButton(tr("Sign in / Sign up to start"))
+        self._connect_btn.setToolTip(
+            tr("Sign in via your browser to start using AI Segmentation"))
+        self._connect_btn.setMinimumHeight(38)
+        self._connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._connect_btn.setStyleSheet(_BTN_GREEN_AUTH)
+        self._connect_btn.clicked.connect(self._on_connect_clicked)
+        connect_layout.addWidget(self._connect_btn)
+
+        # "Unlimited free plan" (not "free forever"): keeps the promise honest
+        # once the paid AI Segmentation Pro tier ships alongside it.
+        connect_hint = QLabel(tr("Unlimited free plan, runs locally"))
+        connect_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        connect_hint.setWordWrap(True)
+        connect_hint.setStyleSheet("font-size: 11px; color: palette(text);")
+        connect_layout.addWidget(connect_hint)
+
+        layout.addWidget(self._connect_section)
+
+        # --- Waiting state: shown while the browser handoff is in progress ---
+        self._pairing_wait_section = QWidget()
+        wait_layout = QVBoxLayout(self._pairing_wait_section)
+        wait_layout.setContentsMargins(0, 4, 0, 0)
+        wait_layout.setSpacing(12)
+
+        status_row = QHBoxLayout()
+        status_row.setSpacing(8)
+        status_row.addStretch(1)
+        self._pairing_spinner = _Spinner(16)
+        status_row.addWidget(self._pairing_spinner, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._pairing_status = QLabel(tr("Waiting for you to sign in in your browser"))
+        self._pairing_status.setWordWrap(True)
+        self._pairing_status.setStyleSheet("font-size: 12px; color: palette(text);")
+        status_row.addWidget(self._pairing_status, 0, Qt.AlignmentFlag.AlignVCenter)
+        status_row.addStretch(1)
+        wait_layout.addLayout(status_row)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        self._pairing_reopen_btn = QPushButton(tr("Open again"))
+        self._pairing_reopen_btn.setToolTip(tr("Didn't open? Open the page again"))
+        self._pairing_reopen_btn.setMinimumHeight(28)
+        self._pairing_reopen_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._pairing_reopen_btn.setStyleSheet(_BTN_PAIR_NEUTRAL)
+        self._pairing_reopen_btn.clicked.connect(self._on_pairing_reopen_clicked)
+        btn_row.addWidget(self._pairing_reopen_btn)
+
+        self._pairing_cancel_btn = QPushButton(tr("Cancel"))
+        self._pairing_cancel_btn.setMinimumHeight(28)
+        self._pairing_cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._pairing_cancel_btn.setStyleSheet(_BTN_PAIR_CANCEL)
+        self._pairing_cancel_btn.clicked.connect(self._on_pairing_cancel_clicked)
+        btn_row.addWidget(self._pairing_cancel_btn)
+        wait_layout.addLayout(btn_row)
+
+        self._pairing_wait_section.setVisible(False)
+        layout.addWidget(self._pairing_wait_section)
+
+        # One timer rotates the spinner while waiting. Parented to the dock
+        # (segfault-safe) and stopped the moment the wait section hides.
+        self._pairing_anim_timer = QTimer(self)
+        self._pairing_anim_timer.setInterval(80)
+        self._pairing_anim_timer.timeout.connect(self._pairing_spinner.advance)
+        self._pending_pairing_code = ""
+
+        # --- Discreet fallback: a tiny underlined text button. Almost everyone
+        # uses the sign-in button; this only matters when the browser can't
+        # open or a key was handed out by an admin. Reveals the field on click.
+        self._paste_toggle = QPushButton(tr("Use an activation key"))
+        self._paste_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._paste_toggle.setStyleSheet(
+            "QPushButton { background: transparent; border: none;"
+            " color: palette(text); font-size: 11px; padding: 2px;"
+            " text-decoration: underline; }"
         )
-        self._setup_desc.setWordWrap(True)
-        self._setup_desc.setStyleSheet(
-            "QLabel {"
-            " background-color: rgba(128, 128, 128, 0.12);"
-            " border: 1px solid rgba(128, 128, 128, 0.25);"
-            " border-radius: 4px;"
-            " padding: 8px;"
-            " font-size: 10px;"
-            " color: palette(text);"
-            "}"
-        )
-        layout.addWidget(self._setup_desc)
+        self._paste_toggle.clicked.connect(self._toggle_paste_section)
+        # Added to the footer (bottom-left, aligned with Help) instead of
+        # here, so it reads as a last-resort escape hatch rather than a
+        # tempting second CTA under the sign-in button. Mirrors AI Edit.
 
-        layout.addSpacing(12)
+        self._paste_section = QWidget()
+        paste_layout = QVBoxLayout(self._paste_section)
+        paste_layout.setContentsMargins(0, 0, 0, 0)
+        paste_layout.setSpacing(6)
 
-        step1_label = QLabel(tr("1. Sign up / Sign in"))
-        step1_label.setStyleSheet(
-            "font-weight: bold; font-size: 12px; color: palette(text);")
-        layout.addWidget(step1_label)
-
-        sign_in_btn = QPushButton(tr("Get Your Key"))
-        sign_in_btn.setMinimumHeight(36)
-        sign_in_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        sign_in_btn.setStyleSheet(
-            "QPushButton { background-color: #2e7d32; color: white;"
-            " font-weight: bold; }"
-            "QPushButton:hover { background-color: #1b5e20; }"
-            "QPushButton:disabled { background-color: #b0bec5; }"
-        )
-        sign_in_btn.clicked.connect(self._on_panel_sign_in_clicked)
-        layout.addWidget(sign_in_btn)
-
-        hint_label = QLabel(tr("Free forever, runs locally"))
-        hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint_label.setWordWrap(True)
-        hint_label.setStyleSheet("font-size: 11px; color: palette(text);")
-        layout.addWidget(hint_label)
-
-        layout.addSpacing(8)
-
-        step2_label = QLabel(tr("2. Paste your activation key"))
+        step2_label = QLabel(tr("Paste your activation key"))
         step2_label.setStyleSheet(
             "font-weight: bold; font-size: 12px; color: palette(text);")
-        layout.addWidget(step2_label)
+        paste_layout.addWidget(step2_label)
 
         key_row = QHBoxLayout()
+        key_row.setSpacing(6)
         self.panel_key_input = QLineEdit()
         self.panel_key_input.setPlaceholderText("tl_...")
         self.panel_key_input.setMinimumHeight(28)
@@ -408,16 +633,15 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.panel_activate_button = QPushButton(tr("Activate"))
         self.panel_activate_button.setMinimumHeight(28)
+        self.panel_activate_button.setMinimumWidth(70)
         self.panel_activate_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.panel_activate_button.setStyleSheet(
-            "QPushButton { background-color: #1976d2; color: white;"
-            " font-weight: bold; }"
-            "QPushButton:hover { background-color: #1565c0; }"
-            "QPushButton:disabled { background-color: #b0bec5; }"
-        )
+        self.panel_activate_button.setStyleSheet(_BTN_BLUE_AUTH)
         self.panel_activate_button.clicked.connect(self._on_panel_activate_clicked)
         key_row.addWidget(self.panel_activate_button)
-        layout.addLayout(key_row)
+        paste_layout.addLayout(key_row)
+
+        self._paste_section.setVisible(False)
+        layout.addWidget(self._paste_section)
 
         self.activation_message_label = QLabel("")
         self.activation_message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -429,10 +653,56 @@ class AISegmentationDockWidget(QDockWidget):
         self.activation_group.setVisible(False)
         self.main_layout.addWidget(self.activation_group)
 
+    # --- One-click connect (browser pairing handoff) ----------------------
+
+    def _on_connect_clicked(self):
+        """Start the one-click browser handoff. Mints a high-entropy pairing
+        code; the plugin opens the browser and polls until it gets the key."""
+        import secrets
+        self._pending_pairing_code = secrets.token_urlsafe(32)
+        self.show_pairing_waiting()
+        self.pairing_requested.emit(self._pending_pairing_code)
+
+    def _on_pairing_reopen_clicked(self):
+        """Re-open the browser with the SAME code (do not mint a new one)."""
+        if self._pending_pairing_code:
+            self.pairing_requested.emit(self._pending_pairing_code)
+
+    def _on_pairing_cancel_clicked(self):
+        self.pairing_cancel_requested.emit(self._pending_pairing_code)
+        self._pending_pairing_code = ""
+        self.show_pairing_idle()
+
+    def _toggle_paste_section(self):
+        self._paste_section.setVisible(not self._paste_section.isVisible())
+        if self._paste_section.isVisible():
+            self.panel_key_input.setFocus()
+
+    def show_pairing_waiting(self):
+        """Switch the onboarding into the 'waiting for browser' state."""
+        self._connect_section.setVisible(False)
+        self._paste_toggle.setVisible(False)
+        self._paste_section.setVisible(False)
+        self.activation_message_label.setVisible(False)
+        self._pairing_wait_section.setVisible(True)
+        self._pairing_anim_timer.start()
+
+    def _stop_pairing_wait(self):
+        """Hide the waiting section and stop its animation timer."""
+        self._pairing_anim_timer.stop()
+        self._pairing_wait_section.setVisible(False)
+
+    def show_pairing_idle(self):
+        """Return to the idle onboarding (Connect button visible)."""
+        self._stop_pairing_wait()
+        self._connect_section.setVisible(True)
+        self._paste_toggle.setVisible(True)
+
     def _setup_segmentation_section(self):
         self.seg_widget = QWidget()
         layout = QVBoxLayout(self.seg_widget)
         layout.setContentsMargins(0, 8, 0, 0)
+        layout.setSpacing(8)
 
         layer_label = QLabel(tr("Select a Raster Layer to Segment:"))
         layer_label.setStyleSheet("font-weight: bold; color: palette(text);")
@@ -548,11 +818,10 @@ class AISegmentationDockWidget(QDockWidget):
         self.start_button = QPushButton(tr("Start AI Segmentation"))
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._on_start_clicked)
-        self.start_button.setStyleSheet(
-            "QPushButton { background-color: #2e7d32; color: #000000; padding: 8px 16px; }"
-            "QPushButton:hover { background-color: #1b5e20; color: #000000; }"
-            "QPushButton:disabled { background-color: #c8e6c9; color: #666666; }"
-        )
+        self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Same prominence as AI Edit's "Launch AI Edit" button.
+        self.start_button.setMinimumHeight(36)
+        self.start_button.setStyleSheet(_BTN_GREEN)
         self.start_button.setToolTip(
             tr("Accept the Terms and Privacy Policy to enable segmentation.")
         )
@@ -573,11 +842,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.save_mask_button.clicked.connect(self._on_save_polygon_clicked)
         self.save_mask_button.setVisible(False)
         self.save_mask_button.setEnabled(False)
-        self.save_mask_button.setStyleSheet(
-            "QPushButton { background-color: #1976d2; color: #000000; padding: 6px 12px; }"
-            "QPushButton:hover { background-color: #1565c0; color: #000000; }"
-            "QPushButton:disabled { background-color: #b0bec5; color: #666666; }"
-        )
+        self.save_mask_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.save_mask_button.setMinimumHeight(34)
+        self.save_mask_button.setStyleSheet(_BTN_BLUE)
         self.save_mask_button.setToolTip(
             tr("Save current polygon to your session")
         )
@@ -587,11 +854,9 @@ class AISegmentationDockWidget(QDockWidget):
         self.export_button.clicked.connect(self._on_export_clicked)
         self.export_button.setVisible(False)
         self.export_button.setEnabled(False)
-        self.export_button.setStyleSheet(
-            "QPushButton { background-color: #b0bec5; color: #000000; padding: 6px 12px; }"
-            "QPushButton:hover { background-color: #90a4ae; color: #000000; }"
-            "QPushButton:disabled { background-color: #b0bec5; color: #666666; }"
-        )
+        self.export_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.export_button.setMinimumHeight(34)
+        self.export_button.setStyleSheet(_BTN_EXPORT_DISABLED)
         layout.addWidget(self.export_button)
 
         # Secondary action buttons (small, horizontal)
@@ -602,19 +867,15 @@ class AISegmentationDockWidget(QDockWidget):
         self.undo_button.setEnabled(False)
         self.undo_button.clicked.connect(self._on_undo_clicked)
         self.undo_button.setVisible(False)  # Hidden until segmentation starts
-        self.undo_button.setStyleSheet(
-            "QPushButton { background-color: #757575; color: #000000; padding: 4px 8px; }"
-            "QPushButton:hover { background-color: #616161; color: #000000; }"
-        )
+        self.undo_button.setMinimumHeight(30)
+        self.undo_button.setStyleSheet(_BTN_GRAY)
         secondary_layout.addWidget(self.undo_button, 1)  # stretch factor 1
 
         self.stop_button = QPushButton(tr("Stop segmentation"))
         self.stop_button.clicked.connect(self._on_stop_clicked)
         self.stop_button.setVisible(False)  # Hidden until segmentation starts
-        self.stop_button.setStyleSheet(
-            "QPushButton { background-color: #757575; color: #000000; padding: 4px 8px; }"
-            "QPushButton:hover { background-color: #616161; color: #000000; }"
-        )
+        self.stop_button.setMinimumHeight(30)
+        self.stop_button.setStyleSheet(_BTN_GRAY)
         secondary_layout.addWidget(self.stop_button, 1)  # stretch factor 1 for same width
 
         self.secondary_buttons_widget = QWidget()
@@ -683,7 +944,9 @@ class AISegmentationDockWidget(QDockWidget):
         _painter.end()
         # Save to temp files for the stylesheet
         import tempfile
-        _dir = tempfile.mkdtemp(prefix="qgis_ai_seg_")
+        # Kept on the instance so cleanup_signals can delete it on unload
+        self._checkbox_icon_dir = tempfile.mkdtemp(prefix="qgis_ai_seg_")
+        _dir = self._checkbox_icon_dir
         _path_off = os.path.join(_dir, "cb_off.png").replace("\\", "/")
         _path_on = os.path.join(_dir, "cb_on.png").replace("\\", "/")
         _pm_off.save(_path_off, "PNG")
@@ -721,7 +984,7 @@ class AISegmentationDockWidget(QDockWidget):
         outline_label = QLabel(tr("Outline").upper())
         outline_label.setStyleSheet(
             "font-size: 10px; color: palette(text); font-weight: bold; "
-            "background: transparent; border: none; border-bottom: 1px solid palette(mid); "
+            "background: transparent; border: none; border-bottom: 1px solid rgba(128, 128, 128, 0.35); "
             "padding: 8px 0px 4px 0px; margin-bottom: 4px; letter-spacing: 1px;")
         refine_content_layout.addWidget(outline_label)
 
@@ -757,7 +1020,7 @@ class AISegmentationDockWidget(QDockWidget):
         selection_label = QLabel(tr("Selection").upper())
         selection_label.setStyleSheet(
             "font-size: 10px; color: palette(text); font-weight: bold; "
-            "background: transparent; border: none; border-bottom: 1px solid palette(mid); "
+            "background: transparent; border: none; border-bottom: 1px solid rgba(128, 128, 128, 0.35); "
             "padding: 14px 0px 4px 0px; margin-bottom: 4px; letter-spacing: 1px;")
         refine_content_layout.addWidget(selection_label)
 
@@ -810,7 +1073,8 @@ class AISegmentationDockWidget(QDockWidget):
         """Toggle the refine panel expanded/collapsed state (only when clicking on title)."""
         # Only toggle if click is in the title area
         # This prevents collapsing when clicking spinbox arrows at min/max values
-        if event.pos().y() > _REFINE_COLLAPSED_HEIGHT:
+        pt = event.position().toPoint() if QT_VERSION >= 0x060000 else event.pos()
+        if pt.y() > _REFINE_COLLAPSED_HEIGHT:
             return  # Click was on content, not title - ignore
 
         self._refine_expanded = not self._refine_expanded
@@ -969,15 +1233,23 @@ class AISegmentationDockWidget(QDockWidget):
         footer_row.setContentsMargins(0, 4, 0, 4)
         footer_row.setSpacing(6)
 
+        # Signed-out only: the "Use an activation key" fallback sits at the
+        # bottom-left of the footer (aligned with Help), in the slot the
+        # cross-promo CTA takes once signed in. Mutually exclusive states.
+        footer_row.addWidget(self._paste_toggle, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._paste_toggle.setVisible(False)
+
         # Cross-promo CTA, pinned bottom-left (before the stretch) so it sits
         # beside the gear/help icons without crowding them (#30). Always opens
         # the AI Edit product page in the browser.
         from .cross_plugin_discovery import open_ai_edit_page
         self._ai_edit_btn = _FooterIconButton(footer_widget)
-        # 🍌 is AI Edit's brand glyph — prepended as a decorative icon (like the
-        # gear/help glyphs) and kept out of the translatable string.
-        self._ai_edit_btn.setText("🍌 " + tr("Try full automatic segmentation"))
-        self._ai_edit_btn.setToolTip(tr("Opens AI Edit"))
+        # Decorative glyph kept out of the translatable string. The copy sells
+        # AI Edit's own promise (transform imagery) and deliberately stays off
+        # AI Segmentation Pro's turf (no segmentation/vectorization wording).
+        self._ai_edit_btn.setText("🍌 " + tr("Edit this map with AI"))
+        self._ai_edit_btn.setToolTip(tr(
+            "Transform imagery with AI Edit: remove clouds, add vegetation, change seasons"))
         self._ai_edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._ai_edit_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._ai_edit_btn.setStyleSheet(_FOOTER_CTA_BTN_STYLE)
@@ -998,21 +1270,27 @@ class AISegmentationDockWidget(QDockWidget):
 
         self._help_btn = _FooterIconButton(footer_widget)
         self._help_btn.setText("?")
-        self._help_btn.setToolTip(tr("Help"))
+        self._help_btn.setToolTip(tr("Help / Report a problem"))
         self._help_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._help_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._help_btn.setStyleSheet(_FOOTER_ICON_BTN_STYLE)
+        self._help_btn.setStyleSheet(_HELP_ICON_BTN_STYLE)
         self._help_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         help_menu = QMenu(self._help_btn)
         help_menu.setStyleSheet(_FOOTER_MENU_STYLE)
         help_menu.addAction(tr("Tutorial"), self._on_open_tutorial)
         help_menu.addAction(tr("Shortcuts"), self._on_show_shortcuts)
         help_menu.addAction(tr("Contact us"), self._on_contact_us)
+        help_menu.addAction(tr("Report a problem"), self._on_report_problem)
         self._help_btn.setMenu(help_menu)
         # Force the hover tint off when the popup closes — Qt does not
-        # synthesise a Leave event in this case.
+        # synthesise a Leave event in this case. The green active tint stays
+        # lit while the menu is open (mirrors AI Edit's footer buttons).
+        help_menu.aboutToShow.connect(
+            lambda btn=self._help_btn: btn.set_active(True)
+        )
         help_menu.aboutToHide.connect(
-            lambda btn=self._help_btn: (btn.setDown(False), btn.set_hovered(False))
+            lambda btn=self._help_btn: (
+                btn.setDown(False), btn.set_hovered(False), btn.set_active(False))
         )
         footer_row.addWidget(self._help_btn)
 
@@ -1023,6 +1301,17 @@ class AISegmentationDockWidget(QDockWidget):
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
         QDesktopServices.openUrl(QUrl(get_tutorial_url()))
+
+    def _on_report_problem(self, _link=None):
+        """User-initiated report: open the log-report dialog (collects the
+        session logs and pre-fills the support email)."""
+        from .error_report_dialog import show_error_report
+        show_error_report(
+            self,
+            tr("Report a problem"),
+            "",
+            error_code="user_reported",
+        )
 
     def _on_show_shortcuts(self):
         """Show keyboard shortcuts in a dialog."""
@@ -1134,32 +1423,35 @@ class AISegmentationDockWidget(QDockWidget):
 
         dlg.exec()
 
-    def _on_panel_sign_in_clicked(self):
-        """Open TerraLab sign-up page (button label is 'Create account')."""
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
-        QDesktopServices.openUrl(QUrl(get_sign_up_url()))
-
     def _on_panel_activate_clicked(self):
-        """Validate the pasted activation key."""
+        """Validate the pasted activation key off the UI thread."""
         key = self.panel_key_input.text().strip()
         if not key:
             self._show_activation_message(
                 tr("Please enter your activation key."), is_error=True)
             return
+        if self._key_validate_worker is not None and self._key_validate_worker.isRunning():
+            return
 
         self.panel_activate_button.setEnabled(False)
         self.panel_activate_button.setText(tr("Checking..."))
 
-        success, msg = validate_key_with_server(key)
+        from .background_workers import KeyValidateWorker
+        self._key_validate_worker = KeyValidateWorker(key)
+        self._key_validate_worker.finished.connect(self._on_key_validated)
+        self._key_validate_worker.start()
 
+    def _on_key_validated(self, success: bool, msg: str, key: str):
         self.panel_activate_button.setText(tr("Activate"))
         self.panel_activate_button.setEnabled(True)
 
         if success:
-            self._plugin_activated = True
+            # Persist here (main thread): QgsAuthManager writes must never
+            # happen on the validation worker thread.
+            from ..core.activation_manager import save_auth_token
+            save_auth_token(key)
+            self.set_activated_state(True)
             self._show_activation_message(tr(msg), is_error=False)
-            self._update_full_ui()
             # Telemetry fires only after Terms + Privacy are accepted at first
             # segmentation (see _on_tos_toggled). Activation alone is not
             # consent.
@@ -1176,6 +1468,24 @@ class AISegmentationDockWidget(QDockWidget):
                 pass  # nosec B110
         else:
             self._show_activation_message(tr(msg), is_error=True)
+
+    def set_activated_state(self, activated: bool):
+        """Flip the signed-in state and refresh every dependent section."""
+        self._plugin_activated = activated
+        if activated:
+            # A stale pairing spinner must never survive a successful activation.
+            self._stop_pairing_wait()
+            self._pending_pairing_code = ""
+        else:
+            self.show_pairing_idle()
+            self._paste_section.setVisible(False)
+            self.activation_message_label.setVisible(False)
+            self.panel_key_input.clear()
+        self._update_full_ui()
+
+    def set_activation_message(self, text: str, is_error: bool = False):
+        """Public alias used by the plugin's pairing handlers."""
+        self._show_activation_message(text, is_error)
 
     def _show_activation_message(self, text: str, is_error: bool = False):
         """Display a message in the activation section."""
@@ -1206,6 +1516,15 @@ class AISegmentationDockWidget(QDockWidget):
             self.welcome_widget.setVisible(False)
 
         self._settings_btn.setVisible(self._plugin_activated)
+
+        # Sign-in page: swap the cross-promo CTA for the discreet key
+        # fallback (bottom-left, aligned with Help), and make sure no
+        # session-only widget (batch tip) leaks onto it.
+        self._ai_edit_btn.setVisible(not show_activation)
+        self._paste_toggle.setVisible(
+            show_activation and not self._pairing_wait_section.isVisible())
+        if not show_segmentation:
+            self.batch_info_widget.setVisible(False)
 
         self._update_ui_state()
 
@@ -1321,7 +1640,7 @@ class AISegmentationDockWidget(QDockWidget):
                     "Install it, restart your computer, then click Retry.")
                 self.setup_status_label.setText(short_msg)
                 self.setup_status_label.setStyleSheet(
-                    "font-weight: bold; color: #c62828;")
+                    f"font-weight: bold; color: {ERROR_TEXT};")
                 self.setup_status_label.setVisible(True)
                 self.install_button.setText(tr("Retry"))
             else:
@@ -1549,15 +1868,10 @@ class AISegmentationDockWidget(QDockWidget):
 
         if count > 0:
             self.export_button.setEnabled(True)
-            self.export_button.setStyleSheet(
-                "QPushButton { background-color: #4CAF50; color: #000000; padding: 6px 12px; }"
-                "QPushButton:hover { background-color: #388E3C; color: #000000; }"
-            )
+            self.export_button.setStyleSheet(_BTN_EXPORT_READY)
         else:
             self.export_button.setEnabled(False)
-            self.export_button.setStyleSheet(
-                "QPushButton { background-color: #b0bec5; color: #666666; padding: 6px 12px; }"
-            )
+            self.export_button.setStyleSheet(_BTN_EXPORT_DISABLED)
 
     def set_point_count(self, positive: int, negative: int):
         self._positive_count = positive
@@ -1687,26 +2001,6 @@ class AISegmentationDockWidget(QDockWidget):
         can_start = deps_ok and checkpoint_ok and has_layer and activated and tos_ok
         self.start_button.setEnabled(can_start and not self._segmentation_active)
 
-    def show_activation_dialog(self):
-        """Show the activation dialog (popup). Only shown once per session."""
-        if self._activation_popup_shown:
-            return
-        from .activation_dialog import ActivationDialog
-
-        self._activation_popup_shown = True
-        dialog = ActivationDialog(self)
-        dialog.activated.connect(self._on_dialog_activated)
-        dialog.exec()
-
-        # If dialog was closed without activation, show the panel section
-        if not self._plugin_activated:
-            self._update_full_ui()
-
-    def _on_dialog_activated(self):
-        """Handle activation from dialog."""
-        self._plugin_activated = True
-        self._update_full_ui()
-
     def cleanup_signals(self):
         """Disconnect project signals and clean up shortcuts/timers on plugin reload."""
         try:
@@ -1751,6 +2045,25 @@ class AISegmentationDockWidget(QDockWidget):
             self._visibility_debounce_timer.timeout.disconnect()
         except (TypeError, RuntimeError, AttributeError):
             pass
+        try:
+            self._pairing_anim_timer.blockSignals(True)
+            self._pairing_anim_timer.stop()
+            self._pairing_anim_timer.timeout.disconnect()
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        # Let an in-flight manual key validation finish (short network call)
+        # so its QThread is never destroyed while running.
+        try:
+            if self._key_validate_worker is not None and self._key_validate_worker.isRunning():
+                self._key_validate_worker.finished.disconnect()
+                self._key_validate_worker.wait(3000)
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+        # Remove the temp dir holding the generated checkbox icons
+        if getattr(self, "_checkbox_icon_dir", None):
+            import shutil
+            shutil.rmtree(self._checkbox_icon_dir, ignore_errors=True)
+            self._checkbox_icon_dir = None
 
     def is_activated(self) -> bool:
         """Check if the plugin is activated."""
