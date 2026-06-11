@@ -1138,6 +1138,8 @@ class AISegmentationPlugin:
             if any(p in msg_lower for p in [
                 "ssl", "certificate verify", "sslerror",
                 "unable to get local issuer",
+                # uv (rustls) wording, no "ssl" substring anywhere
+                "invalid peer certificate", "unknownissuer",
             ]):
                 error_title = tr("SSL Certificate Error")
                 error_code = "ssl_certificate_error"

@@ -125,7 +125,10 @@ INSTALL_MARKER_FILE = os.path.join(CACHE_DIR, "install_in_progress")
 
 # Bump this when install logic changes significantly (e.g., --no-cache-dir,
 # new retry strategies) to force a dependency re-install on plugin update.
-_INSTALL_LOGIC_VERSION = "3"
+# v4: uv/rustls SSL errors ("invalid peer certificate") now trigger the
+#     system-certs / TLS-bypass retry cascade; re-run installs that failed
+#     silently behind corporate MITM proxies.
+_INSTALL_LOGIC_VERSION = "4"
 
 
 def _compute_deps_hash() -> str:
@@ -1754,37 +1757,39 @@ def install_dependencies(
                                 cancel_check=cancel_check,
                             )
 
-                        # If still failing with SSL error (or pip), bypass TLS verification
+                        # If still failing, bypass TLS verification. The
+                        # original error was SSL, so proceed regardless of
+                        # what the --system-certs retry printed (an older uv
+                        # without that flag fails with a usage error that no
+                        # SSL pattern matches).
                         if result.returncode != 0:
-                            retry_output = result.stderr or result.stdout or ""
-                            if _is_ssl_error(retry_output) or not _uv_available:
-                                _log(
-                                    "SSL error persists, retrying with TLS verification bypass...",
-                                    Qgis.MessageLevel.Warning
+                            _log(
+                                "SSL error persists, retrying with TLS verification bypass...",
+                                Qgis.MessageLevel.Warning
+                            )
+                            if progress_callback:
+                                progress_callback(
+                                    pkg_start,
+                                    f"SSL bypass retry for {package_name}... ({i + 1}/{total_packages})"
                                 )
-                                if progress_callback:
-                                    progress_callback(
-                                        pkg_start,
-                                        f"SSL bypass retry for {package_name}... ({i + 1}/{total_packages})"
-                                    )
-                                # Build a new command with SSL bypass flags injected.
-                                # For uv: --trusted-host → --allow-insecure-host (via _build_install_cmd)
-                                # For pip: --trusted-host directly
-                                ssl_bypass_pip_args = list(pip_args) + _get_pip_ssl_bypass_flags()
-                                ssl_cmd_bypass = _build_install_cmd(python_path, ssl_bypass_pip_args)
-                                result = _run_pip_install(
-                                    cmd=ssl_cmd_bypass,
-                                    timeout=pkg_timeout,
-                                    env=env,
-                                    subprocess_kwargs=subprocess_kwargs,
-                                    package_name=package_name,
-                                    package_index=i,
-                                    total_packages=total_packages,
-                                    progress_start=pkg_start,
-                                    progress_end=pkg_end,
-                                    progress_callback=progress_callback,
-                                    cancel_check=cancel_check,
-                                )
+                            # Build a new command with SSL bypass flags injected.
+                            # For uv: --trusted-host → --allow-insecure-host (via _build_install_cmd)
+                            # For pip: --trusted-host directly
+                            ssl_bypass_pip_args = list(pip_args) + _get_pip_ssl_bypass_flags()
+                            ssl_cmd_bypass = _build_install_cmd(python_path, ssl_bypass_pip_args)
+                            result = _run_pip_install(
+                                cmd=ssl_cmd_bypass,
+                                timeout=pkg_timeout,
+                                env=env,
+                                subprocess_kwargs=subprocess_kwargs,
+                                package_name=package_name,
+                                package_index=i,
+                                total_packages=total_packages,
+                                progress_start=pkg_start,
+                                progress_end=pkg_end,
+                                progress_callback=progress_callback,
+                                cancel_check=cancel_check,
+                            )
 
                 # If failed, check for hash mismatch (corrupted cache) and retry
                 if result.returncode != 0 and not _is_windows_process_crash(result.returncode):

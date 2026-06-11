@@ -22,6 +22,12 @@ _SSL_ERROR_PATTERNS = [
     "tlsv1 alert",
     "unable to get local issuer certificate",
     "self signed certificate in certificate chain",
+    # uv is written in Rust: its TLS errors come from rustls, not OpenSSL,
+    # so none of the patterns above match them. Seen behind corporate
+    # MITM proxies: "invalid peer certificate: UnknownIssuer".
+    "invalid peer certificate",
+    "unknownissuer",
+    "self-signed certificate",
 ]
 
 
