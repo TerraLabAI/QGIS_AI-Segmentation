@@ -410,10 +410,14 @@ def show_error_report(parent, error_title: str, error_message: str, error_code: 
         stage = _infer_stage(error_title, error_message)
         first_line = (error_message or "").splitlines()[0] if error_message else ""
         code = error_code or _short_code(error_title)
+        # Install/download logs are pip and download output (no user
+        # geodata, paths and coords scrubbed anyway); the tail is what
+        # turns a useless "network error" event into a diagnosable one.
         track_plugin_error(
             stage=stage,
             error_code=code,
             message=first_line,
+            include_log_tail=stage in ("install", "download"),
         )
     except Exception:
         pass  # nosec B110

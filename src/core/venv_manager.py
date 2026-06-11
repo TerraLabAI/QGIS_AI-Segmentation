@@ -1946,8 +1946,10 @@ def install_dependencies(
                 install_error_msg = f"Error installing {package_name}: {str(e)[:200]}"
 
             if install_failed:
-                # Log detailed pip output for debugging
-                _log(f"pip error output: {install_error_msg[:500]}", Qgis.MessageLevel.Critical)
+                # Log the END of pip output: that is where the real error is.
+                # This line lands in the log buffer that error telemetry and
+                # the "copy logs" button read, so keep it informative.
+                _log(f"pip error output (tail): {install_error_msg[-1000:]}", Qgis.MessageLevel.Critical)
 
                 # Check for Windows process crash
                 if last_returncode is not None and _is_windows_process_crash(last_returncode):
@@ -2121,11 +2123,36 @@ def _get_qgis_proxy_settings() -> str | None:
         return None
 
 
+def _get_system_proxy_settings() -> str | None:
+    """Fall back to the OS-level proxy (Windows registry, macOS network
+    settings, HTTP(S)_PROXY env vars) when no proxy is set in QGIS.
+
+    Corporate machines often have a system proxy that browsers and QGIS
+    use implicitly, while our pip/uv subprocesses get a clean environment
+    and fail with a network error unless we pass it explicitly.
+    """
+    try:
+        import urllib.request
+
+        proxies = urllib.request.getproxies()
+        proxy_url = proxies.get("https") or proxies.get("http")
+        if proxy_url and proxy_url.lower().startswith(("http://", "https://")):
+            return proxy_url
+    except Exception as e:
+        _log(f"Could not read system proxy settings: {e}", Qgis.MessageLevel.Warning)
+    return None
+
+
+def _get_effective_proxy_url() -> str | None:
+    """QGIS-configured proxy first, then the OS system proxy."""
+    return _get_qgis_proxy_settings() or _get_system_proxy_settings()
+
+
 def _get_pip_proxy_args() -> list[str]:
-    """Get pip --proxy argument if QGIS proxy is configured."""
-    proxy_url = _get_qgis_proxy_settings()
+    """Get pip --proxy argument if a QGIS or system proxy is configured."""
+    proxy_url = _get_effective_proxy_url()
     if proxy_url:
-        _log("Using QGIS proxy for pip: {}".format(
+        _log("Using proxy for pip: {}".format(
             proxy_url.split("@")[-1] if "@" in proxy_url else proxy_url),
             Qgis.MessageLevel.Info
         )
@@ -2157,8 +2184,8 @@ def _get_clean_env_for_venv() -> dict:
     # (uv default is 3).
     env.setdefault("UV_HTTP_RETRIES", "5")
 
-    # Propagate QGIS proxy settings to environment for pip/network calls
-    proxy_url = _get_qgis_proxy_settings()
+    # Propagate QGIS or system proxy settings to environment for pip/uv
+    proxy_url = _get_effective_proxy_url()
     if proxy_url:
         env.setdefault("HTTP_PROXY", proxy_url)
         env.setdefault("HTTPS_PROXY", proxy_url)

@@ -746,11 +746,11 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     </message>
     <message>
         <source>Network Connection Problem</source>
-        <translation>Probleme de connexion reseau</translation>
+        <translation>Problème de connexion réseau</translation>
     </message>
     <message>
         <source>Your connection appears unstable or blocked. Check: (1) your internet is working, (2) QGIS > Settings > Options > Network has a proxy configured if you are on a corporate network, (3) your firewall allows connections to pypi.org and files.pythonhosted.org.</source>
-        <translation>Votre connexion semble instable ou bloquee. Verifiez : (1) que votre Internet fonctionne, (2) que QGIS > Reglages > Options > Reseau contient un proxy si vous etes sur un reseau d entreprise, (3) que votre pare-feu autorise les connexions a pypi.org et files.pythonhosted.org.</translation>
+        <translation>Votre connexion semble instable ou bloquée. Vérifiez : (1) que votre Internet fonctionne, (2) que QGIS > Préférences > Options > Réseau contient un proxy si vous êtes sur un réseau d'entreprise, (3) que votre pare-feu autorise les connexions à pypi.org et files.pythonhosted.org.</translation>
     </message>
     <message>
         <source>Sign in to TerraLab</source>
