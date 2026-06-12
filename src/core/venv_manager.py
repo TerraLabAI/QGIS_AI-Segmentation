@@ -491,7 +491,17 @@ def ensure_venv_packages_available():
         _log(f"Venv site-packages not found: {site_packages}", Qgis.MessageLevel.Warning)
         return False
 
+    # Never mount an incomplete venv (interrupted or cancelled install):
+    # partial site-packages on sys.path breaks unrelated imports with DLL
+    # load errors (e.g. rasterio after a cancelled sam2 install).
     if site_packages not in sys.path:
+        is_complete, check_msg = _quick_check_packages()
+        if not is_complete:
+            _log(
+                f"Venv incomplete ({check_msg}), not adding to sys.path",
+                Qgis.MessageLevel.Warning,
+            )
+            return False
         sys.path.append(site_packages)
         _log(f"Added venv site-packages to sys.path: {site_packages}", Qgis.MessageLevel.Info)
 
@@ -2895,7 +2905,10 @@ def _create_venv_and_install(
     if venv_exists() and _venv_is_functional():
         _log("Virtual environment already exists", Qgis.MessageLevel.Info)
         if progress_callback:
-            progress_callback(18, "Virtual environment ready")
+            # Interrupted installs land here on retry: tell the user the
+            # previous progress is kept so cancelling does not feel fatal.
+            progress_callback(
+                18, "Resuming installation (already-installed packages are skipped)")
     else:
         if venv_exists():
             _log(

@@ -1178,13 +1178,21 @@ class AISegmentationPlugin:
             self._verify_worker.finished.connect(self._on_verify_finished)
             self._verify_worker.start()
         else:
+            msg_lower = message.lower() if message else ""
+
+            # User-initiated cancel is not an error: no report dialog, the
+            # status label already says "Installation cancelled" and the next
+            # Install click resumes (already-installed packages are skipped).
+            if "cancel" in msg_lower:
+                self.dock_widget.set_install_progress(100, "Cancelled")
+                return
+
             self.dock_widget.set_install_progress(100, "Failed")
             error_msg = message[:300] if message else tr("Unknown error")
             self.dock_widget.set_dependency_status(False, tr("Installation failed"))
 
             error_title = tr("Installation Failed")
             error_code = "installation_failed"
-            msg_lower = message.lower() if message else ""
             if any(p in msg_lower for p in [
                 "ssl", "certificate verify", "sslerror",
                 "unable to get local issuer",
