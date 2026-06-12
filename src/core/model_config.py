@@ -21,7 +21,8 @@ def _is_rosetta() -> bool:
     try:
         result = subprocess.run(  # nosec B603 B607
             ["sysctl", "-n", "sysctl.proc_translated"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=5,
         )
         return result.stdout.strip() == "1"
     except Exception:
@@ -69,6 +70,22 @@ else:
     CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
     # SHA256 hash for checkpoint verification (not a secret)
     CHECKPOINT_SHA256 = "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"  # noqa: S105, E501  # pragma: allowlist secret
+
+
+def macos_intel_unsupported_python() -> bool:
+    """True on Intel (x86_64) macOS whose Python has no torch wheel.
+
+    PyTorch's last Intel-mac release is 2.2.2, which ships cp38-cp312 wheels.
+    On Python 3.13+ no wheel exists, so the long download then fails with
+    "no matching distribution". Detect it up front to fail fast with a clear
+    message instead of after a multi-minute download attempt.
+
+    (Forcing an older standalone Python here would desync the in-process venv
+    imports from QGIS's own interpreter; that fix waits for the import
+    decoupling. Until then, this is a clean early stop.)
+    """
+    return _IS_MACOS_X86 and sys.version_info >= (3, 13)
+
 
 # Known-good torch versions for Windows DLL fallback.
 # Newer torch releases (2.10+) can fail with WinError 1114 / c10.dll

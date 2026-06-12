@@ -1,4 +1,6 @@
 """Background QThread workers for dependency install, model download, and verification."""
+from __future__ import annotations
+
 
 from qgis.PyQt.QtCore import QThread, pyqtSignal
 
@@ -130,7 +132,7 @@ class KeyRevalidateWorker(QThread):
     clearing of a rejected key happens back on the main thread: settings and
     QgsAuthManager are never touched from this worker.
     """
-    finished = pyqtSignal(bool)  # (key_still_valid)
+    finished = pyqtSignal(bool, str)  # (key_still_valid, rejection_code)
 
     def __init__(self, auth: dict, parent=None):
         super().__init__(parent)
@@ -139,15 +141,19 @@ class KeyRevalidateWorker(QThread):
     def run(self):
         try:
             from ..api.terralab_client import TerraLabClient
-            from ..core.activation_manager import is_rejection_code
+            from ..core.activation_manager import is_device_limit_code, is_rejection_code
             result = TerraLabClient().get_usage(auth=self._auth)
-            if "error" in result and is_rejection_code(result.get("code", "")):
-                self.finished.emit(False)
+            code = result.get("code", "") if "error" in result else ""
+            if is_rejection_code(code) or is_device_limit_code(code):
+                # Device limit counts as invalid for THIS machine: its slot
+                # was taken while idle. The code lets the caller pick a
+                # "free a computer" message instead of "invalid key".
+                self.finished.emit(False, code)
                 return
-            self.finished.emit(True)
+            self.finished.emit(True, "")
         except Exception:
             # Benefit of the doubt: never sign the user out on a local error.
-            self.finished.emit(True)
+            self.finished.emit(True, "")
 
 
 class KeyValidateWorker(QThread):

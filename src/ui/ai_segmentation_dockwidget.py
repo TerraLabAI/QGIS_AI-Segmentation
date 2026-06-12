@@ -184,6 +184,28 @@ from ..core.model_config import _IS_MACOS_X86, USE_SAM2  # noqa: E402
 from ..core.venv_manager import CACHE_DIR  # noqa: E402
 
 
+def _activation_error_code(msg: str) -> str:
+    """Map a key-validation failure to a stable telemetry error_code.
+
+    The raw server/validation message is English source text (tr() is applied
+    only for display), so substring matching here is locale-stable. We never
+    send the message itself in activation_attempted, only this code."""
+    low = (msg or "").lower()
+    if "cannot reach server" in low or "internet" in low:
+        return "network_error"
+    if "invalid activation key" in low or "does not look like" in low:
+        return "invalid_key"
+    if "subscription inactive" in low:
+        return "subscription_inactive"
+    if "maximum number of computers" in low:
+        return "device_limit_exceeded"
+    if "different product" in low:
+        return "wrong_product"
+    if "please enter" in low:
+        return "empty_key"
+    return "validation_failed"
+
+
 class _FooterIconButton(QToolButton):
     """QToolButton whose hover tint is driven by an explicit ``hover``
     dynamic property rather than Qt's :hover pseudo-state.
@@ -588,6 +610,20 @@ class AISegmentationDockWidget(QDockWidget):
         btn_row.addWidget(self._pairing_cancel_btn)
         wait_layout.addLayout(btn_row)
 
+        # Escape hatch DURING the wait: if the browser never opened (blocked,
+        # no default browser, tab closed), the user would otherwise be stuck
+        # at the spinner until a 600 s timeout. This lets them switch to the
+        # manual key field in one click. Mirrors the idle-screen affordance.
+        self._pairing_use_key = QPushButton(tr("Have a key? Enter it manually"))
+        self._pairing_use_key.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._pairing_use_key.setStyleSheet(
+            "QPushButton { background: transparent; border: none;"
+            " color: palette(text); font-size: 11px; padding: 2px;"
+            " text-decoration: underline; }"
+        )
+        self._pairing_use_key.clicked.connect(self._on_pairing_use_key_clicked)
+        wait_layout.addWidget(self._pairing_use_key, 0, Qt.AlignmentFlag.AlignCenter)
+
         self._pairing_wait_section.setVisible(False)
         layout.addWidget(self._pairing_wait_section)
 
@@ -597,6 +633,11 @@ class AISegmentationDockWidget(QDockWidget):
         self._pairing_anim_timer.setInterval(80)
         self._pairing_anim_timer.timeout.connect(self._pairing_spinner.advance)
         self._pending_pairing_code = ""
+        # Explicit pairing state. _update_full_ui() must key off this, NOT off
+        # the wait section's visibility, which races UI refreshes and could
+        # leave the "Use an activation key" escape hatch hidden on the idle
+        # screen (the activation dead-end users reported).
+        self._pairing_active = False
 
         # --- Discreet fallback: a tiny underlined text button. Almost everyone
         # uses the sign-in button; this only matters when the browser can't
@@ -673,6 +714,14 @@ class AISegmentationDockWidget(QDockWidget):
         self._pending_pairing_code = ""
         self.show_pairing_idle()
 
+    def _on_pairing_use_key_clicked(self):
+        """Escape hatch from the waiting state: cancel the server-side poll
+        and open the manual key field. For machines where the browser cannot
+        open or an admin handed out a key directly."""
+        self._on_pairing_cancel_clicked()
+        if not self._paste_section.isVisible():
+            self._toggle_paste_section()
+
     def _toggle_paste_section(self):
         self._paste_section.setVisible(not self._paste_section.isVisible())
         if self._paste_section.isVisible():
@@ -680,6 +729,8 @@ class AISegmentationDockWidget(QDockWidget):
 
     def show_pairing_waiting(self):
         """Switch the onboarding into the 'waiting for browser' state."""
+        self._pairing_active = True
+        self._pairing_status.setText(tr("Waiting for you to sign in in your browser"))
         self._connect_section.setVisible(False)
         self._paste_toggle.setVisible(False)
         self._paste_section.setVisible(False)
@@ -687,8 +738,23 @@ class AISegmentationDockWidget(QDockWidget):
         self._pairing_wait_section.setVisible(True)
         self._pairing_anim_timer.start()
 
+    def show_pairing_browser_seen(self):
+        """The server saw the browser reach /connect: reassure the user."""
+        if self._pairing_active:
+            self._pairing_status.setText(
+                tr("Browser page open. Finish signing in to connect."))
+
+    def show_pairing_stalled_hint(self):
+        """Long wait and the browser was never seen server-side: surface the
+        recovery paths instead of an endless spinner."""
+        if self._pairing_active:
+            self._pairing_status.setText(tr(
+                "Still waiting. If the page did not open or shows an error, "
+                "click Open again or enter your key manually."))
+
     def _stop_pairing_wait(self):
         """Hide the waiting section and stop its animation timer."""
+        self._pairing_active = False
         self._pairing_anim_timer.stop()
         self._pairing_wait_section.setVisible(False)
 
@@ -1435,6 +1501,9 @@ class AISegmentationDockWidget(QDockWidget):
 
         self.panel_activate_button.setEnabled(False)
         self.panel_activate_button.setText(tr("Checking..."))
+        # The line edit gives no feedback on returnPressed, so echo the state
+        # in the message label too (users pressing Enter saw nothing happen).
+        self._show_activation_message(tr("Checking your key..."), is_error=False)
 
         from .background_workers import KeyValidateWorker
         self._key_validate_worker = KeyValidateWorker(key)
@@ -1457,9 +1526,11 @@ class AISegmentationDockWidget(QDockWidget):
             # consent.
             try:
                 from ..core.telemetry import (
+                    track_activation_attempted,
                     track_plugin_activated,
                     track_plugin_opened,
                 )
+                track_activation_attempted(success=True)
                 track_plugin_activated()
                 if not getattr(self, "_plugin_opened_emitted", False):
                     if track_plugin_opened():
@@ -1468,6 +1539,15 @@ class AISegmentationDockWidget(QDockWidget):
                 pass  # nosec B110
         else:
             self._show_activation_message(tr(msg), is_error=True)
+            # activation_attempted runs pre-consent (no message field), so it
+            # fires even before ToS acceptance. error_code is a short machine
+            # id derived from the failure, never the raw server message.
+            try:
+                from ..core.telemetry import track_activation_attempted
+                track_activation_attempted(
+                    success=False, error_code=_activation_error_code(msg))
+            except Exception:
+                pass  # nosec B110
 
     def set_activated_state(self, activated: bool):
         """Flip the signed-in state and refresh every dependent section."""
@@ -1522,7 +1602,7 @@ class AISegmentationDockWidget(QDockWidget):
         # session-only widget (batch tip) leaks onto it.
         self._ai_edit_btn.setVisible(not show_activation)
         self._paste_toggle.setVisible(
-            show_activation and not self._pairing_wait_section.isVisible())
+            show_activation and not self._pairing_active)
         if not show_segmentation:
             self.batch_info_widget.setVisible(False)
 

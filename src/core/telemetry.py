@@ -1,9 +1,10 @@
 """Minimal telemetry for AI Segmentation plugin.
 
 Design principles (do not deviate):
-- Lifecycle events (plugin_opened, plugin_activated, segmentation_run) ship as
+- Lifecycle and funnel events (plugin_opened, plugin_activated, segmentation_run,
+  session_summary, and the install/download/export/Pro funnel events) ship as
   soon as the plugin is activated. Their payload carries only OS, plugin
-  version, QGIS version, success bool, and durations — no PII.
+  version, QGIS version, success bool, counts, and durations. No PII.
 - `plugin_error` is the only event still gated, because its scrubbed message
   field could carry path fragments. The gate is the existing ToS acceptance
   the user gives via the dock checkbox before their first segmentation
@@ -11,7 +12,13 @@ Design principles (do not deviate):
 - File paths are anonymized (<USER> placeholder) via error_report_dialog's
   _anonymize_paths before leaving the machine.
 - Errors in telemetry never affect plugin functionality (fail silently).
-- Non-blocking: POSTs run on a background QThread.
+- Non-blocking: POSTs run on a background QThread, with a single ~2s-backoff
+  retry inside the worker. A hard-offline session loses events (no disk queue).
+- Event names come from telemetry_events.py constants only, never raw strings.
+
+sample_rate semantics: an integer N means "1 in N kept". 1 means unsampled.
+Dashboards multiply counts by sample_rate. An event without sample_rate is
+uninterpretable, so segmentation_run ALWAYS sends it.
 """
 
 from __future__ import annotations
@@ -19,19 +26,31 @@ from __future__ import annotations
 import json
 import platform
 import sys
+import time
 
 from qgis.core import Qgis, QgsBlockingNetworkRequest
 from qgis.PyQt.QtCore import QByteArray, QThread, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
-_TIMEOUT_MS = 5_000
+from . import telemetry_events as ev
 
-# Lifecycle events without user-generated content. Ship without an explicit
-# consent flag so the funnel is observable.
+_TIMEOUT_MS = 5_000
+_RETRY_BACKOFF_S = 2.0
+
+# Lifecycle/funnel events without user-generated content. Ship without an
+# explicit consent flag so the funnel is observable.
 _NO_CONSENT_EVENTS = frozenset({
-    "plugin_opened",
-    "plugin_activated",
-    "segmentation_run",
+    ev.PLUGIN_OPENED,
+    ev.PLUGIN_ACTIVATED,
+    ev.ACTIVATION_ATTEMPTED,
+    ev.DEPENDENCIES_INSTALLED,
+    ev.MODEL_DOWNLOAD_COMPLETED,
+    ev.SEGMENTATION_RUN,
+    ev.SESSION_SUMMARY,
+    ev.EXPORT_COMPLETED,
+    ev.PRO_PANEL_VIEWED,
+    ev.SUBSCRIBE_LINK_CLICKED,
+    ev.TRIAL_EXHAUSTED_VIEWED,
 })
 
 
@@ -46,6 +65,7 @@ def _base_properties() -> dict:
         qgis_version = "unknown"
     return {
         "product_id": "ai-segmentation",
+        "source": "qgis_plugin",
         "plugin_version": _read_plugin_version(),
         "os": platform.system(),
         "os_version": platform.release(),
@@ -104,7 +124,11 @@ def _get_auth_header() -> dict | None:
 
 
 class _TelemetryWorker(QThread):
-    """Fire-and-forget single-event HTTP POST on a background thread."""
+    """Fire-and-forget single-event HTTP POST on a background thread.
+
+    One retry with a short backoff on transport failure. Never blocks the UI
+    thread, never raises into it.
+    """
 
     def __init__(self, url: str, headers: dict, payload: bytes):
         super().__init__()
@@ -112,18 +136,28 @@ class _TelemetryWorker(QThread):
         self._headers = headers
         self._payload = payload
 
+    def _post_once(self) -> bool:
+        req = QNetworkRequest(QUrl(self._url))
+        req.setRawHeader(b"Content-Type", b"application/json")
+        if hasattr(req, "setTransferTimeout"):
+            req.setTransferTimeout(_TIMEOUT_MS)
+        for k, v in self._headers.items():
+            req.setRawHeader(k.encode("utf-8"), v.encode("utf-8"))
+        blocker = QgsBlockingNetworkRequest()
+        err = blocker.post(req, QByteArray(self._payload))
+        return err == QgsBlockingNetworkRequest.ErrorCode.NoError
+
     def run(self):
         try:
-            req = QNetworkRequest(QUrl(self._url))
-            req.setRawHeader(b"Content-Type", b"application/json")
-            if hasattr(req, "setTransferTimeout"):
-                req.setTransferTimeout(_TIMEOUT_MS)
-            for k, v in self._headers.items():
-                req.setRawHeader(k.encode("utf-8"), v.encode("utf-8"))
-            blocker = QgsBlockingNetworkRequest()
-            blocker.post(req, QByteArray(self._payload))
+            if self._post_once():
+                return
         except Exception:
             pass  # nosec B110 — telemetry must never break the plugin
+        try:
+            time.sleep(_RETRY_BACKOFF_S)
+            self._post_once()
+        except Exception:
+            pass  # nosec B110
 
 
 _workers: list = []
@@ -143,8 +177,8 @@ def _on_worker_finished(worker: _TelemetryWorker):
 def _send(event: str, properties: dict | None = None) -> bool:
     """Build payload + ship. Returns True once the background worker has been queued.
 
-    Lifecycle events in `_NO_CONSENT_EVENTS` ship as long as the plugin is
-    activated; everything else additionally requires the user to have
+    Lifecycle/funnel events in `_NO_CONSENT_EVENTS` ship as long as the plugin
+    is activated; everything else additionally requires the user to have
     accepted the ToS (via the dock checkbox before first segmentation).
     """
     auth = _get_auth_header()
@@ -178,44 +212,137 @@ def _send(event: str, properties: dict | None = None) -> bool:
 def track_plugin_opened() -> bool:
     """Fire once per dock-open. Returns True only if the event was actually
     queued so callers can gate their 'emitted once' flag correctly."""
-    return _send("plugin_opened")
+    return _send(ev.PLUGIN_OPENED)
 
 
 def track_plugin_activated() -> bool:
     """Fire when the activation key is validated."""
-    return _send("plugin_activated")
+    return _send(ev.PLUGIN_ACTIVATED)
 
 
+def track_activation_attempted(success: bool, error_code: str | None = None) -> bool:
+    """Fire on every activation-key validation attempt (success and failure).
+
+    error_code is a short machine id on failure (never the raw server message)."""
+    props: dict = {"success": bool(success)}
+    if not success and error_code:
+        props["error_code"] = error_code
+    return _send(ev.ACTIVATION_ATTEMPTED, props)
+
+
+def track_dependencies_installed(duration_ms: int | None = None) -> bool:
+    """Fire after a successful dependency install. Failures emit plugin_error."""
+    return _send(
+        ev.DEPENDENCIES_INSTALLED,
+        {"success": True, "duration_ms": duration_ms},
+    )
+
+
+def track_model_download_completed(
+    duration_ms: int | None = None, model_id: str | None = None
+) -> bool:
+    """Fire after a successful model checkpoint download.
+
+    model_id is an abstract family id (e.g. "sam2"/"sam1"), never a file name."""
+    return _send(
+        ev.MODEL_DOWNLOAD_COMPLETED,
+        {"duration_ms": duration_ms, "model_id": model_id},
+    )
+
+
+# segmentation_run is sampled 1-in-N. session_summary (unsampled) carries the
+# exact totals, so per-run sampling never loses the headline numbers.
+_SEGMENTATION_SAMPLE_RATE = 10
 _segmentation_run_sent_this_session = False
 
 
-def track_segmentation_run(success: bool, duration_ms: int | None = None) -> bool:
-    """Fire when a segmentation run completes (success = saved polygon).
+def track_segmentation_run(
+    success: bool,
+    duration_ms: int | None = None,
+    error_code: str | None = None,
+    mode: str = "local",
+) -> bool:
+    """Fire when a segmentation run finishes.
 
-    Sampled 1-in-10: power users click hundreds of times per session, making
-    this single event the bulk of the whole telemetry volume. The
-    sample_rate property lets insights re-weight counts (sum of sample_rate);
-    success/duration distributions stay statistically valid.
+    success=True is a saved selection; success=False is a crop/encoding/
+    prediction failure mid-run (today those only surfaced as plugin_error).
 
-    The first run of each QGIS session is always sent (sample_rate: 1):
-    funnels and retention only ask "did this user segment at all", and pure
-    sampling would miss most light users entirely (3 runs = 27% chance of
-    appearing). One extra event per user session is negligible volume."""
+    Sampling: power users click hundreds of times per session, making the
+    success path the bulk of telemetry volume. The first success of a session
+    is always sent (sample_rate: 1) so light users still appear in funnels;
+    after that, 1-in-N with sample_rate set so dashboards re-weight. Failures
+    are rare and precious, so they are ALWAYS sent unsampled (sample_rate: 1)
+    regardless of the session counter.
+
+    sample_rate is ALWAYS present (an event without it is uninterpretable)."""
     global _segmentation_run_sent_this_session
     import random
 
-    if _segmentation_run_sent_this_session:
-        if random.random() >= 0.1:  # nosec B311 - sampling, not crypto
+    if not success:
+        sample_rate = 1
+    elif _segmentation_run_sent_this_session:
+        if random.random() >= (1.0 / _SEGMENTATION_SAMPLE_RATE):  # nosec B311 - sampling, not crypto
             return True
-        sample_rate = 10
+        sample_rate = _SEGMENTATION_SAMPLE_RATE
     else:
         _segmentation_run_sent_this_session = True
         sample_rate = 1
+
+    props: dict = {
+        "success": bool(success),
+        "duration_ms": duration_ms,
+        "sample_rate": sample_rate,
+        "mode": mode,
+    }
+    if not success and error_code:
+        props["error_code"] = error_code
+    return _send(ev.SEGMENTATION_RUN, props)
+
+
+def track_session_summary(
+    run_count: int,
+    success_count: int,
+    export_count: int,
+    session_duration_ms: int | None = None,
+) -> bool:
+    """Fire once on dock close / plugin unload. Unsampled exact totals.
+
+    Caller guards against double emission per session; a hard QGIS kill loses
+    this event, which is accepted."""
     return _send(
-        "segmentation_run",
-        {"success": bool(success), "duration_ms": duration_ms,
-         "sample_rate": sample_rate},
+        ev.SESSION_SUMMARY,
+        {
+            "run_count": int(run_count),
+            "success_count": int(success_count),
+            "export_count": int(export_count),
+            "session_duration_ms": session_duration_ms,
+        },
     )
+
+
+def track_export_completed(feature_count: int, format: str = "gpkg") -> bool:
+    """Fire after a successful vector export. format is "gpkg" or "shp"."""
+    return _send(
+        ev.EXPORT_COMPLETED,
+        {"format": format, "feature_count": int(feature_count)},
+    )
+
+
+def track_pro_panel_viewed() -> bool:
+    """Fire when the Pro upsell panel is first shown in a session.
+
+    Start of the Pro conversion funnel."""
+    return _send(ev.PRO_PANEL_VIEWED)
+
+
+def track_subscribe_link_clicked(source: str) -> bool:
+    """Fire on any upgrade/subscribe CTA click. source names the CTA location."""
+    return _send(ev.SUBSCRIBE_LINK_CLICKED, {"source": source})
+
+
+def track_trial_exhausted_viewed(is_free_tier: bool) -> bool:
+    """Fire when a quota/trial exhausted state is shown (Pro)."""
+    return _send(ev.TRIAL_EXHAUSTED_VIEWED, {"is_free_tier": bool(is_free_tier)})
 
 
 _COORD_PATTERN = None
@@ -264,7 +391,7 @@ def track_plugin_error(
     props = {
         "stage": stage,
         "error_code": error_code,
-        "message": _scrub_payload_value((message or "")[:500]),
+        "error_message": _scrub_payload_value((message or "")[:500]),
     }
     if include_log_tail:
         try:
@@ -276,4 +403,4 @@ def track_plugin_error(
             )
         except Exception:
             pass  # nosec B110
-    _send("plugin_error", props)
+    _send(ev.PLUGIN_ERROR, props)

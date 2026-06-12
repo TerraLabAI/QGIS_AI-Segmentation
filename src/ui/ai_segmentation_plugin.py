@@ -173,6 +173,15 @@ class AISegmentationPlugin:
         self._stopping_segmentation = False  # Flag to track if we're stopping programmatically
         self._exporting_in_progress = False  # Guard against double-click on export
 
+        # Session telemetry counters (exact totals while segmentation_run stays
+        # sampled). session_summary is emitted once on unload.
+        import time as _session_time
+        self._session_start_ts = _session_time.time()
+        self._session_run_count = 0
+        self._session_success_count = 0
+        self._session_export_count = 0
+        self._session_summary_sent = False
+
         # CRS transforms (canvas CRS <-> raster CRS), created when features load.
         # None when both CRS are the same (no transform needed).
         self._canvas_to_raster_xform: QgsCoordinateTransform | None = None
@@ -474,6 +483,9 @@ class AISegmentationPlugin:
         QTimer.singleShot(0, _apply)
 
     def unload(self):
+        # Emit the session summary before tearing anything down.
+        self._emit_session_summary()
+
         # 0. Remove keyboard shortcut filter
         try:
             if self._shortcut_filter is not None:
@@ -933,6 +945,9 @@ class AISegmentationPlugin:
 
         self.dock_widget.set_install_progress(0, "Preparing installation...")
 
+        import time as _time
+        self._deps_install_start_ts = _time.time()
+
         self.deps_install_worker = DepsInstallWorker()
         self.deps_install_worker.progress.connect(self._on_deps_install_progress)
         self.deps_install_worker.finished.connect(self._on_deps_install_finished)
@@ -966,13 +981,27 @@ class AISegmentationPlugin:
         self._key_revalidate_worker.finished.connect(self._on_key_revalidated)
         self._key_revalidate_worker.start()
 
-    def _on_key_revalidated(self, still_valid: bool):
+    def _on_key_revalidated(self, still_valid: bool, code: str = ""):
         if not self.dock_widget:
             return
         if not still_valid:
-            from ..core.activation_manager import clear_auth
+            from ..core.activation_manager import clear_auth, is_device_limit_code
             clear_auth()
             self.dock_widget.set_activated_state(False)
+            # Tell the user WHY they are back at the sign-in screen, instead of
+            # a silent return that reads as the plugin forgetting their login.
+            if is_device_limit_code(code):
+                # The key is fine; THIS machine lost its slot to the device
+                # cap. "Invalid session" wording would send users resetting
+                # passwords instead of freeing a computer.
+                message = tr(
+                    "This license is already in use on the maximum number of "
+                    "computers. Use one of your existing computers, or wait "
+                    "for an inactive one to free its slot."
+                )
+            else:
+                message = tr("Your session is no longer valid. Please sign in again.")
+            self.dock_widget.set_activation_message(message, is_error=True)
 
     # --- One-click connect (browser pairing handoff) ------------------------
 
@@ -1016,6 +1045,8 @@ class AISegmentationPlugin:
         self._pairing_worker.pairing_succeeded.connect(self._on_pairing_succeeded)
         self._pairing_worker.pairing_failed.connect(self._on_pairing_failed)
         self._pairing_worker.pairing_timeout.connect(self._on_pairing_timeout)
+        self._pairing_worker.pairing_browser_seen.connect(self._on_pairing_browser_seen)
+        self._pairing_worker.pairing_stalled.connect(self._on_pairing_stalled)
         QgsApplication.taskManager().addTask(self._pairing_worker)
         QgsMessageLog.logMessage(
             "Pairing started", "AI Segmentation", level=Qgis.MessageLevel.Info)
@@ -1025,6 +1056,12 @@ class AISegmentationPlugin:
         save_auth_token(key)
         if self.dock_widget:
             self.dock_widget.set_activated_state(True)
+        # Pairing hands over the key without any /usage call, so the machine
+        # is not registered yet. Revalidate in the background: it sends the
+        # device headers (registers this computer for the dashboard list) and
+        # enforces the device cap, signing back out with a clear message if
+        # the license is already on its maximum number of computers.
+        self._refresh_activation_async()
         # Bring QGIS back to front so the user sees the activated dock.
         try:
             mw = self.iface.mainWindow()
@@ -1050,11 +1087,23 @@ class AISegmentationPlugin:
             f"Pairing failed ({code})", "AI Segmentation",
             level=Qgis.MessageLevel.Warning)
 
+    def _on_pairing_browser_seen(self):
+        if self.dock_widget:
+            self.dock_widget.show_pairing_browser_seen()
+
+    def _on_pairing_stalled(self):
+        if self.dock_widget:
+            self.dock_widget.show_pairing_stalled_hint()
+        QgsMessageLog.logMessage(
+            "Pairing stalled: browser never reached /connect", "AI Segmentation",
+            level=Qgis.MessageLevel.Warning)
+
     def _on_pairing_timeout(self):
         if self.dock_widget:
             self.dock_widget.show_pairing_idle()
             self.dock_widget.set_activation_message(
-                tr("Sign-in timed out. Click Connect to try again."),
+                tr("Sign-in timed out. Click Connect to try again, "
+                   "or enter your key manually."),
                 is_error=True,
             )
         QgsMessageLog.logMessage(
@@ -1198,6 +1247,15 @@ class AISegmentationPlugin:
             return
         if is_valid:
             self.dock_widget.set_dependency_status(True, "✓ " + tr("Dependencies ready"))
+            try:
+                import time as _time
+                from ..core.telemetry import track_dependencies_installed
+                start_ts = getattr(self, "_deps_install_start_ts", None)
+                duration_ms = int((_time.time() - start_ts) * 1000) if start_ts else None
+                track_dependencies_installed(duration_ms=duration_ms)
+                self._deps_install_start_ts = None
+            except Exception:
+                pass  # nosec B110
             if message and not message.startswith("device_error"):
                 QgsMessageLog.logMessage(
                     f"Device info: {message}",
@@ -1250,6 +1308,8 @@ class AISegmentationPlugin:
             pass  # nosec B110
 
         self.dock_widget.set_install_progress(80, tr("Downloading AI model..."))
+        import time as _time
+        self._model_download_start_ts = _time.time()
         try:
             self.download_worker = DownloadWorker()
             self.download_worker.progress.connect(self._on_download_progress)
@@ -1275,6 +1335,19 @@ class AISegmentationPlugin:
             return
         if success:
             self.dock_widget.set_install_progress(95, tr("Loading AI model..."))
+            try:
+                import time as _time
+                from ..core.model_config import USE_SAM2
+                from ..core.telemetry import track_model_download_completed
+                start_ts = getattr(self, "_model_download_start_ts", None)
+                duration_ms = int((_time.time() - start_ts) * 1000) if start_ts else None
+                track_model_download_completed(
+                    duration_ms=duration_ms,
+                    model_id="sam2" if USE_SAM2 else "sam1",
+                )
+                self._model_download_start_ts = None
+            except Exception:
+                pass  # nosec B110
             self._load_predictor()
             self._refresh_activation_async()
         else:
@@ -1684,7 +1757,10 @@ class AISegmentationPlugin:
                 from ..core.telemetry import track_segmentation_run
                 start_ts = getattr(self, "_segmentation_start_ts", None)
                 duration_ms = int((_time.time() - start_ts) * 1000) if start_ts else None
-                track_segmentation_run(success=True, duration_ms=duration_ms)
+                self._session_run_count += 1
+                self._session_success_count += 1
+                track_segmentation_run(
+                    success=True, duration_ms=duration_ms, mode="local")
                 self._segmentation_start_ts = None
             except Exception:
                 pass  # nosec B110
@@ -1708,6 +1784,43 @@ class AISegmentationPlugin:
         self.dock_widget.set_point_count(0, 0)
 
         # Keep crop info so clicks in the same area reuse the encoding.
+
+    def _track_segmentation_failure(self, error_code: str):
+        """Emit an unsampled failed segmentation_run (crop/encoding failure).
+
+        Counts the attempt in the session totals so session_summary stays
+        consistent. Timing is reset so the next run starts clean."""
+        try:
+            import time as _time
+            from ..core.telemetry import track_segmentation_run
+            start_ts = getattr(self, "_segmentation_start_ts", None)
+            duration_ms = int((_time.time() - start_ts) * 1000) if start_ts else None
+            self._session_run_count += 1
+            track_segmentation_run(
+                success=False, duration_ms=duration_ms,
+                error_code=error_code, mode="local")
+            self._segmentation_start_ts = None
+        except Exception:
+            pass  # nosec B110
+
+    def _emit_session_summary(self):
+        """Emit the unsampled session_summary once, on dock close / unload."""
+        if getattr(self, "_session_summary_sent", False):
+            return
+        self._session_summary_sent = True
+        try:
+            import time as _time
+            from ..core.telemetry import track_session_summary
+            start_ts = getattr(self, "_session_start_ts", None)
+            session_ms = int((_time.time() - start_ts) * 1000) if start_ts else None
+            track_session_summary(
+                run_count=self._session_run_count,
+                success_count=self._session_success_count,
+                export_count=self._session_export_count,
+                session_duration_ms=session_ms,
+            )
+        except Exception:
+            pass  # nosec B110
 
     def _on_export_layer(self):
         """Export all saved polygons + current unsaved mask to a new layer."""
@@ -1969,11 +2082,12 @@ class AISegmentationPlugin:
         options.driverName = "GPKG"
         options.fileEncoding = "UTF-8"
 
-        error = QgsVectorFileWriter.writeAsVectorFormatV3(
+        from ..core.layer_conventions import write_vector_layer
+        error = write_vector_layer(
             temp_layer,
             gpkg_path,
+            options,
             QgsProject.instance().transformContext(),
-            options
         )
 
         if error[0] != QgsVectorFileWriter.WriterError.NoError:
@@ -2062,6 +2176,14 @@ class AISegmentationPlugin:
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )
+
+        try:
+            from ..core.telemetry import track_export_completed
+            self._session_export_count += 1
+            track_export_completed(
+                feature_count=len(features_to_add), format="gpkg")
+        except Exception:
+            pass  # nosec B110
 
         self._reset_session()
         self.dock_widget.reset_session()
@@ -2628,6 +2750,8 @@ class AISegmentationPlugin:
 
         if error:
             self._encoding_in_progress = False
+            self._track_segmentation_failure(
+                error_code_from_crop or "crop_error_unknown")
             QgsMessageLog.logMessage(
                 f"Crop extraction failed: {error}",
                 "AI Segmentation", level=Qgis.MessageLevel.Critical
@@ -2648,6 +2772,7 @@ class AISegmentationPlugin:
             self.predictor.set_image(image_np)
         except Exception as e:
             self._encoding_in_progress = False
+            self._track_segmentation_failure("encoding_error")
             QgsMessageLog.logMessage(
                 f"Image encoding failed: {str(e)}",
                 "AI Segmentation", level=Qgis.MessageLevel.Critical

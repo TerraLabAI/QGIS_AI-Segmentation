@@ -28,6 +28,17 @@ class PairingPollTask(QgsTask):
     pairing_succeeded = pyqtSignal(str)
     pairing_failed = pyqtSignal(str, str)
     pairing_timeout = pyqtSignal()
+    # The server marks the code 'pending' as soon as /connect renders, so we
+    # can tell "user is in the browser, signing in" from "the page never
+    # loaded" (browser blocked, page error, wrong machine). Emitted at most
+    # once each; older servers never report 'pending' before success, in
+    # which case only the stalled hint can fire and the flow is unchanged.
+    pairing_browser_seen = pyqtSignal()
+    pairing_stalled = pyqtSignal()
+
+    # How long to poll without ever seeing the browser before hinting the
+    # user that the page probably never opened.
+    STALL_AFTER_S = 45.0
 
     def __init__(
         self,
@@ -56,7 +67,10 @@ class PairingPollTask(QgsTask):
             return False
 
     def run(self) -> bool:
-        deadline = time.monotonic() + self._total_timeout_s
+        started = time.monotonic()
+        deadline = started + self._total_timeout_s
+        browser_seen = False
+        stall_hinted = False
         while not self.isCanceled() and time.monotonic() < deadline:
             try:
                 result = self._client.poll_pairing(self._code)
@@ -101,12 +115,27 @@ class PairingPollTask(QgsTask):
                 )
                 return False
 
-            # Everything else - "pending" (bound row not ready yet), "not_found"
-            # (the user hasn't reached /connect yet, or the code expired), and
-            # transient network/server errors - just means "keep waiting". The
-            # poll is idempotent, so we loop until ready or the overall deadline.
-            # Newer servers hint how long to wait; absent or junk falls back to
-            # the fixed interval so older servers behave unchanged.
+            # Everything else - "pending" (browser reached /connect, user still
+            # signing in), "not_found" (the browser never reached /connect, or
+            # the code expired), and transient network/server errors - just
+            # means "keep waiting". The poll is idempotent, so we loop until
+            # ready or the overall deadline. Newer servers hint how long to
+            # wait; absent or junk falls back to the fixed interval so older
+            # servers behave unchanged.
+            if status == "pending" and not browser_seen:
+                browser_seen = True
+                self.pairing_browser_seen.emit()
+            elif (
+                not browser_seen
+                and not stall_hinted
+                and time.monotonic() - started >= self.STALL_AFTER_S
+            ):
+                # Long wait and the server never saw the browser: the page
+                # probably never opened (blocked browser, page error). Hint
+                # the recovery paths instead of spinning silently.
+                stall_hinted = True
+                self.pairing_stalled.emit()
+
             sleep_s = self._interval_s
             hint = result.get("retry_after") if isinstance(result, dict) else None
             if hint is not None:
@@ -114,7 +143,11 @@ class PairingPollTask(QgsTask):
                     sleep_s = min(max(float(hint), 1.0), 15.0)
                 except (TypeError, ValueError):
                     pass
-            log("Pairing poll: waiting")
+            # Status detail makes user error reports diagnosable (pending =
+            # browser seen, not_found = browser never seen, NO_NETWORK = the
+            # poll itself failing). Never log the code itself.
+            detail = status or (result.get("code") if isinstance(result, dict) else None)
+            log(f"Pairing poll: waiting ({detail or 'unknown'})")
             self._sleep_cancellable(sleep_s)
 
         if self.isCanceled():

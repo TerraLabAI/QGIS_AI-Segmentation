@@ -4,6 +4,8 @@ Intercepts shortcuts (Space, Z, S, Enter, Esc, arrows) regardless of
 which widget has focus, solving the issue where dock widget updates
 steal keyboard focus from the map canvas.
 """
+from __future__ import annotations
+
 
 from qgis.core import QgsPointXY
 from qgis.PyQt.QtCore import QEvent, QObject, Qt

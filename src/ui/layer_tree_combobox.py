@@ -4,6 +4,8 @@ Reusable widget: shows visible raster layers grouped by their layer tree
 structure.  Non-selectable group headers provide visual hierarchy.
 Auto-refreshes on layer add/remove, visibility, and reorder.
 """
+from __future__ import annotations
+
 
 from qgis.core import QgsLayerTree, QgsProject
 from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
@@ -206,7 +208,7 @@ class LayerTreeComboBox(QComboBox):
 
     def _traverse(self, node, depth=0):
         """Recursively walk the layer tree and add items."""
-        from qgis.core import QgsApplication, QgsIconUtils
+        from qgis.core import QgsApplication
 
         visible_children = []
         for child in node.children():
@@ -237,7 +239,9 @@ class LayerTreeComboBox(QComboBox):
 
             elif QgsLayerTree.isLayer(child):
                 layer = child.layer()
-                layer_icon = QgsIconUtils.iconRaster()
+                # getThemeIcon works on all supported QGIS (3.0+), unlike
+                # QgsIconUtils.iconRaster() which only exists since 3.20.
+                layer_icon = QgsApplication.getThemeIcon("/mIconRaster.svg")
                 self.addItem(layer_icon, layer.name(), layer.id())
                 idx = self.count() - 1
                 item = self.model().item(idx)

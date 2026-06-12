@@ -378,9 +378,10 @@ class SegmentationMCPAPI:
             options = QgsVectorFileWriter.SaveVectorOptions()
             options.driverName = "GPKG"
             options.fileEncoding = "UTF-8"
-            error = QgsVectorFileWriter.writeAsVectorFormatV3(
-                temp_layer, gpkg_path,
-                QgsProject.instance().transformContext(), options
+            from .core.layer_conventions import write_vector_layer
+            error = write_vector_layer(
+                temp_layer, gpkg_path, options,
+                QgsProject.instance().transformContext(),
             )
             if error[0] != QgsVectorFileWriter.WriterError.NoError:
                 return {"_error": f"Failed to save GeoPackage: {error[1]}"}

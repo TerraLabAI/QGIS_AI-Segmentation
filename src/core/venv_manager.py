@@ -20,6 +20,15 @@ from .pip_diagnostics import (
     get_crash_help as _get_crash_help,
 )
 from .pip_diagnostics import (
+    get_disk_full_help as _get_disk_full_help,
+)
+from .pip_diagnostics import (
+    get_glibc_too_old_help as _get_glibc_too_old_help,
+)
+from .pip_diagnostics import (
+    get_macos_intel_help as _get_macos_intel_help,
+)
+from .pip_diagnostics import (
     get_file_locked_help as _get_file_locked_help,
 )
 from .pip_diagnostics import (
@@ -38,7 +47,16 @@ from .pip_diagnostics import (
     is_antivirus_error as _is_antivirus_error,
 )
 from .pip_diagnostics import (
+    is_disk_full as _is_disk_full,
+)
+from .pip_diagnostics import (
     is_dll_init_error as _is_dll_init_error,
+)
+from .pip_diagnostics import (
+    is_glibc_too_old as _is_glibc_too_old,
+)
+from .pip_diagnostics import (
+    is_macos_intel_no_wheel as _is_macos_intel_no_wheel,
 )
 from .pip_diagnostics import (
     is_file_locked_error as _is_file_locked_error,
@@ -68,7 +86,6 @@ from .subprocess_utils import get_clean_env_for_venv as _get_base_clean_env  # n
 from .uv_manager import (
     download_uv,
     get_uv_path,
-    remove_uv,
     uv_exists,
     verify_uv,
 )
@@ -128,7 +145,12 @@ INSTALL_MARKER_FILE = os.path.join(CACHE_DIR, "install_in_progress")
 # v4: uv/rustls SSL errors ("invalid peer certificate") now trigger the
 #     system-certs / TLS-bypass retry cascade; re-run installs that failed
 #     silently behind corporate MITM proxies.
-_INSTALL_LOGIC_VERSION = "4"
+# v5: single source of truth for the standalone Python version (fixes an
+#     infinite download/verify loop on QGIS Pythons outside 3.9-3.14),
+#     musl-Linux / Windows-ARM64 platform triples, utf-8 subprocess decoding
+#     with errors="replace", disk-full / glibc-too-old / Intel-mac classifiers,
+#     and keeping uv for installs when only `uv venv` (not the binary) failed.
+_INSTALL_LOGIC_VERSION = "5"
 
 
 def _compute_deps_hash() -> str:
@@ -145,7 +167,7 @@ def _compute_deps_hash() -> str:
 def _read_deps_hash() -> str | None:
     """Read stored deps hash from the venv directory."""
     try:
-        with open(DEPS_HASH_FILE, encoding="utf-8") as f:
+        with open(DEPS_HASH_FILE, encoding="utf-8", errors="replace") as f:
             return f.read().strip()
     except OSError:
         return None
@@ -157,7 +179,7 @@ def _write_deps_hash():
         hash_dir = os.path.dirname(DEPS_HASH_FILE)
         os.makedirs(hash_dir, exist_ok=True)
         tmp_path = DEPS_HASH_FILE + ".tmp"
-        with open(tmp_path, "w", encoding="utf-8") as f:
+        with open(tmp_path, "w", encoding="utf-8", errors="replace") as f:
             f.write(_compute_deps_hash())
         os.replace(tmp_path, DEPS_HASH_FILE)
     except OSError as e:
@@ -167,7 +189,7 @@ def _write_deps_hash():
 def _write_install_marker():
     """Record that an install of the current venv is in progress."""
     try:
-        with open(INSTALL_MARKER_FILE, "w", encoding="utf-8") as f:
+        with open(INSTALL_MARKER_FILE, "w", encoding="utf-8", errors="replace") as f:
             f.write(os.path.basename(VENV_DIR))
     except OSError as e:
         _log(f"Could not write install marker: {e}", Qgis.MessageLevel.Warning)
@@ -183,7 +205,7 @@ def _clear_install_marker():
 def _install_marker_present() -> bool:
     """True when a previous install of the current venv was interrupted by a crash."""
     try:
-        with open(INSTALL_MARKER_FILE, encoding="utf-8") as f:
+        with open(INSTALL_MARKER_FILE, encoding="utf-8", errors="replace") as f:
             return f.read().strip() == os.path.basename(VENV_DIR)
     except OSError:
         return False
@@ -273,7 +295,7 @@ def _check_gdal_available() -> tuple[bool, str]:
     try:
         result = subprocess.run(  # nosec B603 B607
             ["gdal-config", "--version"],
-            capture_output=True, text=True, encoding="utf-8", timeout=5
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5
         )
         if result.returncode == 0:
             return True, f"GDAL {result.stdout.strip()} found"
@@ -663,7 +685,7 @@ def _get_qgis_python() -> str | None:
 
         result = subprocess.run(  # nosec B603
             [python_path, "-c", "import sys; print(sys.version)"],
-            capture_output=True, text=True, encoding="utf-8", timeout=15,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
             env=env, startupinfo=startupinfo,
         )
         if result.returncode == 0:
@@ -809,7 +831,7 @@ def _venv_base_python_ok(venv_dir: str = None) -> tuple[bool, str]:
     cfg_path = os.path.join(venv_dir, "pyvenv.cfg")
     home = None
     try:
-        with open(cfg_path, encoding="utf-8") as f:
+        with open(cfg_path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 key, sep, value = line.partition("=")
                 if sep and key.strip().lower() == "home":
@@ -884,7 +906,7 @@ def create_venv(
 
             result = subprocess.run(  # nosec B603
                 uv_cmd,
-                capture_output=True, text=True, encoding="utf-8", timeout=120,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
                 env=env, **subprocess_kwargs,
             )
             if result.returncode == 0:
@@ -895,17 +917,23 @@ def create_venv(
             error_msg = result.stderr or result.stdout or ""
             _log(f"uv venv creation failed: {error_msg[:200]}", Qgis.MessageLevel.Warning)
             _cleanup_partial_venv(venv_dir)
-            # Fall through to standard venv creation
-            remove_uv()
-            _uv_available = False
-            _uv_path = None
-            _log("Falling back to python -m venv", Qgis.MessageLevel.Warning)
+            # `uv venv` failing does NOT mean uv is broken: it can stumble on a
+            # Python quirk (8.3 short paths, stripped ensurepip) while `uv pip`
+            # installs would work fine. Only discard uv if the binary itself is
+            # unusable; otherwise keep it for the faster installs and just
+            # create the venv with stdlib `python -m venv`.
+            if not verify_uv():  # verify_uv removes a broken binary itself
+                _uv_available = False
+                _uv_path = None
+                _log("uv binary unusable, falling back to pip for installs", Qgis.MessageLevel.Warning)
+            else:
+                _log("Keeping uv for installs; creating venv with python -m venv", Qgis.MessageLevel.Warning)
         except Exception as e:
             _log(f"uv venv exception: {e}, falling back to python -m venv", Qgis.MessageLevel.Warning)
             _cleanup_partial_venv(venv_dir)
-            remove_uv()
-            _uv_available = False
-            _uv_path = None
+            if not verify_uv():
+                _uv_available = False
+                _uv_path = None
 
     # Standard venv creation with python -m venv
     cmd = [system_python, "-m", "venv", venv_dir]
@@ -921,7 +949,7 @@ def create_venv(
             cmd,
             capture_output=True,
             text=True,
-            encoding="utf-8",
+            encoding="utf-8", errors="replace",
             timeout=300,
             env=env,
             **subprocess_kwargs,
@@ -940,7 +968,7 @@ def create_venv(
                 try:
                     ensurepip_result = subprocess.run(  # nosec B603
                         ensurepip_cmd,
-                        capture_output=True, text=True, encoding="utf-8", timeout=120,
+                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
                         env=env,
                         **({"startupinfo": startupinfo} if sys.platform == "win32" else {}),
                     )
@@ -986,7 +1014,7 @@ def create_venv(
             nopip_cmd = [system_python, "-m", "venv", "--without-pip", venv_dir]
             result2 = subprocess.run(  # nosec B603
                 nopip_cmd,
-                capture_output=True, text=True, encoding="utf-8", timeout=300,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300,
                 env=env, **subprocess_kwargs,
             )
             if result2.returncode == 0:
@@ -995,7 +1023,7 @@ def create_venv(
                 ensurepip_cmd = [python_in_venv, "-m", "ensurepip", "--upgrade"]
                 ep_result = subprocess.run(  # nosec B603
                     ensurepip_cmd,
-                    capture_output=True, text=True, encoding="utf-8", timeout=120,
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
                     env=env, **subprocess_kwargs,
                 )
                 if ep_result.returncode == 0:
@@ -1135,7 +1163,7 @@ def _repin_numpy(venv_dir: str):
         result = subprocess.run(  # nosec B603
             [python_path, "-c",
              "import numpy; print(numpy.__version__)"],
-            capture_output=True, text=True, encoding="utf-8", timeout=30,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             env=env, **subprocess_kwargs,
         )
         if result.returncode != 0:
@@ -1157,7 +1185,7 @@ def _repin_numpy(venv_dir: str):
             downgrade_cmd = _build_install_cmd(python_path, downgrade_args)
             downgrade_result = subprocess.run(  # nosec B603
                 downgrade_cmd,
-                capture_output=True, text=True, encoding="utf-8", timeout=120,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
                 env=env, **subprocess_kwargs,
             )
             if downgrade_result.returncode == 0:
@@ -1259,8 +1287,8 @@ def _run_pip_install(
     )
 
     try:
-        stdout_file = os.fdopen(stdout_fd, "w", encoding="utf-8")
-        stderr_file = os.fdopen(stderr_fd, "w", encoding="utf-8")
+        stdout_file = os.fdopen(stdout_fd, "w", encoding="utf-8", errors="replace")
+        stderr_file = os.fdopen(stderr_fd, "w", encoding="utf-8", errors="replace")
     except Exception:
         # If fdopen fails, close the raw fds, remove the temp files, re-raise
         try:
@@ -1285,7 +1313,7 @@ def _run_pip_install(
             stdout=stdout_file,
             stderr=stderr_file,
             text=True,
-            encoding="utf-8",
+            encoding="utf-8", errors="replace",
             env=env,
             **subprocess_kwargs,
         )
@@ -1463,7 +1491,7 @@ def install_dependencies(
             ]
             upgrade_result = subprocess.run(  # nosec B603
                 upgrade_cmd,
-                capture_output=True, text=True, encoding="utf-8", timeout=120,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
                 env=_get_clean_env_for_venv(),
                 **_get_subprocess_kwargs(),
             )
@@ -1511,7 +1539,7 @@ def install_dependencies(
         suffix=".txt", prefix="pip_constraints_", dir=CACHE_DIR
     )
     try:
-        with os.fdopen(constraints_fd, "w", encoding="utf-8") as f:
+        with os.fdopen(constraints_fd, "w", encoding="utf-8", errors="replace") as f:
             if sys.version_info >= (3, 13):
                 f.write("numpy<3.0.0\n")
             else:
@@ -1967,6 +1995,29 @@ def install_dependencies(
                     _log(_get_vcpp_help(), Qgis.MessageLevel.Warning)
                     return False, f"Failed to install {package_name}: {_get_vcpp_help()}"
 
+                # Check for a full disk BEFORE antivirus: a failed write from
+                # ENOSPC also surfaces as a permission/access error on Windows,
+                # which the antivirus classifier would misattribute.
+                if _is_disk_full(install_error_msg):
+                    _log(_get_disk_full_help(CACHE_DIR), Qgis.MessageLevel.Warning)
+                    return False, f"Failed to install {package_name}: not enough disk space"
+
+                # Linux distro too old for current PyTorch wheels (glibc < 2.28).
+                if _is_glibc_too_old(install_error_msg):
+                    _log(_get_glibc_too_old_help(), Qgis.MessageLevel.Warning)
+                    return False, (
+                        f"Failed to install {package_name}: your Linux distribution "
+                        "is too old for the current AI engine"
+                    )
+
+                # Intel mac with a Python newer than the last torch wheel (2.2.2).
+                if _is_macos_intel_no_wheel(install_error_msg):
+                    _log(_get_macos_intel_help(), Qgis.MessageLevel.Warning)
+                    return False, (
+                        f"Failed to install {package_name}: no compatible AI engine "
+                        "build for this Intel Mac and Python version"
+                    )
+
                 # Check for native-module file-lock errors FIRST: a .pyd/.dll/.so
                 # that cannot be removed because it is loaded in the running
                 # QGIS process. Fix is "restart QGIS", NOT antivirus exclusion
@@ -2280,7 +2331,7 @@ def verify_venv(
                 cmd,
                 capture_output=True,
                 text=True,
-                encoding="utf-8",
+                encoding="utf-8", errors="replace",
                 timeout=pkg_timeout,
                 env=env,
                 **subprocess_kwargs
@@ -2328,12 +2379,12 @@ def verify_venv(
                         subprocess.run(  # nosec B603
                             reinstall_cmd,
                             capture_output=True, text=True,
-                            encoding="utf-8", timeout=600,
+                            encoding="utf-8", errors="replace", timeout=600,
                             env=env, **subprocess_kwargs
                         )
                         result2 = subprocess.run(  # nosec B603
                             cmd, capture_output=True, text=True,
-                            encoding="utf-8", timeout=pkg_timeout,
+                            encoding="utf-8", errors="replace", timeout=pkg_timeout,
                             env=env, **subprocess_kwargs
                         )
                         if result2.returncode == 0:
@@ -2363,12 +2414,12 @@ def verify_venv(
                         subprocess.run(  # nosec B603
                             nuke_cmd,
                             capture_output=True, text=True,
-                            encoding="utf-8", timeout=600,
+                            encoding="utf-8", errors="replace", timeout=600,
                             env=env, **subprocess_kwargs
                         )
                         result3 = subprocess.run(  # nosec B603
                             cmd, capture_output=True, text=True,
-                            encoding="utf-8", timeout=pkg_timeout,
+                            encoding="utf-8", errors="replace", timeout=pkg_timeout,
                             env=env, **subprocess_kwargs
                         )
                         if result3.returncode == 0:
@@ -2403,12 +2454,12 @@ def verify_venv(
                             subprocess.run(  # nosec B603
                                 fallback_cmd,
                                 capture_output=True, text=True,
-                                encoding="utf-8", timeout=600,
+                                encoding="utf-8", errors="replace", timeout=600,
                                 env=env, **subprocess_kwargs
                             )
                             result4 = subprocess.run(  # nosec B603
                                 cmd, capture_output=True, text=True,
-                                encoding="utf-8", timeout=pkg_timeout,
+                                encoding="utf-8", errors="replace", timeout=pkg_timeout,
                                 env=env, **subprocess_kwargs
                             )
                             if result4.returncode == 0:
@@ -2459,7 +2510,7 @@ def verify_venv(
                             reinstall_cmd,
                             capture_output=True,
                             text=True,
-                            encoding="utf-8",
+                            encoding="utf-8", errors="replace",
                             timeout=300,
                             env=env,
                             **subprocess_kwargs
@@ -2472,7 +2523,7 @@ def verify_venv(
                             cmd,
                             capture_output=True,
                             text=True,
-                            encoding="utf-8",
+                            encoding="utf-8", errors="replace",
                             timeout=pkg_timeout,
                             env=env,
                             **subprocess_kwargs
@@ -2551,7 +2602,7 @@ def verify_venv(
                     cmd,
                     capture_output=True,
                     text=True,
-                    encoding="utf-8",
+                    encoding="utf-8", errors="replace",
                     timeout=pkg_timeout,
                     env=env,
                     **subprocess_kwargs
@@ -2640,6 +2691,15 @@ def create_venv_and_install(
     - 18-95%:  Install packages (~800MB)
     - 95-100%: Verify installation
     """
+    # Fail fast on platform/Python combinations that have no AI engine build,
+    # before spending minutes downloading a Python that cannot install torch.
+    from .model_config import macos_intel_unsupported_python
+    if macos_intel_unsupported_python():
+        from .pip_diagnostics import get_macos_intel_help
+        hint = get_macos_intel_help()
+        _log(hint, Qgis.MessageLevel.Critical)
+        return False, hint
+
     # Disk space pre-flight: torch and its dependencies need several GB.
     min_free_gb = 4.0
     try:
@@ -2700,7 +2760,7 @@ def _create_venv_and_install(
     try:
         os.makedirs(CACHE_DIR, exist_ok=True)
         test_file = os.path.join(CACHE_DIR, ".write_test")
-        with open(test_file, "w", encoding="utf-8") as f:
+        with open(test_file, "w", encoding="utf-8", errors="replace") as f:
             f.write("ok")
         os.remove(test_file)
     except OSError as e:
@@ -2919,6 +2979,18 @@ def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
             _log(f"Quick check: {package_name} not found at {pkg_dir}", Qgis.MessageLevel.Warning)
             return False, f"Package {package_name} not found"
 
+    # torch is the package most likely to be left half-deleted by an
+    # interrupted upgrade (its import dir survives but the metadata is gone).
+    # A present import dir with a missing dist-info/RECORD means a broken
+    # install that imports inconsistently; force a reinstall instead.
+    import glob as _glob
+    if any(name == "torch" for name, _spec in REQUIRED_PACKAGES):
+        records = _glob.glob(os.path.join(site_packages, "torch-*.dist-info", "RECORD"))
+        if not records:
+            _log("Quick check: torch present but its dist-info/RECORD is missing "
+                 "(half-deleted install)", Qgis.MessageLevel.Warning)
+            return False, "Package torch is incomplete (missing metadata)"
+
     _log(f"Quick check: all packages found in {site_packages}",
          Qgis.MessageLevel.Info)
     return True, "All packages found"
@@ -2987,7 +3059,7 @@ def get_venv_status() -> tuple[bool, str]:
                     probe = subprocess.run(  # nosec B603
                         [python_path, "-c", "import torch"],
                         capture_output=True, text=True,
-                        encoding="utf-8", timeout=60,
+                        encoding="utf-8", errors="replace", timeout=60,
                         env=env, **kwargs,
                     )
                     if probe.returncode != 0:

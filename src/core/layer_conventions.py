@@ -12,12 +12,33 @@ from __future__ import annotations
 import time
 
 from qgis.core import (
+    Qgis,
     QgsDistanceArea,
     QgsGeometry,
     QgsProject,
+    QgsVectorFileWriter,
     QgsVectorLayer,
     QgsWkbTypes,
 )
+
+
+def write_vector_layer(layer, file_path: str, options, transform_context=None):
+    """Write a layer to disk, picking the newest writer the QGIS version has.
+
+    writeAsVectorFormatV3 only exists since QGIS 3.20 (our current floor); on
+    any older build it falls back to writeAsVectorFormatV2, which has the same
+    leading (error_code, error_message) tuple shape. Keeping the branch means
+    the code stays correct if the minimum version is lowered further later.
+    Returns the writer's result tuple unchanged so callers keep reading
+    result[0] / result[1].
+    """
+    if transform_context is None:
+        transform_context = QgsProject.instance().transformContext()
+    if Qgis.QGIS_VERSION_INT >= 32000:
+        return QgsVectorFileWriter.writeAsVectorFormatV3(
+            layer, file_path, transform_context, options)
+    return QgsVectorFileWriter.writeAsVectorFormatV2(
+        layer, file_path, transform_context, options)
 
 
 def geodesic_area_m2(geom: QgsGeometry, crs) -> float:

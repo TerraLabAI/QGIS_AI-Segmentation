@@ -6,6 +6,7 @@ packages via pip or uv.
 """
 from __future__ import annotations
 
+import re
 import sys
 
 # ---------------------------------------------------------------------------
@@ -157,6 +158,134 @@ def is_proxy_auth_error(output: str) -> bool:
         "proxyerror",
     ]
     return any(p in output_lower for p in patterns)
+
+
+# ---------------------------------------------------------------------------
+# Disk-full errors (can happen mid-install, after the 4 GB preflight passed)
+# ---------------------------------------------------------------------------
+
+_DISK_FULL_PATTERNS = [
+    "no space left on device",
+    "errno 28",
+    "enospc",
+    "os error 28",                       # uv / Rust on POSIX
+    "not enough space on the disk",      # en (Windows)
+    "there is not enough space on the disk",
+    "espace disque insuffisant",         # fr
+    "espacio en disco insuficiente",     # es
+    "espaco em disco insuficiente",      # pt-BR (no cedilla, defensive)
+    "espaço em disco insuficiente",      # pt-BR
+]
+
+
+def is_disk_full(output: str) -> bool:
+    """Detect out-of-disk errors during install.
+
+    A 4 GB preflight runs before install, but torch + CUDA wheels can still
+    exhaust the disk mid-extract. Must be checked BEFORE is_antivirus_error:
+    a failed write from a full disk also surfaces as a permission/access
+    error on Windows, which the antivirus classifier would misattribute.
+    """
+    lower = output.lower()
+    return any(p in lower for p in _DISK_FULL_PATTERNS)
+
+
+def get_disk_full_help(cache_dir: str = "") -> str:
+    """Actionable help for a disk-full install failure."""
+    location = cache_dir or "~/.qgis_ai_segmentation"
+    return (
+        "Installation failed: your disk ran out of space.\n\n"
+        "The AI engine needs roughly 4 GB free during installation.\n"
+        "Please try:\n"
+        "  1. Free up disk space (empty the trash, remove large unused files)\n"
+        f"  2. The environment is installed under: {location}\n"
+        "  3. To install on another drive, set the AI_SEGMENTATION_CACHE_DIR\n"
+        "     environment variable to a folder on a disk with more space,\n"
+        "     then restart QGIS and try again"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Linux glibc-too-old errors (Ubuntu 18.04, CentOS 7, ...)
+# ---------------------------------------------------------------------------
+
+def is_glibc_too_old(output: str) -> bool:
+    """Detect a glibc older than what modern PyTorch wheels require.
+
+    Current torch wheels are manylinux_2_28: on older distros pip reports
+    "no matching distribution" and the loader complains about a missing
+    GLIBC_2.xx symbol. uv mentions the manylinux/glibc tag instead.
+    """
+    lower = output.lower()
+    if re.search(r"glibc_2\.\d+'? not found", lower):
+        return True
+    has_manylinux = "manylinux" in lower
+    has_no_match = (
+        # pip vocabulary
+        "no matching distribution" in lower
+        or "could not find a version" in lower
+        or "is not a supported wheel" in lower
+        # uv (rustls) vocabulary: it names the platform tag instead
+        or "no wheels" in lower
+        or "none of the wheels" in lower
+        or "matching platform tag" in lower
+        or "compatible with your platform" in lower
+        or "compatible with the current platform" in lower
+    )
+    if has_manylinux and has_no_match:
+        return True
+    return bool("requires a newer" in lower and "glibc" in lower)
+
+
+def get_glibc_too_old_help() -> str:
+    """Actionable help for a glibc-too-old Linux install failure."""
+    return (
+        "Installation failed: your Linux distribution is too old for the\n"
+        "current AI engine. PyTorch wheels now require a recent system\n"
+        "library (glibc 2.28+, i.e. Ubuntu 20.04 / Debian 10 / CentOS 8 or\n"
+        "newer).\n\n"
+        "Please try:\n"
+        "  1. Upgrade your distribution to a version released after 2019\n"
+        "  2. If you cannot upgrade, this plugin's AI engine is unfortunately\n"
+        "     not supported on this machine"
+    )
+
+
+# ---------------------------------------------------------------------------
+# macOS Intel: no torch wheel for newer Python
+# ---------------------------------------------------------------------------
+
+def is_macos_intel_no_wheel(output: str) -> bool:
+    """Detect 'no torch wheel' failures specific to Intel (x86_64) macOS.
+
+    PyTorch's last Intel-mac release is 2.2.2 (cp38-cp312). With a newer
+    Python (3.13+), no wheel exists and pip/uv report no matching
+    distribution while naming the macosx_x86_64 platform tag.
+    """
+    if sys.platform != "darwin":
+        return False
+    lower = output.lower()
+    mentions_torch = "torch" in lower
+    no_match = (
+        "no matching distribution" in lower
+        or "could not find a version" in lower
+    )
+    mentions_x86 = "macosx" in lower and ("x86_64" in lower or "x86-64" in lower)
+    return mentions_torch and no_match and mentions_x86
+
+
+def get_macos_intel_help() -> str:
+    """Actionable help for the Intel-mac unsupported-Python combination."""
+    return (
+        "Installation failed: no compatible AI engine build exists for this\n"
+        "combination of Intel Mac and Python version.\n\n"
+        "Intel (x86_64) Macs are supported only up to PyTorch 2.2.2, which\n"
+        "ships for Python 3.8 to 3.12. Your Python is newer than that.\n\n"
+        "Please try:\n"
+        "  1. Use a QGIS build bundling Python 3.12 or older, or\n"
+        "  2. On Apple Silicon, run the native (arm64) QGIS rather than the\n"
+        "     Intel build under Rosetta"
+    )
 
 
 # ---------------------------------------------------------------------------

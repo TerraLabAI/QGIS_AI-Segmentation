@@ -28,6 +28,7 @@ from .archive_utils import safe_extract_tar as _safe_extract_tar
 from .archive_utils import safe_extract_zip as _safe_extract_zip
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
+from .platform_detect import is_musl_linux, is_windows_arm64
 
 CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
 UV_DIR = os.path.join(CACHE_DIR, "uv")
@@ -59,10 +60,17 @@ def _get_uv_platform_info() -> tuple[str, str]:
             return ("aarch64-apple-darwin", ".tar.gz")
         return ("x86_64-apple-darwin", ".tar.gz")
     if system == "win32":
+        # Match python_manager: emulated x86_64 on ARM64 Windows (uv has
+        # native aarch64 builds, but we keep the whole toolchain on one arch
+        # so the venv and torch wheels stay consistent).
+        if is_windows_arm64():
+            _log("ARM64 Windows detected; using emulated x86_64 uv binary")
         return ("x86_64-pc-windows-msvc", ".zip")
+    # Linux: -musl loader on Alpine, -gnu elsewhere.
+    libc_suffix = "musl" if is_musl_linux() else "gnu"
     if machine in ("arm64", "aarch64"):
-        return ("aarch64-unknown-linux-gnu", ".tar.gz")
-    return ("x86_64-unknown-linux-gnu", ".tar.gz")
+        return (f"aarch64-unknown-linux-{libc_suffix}", ".tar.gz")
+    return (f"x86_64-unknown-linux-{libc_suffix}", ".tar.gz")
 
 
 def _get_uv_download_url() -> str:
@@ -231,7 +239,7 @@ def verify_uv() -> bool:
 
         result = subprocess.run(  # nosec B603
             [uv_path, "--version"],
-            capture_output=True, text=True, encoding="utf-8", timeout=15,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
             **kwargs,
         )
         if result.returncode == 0:

@@ -934,8 +934,16 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
         <translation>Não foi possível abrir o navegador. Use a opção de chave manual abaixo.</translation>
     </message>
     <message>
-        <source>Sign-in timed out. Click Connect to try again.</source>
-        <translation>Tempo de login esgotado. Clique em Conectar para tentar de novo.</translation>
+        <source>Sign-in timed out. Click Connect to try again, or enter your key manually.</source>
+        <translation>Tempo de login esgotado. Clique em Conectar para tentar de novo, ou insira sua chave manualmente.</translation>
+    </message>
+    <message>
+        <source>Browser page open. Finish signing in to connect.</source>
+        <translation>Página aberta no navegador. Conclua o login para conectar.</translation>
+    </message>
+    <message>
+        <source>Still waiting. If the page did not open or shows an error, click Open again or enter your key manually.</source>
+        <translation>Ainda aguardando. Se a página não abriu ou mostra um erro, clique em Abrir novamente ou insira sua chave manualmente.</translation>
     </message>
     <message>
         <source>Sign-in was cancelled in the browser. Click Connect to try again.</source>
@@ -998,6 +1006,22 @@ Após a instalação, reinicie o QGIS e tente novamente.</translation>
     <message>
         <source>Transform imagery with AI Edit: remove clouds, add vegetation, change seasons</source>
         <translation>Transforme as imagens com o AI Edit: remova nuvens, adicione vegetação, mude as estações</translation>
+    </message>
+    <message>
+        <source>Have a key? Enter it manually</source>
+        <translation>Tem uma chave? Insira-a manualmente</translation>
+    </message>
+    <message>
+        <source>Checking your key...</source>
+        <translation>Verificando sua chave...</translation>
+    </message>
+    <message>
+        <source>Your session is no longer valid. Please sign in again.</source>
+        <translation>Sua sessão não é mais válida. Faça login novamente.</translation>
+    </message>
+    <message>
+        <source>This license is already in use on the maximum number of computers. Use one of your existing computers, or wait for an inactive one to free its slot.</source>
+        <translation>Esta licença já está em uso no número máximo de computadores. Use um dos seus computadores existentes, ou aguarde um inativo liberar sua vaga.</translation>
     </message>
 </context>
 </TS>

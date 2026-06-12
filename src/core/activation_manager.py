@@ -124,16 +124,11 @@ def lock_tos():
     s.setValue(f"{SETTINGS_PREFIX}tos_accepted", True)
 
 
-def get_auth_header(settings=None) -> dict:
-    token = get_auth_token(settings)
-    if not token:
-        return {}
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "X-Product-ID": PRODUCT_ID,
-    }
-    # Anonymous per-machine hash so the server can apply the device limit.
-    # Best-effort: a hash failure must never strip auth.
+def _device_headers() -> dict:
+    """Anonymous per-machine headers so the server can apply the device limit
+    and list the machine on the account page. Best-effort: a hash failure
+    must never strip auth, so callers merge this and ignore emptiness."""
+    headers: dict = {}
     try:
         from .device_id import get_device_hash, get_device_platform
 
@@ -144,6 +139,24 @@ def get_auth_header(settings=None) -> dict:
     except Exception:  # nosec B110
         pass
     return headers
+
+
+def _auth_header_for_key(key: str) -> dict:
+    """Auth header for an explicit key (validation paths, nothing persisted).
+
+    Includes the device headers: every /usage call must identify the machine,
+    otherwise the device never registers and the server-side cap never applies.
+    """
+    headers = {"Authorization": f"Bearer {key}", "X-Product-ID": PRODUCT_ID}
+    headers.update(_device_headers())
+    return headers
+
+
+def get_auth_header(settings=None) -> dict:
+    token = get_auth_token(settings)
+    if not token:
+        return {}
+    return _auth_header_for_key(token)
 
 
 # -- device id (stable per machine, shared across TerraLab plugins) --------
@@ -205,6 +218,14 @@ def get_dashboard_url() -> str:
 
 # -- activation key validation ---------------------------------------------
 
+# English source text; tr() is applied at display time (the dockwidget keeps
+# matching on this exact wording for telemetry error codes).
+DEVICE_LIMIT_MESSAGE = (
+    "This license is already in use on the maximum number of computers. "
+    "Use one of your existing computers, or wait for an inactive one to "
+    "free its slot."
+)
+
 
 def check_key_with_server(key: str) -> tuple[bool, str]:
     """Validate a key against the server WITHOUT persisting anything.
@@ -216,11 +237,14 @@ def check_key_with_server(key: str) -> tuple[bool, str]:
     if not key:
         return False, "Please enter your activation key."
     if not _KEY_RE.match(key):
-        return False, "Invalid key format. Keys look like tl_ followed by 32 characters."
+        return False, (
+            "That does not look like an activation key. Most people do not need "
+            "one: just use the Sign in button. A key starts with tl_ and is only "
+            "for admin-issued or offline activation."
+        )
 
-    auth = {"Authorization": f"Bearer {key}", "X-Product-ID": PRODUCT_ID}
     try:
-        result = _client().get_usage(auth=auth)
+        result = _client().get_usage(auth=_auth_header_for_key(key))
     except Exception:
         return False, "Cannot reach server. Check your internet connection."
 
@@ -230,6 +254,8 @@ def check_key_with_server(key: str) -> tuple[bool, str]:
             return False, "Invalid activation key."
         if code == "SUBSCRIPTION_INACTIVE":
             return False, "Subscription inactive. Check your account."
+        if code == "DEVICE_LIMIT_EXCEEDED":
+            return False, DEVICE_LIMIT_MESSAGE
         return False, result.get("error", "Validation failed.")
 
     server_product = result.get("product_id", "")
@@ -252,6 +278,16 @@ def is_rejection_code(code: str) -> bool:
     return (code or "").strip().upper() in ("INVALID_KEY", "SUBSCRIPTION_INACTIVE")
 
 
+def is_device_limit_code(code: str) -> bool:
+    """True when /usage rejected THIS machine (cap full), not the key itself.
+
+    Happens when a machine comes back after its slot was auto-released (30
+    days idle) and other computers have since filled the cap. The key still
+    works elsewhere, so the UI message must say "free a computer", never
+    "invalid key"."""
+    return (code or "").strip().upper() == "DEVICE_LIMIT_EXCEEDED"
+
+
 def revalidate_stored_key() -> bool:
     """Re-check the stored activation key against the server.
 
@@ -264,13 +300,16 @@ def revalidate_stored_key() -> bool:
     if not key:
         return False
 
-    auth = {"Authorization": f"Bearer {key}", "X-Product-ID": PRODUCT_ID}
     try:
-        result = _client().get_usage(auth=auth)
+        result = _client().get_usage(auth=_auth_header_for_key(key))
     except Exception:
         return True
 
-    if "error" in result and is_rejection_code(result.get("code", "")):
+    code = result.get("code", "") if "error" in result else ""
+    if is_rejection_code(code) or is_device_limit_code(code):
+        # Device limit clears auth too: this machine lost its slot, keeping
+        # the session would silently bypass the cap. Signing in again walks
+        # the user into the explanatory device-limit message.
         clear_auth()
         return False
 

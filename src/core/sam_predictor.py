@@ -175,6 +175,11 @@ class SamPredictor:
                     else subprocess.DEVNULL
                 ),
                 text=True,
+                # Force UTF-8 for the JSON-RPC streams: the default is the
+                # locale encoding (cp1252 on many Windows installs), which
+                # would corrupt non-ASCII paths and could raise on decode.
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
                 env=env,
                 **subprocess_kwargs

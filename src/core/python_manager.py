@@ -27,6 +27,7 @@ from .archive_utils import safe_extract_tar as _safe_extract_tar
 from .archive_utils import safe_extract_zip as _safe_extract_zip
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
+from .platform_detect import is_musl_linux, is_windows_arm64
 from .uv_manager import DOWNLOAD_TIMEOUT_MS
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -47,6 +48,13 @@ PYTHON_VERSIONS = {
     (3, 13): "3.13.9",
     (3, 14): "3.14.0",
 }
+
+# Pinned standalone target when QGIS's own Python is outside the supported
+# range (older QGIS on 3.7/3.8, future QGIS on 3.15+, or anything unknown).
+# 3.12 is chosen because it has wheels for BOTH model paths: SAM2 (torch
+# >=2.5.1, cp312) and SAM1 / Intel-mac (torch <=2.2.2 and <2.6, both ship
+# cp312). It is a well-tested build in the release set above.
+_PINNED_TARGET_VERSION = (3, 12)
 
 
 def is_nixos() -> bool:
@@ -71,11 +79,42 @@ def is_unsupported_windows() -> tuple[bool, str]:
     if sys.platform != "win32":
         return False, ""
     release = platform.release() or ""
-    if release in ("7", "Vista", "XP", "2003Server", "post2003"):
+    # platform.release() returns e.g. "7", "XP", "2008Server", "2012Server".
+    # 2008/2012 Server share the pre-Windows-8 kernel (Server 2008 R2 == Win7,
+    # Server 2012 == Win8 but its non-R2 base predates the standalone floor),
+    # so they hit the same missing-runtime-API failures.
+    unsupported = ("7", "Vista", "XP", "2003Server", "post2003", "2008Server", "2008ServerR2")
+    if release in unsupported:
         return True, (
             f"Windows {release} is not supported by AI Segmentation. "
             "The bundled Python interpreter requires Windows 8 or later. "
             "Please upgrade to Windows 10 or 11."
+        )
+    return False, ""
+
+
+def is_unsupported_macos() -> tuple[bool, str]:
+    """Detect macOS versions too old for the standalone Python.
+
+    Lowering qgisMinimumVersion (now 3.20) lets the plugin UI load on more
+    machines, including some running old macOS, but python-build-standalone
+    macOS builds need a modern system. Block clearly below 10.13 (High Sierra,
+    2017) instead of
+    letting the venv bootstrap fail with an opaque dynamic-loader error. The
+    threshold is intentionally conservative so no working setup is rejected.
+    """
+    if sys.platform != "darwin":
+        return False, ""
+    ver = platform.mac_ver()[0] or ""
+    try:
+        parts = tuple(int(p) for p in ver.split(".")[:2])
+    except ValueError:
+        return False, ""
+    if parts and parts < (10, 13):
+        return True, (
+            f"macOS {ver} is not supported by AI Segmentation. "
+            "The bundled Python interpreter requires macOS 10.13 or later. "
+            "Please update macOS."
         )
     return False, ""
 
@@ -95,27 +134,52 @@ def _get_windows_antivirus_help(plugin_path: str) -> str:
 
 
 def get_qgis_python_version() -> tuple[int, int]:
-    """Get the target Python version for the standalone interpreter.
+    """Return the (major, minor) Python version QGIS itself runs on.
 
-    Under Rosetta, returns (3, 10) so we download ARM64 Python 3.10+
-    for SAM2 support instead of matching QGIS's x86_64 Python 3.9.
+    This is the HOST interpreter version. It is NOT necessarily the version
+    we download for the venv: use get_target_python_version() for that.
+    """
+    return (sys.version_info.major, sys.version_info.minor)
+
+
+def get_target_python_version() -> tuple[int, int]:
+    """Single source of truth for the standalone Python we download.
+
+    Everything that downloads, verifies, names, or compares the standalone
+    interpreter MUST call this so the three can never diverge again. A past
+    bug downloaded 3.13 when QGIS's Python was unknown, then verify rejected
+    it for not matching QGIS's version, looping forever. Selection rules:
+
+    - Rosetta (x86_64 QGIS on Apple Silicon): (3, 10), so we fetch ARM64
+      Python 3.10+ for SAM2 instead of matching QGIS's x86_64 3.9.
+    - QGIS Python is a known, supported version (in PYTHON_VERSIONS and
+      >= 3.9): match it, so in-process venv imports share the host ABI.
+    - Anything else (3.7 / 3.8 on old QGIS, 3.15+ on future QGIS, or an
+      unknown build): pin to a well-tested version that has wheels for both
+      model paths. See _PINNED_TARGET_VERSION.
     """
     if IS_ROSETTA:
         return (3, 10)
-    return (sys.version_info.major, sys.version_info.minor)
+    qgis_version = get_qgis_python_version()
+    if qgis_version in PYTHON_VERSIONS and qgis_version >= (3, 9):
+        return qgis_version
+    return _PINNED_TARGET_VERSION
 
 
 def get_python_full_version() -> str:
     """Get the full Python version string for download (e.g., '3.12.12')."""
-    version_tuple = get_qgis_python_version()
+    version_tuple = get_target_python_version()
     if version_tuple in PYTHON_VERSIONS:
         return PYTHON_VERSIONS[version_tuple]
-    # Fallback: use 3.13 (newest well-tested version) instead of X.Y.0
-    # which likely doesn't exist in the release assets
+    # Defensive only: get_target_python_version() always returns a tuple that
+    # is in PYTHON_VERSIONS, so this branch is unreachable unless the pinned
+    # default is removed from the map. Fall back to the pinned version, never
+    # to a version that verify_standalone_python() would then reject.
     _log(
-        f"Python {version_tuple[0]}.{version_tuple[1]} not in PYTHON_VERSIONS, falling back to 3.13",
+        f"Python {version_tuple[0]}.{version_tuple[1]} not in PYTHON_VERSIONS, "
+        f"falling back to {_PINNED_TARGET_VERSION[0]}.{_PINNED_TARGET_VERSION[1]}",
         Qgis.MessageLevel.Warning)
-    return PYTHON_VERSIONS[(3, 13)]
+    return PYTHON_VERSIONS[_PINNED_TARGET_VERSION]
 
 
 def _create_python_symlinks(python_dir: str) -> None:
@@ -125,7 +189,7 @@ def _create_python_symlinks(python_dir: str) -> None:
     if os.path.exists(python3_path):
         return
     # Find versioned binary like python3.12
-    major, minor = get_qgis_python_version()
+    major, minor = get_target_python_version()
     versioned = os.path.join(bin_dir, f"python{major}.{minor}")
     if os.path.exists(versioned):
         os.symlink(f"python{major}.{minor}", python3_path)
@@ -171,13 +235,14 @@ def standalone_python_is_current() -> bool:
 
         result = subprocess.run(  # nosec B603
             [python_path, "-c", "import sys; print(sys.version_info.major, sys.version_info.minor)"],
-            capture_output=True, text=True, timeout=15, env=env, **kwargs,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=15, env=env, **kwargs,
         )
         if result.returncode == 0:
             parts = result.stdout.strip().split()
             if len(parts) == 2:
                 installed = (int(parts[0]), int(parts[1]))
-                expected = get_qgis_python_version()
+                expected = get_target_python_version()
                 if installed != expected:
                     _log(
                         f"Standalone Python {installed[0]}.{installed[1]} "
@@ -201,11 +266,22 @@ def _get_platform_info() -> tuple[str, str]:
             return ("aarch64-apple-darwin", ".tar.gz")
         return ("x86_64-apple-darwin", ".tar.gz")
     if system == "win32":
+        # Windows on ARM runs QGIS (and us) as emulated x86_64. Native
+        # aarch64 Python exists, but torch publishes win_arm64 wheels only
+        # from 2.7+, which is outside our pinned ranges, so a native venv
+        # could not install torch. Keep the emulated x86_64 build (it works
+        # under emulation) and just log the decision.
+        if is_windows_arm64():
+            _log(
+                "ARM64 Windows detected; using emulated x86_64 Python "
+                "(native torch wheels not yet available for pinned versions)",
+                Qgis.MessageLevel.Info)
         return ("x86_64-pc-windows-msvc", ".tar.gz")
-    # Linux
+    # Linux: musl systems crash on the -gnu loader, so pick the -musl build.
+    libc_suffix = "musl" if is_musl_linux() else "gnu"
     if machine in ("arm64", "aarch64"):
-        return ("aarch64-unknown-linux-gnu", ".tar.gz")
-    return ("x86_64-unknown-linux-gnu", ".tar.gz")
+        return (f"aarch64-unknown-linux-{libc_suffix}", ".tar.gz")
+    return (f"x86_64-unknown-linux-{libc_suffix}", ".tar.gz")
 
 
 def get_download_urls() -> list[str]:
@@ -254,6 +330,11 @@ def download_python_standalone(
     if unsupported:
         _log(why, Qgis.MessageLevel.Critical)
         return False, why
+
+    mac_unsupported, mac_why = is_unsupported_macos()
+    if mac_unsupported:
+        _log(mac_why, Qgis.MessageLevel.Critical)
+        return False, mac_why
 
     if standalone_python_exists():
         _log("Python standalone already exists", Qgis.MessageLevel.Info)
@@ -477,6 +558,8 @@ def verify_standalone_python() -> tuple[bool, str]:
                 [python_path, "-c", "import sys; print(sys.version)"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=30,
                 env=env,
                 startupinfo=startupinfo,
@@ -486,6 +569,8 @@ def verify_standalone_python() -> tuple[bool, str]:
                 [python_path, "-c", "import sys; print(sys.version)"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=30,
                 env=env,
             )
@@ -494,8 +579,9 @@ def verify_standalone_python() -> tuple[bool, str]:
             version_output = result.stdout.strip().split()[0]
             expected_version = get_python_full_version()
 
-            # Verify major.minor matches (use target version, not QGIS's)
-            major, minor = get_qgis_python_version()
+            # Verify major.minor matches the SAME source of truth used to
+            # pick and download the build (never QGIS's host version).
+            major, minor = get_target_python_version()
             if not version_output.startswith(f"{major}.{minor}"):
                 msg = f"Python version mismatch: got {version_output}, expected {expected_version}"
                 _log(msg, Qgis.MessageLevel.Warning)
