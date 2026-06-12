@@ -665,10 +665,27 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
         # Check for blank tiles
         total_sum = int(image_np.sum())
         if total_sum == 0:
-            return None, None, tr(
-                "Online layer returned blank tiles for this area. "
-                "Try panning to an area with data coverage."
-            ), "crop_error_online_blank_tiles"
+            # Tiles fetched but all-zero: stale provider cache, zoom outside
+            # the service's range, or genuinely no coverage. The canvas
+            # renderer reads what QGIS actually displays, so one render-path
+            # retry rescues the stale-cache case before giving up.
+            rendered, render_err = _render_layer_to_image(
+                layer, extent, crop_size, crop_size)
+            if render_err is None and rendered is not None and int(rendered.sum()) > 0:
+                QgsMessageLog.logMessage(
+                    "Blank tiles from provider, rescued by renderer fallback",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning
+                )
+                image_np = rendered
+                height = image_np.shape[0]
+                width = image_np.shape[1]
+            else:
+                return None, None, tr(
+                    "Online layer returned blank tiles for this area. The "
+                    "current zoom level may be outside the service's range, "
+                    "or this area has no coverage. Zoom to a level where the "
+                    "layer is visible on the map, then try again."
+                ), "crop_error_online_blank_tiles"
 
         crop_info = {
             "bounds": (extent.xMinimum(), extent.yMinimum(),

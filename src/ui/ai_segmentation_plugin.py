@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -1785,6 +1786,36 @@ class AISegmentationPlugin:
 
         # Keep crop info so clicks in the same area reuse the encoding.
 
+    def _describe_pathless_layer(self) -> str:
+        """Sanitized one-liner about the current layer for the no-path
+        fallback diagnostics: provider name, URI scheme and validity only,
+        never the path itself (privacy rule: layer sources are user data)."""
+        provider = "none"
+        scheme = "none"
+        valid = False
+        try:
+            layer = self._current_layer
+            if layer is not None:
+                valid = bool(layer.isValid())
+                dp = layer.dataProvider()
+                if dp is not None:
+                    provider = dp.name() or "unknown"
+                source = layer.source() or ""
+                m = re.match(r"^/vsi([a-z0-9_]+)/", source)
+                if m:
+                    scheme = f"vsi{m.group(1)}"
+                else:
+                    m = re.match(r"^([A-Za-z][A-Za-z0-9+.-]{1,15})://", source)
+                    if m:
+                        scheme = m.group(1).lower()
+                    elif re.match(r"^\\\\", source):
+                        scheme = "unc"
+                    elif source:
+                        scheme = "local"
+        except Exception:  # nosec B110
+            pass
+        return f"provider={provider} scheme={scheme} valid={valid}"
+
     def _track_segmentation_failure(self, error_code: str):
         """Emit an unsampled failed segmentation_run (crop/encoding failure).
 
@@ -2713,17 +2744,48 @@ class AISegmentationPlugin:
                 actual_mupp, crop_size=1024
             )
         elif not self._current_raster_path:
-            self._encoding_in_progress = False
-            if self._headless:
-                self._headless_error = tr("No raster file path available. Please restart segmentation.")
-                return False
-            show_error_report(
-                self.iface.mainWindow(),
-                tr("Crop Error"),
-                tr("No raster file path available. Please restart segmentation."),
-                error_code="crop_error_no_path",
+            # The direct file read is only an optimization. A missing path
+            # (non-file provider, state lost across a project switch, exotic
+            # Windows path) used to dead-end here with "restart segmentation",
+            # the n.1 error in production with users retrying in a loop.
+            # Render the layer through the canvas instead, exactly like online
+            # layers: it works for any layer QGIS can display.
+            canvas = self.iface.mapCanvas()
+            canvas_mupp = canvas.mapUnitsPerPixel()
+            if self._canvas_to_raster_xform is not None:
+                canvas_center = canvas.center()
+                cx, cy = canvas_center.x(), canvas_center.y()
+                p1 = self._canvas_to_raster_xform.transform(
+                    QgsPointXY(cx, cy))
+                p2 = self._canvas_to_raster_xform.transform(
+                    QgsPointXY(cx + canvas_mupp, cy))
+                raster_mupp = math.sqrt(
+                    (p2.x() - p1.x()) ** 2 + (p2.y() - p1.y()) ** 2)
+            else:
+                raster_mupp = canvas_mupp
+            QgsMessageLog.logMessage(
+                "No raster file path, falling back to canvas render "
+                f"({self._describe_pathless_layer()})",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning
             )
-            return False
+            self._current_crop_canvas_mupp = canvas_mupp
+            self._current_crop_actual_mupp = raster_mupp
+            self._current_crop_scale_factor = None
+            image_np, crop_info, error, error_code_from_crop = extract_crop_from_online_layer(
+                self._current_layer, raster_pt_x, raster_pt_y,
+                raster_mupp, crop_size=1024
+            )
+            if error:
+                # Keep the historical code so the production decline stays
+                # measurable, but make the message actionable and carry the
+                # layer diagnostics (provider/scheme only, never the path).
+                error_code_from_crop = "crop_error_no_path"
+                error = tr(
+                    "This layer has no readable source file and could not be "
+                    "rendered from the map canvas. Export it as a GeoTIFF "
+                    "(right-click the layer > Export) and run segmentation "
+                    "on the exported copy."
+                ) + f" [{self._describe_pathless_layer()}]"
         else:
             layer_crs_wkt = None
             layer_extent = None
