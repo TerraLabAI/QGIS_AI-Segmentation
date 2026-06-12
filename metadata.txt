@@ -1,9 +1,9 @@
 [general]
 name=AI Segmentation by TerraLab
 description=Segment buildings, vegetation, or any object in your raster using AI, refine & export as vector polygons
-qgisMinimumVersion=3.22
+qgisMinimumVersion=3.20
 qgisMaximumVersion=4.99
-version=1.2.2
+version=1.4.0
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -27,6 +27,8 @@ about=
     • Multilingual: English, French, Portuguese, Spanish
 
 changelog=
+    1.4.0
+    - Improved anonymous usage analytics: per-run sampling now always reports its rate, failed runs are recorded, and a single end-of-session summary gives exact totals. Added install, model-download, and export completion signals. No prompts, file paths, layer names, or coordinates are ever collected.
 
 
 tracker=https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues
