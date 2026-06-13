@@ -1023,5 +1023,13 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
         <source>This license is already in use on the maximum number of computers. Use one of your existing computers, or wait for an inactive one to free its slot.</source>
         <translation>Cette licence est déjà utilisée sur le nombre maximum d&apos;ordinateurs. Utilisez l&apos;un de vos ordinateurs existants, ou attendez qu&apos;un poste inactif libère sa place.</translation>
     </message>
+    <message>
+        <source>Could not find a writable folder for the export. Check your disk space and folder permissions.</source>
+        <translation>Impossible de trouver un dossier accessible en écriture pour l'export. Vérifiez l'espace disque et les permissions du dossier.</translation>
+    </message>
+    <message>
+        <source>The selected folder was not writable, so the export was saved to a temporary folder: {path}</source>
+        <translation>Le dossier sélectionné n'était pas accessible en écriture ; l'export a été enregistré dans un dossier temporaire : {path}</translation>
+    </message>
 </context>
 </TS>

@@ -4,6 +4,7 @@ import math
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 from qgis.core import (
@@ -98,6 +99,28 @@ def _probe_writable(directory: str) -> bool:
         return True
     except OSError:
         return False
+
+
+def _resolve_writable_export_dir(preferred: str) -> tuple[str | None, bool]:
+    """Return a writable directory for exports, falling back to a temp dir.
+
+    Tries ``preferred`` first; if it cannot be created or written to (network
+    share, read-only mount, permission-locked home), falls back to a temp dir
+    so completed work is never lost rather than aborting the export. Returns
+    (directory, used_fallback); directory is None only if nothing is writable.
+    """
+    candidates = [
+        preferred,
+        os.path.join(tempfile.gettempdir(), "ai_segmentation_exports"),
+    ]
+    for i, directory in enumerate(candidates):
+        try:
+            os.makedirs(directory, exist_ok=True)
+            if _probe_writable(directory):
+                return directory, i > 0
+        except OSError:
+            continue
+    return None, False
 
 
 class AISegmentationPlugin:
@@ -2003,24 +2026,16 @@ class AISegmentationPlugin:
             output_dir = str(Path.home())
 
         # OGR/GDAL cannot create intermediate directories; do it here (#27).
-        try:
-            os.makedirs(output_dir, exist_ok=True)
-        except OSError as e:
+        # If the preferred directory is not writable (network share, read-only
+        # mount, permission-locked home), fall back to a temp dir so completed
+        # work is never lost rather than aborting the export.
+        output_dir, export_used_temp_dir = _resolve_writable_export_dir(output_dir)
+        if output_dir is None:
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Cannot Write Export"),
-                tr("Cannot create export directory '{path}': {reason}").format(
-                    path=output_dir, reason=str(e)),
-                error_code="cannot_write_export",
-            )
-            return
-
-        if not _probe_writable(output_dir):
-            show_error_report(
-                self.iface.mainWindow(),
-                tr("Cannot Write Export"),
-                tr("The export directory '{path}' is not writable. "
-                   "Choose a different location.").format(path=output_dir),
+                tr("Could not find a writable folder for the export. "
+                   "Check your disk space and folder permissions."),
                 error_code="cannot_write_export",
             )
             return
@@ -2195,6 +2210,17 @@ class AISegmentationPlugin:
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )
+
+        if export_used_temp_dir:
+            # The chosen folder was not writable; tell the user where it landed
+            # so the file is not silently lost in a temp location.
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("The selected folder was not writable, so the export was "
+                   "saved to a temporary folder: {path}").format(path=gpkg_path),
+                level=Qgis.MessageLevel.Warning,
+                duration=12,
+            )
 
         # Set renderer - red thin outline, transparent fill
         symbol = QgsFillSymbol.createSimple({
@@ -2720,6 +2746,36 @@ class AISegmentationPlugin:
             if not self._headless:
                 QApplication.restoreOverrideCursor()
 
+    def _render_crop_fallback(self, raster_pt_x, raster_pt_y):
+        """Extract a crop by rendering the current layer through the canvas.
+
+        Shared fallback for layers with no readable file path and for direct
+        file reads that fail (exotic driver, unsupported format, rasterio
+        missing). Works for any layer QGIS can display. Returns
+        (image_np, crop_info, error, error_code) and updates the crop-state
+        bookkeeping like the file/online paths do.
+        """
+        from ..core.feature_encoder import extract_crop_from_online_layer
+
+        canvas = self.iface.mapCanvas()
+        canvas_mupp = canvas.mapUnitsPerPixel()
+        if self._canvas_to_raster_xform is not None:
+            canvas_center = canvas.center()
+            cx, cy = canvas_center.x(), canvas_center.y()
+            p1 = self._canvas_to_raster_xform.transform(QgsPointXY(cx, cy))
+            p2 = self._canvas_to_raster_xform.transform(
+                QgsPointXY(cx + canvas_mupp, cy))
+            raster_mupp = math.sqrt(
+                (p2.x() - p1.x()) ** 2 + (p2.y() - p1.y()) ** 2)
+        else:
+            raster_mupp = canvas_mupp
+        self._current_crop_canvas_mupp = canvas_mupp
+        self._current_crop_actual_mupp = raster_mupp
+        self._current_crop_scale_factor = None
+        return extract_crop_from_online_layer(
+            self._current_layer, raster_pt_x, raster_pt_y,
+            raster_mupp, crop_size=1024)
+
     def _do_extract_and_encode(self, center_point, mupp_override):
         """Internal: does the actual crop extraction + SAM encoding."""
         from ..core.feature_encoder import extract_crop_from_online_layer, extract_crop_from_raster
@@ -2758,31 +2814,13 @@ class AISegmentationPlugin:
             # the n.1 error in production with users retrying in a loop.
             # Render the layer through the canvas instead, exactly like online
             # layers: it works for any layer QGIS can display.
-            canvas = self.iface.mapCanvas()
-            canvas_mupp = canvas.mapUnitsPerPixel()
-            if self._canvas_to_raster_xform is not None:
-                canvas_center = canvas.center()
-                cx, cy = canvas_center.x(), canvas_center.y()
-                p1 = self._canvas_to_raster_xform.transform(
-                    QgsPointXY(cx, cy))
-                p2 = self._canvas_to_raster_xform.transform(
-                    QgsPointXY(cx + canvas_mupp, cy))
-                raster_mupp = math.sqrt(
-                    (p2.x() - p1.x()) ** 2 + (p2.y() - p1.y()) ** 2)
-            else:
-                raster_mupp = canvas_mupp
             QgsMessageLog.logMessage(
                 "No raster file path, falling back to canvas render "
                 f"({self._describe_pathless_layer()})",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning
             )
-            self._current_crop_canvas_mupp = canvas_mupp
-            self._current_crop_actual_mupp = raster_mupp
-            self._current_crop_scale_factor = None
-            image_np, crop_info, error, error_code_from_crop = extract_crop_from_online_layer(
-                self._current_layer, raster_pt_x, raster_pt_y,
-                raster_mupp, crop_size=1024
-            )
+            image_np, crop_info, error, error_code_from_crop = (
+                self._render_crop_fallback(raster_pt_x, raster_pt_y))
             if error:
                 # Keep the historical code so the production decline stays
                 # measurable, but make the message actionable and carry the
@@ -2817,6 +2855,20 @@ class AISegmentationPlugin:
                 layer_extent=layer_extent,
                 scale_factor=scale_factor,
             )
+            if error:
+                # The windowed read failed (exotic driver, unsupported format,
+                # rasterio missing). Render through the canvas before giving up:
+                # it works for anything QGIS can draw.
+                QgsMessageLog.logMessage(
+                    f"File read failed ({error_code_from_crop}); "
+                    "falling back to canvas render.",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning
+                )
+                fb_image, fb_info, fb_error, _fb_code = (
+                    self._render_crop_fallback(raster_pt_x, raster_pt_y))
+                if fb_image is not None and not fb_error:
+                    image_np, crop_info, error, error_code_from_crop = (
+                        fb_image, fb_info, None, None)
 
         if error:
             self._encoding_in_progress = False
