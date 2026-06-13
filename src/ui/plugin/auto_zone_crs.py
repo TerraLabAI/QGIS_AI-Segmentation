@@ -1,0 +1,533 @@
+
+
+
+
+
+
+
+
+from __future__ import annotations
+
+from qgis.core import (
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
+    QgsCoordinateTransformContext,
+    QgsGeometry,
+    QgsProject,
+    QgsRasterLayer,
+    QgsRectangle,
+)
+
+from ...core.qt_compat import geometry_op_succeeded
+
+
+class AutoZoneCrsMixin:
+
+
+
+
+
+    def _store_auto_zone(self, zone: QgsRectangle | None, crs=None) -> None:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        self._auto_clip_polygon = None
+        self._auto_clip_engine = None
+        self._auto_run_ctx = None
+
+
+        self._auto_free_zone_fit = None
+        if zone is None:
+            self._auto_zone = None
+            self._auto_zone_pick_label = ""
+            self._forget_zone_crs()
+
+
+
+
+            return
+        self._auto_zone = zone
+        self._record_zone_crs(zone, crs)
+        self._publish_shared_zone(zone)
+
+    def _publish_shared_zone(self, zone: QgsRectangle) -> None:
+
+
+
+
+
+
+
+
+
+
+
+
+        label = str(getattr(self, "_auto_zone_pick_label", "") or "")
+        self._auto_zone_pick_label = ""
+        try:
+            from ...core import zone_of_interest as zoi
+
+            crs = getattr(self, "_auto_zone_crs", None)
+            if crs is None or not crs.isValid():
+                return
+            zoi.write_zone(self._shared_zone_shape(zone), crs, label=label,
+                           project=QgsProject.instance())
+        except Exception:  # noqa: BLE001
+            return
+
+    def _shared_zone_shape(self, zone: QgsRectangle) -> QgsGeometry:
+
+
+
+
+
+
+
+
+        outline = getattr(self, "_auto_zone_polygon", None)
+        try:
+            if outline is None or outline.isEmpty():
+                return QgsGeometry.fromRect(zone)
+            box = outline.boundingBox()
+            span = max(zone.width(), zone.height())
+            tolerance = (span if span > 0 else 1.0) * 1e-6
+            edges = (
+                (box.xMinimum(), zone.xMinimum()),
+                (box.yMinimum(), zone.yMinimum()),
+                (box.xMaximum(), zone.xMaximum()),
+                (box.yMaximum(), zone.yMaximum()),
+            )
+            if all(abs(a - b) <= tolerance for a, b in edges):
+                return QgsGeometry(outline)
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            pass  # nosec B110
+        return QgsGeometry.fromRect(zone)
+
+    def _record_zone_crs(self, zone: QgsRectangle, crs=None) -> None:
+
+
+
+
+
+
+
+        self._forget_zone_crs()
+        try:
+            if crs is None:
+                crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        except (RuntimeError, AttributeError):
+            return
+        if crs is None or not crs.isValid():
+            return
+        self._auto_zone_crs = QgsCoordinateReferenceSystem(crs)
+        self._auto_zone_crs_rect = self._zone_rect_key(zone)
+
+    def _forget_zone_crs(self) -> None:
+
+        self._auto_zone_crs = None
+        self._auto_zone_crs_rect = None
+
+    @staticmethod
+    def _zone_rect_key(rect: QgsRectangle) -> tuple[float, float, float, float]:
+
+        return (rect.xMinimum(), rect.yMinimum(),
+                rect.xMaximum(), rect.yMaximum())
+
+    def _zone_source_crs(self, zone: QgsRectangle | None):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        try:
+            live = self.iface.mapCanvas().mapSettings().destinationCrs()
+        except (RuntimeError, AttributeError):
+            return None
+        recorded = getattr(self, "_auto_zone_crs", None)
+        rect = getattr(self, "_auto_zone_crs_rect", None)
+        stored = self._auto_zone
+        if (recorded is None or not recorded.isValid() or rect is None
+                or stored is None or zone is None):
+            return live
+        try:
+            return recorded if self._zone_rect_key(stored) == rect else live
+        except (RuntimeError, AttributeError):
+            return live
+
+    def _zone_in_layer_crs(
+        self, zone: QgsRectangle, layer: QgsRasterLayer
+    ) -> QgsRectangle:
+
+
+
+
+
+
+
+
+        try:
+            zone_crs = self._zone_source_crs(zone)
+            layer_crs = layer.crs()
+        except (RuntimeError, AttributeError):
+            return zone
+
+        if zone_crs is None or zone_crs == layer_crs:
+            return zone
+        if not zone_crs.isValid() or not layer_crs.isValid():
+            return zone
+
+        try:
+            xform = QgsCoordinateTransform(zone_crs, layer_crs, QgsProject.instance())
+            result = xform.transformBoundingBox(zone)
+        except Exception:  # nosec B110
+            return zone
+
+        if result.width() <= 0 or result.height() <= 0:
+            return zone
+
+        return result
+
+    def _run_crs_for_layer(self, layer: QgsRasterLayer, zone_in_layer: QgsRectangle):
+
+
+
+
+
+
+
+
+
+
+        from ...core.layer_conventions import pick_run_crs
+
+        try:
+            layer_crs = layer.crs()
+            key = (self._run_crs_memo_key(layer_crs, zone_in_layer)
+                   + (self._zone_polygon_identity(),))
+        except (RuntimeError, AttributeError):
+            return None
+        cached = getattr(self, "_auto_run_crs_memo", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        try:
+            frame = self._wrapped_zone_frame(layer)
+            if frame is not None:
+                self._auto_run_crs_memo = (key, frame.crs)
+                return frame.crs
+            run_crs = pick_run_crs(layer_crs, zone_in_layer)
+
+
+
+
+
+            if run_crs is not None and run_crs != layer_crs:
+                moved = QgsCoordinateTransform(
+                    layer_crs, run_crs, QgsProject.instance()
+                ).transformBoundingBox(zone_in_layer)
+                if moved.width() <= 0 or moved.height() <= 0:
+                    run_crs = layer_crs
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            run_crs = layer_crs
+        except Exception:  # noqa: BLE001  # nosec B110
+            run_crs = layer_crs
+        self._auto_run_crs_memo = (key, run_crs)
+        return run_crs
+
+    def _zone_polygon_identity(self):
+
+        polygon = getattr(self, "_auto_zone_polygon", None)
+        if polygon is None:
+            return None
+        source_crs = self._zone_source_crs(getattr(self, "_auto_zone", None))
+        definition = source_crs.toWkt() if source_crs is not None else ""
+        return bytes(polygon.asWkb()), definition
+
+    def _wrapped_zone_frame(self, layer, transform_context=None):
+
+        polygon = getattr(self, "_auto_zone_polygon", None)
+        if polygon is None or polygon.isEmpty():
+            return None
+        try:
+            source_crs = self._zone_source_crs(self._auto_zone)
+            if source_crs is None or not source_crs.isValid():
+                return None
+            project = QgsProject.instance()
+            context = QgsCoordinateTransformContext(
+                transform_context if transform_context is not None
+                else project.transformContext())
+            key = (self._zone_polygon_identity(), source_crs.toWkt(),
+                   layer.crs().toWkt(), project.crs().toWkt(), context)
+            memo = getattr(self, "_auto_wrapped_zone_memo", None)
+            if memo is not None and memo[0] == key:
+                return memo[1]
+            from ...core.zone_run_frame import wrapped_zone_frame
+
+            frame = wrapped_zone_frame(polygon, source_crs, context)
+            self._auto_wrapped_zone_memo = (key, frame)
+            return frame
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _run_crs_memo_key(layer_crs, zone_in_layer):
+
+
+
+
+
+
+
+
+        try:
+            project = QgsProject.instance()
+            project_identity = project.crs().toWkt()
+            context = QgsCoordinateTransformContext(project.transformContext())
+        except (RuntimeError, AttributeError):
+            project_identity = ""
+            context = None
+
+
+
+        return (layer_crs.toWkt(), project_identity,
+                zone_in_layer.xMinimum(), zone_in_layer.yMinimum(),
+                zone_in_layer.xMaximum(), zone_in_layer.yMaximum(), context)
+
+    def _run_crs_now(self, layer: QgsRasterLayer):
+
+
+
+
+
+
+
+        try:
+            layer_crs = layer.crs()
+            memo = getattr(self, "_auto_run_crs_memo", None)
+            if memo is None:
+                return layer_crs
+            project = QgsProject.instance()
+            project_identity = project.crs().toWkt()
+            if (memo[0][0] == layer_crs.toWkt() and memo[0][1] == project_identity
+                    and len(memo[0]) >= 8
+                    and memo[0][6] == project.transformContext()
+                    and memo[0][7] == self._zone_polygon_identity()):
+                return memo[1]
+            return layer_crs
+        except (RuntimeError, AttributeError, IndexError, TypeError):
+            return None
+
+    def _reproject_zone_to_run_crs(
+        self, zone: QgsRectangle, layer: QgsRasterLayer
+    ) -> QgsRectangle:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        anchor = self._auto_zone if self._auto_zone is not None else zone
+        anchor_in_layer = self._zone_in_layer_crs(anchor, layer)
+        zone_in_layer = (anchor_in_layer if anchor is zone
+                         else self._zone_in_layer_crs(zone, layer))
+        run_crs = self._run_crs_for_layer(layer, anchor_in_layer)
+        try:
+            frame = self._wrapped_zone_frame(layer) if anchor is zone else None
+            if frame is not None and frame.crs == run_crs:
+                return QgsRectangle(frame.geometry.boundingBox())
+            if run_crs is None or run_crs == layer.crs():
+                return zone_in_layer
+            zone_crs = self._zone_source_crs(zone)
+            drawn_in = zone_crs is not None and zone_crs.isValid()
+            source_crs = zone_crs if drawn_in else layer.crs()
+            xform = QgsCoordinateTransform(source_crs, run_crs, QgsProject.instance())
+            source_zone = zone if drawn_in else zone_in_layer
+            result = xform.transformBoundingBox(source_zone)
+            if result.width() <= 0 or result.height() <= 0:
+                raise ValueError("degenerate rectangle in the run CRS")
+        except Exception:  # noqa: BLE001
+            self._forget_run_crs(layer, anchor_in_layer)
+            return zone_in_layer
+        return result
+
+    def _forget_run_crs(self, layer: QgsRasterLayer, zone_in_layer: QgsRectangle) -> None:
+
+
+
+
+        try:
+            layer_crs = layer.crs()
+            self._auto_run_crs_memo = (
+                self._run_crs_memo_key(layer_crs, zone_in_layer)
+                + (self._zone_polygon_identity(),), layer_crs)
+        except (RuntimeError, AttributeError):
+            self._auto_run_crs_memo = None
+
+    @staticmethod
+    def _prepare_clip_engine(clip_geom):
+
+
+
+
+
+
+
+        if clip_geom is None or clip_geom.isEmpty():
+            return None
+        try:
+            engine = QgsGeometry.createGeometryEngine(clip_geom.constGet())
+            engine.prepareGeometry()
+            return engine
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _polygon_in_run_crs(self, layer, target_crs=None, transform_context=None):
+
+
+
+
+
+
+        if self._auto_zone_polygon is None:
+            return None
+        geom = QgsGeometry(self._auto_zone_polygon)
+        try:
+
+
+
+
+            zone_rect = self._auto_zone
+            if zone_rect is None:
+                zone_rect = geom.boundingBox()
+            zone_crs = self._zone_source_crs(zone_rect)
+            if target_crs is None:
+                target_crs = self._run_crs_for_layer(
+                    layer, self._zone_in_layer_crs(zone_rect, layer))
+            if target_crs is None:
+                target_crs = layer.crs()
+            context = (transform_context if transform_context is not None
+                       else QgsProject.instance().transformContext())
+            frame = self._wrapped_zone_frame(layer, context)
+            if frame is not None and frame.crs == target_crs:
+                return QgsGeometry(frame.geometry)
+        except (RuntimeError, AttributeError):
+            return None
+        if zone_crs is None or zone_crs == target_crs:
+            return geom
+        if not zone_crs.isValid() or not target_crs.isValid():
+            return geom
+        try:
+            xform = QgsCoordinateTransform(zone_crs, target_crs, context)
+
+
+
+            if not geometry_op_succeeded(geom.transform(xform)):
+                return None
+        except Exception:  # nosec B110
+            return None
+        return geom
+
+    def _tiles_in_polygon(self, tiles, bbox, pixel_w, pixel_h, layer,
+                          crs_authid=None):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        poly = self._polygon_in_run_crs(layer)
+        if poly is not None and poly.isEmpty():
+            poly = None
+
+
+        data_bb = None
+        if layer is not None and crs_authid:
+            data_bb = self._layer_extent_in_run_crs(layer, crs_authid)
+            if data_bb is not None and data_bb.isEmpty():
+                data_bb = None
+        if (poly is None and data_bb is None) or not tiles:
+            return tiles
+        if pixel_w <= 0 or pixel_h <= 0:
+            return tiles
+        minx, _miny, maxx, maxy = bbox
+        span_x = maxx - minx
+        span_y = maxy - bbox[1]
+
+
+
+
+
+        engine = self._prepare_clip_engine(poly) if poly is not None else None
+        pbb = poly.boundingBox() if poly is not None else None
+        kept = []
+        for tile in tiles:
+            tx, ty, tw, th = tile
+            gx0 = minx + (tx / pixel_w) * span_x
+            gx1 = minx + ((tx + tw) / pixel_w) * span_x
+            gy1 = maxy - (ty / pixel_h) * span_y
+            gy0 = maxy - ((ty + th) / pixel_h) * span_y
+            if data_bb is not None and (
+                    gx1 < data_bb.xMinimum() or gx0 > data_bb.xMaximum()
+                    or gy1 < data_bb.yMinimum() or gy0 > data_bb.yMaximum()):
+                continue
+            if pbb is None:
+                kept.append(tile)
+                continue
+            if gx1 < pbb.xMinimum() or gx0 > pbb.xMaximum() or gy1 < pbb.yMinimum() or gy0 > pbb.yMaximum():
+                continue
+            cell = QgsGeometry.fromRect(QgsRectangle(gx0, gy0, gx1, gy1))
+            if engine is not None:
+                if engine.intersects(cell.constGet()):
+                    kept.append(tile)
+            elif cell.intersects(poly):
+                kept.append(tile)
+        return kept
