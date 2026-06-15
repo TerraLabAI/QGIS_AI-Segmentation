@@ -2059,16 +2059,20 @@ def install_dependencies(
                     _log(_get_ssl_error_help(install_error_msg), Qgis.MessageLevel.Warning)
                     return False, f"Failed to install {package_name}: SSL error"
 
-                # Check for proxy authentication errors (407)
+                # Check for proxy authentication errors. pip says "HTTP 407";
+                # uv/rustls says "tunnel error: proxy authorization required".
+                # Both mean the corporate proxy needs credentials we were not
+                # given, so route both to the same actionable guidance.
                 if _is_proxy_auth_error(install_error_msg):
                     _log(
-                        "Proxy authentication failed (HTTP 407). "
-                        "Configure proxy credentials in: "
+                        "Proxy authentication required. Your network proxy needs "
+                        "a username and password. Enter them in: "
                         "QGIS > Settings > Options > Network > Proxy "
-                        "(User and Password fields).",
+                        "(enable the proxy, then fill the User and Password fields), "
+                        "then retry the installation.",
                         Qgis.MessageLevel.Warning
                     )
-                    return False, f"Failed to install {package_name}: proxy authentication required (407)"
+                    return False, f"Failed to install {package_name}: proxy authentication required"
 
                 # Check for network/connection errors (after retries exhausted)
                 if _is_network_error(install_error_msg):

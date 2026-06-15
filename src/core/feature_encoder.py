@@ -87,8 +87,11 @@ def _normalize_to_uint8(bands, nodata_value=None):
             for b in range(3):
                 result[b][nodata_mask] = 0
 
-    # CHW -> HWC
-    return np.transpose(result, (1, 2, 0))
+    # CHW -> HWC, returned C-contiguous. tobytes() in the worker handshake is
+    # order-correct even on a transpose view, but a contiguous buffer keeps the
+    # SAM predictor (which may take .data / buffer views internally) on the
+    # well-tested path and avoids a latent footgun for future callers.
+    return np.ascontiguousarray(np.transpose(result, (1, 2, 0)))
 
 
 def _fetch_online_bands(provider, extent, width, height):
@@ -344,6 +347,18 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
                 col_off, row_off, actual_width, actual_height,
                 buf_xsize=out_w, buf_ysize=out_h
             )
+            # GDAL returns None (not an exception) when the block cannot be
+            # decoded: corrupt tile, missing codec (JPEG-in-TIFF), broken
+            # overview. np.stack on a None would raise a cryptic error that
+            # surfaces as crop_error_read_failed. Catch it here with guidance.
+            if data is None:
+                return None, None, tr(
+                    "Could not read pixels from this {ext} file. The file may "
+                    "be corrupt, truncated, or use a compression your GDAL "
+                    "build cannot decode.\n"
+                    "Try opening it in QGIS to confirm it displays, or convert "
+                    "it to GeoTIFF (.tif) before using AI Segmentation."
+                ).format(ext=ext), "crop_error_read_failed"
             bands.append(data)
 
         nodata = ds.GetRasterBand(1).GetNoDataValue()

@@ -61,6 +61,34 @@ else:
 # QSettings keys for tutorial flags
 SETTINGS_KEY_TUTORIAL_SHOWN = "AISegmentation/tutorial_simple_shown"
 
+# Worker errors that mean "the AI engine deps are not importable yet" (an
+# incomplete or in-flight install), not "this image failed to encode". The
+# prediction worker reports these on init when torch/SAM cannot be imported;
+# set_image also raises a generic spawn failure when the worker dies before
+# sending 'ready'. These must route the user to Install, never surface as a
+# raw encoding_error. Matched on substrings so it stays robust to wording.
+_WORKER_DEPENDENCY_ERROR_MARKERS = (
+    "failed to import dependencies",
+    "please reinstall dependencies",
+    "failed to load pytorch",
+    "failed to start prediction worker",
+    "worker process died during initialization",
+    "worker process closed stdout unexpectedly",
+)
+
+
+def _is_worker_dependency_error(message: str) -> bool:
+    """True when an encode failure is really an unusable/incomplete venv.
+
+    Lets the encode path tell "engine not installed yet" apart from a genuine
+    image-encode failure so the user gets install guidance (and the telemetry
+    error_code is venv_not_ready, not encoding_error).
+    """
+    if not message:
+        return False
+    lowered = message.lower()
+    return any(marker in lowered for marker in _WORKER_DEPENDENCY_ERROR_MARKERS)
+
 
 def _get_change_path_instructions():
     """Return platform-specific instructions for changing the install path."""
@@ -176,6 +204,12 @@ class AISegmentationPlugin:
         self._current_crop_info = None  # dict with 'bounds', 'img_shape'
         self._current_raster_path = None
         self._encoding_in_progress = False  # Guard against concurrent clicks (main/UI thread only)
+        # Encode-time venv readiness gate (#: incomplete-install -> encoding_error).
+        # Once a real encode confirms the deps are usable we stop re-checking;
+        # until then a not-ready venv short-circuits with install guidance
+        # instead of letting the worker spawn fail as a raw encoding_error.
+        self._deps_confirmed_ready = False
+        self._venv_not_ready_prompted = False  # Guide to install once, never loop
         self._shortcut_filter = None  # Event filter for keyboard shortcuts
         self._current_crop_canvas_mupp = None  # canvas mupp at encode time (zoom detection)
         self._current_crop_actual_mupp = None  # actual mupp used for the crop (may differ if zoomed out)
@@ -1497,7 +1531,7 @@ class AISegmentationPlugin:
 
         try:
             layer_name = layer.name().replace(" ", "_")
-            raster_path = os.path.normcase(layer.source())
+            raster_path = self._resolve_raster_file_path(layer)
         except RuntimeError:
             QgsMessageLog.logMessage(
                 "Layer deleted during segmentation start",
@@ -1816,6 +1850,51 @@ class AISegmentationPlugin:
         self.dock_widget.set_point_count(0, 0)
 
         # Keep crop info so clicks in the same area reuse the encoding.
+
+    def _resolve_raster_file_path(self, layer) -> str:
+        """Resolve a raster layer to a clean, readable file path or "".
+
+        `layer.source()` is not always a plain path: GDAL providers append
+        options (``/path/file.tif|layername=...``), use subdataset prefixes
+        (``NETCDF:"/path":var``, ``GTIFF_DIR:...``) or virtual schemes
+        (``/vsizip/``). Feeding those raw to rasterio/GDAL fails and surfaced
+        as the crop_error family; an in-memory or scheme-only source surfaced
+        as crop_error_no_path. Decode the URI to the real file via the
+        provider registry and only return it when it exists on disk. Otherwise
+        return "" so the caller takes the canvas-render fallback, which works
+        for anything QGIS can draw.
+        """
+        try:
+            source = layer.source() or ""
+        except RuntimeError:
+            raise
+        if not source:
+            return ""
+
+        candidate = ""
+        try:
+            from qgis.core import QgsProviderRegistry
+            provider = ""
+            dp = layer.dataProvider()
+            if dp is not None:
+                provider = dp.name() or ""
+            if provider:
+                decoded = QgsProviderRegistry.instance().decodeUri(
+                    provider, source)
+                candidate = decoded.get("path") or ""
+        except Exception:  # nosec B110
+            candidate = ""
+
+        # Fallback: strip a trailing "|..." option string from the raw source.
+        if not candidate:
+            candidate = source.split("|", 1)[0]
+
+        # Virtual file systems (/vsizip/, /vsicurl/, ...) and subdataset URIs
+        # are not plain files; let the canvas-render fallback handle them.
+        if candidate.startswith("/vsi") or not os.path.isfile(candidate):
+            return ""
+
+        return os.path.normcase(candidate)
 
     def _describe_pathless_layer(self) -> str:
         """Sanitized one-liner about the current layer for the no-path
@@ -2776,9 +2855,89 @@ class AISegmentationPlugin:
             self._current_layer, raster_pt_x, raster_pt_y,
             raster_mupp, crop_size=1024)
 
+    def _ensure_deps_ready_for_encode(self) -> bool:
+        """Verify the AI engine venv is usable before attempting an encode.
+
+        Root cause of the production "encoding_error / stage=install" reports:
+        the install failed partway or was still running, so torch/SAM are not
+        importable. The worker subprocess then dies on import, set_image raises
+        a generic RuntimeError, and it surfaced as a raw encoding_error. The
+        existing venv_needs_repair() backstop does NOT catch this case (it only
+        checks the base interpreter runs `pass`, which it does), so users hit
+        the same opaque error on every click (6x in 13 min for one user).
+
+        get_venv_status() is the authoritative, filesystem-based readiness
+        signal (deps present + deps hash current + base Python ok). It is cheap
+        (no per-click subprocess in the common case), so we run it once and
+        cache the positive result; a not-ready venv short-circuits with clear,
+        translated guidance and routes the user to Install exactly once instead
+        of re-encoding in a loop.
+
+        Returns True when an encode may proceed, False when it was short
+        circuited (telemetry + user guidance already handled here).
+        """
+        if self._deps_confirmed_ready:
+            return True
+
+        from ..core.venv_manager import get_venv_status
+        try:
+            is_ready, _status_msg = get_venv_status()
+        except Exception as exc:
+            # A status probe failure must not block a user whose deps are fine;
+            # let the encode proceed and rely on the existing recovery paths.
+            QgsMessageLog.logMessage(
+                f"Venv status probe failed, proceeding with encode: {exc}",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            return True
+
+        if is_ready:
+            self._deps_confirmed_ready = True
+            return True
+
+        # Not ready: this is an incomplete/in-flight install, not a corrupt
+        # image. Count it distinctly so telemetry separates "engine not ready"
+        # from genuine encode failures, and stop the rapid-retry loop.
+        self._encoding_in_progress = False
+        self._track_segmentation_failure("venv_not_ready")
+        QgsMessageLog.logMessage(
+            "Encode blocked: AI engine venv not ready "
+            f"({_status_msg}); routing to install.",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning)
+
+        msg = tr(
+            "The AI engine is not fully installed yet. Open the AI Segmentation "
+            "panel and click Install, or wait for the installation to finish, "
+            "then try your selection again."
+        )
+        if self._headless:
+            self._headless_error = msg
+            return False
+
+        # Guide to install once per session; never reopen it on every click.
+        if not self._venv_not_ready_prompted:
+            self._venv_not_ready_prompted = True
+            try:
+                self.iface.messageBar().pushMessage(
+                    "AI Segmentation", msg,
+                    level=Qgis.MessageLevel.Warning, duration=10)
+                if self.dock_widget is not None:
+                    self.dock_widget.set_dependency_status(
+                        False, tr("Installation not finished"))
+            except Exception:  # nosec B110
+                pass
+        return False
+
     def _do_extract_and_encode(self, center_point, mupp_override):
         """Internal: does the actual crop extraction + SAM encoding."""
         from ..core.feature_encoder import extract_crop_from_online_layer, extract_crop_from_raster
+
+        # Gate on real venv readiness BEFORE doing any work. An incomplete or
+        # in-flight install otherwise reaches set_image(), spawns a worker that
+        # dies on `import torch`, and surfaces as a raw encoding_error (the
+        # production "encoding_error / stage=install" loop). Short-circuit with
+        # actionable install guidance instead.
+        if not self._ensure_deps_ready_for_encode():
+            return False
 
         raster_pt_x = center_point.x()
         raster_pt_y = center_point.y()
@@ -2894,7 +3053,6 @@ class AISegmentationPlugin:
             self.predictor.set_image(image_np)
         except Exception as e:
             self._encoding_in_progress = False
-            self._track_segmentation_failure("encoding_error")
             QgsMessageLog.logMessage(
                 f"Image encoding failed: {str(e)}",
                 "AI Segmentation", level=Qgis.MessageLevel.Critical
@@ -2907,13 +3065,44 @@ class AISegmentationPlugin:
                 is_corrupt_checkpoint_error,
             )
             if is_corrupt_checkpoint_error(str(e)):
+                self._track_segmentation_failure("encoding_error")
                 return self._recover_corrupt_checkpoint(delete_checkpoint())
             # A venv whose base Python was deleted or corrupted fails every
             # worker spawn with "No Python at ..." while the panel still
             # says ready. Route it to the one-click repair. (#64)
             from ..core.venv_manager import venv_needs_repair
             if venv_needs_repair():
+                self._track_segmentation_failure("encoding_error")
                 return self._recover_broken_venv(str(e))
+            # The deps look present on disk (readiness gate passed) but the
+            # worker still could not import them: a half-broken install or DLL
+            # error. This is "engine not ready", NOT a bad image, so count it
+            # distinctly, drop the cached-ready flag (force a re-check), and
+            # route the user to Install instead of an opaque encoding_error.
+            if _is_worker_dependency_error(str(e)):
+                self._deps_confirmed_ready = False
+                self._track_segmentation_failure("venv_not_ready")
+                msg = tr(
+                    "The AI engine is not fully installed yet. Open the AI "
+                    "Segmentation panel and click Install, or wait for the "
+                    "installation to finish, then try your selection again."
+                )
+                if self._headless:
+                    self._headless_error = msg
+                    return False
+                if not self._venv_not_ready_prompted:
+                    self._venv_not_ready_prompted = True
+                    try:
+                        self.iface.messageBar().pushMessage(
+                            "AI Segmentation", msg,
+                            level=Qgis.MessageLevel.Warning, duration=10)
+                        if self.dock_widget is not None:
+                            self.dock_widget.set_dependency_status(
+                                False, tr("Installation not finished"))
+                    except Exception:  # nosec B110
+                        pass
+                return False
+            self._track_segmentation_failure("encoding_error")
             if self._headless:
                 self._headless_error = str(e)
                 return False
@@ -3823,6 +4012,9 @@ class AISegmentationPlugin:
         self._active_crop_points_positive = []
         self._active_crop_points_negative = []
         self._disjoint_warning_shown = False
+        # A new session may follow a finished install: allow the not-ready
+        # install guidance to show once more if the engine is still incomplete.
+        self._venv_not_ready_prompted = False
         self.saved_polygons = []
 
         for rb in self.saved_rubber_bands:

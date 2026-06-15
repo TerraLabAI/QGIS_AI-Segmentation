@@ -413,6 +413,21 @@ class SamPredictor:
             self._last_worker_error = None
             raise RuntimeError(error)
 
+        # Validate the crop before shipping it to the worker. A malformed array
+        # (wrong rank, zero-size, non-uint8) otherwise reaches SAM and throws an
+        # opaque tensor-shape traceback that surfaces as a bare encoding_error.
+        # Coerce the cheap cases (dtype, contiguity) and fail the rest clearly.
+        if not isinstance(image_np, np.ndarray) or image_np.ndim != 3 or image_np.shape[2] != 3:
+            shape = getattr(image_np, "shape", None)
+            raise SamWorkerError(
+                f"Invalid image for encoding: expected (H, W, 3), got shape {shape}")
+        if image_np.shape[0] == 0 or image_np.shape[1] == 0:
+            raise SamWorkerError(
+                f"Invalid image for encoding: empty crop {image_np.shape}")
+        if image_np.dtype != np.uint8:
+            image_np = np.clip(image_np, 0, 255).astype(np.uint8)
+        image_np = np.ascontiguousarray(image_np)
+
         try:
             image_b64 = base64.b64encode(
                 image_np.tobytes()).decode("utf-8")

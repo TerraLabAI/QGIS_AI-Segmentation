@@ -452,7 +452,13 @@ class SegmentationMCPAPI:
         # Setup session programmatically (no UI)
         try:
             layer_name_safe = target_layer.name().replace(" ", "_")
-            raster_path = os.path.normcase(target_layer.source())
+            # Resolve to a clean readable file path (decodes GDAL URI options /
+            # subdatasets, "" for pathless layers so the canvas-render fallback
+            # kicks in). Mirrors the UI start path.
+            if hasattr(plugin, "_resolve_raster_file_path"):
+                raster_path = plugin._resolve_raster_file_path(target_layer)
+            else:
+                raster_path = os.path.normcase(target_layer.source())
 
             if hasattr(plugin, "_reset_session"):
                 plugin._reset_session()

@@ -50,6 +50,14 @@
         <translation>Reparando la instalación...</translation>
     </message>
     <message>
+        <source>The AI engine is not fully installed yet. Open the AI Segmentation panel and click Install, or wait for the installation to finish, then try your selection again.</source>
+        <translation>El motor de IA aún no está completamente instalado. Abra el panel de AI Segmentation y haga clic en Instalar, o espere a que termine la instalación, y luego vuelva a intentar su selección.</translation>
+    </message>
+    <message>
+        <source>Installation not finished</source>
+        <translation>Instalación no finalizada</translation>
+    </message>
+    <message>
         <source>Restart QGIS Required</source>
         <translation>Se requiere reiniciar QGIS</translation>
     </message>
@@ -592,6 +600,12 @@ Por favor, convierta su ráster a GeoTIFF (.tif) antes de usar AI Segmentation.<
 Please convert your raster to GeoTIFF (.tif) manually.</source>
         <translation>Error al leer el archivo {ext}: {error}
 Por favor, convierta su ráster a GeoTIFF (.tif) manualmente.</translation>
+    </message>
+    <message>
+        <source>Could not read pixels from this {ext} file. The file may be corrupt, truncated, or use a compression your GDAL build cannot decode.
+Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) before using AI Segmentation.</source>
+        <translation>No se pudieron leer los píxeles de este archivo {ext}. El archivo puede estar dañado, truncado o usar una compresión que su versión de GDAL no puede decodificar.
+Intente abrirlo en QGIS para confirmar que se muestra, o conviértalo a GeoTIFF (.tif) antes de usar AI Segmentation.</translation>
     </message>
 
     <!-- PyTorch DLL Error Messages -->

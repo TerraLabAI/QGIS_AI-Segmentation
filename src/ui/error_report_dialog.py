@@ -401,9 +401,10 @@ def show_error_report(parent, error_title: str, error_message: str, error_code: 
     """Convenience function to show the error report dialog.
 
     `error_code` should be a canonical English snake_case identifier
-    (e.g. "crop_error"). If omitted, falls back to `_short_code(error_title)`,
-    which leaks the QGIS locale into the analytics payload — callers should
-    pass an explicit code so dashboards aggregate cleanly across languages.
+    (e.g. "crop_error"). If omitted, falls back to the language-independent
+    `_short_code()` constant - it never derives a code from the translated
+    `error_title`, so dashboards aggregate cleanly across UI languages.
+    Callers should still pass an explicit code so the breakdown stays useful.
     """
     try:
         from ..core.telemetry import track_plugin_error
@@ -445,22 +446,23 @@ def _infer_stage(title: str, message: str) -> str:
     return "other"
 
 
-def _short_code(title: str) -> str:
-    """Compact, lowercase error_code from the dialog title.
+def _short_code(_title: str = "") -> str:
+    """Last-resort error_code when a caller omits an explicit `error_code=`.
 
-    If the title contains non-ASCII characters it is almost certainly a
-    translated string (e.g. "Erreur d'extraction"). Returning a slug derived
-    from a translated title splits the same logical error across locales in
-    analytics. Surface that as `unknown_localized` so callers are nudged to
-    pass an explicit `error_code=` instead of silently polluting dashboards.
+    A dialog title is a user-facing string passed through `tr()`, so it is
+    translated per QGIS locale. Slugifying it (the old behavior) produced a
+    DIFFERENT code per language for the SAME error - e.g. the Spanish "Crop
+    Error" title "Error de recorte" became `error_de_recorte` while English
+    stayed `crop_error`, fragmenting the analytics breakdown by UI language.
+    Note this happens even for accent-free titles, so an ASCII check is not
+    enough: a localized title must NEVER become an error_code.
+
+    We therefore return a single language-independent constant and ignore the
+    title entirely. Every real error path passes a canonical English
+    snake_case `error_code=`; reaching this constant means a call site forgot
+    to, which is a code smell to fix at the call site, not here.
     """
-    import re as _re
-    if not title:
-        return "unknown"
-    if not title.isascii():
-        return "unknown_localized"
-    code = _re.sub(r"[^a-zA-Z0-9]+", "_", title).strip("_").lower()
-    return code[:40] or "unknown"
+    return "unspecified_error"
 
 
 def show_bug_report(parent):

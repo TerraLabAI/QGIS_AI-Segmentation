@@ -150,12 +150,22 @@ def is_network_error(output: str) -> bool:
 
 
 def is_proxy_auth_error(output: str) -> bool:
-    """Detect proxy authentication errors (HTTP 407)."""
+    """Detect proxy authentication errors (HTTP 407).
+
+    pip/OpenSSL and uv/rustls word this differently. pip says "407 Proxy
+    Authentication Required" / "ProxyError"; uv (Rust) surfaces the CONNECT
+    tunnel rejection as "tunnel error: proxy authorization required" (note
+    "authoriZation", a different spelling). Both mean the same thing: the
+    corporate proxy needs credentials the installer was not given.
+    """
     output_lower = output.lower()
     patterns = [
         "407 proxy authentication",
         "proxy authentication required",
         "proxyerror",
+        # uv / rustls vocabulary (seen behind authenticated corporate proxies)
+        "proxy authorization required",
+        "tunnel error",
     ]
     return any(p in output_lower for p in patterns)
 
