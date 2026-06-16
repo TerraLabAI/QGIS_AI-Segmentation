@@ -1275,6 +1275,25 @@ class AISegmentationPlugin:
                 error_title = tr("Installation Blocked")
                 error_msg = f"{error_msg}\n\n{_get_change_path_instructions()}"
                 error_code = "installation_blocked"
+            elif "verification" in msg_lower and any(p in msg_lower for p in [
+                "timed out", "timeout",
+            ]):
+                # A local verification step (importing/building a model like
+                # sam2) timing out is NOT a network problem - it is almost
+                # always antivirus scanning the freshly written native libraries
+                # on first import. Keep it a distinct code so it stops polluting
+                # the network_connection_problem bucket in analytics.
+                error_title = tr("Verification Timed Out")
+                error_msg = "{}\n\n{}".format(
+                    error_msg,
+                    tr(
+                        "Verifying the installed AI model took too long. This is "
+                        "usually your antivirus scanning the new files on first "
+                        "load. Add the plugin's install folder to your antivirus "
+                        "exclusions, then restart QGIS and try again."
+                    ),
+                )
+                error_code = "verification_timeout"
             elif any(p in msg_lower for p in [
                 "network error", "connection aborted", "connection reset",
                 "timed out", "timeout", "network connection failed",

@@ -1216,11 +1216,44 @@ def _get_verification_timeout(package_name: str) -> int:
     """
     if package_name == "torch":
         return 120
-    if package_name in ("torchvision", "pandas"):
+    if package_name in ("torchvision", "pandas", "sam2", "segment-anything"):
         # pandas loads many .pyd C extensions on first import;
-        # antivirus (Windows Defender) scans each one, easily exceeding 120s
+        # antivirus (Windows Defender) scans each one, easily exceeding 120s.
+        # sam2/segment-anything verification imports torch and builds the model,
+        # so it inherits torch's native-DLL load on top of its own scan.
         return 180
     return 30
+
+
+def _summarize_install_error(text: str, limit: int = 280) -> str:
+    """Pull the meaningful failure out of pip/uv output for users + telemetry.
+
+    uv prints an info header ("Using Python 3.x environment at: venv_py3.x")
+    first, so the HEAD of the output is useless - taking output[:200] leaked
+    that header into installation_failed telemetry. The real error is at the
+    tail. Drop the known-noise lines, then prefer the line that names the
+    failure; fall back to the last meaningful lines.
+    """
+    if not text:
+        return ""
+    noise_prefixes = (
+        "using python", "resolved ", "audited ", "downloading ", "downloaded ",
+        "prepared ", "installed ", "building ", "built ", "creating ",
+        "updating ", "warning:",
+    )
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    meaningful = [ln for ln in lines if not ln.lower().startswith(noise_prefixes)]
+    if not meaningful:
+        meaningful = lines
+    for kw in (
+        "no space left", "no matching distribution", "could not find",
+        "permission denied", "access is denied", "operation timed out",
+        "connection reset", "error:", "×", "failed",
+    ):
+        for ln in meaningful:
+            if kw in ln.lower():
+                return ln[:limit]
+    return " | ".join(meaningful[-2:])[:limit]
 
 
 class _PipResult:
@@ -2112,7 +2145,7 @@ def install_dependencies(
                         _log(gdal_help, Qgis.MessageLevel.Warning)
                         return False, f"Failed to install {package_name}: GDAL library not found"
 
-                return False, f"Failed to install {package_name}: {install_error_msg[:200]}"
+                return False, f"Failed to install {package_name}: {_summarize_install_error(install_error_msg)}"
 
         # Post-install numpy version safety net:
         # Check and force-downgrade if needed.
