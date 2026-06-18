@@ -55,13 +55,18 @@ def get_or_create_terralab_menu(main_window) -> QMenu:
     return menu
 
 
-def add_plugin_to_menu(menu: QMenu, action, product_id: str):
+def add_plugin_to_menu(menu: QMenu, action, product_id: str, is_cross_promo: bool = False):
     action.setProperty("terralab_product_id", product_id)
-    # Remove existing action with same product_id (real plugin replaces promo)
+    action.setProperty("terralab_is_cross_promo", is_cross_promo)
+    # A real plugin replaces a cross-promo placeholder, but a placeholder must
+    # never replace a real plugin's action (mirrors add_action_to_toolbar), or
+    # load order could let our cross-promo entry clobber the sibling's real one.
     for a in menu.actions():
         if a.objectName() == _UTILITY_SEPARATOR:
             break
         if a.property("terralab_product_id") == product_id and a is not action:
+            if is_cross_promo and not a.property("terralab_is_cross_promo"):
+                return
             menu.removeAction(a)
             break
     sep_action = None

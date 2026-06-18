@@ -437,7 +437,7 @@ class AISegmentationPlugin:
             icon=ai_edit_icon,
         )
         add_action_to_toolbar(self.terralab_toolbar, self.ai_edit_action, "ai-edit", is_cross_promo=True)
-        add_plugin_to_menu(self.terralab_menu, self.ai_edit_action, "ai-edit")
+        add_plugin_to_menu(self.terralab_menu, self.ai_edit_action, "ai-edit", is_cross_promo=True)
         add_to_plugins_menu(self.iface, self.ai_edit_action)
 
         # Defer dock widget creation to first toggle for fast plugin load
