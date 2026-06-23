@@ -1083,11 +1083,14 @@ class AISegmentationPlugin:
             "&utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
             "&utm_content=connect"
         )
+        # Hand the URL to the dock so its "Copy connection link" button can offer
+        # it (lets the user finish sign-in in a different browser).
+        self.dock_widget.set_pairing_link(url)
         opened = QDesktopServices.openUrl(QUrl(url))
         if not opened:
             self.dock_widget.show_pairing_idle()
             self.dock_widget.set_activation_message(
-                tr("Couldn't open your browser. Use the manual key option below."),
+                tr("Couldn't open your browser. Copy the link and open it manually."),
                 is_error=True,
             )
             return

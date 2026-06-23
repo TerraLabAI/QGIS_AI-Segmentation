@@ -3,6 +3,10 @@
 <TS version="2.1" language="es">
 <context>
     <name>AISegmentation</name>
+    <message>
+        <source>Link not opening? Copy link</source>
+        <translation>¿No se abre el enlace? Copiar enlace</translation>
+    </message>
     <!-- Account Settings: Dependencies -->
     <message>
         <source>Dependencies</source>

@@ -373,7 +373,8 @@ class AccountSettingsDialog(QDialog):
         path_lbl = QLabel(CACHE_DIR)
         path_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         path_lbl.setWordWrap(True)
-        path_lbl.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.7);")
+        # 11px + palette(text): the 10px muted grey was hard to read on dark.
+        path_lbl.setStyleSheet("font-size: 11px; color: palette(text);")
         layout.addWidget(path_lbl)
 
         open_btn = QPushButton(tr("Open folder"))

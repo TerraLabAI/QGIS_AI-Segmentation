@@ -156,27 +156,6 @@ class KeyRevalidateWorker(QThread):
             self.finished.emit(True, "")
 
 
-class KeyValidateWorker(QThread):
-    """Validates a pasted activation key without blocking the UI thread.
-
-    Network-only (check_key_with_server never persists); the caller saves
-    the key on the main thread when success comes back.
-    """
-    finished = pyqtSignal(bool, str, str)  # (success, message, key)
-
-    def __init__(self, key: str, parent=None):
-        super().__init__(parent)
-        self._key = key
-
-    def run(self):
-        try:
-            from ..core.activation_manager import check_key_with_server
-            success, message = check_key_with_server(self._key)
-            self.finished.emit(success, message, self._key)
-        except Exception as e:
-            self.finished.emit(False, str(e), self._key)
-
-
 class VerifyWorker(QThread):
     """Runs venv verification + device detection off the main thread."""
     finished = pyqtSignal(bool, str)  # (is_valid, message)
