@@ -3,7 +3,7 @@ name=AI Segmentation by TerraLab
 description=Segment buildings, vegetation, or any object in your raster using AI, refine & export as vector polygons
 qgisMinimumVersion=3.20
 qgisMaximumVersion=4.99
-version=1.4.9
+version=1.5.0
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -27,7 +27,27 @@ about=
     • Multilingual: English, French, Portuguese, Spanish
 
 changelog=
-
+    1.5.0
+    - You can now read a version-by-version changelog right here in the Plugin Manager
+    1.4.9
+    - Stability and reliability improvements
+    1.4.8
+    - Connect with one-click browser sign-in (the manual key field is gone)
+    - New "Copy connection link" button to finish signing in from another browser
+    - Clearer sign-in wording and more readable Account settings text
+    1.4.7
+    - Fix: the AI Edit shortcut no longer overrides AI Edit's own menu entry when both plugins are installed
+    1.4.6
+    - More reliable dependency install: longer verification window so antivirus scans no longer trigger false timeouts
+    - Install errors now show the real cause instead of a confusing header line
+    1.4.5
+    - Works behind authenticated corporate proxies, with guidance to enter your proxy credentials
+    - Clearer messages for corrupt or unreadable rasters instead of a cryptic failure
+    1.4.4
+    - Export no longer fails on read-only or cloud-synced folders (OneDrive, Google Drive, network drives): the result is saved to a temporary folder and its location is shown
+    1.4.3
+    - Cancelling the install no longer pops up an error report
+    - A half-finished install is resumed cleanly when you retry
 
 tracker=https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues
 repository=https://github.com/TerraLabAI/QGIS_AI-Segmentation
