@@ -1,12 +1,17 @@
 """Minimal telemetry for AI Segmentation plugin.
 
 Design principles (do not deviate):
-- Lifecycle and funnel events (plugin_opened, plugin_activated, segmentation_run,
-  session_summary, and the install/download/export/Pro funnel events) ship as
-  soon as the plugin is activated. Their payload carries only OS, plugin
-  version, QGIS version, success bool, counts, and durations. No PII.
-- `plugin_error` is the only event still gated, because its scrubbed message
-  field could carry path fragments. The gate is the existing ToS acceptance
+- All telemetry respects a global opt-out: the QSettings key
+  `TerraLab/telemetry_enabled` (default on, shared across TerraLab plugins so
+  disabling it in one disables it everywhere). When off, `_send` drops every
+  event before any network call. Users flip it from the account settings dialog.
+- All events are anonymous: the payload carries only OS, plugin version, QGIS
+  version, a success bool, counts, and durations. No personal data, no content,
+  no coordinates. The lifecycle events (plugin_opened, plugin_activated,
+  segmentation_run, session_summary, and the install/download/export/Pro events)
+  carry no user-generated content, so they need no gate beyond the opt-out above.
+- `plugin_error` is gated additionally, because its scrubbed message field could
+  carry path fragments. The gate is the existing ToS acceptance
   the user gives via the dock checkbox before their first segmentation
   (`tos_accepted` in activation_manager.py).
 - File paths are anonymized (<USER> placeholder) via error_report_dialog's
@@ -37,9 +42,37 @@ from . import telemetry_events as ev
 _TIMEOUT_MS = 5_000
 _RETRY_BACKOFF_S = 2.0
 
-# Lifecycle/funnel events without user-generated content. Ship without an
-# explicit consent flag so the funnel is observable.
-_NO_CONSENT_EVENTS = frozenset({
+# Global opt-out switch. Shared across TerraLab plugins (same namespace as
+# TerraLab/device_seed) so the user only has to disable telemetry once.
+_TELEMETRY_ENABLED_KEY = "TerraLab/telemetry_enabled"
+
+
+def is_telemetry_enabled() -> bool:
+    """Whether anonymous usage telemetry is enabled. Opt-out: defaults to True.
+
+    Reads the shared TerraLab/telemetry_enabled QSettings key. Fails closed: if
+    the preference cannot be read, we do NOT send (privacy takes precedence over
+    a data point).
+    """
+    try:
+        from qgis.PyQt.QtCore import QSettings
+        return bool(QSettings().value(_TELEMETRY_ENABLED_KEY, True, type=bool))
+    except Exception:  # nosec B110
+        return False
+
+
+def set_telemetry_enabled(enabled: bool) -> None:
+    """Persist the global telemetry opt-out flag (shared across TerraLab plugins)."""
+    try:
+        from qgis.PyQt.QtCore import QSettings
+        QSettings().setValue(_TELEMETRY_ENABLED_KEY, bool(enabled))
+    except Exception:
+        pass  # nosec B110 — a settings write failure must not break the UI
+
+
+# Anonymous lifecycle events that carry no user-generated content, so they need
+# no gate beyond the global opt-out (plugin_error is gated separately).
+_NO_CONTENT_EVENTS = frozenset({
     ev.PLUGIN_OPENED,
     ev.PLUGIN_ACTIVATED,
     ev.ACTIVATION_ATTEMPTED,
@@ -177,14 +210,19 @@ def _on_worker_finished(worker: _TelemetryWorker):
 def _send(event: str, properties: dict | None = None) -> bool:
     """Build payload + ship. Returns True once the background worker has been queued.
 
-    Lifecycle/funnel events in `_NO_CONSENT_EVENTS` ship as long as the plugin
-    is activated; everything else additionally requires the user to have
-    accepted the ToS (via the dock checkbox before first segmentation).
+    Anonymous events in `_NO_CONTENT_EVENTS` ship as long as the plugin is
+    activated; everything else additionally requires the user to have accepted
+    the ToS (via the dock checkbox before first segmentation).
+
+    The global opt-out is checked first: if the user disabled telemetry, no
+    event is ever built or sent.
     """
+    if not is_telemetry_enabled():
+        return False
     auth = _get_auth_header()
     if not auth:
         return False
-    if event not in _NO_CONSENT_EVENTS:
+    if event not in _NO_CONTENT_EVENTS:
         try:
             from .activation_manager import has_tos_accepted, has_tos_locked
             if not (has_tos_accepted() or has_tos_locked()):
@@ -269,7 +307,7 @@ def track_segmentation_run(
 
     Sampling: power users click hundreds of times per session, making the
     success path the bulk of telemetry volume. The first success of a session
-    is always sent (sample_rate: 1) so light users still appear in funnels;
+    is always sent (sample_rate: 1) so light users stay represented;
     after that, 1-in-N with sample_rate set so dashboards re-weight. Failures
     are rare and precious, so they are ALWAYS sent unsampled (sample_rate: 1)
     regardless of the session counter.
@@ -329,9 +367,7 @@ def track_export_completed(feature_count: int, format: str = "gpkg") -> bool:
 
 
 def track_pro_panel_viewed() -> bool:
-    """Fire when the Pro upsell panel is first shown in a session.
-
-    Start of the Pro conversion funnel."""
+    """Fire when the Pro upsell panel is first shown in a session."""
     return _send(ev.PRO_PANEL_VIEWED)
 
 
@@ -382,7 +418,7 @@ def track_plugin_error(
 
     stage: install | download | activate | segment | export | other
     error_code: short machine-friendly id (e.g. "PIP_TIMEOUT", "RUNTIME_ERROR")
-    message: first line of the error, truncated to 500 chars, path + coord scrubbed
+    message: first line of the error, truncated to 200 chars, path + coord scrubbed
     include_log_tail: OFF by default. When True, the last 20 anonymized log lines
         are capped to ~4KB and coordinate-scrubbed before being sent. We default
         off because QGIS runtime logs frequently contain click coords, crop
@@ -391,7 +427,7 @@ def track_plugin_error(
     props = {
         "stage": stage,
         "error_code": error_code,
-        "error_message": _scrub_payload_value((message or "")[:500]),
+        "error_message": _scrub_payload_value((message or "")[:200]),
     }
     if include_log_tail:
         try:

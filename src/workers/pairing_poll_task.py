@@ -125,11 +125,7 @@ class PairingPollTask(QgsTask):
             if status == "pending" and not browser_seen:
                 browser_seen = True
                 self.pairing_browser_seen.emit()
-            elif (
-                not browser_seen
-                and not stall_hinted
-                and time.monotonic() - started >= self.STALL_AFTER_S
-            ):
+            elif not browser_seen and not stall_hinted and time.monotonic() - started >= self.STALL_AFTER_S:
                 # Long wait and the server never saw the browser: the page
                 # probably never opened (blocked browser, page error). Hint
                 # the recovery paths instead of spinning silently.

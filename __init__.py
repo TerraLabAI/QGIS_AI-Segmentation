@@ -15,7 +15,7 @@ def _cleanup_old_installation():
 
 try:
     _cleanup_old_installation()
-except Exception:
+except Exception:  # nosec B110 - best-effort cleanup, must never block plugin load
     pass
 
 

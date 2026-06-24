@@ -37,7 +37,7 @@ BTN_GREEN = "#43a047"
 BTN_GREEN_HOVER = "#2e7d32"
 BTN_GREEN_DISABLED = "#c8e6c9"
 
-# Brand accent green = the QGIS green (terralab-website --qgis-green). Lime
+# Brand accent green = the QGIS green (the --qgis-green brand token). Lime
 # fills use BRAND_GREEN; green text on light backgrounds uses BRAND_GREEN_TEXT.
 BRAND_GREEN = "#8bac27"
 BRAND_GREEN_TEXT = "#4d7c0f"

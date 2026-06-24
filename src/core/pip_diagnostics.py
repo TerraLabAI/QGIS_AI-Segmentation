@@ -230,17 +230,20 @@ def is_glibc_too_old(output: str) -> bool:
     if re.search(r"glibc_2\.\d+'? not found", lower):
         return True
     has_manylinux = "manylinux" in lower
-    has_no_match = (
-        # pip vocabulary
-        "no matching distribution" in lower
-        or "could not find a version" in lower
-        or "is not a supported wheel" in lower
-        # uv (rustls) vocabulary: it names the platform tag instead
-        or "no wheels" in lower
-        or "none of the wheels" in lower
-        or "matching platform tag" in lower
-        or "compatible with your platform" in lower
-        or "compatible with the current platform" in lower
+    has_no_match = any(
+        phrase in lower
+        for phrase in (
+            # pip vocabulary
+            "no matching distribution",
+            "could not find a version",
+            "is not a supported wheel",
+            # uv (rustls) vocabulary: it names the platform tag instead
+            "no wheels",
+            "none of the wheels",
+            "matching platform tag",
+            "compatible with your platform",
+            "compatible with the current platform",
+        )
     )
     if has_manylinux and has_no_match:
         return True
@@ -276,9 +279,9 @@ def is_macos_intel_no_wheel(output: str) -> bool:
         return False
     lower = output.lower()
     mentions_torch = "torch" in lower
-    no_match = (
-        "no matching distribution" in lower
-        or "could not find a version" in lower
+    no_match = any(
+        phrase in lower
+        for phrase in ("no matching distribution", "could not find a version")
     )
     mentions_x86 = "macosx" in lower and ("x86_64" in lower or "x86-64" in lower)
     return mentions_torch and no_match and mentions_x86
@@ -410,10 +413,9 @@ def is_file_locked_error(output: str) -> bool:
     """
     lower = output.lower()
     # "failed to remove" + a binary extension + any access-denied variant
-    has_remove_verb = (
-        "failed to remove" in lower
-        or "could not remove" in lower
-        or "unable to remove" in lower
+    has_remove_verb = any(
+        phrase in lower
+        for phrase in ("failed to remove", "could not remove", "unable to remove")
     )
     if not has_remove_verb:
         return False
@@ -422,11 +424,9 @@ def is_file_locked_error(output: str) -> bool:
         return False
     if any(p in lower for p in _ACCESS_DENIED_LOCALIZED):
         return True
-    return (
-        "os error 5" in lower
-        or "os error 13" in lower
-        or "winerror 5" in lower
-        or "permission denied" in lower
+    return any(
+        phrase in lower
+        for phrase in ("os error 5", "os error 13", "winerror 5", "permission denied")
     )
 
 

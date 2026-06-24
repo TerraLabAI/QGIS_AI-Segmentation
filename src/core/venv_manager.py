@@ -465,8 +465,7 @@ def _repair_poisoned_environment() -> None:
             os.environ.pop("GDAL_DATA", None)
 
     _log(
-        "Repaired PROJ/GDAL environment poisoned by an older plugin version: "
-        + ", ".join(poisoned),
+        f"Repaired PROJ/GDAL environment poisoned by an older plugin version: {', '.join(poisoned)}",
         Qgis.MessageLevel.Info,
     )
 
@@ -1677,10 +1676,7 @@ def install_dependencies(
                 # the same versions as ~180 MB CPU-only wheels. Windows and
                 # macOS wheels on PyPI are already CPU-only, so the extra
                 # index (and its proxy-block risk) stays Linux-only.
-                use_cpu_index = (
-                    package_name in ("torch", "torchvision")
-                    and sys.platform.startswith("linux")
-                )
+                use_cpu_index = package_name in ("torch", "torchvision") and sys.platform.startswith("linux")
                 if use_cpu_index:
                     cpu_args = pip_args[:-1] + [
                         "--index-url", TORCH_CPU_INDEX_URL, pip_args[-1]]

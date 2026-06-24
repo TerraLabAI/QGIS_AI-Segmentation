@@ -4,6 +4,14 @@
 <context>
     <name>AISegmentation</name>
     <message>
+        <source>Share anonymous usage statistics</source>
+        <translation>Partager des statistiques d'usage anonymes</translation>
+    </message>
+    <message>
+        <source>Anonymous metrics (durations, error codes, OS, QGIS version) help us fix issues.</source>
+        <translation>Les métriques anonymes (durées, codes d'erreur, OS, version de QGIS) nous aident à corriger les problèmes.</translation>
+    </message>
+    <message>
         <source>Link not opening? Copy link</source>
         <translation>Le lien ne s'ouvre pas ? Copier le lien</translation>
     </message>

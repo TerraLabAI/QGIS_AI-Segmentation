@@ -12,6 +12,7 @@ import os
 from qgis.PyQt.QtCore import Qt, QThread, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QDesktopServices
 from qgis.PyQt.QtWidgets import (
+    QCheckBox,
     QDialog,
     QFrame,
     QGridLayout,
@@ -28,6 +29,7 @@ from ..core.activation_manager import (
     get_terms_url,
 )
 from ..core.i18n import tr
+from ..core.telemetry import is_telemetry_enabled, set_telemetry_enabled
 from .ai_segmentation_dockwidget import (
     BRAND_BLUE,
     BRAND_BLUE_HOVER,
@@ -196,6 +198,8 @@ class AccountSettingsDialog(QDialog):
 
         self._content_layout.addWidget(self._build_dependencies_card())
 
+        self._content_layout.addWidget(self._build_privacy_card())
+
         # Discreet footer: thin top separator, small muted Terms / Privacy links.
         footer = QFrame()
         footer.setObjectName("legalFooter")
@@ -336,6 +340,46 @@ class AccountSettingsDialog(QDialog):
         manage_btn.setMinimumHeight(36)
         manage_btn.clicked.connect(self._open_dashboard)
         card_layout.addWidget(manage_btn)
+
+        return card
+
+    def _build_privacy_card(self) -> QFrame:
+        """Anonymous usage telemetry with a clear, ON-by-default opt-out.
+
+        QGIS users expect data collection to be transparent and switchable. The
+        checkbox flips the shared TerraLab/telemetry_enabled flag (see
+        telemetry.py), so turning it off here also silences the sibling AI Edit
+        plugin. The metrics are anonymous (no email, no identifier that singles a
+        user out) and carry no geospatial or project content.
+        """
+        card = QFrame()
+        card.setStyleSheet(_CARD_STYLE)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
+
+        title = QLabel(f"<b>{tr('Privacy')}</b>")
+        title.setStyleSheet("font-size: 13px; color: palette(text);")
+        layout.addWidget(title)
+
+        self._telemetry_checkbox = QCheckBox(tr("Share anonymous usage statistics"))
+        self._telemetry_checkbox.setChecked(is_telemetry_enabled())
+        self._telemetry_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._telemetry_checkbox.setStyleSheet(
+            "font-size: 12px; color: palette(text);"
+        )
+        self._telemetry_checkbox.toggled.connect(set_telemetry_enabled)
+        layout.addWidget(self._telemetry_checkbox)
+
+        caption = QLabel(
+            tr(
+                "Anonymous metrics (durations, error codes, OS, QGIS version) "
+                "help us fix issues."
+            )
+        )
+        caption.setWordWrap(True)
+        caption.setStyleSheet("font-size: 11px; color: palette(text);")
+        layout.addWidget(caption)
 
         return card
 

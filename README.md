@@ -10,3 +10,12 @@
 <img src="https://github.com/user-attachments/assets/8528dc25-0dc7-4102-b242-5a223339db36" alt="Demo" width="700"/>
 
 ---
+
+## Data & privacy
+
+AI Segmentation runs locally: your imagery and clicks never leave your computer.
+If you sign in, the plugin contacts our server only to verify your license, plus
+optional anonymous usage stats (no personal data) you can switch off in *Account
+Settings*. See our [Privacy Policy](https://terra-lab.ai/privacy-policy).
+
+---

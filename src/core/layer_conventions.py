@@ -94,9 +94,11 @@ def apply_output_conventions(layer: QgsVectorLayer, source_raster_name: str) -> 
     try:
         md = layer.metadata()
         md.setTitle(layer.name())
+        raster_note = (
+            f" Source raster: {source_raster_name}." if source_raster_name else ""
+        )
         md.setAbstract(
-            "Polygons digitized with AI Segmentation (TerraLab)."
-            + (f" Source raster: {source_raster_name}." if source_raster_name else "")
+            f"Polygons digitized with AI Segmentation (TerraLab).{raster_note}"
         )
         created = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         history = list(md.history())
