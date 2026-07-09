@@ -175,6 +175,17 @@ class AISegmentationDockWidget(
         # the "keeping what's found" note on the progress card while the worker
         # drains its in-flight tiles, instead of the send/queue line.
         self._auto_cancelling: bool = False
+        # Live "waking up the AI" feedback for the pre-first-tile window: a cold
+        # GPU can take up to ~a minute to answer, and with a static 0% bar that
+        # reads as a hang. A 1s QTimer (created lazily) animates the bar
+        # (indeterminate) and evolves the label while no tile has landed yet.
+        # _auto_warming_since is the monotonic run-start used for the elapsed
+        # readout; _auto_queue_position mirrors the last server queue answer
+        # (0 = flowing, -1 = busy/warming with no place known, >=1 = real spot).
+        self._auto_warmup_timer = None
+        self._auto_warming_since: float | None = None
+        self._auto_queue_position: int = 0
+        self._auto_queue_eta: int = 0
         # Last per-zone credit estimate (tile count) and whether it exceeds the
         # known balance. When it does, Detect is hard-blocked: a run may never
         # launch under-funded. None = no estimate yet.

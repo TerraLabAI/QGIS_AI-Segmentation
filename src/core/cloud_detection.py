@@ -33,6 +33,32 @@ _RLE_FORMAT: str = "offset_count_row_major_one_based"
 _TILE_IMAGE_FORMAT: str = "JPEG"
 _TILE_JPEG_QUALITY: int = 90
 
+# Reference-example ("exemplar") crops are pasted in ONE row along a tile's top
+# edge (composite_tile_with_stamps). The whole band MUST stay inside the vertical
+# tile overlap, so any ground it hides is always re-seen clean by the tile above
+# (stamp-region detections are dropped). stamp_size_cap enforces that invariant
+# for any exemplar count; both the worker (pre-sizing) and the compositor (layout)
+# read it, so the two never drift.
+_STAMP_PAD: int = 3            # gap around each pasted crop
+_STAMP_MAX: int = 160         # visual cap on a pasted crop's longest side
+
+
+def stamp_size_cap(n: int) -> int:
+    """Longest-side pixel cap for ``n`` exemplar crops sharing one top-edge row.
+
+    Two ceilings keep the band inside the overlap for any ``n``: its height must
+    fit the vertical overlap band, and ``n`` crops must fit the tile width. The
+    binding (smallest) ceiling wins; ``_STAMP_MAX`` usually binds for small ``n``.
+    """
+    from .tile_manager import OVERLAP_FRACTION, TILE_SIZE
+
+    n = max(1, int(n))
+    overlap_px = int(TILE_SIZE * OVERLAP_FRACTION)
+    band_budget = overlap_px - 2 * _STAMP_PAD
+    width_budget = (TILE_SIZE - _STAMP_PAD) // n - _STAMP_PAD
+    return max(1, min(_STAMP_MAX, band_budget, width_budget))
+
+
 # Blank-tile skip: a tile that renders as essentially one colour (nodata fill,
 # a mosaic gap, an out-of-footprint rectangle corner, a rendered ocean pad)
 # returns no detections but still costs one credit. Detecting it cheaply BEFORE
@@ -147,6 +173,26 @@ def _set_quality_render_flags(settings) -> None:
             pass
 
 
+def _set_blocking_remote_fetch(settings) -> None:
+    """Make the render job fetch remote layer data (XYZ/WMS/WMTS tiles)
+    synchronously before finishing, the way QGIS exports do. Without it an
+    offscreen render of an online basemap can return with EMPTY cells for
+    every imagery tile the provider had not cached yet (it schedules an async
+    download and a canvas refresh that never applies to a one-shot job), which
+    reads as a blank/partial tile downstream. Best-effort: enum location moved
+    across QGIS versions, and a missing flag must never break the render."""
+    from qgis.core import Qgis, QgsMapSettings
+
+    flag = getattr(QgsMapSettings, "RenderBlocking", None) or getattr(
+        getattr(Qgis, "MapSettingsFlag", None), "RenderBlocking", None)
+    if flag is None:
+        return
+    try:
+        settings.setFlag(flag, True)
+    except (TypeError, AttributeError):  # enum type mismatch on this QGIS
+        pass
+
+
 def render_zone_to_image(
     layer: "QgsRasterLayer",
     extent: "QgsRectangle",
@@ -195,6 +241,9 @@ def render_zone_to_image(
         settings.setDestinationCrs(layer.crs())
         settings.setBackgroundColor(QColor(0, 0, 0))
         _set_quality_render_flags(settings)
+        # Fetch remote imagery synchronously so uncached areas render with
+        # real pixels, not blank cells (see _set_blocking_remote_fetch).
+        _set_blocking_remote_fetch(settings)
         # The extent QGIS will actually render (aspect-corrected). Using this for
         # the geo-transform is what keeps detections aligned with the imagery.
         actual_extent = settings.visibleExtent()
@@ -473,6 +522,11 @@ def render_tile_qimage(
         settings.setDestinationCrs(layer.crs())
         settings.setBackgroundColor(QColor(0, 0, 0))
         _set_quality_render_flags(settings)
+        # Online basemaps MUST download their imagery tiles before the job
+        # finishes; otherwise an uncached area (never viewed at detection
+        # zoom) can render blank and the detection tile is silently skipped
+        # as "empty".
+        _set_blocking_remote_fetch(settings)
 
         job = QgsMapRendererParallelJob(settings)
         loop = QEventLoop()
@@ -616,8 +670,8 @@ def encode_tile_png(
 
 
 def composite_tile_with_stamps(img, tx, ty, tw, th, stamps):
-    """Encode one tile, with reference-example crops STAMPED in a row along its
-    top edge (composite-per-tile). The cloud model's exemplars are same-image only, so to make
+    """Encode one tile, with reference-example crops STAMPED in a single row along
+    its top edge (composite-per-tile). The cloud model's exemplars are same-image only, so to make
     one drawn example work on every tile we paste its natural-context crop into
     each tile and point the example box at the OBJECT inside the pasted pixels.
 
@@ -655,18 +709,21 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps):
     boxes: list[dict] = []
     max_x = 0
     max_y = 0
-    pad = 3
+    pad = _STAMP_PAD
     if stamps:
+        from .tile_manager import OVERLAP_FRACTION, TILE_SIZE
+
+        # Stamps go in a SINGLE HORIZONTAL row along the TOP edge. The band must
+        # never reach below the vertical tile overlap, or ground hidden under it
+        # is not guaranteed to be re-seen clean by the tile above (stamp-region
+        # detections are dropped). Stamps are pre-sized (stamp_size_cap) so all
+        # of them fit one row inside this budget; anything that still would not
+        # fit (only possible on a degenerate narrow edge tile) is skipped here,
+        # never wrapped onto a second row that would poke past the overlap.
+        band_h = min(ch, int(TILE_SIZE * OVERLAP_FRACTION))
         painter = QPainter(sub)
-        # Stamps go in a HORIZONTAL row along the TOP edge (wrapping to a second
-        # row only if it overflows the width). Combined with the paste-size cap
-        # (< tile overlap, see _prepare_stamps) the whole stamp band stays inside
-        # the vertical overlap: the ground it hides is always seen clean by the
-        # tile above, so dropping stamp-region detections never leaves holes.
-        # The old vertical stack grew past the overlap from the second stamp on.
         x = pad
         y = pad
-        row_h = 0
         for stamp in stamps:
             if len(stamp) == 3:
                 crop, label, obj_box = stamp
@@ -675,12 +732,10 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps):
                 obj_box = None
             sw = crop.width()
             sh = crop.height()
-            # Wrap to a new row when the row would overflow the tile width.
+            # Row full: stop (never wrap down past the overlap band).
             if x + sw + pad > cw and x > pad:
-                y = y + row_h + pad
-                x = pad
-                row_h = 0
-            if y + sh > ch:  # no room: skip this stamp on this tile
+                break
+            if y + sh + pad > band_h:  # would reach below the overlap: skip
                 continue
             painter.drawImage(QRect(x, y, sw, sh), crop)
             # Send a box tight to the object (obj_box) offset by the paste
@@ -699,7 +754,6 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps):
                 "box": [float(bx0), float(by0), float(bx1), float(by1)],
                 "label": int(label),
             })
-            row_h = max(row_h, sh)
             max_x = max(max_x, x + sw)
             max_y = max(max_y, y + sh)
             x += sw + pad

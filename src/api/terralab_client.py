@@ -21,6 +21,8 @@ _TIMEOUT_SUBMIT_DETECTION_DIRECT = 110_000
 _TIMEOUT_POLL_DETECTION = 15_000     # ms: poll is GET with tiny JSON response
 _TIMEOUT_WARMUP = 5_000              # ms: warmup is a tiny best-effort ping
 _TIMEOUT_TRANSLATE = 6_000           # ms: prompt translation blocks a Detect
+# ms: final-output upload can carry a few MB of geometry; background task only.
+_TIMEOUT_RUN_EXPORT = 60_000
 #                                      click, so fail fast and run as typed
 
 # Qt6 (QGIS 4) uses scoped enums; Qt5 uses flat. Resolve at import time.
@@ -28,6 +30,13 @@ _NE = getattr(QNetworkReply, "NetworkError", QNetworkReply)
 _HostNotFound = getattr(_NE, "HostNotFoundError", getattr(QNetworkReply, "HostNotFoundError", None))
 _ConnRefused = getattr(_NE, "ConnectionRefusedError", getattr(QNetworkReply, "ConnectionRefusedError", None))
 _Timeout = getattr(_NE, "TimeoutError", getattr(QNetworkReply, "TimeoutError", None))
+# What Qt actually emits when a request's setTransferTimeout deadline expires:
+# OperationCanceledError, NOT TimeoutError. A cold-starting / busy inference
+# service that answers slower than the submit deadline lands here, so it must
+# be read as "the service is warming up" (a transient, retry-worthy wait), not
+# as the user's connection dying. reply.abort() on our own cancel path also
+# raises this, but the cancel path never classifies+retries an aborted reply.
+_OpCanceled = getattr(_NE, "OperationCanceledError", getattr(QNetworkReply, "OperationCanceledError", None))
 _SslFailed = getattr(_NE, "SslHandshakeFailedError", getattr(QNetworkReply, "SslHandshakeFailedError", None))
 _ContentDenied = getattr(_NE, "ContentAccessDenied", getattr(QNetworkReply, "ContentAccessDenied", None))
 _AuthRequired = getattr(_NE, "AuthenticationRequiredError", getattr(QNetworkReply, "AuthenticationRequiredError", None))
@@ -108,7 +117,14 @@ def _classify_qt_error(qt_error, error_string: str, http_status: int | None) -> 
         return "DNS_ERROR", tr("Cannot reach the server. Check your internet connection.")
     if qt_error == _ConnRefused:
         return "CONNECTION_REFUSED", tr("Server refused the connection.")
-    if qt_error == _Timeout:
+    if qt_error == _Timeout or (_OpCanceled is not None and qt_error == _OpCanceled):
+        # No HTTP status means the socket never got an answer within the
+        # deadline: on the detection hot path this is a cold-starting / busy
+        # GPU, not a dead link. Code TIMEOUT keeps it a transient retry AND
+        # (unlike NO_INTERNET) makes the worker surface the "your spot is held"
+        # waiting state instead of blaming the user's connection.
+        if http_status is None:
+            return "SERVICE_WARMING", tr("The AI service is waking up. Holding your spot…")
         return "TIMEOUT", tr("Request timed out. Check your connection or try again.")
     if qt_error == _SslFailed:
         return "SSL_ERROR", tr("SSL certificate error. Your network may be blocking secure connections.")
@@ -207,6 +223,27 @@ class TerraLabClient:
         if self.detection_direct:
             return f"{self.detection_base_url}/predict"
         return f"{self.detection_base_url}/api/ai-segmentation/predict"
+
+    def _detection_run_export_url(self) -> str:
+        """Absolute URL for the end-of-run export summary. Same host split as
+        the predict call."""
+        if self.detection_direct:
+            return f"{self.detection_base_url}/run-export"
+        return f"{self.detection_base_url}/api/ai-segmentation/run-export"
+
+    def post_run_export(self, payload: dict, auth: dict) -> dict:
+        """Send the finished run's export summary (review settings + the final
+        exported geometry when small enough) so the run record is complete.
+
+        Additive and best-effort: callers fire-and-forget from a background
+        task; a server without the route degrades to {"error", "code"} and the
+        user's local export is never affected. Off-GUI-thread only.
+        """
+        body = json.dumps(payload).encode("utf-8")
+        return self._request(
+            "POST", self._detection_run_export_url(), auth=auth, body=body,
+            timeout_ms=_TIMEOUT_RUN_EXPORT,
+        )
 
     def _submit_timeout(self) -> int:
         """Submit timeout. Direct mode blocks for the whole inference (no async

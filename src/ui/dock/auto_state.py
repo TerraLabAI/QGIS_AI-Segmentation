@@ -6,6 +6,7 @@ are plain mixin members: widgets/signals live on the dock instance.
 """
 from __future__ import annotations
 
+import time
 
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
@@ -256,6 +257,13 @@ class DockAutoStateMixin:
                 self._set_prompt_info(
                     tr('"{word}" will run as "{token}".').format(
                         word=typed, token=suggestion), info=True)
+            elif reason == "steer":
+                # Valid word, weak from above ('wall'): a light non-blocking
+                # nudge toward the term that detects best. The run proceeds as
+                # typed - we do not overrule the user, only advise.
+                self._set_prompt_info(
+                    self._prompt_steer_message(suggestion), tip=True)
+                self._track_prompt_steered(text, suggestion)
             else:
                 self._set_prompt_info()
             return True
@@ -310,6 +318,18 @@ class DockAutoStateMixin:
         also respects a manual slider override and requires a drawn zone)."""
         text = self.auto_prompt_input.text().strip()
         if text:
+            # Light steer nudge the moment the prompt settles, BEFORE Detect is
+            # clicked, so a weak-from-above word is redirected before any credit
+            # is spent. The amber guard block stays commit-only; this is a quiet
+            # advisory that never blocks.
+            try:
+                ok, reason, suggestion = validate_prompt(text)
+                if ok and reason == "steer":
+                    self._set_prompt_info(
+                        self._prompt_steer_message(suggestion), tip=True)
+                    self._track_prompt_steered(text, suggestion)
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
             try:
                 from ...core import telemetry
                 telemetry.track_auto_prompt_committed(
@@ -330,16 +350,32 @@ class DockAutoStateMixin:
         self.auto_enter_pressed.emit()
 
     def _set_prompt_info(self, text: str | None = None, error: bool = False,
-                         info: bool = False) -> None:
+                         info: bool = False, tip: bool = False) -> None:
         """Guard-rail message under the prompt. Hidden when the prompt is empty
         or valid; an amber callout when the committed prompt is off the rails;
         a quiet neutral note (``info=True``) for the silent-translation case
-        ('"piscine" will run as "swimming pool"'). ``error`` is kept for
-        call-site compatibility; non-info text shows as the amber callout."""
+        ('"piscine" will run as "swimming pool"'); a blue information callout
+        with a leading info bubble (``tip=True``) for the steer nudge that
+        suggests a better prompt. ``error`` is kept for call-site
+        compatibility; plain non-info/non-tip text shows as the amber callout."""
         if not text:
             self.auto_prompt_info.setText("")
             self.auto_prompt_info.setVisible(False)
             return
+        if tip:
+            # Blue information callout: a leading info bubble (rich text so only
+            # the glyph is blue) marks it clearly as a helpful tip, not an error.
+            self.auto_prompt_info.setTextFormat(Qt.TextFormat.RichText)
+            self.auto_prompt_info.setText(
+                '<span style="color:#1e88e5; font-weight:bold;">&#9432;</span>'
+                '&nbsp;&nbsp;{}'.format(text))
+            self.auto_prompt_info.setStyleSheet(
+                "QLabel { background-color: rgba(30,136,229,0.12);"
+                " border: 1px solid rgba(30,136,229,0.45); border-radius: 4px;"
+                " padding: 6px 8px; font-size: 11px; color: palette(text); }")
+            self.auto_prompt_info.setVisible(True)
+            return
+        self.auto_prompt_info.setTextFormat(Qt.TextFormat.PlainText)
         self.auto_prompt_info.setText(text)
         if info:
             self.auto_prompt_info.setStyleSheet(
@@ -385,6 +421,34 @@ class DockAutoStateMixin:
         if suggestion:
             return base + " " + tr("Did you mean '{term}'?").format(term=suggestion)
         return base + " " + tr("The Library has ready-to-use objects.")
+
+    def _prompt_steer_message(self, suggestion: str | None) -> str:
+        """Light nudge for a valid but weak prompt: name the single object term
+        that works better, or point at the Library when there is no clean term."""
+        if suggestion:
+            return tr("Try '{term}' - it's a better prompt.").format(
+                term=suggestion)
+        return tr("Try an object from the Library - it's a better prompt.")
+
+    def _track_prompt_steered(self, prompt: str, suggestion: str | None) -> None:
+        """Fire-and-forget telemetry when the steer nudge is shown, so the
+        weak-prompt demand signal (which words users try, what we steer to) is
+        measurable. Deduped per distinct prompt per session so a re-commit of
+        the same word does not double-count."""
+        try:
+            seen = self._steered_prompts_seen
+        except AttributeError:
+            seen = self._steered_prompts_seen = set()
+        key = (prompt or "").strip().lower()
+        if not key or key in seen:
+            return
+        seen.add(key)
+        try:
+            from ...core import telemetry
+            telemetry.track_auto_prompt_steered(
+                prompt=key, suggestion=(suggestion or ""))
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
 
     def _is_auto_for_us(self) -> bool:
         """True when the Automatic flow should own Enter: in Automatic mode,
@@ -647,6 +711,18 @@ class DockAutoStateMixin:
                 self.auto_progress_label.setVisible(True)
         except (RuntimeError, AttributeError):
             pass
+        # Paint this feedback on THIS click. setText/setEnabled only schedule a
+        # deferred repaint, and the GUI thread is about to churn the in-flight
+        # tile-render backlog (each render spins a nested event loop) plus the
+        # salvage drain for a couple of seconds, which would starve that paint so
+        # the click reads as ignored. A synchronous repaint of just these two
+        # widgets shows "Stopping…" now; it paints only them and pumps no input
+        # events, so it cannot re-enter the cancel slot or the render handlers.
+        for _w in (self.auto_cancel_btn, self.auto_progress_label):
+            try:
+                _w.repaint()
+            except (RuntimeError, AttributeError):
+                pass
 
     def set_auto_zone_rejected(self, area_km2: float | None) -> None:
         """Show (or hide with None) the free-trial zone-cap message in the
@@ -970,9 +1046,17 @@ class DockAutoStateMixin:
             self._auto_found_count = 0
             self._auto_progress_pair = (0, 0)
             self._auto_progress_ratio = 0.0
+            # Fresh warming counter + no known queue place yet, so the elapsed
+            # readout starts at zero for this run.
+            self._auto_queue_position = 0
+            self._auto_queue_eta = 0
+            self._stop_auto_warming_anim()
             self.auto_progress_count_label.setText("")
             self.auto_progress_pct_label.setText("")
             self.auto_progress_label.setVisible(False)
+        else:
+            # Run ended (review / Exit / error): stop the heartbeat.
+            self._stop_auto_warming_anim()
 
     def _set_auto_prompt_readonly(self, readonly: bool) -> None:
         """Lock the prompt card for the in-run read-only view: the text stays
@@ -1417,6 +1501,10 @@ class DockAutoStateMixin:
     def _set_auto_progress_visible(self, visible: bool) -> None:
         """Show/hide the run progress card as one unit (count row + bar + the
         conditional status line)."""
+        if not visible:
+            # Card gone (review / idle / error): kill the warming heartbeat so
+            # no stray tick repaints a torn-down card.
+            self._stop_auto_warming_anim()
         self.auto_progress_card.setVisible(visible)
 
     def _refresh_auto_progress_readout(self) -> None:
@@ -1435,27 +1523,24 @@ class DockAutoStateMixin:
 
     def set_auto_tile_progress(self, current: int, total: int) -> None:
         self.auto_status_banner.setVisible(False)
-        self.auto_tile_progress.setMaximum(total)
-        self.auto_tile_progress.setValue(current)
         # Remembered so a cleared queue state can restore the live tile count.
         self._auto_progress_pair = (current, total)
         self._refresh_auto_progress_readout()
-        # Before the first tile returns (cold start can take ~10s) the count row
-        # sits at "Tile 0/N" and would read as frozen. Keep an honest "Sending..."
-        # status line (Row 3) until the first tile lands; once tiles flow, drop
-        # Row 3 (no queue message) so the card stays clean.
-        if self._auto_cancelling:
-            # A cancel is winding down: hold the reassuring stop note on Row 3
-            # even as salvaged tiles tick the count up (see set_auto_cancelling).
-            self.auto_progress_label.setText(
-                tr("Stopping - keeping the tiles already found…"))
-            self.auto_progress_label.setVisible(True)
-        elif current <= 0:
-            self.auto_progress_label.setText(tr("Sending to the AI…"))
-            self.auto_progress_label.setVisible(True)
-        else:
-            self.auto_progress_label.setVisible(False)
         self._set_auto_progress_visible(True)
+        if current > 0:
+            # Real progress: an honest determinate bar. The warming animation
+            # (if it was running) has done its job.
+            self._stop_auto_warming_anim()
+            self.auto_tile_progress.setRange(0, max(1, total))
+            self.auto_tile_progress.setValue(current)
+        else:
+            # No tile has landed yet (a cold GPU can take ~a minute to answer):
+            # keep the bar ALIVE instead of a frozen 0%. _ensure_auto_warming_anim
+            # switches the bar to indeterminate (Qt animates it) and runs a 1s
+            # timer that evolves the label. Row-3 copy is chosen by the shared
+            # renderer below.
+            self._ensure_auto_warming_anim()
+        self._render_auto_wait_label()
         self._auto_progress_ratio = (current / total) if total else 0.0
 
     def set_auto_queue_state(self, position: int, depth: int, eta_s: int) -> None:
@@ -1468,29 +1553,99 @@ class DockAutoStateMixin:
         never animated on a timer: only real state changes repaint it."""
         if not self.auto_progress_card.isVisible():
             return
+        self._auto_queue_position = position
+        self._auto_queue_eta = eta_s if eta_s and eta_s > 0 else 0
         if position == 0 and depth == 0:
+            # Flowing again: restore the live tile count (which re-arms the
+            # warming animation if we are still at zero tiles).
             current, total = getattr(self, "_auto_progress_pair", (0, 0))
             self.set_auto_tile_progress(current, total)
             return
-        # Positive, customer-centric copy: the user's fear is "did it break /
-        # will I get my result", so the label says their spot is SAFE and when
-        # it starts (honest ETA from the server, it visibly shrinks) - never
-        # "you are behind N people".
-        if position == 1:
-            text = tr("You're next · starting now…")
-        elif position > 1:
-            if 0 < eta_s < 10:
-                text = tr("Spot reserved · starting in a few seconds…")
-            else:
-                eta = self._friendly_eta(eta_s)
-                if eta:
-                    text = tr("Spot reserved · starting in ~{eta}").format(eta=eta)
-                else:
-                    text = tr("Spot reserved · starting soon…")
+        # A busy/queued answer means we are still pre-first-tile: keep the bar
+        # animated and let the shared renderer pick the right copy (real place
+        # in line vs generic "waking up").
+        self._ensure_auto_warming_anim()
+        self._render_auto_wait_label()
+
+    # ------------------------------------------------------------------
+    # Pre-first-tile "waking up" animation (single timer-driven renderer)
+    # ------------------------------------------------------------------
+    def _ensure_auto_warming_anim(self) -> None:
+        """Start (or keep) the pre-first-tile feedback: an indeterminate
+        (Qt-animated) bar plus a 1s timer that evolves the label. Idempotent -
+        safe to call from every progress/queue update."""
+        if self._auto_warming_since is None:
+            self._auto_warming_since = time.monotonic()
+        # An indeterminate range is Qt's built-in animated busy bar: it always
+        # moves, so the wait can never read as frozen. (This deliberately
+        # overrides the old "never animate on a timer" rule, per the request
+        # for constant motion during cold starts.)
+        self.auto_tile_progress.setRange(0, 0)
+        if self._auto_warmup_timer is None:
+            from qgis.PyQt.QtCore import QTimer
+            self._auto_warmup_timer = QTimer(self)
+            self._auto_warmup_timer.setInterval(1000)
+            self._auto_warmup_timer.timeout.connect(self._on_auto_warming_tick)
+        if not self._auto_warmup_timer.isActive():
+            self._auto_warmup_timer.start()
+
+    def _stop_auto_warming_anim(self) -> None:
+        """End the pre-first-tile animation once tiles flow or the run ends."""
+        self._auto_warming_since = None
+        if self._auto_warmup_timer is not None and self._auto_warmup_timer.isActive():
+            self._auto_warmup_timer.stop()
+
+    def _on_auto_warming_tick(self) -> None:
+        """1s heartbeat while no tile has landed: re-assert the animated bar and
+        recount the label so the wait is visibly progressing."""
+        if not getattr(self, "_auto_run_active", False):
+            self._stop_auto_warming_anim()
+            return
+        current, _total = getattr(self, "_auto_progress_pair", (0, 0))
+        if current > 0:
+            self._stop_auto_warming_anim()
+            return
+        if self.auto_tile_progress.maximum() != 0:
+            self.auto_tile_progress.setRange(0, 0)
+        self._render_auto_wait_label()
+
+    def _render_auto_wait_label(self) -> None:
+        """Single source of truth for the Row-3 status line. Priority: the
+        cancel note, then a real place in the server queue, then the generic
+        'waking up' copy. Hidden once tiles flow (unless cancelling)."""
+        current, _total = getattr(self, "_auto_progress_pair", (0, 0))
+        if current > 0 and not self._auto_cancelling:
+            self.auto_progress_label.setVisible(False)
+            return
+        if self._auto_cancelling:
+            text = tr("Stopping - keeping the tiles already found…")
         else:
-            text = tr("High demand · your spot is held…")
+            pos = getattr(self, "_auto_queue_position", 0)
+            eta_s = getattr(self, "_auto_queue_eta", 0)
+            if pos == 1:
+                text = tr("You're next · starting now…")
+            elif pos > 1:
+                if 0 < eta_s < 10:
+                    text = tr("Spot reserved · starting in a few seconds…")
+                else:
+                    eta = self._friendly_eta(eta_s)
+                    text = (tr("Spot reserved · starting in ~{eta}").format(eta=eta)
+                            if eta else tr("Spot reserved · starting soon…"))
+            else:
+                text = self._warming_message()
         self.auto_progress_label.setText(text)
         self.auto_progress_label.setVisible(True)
+
+    def _warming_message(self) -> str:
+        """Evolving pre-first-tile copy with a live elapsed count, so the wait
+        is visibly moving even before the first tile answers."""
+        since = self._auto_warming_since
+        elapsed = int(time.monotonic() - since) if since is not None else 0
+        if elapsed < 6:
+            return tr("Sending to the AI…")
+        if elapsed < 22:
+            return tr("Waking up the AI… {n}s").format(n=elapsed)
+        return tr("The AI is starting up, almost there… {n}s").format(n=elapsed)
 
     @staticmethod
     def _friendly_eta(eta_s: int) -> str:

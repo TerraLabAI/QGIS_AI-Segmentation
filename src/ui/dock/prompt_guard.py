@@ -64,6 +64,8 @@ _LEAD_ARTICLES = {
     "el", "los", "las", "una", "unos", "unas", "o", "os", "um", "uma",
     "uns", "umas", "il", "lo", "gli", "i", "der", "die", "das", "ein",
     "eine", "de", "d",
+    # Dutch (de is already listed above): het, een
+    "het", "een",
 }
 
 
@@ -92,6 +94,23 @@ def _build_prompt_tables(policy: dict) -> dict:
             return int(v)
         return fallback
 
+    def _as_steer(key: str) -> dict[str, str]:
+        """Flatten the steer entries into {trigger word -> better term}. An
+        empty ``suggest`` is kept verbatim ('' = 'point at the Library')."""
+        v = policy.get(key)
+        if not isinstance(v, list):
+            return {}
+        out: dict[str, str] = {}
+        for entry in v:
+            if not isinstance(entry, dict):
+                continue
+            suggest = entry.get("suggest")
+            suggest = suggest if isinstance(suggest, str) else ""
+            for kw in entry.get("keywords") or []:
+                if isinstance(kw, str) and kw:
+                    out[kw.lower()] = suggest
+        return out
+
     return {
         "strip": _as_set("strip_words") or set(_PROMPT_STRIP_WORDS_FALLBACK),
         "command": _as_set("command_words") or set(_PROMPT_COMMAND_WORDS_FALLBACK),
@@ -101,6 +120,7 @@ def _build_prompt_tables(policy: dict) -> dict:
         "foreign_stopwords": _as_set("foreign_stopwords"),
         "foreign_to_english": _as_map("foreign_to_english"),
         "english_object_words": _as_set("english_object_words"),
+        "steer": _as_steer("steer"),
         "max_words": _as_int("max_words", _PROMPT_MAX_WORDS_FALLBACK),
         "max_chars": _as_int("max_chars", _PROMPT_MAX_CHARS_FALLBACK),
     }
@@ -340,6 +360,32 @@ def _looks_foreign(raw_norm: str, folded: str, folded_words: list[str]) -> bool:
     return any(w in foreign for w in folded_words)
 
 
+def _steer_suggestion(words: list[str]) -> str | None:
+    """A better single object term for a valid but weak-from-above prompt, or
+    ``None`` when nothing should be steered.
+
+    Returns the term to nudge toward (e.g. 'building' for 'wall'), an empty
+    string ``""`` when the concept has no clean aerial term and the user should
+    be pointed at the Library, or ``None`` when the prompt is fine.
+
+    Matches the WHOLE stripped phrase (plus its naive singular), never a single
+    word inside a longer prompt: 'wall' is steered, but a valid compound like
+    'sea wall' or 'forest floor' is left alone. The trigger set is
+    server-curated and high-precision, so a normal object prompt is never
+    nudged."""
+    steer = _prompt_tables()["steer"]
+    if not steer:
+        return None
+    strip = _prompt_tables()["strip"]
+    core = [w for w in words if w not in strip] or words
+    candidate = " ".join(core)
+    for probe in _lookup_variants(candidate):
+        if probe in steer:
+            term = steer[probe]
+            return term if term != probe else None
+    return None
+
+
 def validate_prompt(text: str) -> tuple[bool, str | None, str | None]:
     """Validate the committed cloud-model prompt.
 
@@ -351,7 +397,12 @@ def validate_prompt(text: str) -> tuple[bool, str | None, str | None]:
 
     Special case: ``(True, "translated", token)`` means the prompt is a KNOWN
     object typed in another supported language (or a naive plural) - the run
-    should silently use ``token`` instead. Otherwise ``ok`` is True only for
+    should silently use ``token`` instead.
+
+    Special case: ``(True, "steer", term)`` means the prompt is valid English
+    but a weak choice from a top-down view ('wall'); the run still proceeds,
+    the dock just shows a light non-blocking nudge toward ``term`` (or, when
+    ``term`` is ``""``, toward the Library). Otherwise ``ok`` is True only for
     a clean 1-2 word English object the model can ground.
     """
     tables = _prompt_tables()
@@ -414,4 +465,10 @@ def validate_prompt(text: str) -> tuple[bool, str | None, str | None]:
     correction = _typo_correction(folded_words)
     if correction and correction != norm:
         return (True, "translated", correction)
+    # Valid English, but a weak choice from a top-down view ('wall' -> the
+    # building). Non-blocking: the run still proceeds, the dock just shows a
+    # light nudge toward the term that works best.
+    steer = _steer_suggestion(words)
+    if steer is not None:
+        return (True, "steer", steer)
     return (True, None, None)

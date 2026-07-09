@@ -25,6 +25,14 @@ from .shared import (
     _provider_name_for_log,
 )
 
+# A cooperative stop normally confirms within ~3s (the poll loop breaks within
+# one 250ms slice, then drains its in-flight tiles for up to _STOP_DRAIN_BUDGET_S).
+# If a wedged reply (a GPU cold-starting past our submit deadline) keeps the
+# worker from confirming, this watchdog forces the UI out of the run so Cancel
+# can never read as ignored. Comfortably past the normal path, short enough that
+# a genuinely stuck cancel still feels handled.
+_CANCEL_WATCHDOG_MS = 5000
+
 
 class AutoRunMixin:
     """Automatic run lifecycle: start/launch/cancel/stop and the headless MCP path."""
@@ -863,6 +871,16 @@ class AutoRunMixin:
         """
         worker = self._auto_worker
         if worker is None:
+            # No live worker, but the user still sees a run in progress: the
+            # thread wound down without the UI resolving. Force it back to a
+            # usable state so Cancel is never a no-op.
+            if self.dock_widget is not None:
+                try:
+                    self.dock_widget.set_auto_run_active(False)
+                    self.dock_widget.set_auto_status("idle")
+                except (RuntimeError, AttributeError):
+                    pass
+            self._reset_auto_live_pipeline()
             return
         # Paint the "Stopping…" state on THIS click, before request_stop: the
         # stop is cooperative (the worker drains its in-flight tiles first), so
@@ -887,6 +905,44 @@ class AutoRunMixin:
             cancel_active_tile_render()
         except Exception:  # noqa: BLE001 - cancel is best-effort
             pass  # nosec B110
+        # Watchdog: guarantee the UI leaves the run even if the worker never
+        # confirms (a wedged cold-start reply, a lost terminal signal). If this
+        # same worker is still active after the grace window, force the normal
+        # cancelled wind-down (salvages billed partials into review, or lands
+        # back on the prompt step at zero tiles).
+        from qgis.PyQt.QtCore import QTimer
+        QTimer.singleShot(
+            _CANCEL_WATCHDOG_MS, lambda w=worker: self._auto_cancel_watchdog(w))
+
+    def _auto_cancel_watchdog(self, worker) -> None:
+        """Fallback wind-down if a cooperative cancel never confirms. No-ops if
+        the run already resolved (worker nulled) or a new run replaced it."""
+        if worker is None or self._auto_worker is not worker:
+            return
+        QgsMessageLog.logMessage(
+            "Auto detection: cancel watchdog forcing wind-down "
+            "(worker did not confirm within {}ms)".format(_CANCEL_WATCHDOG_MS),
+            "AI Segmentation", level=Qgis.MessageLevel.Warning,
+        )
+        # Detach live-paint + result signals so the still-winding thread cannot
+        # repaint after we finalize; keep 'cancelled' connected so its real
+        # emission later still releases the worker ref (mirrors _stop path).
+        for sig, slot in (
+            (worker.tile_completed, self._on_auto_tile_completed),
+            (worker.progress, self._on_auto_progress),
+            (worker.all_tiles_finished, self._on_auto_all_finished),
+            (worker.warning, self._on_auto_warning),
+            (worker.error, self._on_auto_error),
+            (worker.credits_exhausted, self._on_auto_credits_exhausted),
+            (worker.queue_state, self._on_auto_queue_state),
+        ):
+            try:
+                sig.disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass
+        # Route through the normal cancelled handler: it nulls the worker,
+        # salvages any billed partials into review, and restores step-2.
+        self._on_auto_cancelled()
 
     def _stop_auto_detection(self) -> None:
         """Cancel the running worker instantly, without freezing the UI.

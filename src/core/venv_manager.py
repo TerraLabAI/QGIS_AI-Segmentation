@@ -84,7 +84,7 @@ def _insecure_install_opt_in() -> bool:
     """True only if the user has explicitly allowed disabling TLS verification
     during dependency install.
 
-    The safe corporate-CA path (--system-certs, OS trust store) is always
+    The safe corporate-CA path (--native-tls, OS trust store) is always
     tried first. Fully disabling TLS verification is an integrity risk (an
     active MITM could force the initial verified attempt to fail and then
     serve a poisoned wheel, which runs code on install), so it never happens
@@ -1813,7 +1813,7 @@ def install_dependencies(
                         )
 
                 # If failed, check for SSL errors and retry.
-                # Strategy: for uv, try --system-certs (uses OS trust store,
+                # Strategy: for uv, try --native-tls (uses OS trust store,
                 # handles corporate proxy CAs safely). Fully disabling TLS
                 # verification is NOT done unless the user has explicitly opted
                 # in (see _insecure_install_opt_in): otherwise an active MITM
@@ -1834,7 +1834,12 @@ def install_dependencies(
                                     pkg_start,
                                     f"SSL error, retrying {package_name} (system certs)... ({i + 1}/{total_packages})"
                                 )
-                            ssl_cmd_safe = base_cmd + ["--system-certs"]
+                            # uv's OS-trust-store flag is --native-tls; the
+                            # --system-certs previously passed here does not
+                            # exist in uv ("error: unexpected argument"), so
+                            # this retry could never run (19 corporate-SSL
+                            # install failures on launch night).
+                            ssl_cmd_safe = base_cmd + ["--native-tls"]
                             result = _run_pip_install(
                                 cmd=ssl_cmd_safe,
                                 timeout=pkg_timeout,

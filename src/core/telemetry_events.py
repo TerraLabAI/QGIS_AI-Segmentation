@@ -9,7 +9,7 @@ REGISTRY_VERSION together.
 """
 from __future__ import annotations
 
-REGISTRY_VERSION = 7
+REGISTRY_VERSION = 8
 
 # --- Lifecycle ------------------------------------------------------------
 PLUGIN_FIRST_OPEN = "plugin_first_open"
@@ -26,6 +26,7 @@ AUTO_START_CLICKED = "auto_start_clicked"
 ZONE_DRAWN = "zone_drawn"
 AUTO_ZONE_TOO_LARGE = "auto_zone_too_large"
 AUTO_PROMPT_COMMITTED = "auto_prompt_committed"
+AUTO_PROMPT_STEERED = "auto_prompt_steered"
 EXEMPLAR_ADDED = "exemplar_added"
 EXEMPLAR_REMOVED = "exemplar_removed"
 DETAIL_CHANGED = "detail_changed"
@@ -115,6 +116,7 @@ ALL_EVENTS = frozenset({
     ZONE_DRAWN,
     AUTO_ZONE_TOO_LARGE,
     AUTO_PROMPT_COMMITTED,
+    AUTO_PROMPT_STEERED,
     EXEMPLAR_ADDED,
     EXEMPLAR_REMOVED,
     DETAIL_CHANGED,
@@ -174,6 +176,7 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     ZONE_DRAWN: ("vertices", "area_km2"),
     AUTO_ZONE_TOO_LARGE: ("area_km2",),
     AUTO_PROMPT_COMMITTED: ("prompt",),
+    AUTO_PROMPT_STEERED: (),
     EXEMPLAR_ADDED: ("count_after",),
     EXEMPLAR_REMOVED: ("count_after",),
     DETAIL_CHANGED: ("detail", "tiles", "source"),

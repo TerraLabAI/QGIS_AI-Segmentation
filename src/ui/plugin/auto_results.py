@@ -737,17 +737,30 @@ class AutoResultsMixin:
         holes_n = int(getattr(self, "_auto_render_failed_tiles", 0) or 0)
         if (blank_n or holes_n) and not self._auto_headless_run:
             try:
-                if blank_n:
-                    self.iface.messageBar().pushInfo(
-                        "AI Segmentation",
-                        tr("Skipped {n} empty tiles (not charged).").format(n=blank_n),
-                    )
-                if holes_n:
+                # When the drops dominate the run (a basemap that would not
+                # load), a soft info line reads as success: escalate to one
+                # loud warning that says the area was NOT analyzed.
+                dropped = blank_n + holes_n
+                major_hole = dropped >= 10 or dropped > tiles_succeeded
+                if major_hole:
                     self.iface.messageBar().pushWarning(
                         "AI Segmentation",
-                        tr("{n} tiles could not be loaded from the layer server; "
-                           "results may be incomplete.").format(n=holes_n),
+                        tr("{n} tiles had no imagery and were not analyzed "
+                           "(not charged). Check the imagery layer loads over "
+                           "this area, then run Detect again.").format(n=dropped),
                     )
+                else:
+                    if blank_n:
+                        self.iface.messageBar().pushInfo(
+                            "AI Segmentation",
+                            tr("Skipped {n} empty tiles (not charged).").format(n=blank_n),
+                        )
+                    if holes_n:
+                        self.iface.messageBar().pushWarning(
+                            "AI Segmentation",
+                            tr("{n} tiles could not be loaded from the layer server; "
+                               "results may be incomplete.").format(n=holes_n),
+                        )
             except (RuntimeError, AttributeError):
                 pass
         if blank_n or holes_n:

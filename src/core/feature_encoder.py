@@ -260,7 +260,7 @@ def _fetch_online_bands(provider, extent, width, height):
     return bands_array, False, None
 
 
-def _render_layer_to_image(layer, extent, width, height, timeout_ms=60_000):
+def _render_layer_to_image(layer, extent, width, height):
     """Render a layer to an RGB image using QGIS map renderer (fallback).
 
     Works with any layer type (WMS, WMTS, XYZ, WCS, vector tiles, etc.)
@@ -270,56 +270,37 @@ def _render_layer_to_image(layer, extent, width, height, timeout_ms=60_000):
         extent: QgsRectangle for the area
         width: pixel width
         height: pixel height
-        timeout_ms: hard cap so a dead / very slow tile server cannot freeze
-            the GUI thread forever. The old blocking waitForFinished() had no
-            timeout, so a stalled tile service hung all of QGIS indefinitely.
 
     Returns:
         (image_np, error) where image_np is (H, W, 3) uint8 or None
     """
     try:
-        from qgis.core import QgsMapRendererParallelJob, QgsMapSettings
-        from qgis.PyQt.QtCore import QEventLoop, QSize, QTimer
-        from qgis.PyQt.QtGui import QColor, QImage
+        from qgis.core import QgsMapRendererCustomPainterJob, QgsMapSettings
+        from qgis.PyQt.QtCore import QSize
+        from qgis.PyQt.QtGui import QImage, QPainter
+
+        img = QImage(QSize(width, height), QImage.Format.Format_RGB32)
+        img.fill(0)
 
         settings = QgsMapSettings()
         settings.setOutputSize(QSize(width, height))
         settings.setExtent(extent)
         settings.setLayers([layer])
         settings.setDestinationCrs(layer.crs())
-        settings.setBackgroundColor(QColor(0, 0, 0))
+        settings.setBackgroundColor(img.pixelColor(0, 0))
 
-        # Parallel job driven by a local event loop bounded by a one-shot
-        # timer (same pattern as the online-detection render path). This keeps
-        # the GUI thread responsive and, crucially, bails out after timeout_ms
-        # instead of blocking forever like waitForFinished() did.
-        job = QgsMapRendererParallelJob(settings)
-        loop = QEventLoop()
-        job.finished.connect(loop.quit)
-        QTimer.singleShot(timeout_ms, loop.quit)
+        painter = QPainter(img)
+        job = QgsMapRendererCustomPainterJob(settings, painter)
         job.start()
-        # Guard the race where the job finishes before the loop starts: its
-        # queued finished signal would be lost and we would sit out the whole
-        # timeout for nothing.
-        if job.isActive():
-            loop.exec()
-        if job.isActive():
-            # Timed out: cancel without blocking and let the caller give up.
-            job.cancelWithoutBlocking()
-            return None, f"Renderer fallback timed out after {timeout_ms} ms"
+        job.waitForFinished()
+        painter.end()
 
-        img = job.renderedImage()
-        if img is None or img.isNull():
-            return None, "Renderer fallback produced no image"
-
-        # QImage -> numpy (size taken from the rendered image, not the request)
+        # QImage -> numpy
         img = img.convertToFormat(QImage.Format.Format_RGB32)
-        w = img.width()
-        h = img.height()
         ptr = img.bits()
-        ptr.setsize(h * w * 4)
+        ptr.setsize(height * width * 4)
         arr = np.frombuffer(ptr, dtype=np.uint8).reshape(
-            h, w, 4).copy()
+            height, width, 4).copy()
         # BGRA -> RGB
         image_np = np.stack(
             [arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
@@ -717,44 +698,50 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
         # Retry fetching tiles: when the user pans to a new area, the
         # provider cache may not have the tiles yet.  A short delay
         # between attempts gives QGIS time to download them.
-        # We also re-fetch to detect mixed-resolution tiles (stale cache
-        # from a different zoom): the fetch is stable once two consecutive
-        # reads are identical.
-        # Budget is kept tight on purpose. The old loop did up to 8 tries
-        # with progressive 1.0/1.5/2.0/... sleeps AND an unconditional
-        # reload+0.5s on the very first valid fetch, so a single click on a
-        # slow basemap could stall ~17s. Now: 3 tries max, 0.5s then 1.0s
-        # sleeps, and a reload only when a fetch actually failed (a good
-        # cache is trusted, not thrown away and re-downloaded).
+        # We also re-fetch after getting a valid block to detect
+        # mixed-resolution tiles (stale cache from different zoom).
         from qgis.core import QgsApplication
-        max_retries = 3
+        max_retries = 8
+        retry_delay = 1.0
         block = None
         prev_data = None
         for attempt in range(max_retries):
             block = provider.block(1, extent, crop_size, crop_size)
-            fetch_ok = block is not None and block.isValid()
-            if fetch_ok:
+            if block is not None and block.isValid():
                 cur_data = bytes(block.data())
-                if prev_data is not None and cur_data == prev_data:
-                    # Image stabilized - tiles are consistent
-                    break
-                prev_data = cur_data
+                # An all-zero block means the tiles have not downloaded yet
+                # (or the area has no coverage). Two blank reads in a row must
+                # NOT count as "stabilized": otherwise a slow network trips the
+                # equality check below and abandons the retry budget after ~1s,
+                # shipping a blank crop (crop_error_online_blank_tiles). Only
+                # real pixel content can end the loop early; blank reads always
+                # fall through to the progressive retry/wait branch.
+                if cur_data.strip(b"\x00"):
+                    if prev_data is not None and cur_data == prev_data:
+                        # Image stabilized - tiles are consistent
+                        break
+                    prev_data = cur_data
+                    if attempt == 0:
+                        # First valid fetch - always re-fetch once to
+                        # check if tiles are still loading/updating
+                        provider.reloadData()
+                        deadline = time.monotonic() + 0.5
+                        while time.monotonic() < deadline:
+                            QgsApplication.processEvents()
+                            time.sleep(0.05)
+                        continue
             if attempt < max_retries - 1:
-                delay = 0.5 if attempt == 0 else 1.0
+                delay = retry_delay * (1 + attempt * 0.5)  # Progressive: 1.0, 1.5, 2.0, ...
                 QgsMessageLog.logMessage(
                     f"Online tile fetch attempt {attempt + 1} - "
                     f"retrying in {delay:.1f}s...",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning
                 )
-                # Only force a reload when the last fetch failed; a valid
-                # fetch is simply re-polled after the wait to confirm the
-                # tiles are no longer streaming in.
-                if not fetch_ok:
-                    provider.reloadData()
                 deadline = time.monotonic() + delay
                 while time.monotonic() < deadline:
                     QgsApplication.processEvents()
                     time.sleep(0.05)
+                provider.reloadData()
 
         provider.setZoomedInResamplingMethod(original_method)
 

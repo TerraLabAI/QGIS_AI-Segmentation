@@ -469,6 +469,12 @@ def track_auto_prompt_committed(prompt: str, from_library: bool = False) -> None
     track(ev.AUTO_PROMPT_COMMITTED, {"prompt": prompt, "from_library": bool(from_library)})
 
 
+def track_auto_prompt_steered(prompt: str, suggestion: str = "") -> None:
+    """prompt is the weak 1-2 word object the user typed; suggestion is the term
+    steered toward ("" = pointed at the Library). No PII by construction."""
+    track(ev.AUTO_PROMPT_STEERED, {"prompt": prompt, "suggestion": suggestion or ""})
+
+
 def track_tutorial_opened(source: str) -> None:
     """A tutorial/guide open. source is the touchpoint id (footer_tutorial,
     post_signin, zero_results); no PII by construction."""
@@ -881,8 +887,27 @@ def slot_guard(stage: str, user_message: str | None = None):
     def deco(fn):
         module = (fn.__module__ or "").rsplit(".", 1)[-1]
 
+        # Qt passes signal payloads (e.g. clicked's `checked` bool) into the
+        # slot. Some PyQt builds introspect this wrapper's (*args) as "takes
+        # anything" and forward them, so calling fn with the extra args raised
+        # TypeError inside the guard and the slot silently did NOTHING (launch
+        # bug: a dead Cancel button). Trim to fn's real positional arity.
+        try:
+            import inspect
+            params = list(inspect.signature(fn).parameters.values())[1:]  # drop self
+            _has_var = any(p.kind is inspect.Parameter.VAR_POSITIONAL for p in params)
+            _max_pos = None if _has_var else sum(
+                1 for p in params
+                if p.kind in (inspect.Parameter.POSITIONAL_ONLY,
+                              inspect.Parameter.POSITIONAL_OR_KEYWORD)
+            )
+        except Exception:  # noqa: BLE001 - introspection is best-effort
+            _max_pos = None
+
         @functools.wraps(fn)
         def wrapper(self, *args, **kwargs):
+            if _max_pos is not None and len(args) > _max_pos:
+                args = args[:_max_pos]
             try:
                 return fn(self, *args, **kwargs)
             except Exception as exc:  # noqa: BLE001 - top-level slot boundary

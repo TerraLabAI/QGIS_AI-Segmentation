@@ -46,6 +46,11 @@ logger = logging.getLogger(__name__)
 _TRANSIENT_CODES = {
     "NO_INTERNET", "TIMEOUT", "DNS_ERROR", "PROXY_ERROR",
     "SSL_ERROR", "SERVER_ERROR", "CONNECTION_REFUSED",
+    # A submit whose deadline passed with no HTTP answer at all: the GPU is
+    # cold-starting or busy. Retried on the queue TIME budget (not an attempt
+    # count) and shown as the "your spot is held" waiting room, never blamed
+    # on the user's connection. See terralab_client._classify_qt_error.
+    "SERVICE_WARMING",
 }
 
 # Sentinel codes for exhausted credits: a clean end-of-run, not a tile failure.
@@ -71,8 +76,9 @@ _BUSY_JITTER = (0.85, 1.30)
 # thrown away. Bounded so one hung reply can never hold the stop open: past it
 # the stragglers are aborted (and refunded server side as non-completed). The
 # in-flight set is <= max_concurrent and each direct tile is ~1s, so a real
-# cancel drains in well under this ceiling.
-_STOP_DRAIN_BUDGET_S = 4.0
+# cancel drains in well under this ceiling; kept short so Cancel feels prompt
+# (a tile still computing past it is aborted rather than making the user wait).
+_STOP_DRAIN_BUDGET_S = 2.5
 # The inference default caps instances per tile low, which silently truncates
 # dense scenes. The cloud model detects at most 200 objects per inference (its
 # num_queries=200 is a hard architectural ceiling, not a tunable), so request
@@ -138,6 +144,16 @@ _OFFLINE_STOP_CODE = "NO_CONNECTION"
 # server introduces later costs at most a handful of requests.
 _RUN_FATAL_CODES = {"AUTH_ERROR", "INVALID_KEY", "SUBSCRIPTION_INACTIVE"}
 _MAX_CONSECUTIVE_TILE_FATALS = 5
+
+# A tile whose JIT render comes back blank or empty is NOT dropped on the
+# first try: on an online basemap that usually means the imagery for that
+# area was not downloaded yet (never viewed at detection zoom, provider
+# hiccup, burst throttling), and a short-delay re-render succeeds once the
+# provider has fetched it. Left unretried, a run over a never-viewed area can
+# silently skip most of its tiles. Bounded so a REAL nodata hole (mosaic gap)
+# only costs a couple of cheap local renders before the existing skip path.
+_RENDER_RETRY_MAX = 2
+_RENDER_RETRY_DELAY_S = 1.5
 
 # Mid-run offline abort threshold. After the first successful tile the
 # offline fast-fail no longer trips at its small pre-success threshold; a
@@ -501,6 +517,13 @@ class AutoDetectionWorker(QThread):
         # tiles have succeeded.
         self._fastfail = OfflineFastFail()
 
+        # Render-retry ladder for blank/failed JIT renders (see
+        # _RENDER_RETRY_MAX): tile_idx -> attempts so far, plus the deferred
+        # deque of (not_before_monotonic, tile_idx, spec) waiting out the
+        # re-render delay. Both are worker-thread-only state.
+        self._render_attempts: dict[int, int] = {}
+        self._render_deferred: deque = deque()
+
         self._stop_requested = False
         # Why the run stopped early: "user" | "error" | "exhausted". Only a
         # user stop emits cancelled at the end of run(); error and exhausted
@@ -751,7 +774,13 @@ class AutoDetectionWorker(QThread):
         # resubmit MUST be in the guard: a cycle where a whole batch comes back
         # rate-limited (launch spike) drains pending into resubmit with nothing
         # in flight; without it the loop exited and silently dropped the tiles.
-        while (pending or in_flight or resubmit) and not self._stop_requested:
+        # _render_deferred likewise: tiles waiting out a blank-render retry are
+        # still owed, so the run must not end from under them.
+        while (
+            pending or in_flight or resubmit or self._render_deferred
+        ) and not self._stop_requested:
+            # Blank/failed renders whose retry delay matured re-enter the queue.
+            self._pump_render_deferred(pending)
             # Per-cycle AIMD signals: a completed tile is progress, a timeout /
             # transient-network retry is a setback. Folded into the width once at
             # the end of the cycle (see _settle_concurrency).
@@ -769,16 +798,20 @@ class AutoDetectionWorker(QThread):
                 if resubmit:
                     batch.append(resubmit.popleft())  # already encoded
                     continue
-                tile_idx, (tx, ty, tw, th) = pending.popleft()
-                # Encode off the GUI thread, just before submit.
-                encoded = self._encode_tile(tile_idx, tx, ty, tw, th)
-                if encoded is None:
+                tile_idx, spec = pending.popleft()
+                # Encode off the GUI thread, just before submit. A blank/failed
+                # render is deferred for a re-render (the worker keeps it);
+                # only a permanent skip counts toward progress here.
+                status, payload = self._encode_or_defer(tile_idx, spec)
+                if status == "defer":
+                    continue
+                if status == "skip":
                     # Empty / unencodable tile (e.g. clamped to nothing): skip it
                     # but still count it so progress reaches 100%.
                     completed += 1
                     self._emit_progress(completed, total)
                     continue
-                tile_spec, png_bytes = encoded
+                tile_spec, png_bytes = payload
                 batch.append((tile_idx, tile_spec, png_bytes))
 
             submit_backoff: float | None = None
@@ -921,6 +954,10 @@ class AutoDetectionWorker(QThread):
 
             if not in_flight:
                 self._settle_concurrency(cycle_setback, cycle_progress)
+                # Only render-retry tiles waiting out their delay: pace the
+                # loop instead of spinning hot until they mature.
+                if self._render_deferred and not pending and not resubmit:
+                    self._interruptible_sleep(0.25)
                 continue
 
             # Poll one cycle: check each in-flight request once. Sleeps are
@@ -1112,6 +1149,8 @@ class AutoDetectionWorker(QThread):
             """Encode+post the next pending/resubmit tile. Returns True if one was
             fired, False if nothing left to fire."""
             nonlocal completed
+            # Blank/failed renders whose retry delay matured re-enter the queue.
+            self._pump_render_deferred(pending)
             while resubmit or pending:
                 # Jittered delays make later entries mature before the head, so
                 # scan for the FIRST ready entry instead of gating on index 0
@@ -1127,13 +1166,15 @@ class AutoDetectionWorker(QThread):
                     tile_idx, tile_spec, png_bytes, _ = resubmit[ready_i]
                     del resubmit[ready_i]
                 elif pending:
-                    tile_idx, (tx, ty, tw, th) = pending.popleft()
-                    encoded = self._encode_tile(tile_idx, tx, ty, tw, th)
-                    if encoded is None:
+                    tile_idx, spec = pending.popleft()
+                    status, payload = self._encode_or_defer(tile_idx, spec)
+                    if status == "defer":
+                        continue
+                    if status == "skip":
                         completed += 1
                         self._emit_progress(completed, total)
                         continue
-                    tile_spec, png_bytes = encoded
+                    tile_spec, png_bytes = payload
                 else:
                     # Only back-off-delayed resubmits remain; nothing to fire yet.
                     return False
@@ -1150,7 +1191,9 @@ class AutoDetectionWorker(QThread):
         while len(in_flight) < self._aimd.cap and fire_next():
             pass
 
-        while (in_flight or resubmit or pending) and not self._stop_requested:
+        while (
+            in_flight or resubmit or pending or self._render_deferred
+        ) and not self._stop_requested:
             if not in_flight:
                 # Everything in flight drained while retries wait out their
                 # back-off (a fully busy server can reach this): pace with an
@@ -1274,7 +1317,12 @@ class AutoDetectionWorker(QThread):
             # can fire them and the loop guard sees them before exiting.
             total += self._drain_subtiles(pending)
             self._settle_concurrency(cycle_setback, cycle_progress)
-            while len(in_flight) < self._aimd.cap and fire_next():
+            # Do not start new tiles once a stop is pending: a cancel that landed
+            # during this cycle's reply-processing would otherwise fire fresh work
+            # (a blocking main-thread render + a POST) that then has to be drained
+            # or aborted, delaying the wind-down. A tile not fired is not billed.
+            while (not self._stop_requested
+                   and len(in_flight) < self._aimd.cap and fire_next()):  # noqa: W503
                 pass
 
         # User cancel: before releasing sockets, drain the tiles ALREADY in
@@ -1285,7 +1333,13 @@ class AutoDetectionWorker(QThread):
         # sent, and only up to _STOP_DRAIN_BUDGET_S so a hung reply can never
         # hold the stop open. Errors/exhausted skip this: there is no user
         # result to salvage and the wall is already hit.
-        if self._stop_reason == "user" and in_flight:
+        # Only drain when the service has proven responsive (at least one tile
+        # already landed): then the handful still in flight are worth the short
+        # wait to keep their billed masks. If nothing has EVER succeeded, the
+        # in-flight replies are a cold-start / dead-service hang that will not
+        # land in the drain window anyway, so abort at once and let Cancel feel
+        # instant (the aborted replies are refunded server side as non-completed).
+        if self._stop_reason == "user" and in_flight and self.tiles_succeeded > 0:
             drain_deadline = time.monotonic() + _STOP_DRAIN_BUDGET_S
             while in_flight and time.monotonic() < drain_deadline:
                 QCoreApplication.processEvents(_wait, 100)
@@ -1349,37 +1403,94 @@ class AutoDetectionWorker(QThread):
         self._stamps = []
         from qgis.PyQt.QtCore import Qt as _Qt
 
-        # Longest side of a PASTED crop. Hard invariant: this must stay under the
-        # tile overlap (20% of 1008 = ~201 px). Detections whose centroid lands on
-        # a pasted stamp are dropped (the stamp is the example, not the ground),
-        # so ground hidden under a stamp must always be visible CLEAN in a
-        # neighbouring tile; that only holds while stamps fit inside the overlap
-        # band. A 512 paste carved repeating quarter-tile holes out of real runs.
-        # Small objects render below this size and keep their native crispness;
-        # only larger crops are downsized here (smooth filter).
-        stamp_max = 200
-        # Plugin pre-rendered crisp natural crops. Size them for the tile and
-        # scale the object box by the same factor.
-        if self._exemplar_stamps_in:
-            for item in self._exemplar_stamps_in:
-                if len(item) == 3:
-                    crop, label, obj_box = item
-                else:
-                    crop, label = item
-                    obj_box = None
-                if crop is None or crop.isNull():
-                    continue
-                if max(crop.width(), crop.height()) > stamp_max:
-                    prev_w = crop.width()
-                    crop = crop.scaled(
-                        stamp_max, stamp_max,
-                        _Qt.AspectRatioMode.KeepAspectRatio,
-                        _Qt.TransformationMode.SmoothTransformation)
-                    # KeepAspectRatio scales both axes by the same factor.
-                    if obj_box is not None and prev_w > 0:
-                        s = crop.width() / prev_w
-                        obj_box = [float(v) * s for v in obj_box]
-                self._stamps.append((crop, int(label), obj_box))
+        from ..core.cloud_detection import stamp_size_cap
+
+        if not self._exemplar_stamps_in:
+            return
+
+        # Collect the valid pre-rendered crops FIRST: the paste size depends on
+        # how many there are, since they share one horizontal row that must stay
+        # inside the tile overlap (stamp_size_cap enforces that invariant, shared
+        # with the compositor). Detections whose centroid lands on a pasted stamp
+        # are dropped (the stamp is the example, not the ground), so the ground it
+        # hides must always be seen CLEAN by a neighbouring tile; that only holds
+        # while the whole band fits the overlap.
+        valid: list = []
+        for item in self._exemplar_stamps_in:
+            if len(item) == 3:
+                crop, label, obj_box = item
+            else:
+                crop, label = item
+                obj_box = None
+            if crop is None or crop.isNull():
+                continue
+            valid.append((crop, int(label), obj_box))
+        if not valid:
+            return
+
+        # Size cap for THIS run's exemplar count. Small crops keep their native
+        # crispness; only larger ones are downsized here (smooth filter).
+        cap = stamp_size_cap(len(valid))
+        for crop, label, obj_box in valid:
+            if max(crop.width(), crop.height()) > cap:
+                prev_w = crop.width()
+                crop = crop.scaled(
+                    cap, cap,
+                    _Qt.AspectRatioMode.KeepAspectRatio,
+                    _Qt.TransformationMode.SmoothTransformation)
+                # KeepAspectRatio scales both axes by the same factor.
+                if obj_box is not None and prev_w > 0:
+                    s = crop.width() / prev_w
+                    obj_box = [float(v) * s for v in obj_box]
+            self._stamps.append((crop, int(label), obj_box))
+
+    def _pump_render_deferred(self, pending: deque) -> None:
+        """Move render-retry tiles whose delay has matured back into the submit
+        deque (front, so they keep priority over untouched tiles). Called by
+        both run loops at the top of each fill/fire cycle."""
+        if not self._render_deferred:
+            return
+        now = time.monotonic()
+        matured = [e for e in self._render_deferred if e[0] <= now]
+        if not matured:
+            return
+        for entry in matured:
+            self._render_deferred.remove(entry)
+            pending.appendleft((entry[1], entry[2]))
+
+    def _encode_or_defer(self, tile_idx: int, spec) -> tuple:
+        """Encode one tile with the blank/failed-render retry ladder.
+
+        Returns one of:
+          ("ok", (tile_spec, image_bytes))  - ready to submit
+          ("defer", None)                   - re-render queued (worker keeps it)
+          ("skip", None)                    - permanently dropped (caller counts
+                                              it done, exactly the old None path)
+
+        A blank or empty render is retried up to _RENDER_RETRY_MAX times after
+        _RENDER_RETRY_DELAY_S (an online basemap usually just had not fetched
+        that area yet); only when the ladder is exhausted is the tile counted in
+        tiles_skipped_blank / tiles_render_failed and skipped for good.
+        """
+        tx, ty, tw, th = spec
+        status, payload = self._encode_tile(tile_idx, tx, ty, tw, th)
+        if status == "ok":
+            self._render_attempts.pop(tile_idx, None)
+            return ("ok", payload)
+        if status in ("blank", "render") and not self._stop_requested:
+            attempts = self._render_attempts.get(tile_idx, 0)
+            if attempts < _RENDER_RETRY_MAX:
+                self._render_attempts[tile_idx] = attempts + 1
+                self._render_deferred.append(
+                    (time.monotonic() + _RENDER_RETRY_DELAY_S, tile_idx, spec))
+                return ("defer", None)
+        # Ladder exhausted (or a non-retryable failure): count + skip.
+        if status == "blank":
+            self.tiles_skipped_blank += 1
+        elif status == "render":
+            self.tiles_render_failed += 1
+        self._render_attempts.pop(tile_idx, None)
+        return ("skip", None)
 
     def _encode_tile(self, tile_idx: int, tx: int, ty: int, tw: int, th: int):
         """Produce + encode one tile, on this thread. The tile pixels come from
@@ -1387,10 +1498,17 @@ class AutoDetectionWorker(QThread):
         reference examples exist, their crops are STAMPED into the tile and the
         per-tile example boxes + stamp region are recorded for submit/filter.
 
-        Returns ((tx, ty, cw, ch), image_bytes) or None if the tile is empty,
-        cancelled, or encoding fails. The returned spec always carries the REAL
-        (tx, ty) so _make_tile_transform maps it to the right ground bbox_native,
-        even though a JIT tile image is sliced from its own origin (0, 0). Runs
+        Returns a (status, payload) pair:
+          ("ok", ((tx, ty, cw, ch), image_bytes)) on success;
+          ("render", None) when the render produced nothing (provider hole);
+          ("blank", None) when the render is a uniform/nodata fill;
+          ("skip", None) for everything else (cancelled, no bridge, encode
+          failure). The caller (_encode_or_defer) owns the retry ladder and the
+          skip counters, so this method never counts.
+
+        The returned spec always carries the REAL (tx, ty) so
+        _make_tile_transform maps it to the right ground bbox_native, even
+        though a JIT tile image is sliced from its own origin (0, 0). Runs
         off the GUI thread (only the render itself hops to the main thread via the
         bridge); QImage/QBuffer are reentrant so the encode is safe here.
         """
@@ -1406,9 +1524,9 @@ class AutoDetectionWorker(QThread):
             # The bridge is always supplied (the whole-zone-slice path was removed);
             # a missing bridge is a bug, so fail the tile rather than guessing.
             if self._tile_renderer is None:
-                return None
+                return ("skip", None)
             if self._stop_requested:
-                return None
+                return ("skip", None)
             # A re-split quadrant renders its rect at 2x per depth (out size
             # from _tile_outsize): same ground, finer pixels. The tile SPEC
             # keeps the rect's grid coords so bbox_native stays exact; masks
@@ -1418,17 +1536,18 @@ class AutoDetectionWorker(QThread):
             tile_img = self._tile_renderer(tx, ty, tw, th, out_w, out_h)
             if tile_img is None or tile_img.isNull():
                 # The render produced nothing: a provider/WMS hole or timeout,
-                # not real ground. Count it as a coverage hole (surfaced at run
-                # end); it is never submitted, so it is never billed.
-                self.tiles_render_failed += 1
-                return None
-            # Blank/nodata tile: skip before submit so an empty region inside the
-            # zone rectangle (mosaic gap, out-of-footprint corner) never spends a
-            # credit to return nothing. Checked on the raw render, before any
-            # example stamp is composited in.
+                # not real ground. Retryable (the caller's ladder decides when
+                # it becomes a counted coverage hole); never submitted, so
+                # never billed.
+                return ("render", None)
+            # Blank/nodata tile: on an online basemap this is usually imagery
+            # that was not downloaded yet, so it is retryable too. Once the
+            # ladder is exhausted the caller skips it before submit, so an
+            # empty region inside the zone (mosaic gap, out-of-footprint
+            # corner) never spends a credit to return nothing. Checked on the
+            # raw render, before any example stamp is composited in.
             if tile_is_blank(tile_img):
-                self.tiles_skipped_blank += 1
-                return None
+                return ("blank", None)
             src_x, src_y = 0, 0
 
             if out_w and out_h:
@@ -1439,28 +1558,28 @@ class AutoDetectionWorker(QThread):
                 # stamps (guarded in _maybe_subdivide).
                 encoded = encode_tile_png(tile_img, 0, 0, out_w, out_h)
                 if encoded is None:
-                    return None
+                    return ("skip", None)
                 _crop, data = encoded
-                return (tx, ty, tw, th), data
+                return ("ok", ((tx, ty, tw, th), data))
 
             if self._stamps:
                 out = composite_tile_with_stamps(
                     tile_img, src_x, src_y, tw, th, self._stamps)
                 if out is None:
-                    return None
+                    return ("skip", None)
                 (_sx, _sy, cw, ch), data, ex_boxes, stamp_norm = out
                 self._tile_exemplars[tile_idx] = ex_boxes
                 self._tile_stamp_norm[tile_idx] = stamp_norm
-                return (tx, ty, cw, ch), data
+                return ("ok", ((tx, ty, cw, ch), data))
             encoded = encode_tile_png(tile_img, src_x, src_y, tw, th)
             if encoded is None:
-                return None
+                return ("skip", None)
             (_sx, _sy, cw, ch), data = encoded
-            return (tx, ty, cw, ch), data
+            return ("ok", ((tx, ty, cw, ch), data))
         except Exception as exc:
             logger.warning("AutoDetectionWorker: tile encode failed at (%d,%d): %s",
                            tx, ty, exc)
-            return None
+            return ("skip", None)
 
     def _submit_batch(self, batch: list) -> list:
         """Submit a batch of (tile_idx, tile_spec, png_bytes) CONCURRENTLY.
@@ -1548,6 +1667,15 @@ class AutoDetectionWorker(QThread):
                 # busy answer (the server was reached, so the run is not offline).
                 return ("retry", delay if delay > 0 else 5.0, True, "RATE_LIMITED")
             if code in _TRANSIENT_CODES:
+                if code == "SERVICE_WARMING":
+                    # Submit deadline passed with no answer: the GPU is cold-
+                    # starting or busy. Surface the waiting room and retry on
+                    # the queue TIME budget (a boot can take ~a minute), so the
+                    # tile is never skipped mid-boot by an attempt cap. is_busy
+                    # (4th slot True) also resets the offline fast-fail: the
+                    # link is fine, the service is just warming.
+                    self._note_busy(-1, -1, 0)
+                    return ("retry", 5.0, True, code)
                 if code in ("SERVER_ERROR", "TIMEOUT"):
                     # Likely overload/cold start (the inference service's own 429/503 has a
                     # non-JSON body and lands here as SERVER_ERROR): tell the

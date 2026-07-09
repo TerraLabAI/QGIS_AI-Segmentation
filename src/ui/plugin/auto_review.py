@@ -391,6 +391,15 @@ class AutoReviewMixin:
         name = self._export_auto_detections(
             refined, review["crs"], review["source_layer_name"], review["prompt"],
             scores=refined_scores)
+        # Capture the run's REAL outcome (chosen confidence, refine settings,
+        # the kept geometry - even after a Refine-in-Manual detour) on a hidden
+        # background task. Best-effort: queued only after the local export
+        # succeeded, and can never block or fail it.
+        try:
+            from .run_export_upload import queue_run_export_upload
+            queue_run_export_upload(self, review, refined, refined_scores)
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
         # Record the committed object so the Segment library's Recent tab can
         # re-run it. Runs once per commit (this is the shared interactive +
         # headless-MCP path); best-effort, never blocks the export.
