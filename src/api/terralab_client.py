@@ -533,7 +533,9 @@ class TerraLabClient:
             payload["exemplars"] = exemplars
         return json.dumps(payload).encode("utf-8")
 
-    def submit_detection_many(self, submissions: list[dict], auth: dict) -> list[dict]:
+    def submit_detection_many(
+        self, submissions: list[dict], auth: dict, should_abort=None
+    ) -> list[dict]:
         """Submit several tiles CONCURRENTLY; results in input order.
 
         Each item in `submissions` is the kwargs of submit_detection MINUS auth
@@ -559,7 +561,7 @@ class TerraLabClient:
                 "body": body,
                 "timeout_ms": self._submit_timeout(),
             })
-        return self.request_many(specs)
+        return self.request_many(specs, should_abort=should_abort)
 
     def post_detection_async(self, nam, submission: dict, auth: dict):
         """Fire ONE /predict POST WITHOUT blocking; return the QNetworkReply.
@@ -658,7 +660,9 @@ class TerraLabClient:
             "GET", path, auth=auth, timeout_ms=_TIMEOUT_POLL_DETECTION
         )
 
-    def get_detection_status_many(self, request_ids: list[str], auth: dict) -> list[dict]:
+    def get_detection_status_many(
+        self, request_ids: list[str], auth: dict, should_abort=None
+    ) -> list[dict]:
         """Poll several detection requests CONCURRENTLY; results in input order.
 
         Each result has the SAME shape as get_detection_status. Unlike calling
@@ -677,7 +681,7 @@ class TerraLabClient:
             }
             for rid in request_ids
         ]
-        return self.request_many(specs)
+        return self.request_many(specs, should_abort=should_abort)
 
     def _make_qnetwork_request(self, auth: dict | None, timeout_ms: int, path: str) -> QNetworkRequest:
         """Build a QNetworkRequest with the same headers/timeout/redirect policy
@@ -692,7 +696,7 @@ class TerraLabClient:
                 req.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
         return req
 
-    def request_many(self, specs: list[dict]) -> list[dict]:
+    def request_many(self, specs: list[dict], should_abort=None) -> list[dict]:
         """Execute several requests CONCURRENTLY, returning results in input order.
 
         Each spec is a dict: {"method": "GET"|"POST", "path": str, "auth": dict
@@ -705,6 +709,17 @@ class TerraLabClient:
         of N. It still flows through QGIS's network stack (proxy / SSL / auth /
         Network Logger). MUST be called OFF the GUI thread: it spins a nested
         event loop, which would re-enter the UI on the main thread.
+
+        should_abort: optional predicate polled ~4x/s on the SAME thread that
+        drives the loop. When it returns True the loop quits at once and the
+        pending replies are aborted, so a caller that sets a stop flag (the auto
+        worker's request_stop) unblocks within ~0.25s instead of waiting out the
+        full submit timeout (up to ~115s in direct mode). This is the shutdown
+        guard: on unload the main thread joins the worker with wait(5000), and
+        without this the worker is stuck mid-POST past that join, gets parked as a
+        live QThread, and aborts QGIS at process teardown ("Destroyed while thread
+        is still running"). The timer lives on this thread's spinning loop, so the
+        whole abort stays thread-affine (no cross-thread reply.abort()).
         """
         from qgis.PyQt.QtCore import QEventLoop, QTimer
 
@@ -749,7 +764,32 @@ class TerraLabClient:
         # Safety net: setTransferTimeout already bounds each reply, but a wedged
         # NAM could still stall the loop, so cap the whole batch defensively.
         QTimer.singleShot(max_timeout + 5_000, loop.quit)
-        loop.exec()
+        # Cancellation net: poll the stop predicate on this loop's own thread so a
+        # request_stop() during a long submit quits the loop within ~0.25s (the
+        # shutdown-crash guard; see the docstring). Kept in a local so it stays
+        # alive for the duration of exec() and is stopped right after.
+
+        def _already_aborting():
+            if should_abort is None:
+                return False
+            try:
+                return bool(should_abort())
+            except Exception:  # noqa: BLE001 - predicate must never crash the loop
+                return False
+
+        abort_timer = None
+        if should_abort is not None:
+            abort_timer = QTimer()
+            abort_timer.setInterval(250)
+            abort_timer.timeout.connect(
+                lambda: loop.quit() if _already_aborting() else None)
+            abort_timer.start()
+        # Skip the loop entirely if the stop landed before we blocked (quit()
+        # is a no-op before exec(), so guard here instead).
+        if not _already_aborting():
+            loop.exec()
+        if abort_timer is not None:
+            abort_timer.stop()
 
         results = []
         for reply in replies:

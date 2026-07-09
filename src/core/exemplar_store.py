@@ -6,8 +6,9 @@ this" (exclude). The store keeps the boxes (in the map canvas CRS) plus their
 labels for the lifetime of one Automatic run; it is cleared when the zone is
 redrawn or the run resets. Main thread only, no Qt widgets, no persistence.
 
-Documentation on visual prompting plateaus the gain at 3-4 exemplars, so the
-store caps insertions at EXEMPLAR_MAX.
+Visual prompting plateaus the gain after a few exemplars, so the store caps
+insertions PER LABEL: at most EXEMPLAR_MAX_POSITIVE positive examples and at
+most EXEMPLAR_MAX_EXCLUDE exclude examples (the two are counted independently).
 """
 from __future__ import annotations
 
@@ -16,7 +17,12 @@ from dataclasses import dataclass
 from qgis.core import QgsGeometry, QgsRectangle
 from qgis.PyQt.QtGui import QImage
 
-EXEMPLAR_MAX = 4          # doc plateau is 3-4 exemplars
+# Hard per-label ceilings: at most 3 positive and at most 2 exclude examples.
+EXEMPLAR_MAX_POSITIVE = 3
+EXEMPLAR_MAX_EXCLUDE = 2
+# Total ceiling (both labels at their cap). Kept for callers that only need the
+# combined count; the real gate is the per-label cap above.
+EXEMPLAR_MAX = EXEMPLAR_MAX_POSITIVE + EXEMPLAR_MAX_EXCLUDE
 LABEL_POSITIVE = 1
 LABEL_EXCLUDE = 0
 
@@ -66,7 +72,7 @@ class ExemplarStore:
         thumbnail: QImage | None = None,
         polygon: QgsGeometry | None = None,
     ) -> str | None:
-        """Store a new exemplar. Returns its id, or None if already full.
+        """Store a new exemplar. Returns its id, or None if that label is full.
 
         Args:
             map_rect: Box in the map canvas CRS (project CRS).
@@ -74,7 +80,7 @@ class ExemplarStore:
             thumbnail: Optional preview image (not required).
             polygon: Optional precise outline (canvas CRS); map_rect is its bbox.
         """
-        if self.is_full():
+        if self.is_full_for(label):
             return None
         self._seq += 1
         exemplar_id = f"ex{self._seq}"
@@ -104,8 +110,17 @@ class ExemplarStore:
     def excludes(self) -> int:
         return sum(1 for e in self._exemplars.values() if e.label == LABEL_EXCLUDE)
 
+    def is_full_for(self, label: int) -> bool:
+        """True when the cap for THIS label is reached (no more of it can be
+        added). Positive and exclude examples are capped independently."""
+        if label == LABEL_POSITIVE:
+            return self.positives() >= EXEMPLAR_MAX_POSITIVE
+        return self.excludes() >= EXEMPLAR_MAX_EXCLUDE
+
     def is_full(self) -> bool:
-        return len(self._exemplars) >= EXEMPLAR_MAX
+        """True only when BOTH labels are at their cap (nothing more can be
+        added at all). Per-label gating uses is_full_for."""
+        return self.is_full_for(LABEL_POSITIVE) and self.is_full_for(LABEL_EXCLUDE)
 
     def list(self) -> list[Exemplar]:
         """Return exemplars in insertion order."""

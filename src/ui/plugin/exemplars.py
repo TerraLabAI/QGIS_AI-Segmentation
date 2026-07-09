@@ -113,7 +113,7 @@ class ExemplarsMixin:
         # inputs are locked in for that run.
         if self._auto_worker is not None or self._auto_review is not None:
             return
-        if self._auto_zone is None or self._auto_exemplar_store.is_full():
+        if self._auto_zone is None or self._auto_exemplar_store.is_full_for(int(label)):
             return
         from ..polygon_zone_maptool import PolygonZoneMapTool
         canvas = self.iface.mapCanvas()

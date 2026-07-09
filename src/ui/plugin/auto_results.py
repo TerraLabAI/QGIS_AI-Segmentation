@@ -410,6 +410,12 @@ class AutoResultsMixin:
             if self._auto_live_measurer is None:
                 self._auto_live_measurer = self._make_auto_area_measurer()
             params = self._fresh_review_params()
+            # Fill holes is a native, O(rings) drop of interior rings, so it is
+            # decoupled from the expensive shape refine: when the preset fills
+            # holes, apply it to EVERY over-budget object below (not just the ones
+            # the per-repaint refine budget reached), so the live preview never
+            # streams in hole-riddled polygons the review would fill.
+            fill_holes_live = bool(params.get("fill_holes"))
             cache = self._auto_live_refine_cache
             fresh_cache = {}
             refine_deadline = _t.monotonic() + _AUTO_LIVE_REFINE_BUDGET_S
@@ -454,12 +460,22 @@ class AutoResultsMixin:
                     geom = entry[1]
                 elif score < conf:
                     continue
-                elif live_tol > 0:
-                    # Refine budget spent this repaint: cheap simplify on a COPY
-                    # for now, the preset lands on the next repaint cycle.
-                    sg = geom.simplify(live_tol)
-                    if sg is not None and not sg.isEmpty():
-                        geom = sg
+                else:
+                    # Refine budget spent this repaint: do the CHEAP ops now (drop
+                    # interior rings if the preset fills holes, plus a plain
+                    # simplify), all on a COPY. The costly ops (smooth / ortho /
+                    # expand / clean-edges) land on the next repaint's full refine.
+                    if fill_holes_live:
+                        try:
+                            r = geom.removeInteriorRings(-1.0)
+                            if r is not None and not r.isEmpty():
+                                geom = r
+                        except (AttributeError, TypeError, ValueError):
+                            pass
+                    if live_tol > 0:
+                        sg = geom.simplify(live_tol)
+                        if sg is not None and not sg.isEmpty():
+                            geom = sg
                 # Last-line guard: a MultiPolygon provider rejects a
                 # GeometryCollection, so coerce to polygon-only MultiPolygon and
                 # skip anything with no areal content (never raise mid-repaint).

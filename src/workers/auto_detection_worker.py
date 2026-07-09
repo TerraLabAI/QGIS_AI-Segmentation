@@ -589,6 +589,13 @@ class AutoDetectionWorker(QThread):
             except (RuntimeError, AttributeError):
                 pass
 
+    def _should_abort(self) -> bool:
+        """Stop predicate handed to the client's concurrent network calls so their
+        nested event loop quits the instant a stop is requested (submit/poll can
+        otherwise block this thread for the whole submit timeout, which leaves the
+        thread un-joinable at unload and crashes QGIS at teardown)."""
+        return self._stop_requested
+
     def remaining_tiles(self) -> list[tuple[int, int, int, int]]:
         """Input tile rects not billed as completed, in original order.
 
@@ -976,7 +983,8 @@ class AutoDetectionWorker(QThread):
             # QgsBlockingNetworkRequest calls queued on this single thread. The
             # batch flows through the same QGIS network stack, just concurrently.
             poll_ids = list(in_flight.keys())
-            responses = self._client.get_detection_status_many(poll_ids, self._auth)
+            responses = self._client.get_detection_status_many(
+                poll_ids, self._auth, should_abort=self._should_abort)
 
             if self._stop_requested:
                 break
@@ -1633,7 +1641,8 @@ class AutoDetectionWorker(QThread):
                 "parent_tile_index": self._billed_ancestor_of(tile_idx),
             })
 
-        responses = self._client.submit_detection_many(submissions, self._auth)
+        responses = self._client.submit_detection_many(
+            submissions, self._auth, should_abort=self._should_abort)
         outcomes = []
         for (tile_idx, _spec, _png), response, tile_transform in zip(
             batch, responses, transforms

@@ -779,22 +779,26 @@ class DockStateMixin:
             if w is not None:
                 w.setParent(None)
                 w.deleteLater()
+        from ...core.exemplar_store import (
+            EXEMPLAR_MAX_EXCLUDE, EXEMPLAR_MAX_POSITIVE)
         self._auto_positive_exemplars = sum(1 for it in items if it[1] == 1)
+        exclude_count = sum(1 for it in items if it[1] == 0)
         for idx, it in enumerate(items):
             eid, label = it[0], it[1]
             thumb = it[2] if len(it) > 2 else None
             card = self._make_exemplar_chip(eid, label, idx + 1, thumb)
             layout.insertWidget(layout.count() - 1, card)
-        # At the cap (EXEMPLAR_MAX = 4, positives + excludes) both add buttons
-        # disable. The Exclude button appears only once a positive example
-        # exists, so the primary flow stays one green button.
-        full = len(items) >= 4
+        # Each add button disables at ITS OWN cap (positives and excludes are
+        # capped independently: 3 positive, 2 exclude). The Exclude button
+        # appears only once a positive example exists, so the primary flow stays
+        # one green button.
         try:
-            self.auto_ex_inc_btn.setEnabled(not full)
+            self.auto_ex_inc_btn.setEnabled(
+                self._auto_positive_exemplars < EXEMPLAR_MAX_POSITIVE)
             exc = getattr(self, "auto_ex_exc_btn", None)
             if exc is not None:
                 exc.setVisible(self._auto_positive_exemplars > 0)
-                exc.setEnabled(not full)
+                exc.setEnabled(exclude_count < EXEMPLAR_MAX_EXCLUDE)
         except (RuntimeError, AttributeError):
             pass
         # Drawing the first positive example while the prompt is empty should
