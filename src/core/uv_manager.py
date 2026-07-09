@@ -8,6 +8,7 @@ Source: https://github.com/astral-sh/uv
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import shutil
@@ -28,14 +29,47 @@ from .archive_utils import safe_extract_tar as _safe_extract_tar
 from .archive_utils import safe_extract_zip as _safe_extract_zip
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
-from .platform_detect import is_musl_linux, is_windows_arm64
+from .subprocess_utils import get_subprocess_kwargs  # nosec B404 - our helper, name merely starts with "subprocess"
 
 CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
 UV_DIR = os.path.join(CACHE_DIR, "uv")
 UV_VERSION = "0.10.10"
 
+# SHA256 of each release asset, copied from the official uv-<triple><ext>.sha256
+# files published next to every uv release asset. These digests are public
+# integrity checks, not secrets. MUST be updated in the same commit as any
+# UV_VERSION bump: the download fails closed on a mismatch or a missing entry,
+# so a stale or partial table would brick installs. Keys are the exact asset
+# filenames _get_uv_platform_info() can produce.
+UV_SHA256 = {
+    "uv-aarch64-apple-darwin.tar.gz": "8a09f0ef51ee7f7170731b4cb8bde5bf9ba6da5304f49a7df6cdab42a1f37b5d",  # noqa: E501  # pragma: allowlist secret
+    "uv-x86_64-apple-darwin.tar.gz": "dd18420591d625f9b4ca2b57a7a6fe3cce43910f02e02d90e47a4101428de14a",  # noqa: E501  # pragma: allowlist secret
+    "uv-x86_64-pc-windows-msvc.zip": "d31a30f1dfb96e630a08d5a9b3f3f551254b7ed6e9b7e495f46a4232661c7252",  # noqa: E501  # pragma: allowlist secret
+    "uv-aarch64-unknown-linux-gnu.tar.gz": "2b80457b950deda12e8d5dc3b9b7494ac143eae47f1fb11b1c6e5a8495a6421e",  # noqa: E501  # pragma: allowlist secret
+    "uv-x86_64-unknown-linux-gnu.tar.gz": "3e1027f26ce8c7e4c32e2277a7fed2cb410f2f1f9320d3df97653d40e21f415b",  # noqa: E501  # pragma: allowlist secret
+}
+
 # Inactivity timeout for the binary download (Qt 5.15+); generous for slow corporate links
 DOWNLOAD_TIMEOUT_MS = 300000
+
+
+def _download_tmp_dir() -> str | None:
+    """Containment temp dir on the cache volume, mirroring venv_manager's
+    _apply_cache_containment. The uv download temp file + extraction dir must
+    land on the same volume the install uses, or a full SYSTEM drive still
+    ENOSPCs even when AI_SEGMENTATION_CACHE_DIR points at a roomy secondary
+    drive. The env-aware cache dir is derived here the same way venv_manager
+    does (the module-level CACHE_DIR above deliberately stays the plain home
+    path for the uv binary location). Returns None on any failure so the caller
+    falls back to the system default temp (``dir=None`` == the old behaviour)."""
+    cache_dir = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser(
+        "~/.qgis_ai_segmentation")
+    tmp_dir = os.path.join(cache_dir, "tmp")
+    try:
+        os.makedirs(tmp_dir, exist_ok=True)
+        return tmp_dir
+    except OSError:
+        return None
 
 
 def get_uv_path() -> str:
@@ -60,17 +94,10 @@ def _get_uv_platform_info() -> tuple[str, str]:
             return ("aarch64-apple-darwin", ".tar.gz")
         return ("x86_64-apple-darwin", ".tar.gz")
     if system == "win32":
-        # Match python_manager: emulated x86_64 on ARM64 Windows (uv has
-        # native aarch64 builds, but we keep the whole toolchain on one arch
-        # so the venv and torch wheels stay consistent).
-        if is_windows_arm64():
-            _log("ARM64 Windows detected; using emulated x86_64 uv binary")
         return ("x86_64-pc-windows-msvc", ".zip")
-    # Linux: -musl loader on Alpine, -gnu elsewhere.
-    libc_suffix = "musl" if is_musl_linux() else "gnu"
     if machine in ("arm64", "aarch64"):
-        return (f"aarch64-unknown-linux-{libc_suffix}", ".tar.gz")
-    return (f"x86_64-unknown-linux-{libc_suffix}", ".tar.gz")
+        return ("aarch64-unknown-linux-gnu", ".tar.gz")
+    return ("x86_64-unknown-linux-gnu", ".tar.gz")
 
 
 def _get_uv_download_url() -> str:
@@ -88,6 +115,21 @@ def _find_file_in_dir(directory: str, filename: str) -> str | None:
         if filename in files:
             return os.path.join(root, filename)
     return None
+
+
+def _verify_uv_payload(content_bytes: bytes, asset_name: str) -> tuple[bool, str]:
+    """Fail-closed SHA256 integrity check of a downloaded uv asset.
+
+    Returns (ok, message). Both a missing pin and a digest mismatch fail, so a
+    tampered CDN response or an unpinned variant is never written to disk or
+    executed. Mirrors the fail-closed policy in checkpoint_manager.
+    """
+    expected = UV_SHA256.get(asset_name, "")
+    if not expected:
+        return False, f"No pinned digest for {asset_name}; refusing to install"
+    if hashlib.sha256(content_bytes).hexdigest() != expected:
+        return False, "uv download failed integrity verification"
+    return True, ""
 
 
 def download_uv(
@@ -152,13 +194,22 @@ def download_uv(
     content = reply.content()
     content_bytes = content.data()
 
+    # Verify integrity BEFORE writing/extracting/executing the binary.
+    asset_name = url.rsplit("/", 1)[-1]
+    ok, verify_msg = _verify_uv_payload(content_bytes, asset_name)
+    if not ok:
+        _log(verify_msg, Qgis.MessageLevel.Warning)
+        return False, verify_msg
+
     if progress_callback:
         size_mb = len(content_bytes) / (1024 * 1024)
         progress_callback(50, f"Downloaded uv ({size_mb:.1f} MB), extracting...")
 
     _, ext = _get_uv_platform_info()
     suffix = ".zip" if ext == ".zip" else ".tar.gz"
-    fd, temp_path = tempfile.mkstemp(suffix=suffix)
+    # Contain the download temp on the CACHE_DIR volume (see _download_tmp_dir).
+    tmp_root = _download_tmp_dir()
+    fd, temp_path = tempfile.mkstemp(suffix=suffix, dir=tmp_root)
     os.close(fd)
 
     try:
@@ -170,8 +221,9 @@ def download_uv(
             shutil.rmtree(UV_DIR)
         os.makedirs(UV_DIR, exist_ok=True)
 
-        # Extract to a temp dir first, then move uv binary to UV_DIR
-        extract_dir = tempfile.mkdtemp(prefix="uv_extract_")
+        # Extract to a temp dir first, then move uv binary to UV_DIR. Same
+        # CACHE_DIR containment as the download temp above.
+        extract_dir = tempfile.mkdtemp(prefix="uv_extract_", dir=tmp_root)
         try:
             if suffix == ".tar.gz":
                 with tarfile.open(temp_path, "r:gz") as tar:
@@ -230,17 +282,10 @@ def verify_uv() -> bool:
         return False
 
     try:
-        kwargs = {}
-        if sys.platform == "win32":
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-            kwargs["startupinfo"] = startupinfo
-
         result = subprocess.run(  # nosec B603
             [uv_path, "--version"],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
-            **kwargs,
+            **get_subprocess_kwargs(),
         )
         if result.returncode == 0:
             version_out = result.stdout.strip()

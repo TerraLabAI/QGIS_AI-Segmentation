@@ -40,6 +40,13 @@ _IS_MACOS_X86 = (
 # Under Rosetta, standalone Python will be ARM64 3.10+ -> SAM2
 USE_SAM2 = (sys.version_info >= (3, 10) or IS_ROSETTA) and not _IS_MACOS_X86
 
+# Intel Macs on QGIS 4 (Python 3.13+) cannot run local (Manual) inference: the
+# Intel-Mac fallback pins the deep-learning runtime to its last Intel-Mac
+# release (<=2.2.2), which ships no wheel for Python 3.13+, so the venv install
+# would otherwise fail with a cryptic resolver error. The install gate reads
+# this to fail fast and steer the user to Automatic (cloud) mode instead.
+MACOS_X86_NO_LOCAL_INFERENCE = _IS_MACOS_X86 and sys.version_info >= (3, 13)
+
 if USE_SAM2:
     SAM_PACKAGE = ("sam2", ">=1.0")
     TORCH_MIN = ">=2.5.1"

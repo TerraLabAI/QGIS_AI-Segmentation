@@ -49,7 +49,7 @@ def get_pip_ssl_bypass_flags() -> list[str]:
 
     WARNING: These flags disable TLS verification for the listed hosts,
     exposing downloads to potential MITM attacks. Only use as a fallback
-    after a verified SSL error — never as default install flags.
+    after a verified SSL error - never as default install flags.
 
     Intended for users behind corporate proxies with custom CA certificates
     that pip/uv cannot verify against their bundled certificate store.
@@ -129,7 +129,7 @@ _NETWORK_ERROR_PATTERNS = [
     "network timeout",
     "failed to download",
     # Localized DNS variants. Scoped to the plugin's officially supported
-    # locales (fr, pt-BR, es) — the OS-language error bubbles up via getaddrinfo
+    # locales (fr, pt-BR, es) - the OS-language error bubbles up via getaddrinfo
     # even when the plugin UI is in English, so missing these silently
     # mis-classifies real DNS failures as generic install errors.
     "hôte inconnu",                # fr
@@ -143,7 +143,7 @@ _NETWORK_ERROR_PATTERNS = [
 def is_network_error(output: str) -> bool:
     """Detect transient network/connection errors in pip output."""
     output_lower = output.lower()
-    # Exclude SSL errors — they have their own retry path
+    # Exclude SSL errors - they have their own retry path
     if is_ssl_error(output):
         return False
     return any(p in output_lower for p in _NETWORK_ERROR_PATTERNS)
@@ -311,7 +311,15 @@ def is_unable_to_create_process(output: str) -> bool:
 
 
 def is_dll_init_error(output: str) -> bool:
-    """Detect DLL initialization failures (missing VC++ Redistributables)."""
+    """Detect DLL initialization failures (missing VC++ Redistributables).
+
+    A DLL that is *blocked by a security policy* (AppLocker, WDAC, corporate
+    application-control) or quarantined by antivirus also prints "DLL load
+    failed", but the fix there is to whitelist the plugin folder, not to install
+    the VC++ runtime. Defer those to is_antivirus_error so the user gets the
+    right guidance instead of a dead-end "install Visual C++" message
+    (#bug-kees).
+    """
     lower = output.lower()
     patterns = [
         "winerror 1114",
@@ -319,7 +327,13 @@ def is_dll_init_error(output: str) -> bool:
         "dll load failed",
         "_load_dll_libraries",
     ]
-    return any(p in lower for p in patterns)
+    if not any(p in lower for p in patterns):
+        return False
+    # A policy/antivirus block is not a missing-runtime error; let the
+    # antivirus classifier own it (it carries the whitelist guidance).
+    if is_antivirus_error(output):
+        return False
+    return True
 
 
 def get_vcpp_help() -> str:
@@ -374,7 +388,7 @@ def is_antivirus_error(stderr: str) -> bool:
         *_ACCESS_DENIED_LOCALIZED,
         "winerror 5",
         "winerror 225",
-        "winerror 110",        # ERROR_OPEN_FAILED — AV scan race on new wheel
+        "winerror 110",        # ERROR_OPEN_FAILED - AV scan race on new wheel
         "os error 5",          # uv format on Windows (distinct from winerror 5)
         "os error 13",         # uv format on POSIX (EACCES)
         # Windows text for ERROR_OPEN_FAILED; seen during install of fresh
@@ -402,7 +416,7 @@ def is_file_locked_error(output: str) -> bool:
     """Detect native-module file-lock errors during package upgrade.
 
     These occur when a .pyd/.dll/.so is already imported into the current
-    process — Windows and some filesystems refuse to delete an in-use
+    process - Windows and some filesystems refuse to delete an in-use
     binary. The fix is to close the app holding the module (restart QGIS),
     NOT to exclude the folder from antivirus.
 
@@ -436,7 +450,7 @@ def get_file_locked_help() -> str:
         "How to fix this:\n\n"
         "  1. Close all QGIS windows (File > Exit)\n"
         "  2. Reopen QGIS\n"
-        "  3. Open the AI Segmentation panel — installation will resume\n\n"
+        "  3. Open the AI Segmentation panel - installation will resume\n\n"
         "If it still fails after restarting QGIS:\n"
         "  4. Uninstall the plugin "
         "(Plugins > Manage and Install Plugins > Installed > AI Segmentation)\n"

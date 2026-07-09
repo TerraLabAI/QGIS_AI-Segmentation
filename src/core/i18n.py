@@ -58,6 +58,15 @@ def _load_translations():
         "pt_PT": "pt_BR",   # European Portuguese -> Brazilian Portuguese
         "es_MX": "es",      # Mexican Spanish -> Spanish
         "es_AR": "es",      # Argentine Spanish -> Spanish
+        # Chinese: route bare/script/region variants to Simplified or Traditional.
+        # Order in locale_variants ensures Hant/HK/MO resolve to zh_TW before the
+        # generic "zh" -> zh_CN fallback is reached.
+        "zh": "zh_CN",      # bare Chinese -> Simplified
+        "zh_Hans": "zh_CN",  # Simplified script -> Simplified
+        "zh_SG": "zh_CN",   # Singapore -> Simplified
+        "zh_Hant": "zh_TW",  # Traditional script -> Traditional
+        "zh_HK": "zh_TW",   # Hong Kong -> Traditional
+        "zh_MO": "zh_TW",   # Macau -> Traditional
     }
 
     # Try full locale code first (e.g., pt_BR), then fall back to language code (e.g., pt)

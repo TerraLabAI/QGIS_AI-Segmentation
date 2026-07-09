@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-import uuid
 
 from qgis.core import QgsSettings
 
@@ -25,14 +24,8 @@ _KEY_RE = re.compile(r"^tl_[0-9a-f]{32}$")
 
 SETTINGS_PREFIX = "AISegmentation/"
 TERRALAB_PREFIX = "TerraLab/"
-DEVICE_ID_KEY = f"{TERRALAB_PREFIX}device_id"
 
 TUTORIAL_URL_FALLBACK = "https://youtu.be/lbADk75l-mk?si=q6WnwyV2NcmQYuhI"
-_SIGN_UP_BASE = (
-    "https://terra-lab.ai/signup"
-    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
-    "&utm_content=sign_up&product=ai-segmentation"
-)
 TERMS_URL = (
     "https://terra-lab.ai/terms-of-sale"
     "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
@@ -89,13 +82,16 @@ def is_plugin_activated(settings=None) -> bool:
 
 
 def has_tos_accepted(settings=None) -> bool:
-    """True only after the user has explicitly accepted Terms + Privacy.
+    """Whether the Terms + Privacy box is currently ticked.
 
-    Stored separately from telemetry consent: ToS is mandatory to use the
-    service, telemetry is optional opt-in handled elsewhere.
+    Defaults to True (checked) to remove first-run friction: the box shows
+    pre-ticked and the user still performs an affirmative act (clicking
+    Detect / Start with the agreement text right there) before anything runs.
+    Explicitly unticking persists False, which re-adds the gate. Stored
+    separately from telemetry consent (optional opt-in, handled elsewhere).
     """
     s = settings or QgsSettings()
-    return bool(s.value(f"{SETTINGS_PREFIX}tos_accepted", False, type=bool))
+    return bool(s.value(f"{SETTINGS_PREFIX}tos_accepted", True, type=bool))
 
 
 def set_tos_accepted(granted: bool, settings=None):
@@ -124,11 +120,16 @@ def lock_tos():
     s.setValue(f"{SETTINGS_PREFIX}tos_accepted", True)
 
 
-def _device_headers() -> dict:
-    """Anonymous per-machine headers so the server can apply the device limit
-    and list the machine on the account page. Best-effort: a hash failure
-    must never strip auth, so callers merge this and ignore emptiness."""
-    headers: dict = {}
+def get_auth_header(settings=None) -> dict:
+    token = get_auth_token(settings)
+    if not token:
+        return {}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-Product-ID": PRODUCT_ID,
+    }
+    # Anonymous per-machine hash so the server can apply the device limit.
+    # Best-effort: a hash failure must never strip auth.
     try:
         from .device_id import get_device_hash, get_device_platform
 
@@ -141,56 +142,37 @@ def _device_headers() -> dict:
     return headers
 
 
-def _auth_header_for_key(key: str) -> dict:
-    """Auth header for an explicit key (validation paths, nothing persisted).
-
-    Includes the device headers: every /usage call must identify the machine,
-    otherwise the device never registers and the server-side cap never applies.
-    """
-    headers = {"Authorization": f"Bearer {key}", "X-Product-ID": PRODUCT_ID}
-    headers.update(_device_headers())
-    return headers
-
-
-def get_auth_header(settings=None) -> dict:
-    token = get_auth_token(settings)
-    if not token:
-        return {}
-    return _auth_header_for_key(token)
-
-
-# -- device id (stable per machine, shared across TerraLab plugins) --------
-
-
-def get_device_id(settings=None) -> str:
-    s = settings or QgsSettings()
-    device_id = s.value(DEVICE_ID_KEY, "")
-    if not device_id:
-        device_id = str(uuid.uuid4())
-        s.setValue(DEVICE_ID_KEY, device_id)
-    return device_id
-
-
 # -- server config ---------------------------------------------------------
 
 
 def get_server_config() -> dict:
-    global _cached_config
-    if _cached_config is not None:
-        return _cached_config
-    try:
-        result = _client().get_config(PRODUCT_ID)
-        if "error" not in result:
-            _cached_config = result
-            return result
-    except Exception:
-        pass  # nosec B110
-    return {}
+    """Return the cached server config, or {} if not yet fetched.
+
+    Cache-only by design: this is called on the GUI thread (kill-switch and
+    tutorial-url lookups), so it must NEVER do network here. The fetch happens
+    once off-thread via the plugin's hidden config-prefetch task, which calls
+    set_cached_config(). Callers all fail open on an empty dict.
+    """
+    return _cached_config or {}
 
 
-def clear_config_cache():
+def set_cached_config(config: dict) -> None:
+    """Populate the config cache from the off-thread prefetch result."""
     global _cached_config
-    _cached_config = None
+    if isinstance(config, dict) and config:
+        _cached_config = config
+
+
+def is_automatic_mode_enabled() -> bool:
+    """Server-side kill switch for Automatic mode.
+
+    Fails open: if the config is unreachable or the field is absent
+    (older server), Automatic mode stays available.
+    """
+    config = get_server_config()
+    if not config:
+        return True
+    return bool(config.get("automatic_mode_enabled", True))
 
 
 def get_tutorial_url() -> str:
@@ -198,10 +180,6 @@ def get_tutorial_url() -> str:
     if config and "tutorial_url" in config:
         return config["tutorial_url"]
     return TUTORIAL_URL_FALLBACK
-
-
-def get_sign_up_url() -> str:
-    return f"{_SIGN_UP_BASE}&device_id={get_device_id()}"
 
 
 def get_terms_url() -> str:
@@ -216,101 +194,23 @@ def get_dashboard_url() -> str:
     return DASHBOARD_URL
 
 
+def get_upgrade_url() -> str:
+    """URL for the Pro upgrade checkout/dashboard page with UTM attribution."""
+    base = get_dashboard_url().split("?")[0]
+    return (
+        f"{base}?utm_source=qgis&utm_medium=plugin"
+        "&utm_campaign=ai-segmentation-pro&utm_content=upgrade_cta"
+    )
+
+
 # -- activation key validation ---------------------------------------------
-
-# English source text; tr() is applied at display time (the dockwidget keeps
-# matching on this exact wording for telemetry error codes).
-DEVICE_LIMIT_MESSAGE = (
-    "This license is already in use on the maximum number of computers. "
-    "Use one of your existing computers, or wait for an inactive one to "
-    "free its slot."
-)
-
-
-def check_key_with_server(key: str) -> tuple[bool, str]:
-    """Validate a key against the server WITHOUT persisting anything.
-
-    Pure network + string work, so it is safe to call off the main thread
-    (QgsAuthManager writes must stay on the main thread).
-    """
-    key = (key or "").strip()
-    if not key:
-        return False, "Please enter your activation key."
-    if not _KEY_RE.match(key):
-        return False, (
-            "That does not look like an activation key. Most people do not need "
-            "one: just use the Sign in button. A key starts with tl_ and is only "
-            "for admin-issued or offline activation."
-        )
-
-    try:
-        result = _client().get_usage(auth=_auth_header_for_key(key))
-    except Exception:
-        return False, "Cannot reach server. Check your internet connection."
-
-    if "error" in result:
-        code = (result.get("code") or "").strip().upper()
-        if code == "INVALID_KEY":
-            return False, "Invalid activation key."
-        if code == "SUBSCRIPTION_INACTIVE":
-            return False, "Subscription inactive. Check your account."
-        if code == "DEVICE_LIMIT_EXCEEDED":
-            return False, DEVICE_LIMIT_MESSAGE
-        return False, result.get("error", "Validation failed.")
-
-    server_product = result.get("product_id", "")
-    if server_product and server_product != PRODUCT_ID:
-        return False, "This key belongs to a different product. Use your AI Segmentation key."
-
-    return True, "Activation key verified!"
-
-
-def validate_key_with_server(key: str) -> tuple[bool, str]:
-    """Validate AND persist on success. Main thread only (settings write)."""
-    success, message = check_key_with_server(key)
-    if success:
-        save_auth_token(key)
-    return success, message
+#
+# The manual key-entry validation helpers that used to live here are gone:
+# sign-in is the browser pairing flow (env_setup + pairing_poll_task), and
+# the stored key is re-validated by env_setup's async usage fetch. Only the
+# rejection-code test survives, shared by both.
 
 
 def is_rejection_code(code: str) -> bool:
     """True when a /usage error code means the stored key is no longer usable."""
     return (code or "").strip().upper() in ("INVALID_KEY", "SUBSCRIPTION_INACTIVE")
-
-
-def is_device_limit_code(code: str) -> bool:
-    """True when /usage rejected THIS machine (cap full), not the key itself.
-
-    Happens when a machine comes back after its slot was auto-released (30
-    days idle) and other computers have since filled the cap. The key still
-    works elsewhere, so the UI message must say "free a computer", never
-    "invalid key"."""
-    return (code or "").strip().upper() == "DEVICE_LIMIT_EXCEEDED"
-
-
-def revalidate_stored_key() -> bool:
-    """Re-check the stored activation key against the server.
-
-    Returns True if the key is still valid (or if no key is stored).
-    Returns False and clears auth if the server rejects the key.
-    Network errors are silently ignored (benefit of the doubt).
-    Main thread only (clears settings on rejection).
-    """
-    key = get_auth_token()
-    if not key:
-        return False
-
-    try:
-        result = _client().get_usage(auth=_auth_header_for_key(key))
-    except Exception:
-        return True
-
-    code = result.get("code", "") if "error" in result else ""
-    if is_rejection_code(code) or is_device_limit_code(code):
-        # Device limit clears auth too: this machine lost its slot, keeping
-        # the session would silently bypass the cap. Signing in again walks
-        # the user into the explanatory device-limit message.
-        clear_auth()
-        return False
-
-    return True

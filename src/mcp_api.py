@@ -14,25 +14,20 @@ from qgis.core import (
     QgsCoordinateTransform,
     QgsFeature,
     QgsField,
-    QgsFillSymbol,
     QgsGeometry,
     QgsPointXY,
     QgsProject,
     QgsRasterLayer,
-    QgsSingleSymbolRenderer,
     QgsVectorFileWriter,
     QgsVectorLayer,
 )
 
-# QGIS 4 rejects raw int for QgsField type arg (#25, #36); pick by version.
-if getattr(Qgis, "QGIS_VERSION_INT", 0) >= 40000:
-    from qgis.PyQt.QtCore import QMetaType as _QMetaType
-    _FIELD_TYPE_STRING = _QMetaType.Type.QString
-    _FIELD_TYPE_DOUBLE = _QMetaType.Type.Double
-else:
-    from qgis.PyQt.QtCore import QVariant as _QVariant
-    _FIELD_TYPE_STRING = _QVariant.String
-    _FIELD_TYPE_DOUBLE = _QVariant.Double
+from .core.qt_compat import field_type_double, field_type_string
+
+# QgsField type args (QGIS 4 rejects raw int, #25/#36): resolved once in
+# qt_compat (QVariant on QGIS 3, QMetaType on QGIS 4).
+_FIELD_TYPE_STRING = field_type_string()
+_FIELD_TYPE_DOUBLE = field_type_double()
 
 AISEG_KEYS = ["AI_Segmentation", "QGIS_AI-Segmentation", "QGIS_AI-Segmentation-Team"]
 AISEG_REGISTER_URL = "https://terra-lab.ai/ai-segmentation?utm_source=qgis&utm_medium=mcp&utm_campaign=ai-agent"
@@ -133,6 +128,22 @@ class SegmentationMCPAPI:
             },
             "raster_crs": raster_layer.crs().authid(),
         })
+
+        # Additive fields: mode + credits. Never remove or rename existing keys.
+        try:
+            from .core.activation_manager import is_plugin_activated
+            if is_plugin_activated():
+                dock = getattr(plugin, "dock_widget", None)
+                status["mode"] = "interactive"
+                if dock and hasattr(dock, "_mode"):
+                    status["mode"] = dock._mode.value
+                if dock and hasattr(dock, "_auto_credits") and dock._auto_credits is not None:
+                    status["auto_credits_remaining"] = dock._auto_credits
+                if dock and hasattr(dock, "_auto_is_subscriber"):
+                    status["auto_is_subscriber"] = dock._auto_is_subscriber
+        except Exception:
+            pass  # nosec B110 -- additive fields; never break existing behavior
+
         return status
 
     def detect(self, x: float, y: float, layer_name: str | None = None) -> dict:
@@ -303,7 +314,9 @@ class SegmentationMCPAPI:
                 apply_output_conventions,
                 attribute_values_for_fields,
                 geodesic_area_m2,
+                make_committed_renderer,
                 repair_polygon,
+                to_multipolygon,
             )
 
             timestamp = datetime.now().isoformat(timespec="seconds")
@@ -312,8 +325,9 @@ class SegmentationMCPAPI:
                 try:
                     g = QgsGeometry(geom)
                     g = repair_polygon(g) or g
-                    if not g.isMultipart():
-                        g.convertToMultiType()
+                    # Coerce to polygon-only MultiPolygon so a collection can
+                    # never reach the layer provider (it would be rejected).
+                    g = to_multipolygon(g) or g
                     feature = QgsFeature(existing_layer.fields())
                     feature.setGeometry(g)
                     # Match the layer's schema by field name so appending
@@ -367,8 +381,9 @@ class SegmentationMCPAPI:
 
             g = QgsGeometry(geom)
             g = repair_polygon(g) or g
-            if not g.isMultipart():
-                g.convertToMultiType()
+            # Coerce to polygon-only MultiPolygon so a collection can never
+            # reach the layer provider (it would be rejected).
+            g = to_multipolygon(g) or g
             feature = QgsFeature(temp_layer.fields())
             feature.setGeometry(g)
             feature.setAttributes(["", geodesic_area_m2(g, crs_obj)])
@@ -390,12 +405,7 @@ class SegmentationMCPAPI:
             if not result_layer.isValid():
                 return {"_error": "Created GeoPackage but layer is invalid"}
 
-            symbol = QgsFillSymbol.createSimple({
-                "color": "0,0,0,0",
-                "outline_color": "220,0,0,255",
-                "outline_width": "0.5",
-            })
-            result_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+            result_layer.setRenderer(make_committed_renderer())
             # Style + provenance stored with the .gpkg (survives reloads).
             apply_output_conventions(result_layer, raster_name)
 
@@ -410,6 +420,248 @@ class SegmentationMCPAPI:
 
         except Exception as e:
             return {"_error": f"Export failed: {str(e)}"}
+
+    def detect_auto(
+        self,
+        zone_wkt: str,
+        object_class: str,
+        layer_name: str | None = None,
+        exemplars: list[dict] | None = None,
+        detail: int | None = None,
+    ) -> dict:
+        """Run an Automatic (cloud) detection over a zone.
+
+        Parameters
+        ----------
+        zone_wkt : str
+            Well-known text (WKT) geometry in the raster layer's CRS defining
+            the detection zone. Use POLYGON or MULTIPOLYGON. If empty string,
+            the full raster extent is used.
+        object_class : str
+            Class of objects to detect, e.g. "Building", "Tree", "Car". May be
+            empty ONLY when at least one positive exemplar is given (the cloud model needs
+            either a text prompt or a visual example).
+        layer_name : str | None
+            Optional raster layer name. If None, uses the currently selected
+            layer.
+        exemplars : list[dict] | None
+            Optional visual exemplars ("draw one example, find all"). Each item
+            is {"bbox": [xmin, ymin, xmax, ymax], "label": 1|0} in the raster
+            layer's CRS (same CRS as zone_wkt), where label 1 = positive
+            (find similar) and 0 = exclude. An exemplar run uses single-image
+            mode (the whole zone is one query image). Additive: omit for the
+            text-only behaviour.
+
+        Returns
+        -------
+        dict with keys:
+            "instances"     -- int, number of polygons detected
+            "credits_used"  -- int, credits consumed
+            "layer_name"    -- str, name of the output vector layer created.
+                               Treat as opaque: it is a human-friendly name
+                               like "Buildings (3 Jul)". Results are saved as
+                               a table inside the project's
+                               ai_segmentation.gpkg.
+            "_error"        -- str, present only on failure
+        """
+        plugin = self._plugin
+
+        has_exemplars = bool(exemplars)
+        if (not object_class or not object_class.strip()) and not has_exemplars:
+            return {"_error": "object_class must be a non-empty string (or pass exemplars)."}
+
+        if not hasattr(plugin, "_run_auto_detect_headless"):
+            return {
+                "_error": (
+                    "Automatic detection not available in this plugin version. "
+                    "Upgrade to AI Segmentation 1.3.0+."
+                )
+            }
+
+        # _run_auto_detect_headless switches mode itself; no need to refuse
+        # just because the dock was in Interactive mode.
+        return plugin._run_auto_detect_headless(
+            zone_wkt=zone_wkt,
+            object_class=(object_class or "").strip(),
+            layer_name=layer_name,
+            exemplars=exemplars,
+            detail=detail,
+        )
+
+    def set_mode(self, mode: str) -> dict:
+        """Switch the dock between interactive and automatic modes.
+
+        Parameters
+        ----------
+        mode : str
+            "interactive" or "automatic" (case-insensitive).
+
+        Returns
+        -------
+        dict with key "mode" (new mode string) or "_error".
+        """
+        plugin = self._plugin
+        mode_lower = mode.strip().lower() if mode else ""
+        if mode_lower not in ("interactive", "automatic"):
+            return {"_error": "mode must be 'interactive' or 'automatic'"}
+
+        try:
+            plugin._ensure_dock_widget()
+        except Exception:  # nosec B110
+            pass
+
+        try:
+            from .ui.ai_segmentation_dockwidget import Mode
+            target = Mode.AUTOMATIC if mode_lower == "automatic" else Mode.INTERACTIVE
+            dock = getattr(plugin, "dock_widget", None)
+            if dock is None:
+                return {"_error": "Dock widget not available"}
+            dock._on_mode_selected(target)
+            if target == Mode.AUTOMATIC:
+                try:
+                    if plugin._tile_manager is None:
+                        plugin._setup_auto_mode()
+                except (RuntimeError, AttributeError):
+                    pass
+                try:
+                    plugin._refresh_auto_credits()
+                except (RuntimeError, AttributeError):
+                    pass
+            return {"mode": mode_lower}
+        except Exception as e:
+            return {"_error": "Failed to switch mode: {}".format(str(e))}
+
+    def set_auto_zone(self, zone_wkt: str | None) -> dict:
+        """Set the detection zone for automatic mode.
+
+        The WKT must be in the raster layer's CRS. Pass None or empty string
+        to clear the zone (use full raster extent).
+
+        Returns
+        -------
+        dict with key "zone_set" (bool) and bbox keys when a zone is set,
+        or "_error".
+        """
+        plugin = self._plugin
+
+        if not zone_wkt or not zone_wkt.strip():
+            plugin._auto_zone = None
+            try:
+                dock = getattr(plugin, "dock_widget", None)
+                if dock:
+                    dock.set_auto_zone_state("idle")
+            except (RuntimeError, AttributeError):
+                pass
+            return {"zone_set": False}
+
+        geom = QgsGeometry.fromWkt(zone_wkt)
+        if geom is None or geom.isEmpty():
+            return {"_error": "Invalid zone WKT"}
+
+        bbox = geom.boundingBox()
+
+        # Convert from layer CRS to canvas CRS (same transform as in
+        # _run_auto_detect_headless; _start_auto_detection reprojects back).
+        active_layer = None
+        try:
+            active_layer = plugin._get_active_raster_layer()
+        except (RuntimeError, AttributeError):
+            pass
+
+        # Free-trial zone cap: mirror the interactive draw guard (additive,
+        # explicit error; subscribers are never capped). The WKT is in the
+        # layer CRS (canvas CRS when no layer is resolved).
+        try:
+            zone_crs = active_layer.crs() if active_layer is not None else None
+            cap_area = plugin._free_zone_cap_exceeded_km2(geom, crs=zone_crs)
+        except (RuntimeError, AttributeError):
+            cap_area = None
+        if cap_area is not None:
+            try:
+                from .core import telemetry
+                telemetry.track_auto_zone_too_large(area_km2=cap_area)
+            except Exception:
+                pass  # nosec B110
+            from .ui.plugin.shared import FREE_TRIAL_MAX_ZONE_KM2
+            return {"_error": (
+                "Zone is {:.1f} km2; free trial zones go up to {:g} km2. "
+                "Use a smaller zone, or subscribe to segment areas of "
+                "any size.".format(cap_area, FREE_TRIAL_MAX_ZONE_KM2)
+            )}
+
+        if active_layer is not None:
+            try:
+                from qgis.utils import iface as _iface
+                layer_crs = active_layer.crs()
+                canvas_crs = _iface.mapCanvas().mapSettings().destinationCrs()
+                if layer_crs.isValid() and canvas_crs.isValid() and layer_crs != canvas_crs:
+                    xform = QgsCoordinateTransform(layer_crs, canvas_crs, QgsProject.instance())
+                    bbox = xform.transformBoundingBox(bbox)
+            except Exception:  # nosec B110 -- antimeridian, invalid CRS
+                pass
+
+        plugin._auto_zone = bbox
+        try:
+            dock = getattr(plugin, "dock_widget", None)
+            if dock:
+                dock.set_auto_zone_state("zone_set")
+        except (RuntimeError, AttributeError):
+            pass
+
+        return {
+            "zone_set": True,
+            "xmin": bbox.xMinimum(),
+            "ymin": bbox.yMinimum(),
+            "xmax": bbox.xMaximum(),
+            "ymax": bbox.yMaximum(),
+        }
+
+    def auto_detect_status(self) -> dict:
+        """Return the current automatic detection status.
+
+        Returns
+        -------
+        dict with keys:
+            "running"      -- bool, True if a worker is currently active.
+            "last_result"  -- dict or None, result of the most recent run.
+            "mode"         -- str ("interactive" or "automatic") or None.
+        """
+        plugin = self._plugin
+
+        running = False
+        try:
+            worker = plugin._auto_worker
+            running = worker is not None and worker.isRunning()
+        except (RuntimeError, AttributeError):
+            pass
+
+        mode_str = None
+        try:
+            dock = getattr(plugin, "dock_widget", None)
+            if dock and hasattr(dock, "_mode"):
+                mode_str = dock._mode.value
+        except (RuntimeError, AttributeError):
+            pass
+
+        return {
+            "running": running,
+            "last_result": getattr(plugin, "_last_auto_result", None),
+            "mode": mode_str,
+        }
+
+    def cancel_auto(self) -> dict:
+        """Cancel any running automatic detection.
+
+        Returns
+        -------
+        dict with key "cancelled" (True).
+        """
+        plugin = self._plugin
+        try:
+            plugin._stop_auto_detection()
+        except (RuntimeError, AttributeError):
+            pass
+        return {"cancelled": True}
 
     def _ensure_session(self, layer_name: str | None = None):
         """Ensure plugin has an active session. Returns (layer, error_dict_or_None)."""

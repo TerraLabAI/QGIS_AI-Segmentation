@@ -94,6 +94,81 @@ def _normalize_to_uint8(bands, nodata_value=None):
     return np.ascontiguousarray(np.transpose(result, (1, 2, 0)))
 
 
+def _apply_colormap(indices, colormap):
+    """Map a (H, W) palette-index array to (H, W, 3) uint8 RGB.
+
+    A paletted raster (land cover, thematic classes) stores class INDICES, not
+    colours. Reading the raw index band and stretching it (the default path)
+    produces a meaningless grey ramp instead of the coloured classes the user
+    sees. Expanding through the colour table restores the real classes.
+
+    Args:
+        indices: (H, W) integer array of palette indices.
+        colormap: {index: (r, g, b[, a])} mapping (GDAL colour table or
+                  rasterio ``src.colormap``).
+
+    Returns:
+        (H, W, 3) uint8 RGB, or None when the input cannot be mapped. Indices
+        outside the table render black.
+    """
+    idx = np.asarray(indices)
+    if idx.ndim != 2 or idx.size == 0 or not colormap:
+        return None
+    max_i = int(idx.max(initial=0))
+    lut = np.zeros((max_i + 1, 3), dtype=np.uint8)
+    for i, color in colormap.items():
+        if 0 <= int(i) <= max_i and color is not None and len(color) >= 3:
+            lut[int(i), 0] = int(color[0]) & 0xFF
+            lut[int(i), 1] = int(color[1]) & 0xFF
+            lut[int(i), 2] = int(color[2]) & 0xFF
+    flat = np.clip(idx.astype(np.int64), 0, max_i)
+    return lut[flat]
+
+
+def _read_palette_rgb_rasterio(src, window, out_h, out_w):
+    """Return (H, W, 3) uint8 for a paletted rasterio source, or None when the
+    source is not paletted / has no usable colour table. Reads band 1 with
+    NEAREST resampling so class indices are never interpolated (bilinear on
+    indices would invent nonexistent classes at edges)."""
+    try:
+        from rasterio.enums import ColorInterp, Resampling
+
+        interp = src.colorinterp
+        if not interp or interp[0] != ColorInterp.palette:
+            return None
+        cmap = src.colormap(1)
+        if not cmap:
+            return None
+        idx = src.read(
+            1, window=window, out_shape=(out_h, out_w),
+            resampling=Resampling.nearest,
+        )
+        return _apply_colormap(idx, cmap)
+    except Exception:  # noqa: BLE001 - fall back to raw normalization on any issue
+        return None
+
+
+def _read_palette_rgb_gdal(ds, col_off, row_off, actual_w, actual_h, out_w, out_h):
+    """Return (H, W, 3) uint8 for a paletted GDAL dataset, or None when the
+    band is not paletted. GDAL windowed reads with buf_x/ysize use nearest
+    resampling by default, so class indices are preserved."""
+    try:
+        from osgeo import gdal
+
+        band1 = ds.GetRasterBand(1)
+        ctable = band1.GetColorTable()
+        if ctable is None or band1.GetColorInterpretation() != gdal.GCI_PaletteIndex:
+            return None
+        idx = band1.ReadAsArray(
+            col_off, row_off, actual_w, actual_h,
+            buf_xsize=out_w, buf_ysize=out_h,
+        )
+        cmap = {ci: ctable.GetColorEntry(ci) for ci in range(ctable.GetCount())}
+        return _apply_colormap(idx, cmap)
+    except Exception:  # noqa: BLE001 - fall back to raw normalization on any issue
+        return None
+
+
 def _fetch_online_bands(provider, extent, width, height):
     """Fetch raw band data from an online raster provider.
 
@@ -185,7 +260,7 @@ def _fetch_online_bands(provider, extent, width, height):
     return bands_array, False, None
 
 
-def _render_layer_to_image(layer, extent, width, height):
+def _render_layer_to_image(layer, extent, width, height, timeout_ms=60_000):
     """Render a layer to an RGB image using QGIS map renderer (fallback).
 
     Works with any layer type (WMS, WMTS, XYZ, WCS, vector tiles, etc.)
@@ -195,37 +270,56 @@ def _render_layer_to_image(layer, extent, width, height):
         extent: QgsRectangle for the area
         width: pixel width
         height: pixel height
+        timeout_ms: hard cap so a dead / very slow tile server cannot freeze
+            the GUI thread forever. The old blocking waitForFinished() had no
+            timeout, so a stalled tile service hung all of QGIS indefinitely.
 
     Returns:
         (image_np, error) where image_np is (H, W, 3) uint8 or None
     """
     try:
-        from qgis.core import QgsMapRendererCustomPainterJob, QgsMapSettings
-        from qgis.PyQt.QtCore import QSize
-        from qgis.PyQt.QtGui import QImage, QPainter
-
-        img = QImage(QSize(width, height), QImage.Format.Format_RGB32)
-        img.fill(0)
+        from qgis.core import QgsMapRendererParallelJob, QgsMapSettings
+        from qgis.PyQt.QtCore import QEventLoop, QSize, QTimer
+        from qgis.PyQt.QtGui import QColor, QImage
 
         settings = QgsMapSettings()
         settings.setOutputSize(QSize(width, height))
         settings.setExtent(extent)
         settings.setLayers([layer])
         settings.setDestinationCrs(layer.crs())
-        settings.setBackgroundColor(img.pixelColor(0, 0))
+        settings.setBackgroundColor(QColor(0, 0, 0))
 
-        painter = QPainter(img)
-        job = QgsMapRendererCustomPainterJob(settings, painter)
+        # Parallel job driven by a local event loop bounded by a one-shot
+        # timer (same pattern as the online-detection render path). This keeps
+        # the GUI thread responsive and, crucially, bails out after timeout_ms
+        # instead of blocking forever like waitForFinished() did.
+        job = QgsMapRendererParallelJob(settings)
+        loop = QEventLoop()
+        job.finished.connect(loop.quit)
+        QTimer.singleShot(timeout_ms, loop.quit)
         job.start()
-        job.waitForFinished()
-        painter.end()
+        # Guard the race where the job finishes before the loop starts: its
+        # queued finished signal would be lost and we would sit out the whole
+        # timeout for nothing.
+        if job.isActive():
+            loop.exec()
+        if job.isActive():
+            # Timed out: cancel without blocking and let the caller give up.
+            job.cancelWithoutBlocking()
+            return None, f"Renderer fallback timed out after {timeout_ms} ms"
 
-        # QImage -> numpy
+        img = job.renderedImage()
+        if img is None or img.isNull():
+            return None, "Renderer fallback produced no image"
+
+        # QImage -> numpy (size taken from the rendered image, not the request)
         img = img.convertToFormat(QImage.Format.Format_RGB32)
+        w = img.width()
+        h = img.height()
         ptr = img.bits()
-        ptr.setsize(height * width * 4)
+        ptr.setsize(h * w * 4)
         arr = np.frombuffer(ptr, dtype=np.uint8).reshape(
-            height, width, 4).copy()
+            h, w, 4).copy()
         # BGRA -> RGB
         image_np = np.stack(
             [arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
@@ -269,10 +363,17 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
     # PROJ_DATA/GDAL_DATA to point there so rasterio works in the venv.
     # GDAL (from osgeo) has its own bundled data and will hit a
     # "DATABASE.LAYOUT.VERSION.MINOR = N whereas a number >= M is expected"
-    # error when forced to read rasterio's older proj.db. Restore env after.
-    _proj_data_backup = os.environ.pop("PROJ_DATA", None)
-    _proj_lib_backup = os.environ.pop("PROJ_LIB", None)
-    _gdal_data_backup = os.environ.pop("GDAL_DATA", None)
+    # error when forced to read rasterio's older proj.db. Shadow the vars
+    # via GDAL's own config-option table (scoped to this GDAL instance,
+    # like _scope_rasterio_data_paths does for rasterio) instead of
+    # os.environ, so no other thread or plugin in the process ever sees
+    # them missing while this call runs.
+    _proj_data_backup = gdal.GetConfigOption("PROJ_DATA")
+    _proj_lib_backup = gdal.GetConfigOption("PROJ_LIB")
+    _gdal_data_backup = gdal.GetConfigOption("GDAL_DATA")
+    gdal.SetConfigOption("PROJ_DATA", "")
+    gdal.SetConfigOption("PROJ_LIB", "")
+    gdal.SetConfigOption("GDAL_DATA", "")
     try:
         ds = gdal.Open(raster_path)
         if ds is None:
@@ -340,32 +441,40 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
             out_h = actual_height
             out_w = actual_width
 
-        bands = []
-        for b_idx in range(1, num_bands + 1):
-            band = ds.GetRasterBand(b_idx)
-            data = band.ReadAsArray(
-                col_off, row_off, actual_width, actual_height,
-                buf_xsize=out_w, buf_ysize=out_h
-            )
-            # GDAL returns None (not an exception) when the block cannot be
-            # decoded: corrupt tile, missing codec (JPEG-in-TIFF), broken
-            # overview. np.stack on a None would raise a cryptic error that
-            # surfaces as crop_error_read_failed. Catch it here with guidance.
-            if data is None:
-                return None, None, tr(
-                    "Could not read pixels from this {ext} file. The file may "
-                    "be corrupt, truncated, or use a compression your GDAL "
-                    "build cannot decode.\n"
-                    "Try opening it in QGIS to confirm it displays, or convert "
-                    "it to GeoTIFF (.tif) before using AI Segmentation."
-                ).format(ext=ext), "crop_error_read_failed"
-            bands.append(data)
+        # Paletted (colour-table) raster: expand class indices to their true
+        # colours instead of stretching raw indices to grey.
+        palette_rgb = _read_palette_rgb_gdal(
+            ds, col_off, row_off, actual_width, actual_height, out_w, out_h)
+        if palette_rgb is not None:
+            image_np = palette_rgb
+            ds = None
+        else:
+            bands = []
+            for b_idx in range(1, num_bands + 1):
+                band = ds.GetRasterBand(b_idx)
+                data = band.ReadAsArray(
+                    col_off, row_off, actual_width, actual_height,
+                    buf_xsize=out_w, buf_ysize=out_h
+                )
+                # GDAL returns None (not an exception) when the block cannot be
+                # decoded: corrupt tile, missing codec (JPEG-in-TIFF), broken
+                # overview. np.stack on a None would raise a cryptic error that
+                # surfaces as crop_error_read_failed. Catch it here with guidance.
+                if data is None:
+                    return None, None, tr(
+                        "Could not read pixels from this {ext} file. The file may "
+                        "be corrupt, truncated, or use a compression your GDAL "
+                        "build cannot decode.\n"
+                        "Try opening it in QGIS to confirm it displays, or convert "
+                        "it to GeoTIFF (.tif) before using AI Segmentation."
+                    ).format(ext=ext), "crop_error_read_failed"
+                bands.append(data)
 
-        nodata = ds.GetRasterBand(1).GetNoDataValue()
-        ds = None
+            nodata = ds.GetRasterBand(1).GetNoDataValue()
+            ds = None
 
-        tile_data = np.stack(bands, axis=0)
-        image_np = _normalize_to_uint8(tile_data, nodata_value=nodata)
+            tile_data = np.stack(bands, axis=0)
+            image_np = _normalize_to_uint8(tile_data, nodata_value=nodata)
 
         if out_h < crop_size or out_w < crop_size:
             pad_bottom = crop_size - out_h
@@ -402,12 +511,9 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
 
     finally:
         ds = None
-        if _proj_data_backup is not None:
-            os.environ["PROJ_DATA"] = _proj_data_backup
-        if _proj_lib_backup is not None:
-            os.environ["PROJ_LIB"] = _proj_lib_backup
-        if _gdal_data_backup is not None:
-            os.environ["GDAL_DATA"] = _gdal_data_backup
+        gdal.SetConfigOption("PROJ_DATA", _proj_data_backup)
+        gdal.SetConfigOption("PROJ_LIB", _proj_lib_backup)
+        gdal.SetConfigOption("GDAL_DATA", _gdal_data_backup)
 
 
 def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
@@ -521,7 +627,13 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
                 out_w = actual_width
 
             nodata = src.nodata
-            image_np = _normalize_to_uint8(tile_data, nodata_value=nodata)
+            # Paletted (colour-table) raster: expand class indices to their true
+            # colours (read band 1 with nearest so indices are never blended).
+            palette_rgb = _read_palette_rgb_rasterio(src, window, out_h, out_w)
+            if palette_rgb is not None:
+                image_np = palette_rgb
+            else:
+                image_np = _normalize_to_uint8(tile_data, nodata_value=nodata)
 
             # Pad to full crop_size if crop was clipped at raster edge.
             # Uses reflect padding instead of black borders for better
@@ -605,42 +717,44 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
         # Retry fetching tiles: when the user pans to a new area, the
         # provider cache may not have the tiles yet.  A short delay
         # between attempts gives QGIS time to download them.
-        # We also re-fetch after getting a valid block to detect
-        # mixed-resolution tiles (stale cache from different zoom).
+        # We also re-fetch to detect mixed-resolution tiles (stale cache
+        # from a different zoom): the fetch is stable once two consecutive
+        # reads are identical.
+        # Budget is kept tight on purpose. The old loop did up to 8 tries
+        # with progressive 1.0/1.5/2.0/... sleeps AND an unconditional
+        # reload+0.5s on the very first valid fetch, so a single click on a
+        # slow basemap could stall ~17s. Now: 3 tries max, 0.5s then 1.0s
+        # sleeps, and a reload only when a fetch actually failed (a good
+        # cache is trusted, not thrown away and re-downloaded).
         from qgis.core import QgsApplication
-        max_retries = 8
-        retry_delay = 1.0
+        max_retries = 3
         block = None
         prev_data = None
         for attempt in range(max_retries):
             block = provider.block(1, extent, crop_size, crop_size)
-            if block is not None and block.isValid():
+            fetch_ok = block is not None and block.isValid()
+            if fetch_ok:
                 cur_data = bytes(block.data())
                 if prev_data is not None and cur_data == prev_data:
                     # Image stabilized - tiles are consistent
                     break
                 prev_data = cur_data
-                if attempt == 0:
-                    # First valid fetch - always re-fetch once to
-                    # check if tiles are still loading/updating
-                    provider.reloadData()
-                    deadline = time.monotonic() + 0.5
-                    while time.monotonic() < deadline:
-                        QgsApplication.processEvents()
-                        time.sleep(0.05)
-                    continue
             if attempt < max_retries - 1:
-                delay = retry_delay * (1 + attempt * 0.5)  # Progressive: 1.0, 1.5, 2.0, ...
+                delay = 0.5 if attempt == 0 else 1.0
                 QgsMessageLog.logMessage(
                     f"Online tile fetch attempt {attempt + 1} - "
                     f"retrying in {delay:.1f}s...",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning
                 )
+                # Only force a reload when the last fetch failed; a valid
+                # fetch is simply re-polled after the wait to confirm the
+                # tiles are no longer streaming in.
+                if not fetch_ok:
+                    provider.reloadData()
                 deadline = time.monotonic() + delay
                 while time.monotonic() < deadline:
                     QgsApplication.processEvents()
                     time.sleep(0.05)
-                provider.reloadData()
 
         provider.setZoomedInResamplingMethod(original_method)
 

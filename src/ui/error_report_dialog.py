@@ -24,8 +24,13 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ..core.i18n import tr
+from .dock.styles import _BTN_BLUE, _BTN_GREEN
 
 SUPPORT_EMAIL = "yvann.barbot@terra-lab.ai"
+
+# Subtle down-arrow between step 1 and step 2: a muted, small glyph so it
+# reads as flow guidance, not content.
+_ARROW_STYLE = "color: rgba(128,128,128,0.65); font-size: 10px;"
 
 # In-memory log buffer - captures AI Segmentation messages
 _log_buffer = deque(maxlen=100)
@@ -135,6 +140,18 @@ def _collect_diagnostic_info(error_message: str) -> str:
         lines.append("Version: unknown")
     lines.append("")
 
+    # Last Automatic run correlation id: lets support match this report to the
+    # server-archived run. Omitted entirely when no run happened this session.
+    try:
+        from ..core.telemetry import get_last_run_id
+        run_id = get_last_run_id()
+    except Exception:
+        run_id = None
+    if run_id:
+        lines.append("--- Run ---")
+        lines.append(f"Run ID: {run_id}")
+        lines.append("")
+
     # System info
     lines.append("--- System ---")
     lines.append(f"OS: {sys.platform} ({platform.system()} {platform.release()})")
@@ -152,20 +169,22 @@ def _collect_diagnostic_info(error_message: str) -> str:
         lines.append("QGIS: unknown")
     lines.append("")
 
-    # Device info
+    # Device info. Never IMPORT torch here: this dialog opens on the GUI
+    # thread right after something already failed, and a first-time torch
+    # import (native extensions, antivirus rescans) can freeze QGIS for
+    # seconds at the worst possible moment. Report from the already-loaded
+    # module when the session has one; otherwise say so and move on.
     lines.append("--- Device ---")
     try:
-        from ..core.venv_manager import ensure_venv_packages_available
-        ensure_venv_packages_available()
-        import torch
-        if sys.platform == "darwin" and hasattr(torch.backends, "mps"):
-            if torch.backends.mps.is_available():
+        torch = sys.modules.get("torch")
+        if torch is not None:
+            if sys.platform == "darwin" and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
                 lines.append("Device: Apple Silicon (MPS)")
             else:
                 lines.append(f"Device: CPU ({os.cpu_count()} cores)")
+            lines.append(f"PyTorch: {torch.__version__}")
         else:
-            lines.append(f"Device: CPU ({os.cpu_count()} cores)")
-        lines.append(f"PyTorch: {torch.__version__}")
+            lines.append(f"Device: CPU ({os.cpu_count()} cores), AI engine not loaded this session")
     except Exception:
         lines.append("Device: could not detect (dependencies not installed)")
     lines.append("")
@@ -280,14 +299,31 @@ class ErrorReportDialog(QDialog):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
         layout.setContentsMargins(16, 16, 16, 16)
 
         # Error message
         error_label = QLabel(self._error_message[:500])
         error_label.setWordWrap(True)
         error_label.setTextFormat(Qt.TextFormat.PlainText)
+        error_label.setStyleSheet("font-size: 12px; color: palette(text);")
         layout.addWidget(error_label)
+
+        # Short support code (head of the last run id): lets the user quote it
+        # even without copying the full log blob, and lets support match the
+        # report to the exact server-archived run. Shown only when a run
+        # happened this session.
+        try:
+            from ..core.telemetry import get_last_run_id
+            _run_id = get_last_run_id()
+        except Exception:
+            _run_id = None
+        if _run_id:
+            code_label = QLabel(tr("Support code: {code}").format(code=_run_id[:8]))
+            code_label.setTextFormat(Qt.TextFormat.PlainText)
+            code_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            code_label.setStyleSheet("font-size: 11px; color: palette(text);")
+            layout.addWidget(code_label)
 
         # Help text
         help_label = QLabel(
@@ -296,21 +332,27 @@ class ErrorReportDialog(QDialog):
                 tr("We'll fix your issue :)"))
         )
         help_label.setWordWrap(True)
+        help_label.setStyleSheet("font-size: 11px; color: palette(text);")
         layout.addWidget(help_label)
 
-        # Step 1: Copy logs button (full width)
+        # Step 1: Copy logs button (full width) - green primary
         self._copy_btn = QPushButton(tr("1. Click to copy logs"))
+        self._copy_btn.setStyleSheet(_BTN_GREEN)
+        self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._copy_btn.clicked.connect(self._on_copy)
         layout.addWidget(self._copy_btn)
 
-        # Arrow pointing down, centered
+        # Arrow pointing down, centered (muted flow hint)
         arrow_label = QLabel("\u25BC")
         arrow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        arrow_label.setStyleSheet(_ARROW_STYLE)
         layout.addWidget(arrow_label)
 
-        # Step 2: Email button (full width) - opens mailto link
+        # Step 2: Email button (full width) - blue secondary, opens mailto link
         self._email_btn = QPushButton(tr("2. Click to send to {}").format(SUPPORT_EMAIL))
         self._email_btn.setToolTip(tr("Open email client"))
+        self._email_btn.setStyleSheet(_BTN_BLUE)
+        self._email_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._email_btn.clicked.connect(self._on_open_email)
         layout.addWidget(self._email_btn)
 
@@ -351,7 +393,7 @@ class BugReportDialog(QDialog):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
         layout.setContentsMargins(16, 16, 16, 16)
 
         # Friendly message
@@ -361,21 +403,27 @@ class BugReportDialog(QDialog):
                 tr("Copy your logs and send them to us, we'll look into it :)"))
         )
         msg_label.setWordWrap(True)
+        msg_label.setStyleSheet("font-size: 12px; color: palette(text);")
         layout.addWidget(msg_label)
 
-        # Step 1: Copy logs button (full width)
+        # Step 1: Copy logs button (full width) - green primary
         self._copy_btn = QPushButton(tr("1. Click to copy logs"))
+        self._copy_btn.setStyleSheet(_BTN_GREEN)
+        self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._copy_btn.clicked.connect(self._on_copy)
         layout.addWidget(self._copy_btn)
 
-        # Arrow pointing down, centered
+        # Arrow pointing down, centered (muted flow hint)
         arrow_label = QLabel("\u25BC")
         arrow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        arrow_label.setStyleSheet(_ARROW_STYLE)
         layout.addWidget(arrow_label)
 
-        # Step 2: Email button (full width) - opens mailto link
+        # Step 2: Email button (full width) - blue secondary, opens mailto link
         self._email_btn = QPushButton(tr("2. Click to send to {}").format(SUPPORT_EMAIL))
         self._email_btn.setToolTip(tr("Open email client"))
+        self._email_btn.setStyleSheet(_BTN_BLUE)
+        self._email_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._email_btn.clicked.connect(self._on_open_email)
         layout.addWidget(self._email_btn)
 

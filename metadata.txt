@@ -1,9 +1,9 @@
 [general]
 name=AI Segmentation by TerraLab
 description=Segment buildings, vegetation, or any object in your raster using AI, refine & export as vector polygons
-qgisMinimumVersion=3.20
+qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-version=1.5.1
+version=2.1.0
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -24,9 +24,24 @@ about=
 
     • Universal: Windows, macOS, Linux
 
-    • Multilingual: English, French, Portuguese, Spanish
+    • Multilingual: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese
 
 changelog=
+    2.1.0
+    - Improved Automatic detection quality and recall, especially in dense scenes
+    - Default detail level is now tuned to the object you are detecting
+    - Cleaner, more consistent detections and merged polygons
+    - Stability and interface refinements
+    2.0.1
+    - Minor maintenance and stability improvements
+    2.0.0
+    - New Automatic mode: draw a zone, name what to find, and detect every instance in one run
+    - Draw an example directly on your own imagery to guide detection (show one, find the rest)
+    - Cloud-powered, no local install needed for Automatic mode
+    - Live credit estimate and progress, with instant cancel
+    - Review before you keep: tune confidence, simplify, expand or shrink, and fill holes with no re-run
+    - Hand-refine detections in Manual mode, then finish
+    - Detections deduplicated, smoothed, and saved as clean GeoPackage polygons
     1.5.1
     - Minor maintenance and stability improvements
     1.5.0

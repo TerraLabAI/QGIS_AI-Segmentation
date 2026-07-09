@@ -7,7 +7,7 @@ Auto-refreshes on layer add/remove, visibility, and reorder.
 from __future__ import annotations
 
 
-from qgis.core import QgsLayerTree, QgsProject
+from qgis.core import QgsLayerTree, QgsProject, QgsRasterLayer
 from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import QComboBox, QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
@@ -50,6 +50,7 @@ class LayerTreeComboBox(QComboBox):
         self._current_layer_id = None  # track selection across refreshes
         self._layer_ids = []  # ordered list of selectable layer IDs
         self._refreshing = False
+        self._frozen = False  # when True, ignore layer-tree changes (locked flow)
 
         from qgis.PyQt.QtCore import QSize
         self.setIconSize(QSize(16, 16))
@@ -101,6 +102,18 @@ class LayerTreeComboBox(QComboBox):
         """Return the number of selectable (non-header) items."""
         return len(self._layer_ids)
 
+    def set_frozen(self, frozen: bool) -> None:
+        """Freeze/unfreeze auto-refresh. While frozen, layer-tree changes (add,
+        remove, visibility, reorder) are ignored so the current list + selection
+        stay put; used while the Automatic flow has a locked source raster, where
+        hiding a layer to peek underneath must not drop the locked source or
+        re-pick another. Unfreezing resyncs once (the tree may have changed)."""
+        if frozen == self._frozen:
+            return
+        self._frozen = frozen
+        if not frozen:
+            self._refresh()
+
     def cleanup(self):
         """Disconnect project signals."""
         try:
@@ -131,6 +144,11 @@ class LayerTreeComboBox(QComboBox):
 
     def _refresh(self):
         """Rebuild the combo items from the layer tree."""
+        # Frozen while the Automatic flow has a locked source raster: a layer-tree
+        # change (add/remove/visibility/reorder) must NOT rebuild the list or
+        # re-pick the selection, so hiding a layer keeps the locked source intact.
+        if self._frozen:
+            return
         self._refreshing = True
         prev_id = self._current_layer_id
         self.clear()
@@ -198,8 +216,8 @@ class LayerTreeComboBox(QComboBox):
         for child in node.children():
             if QgsLayerTree.isLayer(child):
                 layer = child.layer()
-                if (layer and layer.type() == layer.RasterLayer
-                        and child.isVisible()):  # noqa: W503
+                if (layer and isinstance(layer, QgsRasterLayer)
+                        and layer.isValid() and child.isVisible()):  # noqa: W503
                     return True
             elif QgsLayerTree.isGroup(child):
                 if child.isVisible() and self._has_visible_rasters(child):
@@ -217,8 +235,8 @@ class LayerTreeComboBox(QComboBox):
                     visible_children.append(child)
             elif QgsLayerTree.isLayer(child):
                 layer = child.layer()
-                if (layer and layer.type() == layer.RasterLayer
-                        and child.isVisible()):  # noqa: W503
+                if (layer and isinstance(layer, QgsRasterLayer)
+                        and layer.isValid() and child.isVisible()):  # noqa: W503
                     visible_children.append(child)
 
         depth_role = _IndentDelegate.DEPTH_ROLE

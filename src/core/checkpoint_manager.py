@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import time
 from typing import Callable
 
@@ -41,8 +42,14 @@ def checkpoint_exists() -> bool:
 
 def verify_checkpoint_hash(filepath: str) -> bool:
     if not SAM_CHECKPOINT_SHA256:
-        # Hash not yet computed, skip verification
-        return True
+        # Fail closed: with no expected hash we cannot prove integrity, so we
+        # refuse to treat the file as verified rather than silently trusting it.
+        # (Both shipped checkpoints define a hash; an empty value here would be
+        # a packaging mistake that must surface, not pass through.)
+        QgsMessageLog.logMessage(
+            "No expected checkpoint hash is configured; cannot verify integrity.",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        return False
     if not os.path.isfile(filepath):
         QgsMessageLog.logMessage(
             f"Checkpoint file not found for hash verification: {filepath}",
@@ -51,7 +58,10 @@ def verify_checkpoint_hash(filepath: str) -> bool:
     try:
         sha256_hash = hashlib.sha256()
         with open(filepath, "rb") as f:
-            for byte_block in iter(lambda: f.read(4096), b""):
+            # Checkpoints are 150-320 MB; a 4 KiB block would take tens of
+            # thousands of Python-level loop iterations, so read in 1 MiB
+            # chunks instead.
+            for byte_block in iter(lambda: f.read(1024 * 1024), b""):
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest() == SAM_CHECKPOINT_SHA256
     except OSError as e:
@@ -104,6 +114,32 @@ def delete_checkpoint() -> bool:
         return False
 
 
+def _disk_space_preflight_hint(dest_dir: str, min_free_mb: float = 1024.0) -> str | None:
+    """Return an error message if dest_dir has less than min_free_mb free.
+
+    Mirrors the venv install's 4GB preflight (venv_manager.py) so a full disk
+    fails clearly here too instead of an opaque mid-write error. The SAM
+    checkpoint is a few hundred MB; 1GB headroom covers it plus the ".tmp"
+    partial-download file that coexists with it during the swap.
+    """
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        free_mb = shutil.disk_usage(dest_dir).free / (1024 ** 2)
+    except OSError:
+        # Let the actual write report the real error instead of guessing here.
+        return None
+    if free_mb < min_free_mb:
+        return (
+            f"Not enough free disk space to download the AI model: "
+            f"{free_mb:.0f} MB available at {dest_dir}, "
+            f"at least {min_free_mb:.0f} MB is required.\n\n"
+            "Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR "
+            "environment variable to a directory on a larger drive, "
+            "then restart QGIS."
+        )
+    return None
+
+
 def _replace_with_retry(src: str, dst: str, max_attempts: int = 5, delay: float = 2.0):
     """Rename src to dst, retrying on PermissionError (Windows antivirus lock)."""
     import gc
@@ -153,6 +189,11 @@ def download_checkpoint(
         )
         os.remove(checkpoint_path)
 
+    disk_hint = _disk_space_preflight_hint(os.path.dirname(checkpoint_path))
+    if disk_hint:
+        QgsMessageLog.logMessage(disk_hint, "AI Segmentation", level=Qgis.MessageLevel.Critical)
+        return False, disk_hint
+
     if progress_callback:
         progress_callback(0, "Connecting to download server...")
 
@@ -195,8 +236,11 @@ def download_checkpoint(
                 idle_timer.start()
             if not progress_callback:
                 return
-            actual_received = resume_offset + received
-            actual_total = resume_offset + total if total > 0 else 0
+            # Read the base from the state dict, not the closure: a resume the
+            # server answered with 200 resets it to 0 (see on_ready_read).
+            base = download_state["resume_offset"]
+            actual_received = base + received
+            actual_total = base + total if total > 0 else 0
             elapsed = max(0.1, time.monotonic() - download_state["start_time"])
             speed_mbs = (received / (1024 * 1024)) / elapsed if received > 0 else 0.0
             retry_suffix = f" (retry {attempt}/{max_retries})" if attempt > 1 else ""
@@ -223,8 +267,40 @@ def download_checkpoint(
 
         def on_ready_read():
             data = reply.readAll()
-            if download_state["file"] is not None:
-                download_state["file"].write(data.data())
+            if download_state["file"] is None:
+                return
+            # A resume answered with HTTP 200 (not 206 Partial Content) means
+            # the server or a proxy ignored the Range header and is sending
+            # the FULL body; appending it to the partial corrupts the file,
+            # caught only by the SHA256 check after a wasted full download
+            # (common behind caching proxies that strip Range). Restart the
+            # temp file as a fresh write instead, once, on first data.
+            if download_state["resume_offset"] > 0 and not download_state.get("status_checked"):
+                download_state["status_checked"] = True
+                try:
+                    status = reply.attribute(
+                        QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+                except (RuntimeError, AttributeError):
+                    status = None
+                if status == 200:
+                    QgsMessageLog.logMessage(
+                        "Server ignored the resume range (HTTP 200): "
+                        "restarting the file from scratch",
+                        "AI Segmentation", level=Qgis.MessageLevel.Warning)
+                    try:
+                        download_state["file"].close()
+                        download_state["file"] = open(temp_path, "wb")
+                    except OSError as reset_err:
+                        download_state["error"] = (
+                            f"Cannot restart download file: {reset_err}")
+                        download_state["file"] = None
+                        try:
+                            reply.abort()
+                        except (RuntimeError, AttributeError):
+                            pass
+                        return
+                    download_state["resume_offset"] = 0
+            download_state["file"].write(data.data())
 
         def on_error(_error_code):
             download_state["error"] = reply.errorString()

@@ -1,8 +1,8 @@
 """Global keyboard shortcut filter for the segmentation map tool.
 
-Intercepts shortcuts (Space, Z, S, Enter, Esc, arrows) regardless of
-which widget has focus, solving the issue where dock widget updates
-steal keyboard focus from the map canvas.
+Intercepts shortcuts (Space, Ctrl+Z, Backspace, S, Enter, Esc, Delete,
+arrows) regardless of which widget has focus, solving the issue where
+dock widget updates steal keyboard focus from the map canvas.
 """
 from __future__ import annotations
 
@@ -35,17 +35,16 @@ class ShortcutFilter(QObject):
         if event_type in (QEvent.Type.ShortcutOverride,
                           QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
             if (event.key() == Qt.Key.Key_Space
-                    and plugin.map_tool  # noqa: W503
                     and not event.isAutoRepeat()):  # noqa: W503
-                if event_type == QEvent.Type.ShortcutOverride:
-                    if plugin.map_tool.isActive():
+                pan_tool = plugin._active_space_pan_tool()
+                if pan_tool is not None:
+                    if event_type == QEvent.Type.ShortcutOverride:
                         event.accept()
                         return True
-                elif event_type == QEvent.Type.KeyPress and plugin.map_tool.isActive():
-                    plugin.map_tool.start_space_pan()
-                    return True
-                elif event_type == QEvent.Type.KeyRelease:
-                    plugin.map_tool.stop_space_pan()
+                    if event_type == QEvent.Type.KeyPress:
+                        pan_tool.start_space_pan()
+                        return True
+                    pan_tool.stop_space_pan()
                     return True
 
         if event_type != QEvent.Type.KeyPress:
@@ -71,6 +70,20 @@ class ShortcutFilter(QObject):
         modifiers = event.modifiers()
 
         if key == Qt.Key.Key_Z and modifiers & Qt.KeyboardModifier.ControlModifier:
+            plugin._on_undo()
+            return True
+        # Delete the active (open-for-editing) object: Delete, or Ctrl/Cmd+Backspace (the
+        # big key on Mac keyboards; Qt maps Cmd to ControlModifier on macOS).
+        # Plain Backspace without a modifier falls through (never deletes).
+        if key == Qt.Key.Key_Delete or (
+                key == Qt.Key.Key_Backspace and modifiers & Qt.KeyboardModifier.ControlModifier):
+            if getattr(plugin, "_on_delete_active_object", None):
+                plugin._on_delete_active_object()
+                return True
+        # Plain Backspace (no modifier) = undo the last click, mirroring the
+        # zone-draw tool's Backspace-undo. Kept AFTER the modifier branch
+        # above so Ctrl/Cmd+Backspace keeps meaning delete, never undo.
+        if key == Qt.Key.Key_Backspace and not modifiers:
             plugin._on_undo()
             return True
         if (key == Qt.Key.Key_S

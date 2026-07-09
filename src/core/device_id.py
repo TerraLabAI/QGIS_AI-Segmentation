@@ -72,4 +72,9 @@ def get_device_platform() -> str:
         name = QSysInfo.prettyProductName() or ""
     except Exception:  # nosec B110
         name = ""
+    # This value travels as a raw HTTP header, which must stay ASCII: a
+    # localized OS product name with accents, UTF-8-encoded into the header,
+    # gets rejected by strict proxies/gateways. Fold instead of failing.
+    name = " ".join(name.split())
+    name = name.encode("ascii", "ignore").decode("ascii")
     return name.strip()[:_PLATFORM_MAX_LEN]

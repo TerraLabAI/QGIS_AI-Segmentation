@@ -8,6 +8,7 @@ Source: https://github.com/astral-sh/python-build-standalone
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import shutil
@@ -27,12 +28,27 @@ from .archive_utils import safe_extract_tar as _safe_extract_tar
 from .archive_utils import safe_extract_zip as _safe_extract_zip
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
-from .platform_detect import is_musl_linux, is_windows_arm64
+from .subprocess_utils import get_subprocess_kwargs  # nosec B404 - our helper, name merely starts with "subprocess"
 from .uv_manager import DOWNLOAD_TIMEOUT_MS
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_DIR = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser("~/.qgis_ai_segmentation")
 STANDALONE_DIR = os.path.join(CACHE_DIR, "python_standalone")
+
+
+def _download_tmp_dir() -> str | None:
+    """Containment temp dir on the CACHE_DIR volume, mirroring venv_manager's
+    _apply_cache_containment. The download temp file must land on the same
+    volume the rest of the install uses, or a full SYSTEM drive still ENOSPCs
+    the multi-hundred-MB download even when AI_SEGMENTATION_CACHE_DIR points at a
+    roomy secondary drive. Returns None on any failure so the caller falls back
+    to the system default temp (``dir=None`` == the old behaviour)."""
+    tmp_dir = os.path.join(CACHE_DIR, "tmp")
+    try:
+        os.makedirs(tmp_dir, exist_ok=True)
+        return tmp_dir
+    except OSError:
+        return None
 
 
 # Release tag from python-build-standalone
@@ -49,12 +65,75 @@ PYTHON_VERSIONS = {
     (3, 14): "3.14.0",
 }
 
-# Pinned standalone target when QGIS's own Python is outside the supported
-# range (older QGIS on 3.7/3.8, future QGIS on 3.15+, or anything unknown).
-# 3.12 is chosen because it has wheels for BOTH model paths: SAM2 (torch
-# >=2.5.1, cp312) and SAM1 / Intel-mac (torch <=2.2.2 and <2.6, both ship
-# cp312). It is a well-tested build in the release set above.
-_PINNED_TARGET_VERSION = (3, 12)
+# SHA256 of every standalone-Python archive get_download_urls() can request,
+# copied from the release's official SHA256SUMS. Public integrity checks, not
+# secrets. Covers all PYTHON_VERSIONS x every platform string _get_platform_info()
+# emits x both variants (install_only_stripped preferred, install_only fallback).
+# MUST be regenerated in the same commit as any RELEASE_TAG or PYTHON_VERSIONS
+# bump: the download fails closed on a mismatch or a missing entry, so a stale
+# or partial table would brick installs on the affected platform.
+PYTHON_STANDALONE_SHA256 = {
+    "cpython-3.9.24+20251014-aarch64-apple-darwin-install_only_stripped.tar.gz": "6292c6484ab2c96c80116f4bdb3da638d816206fe11a102e83787a2f75591b94",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.9.24+20251014-aarch64-apple-darwin-install_only.tar.gz": "6b65213e639e91eb8072db80ed9c140d769af1d5e0386efd8f153449c3694714",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.9.24+20251014-x86_64-apple-darwin-install_only_stripped.tar.gz": "eafceb263d9507ff0052ae9d6f1c415bb99299dcb202a931865b8ca044a5e40e",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.9.24+20251014-x86_64-apple-darwin-install_only.tar.gz": "14beda9465feb6991f73d6f6cb9e69afc576c5cac8c185bd729f491aa4305bfb",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.9.24+20251014-x86_64-pc-windows-msvc-install_only_stripped.tar.gz": "fc9b3af198bdc85ff532eade79825d18b4a4d4036caf8f895922e97e3378c642",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.9.24+20251014-x86_64-pc-windows-msvc-install_only.tar.gz": "a2fdaf290361386396bbfaa08e13fc2b88e1149f870adf18836e262c609406db",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.9.24+20251014-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz": "4a5faa90b3f76b235f2706be501605fc8f57e4f1e2c6c596e6fb328639e0d65a",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.9.24+20251014-aarch64-unknown-linux-gnu-install_only.tar.gz": "d840efd9d81ad557019ebd0d435828fc32101cd01be82046087b4aee463dca0c",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.9.24+20251014-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz": "0339804b69bc00d5dde58c6694174c8e97e6f16c8ace90fe9a1b1a15456ac510",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.9.24+20251014-x86_64-unknown-linux-gnu-install_only.tar.gz": "866745efbee219a3f9b9d54ee1477ebf92542bb9ff9f6591a7e5a3643a0d4214",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.10.19+20251014-aarch64-apple-darwin-install_only_stripped.tar.gz": "37931bdcd24496bf57415e34f93dcf360f80b6a2b5bf91d32ceecde14fe9f29f",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.10.19+20251014-aarch64-apple-darwin-install_only.tar.gz": "06cfdfa8966dfd86204d45c6a241dd37cb0b3ede90986591fc0b0dbe576848de",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.10.19+20251014-x86_64-apple-darwin-install_only_stripped.tar.gz": "82703c1d9de3b6b686269361dd61c29aa65f52d04dbf0c4f53fc6fd8faf38dfd",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.10.19+20251014-x86_64-apple-darwin-install_only.tar.gz": "b4e0c82f350f18a8fb1b1982f03c1c90aaba5d9ab74fe6ede9896306f64a287c",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.10.19+20251014-x86_64-pc-windows-msvc-install_only_stripped.tar.gz": "47ffefa9240d7354c086e9eb84e917d2460c6ae2a719281337218a2a3c83e4cf",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.10.19+20251014-x86_64-pc-windows-msvc-install_only.tar.gz": "e2d9193b2d2fd99fac3fb90eda216100b64cd7cf14f291d9425436ea9b1eaa04",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.10.19+20251014-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz": "6ea9ff46ae3e0eb551558754c78a41cb90968b1950e1a2c716e339e6264bcc96",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.10.19+20251014-aarch64-unknown-linux-gnu-install_only.tar.gz": "c4c760f49dbba10a0f91b2fd52c847dd50cbe7cb8cb19bb7598c4dc38a358e9c",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.10.19+20251014-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz": "c0b09b744293f2aad85b1ef84544f8a7ba383675b29d1f7efd1e96bb9984399f",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.10.19+20251014-x86_64-unknown-linux-gnu-install_only.tar.gz": "85c96114de83d783db18137f3858bcd3b5a9c4cbe9053f0072d7b5f52154a8c9",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.11.14+20251014-aarch64-apple-darwin-install_only_stripped.tar.gz": "cd54cc868a9b1056fbd4654509431f402f0365329618e2583b60c82f73da4e56",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.11.14+20251014-aarch64-apple-darwin-install_only.tar.gz": "99d98bf73d9906d18a9184054a328288ede2cb4a2d245a05411a28e8d023aab6",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.11.14+20251014-x86_64-apple-darwin-install_only_stripped.tar.gz": "a1eb602d2bbbfdbba005c54334b33779de8e0f2225f1d5e03c7a1e3e95cb822e",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.11.14+20251014-x86_64-apple-darwin-install_only.tar.gz": "d234fa6518634daf3aa812895ec757d0e0b1fea3335fd0c5038d4e2bcc5d7ee5",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.11.14+20251014-x86_64-pc-windows-msvc-install_only_stripped.tar.gz": "c2a7b0bb86eb9f1cc094a01bdabef7ddc77f89f8e45161fa7819f2b4a7ba7bc1",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.11.14+20251014-x86_64-pc-windows-msvc-install_only.tar.gz": "80022423ca581c88d5bb7beb889f10c12d3d8d2e5cc6422fd2b060b52e45aa05",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.11.14+20251014-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz": "b59afc432a64df8fdcfeab5bca98e66c7272cd3e6bc3611b9b48996f714ae15a",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.11.14+20251014-aarch64-unknown-linux-gnu-install_only.tar.gz": "8b033614f3a6969d86c20f9b823277ee8e1f72788307c082a44d2ad4cc856e2b",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.11.14+20251014-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz": "91ab434738647ab45d630aaa02e3808bb516239beeb52f7799c12a12d1557a38",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.11.14+20251014-x86_64-unknown-linux-gnu-install_only.tar.gz": "d0623c777fb89b904b56cd5aba51af29cbb34b1f9d45f0672f90f6dce30fa93e",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.12.12+20251014-aarch64-apple-darwin-install_only_stripped.tar.gz": "84cb7acbf75264982c8bdd818bfa1ff0f1eb76007b48a5f3e01d28633b46afdf",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.12.12+20251014-aarch64-apple-darwin-install_only.tar.gz": "6ceba34fe78802853a30bde6f303a0a54f71f6ab07a673da34e90c0aa06c786e",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.12.12+20251014-x86_64-apple-darwin-install_only_stripped.tar.gz": "f76a921e71e9c8954cccd00f176b7083041527b3b4223670d05bbb2f51209d3f",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.12.12+20251014-x86_64-apple-darwin-install_only.tar.gz": "9b8589eefb153cbe7cb652993d0ecc94aeb2fa13c1a2e8bc240f5f74f23bb21b",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.12.12+20251014-x86_64-pc-windows-msvc-install_only_stripped.tar.gz": "3c8b9b10a933909c98b9916297e2093b24a9c2abaa23df1c2622c2bfe052cb94",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.12.12+20251014-x86_64-pc-windows-msvc-install_only.tar.gz": "2d670beb3b930d30e3a13cc909923a001dbdfcb5537692d5da40b6b41643ce1c",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.12.12+20251014-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz": "d2a6c0d4ceea088f635b309a59d5d700a256656423225f96ddfb71d532adb1aa",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.12.12+20251014-aarch64-unknown-linux-gnu-install_only.tar.gz": "d32487b853d6f5709019a471770be5e5d3e6bd2ac507e5629e2d6825565d3e71",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.12.12+20251014-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz": "c74addcd1b033a6e4d60ead3ab47fcc995569027e01d3061c4a934f363c4a0cf",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.12.12+20251014-x86_64-unknown-linux-gnu-install_only.tar.gz": "1ab2b6594d1c3d76cbebea09d6bc3e6ba68d8eb3b6322080375c4cc3dd188f34",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.13.9+20251014-aarch64-apple-darwin-install_only_stripped.tar.gz": "52721745b0fa3196e4d0381fa5c06dda1d54343b90d49d90c3bba52d1171bd98",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.13.9+20251014-aarch64-apple-darwin-install_only.tar.gz": "931db8f735e18700d4eab9ee39dbbd0b4c114d7d039dd2707b2d932ded039698",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.13.9+20251014-x86_64-apple-darwin-install_only_stripped.tar.gz": "7c33b153a69c6255e6f2659cf39738f316b03969d6230d7bc47c73b7fde9a0d4",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.13.9+20251014-x86_64-apple-darwin-install_only.tar.gz": "9f6bc3c15e2f9e2c9c90db2c8b3ee94598e777789f8aea6e36b69ae55d007d01",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.13.9+20251014-x86_64-pc-windows-msvc-install_only_stripped.tar.gz": "76e0a9749c4deeb975a4b6b36d54be4e43f0c2a4c654bedab5d2e4d62dbc3006",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.13.9+20251014-x86_64-pc-windows-msvc-install_only.tar.gz": "8b0efc2674bb293ce2d423d59765b1ca3a2d80dc0ca6168f6279cb569e72b55e",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.13.9+20251014-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz": "baa3d107d17e4328448e30c3c9c83cca0eb41ca7a37c10982e14d46a5c3db07d",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.13.9+20251014-aarch64-unknown-linux-gnu-install_only.tar.gz": "c86606a45fb6540b1b66d9c52c6f5466fba8affb29acb9ab6a0b7f5ad54e588a",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.13.9+20251014-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz": "c0ccda275948c79996e46993c2c5476ff5cca606dee530f1dea712179131b348",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.13.9+20251014-x86_64-unknown-linux-gnu-install_only.tar.gz": "b4b0204658930337c85c321b49ed2585fe544097a72bc76dcf0b77e49fff8473",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.14.0+20251014-aarch64-apple-darwin-install_only_stripped.tar.gz": "057476264b07222a2baeff68a733647f91a9d61c94f79beba46a44eb42101749",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.14.0+20251014-aarch64-apple-darwin-install_only.tar.gz": "1333ce2807fbea673eb242edbf4997ea1e2f6cbc01cd80dec1f9d19de2cd63ed",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.14.0+20251014-x86_64-apple-darwin-install_only_stripped.tar.gz": "56dcb0cdafabac9d6d976690fb05d9ee92d20ce798c3aabe9049259ebe7d3e0d",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.14.0+20251014-x86_64-apple-darwin-install_only.tar.gz": "0a4cc33ca56830b92545950aacdde8925c9d4259e4f00ceda04fedf853f70679",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.14.0+20251014-x86_64-pc-windows-msvc-install_only_stripped.tar.gz": "b064fca740da03dbae1bad7f73fcaabbc76681ad635b9897ed3808c3eecff122",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.14.0+20251014-x86_64-pc-windows-msvc-install_only.tar.gz": "d90e97fe69b819f0a776cd665d06fef6526a4259211d11f00e501688659f1c0e",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.14.0+20251014-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz": "7dbb43b742c040835a277318355fb359b41e509dbf4fbb614da38005a9290e16",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.14.0+20251014-aarch64-unknown-linux-gnu-install_only.tar.gz": "e613f44e60227b3423a994698426698569e055c24447c10dd9c1c022cf511f05",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.14.0+20251014-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz": "493c477b4a88bb1ea2f6c6f57fa0e88ffbe55d9e7b1405c4699f2d41c04eb154",  # noqa: E501  # pragma: allowlist secret
+    "cpython-3.14.0+20251014-x86_64-unknown-linux-gnu-install_only.tar.gz": "74d4516a64abc63ae4bcbffb35482879a85b7faa187fcfa47c1ca8f00faebf5f",  # noqa: E501  # pragma: allowlist secret
+}
 
 
 def is_nixos() -> bool:
@@ -63,6 +142,31 @@ def is_nixos() -> bool:
         return False
     nix_env = os.environ.get("NIX_PROFILES")
     return os.path.exists("/etc/NIXOS") or bool(nix_env)
+
+
+def is_flatpak() -> bool:
+    """Detect a Flatpak-sandboxed QGIS (e.g. org.qgis.qgis on Flathub)."""
+    if sys.platform != "linux":
+        return False
+    return os.path.exists("/.flatpak-info") or bool(os.environ.get("FLATPAK_ID"))
+
+
+def is_snap() -> bool:
+    """Detect a Snap-confined QGIS (the Ubuntu Snap Store package)."""
+    if sys.platform != "linux":
+        return False
+    return bool(os.environ.get("SNAP")) and bool(os.environ.get("SNAP_NAME"))
+
+
+def is_sandboxed_linux() -> bool:
+    """True when running inside a Flatpak or Snap sandbox on Linux.
+
+    Manual (local) mode needs to download/execute a standalone Python and
+    build a multi-GB venv; both are unreliable or blocked under strict
+    Flatpak/Snap confinement. Automatic mode needs no local install and is
+    unaffected.
+    """
+    return is_flatpak() or is_snap()
 
 
 def is_unsupported_windows() -> tuple[bool, str]:
@@ -79,42 +183,11 @@ def is_unsupported_windows() -> tuple[bool, str]:
     if sys.platform != "win32":
         return False, ""
     release = platform.release() or ""
-    # platform.release() returns e.g. "7", "XP", "2008Server", "2012Server".
-    # 2008/2012 Server share the pre-Windows-8 kernel (Server 2008 R2 == Win7,
-    # Server 2012 == Win8 but its non-R2 base predates the standalone floor),
-    # so they hit the same missing-runtime-API failures.
-    unsupported = ("7", "Vista", "XP", "2003Server", "post2003", "2008Server", "2008ServerR2")
-    if release in unsupported:
+    if release in ("7", "Vista", "XP", "2003Server", "post2003"):
         return True, (
             f"Windows {release} is not supported by AI Segmentation. "
             "The bundled Python interpreter requires Windows 8 or later. "
             "Please upgrade to Windows 10 or 11."
-        )
-    return False, ""
-
-
-def is_unsupported_macos() -> tuple[bool, str]:
-    """Detect macOS versions too old for the standalone Python.
-
-    Lowering qgisMinimumVersion (now 3.20) lets the plugin UI load on more
-    machines, including some running old macOS, but python-build-standalone
-    macOS builds need a modern system. Block clearly below 10.13 (High Sierra,
-    2017) instead of
-    letting the venv bootstrap fail with an opaque dynamic-loader error. The
-    threshold is intentionally conservative so no working setup is rejected.
-    """
-    if sys.platform != "darwin":
-        return False, ""
-    ver = platform.mac_ver()[0] or ""
-    try:
-        parts = tuple(int(p) for p in ver.split(".")[:2])
-    except ValueError:
-        return False, ""
-    if parts and parts < (10, 13):
-        return True, (
-            f"macOS {ver} is not supported by AI Segmentation. "
-            "The bundled Python interpreter requires macOS 10.13 or later. "
-            "Please update macOS."
         )
     return False, ""
 
@@ -134,52 +207,27 @@ def _get_windows_antivirus_help(plugin_path: str) -> str:
 
 
 def get_qgis_python_version() -> tuple[int, int]:
-    """Return the (major, minor) Python version QGIS itself runs on.
+    """Get the target Python version for the standalone interpreter.
 
-    This is the HOST interpreter version. It is NOT necessarily the version
-    we download for the venv: use get_target_python_version() for that.
-    """
-    return (sys.version_info.major, sys.version_info.minor)
-
-
-def get_target_python_version() -> tuple[int, int]:
-    """Single source of truth for the standalone Python we download.
-
-    Everything that downloads, verifies, names, or compares the standalone
-    interpreter MUST call this so the three can never diverge again. A past
-    bug downloaded 3.13 when QGIS's Python was unknown, then verify rejected
-    it for not matching QGIS's version, looping forever. Selection rules:
-
-    - Rosetta (x86_64 QGIS on Apple Silicon): (3, 10), so we fetch ARM64
-      Python 3.10+ for SAM2 instead of matching QGIS's x86_64 3.9.
-    - QGIS Python is a known, supported version (in PYTHON_VERSIONS and
-      >= 3.9): match it, so in-process venv imports share the host ABI.
-    - Anything else (3.7 / 3.8 on old QGIS, 3.15+ on future QGIS, or an
-      unknown build): pin to a well-tested version that has wheels for both
-      model paths. See _PINNED_TARGET_VERSION.
+    Under Rosetta, returns (3, 10) so we download ARM64 Python 3.10+
+    for SAM2 support instead of matching QGIS's x86_64 Python 3.9.
     """
     if IS_ROSETTA:
         return (3, 10)
-    qgis_version = get_qgis_python_version()
-    if qgis_version in PYTHON_VERSIONS and qgis_version >= (3, 9):
-        return qgis_version
-    return _PINNED_TARGET_VERSION
+    return (sys.version_info.major, sys.version_info.minor)
 
 
 def get_python_full_version() -> str:
     """Get the full Python version string for download (e.g., '3.12.12')."""
-    version_tuple = get_target_python_version()
+    version_tuple = get_qgis_python_version()
     if version_tuple in PYTHON_VERSIONS:
         return PYTHON_VERSIONS[version_tuple]
-    # Defensive only: get_target_python_version() always returns a tuple that
-    # is in PYTHON_VERSIONS, so this branch is unreachable unless the pinned
-    # default is removed from the map. Fall back to the pinned version, never
-    # to a version that verify_standalone_python() would then reject.
+    # Fallback: use 3.13 (newest well-tested version) instead of X.Y.0
+    # which likely doesn't exist in the release assets
     _log(
-        f"Python {version_tuple[0]}.{version_tuple[1]} not in PYTHON_VERSIONS, "
-        f"falling back to {_PINNED_TARGET_VERSION[0]}.{_PINNED_TARGET_VERSION[1]}",
+        f"Python {version_tuple[0]}.{version_tuple[1]} not in PYTHON_VERSIONS, falling back to 3.13",
         Qgis.MessageLevel.Warning)
-    return PYTHON_VERSIONS[_PINNED_TARGET_VERSION]
+    return PYTHON_VERSIONS[(3, 13)]
 
 
 def _create_python_symlinks(python_dir: str) -> None:
@@ -189,7 +237,7 @@ def _create_python_symlinks(python_dir: str) -> None:
     if os.path.exists(python3_path):
         return
     # Find versioned binary like python3.12
-    major, minor = get_target_python_version()
+    major, minor = get_qgis_python_version()
     versioned = os.path.join(bin_dir, f"python{major}.{minor}")
     if os.path.exists(versioned):
         os.symlink(f"python{major}.{minor}", python3_path)
@@ -226,23 +274,15 @@ def standalone_python_is_current() -> bool:
         env.pop("PYTHONHOME", None)
         env["PYTHONIOENCODING"] = "utf-8"
 
-        kwargs = {}
-        if sys.platform == "win32":
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-            kwargs["startupinfo"] = startupinfo
-
         result = subprocess.run(  # nosec B603
             [python_path, "-c", "import sys; print(sys.version_info.major, sys.version_info.minor)"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=15, env=env, **kwargs,
+            capture_output=True, text=True, timeout=15, env=env, **get_subprocess_kwargs(),
         )
         if result.returncode == 0:
             parts = result.stdout.strip().split()
             if len(parts) == 2:
                 installed = (int(parts[0]), int(parts[1]))
-                expected = get_target_python_version()
+                expected = get_qgis_python_version()
                 if installed != expected:
                     _log(
                         f"Standalone Python {installed[0]}.{installed[1]} "
@@ -266,22 +306,11 @@ def _get_platform_info() -> tuple[str, str]:
             return ("aarch64-apple-darwin", ".tar.gz")
         return ("x86_64-apple-darwin", ".tar.gz")
     if system == "win32":
-        # Windows on ARM runs QGIS (and us) as emulated x86_64. Native
-        # aarch64 Python exists, but torch publishes win_arm64 wheels only
-        # from 2.7+, which is outside our pinned ranges, so a native venv
-        # could not install torch. Keep the emulated x86_64 build (it works
-        # under emulation) and just log the decision.
-        if is_windows_arm64():
-            _log(
-                "ARM64 Windows detected; using emulated x86_64 Python "
-                "(native torch wheels not yet available for pinned versions)",
-                Qgis.MessageLevel.Info)
         return ("x86_64-pc-windows-msvc", ".tar.gz")
-    # Linux: musl systems crash on the -gnu loader, so pick the -musl build.
-    libc_suffix = "musl" if is_musl_linux() else "gnu"
+    # Linux
     if machine in ("arm64", "aarch64"):
-        return (f"aarch64-unknown-linux-{libc_suffix}", ".tar.gz")
-    return (f"x86_64-unknown-linux-{libc_suffix}", ".tar.gz")
+        return ("aarch64-unknown-linux-gnu", ".tar.gz")
+    return ("x86_64-unknown-linux-gnu", ".tar.gz")
 
 
 def get_download_urls() -> list[str]:
@@ -305,9 +334,31 @@ def get_download_urls() -> list[str]:
     ]
 
 
-def get_download_url() -> str:
-    """Preferred download URL (kept for callers that want a single URL)."""
-    return get_download_urls()[0]
+def _sha256_file(filepath: str) -> str:
+    """Stream a file through SHA256 in 4096-byte blocks.
+
+    Mirrors checkpoint_manager.verify_checkpoint_hash so the archive (tens of
+    MB) is not held in memory a second time.
+    """
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest()
+
+
+def _verify_python_payload(filepath: str, asset_name: str) -> tuple[bool, str]:
+    """Fail-closed SHA256 integrity check of a downloaded standalone Python archive.
+
+    Returns (ok, message). Both a missing pin and a digest mismatch fail, so a
+    tampered CDN response or an unpinned variant is never extracted or executed.
+    """
+    expected = PYTHON_STANDALONE_SHA256.get(asset_name, "")
+    if not expected:
+        return False, f"No pinned digest for {asset_name}; refusing to install"
+    if _sha256_file(filepath) != expected:
+        return False, "Python download failed integrity verification"
+    return True, ""
 
 
 def download_python_standalone(
@@ -331,11 +382,6 @@ def download_python_standalone(
         _log(why, Qgis.MessageLevel.Critical)
         return False, why
 
-    mac_unsupported, mac_why = is_unsupported_macos()
-    if mac_unsupported:
-        _log(mac_why, Qgis.MessageLevel.Critical)
-        return False, mac_why
-
     if standalone_python_exists():
         _log("Python standalone already exists", Qgis.MessageLevel.Info)
         return True, "Python standalone already installed"
@@ -348,8 +394,9 @@ def download_python_standalone(
     if progress_callback:
         progress_callback(0, f"Downloading Python {python_version}...")
 
-    # Create temp file for download
-    fd, temp_path = tempfile.mkstemp(suffix=".tar.gz")
+    # Create temp file for download, contained on the CACHE_DIR volume so a
+    # full system drive does not ENOSPC the download (see _download_tmp_dir).
+    fd, temp_path = tempfile.mkstemp(suffix=".tar.gz", dir=_download_tmp_dir())
     os.close(fd)
 
     try:
@@ -464,6 +511,13 @@ def download_python_standalone(
                 f"Preview: {preview_text}"
             )
 
+        # Cryptographically verify the payload BEFORE extracting/executing it.
+        asset_name = url.rsplit("/", 1)[-1]
+        ok, verify_msg = _verify_python_payload(temp_path, asset_name)
+        if not ok:
+            _log(verify_msg, Qgis.MessageLevel.Warning)
+            return False, verify_msg
+
         _log(f"Download complete ({content_size} bytes), extracting...", Qgis.MessageLevel.Info)
 
         if progress_callback:
@@ -549,40 +603,31 @@ def verify_standalone_python() -> tuple[bool, str]:
         env.pop("PYTHONHOME", None)
         env["PYTHONIOENCODING"] = "utf-8"
 
-        if sys.platform == "win32":
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-
-            result = subprocess.run(  # nosec B603
-                [python_path, "-c", "import sys; print(sys.version)"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=30,
-                env=env,
-                startupinfo=startupinfo,
-            )
-        else:
-            result = subprocess.run(  # nosec B603
-                [python_path, "-c", "import sys; print(sys.version)"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=30,
-                env=env,
-            )
+        # Probe BOTH the version AND that `import subprocess` works: a broken
+        # macOS standalone can print its version yet fail to import subprocess
+        # (which pulls the _posixsubprocess C extension), a failure that used to
+        # stay hidden until it resurfaced as a cryptic "No module named
+        # '_posixsubprocess'" crash at venv-creation time. Importing it here
+        # catches the broken build now, so it is removed and re-downloaded
+        # instead of being trusted (#bug-anehm).
+        result = subprocess.run(  # nosec B603
+            [python_path, "-c", "import subprocess, sys; print(sys.version)"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+            **get_subprocess_kwargs(),
+        )
 
         if result.returncode == 0:
             version_output = result.stdout.strip().split()[0]
             expected_version = get_python_full_version()
 
-            # Verify major.minor matches the SAME source of truth used to
-            # pick and download the build (never QGIS's host version).
-            major, minor = get_target_python_version()
-            if not version_output.startswith(f"{major}.{minor}"):
+            # Require the FULL version to match what we downloaded. A major.minor
+            # check let a wrong interpreter (e.g. the host's 3.9.5 instead of the
+            # bundled 3.9.24) pass verification, masking a broken extraction that
+            # only failed later at venv creation (#bug-anehm).
+            if version_output != expected_version:
                 msg = f"Python version mismatch: got {version_output}, expected {expected_version}"
                 _log(msg, Qgis.MessageLevel.Warning)
                 return False, f"Version mismatch: downloaded {version_output}, expected {expected_version}"

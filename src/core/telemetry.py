@@ -1,61 +1,78 @@
-"""Minimal telemetry for AI Segmentation plugin.
+"""Batched telemetry for the AI Segmentation plugin.
 
 Design principles (do not deviate):
-- All telemetry respects a global opt-out: the QSettings key
-  `TerraLab/telemetry_enabled` (default on, shared across TerraLab plugins so
-  disabling it in one disables it everywhere). When off, `_send` drops every
-  event before any network call. Users flip it from the account settings dialog.
-- All events are anonymous: the payload carries only OS, plugin version, QGIS
-  version, a success bool, counts, and durations. No personal data, no content,
-  no coordinates. The lifecycle events (plugin_opened, plugin_activated,
-  segmentation_run, session_summary, and the install/download/export/Pro events)
-  carry no user-generated content, so they need no gate beyond the opt-out above.
-- `plugin_error` is gated additionally, because its scrubbed message field could
-  carry path fragments. The gate is the existing ToS acceptance
-  the user gives via the dock checkbox before their first segmentation
-  (`tos_accepted` in activation_manager.py).
-- File paths are anonymized (<USER> placeholder) via error_report_dialog's
-  _anonymize_paths before leaving the machine.
+- Global opt-out: the shared TerraLab/telemetry_enabled QSettings key. When
+  disabled, nothing is even queued. Fail-closed on read errors.
+- Events batch in memory and flush once per generation cycle (or immediately
+  for FLUSH_NOW milestones/failures). Batching collapses the power-user
+  "hundreds of clicks per session" volume into one POST per cycle.
+- Lifecycle events (NO_CONSENT_EVENTS) ship as soon as the plugin is activated;
+  everything else additionally requires the user to have accepted the ToS.
+  Pre-auth lifecycle events park in _pending_pre_auth until the first
+  authenticated flush drains them.
+- Relay model: plugin -> POST {base}/api/plugin/track -> our analytics relay. No analytics
+  key in the plugin. Body shape {"events": [...]} matches the shared route.
+- MAIN THREAD ONLY: flush() ends in QgsApplication.taskManager().addTask(),
+  which is main-thread-only. Worker threads must only track(); the next
+  main-thread flush ships the batch.
 - Errors in telemetry never affect plugin functionality (fail silently).
-- Non-blocking: POSTs run on a background QThread, with a single ~2s-backoff
-  retry inside the worker. A hard-offline session loses events (no disk queue).
-- Event names come from telemetry_events.py constants only, never raw strings.
+- Payloads carry only OS/version/timing/counts/enums, never PII: no paths,
+  coordinates, layer names, urls, or emails.
 
-sample_rate semantics: an integer N means "1 in N kept". 1 means unsampled.
-Dashboards multiply counts by sample_rate. An event without sample_rate is
-uninterpretable, so segmentation_run ALWAYS sends it.
+HTTP stack: QgsBlockingNetworkRequest (inside the flush QgsTask), so the
+relay POST inherits QGIS proxy/TLS settings. No raw requests/urllib.
 """
 
 from __future__ import annotations
 
+import functools
 import json
 import platform
 import sys
-import time
+import threading
+import uuid
 
-from qgis.core import Qgis, QgsBlockingNetworkRequest
-from qgis.PyQt.QtCore import QByteArray, QThread, QUrl
+from qgis.core import (
+    Qgis,
+    QgsApplication,
+    QgsBlockingNetworkRequest,
+    QgsTask,
+)
+from qgis.PyQt.QtCore import QByteArray, QSettings, QThread, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from . import telemetry_events as ev
+from .telemetry_events import FLUSH_NOW, NO_CONSENT_EVENTS, REGISTRY_VERSION
 
 _TIMEOUT_MS = 5_000
-_RETRY_BACKOFF_S = 2.0
-
-# Global opt-out switch. Shared across TerraLab plugins (same namespace as
-# TerraLab/device_seed) so the user only has to disable telemetry once.
+_BATCH_MAX = 10
+_PENDING_PRE_AUTH_MAX = 50
 _TELEMETRY_ENABLED_KEY = "TerraLab/telemetry_enabled"
+
+# Guards _batch / _pending_pre_auth / _inflight: track() can run on a worker
+# thread while the main thread flushes, so the list mutations must not race.
+_lock = threading.Lock()
+_batch: list[dict] = []
+_pending_pre_auth: list[dict] = []
+_inflight: list = []
+_session_id = uuid.uuid4().hex
+
+# Most-recent Automatic run correlation id (the id the server archives each
+# billed run under). Kept so the error report can quote it for support; None
+# until the first run this process. Not telemetry state, just a breadcrumb.
+_last_run_id: str | None = None
+
+
+# --- Opt-out --------------------------------------------------------------
 
 
 def is_telemetry_enabled() -> bool:
     """Whether anonymous usage telemetry is enabled. Opt-out: defaults to True.
 
-    Reads the shared TerraLab/telemetry_enabled QSettings key. Fails closed: if
-    the preference cannot be read, we do NOT send (privacy takes precedence over
-    a data point).
-    """
+    Reads the shared TerraLab/telemetry_enabled QSettings key (shared with
+    AI Edit so the user opts out once). Fail-closed: if the preference cannot be
+    read, do NOT send (privacy over a data point)."""
     try:
-        from qgis.PyQt.QtCore import QSettings
         return bool(QSettings().value(_TELEMETRY_ENABLED_KEY, True, type=bool))
     except Exception:  # nosec B110
         return False
@@ -64,27 +81,27 @@ def is_telemetry_enabled() -> bool:
 def set_telemetry_enabled(enabled: bool) -> None:
     """Persist the global telemetry opt-out flag (shared across TerraLab plugins)."""
     try:
-        from qgis.PyQt.QtCore import QSettings
         QSettings().setValue(_TELEMETRY_ENABLED_KEY, bool(enabled))
-    except Exception:
-        pass  # nosec B110 — a settings write failure must not break the UI
+    except Exception:  # nosec B110
+        pass
 
 
-# Anonymous lifecycle events that carry no user-generated content, so they need
-# no gate beyond the global opt-out (plugin_error is gated separately).
-_NO_CONTENT_EVENTS = frozenset({
-    ev.PLUGIN_OPENED,
-    ev.PLUGIN_ACTIVATED,
-    ev.ACTIVATION_ATTEMPTED,
-    ev.DEPENDENCIES_INSTALLED,
-    ev.MODEL_DOWNLOAD_COMPLETED,
-    ev.SEGMENTATION_RUN,
-    ev.SESSION_SUMMARY,
-    ev.EXPORT_COMPLETED,
-    ev.PRO_PANEL_VIEWED,
-    ev.SUBSCRIBE_LINK_CLICKED,
-    ev.TRIAL_EXHAUSTED_VIEWED,
-})
+def new_session() -> None:
+    """Rotate the per-session id. Call on dock open so events group by session."""
+    global _session_id
+    _session_id = uuid.uuid4().hex
+
+
+def set_last_run_id(run_id: str | None) -> None:
+    """Remember the most recent Automatic run's correlation id so a later error
+    report can quote it. Best-effort breadcrumb, never raises."""
+    global _last_run_id
+    _last_run_id = run_id or None
+
+
+def get_last_run_id() -> str | None:
+    """The most recent Automatic run id this process, or None if no run yet."""
+    return _last_run_id
 
 
 # --- Payload helpers ------------------------------------------------------
@@ -96,15 +113,23 @@ def _base_properties() -> dict:
         qgis_version = Qgis.QGIS_VERSION
     except Exception:
         qgis_version = "unknown"
-    return {
+    props = {
         "product_id": "ai-segmentation",
-        "source": "qgis_plugin",
         "plugin_version": _read_plugin_version(),
         "os": platform.system(),
         "os_version": platform.release(),
+        "arch": platform.machine(),
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
         "qgis_version": qgis_version,
+        "session_id": _session_id,
+        "registry_version": REGISTRY_VERSION,
     }
+    try:
+        from .device_id import get_device_hash
+        props["device_hash"] = get_device_hash()
+    except Exception:  # nosec B110
+        pass
+    return props
 
 
 def _read_plugin_version() -> str:
@@ -153,259 +178,573 @@ def _get_auth_header() -> dict | None:
     return None
 
 
-# --- Background HTTP worker ----------------------------------------------
-
-
-class _TelemetryWorker(QThread):
-    """Fire-and-forget single-event HTTP POST on a background thread.
-
-    One retry with a short backoff on transport failure. Never blocks the UI
-    thread, never raises into it.
-    """
-
-    def __init__(self, url: str, headers: dict, payload: bytes):
-        super().__init__()
-        self._url = url
-        self._headers = headers
-        self._payload = payload
-
-    def _post_once(self) -> bool:
-        req = QNetworkRequest(QUrl(self._url))
-        req.setRawHeader(b"Content-Type", b"application/json")
-        if hasattr(req, "setTransferTimeout"):
-            req.setTransferTimeout(_TIMEOUT_MS)
-        for k, v in self._headers.items():
-            req.setRawHeader(k.encode("utf-8"), v.encode("utf-8"))
-        blocker = QgsBlockingNetworkRequest()
-        err = blocker.post(req, QByteArray(self._payload))
-        return err == QgsBlockingNetworkRequest.ErrorCode.NoError
-
-    def run(self):
-        try:
-            if self._post_once():
-                return
-        except Exception:
-            pass  # nosec B110 — telemetry must never break the plugin
-        try:
-            time.sleep(_RETRY_BACKOFF_S)
-            self._post_once()
-        except Exception:
-            pass  # nosec B110
-
-
-_workers: list = []
-
-
-def _on_worker_finished(worker: _TelemetryWorker):
+def _has_consent() -> bool:
+    """Non-lifecycle events additionally require ToS acceptance (raw message
+    fields can carry path fragments; the ToS is the user's data gate)."""
     try:
-        _workers.remove(worker)
-    except ValueError:
-        pass
-    worker.deleteLater()
-
-
-# --- Public API -----------------------------------------------------------
-
-
-def _send(event: str, properties: dict | None = None) -> bool:
-    """Build payload + ship. Returns True once the background worker has been queued.
-
-    Anonymous events in `_NO_CONTENT_EVENTS` ship as long as the plugin is
-    activated; everything else additionally requires the user to have accepted
-    the ToS (via the dock checkbox before first segmentation).
-
-    The global opt-out is checked first: if the user disabled telemetry, no
-    event is ever built or sent.
-    """
-    if not is_telemetry_enabled():
-        return False
-    auth = _get_auth_header()
-    if not auth:
-        return False
-    if event not in _NO_CONTENT_EVENTS:
-        try:
-            from .activation_manager import has_tos_accepted, has_tos_locked
-            if not (has_tos_accepted() or has_tos_locked()):
-                return False
-        except Exception:
-            return False
-    try:
-        payload = json.dumps({
-            "event": event,
-            "properties": {
-                **_base_properties(),
-                **(properties or {}),
-            },
-        }).encode("utf-8")
-        url = f"{_build_base_url().rstrip('/')}/api/plugin/track"
-        worker = _TelemetryWorker(url, auth, payload)
-        _workers.append(worker)
-        worker.finished.connect(lambda w=worker: _on_worker_finished(w))
-        worker.start()
-        return True
+        from .activation_manager import has_tos_accepted, has_tos_locked
+        return bool(has_tos_accepted() or has_tos_locked())
     except Exception:
-        return False  # nosec B110
+        return False
 
 
-def track_plugin_opened() -> bool:
-    """Fire once per dock-open. Returns True only if the event was actually
-    queued so callers can gate their 'emitted once' flag correctly."""
-    return _send(ev.PLUGIN_OPENED)
+def _silent_task_flags():
+    """CanCancel plus Hidden/Silent when the running QGIS exposes them.
+
+    Hidden/Silent landed in QGIS 3.26; resolve defensively so the task-manager
+    widget never fills with "AI Segmentation telemetry" rows on modern builds,
+    and degrades to a plain cancellable task on older ones."""
+    flags = QgsTask.Flag.CanCancel
+    for name in ("Hidden", "Silent"):
+        flag = getattr(QgsTask.Flag, name, None)
+        if flag is not None:
+            flags = flags | flag
+    return flags
 
 
-def track_plugin_activated() -> bool:
-    """Fire when the activation key is validated."""
-    return _send(ev.PLUGIN_ACTIVATED)
+def _on_main_thread() -> bool:
+    try:
+        app = QgsApplication.instance()
+        return app is not None and QThread.currentThread() == app.thread()
+    except Exception:
+        return False
 
 
-def track_activation_attempted(success: bool, error_code: str | None = None) -> bool:
-    """Fire on every activation-key validation attempt (success and failure).
-
-    error_code is a short machine id on failure (never the raw server message)."""
-    props: dict = {"success": bool(success)}
-    if not success and error_code:
-        props["error_code"] = error_code
-    return _send(ev.ACTIVATION_ATTEMPTED, props)
+# --- Background flush task ------------------------------------------------
 
 
-def track_dependencies_installed(duration_ms: int | None = None) -> bool:
-    """Fire after a successful dependency install. Failures emit plugin_error."""
-    return _send(
-        ev.DEPENDENCIES_INSTALLED,
-        {"success": True, "duration_ms": duration_ms},
-    )
+class _TelemetryFlushTask(QgsTask):
+    """Sends one batch. Failures swallowed: telemetry must never break the plugin."""
+
+    def __init__(self, events: list, auth: dict):
+        super().__init__("AI Segmentation telemetry flush", _silent_task_flags())
+        self._events = events
+        self._auth = auth
+
+    def run(self) -> bool:
+        if self.isCanceled():
+            return False
+        # One retry with a short backoff covers a transient network blip without
+        # a disk queue; a hard-offline session still loses the batch (accepted).
+        if not self._post() and not self.isCanceled():
+            import time
+            time.sleep(2)
+            if self.isCanceled():
+                return False
+            self._post()
+        return True
+
+    def _post(self) -> bool:
+        try:
+            payload = json.dumps({"events": self._events}).encode("utf-8")
+            url = f"{_build_base_url().rstrip('/')}/api/plugin/track"
+            req = QNetworkRequest(QUrl(url))
+            req.setRawHeader(b"Content-Type", b"application/json")
+            if hasattr(req, "setTransferTimeout"):
+                req.setTransferTimeout(_TIMEOUT_MS)
+            for k, v in self._auth.items():
+                req.setRawHeader(k.encode("utf-8"), v.encode("utf-8"))
+            blocker = QgsBlockingNetworkRequest()
+            err = blocker.post(req, QByteArray(payload))
+            # ErrorCode 0 = NoError. Ignoring the result made run()'s single
+            # retry dead code: a failed batch returned True and was dropped.
+            return int(err) == 0
+        except Exception:
+            return False  # nosec B110 - telemetry must never break the plugin
+
+    def finished(self, result: bool) -> None:
+        return
 
 
-def track_model_download_completed(
-    duration_ms: int | None = None, model_id: str | None = None
-) -> bool:
-    """Fire after a successful model checkpoint download.
-
-    model_id is an abstract family id (e.g. "sam2"/"sam1"), never a file name."""
-    return _send(
-        ev.MODEL_DOWNLOAD_COMPLETED,
-        {"duration_ms": duration_ms, "model_id": model_id},
-    )
+def _drop_inflight(task: _TelemetryFlushTask) -> None:
+    with _lock:
+        try:
+            _inflight.remove(task)
+        except ValueError:
+            pass
 
 
-# segmentation_run is sampled 1-in-N. session_summary (unsampled) carries the
-# exact totals, so per-run sampling never loses the headline numbers.
-_SEGMENTATION_SAMPLE_RATE = 10
-_segmentation_run_sent_this_session = False
+# --- Core API -------------------------------------------------------------
 
 
-def track_segmentation_run(
-    success: bool,
-    duration_ms: int | None = None,
-    error_code: str | None = None,
-    mode: str = "local",
-) -> bool:
-    """Fire when a segmentation run finishes.
+def track(event: str, properties: dict | None = None, flush_now: bool = False) -> None:
+    """Queue an event. Global opt-out short-circuits before anything is queued.
 
-    success=True is a saved selection; success=False is a crop/encoding/
-    prediction failure mid-run (today those only surfaced as plugin_error).
-
-    Sampling: power users click hundreds of times per session, making the
-    success path the bulk of telemetry volume. The first success of a session
-    is always sent (sample_rate: 1) so light users stay represented;
-    after that, 1-in-N with sample_rate set so dashboards re-weight. Failures
-    are rare and precious, so they are ALWAYS sent unsampled (sample_rate: 1)
-    regardless of the session counter.
-
-    sample_rate is ALWAYS present (an event without it is uninterpretable)."""
-    global _segmentation_run_sent_this_session
-    import random
-
-    if not success:
-        sample_rate = 1
-    elif _segmentation_run_sent_this_session:
-        if random.random() >= (1.0 / _SEGMENTATION_SAMPLE_RATE):  # nosec B311 - sampling, not crypto
-            return True
-        sample_rate = _SEGMENTATION_SAMPLE_RATE
-    else:
-        _segmentation_run_sent_this_session = True
-        sample_rate = 1
-
-    props: dict = {
-        "success": bool(success),
-        "duration_ms": duration_ms,
-        "sample_rate": sample_rate,
-        "mode": mode,
-    }
-    if not success and error_code:
-        props["error_code"] = error_code
-    return _send(ev.SEGMENTATION_RUN, props)
+    Ships immediately when flush_now is True, the event is a FLUSH_NOW milestone,
+    or the batch is full; otherwise it waits for the next flush()."""
+    if not is_telemetry_enabled():
+        return
+    try:
+        evt = {
+            "event": event,
+            "properties": {**_base_properties(), **(properties or {})},
+        }
+    except Exception:  # nosec B110
+        return
+    with _lock:
+        _batch.append(evt)
+        should_flush = flush_now or event in FLUSH_NOW or len(_batch) >= _BATCH_MAX
+    if should_flush:
+        flush()
 
 
-def track_session_summary(
-    run_count: int,
-    success_count: int,
-    export_count: int,
-    session_duration_ms: int | None = None,
-) -> bool:
-    """Fire once on dock close / plugin unload. Unsampled exact totals.
-
-    Caller guards against double emission per session; a hard QGIS kill loses
-    this event, which is accepted."""
-    return _send(
-        ev.SESSION_SUMMARY,
-        {
-            "run_count": int(run_count),
-            "success_count": int(success_count),
-            "export_count": int(export_count),
-            "session_duration_ms": session_duration_ms,
-        },
-    )
-
-
-def track_export_completed(feature_count: int, format: str = "gpkg") -> bool:
-    """Fire after a successful vector export. format is "gpkg" or "shp"."""
-    return _send(
-        ev.EXPORT_COMPLETED,
-        {"format": format, "feature_count": int(feature_count)},
-    )
-
-
-def track_pro_panel_viewed() -> bool:
-    """Fire when the Pro upsell panel is first shown in a session."""
-    return _send(ev.PRO_PANEL_VIEWED)
-
-
-def track_subscribe_link_clicked(source: str) -> bool:
-    """Fire on any upgrade/subscribe CTA click. source names the CTA location."""
-    return _send(ev.SUBSCRIBE_LINK_CLICKED, {"source": source})
+def flush() -> None:
+    """Ship the queued batch. MAIN THREAD ONLY (no-ops off it). Lifecycle events
+    ship pre-consent; everything else requires consent. Pre-auth lifecycle events
+    park in _pending_pre_auth until the first authenticated flush."""
+    if not _on_main_thread():
+        return
+    task = None
+    with _lock:
+        if not _batch and not _pending_pre_auth:
+            return
+        auth = _get_auth_header()
+        if not auth:
+            for evt in _batch:
+                if evt["event"] in NO_CONSENT_EVENTS and len(_pending_pre_auth) < _PENDING_PRE_AUTH_MAX:
+                    _pending_pre_auth.append(evt)
+            _batch.clear()
+            return
+        consented = _has_consent()
+        events_to_send = list(_pending_pre_auth) + [
+            e for e in _batch
+            if consented or e["event"] in NO_CONSENT_EVENTS
+        ]
+        _batch.clear()
+        _pending_pre_auth.clear()
+        if not events_to_send:
+            return
+        task = _TelemetryFlushTask(events_to_send, auth)
+        _inflight.append(task)
+    try:
+        task.taskCompleted.connect(lambda t=task: _drop_inflight(t))
+        task.taskTerminated.connect(lambda t=task: _drop_inflight(t))
+    except Exception:  # nosec B110
+        pass
+    QgsApplication.taskManager().addTask(task)
 
 
-def track_trial_exhausted_viewed(is_free_tier: bool) -> bool:
-    """Fire when a quota/trial exhausted state is shown (Pro)."""
-    return _send(ev.TRIAL_EXHAUSTED_VIEWED, {"is_free_tier": bool(is_free_tier)})
+# --- Payload scrubbing (kept as-is) ---------------------------------------
 
 
 _COORD_PATTERN = None
+_URL_PATTERN = None
+_EMAIL_PATTERN = None
 
 
 def _scrub_payload_value(value: str) -> str:
-    """Strip path-like tokens and numeric coordinate tuples from telemetry strings.
+    """Strip path-like tokens, coordinate tuples, URLs and email addresses
+    from telemetry strings.
 
     Applied defensively to any string leaving the machine. We already call
     _anonymize_paths upstream for filesystem paths, but this pass also catches
-    leftover coordinate-like artefacts that could appear in logs (crop bounds,
-    click tuples, bbox extents, etc.).
+    leftover coordinate-like artefacts (crop bounds, click tuples, bbox
+    extents) plus URLs/emails: the unhandled-error catch-all forwards raw
+    third-party exception text, which can embed a host or an address, and the
+    telemetry contract is no URLs and no emails, so redact rather than trust
+    the source.
     """
     import re as _re
-    global _COORD_PATTERN
+    global _COORD_PATTERN, _URL_PATTERN, _EMAIL_PATTERN
     if _COORD_PATTERN is None:
-        # Matches sequences of 2+ comma-separated signed floats/ints — e.g.
-        # "(12.345, -67.89)" or "bbox=100,200,300,400". Replaces with <COORDS>.
         _COORD_PATTERN = _re.compile(
             r"(?:[-+]?\d+(?:\.\d+)?)(?:\s*,\s*[-+]?\d+(?:\.\d+)?){1,}"
         )
+        _URL_PATTERN = _re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s'\"]+")
+        _EMAIL_PATTERN = _re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
     try:
         from ..ui.error_report_dialog import _anonymize_paths
         value = _anonymize_paths(value)
     except Exception:
         pass  # nosec B110
-    return _COORD_PATTERN.sub("<COORDS>", value or "")
+    value = _URL_PATTERN.sub("<URL>", value or "")
+    value = _EMAIL_PATTERN.sub("<EMAIL>", value)
+    return _COORD_PATTERN.sub("<COORDS>", value)
+
+
+# --- Public typed wrappers (delegate to track) ----------------------------
+#
+# Every event constant has a wrapper so call sites stay readable and prop names
+# are centralized. flush_now is decided by FLUSH_NOW membership inside track().
+
+
+# Lifecycle -----------------------------------------------------------------
+
+
+_FIRST_OPEN_KEY = "AI_Segmentation/first_open_sent"
+
+
+def track_plugin_first_open() -> None:
+    """Fire exactly once, ever, the first time the dock is opened on this machine.
+
+    Guarded by a persistent QSettings flag so an install -> first-open ->
+    activation funnel has a clean entry marker. No consent needed (a lifecycle
+    ping with no user content); parks pre-auth like plugin_opened."""
+    try:
+        settings = QSettings()
+        if bool(settings.value(_FIRST_OPEN_KEY, False, type=bool)):
+            return
+        settings.setValue(_FIRST_OPEN_KEY, True)
+    except Exception:  # nosec B110 - never break the open path on a settings error
+        return
+    track(ev.PLUGIN_FIRST_OPEN)
+
+
+def track_plugin_opened() -> None:
+    """Fire once per dock-open."""
+    track(ev.PLUGIN_OPENED)
+
+
+def track_plugin_activated() -> None:
+    """Fire when the activation key is validated."""
+    track(ev.PLUGIN_ACTIVATED)
+
+
+def track_mode_switched(to_mode: str, had_unsaved_manual: bool = False,
+                        auto_step: int | None = None) -> None:
+    """Fire when the user changes the Manual / Automatic toggle."""
+    track(ev.MODE_SWITCHED, {
+        "to_mode": to_mode,
+        "had_unsaved_manual": bool(had_unsaved_manual),
+        "auto_step": auto_step,
+    })
+
+
+def track_install_started() -> None:
+    track(ev.INSTALL_STARTED)
+
+
+def track_install_completed(duration_ms: int | None = None,
+                            python_minor: int | None = None,
+                            retry_count: int | None = None) -> None:
+    track(ev.INSTALL_COMPLETED, {
+        "duration_ms": duration_ms,
+        "python_minor": python_minor,
+        "retry_count": retry_count,
+    })
+
+
+def track_install_failed(error_class: str, duration_ms: int | None = None,
+                         python_minor: int | None = None,
+                         retry_count: int | None = None) -> None:
+    track(ev.INSTALL_FAILED, {
+        "error_class": error_class,
+        "duration_ms": duration_ms,
+        "python_minor": python_minor,
+        "retry_count": retry_count,
+    })
+
+
+def track_model_download_completed(model: str, duration_ms: int | None = None) -> None:
+    """model is "sam1" or "sam2" ONLY (never a checkpoint URL or file name)."""
+    track(ev.MODEL_DOWNLOAD_COMPLETED, {"model": model, "duration_ms": duration_ms})
+
+
+# Automatic funnel ----------------------------------------------------------
+
+
+def track_auto_start_clicked(layer_kind: str, has_credits_known: bool = False) -> None:
+    track(ev.AUTO_START_CLICKED, {
+        "layer_kind": layer_kind,
+        "has_credits_known": bool(has_credits_known),
+    })
+
+
+def track_zone_drawn(vertices: int, area_km2: float, zone_kind: str = "polygon") -> None:
+    track(ev.ZONE_DRAWN, {
+        "vertices": vertices,
+        "area_km2": round(area_km2, 1),
+        "zone_kind": zone_kind,
+    })
+
+
+def track_auto_zone_too_large(area_km2: float) -> None:
+    """Free-trial zone cap hit: the zone exceeds the free-tier limit. Only
+    the rounded area is sent, never coordinates."""
+    track(ev.AUTO_ZONE_TOO_LARGE, {"area_km2": round(area_km2, 1)})
+
+
+def track_auto_prompt_committed(prompt: str, from_library: bool = False) -> None:
+    """prompt is the validated 1-2 word object class (no PII by construction)."""
+    track(ev.AUTO_PROMPT_COMMITTED, {"prompt": prompt, "from_library": bool(from_library)})
+
+
+def track_tutorial_opened(source: str) -> None:
+    """A tutorial/guide open. source is the touchpoint id (footer_tutorial,
+    post_signin, zero_results); no PII by construction."""
+    track(ev.TUTORIAL_OPENED, {"source": source})
+
+
+def track_exemplar_added(count_after: int) -> None:
+    track(ev.EXEMPLAR_ADDED, {"count_after": count_after})
+
+
+def track_exemplar_removed(count_after: int) -> None:
+    track(ev.EXEMPLAR_REMOVED, {"count_after": count_after})
+
+
+def track_detail_changed(detail: int, tiles: int, source: str) -> None:
+    """source: "auto_seeded" or "user"."""
+    track(ev.DETAIL_CHANGED, {"detail": detail, "tiles": tiles, "source": source})
+
+
+def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
+                              object_class: str, detail: int, exemplar_count: int,
+                              est_credits: int, credits_before: int | None,
+                              is_free_tier: bool) -> None:
+    track(ev.AUTO_DETECT_STARTED, {
+        "run_id": run_id,
+        "tiles": tiles,
+        "zone_km2": round(zone_km2, 2),
+        "object_class": object_class,
+        "detail": detail,
+        "exemplar_count": exemplar_count,
+        "est_credits": est_credits,
+        "credits_before": credits_before,
+        "is_free_tier": bool(is_free_tier),
+    })
+
+
+def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
+                                tiles_failed: int, instances_found: int,
+                                instances_visible_at_default: int, zero_at_default: bool,
+                                p50_tile_ms: int | None = None,
+                                p95_tile_ms: int | None = None,
+                                stop_reason: str = "completed") -> None:
+    track(ev.AUTO_DETECT_COMPLETED, {
+        "run_id": run_id,
+        "duration_ms": duration_ms,
+        "tiles_done": tiles_done,
+        "tiles_failed": tiles_failed,
+        "instances_found": instances_found,
+        "instances_visible_at_default": instances_visible_at_default,
+        "zero_at_default": bool(zero_at_default),
+        "p50_tile_ms": p50_tile_ms,
+        "p95_tile_ms": p95_tile_ms,
+        "stop_reason": stop_reason,
+    })
+
+
+def track_auto_detect_failed(run_id: str, error_class: str, tiles_done: int,
+                             duration_ms: int | None = None) -> None:
+    """error_class: NETWORK/AUTH/CREDITS_EXHAUSTED/SERVER/CANCELLED/TIMEOUT/UNKNOWN."""
+    track(ev.AUTO_DETECT_FAILED, {
+        "run_id": run_id,
+        "error_class": error_class,
+        "tiles_done": tiles_done,
+        "duration_ms": duration_ms,
+    })
+
+
+def track_auto_detect_cancelled(run_id: str, tiles_done: int, tiles_total: int,
+                                salvaged_to_review: bool) -> None:
+    track(ev.AUTO_DETECT_CANCELLED, {
+        "run_id": run_id,
+        "tiles_done": tiles_done,
+        "tiles_total": tiles_total,
+        "salvaged_to_review": bool(salvaged_to_review),
+    })
+
+
+def track_credits_exhausted(run_id: str, tiles_done: int, tiles_total: int,
+                            is_free_tier: bool) -> None:
+    track(ev.CREDITS_EXHAUSTED, {
+        "run_id": run_id,
+        "tiles_done": tiles_done,
+        "tiles_total": tiles_total,
+        "is_free_tier": bool(is_free_tier),
+    })
+
+
+def track_auto_tiles_degraded(run_id: str, skipped_tiles: int, timeout_tiles: int,
+                              blank_tiles: int = 0,
+                              render_failed_tiles: int = 0) -> None:
+    track(ev.AUTO_TILES_DEGRADED, {
+        "run_id": run_id,
+        "skipped_tiles": skipped_tiles,
+        "timeout_tiles": timeout_tiles,
+        # Pre-submit, uncharged drops: blank/nodata skips (credits saved) and
+        # render/provider holes (possible coverage gap). Additive; older keys
+        # unchanged.
+        "blank_tiles": blank_tiles,
+        "render_failed_tiles": render_failed_tiles,
+    })
+
+
+def track_auto_zero_result(run_id: str, tiles: int, object_class: str,
+                           had_exemplar: bool) -> None:
+    track(ev.AUTO_ZERO_RESULT, {
+        "run_id": run_id,
+        "tiles": tiles,
+        "object_class": object_class,
+        "had_exemplar": bool(had_exemplar),
+    })
+
+
+# Review / refine -----------------------------------------------------------
+
+
+def track_review_opened(run_id: str, instances_found: int, visible_at_start: int,
+                        start_confidence: int, auto_lowered: bool) -> None:
+    track(ev.REVIEW_OPENED, {
+        "run_id": run_id,
+        "instances_found": instances_found,
+        "visible_at_start": visible_at_start,
+        "start_confidence": start_confidence,
+        "auto_lowered": bool(auto_lowered),
+    })
+
+
+def track_review_confidence_final(run_id: str, final_pct: int, visible_count: int,
+                                  moves: int) -> None:
+    track(ev.REVIEW_CONFIDENCE_FINAL, {
+        "run_id": run_id,
+        "final_pct": final_pct,
+        "visible_count": visible_count,
+        "moves": moves,
+    })
+
+
+def track_review_display_mode(mode: str) -> None:
+    track(ev.REVIEW_DISPLAY_MODE, {"mode": mode})
+
+
+def track_review_shape_adjusted(control: str, value) -> None:
+    track(ev.REVIEW_SHAPE_ADJUSTED, {"control": control, "value": value})
+
+
+def track_refine_in_manual_entered(run_id: str, instances: int) -> None:
+    track(ev.REFINE_IN_MANUAL_ENTERED, {"run_id": run_id, "instances": instances})
+
+
+def track_refine_in_manual_back(run_id: str, validated_count: int,
+                                duration_ms: int | None = None) -> None:
+    track(ev.REFINE_IN_MANUAL_BACK, {
+        "run_id": run_id,
+        "validated_count": validated_count,
+        "duration_ms": duration_ms,
+    })
+
+
+def track_auto_export_done(run_id: str, exported_count: int, visible_pct_of_found: int,
+                           final_confidence: int, display_mode: str,
+                           refined_in_manual: bool) -> None:
+    track(ev.AUTO_EXPORT_DONE, {
+        "run_id": run_id,
+        "exported_count": exported_count,
+        "visible_pct_of_found": visible_pct_of_found,
+        "final_confidence": final_confidence,
+        "display_mode": display_mode,
+        "refined_in_manual": bool(refined_in_manual),
+    })
+
+
+def track_auto_retry_clicked(run_id: str, discarded_count: int, confirmed: bool) -> None:
+    track(ev.AUTO_RETRY_CLICKED, {
+        "run_id": run_id,
+        "discarded_count": discarded_count,
+        "confirmed": bool(confirmed),
+    })
+
+
+def track_auto_exit_clicked(from_step: int, autosaved_count: int) -> None:
+    track(ev.AUTO_EXIT_CLICKED, {
+        "from_step": from_step,
+        "autosaved_count": autosaved_count,
+    })
+
+
+# Manual --------------------------------------------------------------------
+
+
+_segmentation_run_sent_this_session = False
+
+
+def track_segmentation_run(success: bool, duration_ms: int | None = None) -> None:
+    """Fire when a manual segmentation run completes (or fails).
+
+    Success runs are sampled 1-in-10 (power users click hundreds of times per
+    session); the first run per session is always sent (sample_rate 1). Failures
+    are ALWAYS sent unsampled (sample_rate 1) so the failure rate is real."""
+    global _segmentation_run_sent_this_session
+    import random
+
+    if not success:
+        # Failures are never sampled: the failure signal must be complete.
+        track(ev.SEGMENTATION_RUN, {
+            "success": False, "duration_ms": duration_ms, "sample_rate": 1,
+        })
+        return
+
+    if _segmentation_run_sent_this_session:
+        if random.random() >= 0.1:  # nosec B311 - sampling, not crypto
+            return
+        sample_rate = 10
+    else:
+        _segmentation_run_sent_this_session = True
+        sample_rate = 1
+    track(ev.SEGMENTATION_RUN, {
+        "success": True, "duration_ms": duration_ms, "sample_rate": sample_rate,
+    })
+
+
+def track_manual_export_done(polygon_count: int, refine_used: bool) -> None:
+    track(ev.MANUAL_EXPORT_DONE, {
+        "polygon_count": polygon_count,
+        "refine_used": bool(refine_used),
+    })
+
+
+def track_manual_session_summary(saves: int, undos: int,
+                                 duration_ms: int | None = None) -> None:
+    track(ev.MANUAL_SESSION_SUMMARY, {
+        "saves": saves,
+        "undos": undos,
+        "duration_ms": duration_ms,
+    })
+
+
+# Monetization --------------------------------------------------------------
+
+
+_upsell_viewed_this_session = False
+_low_credit_banner_viewed_this_session = False
+
+
+def track_pro_upsell_viewed(trigger: str = "free_exhausted") -> None:
+    """Fire at most once per session when the upsell card first renders."""
+    global _upsell_viewed_this_session
+    if _upsell_viewed_this_session:
+        return
+    _upsell_viewed_this_session = True
+    track(ev.PRO_UPSELL_VIEWED, {"trigger": trigger})
+
+
+def track_pro_upsell_clicked(source: str = "upsell_card") -> None:
+    """source: upsell_card / subscribe_pill / low_credit_banner / exhausted_status."""
+    track(ev.PRO_UPSELL_CLICKED, {"source": source})
+
+
+def track_free_taste_consumed(remaining: int) -> None:
+    """remaining = free detections left after this one."""
+    track(ev.FREE_TASTE_CONSUMED, {"remaining": remaining})
+
+
+def track_low_credit_banner_viewed(remaining: int, total: int) -> None:
+    """Fire at most once per session when the low-credit banner first shows."""
+    global _low_credit_banner_viewed_this_session
+    if _low_credit_banner_viewed_this_session:
+        return
+    _low_credit_banner_viewed_this_session = True
+    track(ev.LOW_CREDIT_BANNER_VIEWED, {"remaining": remaining, "total": total})
+
+
+def track_detect_blocked(reason: str) -> None:
+    """reason: credits / zone_too_large / cost_over_balance."""
+    track(ev.DETECT_BLOCKED, {"reason": reason})
+
+
+# Errors --------------------------------------------------------------------
 
 
 def track_plugin_error(
@@ -413,22 +752,29 @@ def track_plugin_error(
     error_code: str,
     message: str,
     include_log_tail: bool = False,
-):
+    traceback_hash: str | None = None,
+    module: str | None = None,
+) -> None:
     """Fire when an error is shown to the user or an exception is caught.
 
     stage: install | download | activate | segment | export | other
     error_code: short machine-friendly id (e.g. "PIP_TIMEOUT", "RUNTIME_ERROR")
-    message: first line of the error, truncated to 200 chars, path + coord scrubbed
+    message: first line of the error, truncated to 500 chars, path + coord scrubbed
     include_log_tail: OFF by default. When True, the last 20 anonymized log lines
-        are capped to ~4KB and coordinate-scrubbed before being sent. We default
-        off because QGIS runtime logs frequently contain click coords, crop
-        bounds, and export extents that we promised never to collect.
+        are capped to ~4KB and coordinate-scrubbed before being sent.
+    traceback_hash: optional short sha of the normalized traceback (groups
+        recurrences of the same crash). Additive; omitted when unknown.
+    module: optional source module the exception was caught in. Additive.
     """
     props = {
         "stage": stage,
         "error_code": error_code,
-        "error_message": _scrub_payload_value((message or "")[:200]),
+        "message": _scrub_payload_value((message or "")[:500]),
     }
+    if traceback_hash:
+        props["traceback_hash"] = traceback_hash
+    if module:
+        props["module"] = module
     if include_log_tail:
         try:
             from ..ui.error_report_dialog import _get_recent_logs
@@ -439,4 +785,123 @@ def track_plugin_error(
             )
         except Exception:
             pass  # nosec B110
-    _send(ev.PLUGIN_ERROR, props)
+    track(ev.PLUGIN_ERROR, props)
+
+
+# --- Error capture (top-level slots + worker bodies) ----------------------
+#
+# The only error -> telemetry path used to be an explicit show_error_report()
+# call, so an uncaught exception in a Qt slot or worker run() body produced NO
+# telemetry at all. These helpers give a standard capture pattern: track a
+# plugin_error with a stable English error_code, a traceback_hash (so the
+# analytics backend groups recurrences of the same crash), and the source
+# module; log a line; and
+# show a dialog ONLY when an explicit user_message is passed. No sys.excepthook
+# (that conflicts with QGIS and other plugins) - wrap the entry points instead.
+
+
+def _short_traceback_hash(exc: BaseException) -> str:
+    """A short, path-free fingerprint of an exception's traceback.
+
+    Each frame contributes basename:lineno:function; the exception class name
+    is appended. Filenames are reduced to their basename so the hash is stable
+    across machines. Returns "" if anything goes wrong (never raises)."""
+    import hashlib
+    import os as _os
+    import traceback as _tb
+    try:
+        parts = [
+            "{}:{}:{}".format(_os.path.basename(fr.filename), fr.lineno, fr.name)
+            for fr in _tb.extract_tb(exc.__traceback__)
+        ]
+        parts.append(exc.__class__.__name__)
+        return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:16]
+    except Exception:
+        return ""
+
+
+def report_exception(
+    exc: BaseException,
+    stage: str,
+    module: str = "",
+    user_message: str | None = None,
+    parent=None,
+) -> None:
+    """Capture an unhandled exception: track it, log it, optionally show it.
+
+    Always tracks a plugin_error (error_code = exception class name, plus a
+    traceback_hash and module) and writes one QgsMessageLog line. Shows the
+    error-report dialog ONLY when user_message is given AND we are on the main
+    thread. Never raises: this runs on failure paths where a second failure
+    must stay invisible."""
+    error_code = ""
+    tb_hash = ""
+    first_line = ""
+    try:
+        error_code = exc.__class__.__name__
+        tb_hash = _short_traceback_hash(exc)
+        text = str(exc)
+        first_line = text.splitlines()[0] if text else ""
+    except Exception:  # nosec B110
+        pass
+    try:
+        track_plugin_error(
+            stage=stage,
+            error_code=error_code or "Exception",
+            message=first_line,
+            traceback_hash=tb_hash,
+            module=module or None,
+        )
+    except Exception:  # nosec B110
+        pass
+    try:
+        from qgis.core import Qgis, QgsMessageLog
+        QgsMessageLog.logMessage(
+            "Unhandled {code} in {mod} ({stage}) [{h}]".format(
+                code=error_code or "Exception", mod=module or "?",
+                stage=stage, h=tb_hash or "-"),
+            "AI Segmentation", level=Qgis.MessageLevel.Warning,
+        )
+    except Exception:  # nosec B110
+        pass
+    if user_message and _on_main_thread():
+        try:
+            from ..ui.error_report_dialog import ErrorReportDialog
+            dialog = ErrorReportDialog(user_message, user_message, parent)
+            dialog.exec()
+        except Exception:  # nosec B110
+            pass
+
+
+def slot_guard(stage: str, user_message: str | None = None):
+    """Decorator for a top-level Qt slot: catch any unhandled exception, report
+    it (telemetry + log, and a dialog only when user_message is given), and
+    swallow it so a stray crash never leaves QGIS's console handler as the only
+    trace. Do NOT stack on slots that already surface their own errors."""
+    def deco(fn):
+        module = (fn.__module__ or "").rsplit(".", 1)[-1]
+
+        @functools.wraps(fn)
+        def wrapper(self, *args, **kwargs):
+            try:
+                return fn(self, *args, **kwargs)
+            except Exception as exc:  # noqa: BLE001 - top-level slot boundary
+                parent = None
+                if user_message is not None:
+                    try:
+                        parent = self.iface.mainWindow()
+                    except Exception:  # nosec B110
+                        parent = None
+                report_exception(
+                    exc, stage=stage, module=module,
+                    user_message=user_message, parent=parent,
+                )
+                return None
+        return wrapper
+    return deco
+
+
+# NOTE: worker run() bodies report inline (see AutoDetectionWorker.run): they
+# pair the report with worker-specific cleanup (power inhibit, error signal),
+# which a generic context manager cannot know about. slot_guard above is the
+# one shared boundary; an unused error_boundary context manager was removed.

@@ -9,24 +9,17 @@ import shutil
 import subprocess  # nosec B404
 import sys
 import tempfile
+import threading
 import time
 from typing import Callable
 
 from qgis.core import Qgis
 
+from .install_lock import InstallLock
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA, SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN
 from .pip_diagnostics import (
     get_crash_help as _get_crash_help,
-)
-from .pip_diagnostics import (
-    get_disk_full_help as _get_disk_full_help,
-)
-from .pip_diagnostics import (
-    get_glibc_too_old_help as _get_glibc_too_old_help,
-)
-from .pip_diagnostics import (
-    get_macos_intel_help as _get_macos_intel_help,
 )
 from .pip_diagnostics import (
     get_file_locked_help as _get_file_locked_help,
@@ -47,16 +40,7 @@ from .pip_diagnostics import (
     is_antivirus_error as _is_antivirus_error,
 )
 from .pip_diagnostics import (
-    is_disk_full as _is_disk_full,
-)
-from .pip_diagnostics import (
     is_dll_init_error as _is_dll_init_error,
-)
-from .pip_diagnostics import (
-    is_glibc_too_old as _is_glibc_too_old,
-)
-from .pip_diagnostics import (
-    is_macos_intel_no_wheel as _is_macos_intel_no_wheel,
 )
 from .pip_diagnostics import (
     is_file_locked_error as _is_file_locked_error,
@@ -86,6 +70,7 @@ from .subprocess_utils import get_clean_env_for_venv as _get_base_clean_env  # n
 from .uv_manager import (
     download_uv,
     get_uv_path,
+    remove_uv,
     uv_exists,
     verify_uv,
 )
@@ -93,6 +78,30 @@ from .uv_manager import (
 # Module-level uv state (set during create_venv_and_install)
 _uv_available = False
 _uv_path: str | None = None
+
+
+def _insecure_install_opt_in() -> bool:
+    """True only if the user has explicitly allowed disabling TLS verification
+    during dependency install.
+
+    The safe corporate-CA path (--system-certs, OS trust store) is always
+    tried first. Fully disabling TLS verification is an integrity risk (an
+    active MITM could force the initial verified attempt to fail and then
+    serve a poisoned wheel, which runs code on install), so it never happens
+    silently: it requires an explicit opt-in via the QSettings key
+    ``TerraLab/allow_insecure_install`` or the ``QGIS_AI_ALLOW_INSECURE_INSTALL``
+    environment variable. Default is off.
+    """
+    if os.environ.get("QGIS_AI_ALLOW_INSECURE_INSTALL", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    try:
+        from qgis.PyQt.QtCore import QSettings
+
+        val = QSettings().value("TerraLab/allow_insecure_install", False, type=bool)
+        return bool(val)
+    except Exception:  # noqa: BLE001 - settings unavailable: fail closed (secure default)
+        return False
+
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = PLUGIN_ROOT_DIR  # src/ directory
@@ -140,17 +149,19 @@ DEPS_HASH_FILE = os.path.join(VENV_DIR, "deps_hash.txt")
 # run means the venv may be half-built and must be reinstalled.
 INSTALL_MARKER_FILE = os.path.join(CACHE_DIR, "install_in_progress")
 
+# Cross-process install lock. CACHE_DIR is shared across QGIS instances and
+# profiles, so two windows can install concurrently; without a mutex the
+# second one would rmtree the venv the first is still building. This lock
+# complements the crash marker above: the marker recovers a same-process
+# crash, the lock keeps two LIVE processes from touching the venv at once.
+INSTALL_LOCK_FILE = os.path.join(CACHE_DIR, "install.lock")
+
 # Bump this when install logic changes significantly (e.g., --no-cache-dir,
 # new retry strategies) to force a dependency re-install on plugin update.
 # v4: uv/rustls SSL errors ("invalid peer certificate") now trigger the
 #     system-certs / TLS-bypass retry cascade; re-run installs that failed
 #     silently behind corporate MITM proxies.
-# v5: single source of truth for the standalone Python version (fixes an
-#     infinite download/verify loop on QGIS Pythons outside 3.9-3.14),
-#     musl-Linux / Windows-ARM64 platform triples, utf-8 subprocess decoding
-#     with errors="replace", disk-full / glibc-too-old / Intel-mac classifiers,
-#     and keeping uv for installs when only `uv venv` (not the binary) failed.
-_INSTALL_LOGIC_VERSION = "5"
+_INSTALL_LOGIC_VERSION = "4"
 
 
 def _compute_deps_hash() -> str:
@@ -167,7 +178,7 @@ def _compute_deps_hash() -> str:
 def _read_deps_hash() -> str | None:
     """Read stored deps hash from the venv directory."""
     try:
-        with open(DEPS_HASH_FILE, encoding="utf-8", errors="replace") as f:
+        with open(DEPS_HASH_FILE, encoding="utf-8") as f:
             return f.read().strip()
     except OSError:
         return None
@@ -179,7 +190,7 @@ def _write_deps_hash():
         hash_dir = os.path.dirname(DEPS_HASH_FILE)
         os.makedirs(hash_dir, exist_ok=True)
         tmp_path = DEPS_HASH_FILE + ".tmp"
-        with open(tmp_path, "w", encoding="utf-8", errors="replace") as f:
+        with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(_compute_deps_hash())
         os.replace(tmp_path, DEPS_HASH_FILE)
     except OSError as e:
@@ -189,7 +200,7 @@ def _write_deps_hash():
 def _write_install_marker():
     """Record that an install of the current venv is in progress."""
     try:
-        with open(INSTALL_MARKER_FILE, "w", encoding="utf-8", errors="replace") as f:
+        with open(INSTALL_MARKER_FILE, "w", encoding="utf-8") as f:
             f.write(os.path.basename(VENV_DIR))
     except OSError as e:
         _log(f"Could not write install marker: {e}", Qgis.MessageLevel.Warning)
@@ -205,7 +216,7 @@ def _clear_install_marker():
 def _install_marker_present() -> bool:
     """True when a previous install of the current venv was interrupted by a crash."""
     try:
-        with open(INSTALL_MARKER_FILE, encoding="utf-8", errors="replace") as f:
+        with open(INSTALL_MARKER_FILE, encoding="utf-8") as f:
             return f.read().strip() == os.path.basename(VENV_DIR)
     except OSError:
         return False
@@ -272,7 +283,7 @@ def cleanup_old_venv_directories() -> list[str]:
                     old_path = os.path.join(scan_dir, entry)
                     if os.path.isdir(old_path):
                         try:
-                            shutil.rmtree(old_path)
+                            shutil.rmtree(_win_extended_path(old_path))
                             _log(f"Cleaned up old venv: {old_path}",
                                  Qgis.MessageLevel.Info)
                             removed.append(old_path)
@@ -465,12 +476,29 @@ def _repair_poisoned_environment() -> None:
             os.environ.pop("GDAL_DATA", None)
 
     _log(
-        f"Repaired PROJ/GDAL environment poisoned by an older plugin version: {', '.join(poisoned)}",
+        "Repaired PROJ/GDAL environment poisoned by an older plugin version: " + ", ".join(poisoned),
         Qgis.MessageLevel.Info,
     )
 
 
+# Serializes ensure_venv_packages_available across threads. The old-numpy
+# branch below does sys.modules/sys.path surgery (delete numpy*/pandas*,
+# re-import from the venv); it is called from worker threads (DeviceInfoWorker,
+# VerifyWorker) AND from the main thread (module-top of polygon_exporter /
+# device_manager on their first import). Two threads interleaving that swap can
+# observe numpy half-deleted / half-imported: an ImportError at best, a native
+# C-extension re-init fault (= all of QGIS down) at worst. RLock, not Lock: the
+# re-imports inside can transitively re-enter this function via a module-top
+# ensure_venv_packages_available() call.
+_ensure_packages_lock = threading.RLock()
+
+
 def ensure_venv_packages_available():
+    with _ensure_packages_lock:
+        return _ensure_venv_packages_available_locked()
+
+
+def _ensure_venv_packages_available_locked():
     # Heal sessions where an older plugin version globally overrode
     # PROJ/GDAL env vars (hot upgrade without QGIS restart).
     _repair_poisoned_environment()
@@ -490,17 +518,7 @@ def ensure_venv_packages_available():
         _log(f"Venv site-packages not found: {site_packages}", Qgis.MessageLevel.Warning)
         return False
 
-    # Never mount an incomplete venv (interrupted or cancelled install):
-    # partial site-packages on sys.path breaks unrelated imports with DLL
-    # load errors (e.g. rasterio after a cancelled sam2 install).
     if site_packages not in sys.path:
-        is_complete, check_msg = _quick_check_packages()
-        if not is_complete:
-            _log(
-                f"Venv incomplete ({check_msg}), not adding to sys.path",
-                Qgis.MessageLevel.Warning,
-            )
-            return False
         sys.path.append(site_packages)
         _log(f"Added venv site-packages to sys.path: {site_packages}", Qgis.MessageLevel.Info)
 
@@ -688,14 +706,11 @@ def _get_qgis_python() -> str | None:
     try:
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
 
         result = subprocess.run(  # nosec B603
             [python_path, "-c", "import sys; print(sys.version)"],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
-            env=env, startupinfo=startupinfo,
+            env=env, **_get_subprocess_kwargs(),
         )
         if result.returncode == 0:
             _log(f"QGIS Python verified: {result.stdout.strip()}", Qgis.MessageLevel.Info)
@@ -705,6 +720,34 @@ def _get_qgis_python() -> str | None:
     except Exception as e:
         _log(f"QGIS Python verification error: {e}", Qgis.MessageLevel.Warning)
         return None
+
+
+def _system_python_matches_target(python3_path: str) -> bool:
+    """Check a system python3 is a runnable interpreter at the target version.
+
+    Used as the Linux fallback when the standalone build cannot execute
+    (NixOS, musl/old glibc, sandboxed). We only need major.minor to match
+    the same target the standalone Python would have been (get_qgis_python_
+    version); an exact patch match is not required.
+    """
+    from .python_manager import get_qgis_python_version
+    try:
+        env = _get_clean_env_for_venv()
+        result = subprocess.run(  # nosec B603
+            [python3_path, "-c", "import sys; print(sys.version_info.major, sys.version_info.minor)"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
+            env=env, **_get_subprocess_kwargs(),
+        )
+        if result.returncode != 0:
+            return False
+        parts = result.stdout.strip().split()
+        if len(parts) != 2:
+            return False
+        installed = (int(parts[0]), int(parts[1]))
+        return installed == get_qgis_python_version()
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        _log(f"System Python version check failed: {e}", Qgis.MessageLevel.Warning)
+        return False
 
 
 def _get_system_python() -> str:
@@ -744,12 +787,16 @@ def _get_system_python() -> str:
         )
         remove_standalone_python()
 
-    # On NixOS, use system Python (standalone binaries can't run)
-    from .python_manager import is_nixos
-    if is_nixos():
+    # On Linux, fall back to a matching system Python when the standalone
+    # build cannot run: NixOS (no dynamic FHS paths), musl/Alpine and old
+    # glibc distros (astral's *-unknown-linux-gnu binaries need glibc
+    # >= ~2.17), and sandboxed installs (Flatpak/Snap). Only NixOS was
+    # covered before; generalize so any Linux with a compatible python3
+    # on PATH does not dead-end on the raise below.
+    if sys.platform == "linux":
         python3 = shutil.which("python3")
-        if python3:
-            _log(f"NixOS: using system Python: {python3}", Qgis.MessageLevel.Info)
+        if python3 and _system_python_matches_target(python3):
+            _log(f"Linux fallback: using system Python: {python3}", Qgis.MessageLevel.Info)
             return python3
 
     # On Windows, try QGIS's bundled Python as fallback
@@ -781,7 +828,7 @@ def _cleanup_partial_venv(venv_dir: str):
     """Remove a partially-created venv directory to prevent broken state on retry."""
     if os.path.exists(venv_dir):
         try:
-            shutil.rmtree(venv_dir, ignore_errors=True)
+            shutil.rmtree(_win_extended_path(venv_dir), ignore_errors=True)
             _log(f"Cleaned up partial venv: {venv_dir}", Qgis.MessageLevel.Info)
         except Exception:
             _log(f"Could not clean up partial venv: {venv_dir}", Qgis.MessageLevel.Warning)
@@ -792,7 +839,7 @@ def _venv_is_functional(venv_dir: str = None) -> bool:
 
     ``venv_exists`` only checks that the python executable file is there. A
     venv left half-created by an interrupted run can have the executable but
-    no valid ``pyvenv.cfg`` — uv then refuses it ("No virtual environment or
+    no valid ``pyvenv.cfg`` - uv then refuses it ("No virtual environment or
     system Python installation found for path ...; run `uv venv`") and the
     whole install fails. Require both a valid venv marker AND a working
     interpreter so a broken venv is detected and recreated. (#64)
@@ -840,7 +887,7 @@ def _venv_base_python_ok(venv_dir: str = None) -> tuple[bool, str]:
     cfg_path = os.path.join(venv_dir, "pyvenv.cfg")
     home = None
     try:
-        with open(cfg_path, encoding="utf-8", errors="replace") as f:
+        with open(cfg_path, encoding="utf-8") as f:
             for line in f:
                 key, sep, value = line.partition("=")
                 if sep and key.strip().lower() == "home":
@@ -906,12 +953,7 @@ def create_venv(
         uv_python = _win_long_path(system_python)
         uv_cmd = [_uv_path, "venv", "--python", uv_python, venv_dir]
         try:
-            subprocess_kwargs = {}
-            if sys.platform == "win32":
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
-                subprocess_kwargs["startupinfo"] = startupinfo
+            subprocess_kwargs = _get_subprocess_kwargs()
 
             result = subprocess.run(  # nosec B603
                 uv_cmd,
@@ -926,33 +968,22 @@ def create_venv(
             error_msg = result.stderr or result.stdout or ""
             _log(f"uv venv creation failed: {error_msg[:200]}", Qgis.MessageLevel.Warning)
             _cleanup_partial_venv(venv_dir)
-            # `uv venv` failing does NOT mean uv is broken: it can stumble on a
-            # Python quirk (8.3 short paths, stripped ensurepip) while `uv pip`
-            # installs would work fine. Only discard uv if the binary itself is
-            # unusable; otherwise keep it for the faster installs and just
-            # create the venv with stdlib `python -m venv`.
-            if not verify_uv():  # verify_uv removes a broken binary itself
-                _uv_available = False
-                _uv_path = None
-                _log("uv binary unusable, falling back to pip for installs", Qgis.MessageLevel.Warning)
-            else:
-                _log("Keeping uv for installs; creating venv with python -m venv", Qgis.MessageLevel.Warning)
+            # Fall through to standard venv creation
+            remove_uv()
+            _uv_available = False
+            _uv_path = None
+            _log("Falling back to python -m venv", Qgis.MessageLevel.Warning)
         except Exception as e:
             _log(f"uv venv exception: {e}, falling back to python -m venv", Qgis.MessageLevel.Warning)
             _cleanup_partial_venv(venv_dir)
-            if not verify_uv():
-                _uv_available = False
-                _uv_path = None
+            remove_uv()
+            _uv_available = False
+            _uv_path = None
 
     # Standard venv creation with python -m venv
     cmd = [system_python, "-m", "venv", venv_dir]
     try:
-        subprocess_kwargs = {}
-        if sys.platform == "win32":
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-            subprocess_kwargs["startupinfo"] = startupinfo
+        subprocess_kwargs = _get_subprocess_kwargs()
 
         result = subprocess.run(  # nosec B603
             cmd,
@@ -979,7 +1010,7 @@ def create_venv(
                         ensurepip_cmd,
                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
                         env=env,
-                        **({"startupinfo": startupinfo} if sys.platform == "win32" else {}),
+                        **subprocess_kwargs,
                     )
                     if ensurepip_result.returncode == 0:
                         _log("pip bootstrapped via ensurepip", Qgis.MessageLevel.Success)
@@ -1087,6 +1118,25 @@ def _win_short_path(path: str) -> str:
     return path
 
 
+def _win_extended_path(path: str) -> str:
+    """Prefix an absolute Windows path with the \\\\?\\ extended-length marker.
+
+    The torch venv tree (deep Lib/site-packages/torch/... module paths) can
+    exceed the legacy 260-char MAX_PATH, which is still the Windows default
+    (LongPathsEnabled=0). The \\\\?\\ prefix routes shutil/glob's underlying
+    file APIs around that limit. No-op on non-Windows and on paths already
+    prefixed; UNC paths use the distinct \\\\?\\UNC\\ form.
+    """
+    if sys.platform != "win32" or not path:
+        return path
+    if path.startswith("\\\\?\\"):
+        return path
+    abs_path = os.path.abspath(path)
+    if abs_path.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + abs_path.lstrip("\\")
+    return "\\\\?\\" + abs_path
+
+
 def _win_long_path(path: str) -> str:
     """Convert a Windows 8.3 short path to its long form.
 
@@ -1148,7 +1198,10 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
             cmd.append(arg)
         cmd.extend(["--python", _win_short_path(python_path)])
         return cmd
-    return [python_path, "-m", "pip"] + pip_args
+    # Pure-Python pip fallback (no uv): pip's own file writes under a deep
+    # torch venv tree can exceed Windows' legacy 260-char MAX_PATH, so route
+    # the interpreter path through the extended-length form as cheap insurance.
+    return [_win_extended_path(python_path), "-m", "pip"] + pip_args
 
 
 def _repin_numpy(venv_dir: str):
@@ -1215,44 +1268,11 @@ def _get_verification_timeout(package_name: str) -> int:
     """
     if package_name == "torch":
         return 120
-    if package_name in ("torchvision", "pandas", "sam2", "segment-anything"):
+    if package_name in ("torchvision", "pandas"):
         # pandas loads many .pyd C extensions on first import;
-        # antivirus (Windows Defender) scans each one, easily exceeding 120s.
-        # sam2/segment-anything verification imports torch and builds the model,
-        # so it inherits torch's native-DLL load on top of its own scan.
+        # antivirus (Windows Defender) scans each one, easily exceeding 120s
         return 180
     return 30
-
-
-def _summarize_install_error(text: str, limit: int = 280) -> str:
-    """Pull the meaningful failure out of pip/uv output for users + telemetry.
-
-    uv prints an info header ("Using Python 3.x environment at: venv_py3.x")
-    first, so the HEAD of the output is useless - taking output[:200] leaked
-    that header into installation_failed telemetry. The real error is at the
-    tail. Drop the known-noise lines, then prefer the line that names the
-    failure; fall back to the last meaningful lines.
-    """
-    if not text:
-        return ""
-    noise_prefixes = (
-        "using python", "resolved ", "audited ", "downloading ", "downloaded ",
-        "prepared ", "installed ", "building ", "built ", "creating ",
-        "updating ", "warning:",
-    )
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    meaningful = [ln for ln in lines if not ln.lower().startswith(noise_prefixes)]
-    if not meaningful:
-        meaningful = lines
-    for kw in (
-        "no space left", "no matching distribution", "could not find",
-        "permission denied", "access is denied", "operation timed out",
-        "connection reset", "error:", "×", "failed",
-    ):
-        for ln in meaningful:
-            if kw in ln.lower():
-                return ln[:limit]
-    return " | ".join(meaningful[-2:])[:limit]
 
 
 class _PipResult:
@@ -1315,8 +1335,9 @@ def _run_pip_install(
     """
     Run a pip install command with real-time progress updates.
 
-    Uses Popen with stdout/stderr redirected to temp files (not PIPE,
-    per CLAUDE.md) and polls every 2 seconds to provide live feedback.
+    Uses Popen with stdout/stderr redirected to temp files (never PIPE:
+    an undrained PIPE deadlocks once the buffer fills) and polls every
+    2 seconds to provide live feedback.
     """
     poll_interval = 2  # seconds
 
@@ -1329,8 +1350,8 @@ def _run_pip_install(
     )
 
     try:
-        stdout_file = os.fdopen(stdout_fd, "w", encoding="utf-8", errors="replace")
-        stderr_file = os.fdopen(stderr_fd, "w", encoding="utf-8", errors="replace")
+        stdout_file = os.fdopen(stdout_fd, "w", encoding="utf-8")
+        stderr_file = os.fdopen(stderr_fd, "w", encoding="utf-8")
     except Exception:
         # If fdopen fails, close the raw fds, remove the temp files, re-raise
         try:
@@ -1444,7 +1465,7 @@ def _run_pip_install(
         if cancel_check and cancel_check():
             return _PipResult(-1, "", "Installation cancelled")
 
-        # Process finished — close files before reading
+        # Process finished - close files before reading
         stdout_file.close()
         stderr_file.close()
         stdout_file = None
@@ -1581,7 +1602,7 @@ def install_dependencies(
         suffix=".txt", prefix="pip_constraints_", dir=CACHE_DIR
     )
     try:
-        with os.fdopen(constraints_fd, "w", encoding="utf-8", errors="replace") as f:
+        with os.fdopen(constraints_fd, "w", encoding="utf-8") as f:
             if sys.version_info >= (3, 13):
                 f.write("numpy<3.0.0\n")
             else:
@@ -1676,7 +1697,9 @@ def install_dependencies(
                 # the same versions as ~180 MB CPU-only wheels. Windows and
                 # macOS wheels on PyPI are already CPU-only, so the extra
                 # index (and its proxy-block risk) stays Linux-only.
-                use_cpu_index = package_name in ("torch", "torchvision") and sys.platform.startswith("linux")
+                use_cpu_index = (
+                    package_name in ("torch", "torchvision") and sys.platform.startswith("linux")
+                )
                 if use_cpu_index:
                     cpu_args = pip_args[:-1] + [
                         "--index-url", TORCH_CPU_INDEX_URL, pip_args[-1]]
@@ -1789,11 +1812,13 @@ def install_dependencies(
                             cancel_check=cancel_check,
                         )
 
-                # If failed, check for SSL errors and retry with TLS bypass.
-                # Strategy: for uv, first try --system-certs (uses OS trust
-                # store, handles corporate proxy CAs safely). If that also
-                # fails, fall back to --allow-insecure-host (disables TLS
-                # verification entirely). For pip, use --trusted-host directly.
+                # If failed, check for SSL errors and retry.
+                # Strategy: for uv, try --system-certs (uses OS trust store,
+                # handles corporate proxy CAs safely). Fully disabling TLS
+                # verification is NOT done unless the user has explicitly opted
+                # in (see _insecure_install_opt_in): otherwise an active MITM
+                # could force the verified attempt to fail and then serve a
+                # poisoned wheel.
                 if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
                     error_output = result.stderr or result.stdout or ""
 
@@ -1824,14 +1849,23 @@ def install_dependencies(
                                 cancel_check=cancel_check,
                             )
 
-                        # If still failing, bypass TLS verification. The
-                        # original error was SSL, so proceed regardless of
-                        # what the --system-certs retry printed (an older uv
-                        # without that flag fails with a usage error that no
-                        # SSL pattern matches).
-                        if result.returncode != 0:
+                        # If still failing, only disable TLS verification when
+                        # the user has explicitly opted in. Otherwise surface the
+                        # SSL error so a MITM can never silently downgrade the
+                        # install to an unverified channel.
+                        if result.returncode != 0 and not _insecure_install_opt_in():
                             _log(
-                                "SSL error persists, retrying with TLS verification bypass...",
+                                "SSL error persists after the system-certificate retry. "
+                                "Not disabling TLS verification (secure default). If you are "
+                                "behind a corporate proxy, add its CA to your OS trust store, "
+                                "or set TerraLab/allow_insecure_install to opt in to an "
+                                "unverified install at your own risk.",
+                                Qgis.MessageLevel.Warning
+                            )
+                        elif result.returncode != 0:
+                            _log(
+                                "SSL error persists, retrying with TLS verification bypass "
+                                "(user opted in via allow_insecure_install)...",
                                 Qgis.MessageLevel.Warning
                             )
                             if progress_callback:
@@ -2034,33 +2068,10 @@ def install_dependencies(
                     _log(_get_vcpp_help(), Qgis.MessageLevel.Warning)
                     return False, f"Failed to install {package_name}: {_get_vcpp_help()}"
 
-                # Check for a full disk BEFORE antivirus: a failed write from
-                # ENOSPC also surfaces as a permission/access error on Windows,
-                # which the antivirus classifier would misattribute.
-                if _is_disk_full(install_error_msg):
-                    _log(_get_disk_full_help(CACHE_DIR), Qgis.MessageLevel.Warning)
-                    return False, f"Failed to install {package_name}: not enough disk space"
-
-                # Linux distro too old for current PyTorch wheels (glibc < 2.28).
-                if _is_glibc_too_old(install_error_msg):
-                    _log(_get_glibc_too_old_help(), Qgis.MessageLevel.Warning)
-                    return False, (
-                        f"Failed to install {package_name}: your Linux distribution "
-                        "is too old for the current AI engine"
-                    )
-
-                # Intel mac with a Python newer than the last torch wheel (2.2.2).
-                if _is_macos_intel_no_wheel(install_error_msg):
-                    _log(_get_macos_intel_help(), Qgis.MessageLevel.Warning)
-                    return False, (
-                        f"Failed to install {package_name}: no compatible AI engine "
-                        "build for this Intel Mac and Python version"
-                    )
-
                 # Check for native-module file-lock errors FIRST: a .pyd/.dll/.so
                 # that cannot be removed because it is loaded in the running
                 # QGIS process. Fix is "restart QGIS", NOT antivirus exclusion
-                # — so this must precede the antivirus/rename branches below.
+                # - so this must precede the antivirus/rename branches below.
                 if _is_file_locked_error(install_error_msg):
                     _log(_get_file_locked_help(), Qgis.MessageLevel.Warning)
                     return False, (
@@ -2088,20 +2099,16 @@ def install_dependencies(
                     _log(_get_ssl_error_help(install_error_msg), Qgis.MessageLevel.Warning)
                     return False, f"Failed to install {package_name}: SSL error"
 
-                # Check for proxy authentication errors. pip says "HTTP 407";
-                # uv/rustls says "tunnel error: proxy authorization required".
-                # Both mean the corporate proxy needs credentials we were not
-                # given, so route both to the same actionable guidance.
+                # Check for proxy authentication errors (407)
                 if _is_proxy_auth_error(install_error_msg):
                     _log(
-                        "Proxy authentication required. Your network proxy needs "
-                        "a username and password. Enter them in: "
+                        "Proxy authentication failed (HTTP 407). "
+                        "Configure proxy credentials in: "
                         "QGIS > Settings > Options > Network > Proxy "
-                        "(enable the proxy, then fill the User and Password fields), "
-                        "then retry the installation.",
+                        "(User and Password fields).",
                         Qgis.MessageLevel.Warning
                     )
-                    return False, f"Failed to install {package_name}: proxy authentication required"
+                    return False, f"Failed to install {package_name}: proxy authentication required (407)"
 
                 # Check for network/connection errors (after retries exhausted)
                 if _is_network_error(install_error_msg):
@@ -2141,7 +2148,7 @@ def install_dependencies(
                         _log(gdal_help, Qgis.MessageLevel.Warning)
                         return False, f"Failed to install {package_name}: GDAL library not found"
 
-                return False, f"Failed to install {package_name}: {_summarize_install_error(install_error_msg)}"
+                return False, f"Failed to install {package_name}: {install_error_msg[:200]}"
 
         # Post-install numpy version safety net:
         # Check and force-downgrade if needed.
@@ -2259,10 +2266,48 @@ def _get_pip_proxy_args() -> list[str]:
     return []
 
 
+def _apply_cache_containment(env: dict) -> None:
+    """Point uv/pip caches and build temp at CACHE_DIR for install subprocesses.
+
+    By default uv, pip and the OS temp all live on the home/system volume even
+    when the user points AI_SEGMENTATION_CACHE_DIR at a big secondary drive.
+    That user then passes the single CACHE_DIR disk preflight and still fills
+    the system drive mid torch install. Co-locating the caches and temp on the
+    CACHE_DIR volume makes that one preflight cover the whole install, lets uv
+    hardlink from its cache into the venv (faster, no cross-filesystem copy)
+    and stops polluting the OS drive.
+
+    This only touches the env dict handed to install subprocesses, never the
+    QGIS process environment. Best-effort: if the directories cannot be
+    created, the env is left untouched so the install still runs on the OS
+    defaults rather than failing on our own bookkeeping.
+    """
+    uv_cache = os.path.join(CACHE_DIR, "uv_cache")
+    pip_cache = os.path.join(CACHE_DIR, "pip_cache")
+    tmp_dir = os.path.join(CACHE_DIR, "tmp")
+    try:
+        for path in (uv_cache, pip_cache, tmp_dir):
+            os.makedirs(path, exist_ok=True)
+    except OSError as e:
+        _log(
+            f"Cache containment skipped, using default locations: {e}",
+            Qgis.MessageLevel.Info)
+        return
+    env["UV_CACHE_DIR"] = uv_cache
+    env["PIP_CACHE_DIR"] = pip_cache
+    env["TMPDIR"] = tmp_dir   # POSIX
+    env["TEMP"] = tmp_dir     # Windows
+    env["TMP"] = tmp_dir      # Windows
+
+
 def _get_clean_env_for_venv() -> dict:
     # Shared sanitization (QGIS/PROJ/GDAL vars, SSL_CERT_DIR) lives in
     # subprocess_utils; install-specific extras are layered on top here.
     env = _get_base_clean_env()
+
+    # Contain package-manager caches and build temp on the CACHE_DIR volume so
+    # the disk preflight actually covers the whole install (see the helper).
+    _apply_cache_containment(env)
 
     # Skip sam2 CUDA extension compilation (Python fallback works fine)
     env["SAM2_BUILD_CUDA"] = "0"
@@ -2337,6 +2382,7 @@ def _get_verification_code(package_name: str) -> str:
 def _remove_torch_dirs(site_pkgs: str) -> None:
     """Remove torch/torchvision dirs from site-packages, including .dist-info
     and partial wheel leftovers, so a fresh reinstall starts clean."""
+    site_pkgs = _win_extended_path(site_pkgs)
     for pattern in ("torch*", "torchvision*"):
         for target in glob.glob(os.path.join(site_pkgs, pattern)):
             if os.path.isdir(target):
@@ -2381,7 +2427,14 @@ def verify_venv(
             )
 
             if result.returncode != 0:
-                error_detail = result.stderr[:300] if result.stderr else result.stdout[:300]
+                # A Python traceback puts the real cause on its LAST line, so
+                # keep the full text for classification and surface the TAIL (not
+                # the first 300 chars, which is only the traceback header and
+                # hid errors like "blocked by an application control policy" that
+                # live at the bottom, sending the user to a dead-end VC++
+                # message) (#bug-kees).
+                full_error = result.stderr or result.stdout or ""
+                error_detail = full_error[-400:] if full_error else ""
                 _log(
                     f"Package {package_name} verification failed: {error_detail}",
                     Qgis.MessageLevel.Warning
@@ -2390,7 +2443,7 @@ def verify_venv(
                 # Non-essential packages (e.g. pandas) are not used by the
                 # plugin. A failure here is usually a missing Visual C++
                 # Redistributable that a reinstall cannot fix, so don't block
-                # the whole install — warn and move on. (#66)
+                # the whole install - warn and move on. (#66)
                 if package_name in NON_ESSENTIAL_PACKAGES:
                     _log(
                         f"Package {package_name} is not required by the plugin; "
@@ -2401,9 +2454,23 @@ def verify_venv(
                     )
                     continue
 
+                # Security-policy / antivirus block (AppLocker, WDAC, corporate
+                # application-control, quarantined file): the library is present
+                # but blocked from loading, so the fix is to whitelist the
+                # folder, NOT to reinstall or install a VC++ runtime. Checked
+                # BEFORE the DLL branch, which the same "DLL load failed" text
+                # would otherwise trigger (#bug-kees).
+                if _is_antivirus_error(full_error):
+                    _log(_get_pip_antivirus_help(venv_dir), Qgis.MessageLevel.Warning)
+                    return False, (
+                        f"Package {package_name} is blocked by a security policy "
+                        "(antivirus, AppLocker or application control).\n\n"
+                        f"{_get_pip_antivirus_help(venv_dir)}"
+                    )
+
                 # DLL init error (WinError 1114) - try force-reinstall first,
                 # as a conflicting DLL from another Python install may be the cause
-                if _is_dll_init_error(error_detail):
+                if _is_dll_init_error(full_error):
                     _log(
                         f"DLL init error for {package_name}, attempting "
                         "force-reinstall...",
@@ -2520,7 +2587,7 @@ def verify_venv(
                     )
 
                 # Detect broken C extensions (antivirus may have quarantined .pyd files)
-                error_lower = error_detail.lower()
+                error_lower = full_error.lower()
                 broken_markers = [
                     "no module named", "_libs",
                     "dll load failed", "importerror",
@@ -2580,7 +2647,7 @@ def verify_venv(
                     except Exception:
                         pass  # nosec B110
                     # Still broken after reinstall - check for AppLocker
-                    detail_lower = error_detail.lower()
+                    detail_lower = full_error.lower()
                     applocker_markers = [
                         "applocker", "application control",
                         "blocked by your organization",
@@ -2734,51 +2801,68 @@ def create_venv_and_install(
     - 18-95%:  Install packages (~800MB)
     - 95-100%: Verify installation
     """
-    # Fail fast on platform/Python combinations that have no AI engine build,
-    # before spending minutes downloading a Python that cannot install torch.
-    from .model_config import macos_intel_unsupported_python
-    if macos_intel_unsupported_python():
-        from .pip_diagnostics import get_macos_intel_help
-        hint = get_macos_intel_help()
-        _log(hint, Qgis.MessageLevel.Critical)
-        return False, hint
-
-    # Disk space pre-flight: torch and its dependencies need several GB.
-    min_free_gb = 4.0
-    try:
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        free_gb = shutil.disk_usage(CACHE_DIR).free / (1024 ** 3)
-    except OSError:
-        # Let the writability check inside the install flow report the real error
-        free_gb = None
-    if free_gb is not None and free_gb < min_free_gb:
-        hint = (
-            f"Not enough free disk space to install dependencies: "
-            f"{free_gb:.1f} GB available at {CACHE_DIR}, "
-            f"at least {min_free_gb:.0f} GB is required.\n\n"
-            "Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR "
-            "environment variable to a directory on a larger drive, "
-            "then restart QGIS."
+    # Cross-process install lock (try-once, never blocks the GUI). CACHE_DIR is
+    # shared across QGIS instances/profiles, so a second window installing at
+    # the same time would rmtree the venv this one is building. If another LIVE
+    # process holds the lock, report it through the normal failure channel and
+    # bail out untouched. Everything below (preflight, marker-triggered
+    # cleanup, venv rebuild) then runs while we exclusively hold the lock.
+    lock = InstallLock(INSTALL_LOCK_FILE)
+    if not lock.acquire():
+        busy = (
+            "Another QGIS window is installing the AI components. "
+            "Wait for it to finish, then try again."
         )
-        _log(hint, Qgis.MessageLevel.Critical)
-        return False, hint
+        _log(busy, Qgis.MessageLevel.Warning)
+        return False, busy
 
-    # A leftover marker means QGIS was killed mid-install: the venv may be
-    # half-built yet pass superficial checks, so rebuild it from scratch.
-    if _install_marker_present():
-        _log(
-            "Previous installation was interrupted, "
-            "recreating the virtual environment...",
-            Qgis.MessageLevel.Warning)
-        _cleanup_partial_venv(VENV_DIR)
-
-    _write_install_marker()
     try:
-        return _create_venv_and_install(progress_callback, cancel_check)
+        # Disk space pre-flight. Package-manager caches and build temp are now
+        # contained under CACHE_DIR for the install subprocesses (see
+        # _get_clean_env_for_venv), so this single measurement covers the whole
+        # install on one volume: the extracted venv (torch dominates, ~3 GB) +
+        # the retained download cache (compressed wheels, up to ~1.5 GB when
+        # pip is used since it does not hardlink from cache) + transient
+        # extraction temp (~0.5 GB). 5 GB covers that with a small margin.
+        min_free_gb = 5.0
+        try:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            free_gb = shutil.disk_usage(CACHE_DIR).free / (1024 ** 3)
+        except OSError:
+            # Let the writability check inside the install flow report the real error
+            free_gb = None
+        if free_gb is not None and free_gb < min_free_gb:
+            hint = (
+                f"Not enough free disk space to install dependencies: "
+                f"{free_gb:.1f} GB available at {CACHE_DIR}, "
+                f"at least {min_free_gb:.0f} GB is required.\n\n"
+                "Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR "
+                "environment variable to a directory on a larger drive, "
+                "then restart QGIS."
+            )
+            _log(hint, Qgis.MessageLevel.Critical)
+            return False, hint
+
+        # A leftover marker means QGIS was killed mid-install: the venv may be
+        # half-built yet pass superficial checks, so rebuild it from scratch.
+        # Safe to rmtree here because we hold the lock, so no other live
+        # process can be building this venv right now.
+        if _install_marker_present():
+            _log(
+                "Previous installation was interrupted, "
+                "recreating the virtual environment...",
+                Qgis.MessageLevel.Warning)
+            _cleanup_partial_venv(VENV_DIR)
+
+        _write_install_marker()
+        try:
+            return _create_venv_and_install(progress_callback, cancel_check)
+        finally:
+            # Any normal return or exception here is reported to the user; the
+            # marker only needs to survive a hard crash, where finally never runs.
+            _clear_install_marker()
     finally:
-        # Any normal return or exception here is reported to the user; the
-        # marker only needs to survive a hard crash, where finally never runs.
-        _clear_install_marker()
+        lock.release()
 
 
 def _create_venv_and_install(
@@ -2803,7 +2887,7 @@ def _create_venv_and_install(
     try:
         os.makedirs(CACHE_DIR, exist_ok=True)
         test_file = os.path.join(CACHE_DIR, ".write_test")
-        with open(test_file, "w", encoding="utf-8", errors="replace") as f:
+        with open(test_file, "w", encoding="utf-8") as f:
             f.write("ok")
         os.remove(test_file)
     except OSError as e:
@@ -2938,10 +3022,7 @@ def _create_venv_and_install(
     if venv_exists() and _venv_is_functional():
         _log("Virtual environment already exists", Qgis.MessageLevel.Info)
         if progress_callback:
-            # Interrupted installs land here on retry: tell the user the
-            # previous progress is kept so cancelling does not feel fatal.
-            progress_callback(
-                18, "Resuming installation (already-installed packages are skipped)")
+            progress_callback(18, "Virtual environment ready")
     else:
         if venv_exists():
             _log(
@@ -2997,7 +3078,7 @@ def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
     """
     Fast filesystem-based check that packages exist in the venv site-packages.
 
-    Does NOT spawn subprocesses — safe to call from the main thread.
+    Does NOT spawn subprocesses - safe to call from the main thread.
     Checks for known package directories/files in site-packages.
     """
     if venv_dir is None:
@@ -3025,18 +3106,6 @@ def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
             _log(f"Quick check: {package_name} not found at {pkg_dir}", Qgis.MessageLevel.Warning)
             return False, f"Package {package_name} not found"
 
-    # torch is the package most likely to be left half-deleted by an
-    # interrupted upgrade (its import dir survives but the metadata is gone).
-    # A present import dir with a missing dist-info/RECORD means a broken
-    # install that imports inconsistently; force a reinstall instead.
-    import glob as _glob
-    if any(name == "torch" for name, _spec in REQUIRED_PACKAGES):
-        records = _glob.glob(os.path.join(site_packages, "torch-*.dist-info", "RECORD"))
-        if not records:
-            _log("Quick check: torch present but its dist-info/RECORD is missing "
-                 "(half-deleted install)", Qgis.MessageLevel.Warning)
-            return False, "Package torch is incomplete (missing metadata)"
-
     _log(f"Quick check: all packages found in {site_packages}",
          Qgis.MessageLevel.Info)
     return True, "All packages found"
@@ -3059,11 +3128,14 @@ def get_venv_status() -> tuple[bool, str]:
              Qgis.MessageLevel.Warning)
         return False, "Previous installation was interrupted"
 
-    # Check Python standalone (skip on NixOS where system Python is used)
-    from .python_manager import is_nixos
-    if not standalone_python_exists() and not is_nixos():
-        _log("get_venv_status: standalone Python not found", Qgis.MessageLevel.Info)
-        return False, "Dependencies not installed"
+    # Check Python standalone (skip where a matching system Python is used
+    # instead, e.g. NixOS or other Linux where the standalone build cannot
+    # run: musl/old glibc, sandboxed Flatpak/Snap)
+    if not standalone_python_exists():
+        python3 = shutil.which("python3") if sys.platform == "linux" else None
+        if not (python3 and _system_python_matches_target(python3)):
+            _log("get_venv_status: standalone Python not found", Qgis.MessageLevel.Info)
+            return False, "Dependencies not installed"
 
     # Check venv
     if not venv_exists():

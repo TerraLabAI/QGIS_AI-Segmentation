@@ -2,21 +2,25 @@ from __future__ import annotations
 
 from qgis.core import QgsPointXY
 from qgis.gui import QgsMapCanvas, QgsMapTool, QgsVertexMarker
-from qgis.PyQt.QtCore import QT_VERSION, Qt, pyqtSignal
+from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QCursor
+
+from ..core.qt_compat import event_pos
 
 
 class AISegmentationMapTool(QgsMapTool):
-    """Map tool for AI segmentation with positive/negative point prompts.
+    """Map tool for Manual AI segmentation with point prompts.
 
-    Shortcuts:
-    - G: Start segmentation (when not active)
-    - Left click: Select this element (add positive point)
-    - Right click: Refine selection (add negative point)
-    - Ctrl+Z: Undo last point
-    - S: Save mask (Batch mode only)
-    - Enter: Export to layer
-    - Hold Space + move: Pan the map (release to resume)
+    Keyboard/mouse map while the tool is active (the dock's "?" menu >
+    Keyboard shortcuts shows the full plugin map):
+    - Left click: add area (positive point)
+    - Right click: remove area (negative point)
+    - Ctrl/Cmd+Z or Backspace: undo the last point
+    - S: save the current polygon
+    - Enter: export the saved polygons to a layer
+    - Escape: stop the session (confirms when work would be discarded)
+    - Delete (or Ctrl/Cmd+Backspace): delete the active object
+    - Hold Space + move, arrow keys, or middle mouse drag: pan the map
     """
 
     positive_click = pyqtSignal(QgsPointXY)
@@ -52,7 +56,7 @@ class AISegmentationMapTool(QgsMapTool):
         self._active = False
         self._space_panning = False
         self._pan_last_point = None
-        # Don't clear markers here — the plugin decides whether to keep them
+        # Don't clear markers here - the plugin decides whether to keep them
         # (e.g. when user is asked to confirm leaving segmentation mode).
         self.tool_deactivated.emit()
 
@@ -107,9 +111,6 @@ class AISegmentationMapTool(QgsMapTool):
         except RuntimeError:
             pass
 
-    def get_marker_count(self) -> int:
-        return len(self._markers)
-
     def canvasPressEvent(self, event):
         if not self._active:
             return
@@ -118,7 +119,7 @@ class AISegmentationMapTool(QgsMapTool):
         if self._space_panning:
             return
 
-        pt = event.position().toPoint() if QT_VERSION >= 0x060000 else event.pos()
+        pt = event_pos(event)
         point = self.toMapCoordinates(pt)
 
         if event.button() == Qt.MouseButton.LeftButton:
@@ -132,7 +133,7 @@ class AISegmentationMapTool(QgsMapTool):
         if not self._space_panning:
             return
 
-        current = event.position().toPoint() if QT_VERSION >= 0x060000 else event.pos()
+        current = event_pos(event)
         if self._pan_last_point is not None:
             start_map = self.toMapCoordinates(self._pan_last_point)
             end_map = self.toMapCoordinates(current)
@@ -146,14 +147,14 @@ class AISegmentationMapTool(QgsMapTool):
         self._pan_last_point = current
 
     def start_space_pan(self):
-        """Called when Space is pressed — enable temporary pan mode."""
+        """Called when Space is pressed - enable temporary pan mode."""
         self._space_panning = True
         # Record current cursor position as pan reference
         self._pan_last_point = self.canvas.mapFromGlobal(QCursor.pos())
         self.canvas.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
 
     def stop_space_pan(self):
-        """Called when Space is released — restore segmentation mode."""
+        """Called when Space is released - restore segmentation mode."""
         self._space_panning = False
         self._pan_last_point = None
         if self._active:
