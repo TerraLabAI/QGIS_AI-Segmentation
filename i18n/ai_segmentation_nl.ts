@@ -1,0 +1,6750 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TS version="2.1" language="nl_NL">
+<context>
+    <name>AISegmentation</name>
+    <message>
+        <source>Show them</source>
+        <translation>Toon ze</translation>
+    </message>
+    <message>
+        <source>Save them</source>
+        <translation>Opslaan</translation>
+    </message>
+    <message>
+        <source>Discard</source>
+        <translation>Verwerpen</translation>
+    </message>
+    <message>
+        <source>Saving keeps them on the map.</source>
+        <translation>Door ze op te slaan, blijven ze op de kaart.</translation>
+    </message>
+    <message>
+        <source>AI Segmentation {version} is out</source>
+        <translation>AI Segmentation {version} is beschikbaar</translation>
+    </message>
+    <message>
+        <source>Later</source>
+        <translation>Later</translation>
+    </message>
+    <message>
+        <source>Lower precision to fit</source>
+        <translation>Precisie verlagen</translation>
+    </message>
+    <message>
+        <source>Sweeps the same zone in a coarser grid, so it fits in one run.</source>
+        <translation>Doorzoekt hetzelfde gebied met een grover raster, zodat het in één run past.</translation>
+    </message>
+    <message>
+        <source>AI Segmentation {version} is available.</source>
+        <translation>AI Segmentation {version} is beschikbaar.</translation>
+    </message>
+    <message>
+        <source>The update applies once QGIS reloads the plugin. Restart QGIS if the panel misbehaves after it.</source>
+        <translation>De update wordt toegepast zodra QGIS de plugin opnieuw laadt. Start QGIS opnieuw als het paneel daarna niet goed werkt.</translation>
+    </message>
+    <message>
+        <source>Working in a team?</source>
+        <translation>Werkt u in een team?</translation>
+    </message>
+    <message>
+        <source>Custom quota, team seats, invoices, or a custom AI solution.</source>
+        <translation>Aangepast quotum, teamlicenties, facturen of een aangepaste AI-oplossing.</translation>
+    </message>
+    <message>
+        <source>Book a call</source>
+        <translation>Plan een gesprek</translation>
+    </message>
+    <message>
+        <source>Need more than Pro?</source>
+        <translation>Meer nodig dan Pro?</translation>
+    </message>
+    <message>
+        <source>From {price}/month, {days}-day free trial.</source>
+        <translation>Vanaf {price}/maand, {days} dagen gratis proberen.</translation>
+    </message>
+    <message>
+        <source>From {price}/month.</source>
+        <translation>Vanaf {price}/maand.</translation>
+    </message>
+    <message>
+        <source>No matches in this zone. Try one plain word for the object, "building" and not "building footprint", and a smaller zone.</source>
+        <translation>Geen overeenkomsten in dit gebied. Probeer één eenvoudig woord voor het object, "gebouw" en niet "gebouwvoetafdruk", en een kleiner gebied.</translation>
+    </message>
+    <message>
+        <source>Opening the plans page</source>
+        <translation>De abonnementenpagina openen</translation>
+    </message>
+    <message>
+        <source>See all plans</source>
+        <translation>Alle abonnementen bekijken</translation>
+    </message>
+    <message>
+        <source>Saving...</source>
+        <translation>Opslaan...</translation>
+    </message>
+    <message>
+        <source>Your selection is sent to our servers in Europe {dot} {privacy}</source>
+        <translation>Je selectie wordt naar onze servers in Europa gestuurd {dot} {privacy}</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normaal</translation>
+    </message>
+    <message>
+        <source>Confidence</source>
+        <translation>Betrouwbaarheid</translation>
+    </message>
+    <message>
+        <source>Outline</source>
+        <translation>Omtrek</translation>
+    </message>
+    <message>
+        <source>Retry</source>
+        <translation>Opnieuw proberen</translation>
+    </message>
+    <message>
+        <source>Click to enlarge</source>
+        <translation>Klik om te vergroten</translation>
+    </message>
+    <message>
+        <source>This is exactly what the AI uses: your object with a little of its surroundings.</source>
+        <translation>Dit is precies wat de AI gebruikt: je object met een klein deel van de omgeving.</translation>
+    </message>
+    <message>
+        <source>Describe what to find</source>
+        <translation>Beschrijf wat je wilt vinden</translation>
+    </message>
+    <message>
+        <source>Exclude a look-alike</source>
+        <translation>Gelijkende uitsluiten</translation>
+    </message>
+    <message>
+        <source>Too generic to name. Clear the box to search from your example alone, or type a concrete object.</source>
+        <translation>Te algemeen om te benoemen. Maak het veld leeg om alleen op basis van je voorbeeld te zoeken, of voer een concreet object in.</translation>
+    </message>
+    <message>
+        <source>Mark an object to find more like it.</source>
+        <translation>Markeer een object om er meer zoals dit te vinden.</translation>
+    </message>
+    <message>
+        <source>Mark a false positive to drop things like it.</source>
+        <translation>Markeer een fout-positief om vergelijkbare objecten te verwijderen.</translation>
+    </message>
+    <message>
+        <source>Finish or exit the review to switch modes.</source>
+        <translation>Voltooi of verlaat de beoordeling om van modus te wisselen.</translation>
+    </message>
+    <message>
+        <source>Detection</source>
+        <translation>Detectie</translation>
+    </message>
+    <message>
+        <source>Confidence:</source>
+        <translation>Betrouwbaarheid:</translation>
+    </message>
+    <message>
+        <source>Minimum confidence to keep a detected object. Lower finds more objects but may add false positives; raise it for cleaner results on large, distinct features.</source>
+        <translation>Minimale betrouwbaarheid om een gedetecteerd object te behouden. Lager vindt meer objecten maar kan fout-positieven toevoegen; hoger geeft schonere resultaten bij grote, duidelijk herkenbare objecten.</translation>
+    </message>
+    <message>
+        <source>Dependencies</source>
+        <translation>Afhankelijkheden</translation>
+    </message>
+    <message>
+        <source>Local AI model files stored on this computer.</source>
+        <translation>Lokale AI-modelbestanden die op deze computer zijn opgeslagen.</translation>
+    </message>
+    <message>
+        <source>On disk</source>
+        <translation>Op schijf</translation>
+    </message>
+    <message>
+        <source>Not installed</source>
+        <translation>Niet geïnstalleerd</translation>
+    </message>
+    <message>
+        <source>Open folder</source>
+        <translation>Map openen</translation>
+    </message>
+    <message>
+        <source>Accept the Terms and Privacy Policy to enable segmentation.</source>
+        <translation>Accepteer de Algemene Voorwaarden en het Privacybeleid om segmentatie in te schakelen.</translation>
+    </message>
+    <message>
+        <source>I agree to the &lt;a href="{terms}"&gt;Terms&lt;/a&gt; and &lt;a href="{privacy}"&gt;Privacy Policy&lt;/a&gt;</source>
+        <translation>Ik ga akkoord met de &lt;a href="{terms}"&gt;Algemene Voorwaarden&lt;/a&gt; en het &lt;a href="{privacy}"&gt;Privacybeleid&lt;/a&gt;</translation>
+    </message>
+    <message>
+        <source>No valid polygons could be created from the selection. Try adjusting the refine settings or making a new selection.</source>
+        <translation>Er konden geen geldige polygonen worden gemaakt van de selectie. Pas de verfijningsinstellingen aan of maak een nieuwe selectie.</translation>
+    </message>
+    <message>
+        <source>Repairing Installation</source>
+        <translation>Installatie herstellen</translation>
+    </message>
+    <message>
+        <source>Repairing installation...</source>
+        <translation>Installatie wordt hersteld...</translation>
+    </message>
+    <message>
+        <source>Restart QGIS Required</source>
+        <translation>QGIS-herstart vereist</translation>
+    </message>
+    <message>
+        <source>Something went wrong with this click, so it was not applied. Please try again.</source>
+        <translation>Er is iets misgegaan met deze klik, waardoor deze niet is toegepast. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The Python runtime used by the AI engine is damaged (this can be caused by a disk cleanup tool or antivirus). It will now be repaired automatically. Please try your selection again once the repair finishes.</source>
+        <translation>De Python-runtime die door de AI-engine wordt gebruikt is beschadigd (dit kan worden veroorzaakt door een schijfopruimingstool of antivirussoftware). Deze wordt nu automatisch hersteld. Probeer je selectie opnieuw zodra het herstel is voltooid.</translation>
+    </message>
+    <message>
+        <source>Your polygons were added as a temporary layer so nothing is lost.</source>
+        <translation>Je polygonen zijn toegevoegd als een tijdelijke laag, zodat er niets verloren gaat.</translation>
+    </message>
+    <message>
+        <source>Could not write to {name}. Saved to a separate file instead.</source>
+        <translation>Kon niet schrijven naar {name}. In plaats daarvan opgeslagen in een apart bestand.</translation>
+    </message>
+    <message>
+        <source>Click Install to set up AI Segmentation</source>
+        <translation>Klik op Installeren om AI Segmentation in te stellen</translation>
+    </message>
+    <message>
+        <source>Installing AI Segmentation...</source>
+        <translation>AI Segmentation wordt geïnstalleerd...</translation>
+    </message>
+    <message>
+        <source>Verifying installation...</source>
+        <translation>Installatie wordt gecontroleerd...</translation>
+    </message>
+    <message>
+        <source>Detecting device...</source>
+        <translation>Apparaat wordt gedetecteerd...</translation>
+    </message>
+    <message>
+        <source>Install path: {}</source>
+        <translation>Installatiepad: {}</translation>
+    </message>
+    <message>
+        <source>To install in a different folder, set the environment variable AI_SEGMENTATION_CACHE_DIR:</source>
+        <translation>Om te installeren in een andere map, stel de omgevingsvariabele AI_SEGMENTATION_CACHE_DIR in:</translation>
+    </message>
+    <message>
+        <source>1. Open Windows Settings &gt; System &gt; Advanced system settings
+2. Click 'Environment Variables'
+3. Under 'User variables', click 'New'
+4. Variable name: AI_SEGMENTATION_CACHE_DIR
+5. Variable value: the folder path you want to use
+6. Click OK and restart QGIS</source>
+        <translation>1. Open Windows-instellingen &gt; Systeem &gt; Geavanceerde systeeminstellingen
+2. Klik op 'Omgevingsvariabelen'
+3. Klik onder 'Gebruikersvariabelen' op 'Nieuw'
+4. Variabelenaam: AI_SEGMENTATION_CACHE_DIR
+5. Variabelewaarde: het mappad dat je wilt gebruiken
+6. Klik op OK en start QGIS opnieuw</translation>
+    </message>
+    <message>
+        <source>Run this command in Terminal, then restart QGIS:
+
+launchctl setenv AI_SEGMENTATION_CACHE_DIR /your/path</source>
+        <translation>Voer deze opdracht uit in Terminal en start QGIS daarna opnieuw op:
+
+launchctl setenv AI_SEGMENTATION_CACHE_DIR /jouw/pad</translation>
+    </message>
+    <message>
+        <source>Add this line to your ~/.bashrc or ~/.profile, then restart QGIS:
+
+export AI_SEGMENTATION_CACHE_DIR=/your/path</source>
+        <translation>Voeg deze regel toe aan je ~/.bashrc of ~/.profile en start QGIS daarna opnieuw op:
+
+export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
+    </message>
+    <message>
+        <source>Checking...</source>
+        <translation>Controleren...</translation>
+    </message>
+    <message>
+        <source>Install</source>
+        <translation>Installeren</translation>
+    </message>
+    <message>
+        <source>Update</source>
+        <translation>Bijwerken</translation>
+    </message>
+    <message>
+        <source>Downloading AI model...</source>
+        <translation>AI-model wordt gedownload...</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Annuleren</translation>
+    </message>
+    <message>
+        <source>Cancel installation</source>
+        <translation>Installatie annuleren</translation>
+    </message>
+    <message>
+        <source>Are you sure you want to cancel the installation?</source>
+        <translation>Weet je zeker dat je de installatie wilt annuleren?</translation>
+    </message>
+    <message>
+        <source>Installation cancelled</source>
+        <translation>Installatie geannuleerd</translation>
+    </message>
+    <message>
+        <source>Installation failed</source>
+        <translation>Installatie mislukt</translation>
+    </message>
+    <message>
+        <source>Verification failed:</source>
+        <translation>Verificatie mislukt:</translation>
+    </message>
+    <message>
+        <source>Verification Failed</source>
+        <translation>Verificatie mislukt</translation>
+    </message>
+    <message>
+        <source>Unknown error</source>
+        <translation>Onbekende fout</translation>
+    </message>
+    <message>
+        <source>Installation Failed</source>
+        <translation>Installatie mislukt</translation>
+    </message>
+    <message>
+        <source>Update QGIS to 3.34+ for the latest AI model</source>
+        <translation>Werk QGIS bij naar 3.34+ voor het nieuwste AI-model</translation>
+    </message>
+    <message>
+        <source>Download Failed</source>
+        <translation>Downloaden mislukt</translation>
+    </message>
+    <message>
+        <source>Failed to download model:</source>
+        <translation>Downloaden van model mislukt:</translation>
+    </message>
+    <message>
+        <source>AI Segmentation by TerraLab</source>
+        <translation>AI Segmentation by TerraLab</translation>
+    </message>
+    <message>
+        <source>Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)</source>
+        <translation>Selecteer een rasterlaag (GeoTIFF, WMS, XYZ-tegels, enz.)</translation>
+    </message>
+    <message>
+        <source>Save polygon</source>
+        <translation>Polygoon opslaan</translation>
+    </message>
+    <message>
+        <source>Undo last point</source>
+        <translation>Laatste punt ongedaan maken</translation>
+    </message>
+    <message>
+        <source>Stop segmentation</source>
+        <translation>Segmentatie stoppen</translation>
+    </message>
+    <message>
+        <source>Segmentation</source>
+        <translation>Segmentatie</translation>
+    </message>
+    <message>
+        <source>Space</source>
+        <translation>Spatie</translation>
+    </message>
+    <message>
+        <source>Hold and move to pan the map</source>
+        <translation>Ingedrukt houden en bewegen om de kaart te verschuiven</translation>
+    </message>
+    <message>
+        <source>The AI model works best on one element at a time.</source>
+        <translation>Het AI-model werkt het best met één element tegelijk.</translation>
+    </message>
+    <message>
+        <source>Save your polygon before selecting the next element.</source>
+        <translation>Sla je polygoon op voordat je het volgende element selecteert.</translation>
+    </message>
+    <message>
+        <source>Export polygon to a layer</source>
+        <translation>Polygoon exporteren naar een laag</translation>
+    </message>
+    <message>
+        <source>Export {count} polygons to a layer</source>
+        <translation>{count} polygonen exporteren naar een laag</translation>
+    </message>
+    <message>
+        <source>Refine selection</source>
+        <translation>Selectie verfijnen</translation>
+    </message>
+    <message>
+        <source>Fill interior holes in the selection</source>
+        <translation>Interne gaten in de selectie opvullen</translation>
+    </message>
+    <message>
+        <source>Shape</source>
+        <translation>Vorm</translation>
+    </message>
+    <message>
+        <source>Size</source>
+        <translation>Grootte</translation>
+    </message>
+    <message>
+        <source>Outline</source>
+        <translation>Contour</translation>
+    </message>
+    <message>
+        <source>Left-click to select</source>
+        <translation>Klik met de linkermuisknop om te selecteren</translation>
+    </message>
+    <message>
+        <source>Left-click to add more</source>
+        <translation>Klik met de linkermuisknop om meer toe te voegen</translation>
+    </message>
+    <message>
+        <source>Right-click to exclude from selection</source>
+        <translation>Klik met de rechtermuisknop om uit te sluiten van de selectie</translation>
+    </message>
+    <message>
+        <source>Invalid Layer</source>
+        <translation>Ongeldige laag</translation>
+    </message>
+    <message>
+        <source>Not Ready</source>
+        <translation>Niet gereed</translation>
+    </message>
+    <message>
+        <source>Layer Creation Failed</source>
+        <translation>Aanmaken van laag mislukt</translation>
+    </message>
+    <message>
+        <source>Could not create the output layer.</source>
+        <translation>Kan de uitvoerlaag niet aanmaken.</translation>
+    </message>
+    <message>
+        <source>Export Failed</source>
+        <translation>Export mislukt</translation>
+    </message>
+    <message>
+        <source>Could not save layer to file:</source>
+        <translation>Kan laag niet opslaan naar bestand:</translation>
+    </message>
+    <message>
+        <source>You have {count} unsaved polygon(s).</source>
+        <translation>U hebt {count} niet-opgeslagen polygoon(en).</translation>
+    </message>
+    <message>
+        <source>Change Layer?</source>
+        <translation>Laag wijzigen?</translation>
+    </message>
+    <message>
+        <source>Stop Segmentation?</source>
+        <translation>Segmentatie stoppen?</translation>
+    </message>
+    <message>
+        <source>This will discard {count} polygon(s).</source>
+        <translation>Hierdoor verwijdert u {count} polygoon(en).</translation>
+    </message>
+    <message>
+        <source>Do you want to continue?</source>
+        <translation>Wilt u doorgaan?</translation>
+    </message>
+    <message>
+        <source>Edit saved polygon</source>
+        <translation>Opgeslagen polygoon bewerken</translation>
+    </message>
+    <message>
+        <source>Warning: you are about to edit an already saved polygon.</source>
+        <translation>Waarschuwing: u staat op het punt een reeds opgeslagen polygoon te bewerken.</translation>
+    </message>
+    <message>
+        <source>Contact us</source>
+        <translation>Neem contact met ons op</translation>
+    </message>
+    <message>
+        <source>Bug, question, feature request?</source>
+        <translation>Bug, vraag of functieverzoek?</translation>
+    </message>
+    <message>
+        <source>Copy email address</source>
+        <translation>E-mailadres kopiëren</translation>
+    </message>
+    <message>
+        <source>buildings</source>
+        <translation>gebouwen</translation>
+    </message>
+    <message>
+        <source>or</source>
+        <translation>of</translation>
+    </message>
+    <message>
+        <source>Book a video call</source>
+        <translation>Plan een videogesprek</translation>
+    </message>
+    <message>
+        <source>Tutorial</source>
+        <translation>Tutorial</translation>
+    </message>
+    <message>
+        <source>Settings</source>
+        <translation>Instellingen</translation>
+    </message>
+    <message>
+        <source>Terms</source>
+        <translation>Voorwaarden</translation>
+    </message>
+    <message>
+        <source>Privacy</source>
+        <translation>Privacy</translation>
+    </message>
+    <message>
+        <source>Segment elements on raster images using AI</source>
+        <translation>Segmenteer elementen op rasterafbeeldingen met AI</translation>
+    </message>
+    <message>
+        <source>Copy your logs with the button below and send them to our support email.</source>
+        <translation>Kopieer uw logboeken met de knop hieronder en stuur ze naar ons support-e-mailadres.</translation>
+    </message>
+    <message>
+        <source>We'll get this fixed for you :)</source>
+        <translation>We lossen dit voor u op :)</translation>
+    </message>
+    <message>
+        <source>1. Click to copy logs</source>
+        <translation>1. Klik om logs te kopiëren</translation>
+    </message>
+    <message>
+        <source>2. Click to send to {}</source>
+        <translation>2. Klik om te verzenden naar {}</translation>
+    </message>
+    <message>
+        <source>Open email client</source>
+        <translation>E-mailclient openen</translation>
+    </message>
+    <message>
+        <source>Copied!</source>
+        <translation>Gekopieerd!</translation>
+    </message>
+    <message>
+        <source>SSL Certificate Error</source>
+        <translation>SSL-certificaatfout</translation>
+    </message>
+    <message>
+        <source>Installation Blocked</source>
+        <translation>Installatie geblokkeerd</translation>
+    </message>
+    <message>
+        <source>Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.</source>
+        <translation>De klik ligt buiten het raster '{layer}'. Stop eerst de huidige segmentatie om een ander raster te kunnen segmenteren.</translation>
+    </message>
+    <message>
+        <source>trees</source>
+        <translation>bomen</translation>
+    </message>
+    <message>
+        <source>{ext} format is not directly supported. GDAL is not available.
+Please convert your raster to GeoTIFF (.tif) before using AI Segmentation.</source>
+        <translation>{ext}-indeling wordt niet direct ondersteund. GDAL is niet beschikbaar.
+Zet uw raster om naar GeoTIFF (.tif) voordat u AI Segmentation gebruikt.</translation>
+    </message>
+    <message>
+        <source>Cannot open {ext} file. The format may not be supported by your QGIS installation.
+Please convert your raster to GeoTIFF (.tif) before using AI Segmentation.</source>
+        <translation>Kan het {ext}-bestand niet openen. De indeling wordt mogelijk niet ondersteund door uw QGIS-installatie.
+Zet uw raster om naar GeoTIFF (.tif) voordat u AI Segmentation gebruikt.</translation>
+    </message>
+    <message>
+        <source>Failed to read {ext} file: {error}
+Please convert your raster to GeoTIFF (.tif) manually.</source>
+        <translation>Kan het {ext}-bestand niet lezen: {error}
+Zet uw raster handmatig om naar GeoTIFF (.tif).</translation>
+    </message>
+    <message>
+        <source>PyTorch cannot load on Windows</source>
+        <translation>PyTorch kan niet worden geladen op Windows</translation>
+    </message>
+    <message>
+        <source>The plugin requires Visual C++ Redistributables to run PyTorch.
+
+Please download and install:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+After installation, restart QGIS and try again.</source>
+        <translation>Deze plugin heeft Visual C++ Redistributables nodig om PyTorch te kunnen uitvoeren.
+
+Download en installeer:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
+    </message>
+    <message>
+        <source>Segmentation failed</source>
+        <translation>Segmentatie mislukt</translation>
+    </message>
+    <message>
+        <source>Layer data provider is not available.</source>
+        <translation>De gegevensprovider van de laag is niet beschikbaar.</translation>
+    </message>
+    <message>
+        <source>Failed to fetch tiles from the online layer. Check your network connection.</source>
+        <translation>Kan geen tegels ophalen van de online laag. Controleer uw netwerkverbinding.</translation>
+    </message>
+    <message>
+        <source>Crop Error</source>
+        <translation>Fout bij uitsnijden</translation>
+    </message>
+    <message>
+        <source>Encoding Error</source>
+        <translation>Coderingsfout</translation>
+    </message>
+    <message>
+        <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
+        <translation>Losse onderdelen gedetecteerd. Segmenteer voor de beste nauwkeurigheid één element per keer.</translation>
+    </message>
+    <message>
+        <source>Updating...</source>
+        <translation>Bijwerken...</translation>
+    </message>
+    <message>
+        <source>Missing Visual C++ Redistributable. Install it, restart your computer, then click Retry.</source>
+        <translation>Visual C++ Redistributable ontbreekt. Installeer deze, start uw computer opnieuw op en klik daarna op Opnieuw proberen.</translation>
+    </message>
+    <message>
+        <source>Retry</source>
+        <translation>Opnieuw proberen</translation>
+    </message>
+    <message>
+        <source>Loading AI model...</source>
+        <translation>AI-model laden...</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation>Gereed</translation>
+    </message>
+    <message>
+        <source>Model load failed</source>
+        <translation>Laden van model mislukt</translation>
+    </message>
+    <message>
+        <source>New here?</source>
+        <translation>Nieuw hier?</translation>
+    </message>
+    <message>
+        <source>Watch the tutorial</source>
+        <translation>Bekijk de tutorial</translation>
+    </message>
+    <message>
+        <source>Network Connection Problem</source>
+        <translation>Netwerkverbindingsprobleem</translation>
+    </message>
+    <message>
+        <source>Your connection appears unstable or blocked. Check: (1) your internet is working, (2) QGIS &gt; Settings &gt; Options &gt; Network has a proxy configured if you are on a corporate network, (3) your firewall allows connections to pypi.org and files.pythonhosted.org.</source>
+        <translation>Uw verbinding lijkt instabiel of geblokkeerd. Controleer: (1) of uw internet werkt, (2) of er in QGIS &gt; Instellingen &gt; Opties &gt; Netwerk een proxy is geconfigureerd als u op een zakelijk netwerk zit, (3) of uw firewall verbindingen met pypi.org en files.pythonhosted.org toestaat.</translation>
+    </message>
+    <message>
+        <source>Checking...</source>
+        <translation>Controleren...</translation>
+    </message>
+    <message>
+        <source>AI Edit</source>
+        <translation>AI Edit</translation>
+    </message>
+    <message>
+        <source>Generate imagery with AI on map zones (opens AI Edit plugin)</source>
+        <translation>Genereer beeldmateriaal met AI op kaartzones (opent de AI Edit-plugin)</translation>
+    </message>
+    <message>
+        <source>Right-click must be inside the current selection area.</source>
+        <translation>De rechtermuisklik moet binnen het huidige selectiegebied liggen.</translation>
+    </message>
+    <message>
+        <source>Account Settings</source>
+        <translation>Accountinstellingen</translation>
+    </message>
+    <message>
+        <source>Loading account info...</source>
+        <translation>Accountgegevens laden...</translation>
+    </message>
+    <message>
+        <source>Model File Corrupted</source>
+        <translation>Modelbestand beschadigd</translation>
+    </message>
+    <message>
+        <source>Re-downloading Model</source>
+        <translation>Model opnieuw downloaden</translation>
+    </message>
+    <message>
+        <source>The AI model file was corrupted and is being re-downloaded. Please try your selection again once it finishes.</source>
+        <translation>Het AI-modelbestand was beschadigd en wordt opnieuw gedownload. Probeer uw selectie opnieuw zodra dit is voltooid.</translation>
+    </message>
+    <message>
+        <source>The AI model file is corrupted but could not be removed automatically. Please delete this folder and restart QGIS:</source>
+        <translation>Het AI-modelbestand is beschadigd, maar kon niet automatisch worden verwijderd. Verwijder deze map en start QGIS opnieuw:</translation>
+    </message>
+    <message>
+        <source>Segment your map with AI</source>
+        <translation>Segmenteer uw kaart met AI</translation>
+    </message>
+    <message>
+        <source>Sign in / Sign up to start</source>
+        <translation>Aanmelden / registreren om te starten</translation>
+    </message>
+    <message>
+        <source>Sign in via your browser to start using AI Segmentation</source>
+        <translation>Meld u aan via uw browser om AI Segmentation te gebruiken</translation>
+    </message>
+    <message>
+        <source>Open again</source>
+        <translation>Opnieuw openen</translation>
+    </message>
+    <message>
+        <source>Didn't open? Open the page again</source>
+        <translation>Niet geopend? Open de pagina opnieuw</translation>
+    </message>
+    <message>
+        <source>Sign-in timed out. Click Sign in to try again.</source>
+        <translation>Aanmelden is verlopen. Klik op Aanmelden om het opnieuw te proberen.</translation>
+    </message>
+    <message>
+        <source>Sign-in was cancelled in the browser. Click Sign in to try again.</source>
+        <translation>Aanmelden is geannuleerd in de browser. Klik op Aanmelden om het opnieuw te proberen.</translation>
+    </message>
+    <message>
+        <source>Unexpected response from the server. Please try again.</source>
+        <translation>Onverwachte reactie van de server. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>This account has no active AI Segmentation plan. Reactivate it on terra-lab.ai, then click Sign in again.</source>
+        <translation>Dit account heeft geen actief AI Segmentation-abonnement. Activeer het opnieuw op terra-lab.ai en klik vervolgens op Aanmelden.</translation>
+    </message>
+    <message>
+        <source>Connecting AI Segmentation</source>
+        <translation>AI Segmentation verbinden</translation>
+    </message>
+    <message>
+        <source>Cancelling sign-in</source>
+        <translation>Aanmelden annuleren</translation>
+    </message>
+    <message>
+        <source>Help / Report a problem</source>
+        <translation>Help / Probleem melden</translation>
+    </message>
+    <message>
+        <source>Report a problem</source>
+        <translation>Probleem melden</translation>
+    </message>
+    <message>
+        <source>Connected</source>
+        <translation>Verbonden</translation>
+    </message>
+    <message>
+        <source>Sign out</source>
+        <translation>Afmelden</translation>
+    </message>
+    <message>
+        <source>Sign out of AI Segmentation?</source>
+        <translation>Afmelden bij AI Segmentation?</translation>
+    </message>
+    <message>
+        <source>You can sign back in anytime from QGIS.</source>
+        <translation>U kunt zich op elk moment opnieuw aanmelden vanuit QGIS.</translation>
+    </message>
+    <message>
+        <source>Active</source>
+        <translation>Actief</translation>
+    </message>
+    <message>
+        <source>Make this map presentation-ready</source>
+        <translation>Maak deze kaart presentatieklaar</translation>
+    </message>
+    <message>
+        <source>AI Edit: turn your imagery into presentation and planning visuals</source>
+        <translation>AI Edit: maak van uw beelden presentatie- en planningsvisuals</translation>
+    </message>
+    <message>
+        <source>Mode selection</source>
+        <translation>Modusselectie</translation>
+    </message>
+    <message>
+        <source>Stop the active segmentation before switching modes.</source>
+        <translation>Stop de actieve segmentatie voordat u van modus wisselt.</translation>
+    </message>
+    <message>
+        <source>Cancel the active detection before switching modes.</source>
+        <translation>Annuleer de actieve detectie voordat u van modus wisselt.</translation>
+    </message>
+    <message>
+        <source>Cancel the running detection first</source>
+        <translation>Annuleer eerst de lopende detectie</translation>
+    </message>
+    <message>
+        <source>Zone too large - reduce the selection area</source>
+        <translation>Zone te groot - verklein het selectiegebied</translation>
+    </message>
+    <message>
+        <source>Detect objects</source>
+        <translation>Objecten detecteren</translation>
+    </message>
+    <message>
+        <source>Cancel detection</source>
+        <translation>Detectie annuleren</translation>
+    </message>
+    <message>
+        <source>Detection {current}/{total}</source>
+        <translation>Detectie {current}/{total}</translation>
+    </message>
+    <message>
+        <source>Spot reserved · starting in ~{eta}</source>
+        <translation>Plek gereserveerd · start over ~{eta}</translation>
+    </message>
+    <message>
+        <source>{s} seconds</source>
+        <translation>{s} seconden</translation>
+    </message>
+    <message>
+        <source>{m} min</source>
+        <translation>{m} min</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections remaining</source>
+        <translation>{n} clouddetecties resterend</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detection(s) remaining</source>
+        <translation>{n} gratis clouddetectie(s) resterend</translation>
+    </message>
+    <message>
+        <source>{remaining} / {total} cloud detections</source>
+        <translation>{remaining} / {total} clouddetecties</translation>
+    </message>
+    <message>
+        <source>Auto detection (live)</source>
+        <translation>Automatische detectie (live)</translation>
+    </message>
+    <message>
+        <source>Preparing your zone...</source>
+        <translation>Je zone wordt voorbereid...</translation>
+    </message>
+    <message>
+        <source>Cancelling...</source>
+        <translation>Annuleren...</translation>
+    </message>
+    <message>
+        <source>Finishing the previous run, please wait a moment...</source>
+        <translation>De vorige run wordt afgerond, een moment geduld...</translation>
+    </message>
+    <message>
+        <source>Detection failed. Check your connection and try again.</source>
+        <translation>Detectie mislukt. Controleer uw verbinding en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Automatic detection is temporarily unavailable. Please try again later.</source>
+        <translation>Automatische detectie is tijdelijk niet beschikbaar. Probeer het later opnieuw.</translation>
+    </message>
+    <message>
+        <source>Draw a zone first. Automatic detection on online layers needs a zone.</source>
+        <translation>Teken eerst een zone. Automatische detectie op online lagen heeft een zone nodig.</translation>
+    </message>
+    <message>
+        <source>The zone is outside the selected raster layer. Pick the right layer or redraw the zone.</source>
+        <translation>De zone valt buiten de geselecteerde rasterlaag. Kies de juiste laag of teken de zone opnieuw.</translation>
+    </message>
+    <message>
+        <source>Less</source>
+        <translation>Minder</translation>
+    </message>
+    <message>
+        <source>More</source>
+        <translation>Meer</translation>
+    </message>
+    <message>
+        <source>Available when detection finishes</source>
+        <translation>Beschikbaar zodra de detectie is voltooid</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Uit</translation>
+    </message>
+    <message>
+        <source>No limit</source>
+        <translation>Geen limiet</translation>
+    </message>
+    <message>
+        <source>Hide detections smaller than this ground area. Use it to drop tiny noise blobs. 0 = keep all.</source>
+        <translation>Verberg detecties kleiner dan dit grondoppervlak. Gebruik dit om kleine ruisvlekken te verwijderen. 0 = alles behouden.</translation>
+    </message>
+    <message>
+        <source>Hide detections larger than this ground area. 0 = no limit.</source>
+        <translation>Verberg detecties groter dan dit grondoppervlak. 0 = geen limiet.</translation>
+    </message>
+    <message>
+        <source>Saved {n} polygon(s) to {name}</source>
+        <translation>{n} polygoon(en) opgeslagen in {name}</translation>
+    </message>
+    <message>
+        <source>Cannot reach the server. Check your internet connection.</source>
+        <translation>Kan de server niet bereiken. Controleer uw internetverbinding.</translation>
+    </message>
+    <message>
+        <source>Server refused the connection.</source>
+        <translation>Server heeft de verbinding geweigerd.</translation>
+    </message>
+    <message>
+        <source>Request timed out. Check your connection or try again.</source>
+        <translation>Aanvraag verlopen (time-out). Controleer uw verbinding of probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>SSL certificate error. Your network may be blocking secure connections.</source>
+        <translation>SSL-certificaatfout. Uw netwerk blokkeert mogelijk beveiligde verbindingen.</translation>
+    </message>
+    <message>
+        <source>Proxy connection failed. Check QGIS proxy settings (Settings &gt; Options &gt; Network).</source>
+        <translation>Proxyverbinding mislukt. Controleer de proxy-instellingen van QGIS (Instellingen &gt; Opties &gt; Netwerk).</translation>
+    </message>
+    <message>
+        <source>Authentication failed. Please sign in again.</source>
+        <translation>Authenticatie mislukt. Meld u opnieuw aan.</translation>
+    </message>
+    <message>
+        <source>Network error. Check your internet connection.</source>
+        <translation>Netwerkfout. Controleer uw internetverbinding.</translation>
+    </message>
+    <message>
+        <source>Checking your AI Segmentation subscription</source>
+        <translation>Uw AI Segmentation-abonnement wordt gecontroleerd</translation>
+    </message>
+    <message>
+        <source>Loading AI Segmentation settings</source>
+        <translation>AI Segmentation-instellingen laden</translation>
+    </message>
+    <message>
+        <source>Refreshing your cloud detections</source>
+        <translation>Je clouddetecties worden vernieuwd</translation>
+    </message>
+    <message>
+        <source>Warming up AI Segmentation</source>
+        <translation>AI Segmentation wordt opgestart</translation>
+    </message>
+    <message>
+        <source>Popular</source>
+        <translation>Populair</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>Bibliotheek</translation>
+    </message>
+    <message>
+        <source>Use just 1-2 words for the object.</source>
+        <translation>Gebruik slechts 1-2 woorden voor het object.</translation>
+    </message>
+    <message>
+        <source>Type the object itself, not a sentence or question.</source>
+        <translation>Typ het object zelf, geen zin of vraag.</translation>
+    </message>
+    <message>
+        <source>Too generic. Draw an example instead, or use a concrete word like building.</source>
+        <translation>Te algemeen. Teken in plaats daarvan een voorbeeld, of gebruik een concreet woord zoals building.</translation>
+    </message>
+    <message>
+        <source>Name a concrete object, not how it looks.</source>
+        <translation>Noem een concreet object, niet hoe het eruitziet.</translation>
+    </message>
+    <message>
+        <source>Segment one object - drop words like 'near' or 'with'.</source>
+        <translation>Segmenteer één object - laat woorden als 'near' of 'with' weg.</translation>
+    </message>
+    <message>
+        <source>Use a real object word.</source>
+        <translation>Gebruik een echt objectwoord.</translation>
+    </message>
+    <message>
+        <source>Use a 1-2 word object name.</source>
+        <translation>Gebruik een objectnaam van 1-2 woorden.</translation>
+    </message>
+    <message>
+        <source>Did you mean '{term}'?</source>
+        <translation>Bedoelde u '{term}'?</translation>
+    </message>
+    <message>
+        <source>Loading...</source>
+        <translation>Laden...</translation>
+    </message>
+    <message>
+        <source>No preview</source>
+        <translation>Geen voorbeeld</translation>
+    </message>
+    <message>
+        <source>No preview yet</source>
+        <translation>Nog geen voorbeeld</translation>
+    </message>
+    <message>
+        <source>Segment library</source>
+        <translation>Segmentbibliotheek</translation>
+    </message>
+    <message>
+        <source>today</source>
+        <translation>vandaag</translation>
+    </message>
+    <message>
+        <source>yesterday</source>
+        <translation>gisteren</translation>
+    </message>
+    <message>
+        <source>{n} days ago</source>
+        <translation>{n} dagen geleden</translation>
+    </message>
+    <message>
+        <source>{n} detection(s)</source>
+        <translation>{n} detectie(s)</translation>
+    </message>
+    <message>
+        <source>{n} object(s)</source>
+        <translation>{n} object(en)</translation>
+    </message>
+    <message>
+        <source>Loading segment library</source>
+        <translation>Segmentbibliotheek laden</translation>
+    </message>
+    <message>
+        <source>Search objects... e.g. building, solar panel</source>
+        <translation>Objecten zoeken... bijv. building, solar panel</translation>
+    </message>
+    <message>
+        <source>Fuzzy edges: this one may need cleanup after detection.</source>
+        <translation>Vage randen: dit object heeft mogelijk opschoning nodig na detectie.</translation>
+    </message>
+    <message>
+        <source>Use this prompt</source>
+        <translation>Gebruik deze prompt</translation>
+    </message>
+    <message>
+        <source>Use</source>
+        <translation>Gebruiken</translation>
+    </message>
+    <message>
+        <source>≈ {n} cloud detections</source>
+        <translation>≈ {n} clouddetecties</translation>
+    </message>
+    <message>
+        <source>Draw your example inside the selected zone.</source>
+        <translation>Teken uw voorbeeld binnen de geselecteerde zone.</translation>
+    </message>
+    <message>
+        <source>{n} objects found</source>
+        <translation>{n} objecten gevonden</translation>
+    </message>
+    <message>
+        <source>No objects found</source>
+        <translation>Geen objecten gevonden</translation>
+    </message>
+    <message>
+        <source>0 shown at {pct}% - lower Confidence to reveal them</source>
+        <translation>0 getoond bij {pct}% - verlaag Betrouwbaarheid om ze te tonen</translation>
+    </message>
+    <message>
+        <source>More objects</source>
+        <translation>Meer objecten</translation>
+    </message>
+    <message>
+        <source>Only confident</source>
+        <translation>Alleen betrouwbare</translation>
+    </message>
+    <message>
+        <source>Export {n} polygons</source>
+        <translation>Export {n} polygonen</translation>
+    </message>
+    <message>
+        <source>Lower Confidence to show objects first.</source>
+        <translation>Verlaag Betrouwbaarheid om eerst objecten te tonen.</translation>
+    </message>
+    <message>
+        <source>Discard these detections?</source>
+        <translation>Deze detecties verwijderen?</translation>
+    </message>
+    <message>
+        <source>Your {total} detections will be discarded. You keep your zone, object and settings. Running Detect again spends new cloud detections.</source>
+        <translation>Je {total} detecties worden verwijderd. Je behoudt je zone, object en instellingen. Detecteren opnieuw uitvoeren kost nieuwe clouddetecties.</translation>
+    </message>
+    <message>
+        <source>Discard &amp;&amp; adjust</source>
+        <translation>Verwijderen &amp;&amp; aanpassen</translation>
+    </message>
+    <message>
+        <source>Keep your detections?</source>
+        <translation>Detecties behouden?</translation>
+    </message>
+    <message>
+        <source>Save &amp;&amp; exit</source>
+        <translation>Opslaan &amp;&amp; afsluiten</translation>
+    </message>
+    <message>
+        <source>Discard &amp;&amp; exit</source>
+        <translation>Verwijderen &amp;&amp; afsluiten</translation>
+    </message>
+    <message>
+        <source>How many objects sit at each confidence level.</source>
+        <translation>Hoeveel objecten zich op elk betrouwbaarheidsniveau bevinden.</translation>
+    </message>
+    <message>
+        <source>Start Automatic AI Segmentation</source>
+        <translation>Start Automatische AI Segmentation</translation>
+    </message>
+    <message>
+        <source>Draw your zone</source>
+        <translation>Teken uw zone</translation>
+    </message>
+    <message>
+        <source>Click on the map to outline the area to scan.</source>
+        <translation>Klik op de kaart om het te scannen gebied te omlijnen.</translation>
+    </message>
+    <message>
+        <source>Keep clicking around the area, at least 3 points.</source>
+        <translation>Blijf rond het gebied klikken, minstens 3 punten.</translation>
+    </message>
+    <message>
+        <source>Click the first point to close the zone.</source>
+        <translation>Klik op het eerste punt om de zone te sluiten.</translation>
+    </message>
+    <message>
+        <source>undo point</source>
+        <translation>punt ongedaan maken</translation>
+    </message>
+    <message>
+        <source>cancel</source>
+        <translation>annuleren</translation>
+    </message>
+    <message>
+        <source>Exit</source>
+        <translation>Afsluiten</translation>
+    </message>
+    <message>
+        <source>e.g. building, tree, road, car</source>
+        <translation>bijv. building, tree, road, car</translation>
+    </message>
+    <message>
+        <source>Browse ready-to-use objects with before / after previews.</source>
+        <translation>Blader door direct te gebruiken objecten met voor-/na-voorbeelden.</translation>
+    </message>
+    <message>
+        <source>Filter detections by confidence. Lower shows more (and noisier), higher keeps only the strongest. Free and instant.</source>
+        <translation>Filter detecties op betrouwbaarheid. Lager toont meer (en ruisiger), hoger houdt alleen de sterkste over. Gratis en direct.</translation>
+    </message>
+    <message>
+        <source>Show tiles (debug)</source>
+        <translation>Tegels tonen (debug)</translation>
+    </message>
+    <message>
+        <source>"{word}" will run as "{token}".</source>
+        <translation>"{word}" wordt uitgevoerd als "{token}".</translation>
+    </message>
+    <message>
+        <source>That word isn't recognized - try a common object like building or tree.</source>
+        <translation>Dat woord wordt niet herkend - probeer een veelvoorkomend object zoals building of tree.</translation>
+    </message>
+    <message>
+        <source>One object per run - start with the first one, then run again.</source>
+        <translation>Één object per uitvoering - begin met de eerste en voer daarna opnieuw uit.</translation>
+    </message>
+    <message>
+        <source>The Library has ready-to-use objects.</source>
+        <translation>De Bibliotheek heeft direct te gebruiken objecten.</translation>
+    </message>
+    <message>
+        <source>Older detection</source>
+        <translation>Oudere detectie</translation>
+    </message>
+    <message>
+        <source>Details</source>
+        <translation>Details</translation>
+    </message>
+    <message>
+        <source>Fullscreen</source>
+        <translation>Volledig scherm</translation>
+    </message>
+    <message>
+        <source>Exit fullscreen</source>
+        <translation>Volledig scherm verlaten</translation>
+    </message>
+    <message>
+        <source>Prompt</source>
+        <translation>Prompt</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>Kopiëren</translation>
+    </message>
+    <message>
+        <source>Copy prompt</source>
+        <translation>Prompt kopiëren</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>Gekopieerd</translation>
+    </message>
+    <message>
+        <source>Template</source>
+        <translation>Sjabloon</translation>
+    </message>
+    <message>
+        <source>Your detection</source>
+        <translation>Uw detectie</translation>
+    </message>
+    <message>
+        <source>Open the Library from the Automatic page to use this.</source>
+        <translation>Open de Bibliotheek vanaf de pagina Automatisch om dit te gebruiken.</translation>
+    </message>
+    <message>
+        <source>DATE</source>
+        <translation>DATUM</translation>
+    </message>
+    <message>
+        <source>OBJECTS</source>
+        <translation>OBJECTEN</translation>
+    </message>
+    <message>
+        <source>CHARGED</source>
+        <translation>BEREKEND</translation>
+    </message>
+    <message>
+        <source>CLOUD DETECTIONS</source>
+        <translation>CLOUDDETECTIES</translation>
+    </message>
+    <message>
+        <source>RESOLUTION</source>
+        <translation>RESOLUTIE</translation>
+    </message>
+    <message>
+        <source>EXAMPLE</source>
+        <translation>VOORBEELD</translation>
+    </message>
+    <message>
+        <source>Used</source>
+        <translation>Gebruikt</translation>
+    </message>
+    <message>
+        <source>Restore to map</source>
+        <translation>Herstellen naar kaart</translation>
+    </message>
+    <message>
+        <source>Reopens this run's review at the same place, with its imagery. Free, and it costs no cloud detections.</source>
+        <translation>Opent de beoordeling van deze run opnieuw op dezelfde plaats, met de beelden. Gratis en het kost geen clouddetecties.</translation>
+    </message>
+    <message>
+        <source>Export...</source>
+        <translation>Exporteren...</translation>
+    </message>
+    <message>
+        <source>Remove from favorites</source>
+        <translation>Verwijderen uit favorieten</translation>
+    </message>
+    <message>
+        <source>Add to favorites</source>
+        <translation>Toevoegen aan favorieten</translation>
+    </message>
+    <message>
+        <source>Format:</source>
+        <translation>Formaat:</translation>
+    </message>
+    <message>
+        <source>GeoPackage keeps the embedded style; other formats are saved without a style.</source>
+        <translation>GeoPackage behoudt de ingesloten stijl; andere formaten worden zonder stijl opgeslagen.</translation>
+    </message>
+    <message>
+        <source>Browse...</source>
+        <translation>Bladeren...</translation>
+    </message>
+    <message>
+        <source>Recent</source>
+        <translation>Recent</translation>
+    </message>
+    <message>
+        <source>Favorites</source>
+        <translation>Favorieten</translation>
+    </message>
+    <message>
+        <source>Load older runs</source>
+        <translation>Oudere runs laden</translation>
+    </message>
+    <message>
+        <source>Nothing here yet. Your automatic detections will land here, ready to reuse, restore or export.</source>
+        <translation>Hier is nog niets. Je automatische detecties komen hier terecht, klaar om opnieuw te gebruiken, te herstellen of te exporteren.</translation>
+    </message>
+    <message>
+        <source>Could not load this run's stored detections. Try again later.</source>
+        <translation>De opgeslagen detecties van deze run konden niet worden geladen. Probeer het later opnieuw.</translation>
+    </message>
+    <message>
+        <source>Nothing to export at this confidence. Lower it and try again.</source>
+        <translation>Er is niets te exporteren bij dit betrouwbaarheidsniveau. Verlaag het en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The export failed. Check the file path and try again.</source>
+        <translation>Exporteren is mislukt. Controleer het bestandspad en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Exported {n} polygon(s).</source>
+        <translation>{n} polygoon(en) geëxporteerd.</translation>
+    </message>
+    <message>
+        <source>Add a point</source>
+        <translation>Een punt toevoegen</translation>
+    </message>
+    <message>
+        <source>Add area</source>
+        <translation>Gebied toevoegen</translation>
+    </message>
+    <message>
+        <source>Arrow keys</source>
+        <translation>Pijltjestoetsen</translation>
+    </message>
+    <message>
+        <source>Automatic</source>
+        <translation>Automatisch</translation>
+    </message>
+    <message>
+        <source>Click</source>
+        <translation>Klik</translation>
+    </message>
+    <message>
+        <source>Could not place the example on the image. Redraw the example box inside the zone and try again.</source>
+        <translation>Het voorbeeld kon niet op de afbeelding worden geplaatst. Teken het voorbeeldvak opnieuw binnen de zone en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Could not rebuild this run's detections.</source>
+        <translation>De detecties van deze run konden niet opnieuw worden opgebouwd.</translation>
+    </message>
+    <message>
+        <source>Delete the active object</source>
+        <translation>Het actieve object verwijderen</translation>
+    </message>
+    <message>
+        <source>Detection continues in the background. Reopen AI Segmentation to follow it.</source>
+        <translation>De detectie gaat op de achtergrond verder. Open AI Segmentation opnieuw om deze te volgen.</translation>
+    </message>
+    <message>
+        <source>Double-click</source>
+        <translation>Dubbelklik</translation>
+    </message>
+    <message>
+        <source>Example</source>
+        <translation>Voorbeeld</translation>
+    </message>
+    <message>
+        <source>Finish or exit the current run before restoring a past one.</source>
+        <translation>Rond de huidige run af of sluit deze af voordat je een eerdere run herstelt.</translation>
+    </message>
+    <message>
+        <source>Finish the zone</source>
+        <translation>Zone afronden</translation>
+    </message>
+    <message>
+        <source>General</source>
+        <translation>Algemeen</translation>
+    </message>
+    <message>
+        <source>Install now</source>
+        <translation>Nu installeren</translation>
+    </message>
+    <message>
+        <source>Keeps this polygon in your session. Export writes all kept polygons to a layer.</source>
+        <translation>Bewaart deze polygoon in je sessie. Exporteren schrijft alle bewaarde polygonen naar een laag.</translation>
+    </message>
+    <message>
+        <source>Keyboard shortcuts</source>
+        <translation>Toetsencombinaties</translation>
+    </message>
+    <message>
+        <source>Left-click</source>
+        <translation>Linkerklik</translation>
+    </message>
+    <message>
+        <source>Manual</source>
+        <translation>Handmatig</translation>
+    </message>
+    <message>
+        <source>OK</source>
+        <translation>OK</translation>
+    </message>
+    <message>
+        <source>One color per object - check neighbors are separated</source>
+        <translation>Één kleur per object - controleer of buren gescheiden zijn</translation>
+    </message>
+    <message>
+        <source>Out of cloud detections at {done}/{total}. Everything found so far is kept below and stays yours.</source>
+        <translation>Clouddetecties gebruikt bij {done}/{total}. Alles wat tot nu toe is gevonden, blijft hieronder en blijft van jou.</translation>
+    </message>
+    <message>
+        <source>Outlines only - check boundaries against the imagery</source>
+        <translation>Alleen contouren - controleer de grenzen tegen de beelden</translation>
+    </message>
+    <message>
+        <source>Pan the map</source>
+        <translation>De kaart verschuiven</translation>
+    </message>
+    <message>
+        <source>Part of your zone is outside "{layer}" - only the overlapping area will return objects.</source>
+        <translation>Een deel van je zone valt buiten "{layer}" - alleen het overlappende gebied levert objecten op.</translation>
+    </message>
+    <message>
+        <source>Pick an object to detect first (nothing was selected).</source>
+        <translation>Kies eerst een object om te detecteren (er is niets geselecteerd).</translation>
+    </message>
+    <message>
+        <source>Polygon saved ({n} total). Click another element, or export when done.</source>
+        <translation>Polygoon opgeslagen ({n} in totaal). Klik op een ander element, of exporteer wanneer je klaar bent.</translation>
+    </message>
+    <message>
+        <source>Refine seeds</source>
+        <translation>Seeds verfijnen</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Verwijderen</translation>
+    </message>
+    <message>
+        <source>Remove area</source>
+        <translation>Gebied verwijderen</translation>
+    </message>
+    <message>
+        <source>Remove zone</source>
+        <translation>Zone verwijderen</translation>
+    </message>
+    <message>
+        <source>Resets {date}</source>
+        <translation>Wordt gereset op {date}</translation>
+    </message>
+    <message>
+        <source>Restored "{prompt}" - adjust and export below.</source>
+        <translation>"{prompt}" hersteld - pas hieronder aan en exporteer.</translation>
+    </message>
+    <message>
+        <source>Right-click</source>
+        <translation>Rechterklik</translation>
+    </message>
+    <message>
+        <source>Save polygon (S)</source>
+        <translation>Polygoon opslaan (S)</translation>
+    </message>
+    <message>
+        <source>Session expired. Sign in again to continue.</source>
+        <translation>Sessie verlopen. Log opnieuw in om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Start (the visible mode's Start button)</source>
+        <translation>Start (de Start-knop van de zichtbare modus)</translation>
+    </message>
+    <message>
+        <source>The raster was removed. Your polygons were saved to a layer.</source>
+        <translation>De raster is verwijderd. Je polygonen zijn opgeslagen in een laag.</translation>
+    </message>
+    <message>
+        <source>The selected raster was removed.</source>
+        <translation>De geselecteerde raster is verwijderd.</translation>
+    </message>
+    <message>
+        <source>The selected raster was removed. Keeping what was already found.</source>
+        <translation>De geselecteerde raster is verwijderd. Wat al gevonden was, blijft bewaard.</translation>
+    </message>
+    <message>
+        <source>Undo the last point</source>
+        <translation>Laatste punt ongedaan maken</translation>
+    </message>
+    <message>
+        <source>Writes a GeoPackage layer with your {n} kept polygons.</source>
+        <translation>Schrijft een GeoPackage-laag met je {n} bewaarde polygonen.</translation>
+    </message>
+    <message>
+        <source>Your zone is outside "{layer}". Pick the right layer or draw inside it.</source>
+        <translation>Je zone valt buiten "{layer}". Kies de juiste laag of teken erbinnen.</translation>
+    </message>
+    <message>
+        <source>Zone too large. Reduce the area to {max} tiles or fewer.</source>
+        <translation>Zone te groot. Verklein het gebied tot {max} tegels of minder.</translation>
+    </message>
+    <message>
+        <source>{n} of {total} free cloud detections left</source>
+        <translation>{n} van {total} gratis clouddetecties resterend</translation>
+    </message>
+    <message>
+        <source>≈ 1 cloud detection</source>
+        <translation>≈ 1 clouddetectie</translation>
+    </message>
+    <message>
+        <source>all shown</source>
+        <translation>alles getoond</translation>
+    </message>
+    <message>
+        <source>{visible} of {n} shown</source>
+        <translation>{visible} van {n} getoond</translation>
+    </message>
+    <message>
+        <source>all shown</source>
+        <translation>alles getoond</translation>
+    </message>
+    <message>
+        <source>{visible} of {n} shown</source>
+        <translation>{visible} van {n} getoond</translation>
+    </message>
+    <message>
+        <source>Show guidance tips again</source>
+        <translation>Begeleidingstips opnieuw tonen</translation>
+    </message>
+    <message>
+        <source>Guidance tips restored</source>
+        <translation>Begeleidingstips hersteld</translation>
+    </message>
+    <message>
+        <source>Run again here</source>
+        <translation>Hier opnieuw uitvoeren</translation>
+    </message>
+    <message>
+        <source>Reload this zone and object, ready to detect.</source>
+        <translation>Laad deze zone en dit object opnieuw, gereed om te detecteren.</translation>
+    </message>
+    <message>
+        <source>Same object, new zone</source>
+        <translation>Zelfde object, nieuwe zone</translation>
+    </message>
+    <message>
+        <source>Keep this object and draw a new zone on the map.</source>
+        <translation>Bewaar dit object en teken een nieuwe zone op de kaart.</translation>
+    </message>
+    <message>
+        <source>Upgrade to Pro</source>
+        <translation>Upgraden naar Pro</translation>
+    </message>
+    <message>
+        <source>Free account - sign up takes 15 seconds in your browser.</source>
+        <translation>Gratis account - aanmelden duurt 15 seconden in je browser.</translation>
+    </message>
+    <message>
+        <source>Then segment any imagery: point and click, or fully automatic.</source>
+        <translation>Segmenteer daarna elke afbeelding: klik-en-detecteer, of volledig automatisch.</translation>
+    </message>
+    <message>
+        <source>Waiting for your browser sign-in...</source>
+        <translation>Wachten op aanmelden via je browser...</translation>
+    </message>
+    <message>
+        <source>Got it - hide this tip</source>
+        <translation>Begrepen - deze tip verbergen</translation>
+    </message>
+    <message>
+        <source>Finish or cancel the current detection before re-running a past one.</source>
+        <translation>Rond de huidige detectie af of annuleer deze voordat je een eerdere opnieuw uitvoert.</translation>
+    </message>
+    <message>
+        <source>0 shown - lower the Min size filter to reveal them</source>
+        <translation>0 getoond - verlaag het filter Min. grootte om ze te tonen</translation>
+    </message>
+    <message>
+        <source>A Component Failed to Load</source>
+        <translation>Een onderdeel kon niet worden geladen</translation>
+    </message>
+    <message>
+        <source>AI Segmentation</source>
+        <translation>AI Segmentation</translation>
+    </message>
+    <message>
+        <source>AI data removed, but some items could not be fully cleared. You can delete the folder manually.</source>
+        <translation>AI-gegevens verwijderd, maar sommige items konden niet volledig worden gewist. Je kunt de map handmatig verwijderen.</translation>
+    </message>
+    <message>
+        <source>Accept the Terms and Privacy Policy first.</source>
+        <translation>Accepteer eerst de Algemene Voorwaarden en het Privacybeleid.</translation>
+    </message>
+    <message>
+        <source>An install or detection is still running. Wait for it to finish, then try again.</source>
+        <translation>Er is nog een installatie of detectie bezig. Wacht tot deze klaar is en probeer het dan opnieuw.</translation>
+    </message>
+    <message>
+        <source>Any GeoTIFF, WMS or XYZ basemap.</source>
+        <translation>Elke GeoTIFF, WMS of XYZ-basiskaart.</translation>
+    </message>
+    <message>
+        <source>Available once the current install or detection finishes.</source>
+        <translation>Beschikbaar zodra de huidige installatie of detectie is voltooid.</translation>
+    </message>
+    <message>
+        <source>Blocked by IT Security Policy</source>
+        <translation>Geblokkeerd door het IT-beveiligingsbeleid</translation>
+    </message>
+    <message>
+        <source>Browse the library (view only while detecting).</source>
+        <translation>Blader door de bibliotheek (alleen bekijken tijdens het detecteren).</translation>
+    </message>
+    <message>
+        <source>Could not reach the service. Check your connection and try again.</source>
+        <translation>Kan de service niet bereiken. Controleer je verbinding en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Could not read pixels from this {ext} file. The file may be corrupt, truncated, or use a compression your GDAL build cannot decode.
+Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) before using AI Segmentation.</source>
+        <translation>Kan geen pixels lezen uit dit {ext}-bestand. Het bestand is mogelijk beschadigd of afgekapt, of gebruikt een compressie die jouw GDAL-versie niet kan decoderen.
+Open het in QGIS om te controleren of het wordt weergegeven, of converteer het naar GeoTIFF (.tif) voordat je AI Segmentation gebruikt.</translation>
+    </message>
+    <message>
+        <source>Could not remove the AI data. Try again.</source>
+        <translation>Kan de AI-gegevens niet verwijderen. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Couldn't load the demo imagery. Check your internet connection, or add your own layer.</source>
+        <translation>De demobeelden konden niet worden geladen. Controleer je internetverbinding of voeg je eigen laag toe.</translation>
+    </message>
+    <message>
+        <source>Detected object</source>
+        <translation>Gedetecteerd object</translation>
+    </message>
+    <message>
+        <source>Detection failed. Run Detect again, and lower the precision if it fails a second time.</source>
+        <translation>Detectie mislukt. Voer Detecteren opnieuw uit en verlaag de precisie als het een tweede keer mislukt.</translation>
+    </message>
+    <message>
+        <source>Downloaded AI data removed. You have been signed out.</source>
+        <translation>Gedownloade AI-gegevens verwijderd. Je bent afgemeld.</translation>
+    </message>
+    <message>
+        <source>Draw on the map</source>
+        <translation>Teken op de kaart</translation>
+    </message>
+    <message>
+        <source>Free plan</source>
+        <translation>Gratis abonnement</translation>
+    </message>
+    <message>
+        <source>Hide parts larger than this ground area. 0 = no limit.</source>
+        <translation>Verberg delen groter dan dit grondoppervlak. 0 = geen limiet.</translation>
+    </message>
+    <message>
+        <source>Hide parts smaller than this ground area. Use it to drop tiny noise blobs. 0 = keep all.</source>
+        <translation>Verberg delen kleiner dan dit grondoppervlak. Gebruik dit om kleine ruisvlekken te verwijderen. 0 = alles behouden.</translation>
+    </message>
+    <message>
+        <source>Load example imagery</source>
+        <translation>Voorbeeldbeelden laden</translation>
+    </message>
+    <message>
+        <source>Load your own imagery</source>
+        <translation>Eigen beelden laden</translation>
+    </message>
+    <message>
+        <source>Your imagery is hidden</source>
+        <translation>Je beelden zijn verborgen</translation>
+    </message>
+    <message>
+        <source>It is unchecked in the Layers panel.</source>
+        <translation>Het is uitgevinkt in het paneel Lagen.</translation>
+    </message>
+    <message>
+        <source>Show it on the map</source>
+        <translation>Op de kaart tonen</translation>
+    </message>
+    <message>
+        <source>Lower the Min size filter to show objects first.</source>
+        <translation>Verlaag het filter Min. grootte om eerst objecten te tonen.</translation>
+    </message>
+    <message>
+        <source>Manage account</source>
+        <translation>Account beheren</translation>
+    </message>
+    <message>
+        <source>New here? Our 5-minute tutorial walks you through a full detection, step by step.</source>
+        <translation>Nieuw hier? Onze tutorial van 5 minuten leidt je stap voor stap door een volledige detectie.</translation>
+    </message>
+    <message>
+        <source>Not Enough Disk Space</source>
+        <translation>Onvoldoende schijfruimte</translation>
+    </message>
+    <message>
+        <source>Online layer returned blank tiles for this area. The current zoom level may be outside the service's range, or this area has no coverage. Zoom to a level where the layer is visible on the map, then try again.</source>
+        <translation>De online laag gaf lege tegels terug voor dit gebied. Het huidige zoomniveau valt mogelijk buiten het bereik van de service, of dit gebied heeft geen dekking. Zoom naar een niveau waarop de laag zichtbaar is op de kaart en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Open the step-by-step tutorial</source>
+        <translation>Open de stap-voor-stap tutorial</translation>
+    </message>
+    <message>
+        <source>Open the tutorial</source>
+        <translation>Open de tutorial</translation>
+    </message>
+    <message>
+        <source>Opens terra-lab.ai in your browser.</source>
+        <translation>Opent terra-lab.ai in je browser.</translation>
+    </message>
+    <message>
+        <source>Opens your terra-lab.ai account in the browser.</source>
+        <translation>Opent je terra-lab.ai-account in de browser.</translation>
+    </message>
+    <message>
+        <source>Opens your terra-lab.ai dashboard in the browser.</source>
+        <translation>Opent je terra-lab.ai-dashboard in de browser.</translation>
+    </message>
+    <message>
+        <source>Outline ONE example of the object on the map, then run again. Runs with a drawn example return far fewer empty results.</source>
+        <translation>Omlijn ÉÉN voorbeeld van het object op de kaart en voer daarna opnieuw uit. Runs met een getekend voorbeeld geven veel minder lege resultaten.</translation>
+    </message>
+    <message>
+        <source>Planning AI Segmentation run</source>
+        <translation>AI Segmentation-run wordt gepland</translation>
+    </message>
+    <message>
+        <source>Pro plan</source>
+        <translation>Pro-abonnement</translation>
+    </message>
+    <message>
+        <source>Remove downloaded AI data</source>
+        <translation>Gedownloade AI-gegevens verwijderen</translation>
+    </message>
+    <message>
+        <source>Remove the downloaded AI data from this computer?</source>
+        <translation>De gedownloade AI-gegevens van deze computer verwijderen?</translation>
+    </message>
+    <message>
+        <source>Removing...</source>
+        <translation>Verwijderen...</translation>
+    </message>
+    <message>
+        <source>Right level for {obj} in this zone.</source>
+        <translation>Het juiste niveau voor {obj} in deze zone.</translation>
+    </message>
+    <message>
+        <source>Rotated raster</source>
+        <translation>Geroteerd raster</translation>
+    </message>
+    <message>
+        <source>Save {save} detections ({hidden} currently hidden by Confidence) to a layer before leaving?</source>
+        <translation>{save} detecties ({hidden} momenteel verborgen door Betrouwbaarheid) opslaan in een laag voordat je weggaat?</translation>
+    </message>
+    <message>
+        <source>Save {save} detections to a layer before leaving?</source>
+        <translation>{save} detecties opslaan in een laag voordat je weggaat?</translation>
+    </message>
+    <message>
+        <source>Segment library (view only)</source>
+        <translation>Segmentbibliotheek (alleen bekijken)</translation>
+    </message>
+    <message>
+        <source>Segmentation failed. Please try again.</source>
+        <translation>Segmentatie mislukt. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Sharper than {obj} usually needs - catches the smallest ones.</source>
+        <translation>Scherper dan {obj} meestal nodig heeft - vangt de allerkleinste.</translation>
+    </message>
+    <message>
+        <source>Small {obj} may be missed at this level.</source>
+        <translation>Kleine {obj} kunnen op dit niveau worden gemist.</translation>
+    </message>
+    <message>
+        <source>Something went wrong saving your detections. Please try again.</source>
+        <translation>Er ging iets mis bij het opslaan van je detecties. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Something went wrong starting the detection. Please try again.</source>
+        <translation>Er ging iets mis bij het starten van de detectie. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Support code: {code}</source>
+        <translation>Supportcode: {code}</translation>
+    </message>
+    <message>
+        <source>Team or organization?</source>
+        <translation>Team of organisatie?</translation>
+    </message>
+    <message>
+        <source>The AI service is waking up. Holding your spot…</source>
+        <translation>De AI-service wordt wakker. Je plek wordt vastgehouden…</translation>
+    </message>
+    <message>
+        <source>The detection service is busy right now. Please try again in a moment.</source>
+        <translation>De detectieservice is momenteel bezet. Probeer het zo weer opnieuw.</translation>
+    </message>
+    <message>
+        <source>The service is temporarily unavailable (server error). Your connection is fine - please try again in a few minutes.</source>
+        <translation>De service is tijdelijk niet beschikbaar (serverfout). Je verbinding is in orde - probeer het over een paar minuten opnieuw.</translation>
+    </message>
+    <message>
+        <source>There's a problem with your subscription. Open Settings to update your payment method or review your plan.</source>
+        <translation>Er is een probleem met je abonnement. Open Instellingen om je betaalmethode bij te werken of je abonnement te bekijken.</translation>
+    </message>
+    <message>
+        <source>There's a problem with your subscription. Your last payment may have failed. Open your account to update your payment method or review your plan.</source>
+        <translation>Er is een probleem met je abonnement. Je laatste betaling is mogelijk mislukt. Open je account om je betaalmethode bij te werken of je abonnement te bekijken.</translation>
+    </message>
+    <message>
+        <source>This layer has no valid coordinate reference system. Set one in Layer Properties before detecting.</source>
+        <translation>Deze laag heeft geen geldig coördinatenreferentiesysteem. Stel er een in bij Laageigenschappen voordat je detecteert.</translation>
+    </message>
+    <message>
+        <source>This raster uses a geographic CRS (degrees), which distorts the imagery sent to the AI. For best results, reproject it to a projected CRS (e.g. UTM).</source>
+        <translation>Dit raster gebruikt een geografisch CRS (graden), wat de beelden die naar de AI worden gestuurd vervormt. Herprojecteer het voor de beste resultaten naar een geprojecteerd CRS (bijv. UTM).</translation>
+    </message>
+    <message>
+        <source>Tip: this raster has no overviews (pyramids). Build them (Raster menu, Miscellaneous, Build Overviews) to make detection much faster.</source>
+        <translation>Tip: dit raster heeft geen overzichten (piramiden). Bouw ze op (menu Raster, Diversen, Overzichten opbouwen) om de detectie veel sneller te maken.</translation>
+    </message>
+    <message>
+        <source>Try "{word}" instead</source>
+        <translation>Probeer "{word}" in plaats daarvan</translation>
+    </message>
+    <message>
+        <source>Update now</source>
+        <translation>Nu bijwerken</translation>
+    </message>
+    <message>
+        <source>Update payment method</source>
+        <translation>Betaalmethode bijwerken</translation>
+    </message>
+    <message>
+        <source>Version {version} is available.</source>
+        <translation>Versie {version} is beschikbaar.</translation>
+    </message>
+    <message>
+        <source>Very fine for {obj} - large ones may come back split in parts.</source>
+        <translation>Zeer fijn voor {obj} - grote exemplaren kunnen in delen gesplitst terugkomen.</translation>
+    </message>
+    <message>
+        <source>View detections as:</source>
+        <translation>Detecties weergeven als:</translation>
+    </message>
+    <message>
+        <source>We read every message.</source>
+        <translation>We lezen elk bericht.</translation>
+    </message>
+    <message>
+        <source>Write to us:</source>
+        <translation>Schrijf ons:</translation>
+    </message>
+    <message>
+        <source>Your reference</source>
+        <translation>Je referentie</translation>
+    </message>
+    <message>
+        <source>confident</source>
+        <translation>betrouwbaar</translation>
+    </message>
+    <message>
+        <source>polygons</source>
+        <translation>polygonen</translation>
+    </message>
+    <message>
+        <source>uncertain</source>
+        <translation>onzeker</translation>
+    </message>
+    <message>
+        <source>your object</source>
+        <translation>je object</translation>
+    </message>
+    <message>
+        <source>{n} found so far</source>
+        <translation>{n} gevonden tot nu toe</translation>
+    </message>
+    
+    <message>
+        <source>This zone is {area} km². Free zones stop at {max} km².</source>
+        <translation>Deze zone is {area} km². Gratis zones gaan tot {max} km².</translation>
+    </message>
+
+    <message>
+        <source>&lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to run this zone as drawn, or make it smaller.</source>
+        <translation>&lt;a href="{url}"&gt;Upgrade naar Pro&lt;/a&gt; om deze zone te draaien zoals getekend, of maak hem kleiner.</translation>
+    </message>
+    <message>
+        <source>Sending to the AI...</source>
+        <translation>Verzenden naar de AI...</translation>
+    </message>
+    <message>
+        <source>Spot reserved · starting in a few seconds...</source>
+        <translation>Plek gereserveerd · start over enkele seconden...</translation>
+    </message>
+    <message>
+        <source>Spot reserved · starting soon...</source>
+        <translation>Plek gereserveerd · start binnenkort...</translation>
+    </message>
+    <message>
+        <source>Stopping - keeping everything already found...</source>
+        <translation>Stoppen - alles wat al is gevonden wordt bewaard...</translation>
+    </message>
+    <message>
+        <source>Stopping...</source>
+        <translation>Stoppen...</translation>
+    </message>
+    <message>
+        <source>The AI is starting up, almost there... {n}s</source>
+        <translation>De AI start op, bijna klaar... {n}s</translation>
+    </message>
+    <message>
+        <source>Waking up the AI... {n}s</source>
+        <translation>De AI wordt wakker gemaakt... {n}s</translation>
+    </message>
+    <message>
+        <source>You're next · starting now...</source>
+        <translation>U bent aan de beurt · start nu...</translation>
+    </message>
+    <message>
+        <source>Cancelled</source>
+        <translation>Geannuleerd</translation>
+    </message>
+    <message>
+        <source>Free trial</source>
+        <translation>Gratis proefperiode</translation>
+    </message>
+    <message>
+        <source>Select a raster layer to segment:</source>
+        <translation>Selecteer een rasterlaag om te segmenteren:</translation>
+    </message>
+    <message>
+        <source>Your {n} free detections are used up</source>
+        <translation>Je {n} gratis detecties zijn opgebruikt</translation>
+    </message>
+    <message>
+        <source>1 object found</source>
+        <translation>1 object gevonden</translation>
+    </message>
+    <message>
+        <source>Download AI model</source>
+        <translation>AI-model downloaden</translation>
+    </message>
+    <message>
+        <source>Export 1 polygon</source>
+        <translation>Export 1 polygoon</translation>
+    </message>
+    <message>
+        <source>Resolving object name</source>
+        <translation>Objectnaam wordt bepaald</translation>
+    </message>
+    <message>
+        <source>Your free detections are used up</source>
+        <translation>Je gratis detecties zijn opgebruikt</translation>
+    </message>
+    <message>
+        <source>"{obj}" is not an object the AI knows well. Drawing one example on the map shows it what to find.</source>
+        <translation>"{obj}" is geen object dat de AI goed kent. Teken één voorbeeld op de kaart om te laten zien wat het moet vinden.</translation>
+    </message>
+    <message>
+        <source>"{obj}" is often missed from text alone. Draw one example on the map to find far more.</source>
+        <translation>"{obj}" wordt vaak gemist als je alleen tekst gebruikt. Teken één voorbeeld op de kaart om er veel meer te vinden.</translation>
+    </message>
+    <message>
+        <source>1 correction this round</source>
+        <translation>1 correctie deze ronde</translation>
+    </message>
+    <message>
+        <source>1 object</source>
+        <translation>1 object</translation>
+    </message>
+    <message>
+        <source>1 polygon added so far.</source>
+        <translation>Tot nu toe 1 polygoon toegevoegd.</translation>
+    </message>
+    <message>
+        <source>1 result</source>
+        <translation>1 resultaat</translation>
+    </message>
+    <message>
+        <source>A newer version of AI Segmentation is available with the latest fixes.</source>
+        <translation>Er is een nieuwere versie van AI Segmentation beschikbaar, met de nieuwste verbeteringen.</translation>
+    </message>
+    <message>
+        <source>A shape was removed. Click Save to confirm.</source>
+        <translation>Een vorm is verwijderd. Klik op Opslaan om te bevestigen.</translation>
+    </message>
+    <message>
+        <source>AI</source>
+        <translation>AI</translation>
+    </message>
+    <message>
+        <source>AI Environment Damaged</source>
+        <translation>AI-omgeving beschadigd</translation>
+    </message>
+    <message>
+        <source>Add a missing polygon</source>
+        <translation>Ontbrekende polygoon toevoegen</translation>
+    </message>
+    <message>
+        <source>Add another example - more references detect more</source>
+        <translation>Voeg nog een voorbeeld toe - meer referenties detecteren meer</translation>
+    </message>
+    <message>
+        <source>Add one more example for the best results.</source>
+        <translation>Voeg nog één voorbeeld toe voor het beste resultaat.</translation>
+    </message>
+    <message>
+        <source>Adding needs a one-time setup</source>
+        <translation>Toevoegen heeft een eenmalige installatie nodig</translation>
+    </message>
+    <message>
+        <source>Almost done - building the shapes...</source>
+        <translation>Bijna klaar - de vormen worden opgebouwd...</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI components. Wait for it to finish, then try again.</source>
+        <translation>Een ander QGIS-venster installeert de AI-componenten. Wacht tot dit klaar is en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI engine. Wait for it to finish, then try again.</source>
+        <translation>Een ander QGIS-venster installeert de AI-engine. Wacht tot dit klaar is en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Automatic detection failed</source>
+        <translation>Automatische detectie mislukt</translation>
+    </message>
+    <message>
+        <source>Automatic: detect</source>
+        <translation>Automatisch: detecteren</translation>
+    </message>
+    <message>
+        <source>Automatic: draw the zone</source>
+        <translation>Automatisch: zone tekenen</translation>
+    </message>
+    <message>
+        <source>Automatic: merge with neighbours</source>
+        <translation>Automatisch: samenvoegen met buren</translation>
+    </message>
+    <message>
+        <source>Automatic: review and Correct</source>
+        <translation>Automatisch: beoordelen en corrigeren</translation>
+    </message>
+    <message>
+        <source>Best quality. Two references locked in.</source>
+        <translation>Beste kwaliteit. Twee referenties vastgelegd.</translation>
+    </message>
+    <message>
+        <source>Blocked by Antivirus or Security Software</source>
+        <translation>Geblokkeerd door antivirus- of beveiligingssoftware</translation>
+    </message>
+    <message>
+        <source>Calculating...</source>
+        <translation>Wordt berekend...</translation>
+    </message>
+    <message>
+        <source>Cancel the example box, the detection, or exit Automatic</source>
+        <translation>Annuleer het voorbeeldvak, de detectie, of verlaat Automatisch</translation>
+    </message>
+    <message>
+        <source>Cancel the merge</source>
+        <translation>Annuleer het samenvoegen</translation>
+    </message>
+    <message>
+        <source>Change recorded.</source>
+        <translation>Wijziging vastgelegd.</translation>
+    </message>
+    <message>
+        <source>Checking the object name</source>
+        <translation>De objectnaam wordt gecontroleerd</translation>
+    </message>
+    <message>
+        <source>Checking the object name...</source>
+        <translation>De objectnaam wordt gecontroleerd...</translation>
+    </message>
+    <message>
+        <source>Choose how to fix the polygon: AI points or QGIS vertices</source>
+        <translation>Kies hoe je de polygoon corrigeert: AI-punten of QGIS-hoekpunten</translation>
+    </message>
+    <message>
+        <source>Clean up the outlines</source>
+        <translation>Contouren opschonen</translation>
+    </message>
+    <message>
+        <source>Clear all</source>
+        <translation>Alles wissen</translation>
+    </message>
+    <message>
+        <source>Clear the points, then exit Automatic</source>
+        <translation>Wis de punten en verlaat Automatisch</translation>
+    </message>
+    <message>
+        <source>Clear the selection, or stop the segmentation</source>
+        <translation>Wis de selectie, of stop de segmentatie</translation>
+    </message>
+    <message>
+        <source>Click a polygon, then click the spot the AI missed.</source>
+        <translation>Klik op een polygoon en klik dan op de plek die de AI heeft gemist.</translation>
+    </message>
+    <message>
+        <source>Click a polygon, then drag any corner.</source>
+        <translation>Klik op een polygoon en sleep dan een hoekpunt.</translation>
+    </message>
+    <message>
+        <source>Click an object on the map and the AI outlines it.</source>
+        <translation>Klik op een object op de kaart en de AI omlijnt het.</translation>
+    </message>
+    <message>
+        <source>Click each corner of the object, then Finish.</source>
+        <translation>Klik op elk hoekpunt van het object, dan Voltooien.</translation>
+    </message>
+    <message>
+        <source>Click each corner on the map, then Finish the line.</source>
+        <translation>Klik op elk hoekpunt op de kaart, dan Lijn voltooien.</translation>
+    </message>
+    <message>
+        <source>Click each piece of the object you want to join.</source>
+        <translation>Klik op elk deel van het object dat je wilt samenvoegen.</translation>
+    </message>
+    <message>
+        <source>Click to open this step</source>
+        <translation>Klik om deze stap te openen</translation>
+    </message>
+    <message>
+        <source>Close the fix, clear the selection, or exit the review</source>
+        <translation>Sluit de correctie, wis de selectie, of verlaat de beoordeling</translation>
+    </message>
+    <message>
+        <source>Close the gaps inside this polygon, without filling the courtyards the rest of the layer is meant to keep.</source>
+        <translation>Sluit de gaten binnen deze polygoon, zonder de binnenplaatsen te vullen die de rest van de laag moet behouden.</translation>
+    </message>
+    <message>
+        <source>Close the line you are drawing. A right-click on the map does the same.</source>
+        <translation>Sluit de lijn die je tekent. Een rechterklik op de kaart doet hetzelfde.</translation>
+    </message>
+    <message>
+        <source>Closes the hairline gaps between neighbouring shapes, for land cover maps.</source>
+        <translation>Sluit de haarfijne kiertjes tussen aangrenzende vormen, voor landbedekkingskaarten.</translation>
+    </message>
+    <message>
+        <source>Confirm the merge</source>
+        <translation>Bevestig het samenvoegen</translation>
+    </message>
+    <message>
+        <source>Correct</source>
+        <translation>Corrigeren</translation>
+    </message>
+    <message>
+        <source>Could not apply the new settings. Try a different value.</source>
+        <translation>Kon de nieuwe instellingen niet toepassen. Probeer een andere waarde.</translation>
+    </message>
+    <message>
+        <source>Could not check the AI components. See the log for details.</source>
+        <translation>Kon de AI-componenten niet controleren. Zie het logbestand voor meer details.</translation>
+    </message>
+    <message>
+        <source>Your cloud detections come back on {date}</source>
+        <translation>Je clouddetecties komen terug op {date}</translation>
+    </message>
+    <message>
+        <source>Crop fetch was cancelled.</source>
+        <translation>Ophalen van de uitsnede geannuleerd.</translation>
+    </message>
+    <message>
+        <source>Cut thin spurs off this polygon (0 = off). Raise it on a single ragged outline instead of eroding the whole layer.</source>
+        <translation>Snijd dunne uitsteeksels van deze polygoon af (0 = uit). Verhoog dit bij één rafelige contour in plaats van de hele laag te eroderen.</translation>
+    </message>
+    <message>
+        <source>Delete this corner</source>
+        <translation>Dit hoekpunt verwijderen</translation>
+    </message>
+    <message>
+        <source>Delete this polygon</source>
+        <translation>Deze polygoon verwijderen</translation>
+    </message>
+    <message>
+        <source>Delete this polygon (the Delete key works too, and a right-click on the map deletes the shape under the cursor). Undo brings it back.</source>
+        <translation>Deze polygoon verwijderen (de Delete-toets werkt ook, en een rechterklik op de kaart verwijdert de vorm onder de cursor). Ongedaan maken zet hem terug.</translation>
+    </message>
+    <message>
+        <source>Deleting the downloaded data...</source>
+        <translation>De gedownloade gegevens worden verwijderd...</translation>
+    </message>
+    <message>
+        <source>Dense area {current}/{total}</source>
+        <translation>Dicht gebied {current}/{total}</translation>
+    </message>
+    <message>
+        <source>Dense forest? "Forest" takes it as one block; "Tree" picks individual trees.</source>
+        <translation>Dicht bos? "Forest" neemt het als één geheel; "Tree" kiest afzonderlijke bomen.</translation>
+    </message>
+    <message>
+        <source>Detection stopped early after {done} cloud detection(s). Everything found is kept below and stays yours.</source>
+        <translation>Detectie vroegtijdig gestopt na {done} clouddetectie(s). Alles wat is gevonden, blijft hieronder en blijft van jou.</translation>
+    </message>
+    <message>
+        <source>Discard reviewed results and run again? Confirm</source>
+        <translation>Beoordeelde resultaten verwijderen en opnieuw uitvoeren? Bevestigen</translation>
+    </message>
+    <message>
+        <source>Distinct</source>
+        <translation>Uniek</translation>
+    </message>
+    <message>
+        <source>Drag a corner to move it. Click an edge to add one, right-click removes.</source>
+        <translation>Sleep een hoekpunt om het te verplaatsen. Klik op een rand om er een toe te voegen, rechterklik verwijdert het.</translation>
+    </message>
+    <message>
+        <source>Drag a corner to move it. Double-click an edge to add one.</source>
+        <translation>Sleep een hoekpunt om het te verplaatsen. Dubbelklik op een rand om er een toe te voegen.</translation>
+    </message>
+    <message>
+        <source>Drag, add or delete the object's corners by hand.</source>
+        <translation>Sleep, voeg toe of verwijder de hoekpunten van het object handmatig.</translation>
+    </message>
+    <message>
+        <source>Draw a line across the object to cut it into two.</source>
+        <translation>Teken een lijn over het object om het in tweeën te splitsen.</translation>
+    </message>
+    <message>
+        <source>Draw a line right across the shape, then Finish.</source>
+        <translation>Teken een lijn dwars over de vorm, dan Voltooien.</translation>
+    </message>
+    <message>
+        <source>Draw an example, or type what to find.</source>
+        <translation>Teken een voorbeeld, of typ wat je wilt vinden.</translation>
+    </message>
+    <message>
+        <source>Draw its corners</source>
+        <translation>Teken de hoekpunten</translation>
+    </message>
+    <message>
+        <source>Draw one '{object}' - the AI finds the rest</source>
+        <translation>Teken één '{object}' - de AI vindt de rest</translation>
+    </message>
+    <message>
+        <source>Draw one example - the AI finds the rest</source>
+        <translation>Teken één voorbeeld - de AI vindt de rest</translation>
+    </message>
+    <message>
+        <source>Draw the new edge: start outside the shape, cross it, end outside, then Finish.</source>
+        <translation>Teken de nieuwe rand: begin buiten de vorm, doorkruis hem, eindig buiten, dan Voltooien.</translation>
+    </message>
+    <message>
+        <source>Drawn examples</source>
+        <translation>Getekende voorbeelden</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial for thinning an outline.</source>
+        <translation>Verwijder punten die dichter bij een rechte rand liggen dan deze afstand (0 = uit). Een afstand, geen aantal: hoog ingesteld kan het gebogen muren afvlakken. Punten is meestal de betere regelaar om een contour dunner te maken.</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial; this stays for comparison.</source>
+        <translation>Verwijder punten die dichter bij een rechte rand liggen dan deze afstand (0 = uit). Een afstand, geen aantal: hoog ingesteld kan het gebogen muren afvlakken. Punten is meestal de betere regelaar; dit blijft staan ter vergelijking.</translation>
+    </message>
+    <message>
+        <source>Drop this polygon's points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
+        <translation>Verwijder de punten van deze polygoon die dichter bij een rechte rand liggen dan deze afstand (0 = uit). Een afstand, geen aantal; Punten is meestal de betere regelaar.</translation>
+    </message>
+    <message>
+        <source>Edit an existing polygon</source>
+        <translation>Een bestaande polygoon bewerken</translation>
+    </message>
+    <message>
+        <source>Export the polygons to a layer</source>
+        <translation>Polygonen exporteren naar een laag</translation>
+    </message>
+    <message>
+        <source>Fewer points</source>
+        <translation>Minder punten</translation>
+    </message>
+    <message>
+        <source>Fill holes</source>
+        <translation>Gaten opvullen</translation>
+    </message>
+    <message>
+        <source>Fill only holes smaller than this ground area. Bigger holes (a road median, a courtyard) stay open. No limit = fill every hole.</source>
+        <translation>Vul alleen gaten die kleiner zijn dan dit grondoppervlak. Grotere gaten (een middenberm, een binnenplaats) blijven open. Geen limiet = vul elk gat.</translation>
+    </message>
+    <message>
+        <source>Finish the line</source>
+        <translation>Lijn voltooien</translation>
+    </message>
+    <message>
+        <source>Fix method</source>
+        <translation>Correctiemethode</translation>
+    </message>
+    <message>
+        <source>Give neighbouring shapes one exact border instead of a hairline gap or overlap. For land cover, where the map is one surface.</source>
+        <translation>Geef aangrenzende vormen precies dezelfde grens in plaats van een haarfijn kiertje of overlap. Voor landbedekking, waar de kaart één oppervlak is.</translation>
+    </message>
+    <message>
+        <source>Give this one polygon its own shape settings, without moving the dials that drive the whole layer.</source>
+        <translation>Geef deze ene polygoon zijn eigen vorminstellingen, zonder de regelaars te verplaatsen die de hele laag sturen.</translation>
+    </message>
+    <message>
+        <source>Go back to picking polygons. Everything you kept stays, and so does the outline on screen.</source>
+        <translation>Ga terug naar het kiezen van polygonen. Alles wat je hebt bewaard, blijft staan, en de omtrek op het scherm ook.</translation>
+    </message>
+    <message>
+        <source>Go back to your zone, references and settings, then detect the whole zone again. Nothing is saved.</source>
+        <translation>Ga terug naar je zone, referenties en instellingen, en detecteer daarna de hele zone opnieuw. Er wordt niets opgeslagen.</translation>
+    </message>
+    <message>
+        <source>Grow / shrink</source>
+        <translation>Vergroten / verkleinen</translation>
+    </message>
+    <message>
+        <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a distinct colour per object to tell them apart.</source>
+        <translation>Hoe detecties op de kaart worden gekleurd (alleen visueel): Normale vulling, Omtrek, Betrouwbaarheid-heatmap, of een unieke kleur per object om ze uit elkaar te houden.</translation>
+    </message>
+    <message>
+        <source>How many of this polygon's points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
+        <translation>Hoeveel punten van deze polygoon behouden blijven. Het aantal in de titelbalk volgt dit. Dit werkt vóór Rechte hoeken, dus als je dit verlaagt, geeft dat het haaks maken rechte muren in plaats van een trapje.</translation>
+    </message>
+    <message>
+        <source>How sure the AI is about each object. Lower shows more, higher keeps only the sure ones.</source>
+        <translation>Hoe zeker de AI is over elk object. Lager toont er meer, hoger houdt alleen de zekere over.</translation>
+    </message>
+    <message>
+        <source>Closed forest: the AI takes it as one cover and does not separate its trees. For the forest as one area, re-run with "forest".</source>
+        <translation>Gesloten bos: de AI ziet het als één geheel bladerdak en scheidt de bomen niet. Voer opnieuw uit met "forest" om het bos als één gebied te krijgen.</translation>
+    </message>
+    <message>
+        <source>Identify new shape</source>
+        <translation>Nieuwe vorm identificeren</translation>
+    </message>
+    <message>
+        <source>Installation Already Running</source>
+        <translation>Installatie is al bezig</translation>
+    </message>
+    <message>
+        <source>Installation Path Problem</source>
+        <translation>Probleem met installatiepad</translation>
+    </message>
+    <message>
+        <source>Installation running in another window</source>
+        <translation>Installatie loopt al in een ander venster</translation>
+    </message>
+    <message>
+        <source>Keep</source>
+        <translation>Behouden</translation>
+    </message>
+    <message>
+        <source>Keep these edits and go back to picking polygons.</source>
+        <translation>Bewaar deze bewerkingen en ga terug naar het kiezen van polygonen.</translation>
+    </message>
+    <message>
+        <source>Keep this detection in Favorites</source>
+        <translation>Bewaar deze detectie in Favorieten</translation>
+    </message>
+    <message>
+        <source>Keep this object in Favorites</source>
+        <translation>Bewaar dit object in Favorieten</translation>
+    </message>
+    <message>
+        <source>Keep this one</source>
+        <translation>Deze behouden</translation>
+    </message>
+    <message>
+        <source>Keep this one, or click again to correct the outline.</source>
+        <translation>Behoud deze, of klik opnieuw om de contour te corrigeren.</translation>
+    </message>
+    <message>
+        <source>Keep this one, or keep placing corners.</source>
+        <translation>Behoud deze, of blijf hoekpunten plaatsen.</translation>
+    </message>
+    <message>
+        <source>Keep this outline and point at the next object. Shortcut: S</source>
+        <translation>Behoud deze contour en wijs het volgende object aan. Toets: S</translation>
+    </message>
+    <message>
+        <source>Left-click adds a keep point, right-click a trim point. The outline follows.</source>
+        <translation>Linkerklik voegt een behoudpunt toe, rechterklik een inkortpunt. De contour volgt daarop.</translation>
+    </message>
+    <message>
+        <source>Linux System Too Old</source>
+        <translation>Linux-systeem te oud</translation>
+    </message>
+    <message>
+        <source>Loading stored detections ({done} of {total})</source>
+        <translation>Opgeslagen detecties worden geladen ({done} van {total})</translation>
+    </message>
+    <message>
+        <source>Maximum</source>
+        <translation>Maximum</translation>
+    </message>
+    <message>
+        <source>Measuring AI data size...</source>
+        <translation>AI-gegevensgrootte wordt gemeten...</translation>
+    </message>
+    <message>
+        <source>Measuring the downloaded data...</source>
+        <translation>De gedownloade gegevens worden gemeten...</translation>
+    </message>
+    <message>
+        <source>Merge with neighbours</source>
+        <translation>Samenvoegen met buren</translation>
+    </message>
+    <message>
+        <source>Merge {n} shapes · Free</source>
+        <translation>{n} vormen samenvoegen · Gratis</translation>
+    </message>
+    <message>
+        <source>Minimum</source>
+        <translation>Minimum</translation>
+    </message>
+    <message>
+        <source>Missing System Component</source>
+        <translation>Systeemonderdeel ontbreekt</translation>
+    </message>
+    <message>
+        <source>Move points</source>
+        <translation>Punten verplaatsen</translation>
+    </message>
+    <message>
+        <source>Navigation (while a tool is armed)</source>
+        <translation>Navigatie (terwijl een tool actief is)</translation>
+    </message>
+    <message>
+        <source>New polygon</source>
+        <translation>Nieuwe polygoon</translation>
+    </message>
+    <message>
+        <source>New shape added. Click Save to keep it.</source>
+        <translation>Nieuwe vorm toegevoegd. Klik op Opslaan om hem te behouden.</translation>
+    </message>
+    <message>
+        <source>No connection to the sign-in service. Check your internet connection, then click Sign in to try again.</source>
+        <translation>Geen verbinding met de aanmeldingsservice. Controleer je internetverbinding en klik op Aanmelden om het opnieuw te proberen.</translation>
+    </message>
+    <message>
+        <source>No detection under that click.</source>
+        <translation>Geen detectie onder die klik.</translation>
+    </message>
+    <message>
+        <source>No matches in this zone. A different object word often fixes it.</source>
+        <translation>Geen overeenkomsten in deze zone. Een ander objectwoord helpt vaak.</translation>
+    </message>
+    <message>
+        <source>No object matches that search.</source>
+        <translation>Geen object komt overeen met die zoekopdracht.</translation>
+    </message>
+    <message>
+        <source>Nothing changed. The line has to cross the outline twice, starting and ending outside the shape.</source>
+        <translation>Er is niets veranderd. De lijn moet de contour twee keer kruisen, en buiten de vorm beginnen en eindigen.</translation>
+    </message>
+    <message>
+        <source>Nothing was added. A polygon needs at least three corners.</source>
+        <translation>Er is niets toegevoegd. Een polygoon heeft minstens drie hoekpunten nodig.</translation>
+    </message>
+    <message>
+        <source>Nothing was split. The line has to cross the shape completely, starting and ending outside it.</source>
+        <translation>Er is niets gesplitst. De lijn moet de vorm volledig doorkruisen, en erbuiten beginnen en eindigen.</translation>
+    </message>
+    <message>
+        <source>Now click the other pieces of this object.</source>
+        <translation>Klik nu op de andere delen van dit object.</translation>
+    </message>
+    <message>
+        <source>One object came back split into several polygons. Click the others on the map, then confirm to merge them into one.</source>
+        <translation>Eén object kwam terug als meerdere polygonen. Klik op de andere op de kaart en bevestig daarna om ze samen te voegen tot één.</translation>
+    </message>
+    <message>
+        <source>One object per run - Detect will run "{first}" first.</source>
+        <translation>Eén object per run - Detecteren voert eerst "{first}" uit.</translation>
+    </message>
+    <message>
+        <source>One object per run - detecting "{first}" now. Run the other objects as separate detections.</source>
+        <translation>Eén object per run - "{first}" wordt nu gedetecteerd. Voer de andere objecten uit als aparte detecties.</translation>
+    </message>
+    <message>
+        <source>Open the selected saved polygon for AI editing</source>
+        <translation>Open de geselecteerde opgeslagen polygoon voor AI-bewerking</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>Overig</translation>
+    </message>
+    <message>
+        <source>Package Versions Conflict</source>
+        <translation>Conflict tussen pakketversies</translation>
+    </message>
+    <message>
+        <source>Pick a tool above, then edit the highlighted object.</source>
+        <translation>Kies hierboven een tool, en bewerk dan het gemarkeerde object.</translation>
+    </message>
+    <message>
+        <source>Pick at least two shapes to merge them.</source>
+        <translation>Kies minstens twee vormen om ze samen te voegen.</translation>
+    </message>
+    <message>
+        <source>Pick or un-pick an object</source>
+        <translation>Een object kiezen of deselecteren</translation>
+    </message>
+    <message>
+        <source>Point at it on the map</source>
+        <translation>Wijs het aan op de kaart</translation>
+    </message>
+    <message>
+        <source>Points</source>
+        <translation>Punten</translation>
+    </message>
+    <message>
+        <source>Points the map back at this run with the same object and the same number of cloud detections, ready to detect. Nothing is spent until you do.</source>
+        <translation>Wijst de kaart terug naar deze run met hetzelfde object en hetzelfde aantal clouddetecties, klaar voor detectie. Niets wordt besteed tot je het doet.</translation>
+    </message>
+    <message>
+        <source>Points: {n}</source>
+        <translation>Punten: {n}</translation>
+    </message>
+    <message>
+        <source>Positive = grow outward, negative = shrink inward</source>
+        <translation>Positief = naar buiten groeien, negatief = naar binnen krimpen</translation>
+    </message>
+    <message>
+        <source>Proxy Authentication Required</source>
+        <translation>Proxyauthenticatie vereist</translation>
+    </message>
+    <message>
+        <source>Push this polygon's edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
+        <translation>Duw de rand van deze polygoon naar buiten (positief) of naar binnen (negatief), voor het ene grondvlak dat het model te kort of te lang maakte.</translation>
+    </message>
+    <message>
+        <source>QGIS could not activate the temporary review layer. Close any other editing session, then try Edit manually again.</source>
+        <translation>QGIS kon de tijdelijke beoordelingslaag niet activeren. Sluit elke andere bewerkingssessie en probeer daarna opnieuw Handmatig bewerken.</translation>
+    </message>
+    <message>
+        <source>QGIS could not save these edits. Fix the geometry and click Done again.</source>
+        <translation>QGIS kon deze bewerkingen niet opslaan. Corrigeer de geometrie en klik opnieuw op Klaar.</translation>
+    </message>
+    <message>
+        <source>Re-run the whole zone</source>
+        <translation>Voer de hele zone opnieuw uit</translation>
+    </message>
+    <message>
+        <source>Reading the imagery around this polygon...</source>
+        <translation>De beelden rond deze polygoon worden gelezen...</translation>
+    </message>
+    <message>
+        <source>Reading the imagery around your click...</source>
+        <translation>De beelden rond je klik worden gelezen...</translation>
+    </message>
+    <message>
+        <source>Reading this run...</source>
+        <translation>Deze run wordt gelezen...</translation>
+    </message>
+    <message>
+        <source>Rebuilding shapes ({done} of {total})</source>
+        <translation>Vormen worden herbouwd ({done} van {total})</translation>
+    </message>
+    <message>
+        <source>Redraw edge</source>
+        <translation>Rand hertekenen</translation>
+    </message>
+    <message>
+        <source>Remove the corner you picked. The Delete key does the same.</source>
+        <translation>Verwijder het hoekpunt dat je hebt gekozen. De Delete-toets doet hetzelfde.</translation>
+    </message>
+    <message>
+        <source>Remove the selected detection</source>
+        <translation>De geselecteerde detectie verwijderen</translation>
+    </message>
+    <message>
+        <source>Removing the downloaded AI data. This window closes when it is done.</source>
+        <translation>De gedownloade AI-gegevens worden verwijderd. Dit venster sluit zodra het verwijderen klaar is.</translation>
+    </message>
+    <message>
+        <source>Removing the downloaded AI data...</source>
+        <translation>De gedownloade AI-gegevens worden verwijderd...</translation>
+    </message>
+    <message>
+        <source>Replace one side by drawing a new line across the outline.</source>
+        <translation>Vervang één kant door een nieuwe lijn over de contour te tekenen.</translation>
+    </message>
+    <message>
+        <source>Report this problem</source>
+        <translation>Dit probleem melden</translation>
+    </message>
+    <message>
+        <source>Reset to shared</source>
+        <translation>Terugzetten naar gedeeld</translation>
+    </message>
+    <message>
+        <source>Right angles</source>
+        <translation>Rechte hoeken</translation>
+    </message>
+    <message>
+        <source>Round corners</source>
+        <translation>Hoeken afronden</translation>
+    </message>
+    <message>
+        <source>Round corners for natural shapes like trees and bushes. Lower Points for smoother results.</source>
+        <translation>Rond hoeken af voor natuurlijke vormen zoals bomen en struiken. Verlaag Punten voor een vloeiender resultaat.</translation>
+    </message>
+    <message>
+        <source>Round this polygon's corners, for a tree or a pond among squared neighbours.</source>
+        <translation>Rond de hoeken van deze polygoon af, voor een boom of vijver tussen rechthoekige buren.</translation>
+    </message>
+    <message>
+        <source>Run the detection</source>
+        <translation>Voer de detectie uit</translation>
+    </message>
+    <message>
+        <source>Run this zone again</source>
+        <translation>Voer deze zone opnieuw uit</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Opslaan</translation>
+    </message>
+    <message>
+        <source>Save the fix and go back to the review</source>
+        <translation>Sla de correctie op en ga terug naar de beoordeling</translation>
+    </message>
+    <message>
+        <source>Shape updated. Keep editing, or click Save.</source>
+        <translation>Vorm bijgewerkt. Blijf bewerken, of klik op Opslaan.</translation>
+    </message>
+    <message>
+        <source>Shapes</source>
+        <translation>Vormen</translation>
+    </message>
+    <message>
+        <source>Shared borders:</source>
+        <translation>Gedeelde grenzen:</translation>
+    </message>
+    <message>
+        <source>Shave thin spikes and ragged bits off each shape's outline. It leaves the main body alone; higher values trim more. 0 = off.</source>
+        <translation>Snijd dunne pieken en rafelige stukjes van de contour van elke vorm. De hoofdvorm blijft ongemoeid; hogere waarden snijden meer weg. 0 = uit.</translation>
+    </message>
+    <message>
+        <source>Show what it looks like</source>
+        <translation>Laat zien hoe het eruitziet</translation>
+    </message>
+    <message>
+        <source>Simplify</source>
+        <translation>Vereenvoudigen</translation>
+    </message>
+    <message>
+        <source>Snap walls to right angles, 45 degree walls included. Made for buildings, pools and solar panels. A shape it would distort is left as it is.</source>
+        <translation>Lijn muren uit op rechte hoeken, inclusief muren van 45 graden. Gemaakt voor gebouwen, zwembaden en zonnepanelen. Een vorm die hierdoor zou vervormen, blijft ongewijzigd.</translation>
+    </message>
+    <message>
+        <source>Something went wrong preparing the results. Please run Detect again.</source>
+        <translation>Er ging iets mis bij het voorbereiden van de resultaten. Voer Detecteren opnieuw uit.</translation>
+    </message>
+    <message>
+        <source>Something went wrong preparing the results. Your detections were saved to the layer {name}.</source>
+        <translation>Er ging iets mis bij het voorbereiden van de resultaten. Je detecties zijn opgeslagen in de laag {name}.</translation>
+    </message>
+    <message>
+        <source>Split</source>
+        <translation>Splitsen</translation>
+    </message>
+    <message>
+        <source>Square this polygon's edges, or leave them as traced while the rest of the layer stays squared.</source>
+        <translation>Maak de randen van deze polygoon haaks, of laat ze zoals getraceerd terwijl de rest van de laag haaks blijft.</translation>
+    </message>
+    <message>
+        <source>Star a detection or an object to keep it here.</source>
+        <translation>Markeer een detectie of een object met een ster om het hier te bewaren.</translation>
+    </message>
+    <message>
+        <source>Still waiting for the sign-in page. If no browser opened, or the page shows an error, click Cancel and try again.</source>
+        <translation>Wachten nog steeds op de aanmeldpagina. Als er geen browser is geopend, of de pagina toont een fout, klik dan op Annuleren en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Stop adding</source>
+        <translation>Toevoegen stoppen</translation>
+    </message>
+    <message>
+        <source>Stopping the local AI...</source>
+        <translation>De lokale AI wordt gestopt...</translation>
+    </message>
+    <message>
+        <source>That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.</source>
+        <translation>Dat gebied raakt het object dat je bewerkt niet, dus er is niets toegevoegd. Vormaanpassing werkt op één object tegelijk.</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples - you can draw up to 3.</source>
+        <translation>De AI vindt elk object dat lijkt op je voorbeelden - je kunt er tot 3 tekenen.</translation>
+    </message>
+    <message>
+        <source>The connection to the server was interrupted. Please try again.</source>
+        <translation>De verbinding met de server is onderbroken. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The detection service had a problem and the run stopped. Please try again.</source>
+        <translation>De detectieservice had een probleem en de run is gestopt. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the {n} cloud detection(s) already paid for.</source>
+        <translation>De detectie reageert niet meer. De {n} clouddetectie(s) waarvoor al betaald is, worden behouden.</translation>
+    </message>
+    <message>
+        <source>The imagery reader could not be loaded, and repairing the installation did not fix it. Please report this so we can look into it.
+
+{details}</source>
+        <translation>De beeldlezer kon niet worden geladen, en het herstellen van de installatie loste dit niet op. Meld dit zodat we het kunnen onderzoeken.
+
+{details}</translation>
+    </message>
+    <message>
+        <source>The installer could not start a helper process (a damaged Python launcher). Click Reinstall Dependencies to rebuild the environment from scratch.</source>
+        <translation>Het installatieprogramma kon geen hulpproces starten (een beschadigde Python-launcher). Klik op Afhankelijkheden opnieuw installeren om de omgeving helemaal opnieuw op te bouwen.</translation>
+    </message>
+    <message>
+        <source>The removal could not start. You are signed out, but the downloaded AI data is still on this computer. Try again.</source>
+        <translation>Het verwijderen kon niet starten. Je bent afgemeld, maar de gedownloade AI-gegevens staan nog op deze computer. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The removal did not finish. Close this window, then check the AI data folder before trying again.</source>
+        <translation>Het verwijderen is niet voltooid. Sluit dit venster en controleer daarna de AI-gegevensmap voordat je het opnieuw probeert.</translation>
+    </message>
+    <message>
+        <source>The removal is already running.</source>
+        <translation>Het verwijderen is al bezig.</translation>
+    </message>
+    <message>
+        <source>The reply did not come from the service. If this network shows a sign-in page, open it in your browser first, then try again.</source>
+        <translation>Het antwoord kwam niet van de service. Als dit netwerk een aanmeldpagina toont, open deze dan eerst in je browser en probeer het daarna opnieuw.</translation>
+    </message>
+    <message>
+        <source>The server returned an unexpected response. Please try again.</source>
+        <translation>De server gaf een onverwacht antwoord. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Thin this polygon's points before you edit them by hand. 100% keeps the outline as it is.</source>
+        <translation>Dun de punten van deze polygoon uit voordat je ze handmatig bewerkt. 100% houdt de contour zoals hij is.</translation>
+    </message>
+    <message>
+        <source>This polygon</source>
+        <translation>Deze polygoon</translation>
+    </message>
+    <message>
+        <source>This raster has no coordinate reference system, so polygons will use pixel coordinates. Set a CRS in Layer Properties for georeferenced output.</source>
+        <translation>Dit raster heeft geen coördinatenreferentiesysteem, dus polygonen gebruiken pixelcoördinaten. Stel een CRS in bij Laageigenschappen voor gegeorefereerde uitvoer.</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it before segmenting.</source>
+        <translation>Dit raster is geroteerd. Voer Warp (Reproject) erop uit om het recht te trekken voordat je segmenteert.</translation>
+    </message>
+    <message>
+        <source>This run did not keep where it looked, so it cannot be pointed at the same place. Draw the zone again.</source>
+        <translation>Deze run heeft niet onthouden waar hij keek, dus hij kan niet naar dezelfde plek worden teruggezet. Teken de zone opnieuw.</translation>
+    </message>
+    <message>
+        <source>Those shapes could not be joined. Nothing was changed.</source>
+        <translation>Die vormen konden niet worden samengevoegd. Er is niets veranderd.</translation>
+    </message>
+    <message>
+        <source>Trim spikes</source>
+        <translation>Pieken bijsnijden</translation>
+    </message>
+    <message>
+        <source>Two references give the strongest detection. Draw a second to reach best quality.</source>
+        <translation>Twee referenties geven de sterkste detectie. Teken een tweede voor de beste kwaliteit.</translation>
+    </message>
+    <message>
+        <source>Unavailable while Right angles is on. Turn it off to adjust this setting.</source>
+        <translation>Niet beschikbaar zolang Rechte hoeken aan staat. Zet dit uit om deze instelling aan te passen.</translation>
+    </message>
+    <message>
+        <source>Undo</source>
+        <translation>Ongedaan maken</translation>
+    </message>
+    <message>
+        <source>Undo last</source>
+        <translation>Laatste ongedaan maken</translation>
+    </message>
+    <message>
+        <source>Undo the last correction</source>
+        <translation>Laatste correctie ongedaan maken</translation>
+    </message>
+    <message>
+        <source>Undo the last thing you did here: the point you just placed, or the last edit.</source>
+        <translation>Maak het laatste ongedaan wat je hier hebt gedaan: het punt dat je net hebt geplaatst, of de laatste bewerking.</translation>
+    </message>
+    <message>
+        <source>Unsupported Mac and Python Combination</source>
+        <translation>Niet-ondersteunde combinatie van Mac en Python</translation>
+    </message>
+    <message>
+        <source>Up to</source>
+        <translation>Tot</translation>
+    </message>
+    <message>
+        <source>Writing the file...</source>
+        <translation>Bestand wordt geschreven...</translation>
+    </message>
+    <message>
+        <source>Your examples drive the search - naming the object makes it even more accurate.</source>
+        <translation>Je voorbeelden bepalen de zoekopdracht - het object benoemen maakt het nog nauwkeuriger.</translation>
+    </message>
+    <message>
+        <source>Your free detections come back on {date}.</source>
+        <translation>Je gratis detecties komen terug op {date}.</translation>
+    </message>
+    <message>
+        <source>Your network proxy requires a username and password. Enter them in QGIS &gt; Settings &gt; Options &gt; Network, then restart QGIS and try again.</source>
+        <translation>Je netwerkproxy vereist een gebruikersnaam en wachtwoord. Voer deze in bij QGIS &gt; Instellingen &gt; Opties &gt; Netwerk, start QGIS daarna opnieuw op en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>a month ago</source>
+        <translation>een maand geleden</translation>
+    </message>
+    <message>
+        <source>a week ago</source>
+        <translation>een week geleden</translation>
+    </message>
+    <message>
+        <source>a year ago</source>
+        <translation>een jaar geleden</translation>
+    </message>
+    <message>
+        <source>applies to every polygon</source>
+        <translation>geldt voor elke polygoon</translation>
+    </message>
+    <message>
+        <source>fine-tune the edges</source>
+        <translation>de randen verfijnen</translation>
+    </message>
+    <message>
+        <source>hide anything outside this range</source>
+        <translation>verberg alles buiten dit bereik</translation>
+    </message>
+    <message>
+        <source>how each outline is styled</source>
+        <translation>hoe elke contour wordt vormgegeven</translation>
+    </message>
+    <message>
+        <source>how the outline is styled</source>
+        <translation>hoe de contour wordt vormgegeven</translation>
+    </message>
+    <message>
+        <source>{count} polygons added so far.</source>
+        <translation>Tot nu toe {count} polygonen toegevoegd.</translation>
+    </message>
+    <message>
+        <source>{count} vertices</source>
+        <translation>{count} hoekpunten</translation>
+    </message>
+    <message>
+        <source>{credits} charged</source>
+        <translation>{credits} berekend</translation>
+    </message>
+    <message>
+        <source>{hidden} hidden by the filters</source>
+        <translation>{hidden} verborgen door de filters</translation>
+    </message>
+    <message>
+        <source>{n} "{object}" found so far</source>
+        <translation>Tot nu toe {n} "{object}" gevonden</translation>
+    </message>
+    <message>
+        <source>{n} corrections this round</source>
+        <translation>{n} correcties deze ronde</translation>
+    </message>
+    <message>
+        <source>{n} kept</source>
+        <translation>{n} behouden</translation>
+    </message>
+    <message>
+        <source>{n} months ago</source>
+        <translation>{n} maanden geleden</translation>
+    </message>
+    <message>
+        <source>{n} objects</source>
+        <translation>{n} objecten</translation>
+    </message>
+    <message>
+        <source>{n} point placed.</source>
+        <translation>{n} punt geplaatst.</translation>
+    </message>
+    <message>
+        <source>{n} points placed.</source>
+        <translation>{n} punten geplaatst.</translation>
+    </message>
+    <message>
+        <source>{n} results</source>
+        <translation>{n} resultaten</translation>
+    </message>
+    <message>
+        <source>{n} shape(s) edited this session</source>
+        <translation>{n} vorm(en) bewerkt deze sessie</translation>
+    </message>
+    <message>
+        <source>{n} shapes picked. Press Enter to join.</source>
+        <translation>{n} vormen gekozen. Druk op Enter om samen te voegen.</translation>
+    </message>
+    <message>
+        <source>{n} part(s) of this run took too long to load and are missing from this result.</source>
+        <translation>{n} onderdeel(en) van deze run duurde(n) te lang om te laden en ontbreekt/ontbreken in dit resultaat.</translation>
+    </message>
+    <message>
+        <source>{n} weeks ago</source>
+        <translation>{n} weken geleden</translation>
+    </message>
+    <message>
+        <source>{n} years ago</source>
+        <translation>{n} jaar geleden</translation>
+    </message>
+    <message>
+        <source>{tiles} cloud detections</source>
+        <translation>{tiles} clouddetecties</translation>
+    </message>
+    
+    <message>
+        <source>A free run covers up to {cap} cloud detections. This one needs more. Pro covers up to 800 in one run.</source>
+        <translation>Een gratis run omvat tot {cap} clouddetecties. Deze heeft meer nodig. Pro omvat tot 800 in één run.</translation>
+    </message>
+    <message>
+        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then arms Add for you.</source>
+        <translation>Een object toevoegen gebruikt de gratis lokale AI, die nog niet is geïnstalleerd. Nu installeren? Dit gebeurt eenmalig en duurt een paar minuten. De beoordeling wacht erop, en zet daarna Toevoegen voor je klaar.</translation>
+    </message>
+    <message>
+        <source>At this precision {obj} is too small to spot - raise the precision.</source>
+        <translation>Bij deze precisie is {obj} te klein om te herkennen - verhoog de precisie.</translation>
+    </message>
+    <message>
+        <source>Automatic mode sweeps your zone in a grid. Each grid cell costs one cloud detection, so this run costs about {n}. More precision means a finer grid and more cloud detections.</source>
+        <translation>Automatische modus scant je zone in een raster. Elke rastercell kost één clouddetectie, dus deze run kost ongeveer {n}. Meer precisie betekent een fijner raster en meer clouddetecties.</translation>
+    </message>
+    <message>
+        <source>Cancel setup</source>
+        <translation>Installatie annuleren</translation>
+    </message>
+    <message>
+        <source>Clean up this outline</source>
+        <translation>Deze contour opschonen</translation>
+    </message>
+    <message>
+        <source>Click points around one look-alike, then double-click to close.</source>
+        <translation>Klik punten rond één gelijkend object, dubbelklik daarna om te sluiten.</translation>
+    </message>
+    <message>
+        <source>Click points around one object, then double-click to close.</source>
+        <translation>Klik punten rond één object, dubbelklik daarna om te sluiten.</translation>
+    </message>
+    <message>
+        <source>Click the layer name to see it on the map</source>
+        <translation>Klik op de laagnaam om deze op de kaart te zien</translation>
+    </message>
+    <message>
+        <source>Click to open your dashboard</source>
+        <translation>Klik om je dashboard te openen</translation>
+    </message>
+    <message>
+        <source>Connection is slow - still working, everything already found is kept...</source>
+        <translation>Verbinding is traag - nog steeds bezig, alles wat al is gevonden wordt bewaard...</translation>
+    </message>
+    <message>
+        <source>Could not save your detections to a file.</source>
+        <translation>Kon je detecties niet opslaan naar een bestand.</translation>
+    </message>
+    <message>
+        <source>Downloads Blocked by Your Network</source>
+        <translation>Downloads geblokkeerd door je netwerk</translation>
+    </message>
+    <message>
+        <source>Draw another example</source>
+        <translation>Teken nog een voorbeeld</translation>
+    </message>
+    <message>
+        <source>Drawing (click to stop)</source>
+        <translation>Tekenen (klik om te stoppen)</translation>
+    </message>
+    <message>
+        <source>Errors, versions and the words you type, linked to your account. Never your imagery, layers or coordinates.</source>
+        <translation>Fouten, versies en de woorden die je typt, gekoppeld aan je account. Nooit je beeldmateriaal, lagen of coördinaten.</translation>
+    </message>
+    <message>
+        <source>Fixing a polygon uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then opens this polygon for you.</source>
+        <translation>Een polygoon corrigeren gebruikt de gratis lokale AI, die nog niet is geïnstalleerd. Nu installeren? Dit gebeurt eenmalig en duurt een paar minuten. De beoordeling wacht erop en opent daarna deze polygoon voor je.</translation>
+    </message>
+    <message>
+        <source>Fixing needs a one-time setup</source>
+        <translation>Corrigeren heeft een eenmalige installatie nodig</translation>
+    </message>
+    <message>
+        <source>Helps us fix bugs faster.</source>
+        <translation>Helpt ons bugs sneller op te lossen.</translation>
+    </message>
+    <message>
+        <source>More precision sweeps your zone in a finer grid, so it catches smaller objects. Each grid cell costs one cloud detection.</source>
+        <translation>Meer precisie scant je zone in een fijner raster, dus het vangt kleinere objecten. Elke rastercell kost één clouddetectie.</translation>
+    </message>
+    <message>
+        <source>Keep installing</source>
+        <translation>Blijven installeren</translation>
+    </message>
+    <message>
+        <source>Keep this shape. The polygon stays picked, so you can still adjust, merge or delete it.</source>
+        <translation>Behoud deze vorm. De polygoon blijft gekozen, zodat je hem nog kunt aanpassen, samenvoegen of verwijderen.</translation>
+    </message>
+    <message>
+        <source>Loading the imagery...</source>
+        <translation>Beeldmateriaal laden...</translation>
+    </message>
+    <message>
+        <source>Loading the imagery... {n}s</source>
+        <translation>Beeldmateriaal laden... {n}s</translation>
+    </message>
+    <message>
+        <source>Max precision for this zone - draw a larger zone to go finer.</source>
+        <translation>Maximale precisie voor deze zone - teken een grotere zone voor meer precisie.</translation>
+    </message>
+    <message>
+        <source>More precision finds smaller objects and uses more cloud detections.</source>
+        <translation>Meer precisie vindt kleinere objecten en gebruikt meer clouddetecties.</translation>
+    </message>
+    <message>
+        <source>More precision finds smaller objects.</source>
+        <translation>Meer precisie vindt kleinere objecten.</translation>
+    </message>
+    <message>
+        <source>More precision keeps helping {obj} in this zone.</source>
+        <translation>Meer precisie blijft helpen voor {obj} in deze zone.</translation>
+    </message>
+    <message>
+        <source>Name the object (or draw an example) first - Precision then tunes itself to it.</source>
+        <translation>Benoem eerst het object (of teken een voorbeeld) - Precisie stemt zich er daarna op af.</translation>
+    </message>
+    <message>
+        <source>Next: clean up the outlines</source>
+        <translation>Volgende: contouren opschonen</translation>
+    </message>
+    <message>
+        <source>Next: fix what looks wrong</source>
+        <translation>Volgende: corrigeren wat er niet goed uitziet</translation>
+    </message>
+    <message>
+        <source>No detection in this zone. Try a more specific object word, or more precision.</source>
+        <translation>Geen detectie in deze zone. Probeer een specifieker objectwoord, of meer precisie.</translation>
+    </message>
+    <message>
+        <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
+        <translation>Geen beeld over deze zone bij deze precisie, dus er is niets geanalyseerd (niet in rekening gebracht). Verlaag Precisie, of kies een laag die dit gebied dekt.</translation>
+    </message>
+    <message>
+        <source>Opens your terra-lab.ai dashboard: your plan, your cloud detections and your payment details.</source>
+        <translation>Opent je terra-lab.ai-dashboard: je plan, je clouddetecties en je betalingsgegevens.</translation>
+    </message>
+    <message>
+        <source>Outline settings</source>
+        <translation>Contourinstellingen</translation>
+    </message>
+    <message>
+        <source>Precision</source>
+        <translation>Precisie</translation>
+    </message>
+    <message>
+        <source>Ready for Automatic mode</source>
+        <translation>Gereed voor Automatische modus</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: nog {n} gratis detecties over, terug op {date}. &lt;a href="{url}"&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: nog {n} gratis detecties over. &lt;a href="{url}"&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
+        <translation>Dezelfde instellingen als je laatste run - het resultaat komt overeen. Voeg een voorbeeld toe of wijzig de precisie voor een ander resultaat.</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI. This runs once and takes a few minutes. The review waits here until it is done.</source>
+        <translation>De lokale AI wordt ingesteld. Dit gebeurt eenmalig en duurt een paar minuten. De beoordeling wacht hier totdat het klaar is.</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI...</source>
+        <translation>De lokale AI wordt ingesteld...</translation>
+    </message>
+    <message>
+        <source>Shadows getting detected instead of trees? Use 'Exclude a look-alike' on one shadow - the AI drops similar false positives.</source>
+        <translation>Worden schaduwen gedetecteerd in plaats van bomen? Gebruik 'Gelijkende uitsluiten' op één schaduw - de AI laat vergelijkbare fout-positieven vallen.</translation>
+    </message>
+    <message>
+        <source>Share of each outline's points to keep. 100% is the class default.
+Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
+        <translation>Aandeel van de punten van elke contour dat behouden blijft. 100% is de klassestandaard.
+Lager dunt eerst het kleinste detail uit, behoudt de hoekpunten, en geeft Rechte hoeken rechte muren om vanuit te werken.</translation>
+    </message>
+    <message>
+        <source>Share of the outline's points to keep. 100% is the standard density.
+Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
+        <translation>Aandeel van de punten van de contour dat behouden blijft. 100% is de standaarddichtheid.
+Lager dunt eerst het kleinste detail uit, behoudt de hoekpunten, en geeft Rechte hoeken rechte muren om vanuit te werken.</translation>
+    </message>
+    <message>
+        <source>Share usage statistics with TerraLab</source>
+        <translation>Gebruiksstatistieken delen met TerraLab</translation>
+    </message>
+    <message>
+        <source>Simplify this outline first</source>
+        <translation>Vereenvoudig eerst deze contour</translation>
+    </message>
+    <message>
+        <source>Stop the setup</source>
+        <translation>Installatie stoppen</translation>
+    </message>
+    <message>
+        <source>Stop the setup and go back to the review. The AI fix stays unavailable until you install it.</source>
+        <translation>Stop de installatie en ga terug naar de beoordeling. De AI-correctie blijft onbeschikbaar totdat je deze installeert.</translation>
+    </message>
+    <message>
+        <source>Stop the setup?</source>
+        <translation>Installatie stoppen?</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding before anything came back. Check your connection, then run Detect again (nothing was charged).</source>
+        <translation>De detectie reageert niet meer voordat iets terugkwam. Controleer je verbinding en voer Detecteren opnieuw uit (er is niets berekend).</translation>
+    </message>
+    <message>
+        <source>The file may be open in QGIS or in another program. Close it and try Finish again.</source>
+        <translation>Het bestand is mogelijk geopend in QGIS of in een ander programma. Sluit het en probeer opnieuw af te ronden.</translation>
+    </message>
+    <message>
+        <source>The imagery is loading slowly... {n}s</source>
+        <translation>Het beeldmateriaal laadt traag... {n}s</translation>
+    </message>
+    <message>
+        <source>The on-device AI could not start, so the AI fix is off. Your detections are safe: switch the fix method to Manual to keep correcting, or save them as they are.</source>
+        <translation>De lokale AI kon niet starten, dus de AI-correctie is uitgeschakeld. Je detecties zijn veilig: zet de correctiemethode op Handmatig om te blijven corrigeren, of sla ze op zoals ze zijn.</translation>
+    </message>
+    <message>
+        <source>The on-device AI is unavailable, so the AI fix is off. Switch the fix method to Manual to keep correcting.</source>
+        <translation>De lokale AI is niet beschikbaar, dus de AI-correctie is uitgeschakeld. Zet de correctiemethode op Handmatig om te blijven corrigeren.</translation>
+    </message>
+    <message>
+        <source>The on-device AI will not be installed, so fixing a polygon with it stays unavailable. What is already downloaded is kept, so starting again resumes from there.</source>
+        <translation>De lokale AI wordt niet geïnstalleerd, dus een polygoon corrigeren daarmee blijft onbeschikbaar. Wat al is gedownload, blijft bewaard, dus opnieuw beginnen gaat daar verder.</translation>
+    </message>
+    <message>
+        <source>The package index refused the download (error 403).
+
+This is usually a company or campus network filtering downloads. Ask your IT administrator to allow pypi.org and files.pythonhosted.org, or run the install from another network.
+
+Automatic (cloud) mode does not need this download.</source>
+        <translation>De pakketindex weigerde de download (fout 403).
+
+Dit komt meestal doordat een bedrijfs- of campusnetwerk downloads filtert. Vraag je IT-beheerder om pypi.org en files.pythonhosted.org toe te staan, of voer de installatie uit vanaf een ander netwerk.
+
+De Automatische (cloud) modus heeft deze download niet nodig.</translation>
+    </message>
+    <message>
+        <source>The raster file could not be found:
+{path}
+
+It may have been moved or renamed, or the drive or network share it is on may be disconnected. Reload the layer from where the file is now, then start again.</source>
+        <translation>Het rasterbestand kon niet worden gevonden:
+{path}
+
+Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het staat is mogelijk niet verbonden. Laad de laag opnieuw vanaf de huidige locatie van het bestand en begin daarna opnieuw.</translation>
+    </message>
+    <message>
+        <source>Thin this outline before you drag its corners, without moving the dials that drive the whole layer.</source>
+        <translation>Dun deze contour uit voordat je de hoekpunten ervan sleept, zonder de regelaars te verplaatsen die de hele laag sturen.</translation>
+    </message>
+    <message>
+        <source>This area is large for this precision. Raise the precision or zoom in for sharper detections.</source>
+        <translation>Dit gebied is groot voor deze precisie. Verhoog de precisie of zoom in voor scherpere detecties.</translation>
+    </message>
+    <message>
+        <source>This example is very small at this precision. Raise the precision or draw a larger object.</source>
+        <translation>Dit voorbeeld is erg klein bij deze precisie. Verhoog de precisie of teken een groter object.</translation>
+    </message>
+    <message>
+        <source>This example is very small even at full precision. Draw a larger object, or it may be too small to detect.</source>
+        <translation>Dit voorbeeld is zelfs bij volledige precisie erg klein. Teken een groter object, anders is het mogelijk te klein om te detecteren.</translation>
+    </message>
+    <message>
+        <source>This layer has no image over your zone at this precision. The map source answered with an empty tile, so there is nothing to detect on. Lower Precision, zoom the layer out until the imagery shows, or pick a layer that covers this area.</source>
+        <translation>Deze laag heeft geen beeld over je zone bij deze precisie. De kaartbron antwoordde met een lege tegel, dus er is niets om te detecteren. Verlaag Precisie, zoom de laag uit totdat het beeld verschijnt, of kies een laag die dit gebied dekt.</translation>
+    </message>
+    <message>
+        <source>This polygon only. Every other one follows the Shapes step.</source>
+        <translation>Alleen deze polygoon. Elke andere volgt de stap Vormen.</translation>
+    </message>
+    <message>
+        <source>This polygon only. Fewer points means fewer corners to drag.</source>
+        <translation>Alleen deze polygoon. Minder punten betekent minder hoekpunten om te slepen.</translation>
+    </message>
+    <message>
+        <source>This run needs more cloud detections than one free run covers. Pro covers up to 800 in one run.</source>
+        <translation>Deze run heeft meer clouddetecties nodig dan één gratis run omvat. Pro omvat tot 800 in één run.</translation>
+    </message>
+    <message>
+        <source>One free run covers fewer cloud detections than this. Lower the precision or shrink the zone to stay free. Pro runs up to 800 cloud detections in one go, so a wide zone keeps a fine grid.</source>
+        <translation>Één gratis run omvat minder clouddetecties dan dit. Verlaag de precisie of verklein de zone om gratis te blijven. Pro kan tot 800 clouddetecties tegelijk verwerken, dus een brede zone houdt een fijn raster.</translation>
+    </message>
+    <message>
+        <source>This zone is too large for sharp detections, even at full precision. Draw a smaller zone for the best results.</source>
+        <translation>Deze zone is te groot voor scherpe detecties, zelfs bij volledige precisie. Teken een kleinere zone voor de beste resultaten.</translation>
+    </message>
+    <message>
+        <source>You are never charged for a part of the zone your layer has no image for, so a run can cost less than this, never more.</source>
+        <translation>Je wordt nooit belast voor een deel van de zone waarvoor je laag geen afbeelding heeft, dus een run kan minder kosten dan dit, maar nooit meer.</translation>
+    </message>
+    <message>
+        <source>Type a word for the object, or draw an example.</source>
+        <translation>Typ een woord voor het object, of teken een voorbeeld.</translation>
+    </message>
+    <message>
+        <source>Wait for the on-device AI to finish installing.</source>
+        <translation>Wacht tot de lokale AI klaar is met installeren.</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved</source>
+        <translation>{n} {object} opgeslagen</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved to {layer}</source>
+        <translation>{n} {object} opgeslagen in {layer}</translation>
+    </message>
+    
+    <message>
+        <source>A session is already running.</source>
+        <translation>Er is al een sessie bezig.</translation>
+    </message>
+    <message>
+        <source>AI engine</source>
+        <translation>AI-engine</translation>
+    </message>
+    <message>
+        <source>AI fixing is not reachable right now. Switched to editing by hand, which works offline.</source>
+        <translation>AI-correctie is nu niet bereikbaar. Overgeschakeld op handmatige bewerking, die offline werkt.</translation>
+    </message>
+    <message>
+        <source>AI ready</source>
+        <translation>AI gereed</translation>
+    </message>
+    <message>
+        <source>Almost ready: the AI file did not download.</source>
+        <translation>Bijna klaar: het AI-bestand is niet gedownload.</translation>
+    </message>
+    <message>
+        <source>Almost ready: the AI file is still missing.</source>
+        <translation>Bijna klaar: het AI-bestand ontbreekt nog.</translation>
+    </message>
+    <message>
+        <source>Answered on your computer this time. TerraLab could not be reached.</source>
+        <translation>Deze keer beantwoord op je computer. TerraLab kon niet worden bereikt.</translation>
+    </message>
+    <message>
+        <source>As fine as {obj} benefits from - finer splits them into pieces.</source>
+        <translation>Zo fijn als {obj} nodig heeft - fijner verdeelt ze in stukken.</translation>
+    </message>
+    <message>
+        <source>Automatic mode is ready. The on-device AI could not be installed, so Semi-Auto mode and the AI fix are off until it is. Everything else works.</source>
+        <translation>De Automatische modus is gereed. De lokale AI kon niet worden geïnstalleerd, dus de Semi-Auto-modus en de AI-correctie zijn uitgeschakeld totdat dit is gebeurd. Al het andere werkt.</translation>
+    </message>
+    <message>
+        <source>Automatic mode needs a small one-time setup before it can read your imagery. It takes about a minute.</source>
+        <translation>De Automatische modus heeft een korte eenmalige installatie nodig om je beeldmateriaal te kunnen lezen. Dit duurt ongeveer een minuut.</translation>
+    </message>
+    <message>
+        <source>Automatic mode ready</source>
+        <translation>Automatische modus gereed</translation>
+    </message>
+    <message>
+        <source>Categories</source>
+        <translation>Categorieën</translation>
+    </message>
+    <message>
+        <source>Choose between Semi-Auto and Automatic segmentation</source>
+        <translation>Kies tussen Semi-Auto-segmentatie en Automatische segmentatie</translation>
+    </message>
+    <message>
+        <source>Choose where the AI runs: on TerraLab servers, or on your own computer</source>
+        <translation>Kies waar de AI draait: op TerraLab-servers, of op je eigen computer</translation>
+    </message>
+    <message>
+        <source>Click the object you want to segment:</source>
+        <translation>Klik op het object dat je wilt segmenteren:</translation>
+    </message>
+    <message>
+        <source>Cloud AI</source>
+        <translation>Cloud AI</translation>
+    </message>
+    <message>
+        <source>Cloud AI needs your account, and it is signed out. Sign back in, or install the offline AI to work without one.</source>
+        <translation>Cloud AI heeft je account nodig, en je bent afgemeld. Meld je opnieuw aan, of installeer de lokale AI om zonder account te werken.</translation>
+    </message>
+    <message>
+        <source>How Cloud AI works</source>
+        <translation>Hoe Cloud AI werkt</translation>
+    </message>
+    <message>
+        <source>Continue with Cloud AI</source>
+        <translation>Doorgaan met Cloud AI</translation>
+    </message>
+    <message>
+        <source>Delete this polygon and leave the manual edit. Anything you changed here and did not save goes with it. Undo brings the polygon back.</source>
+        <translation>Deze polygoon verwijderen en de handmatige bewerking verlaten. Alles wat je hier hebt gewijzigd en niet hebt opgeslagen, gaat verloren. Ongedaan maken zet de polygoon terug.</translation>
+    </message>
+    <message>
+        <source>Downloading and setting it up takes &lt;b&gt;about {n} minutes&lt;/b&gt;, once.</source>
+        <translation>Downloaden en instellen duurt &lt;b&gt;ongeveer {n} minuten&lt;/b&gt;, eenmalig.</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Semi-Auto mode to work one object at a time.</source>
+        <translation>Teken een zone, benoem één soort object, en krijg ze allemaal in één run. Gebruik de Semi-Auto-modus om één object tegelijk te bewerken.</translation>
+    </message>
+    <message>
+        <source>Each click sends a small square of the image to our servers in Europe, and the outline comes back.</source>
+        <translation>Elke klik stuurt een klein vierkant van de afbeelding naar onze servers in Europa, en de omlijning komt terug.</translation>
+    </message>
+    <message>
+        <source>Bigger model, more accurate</source>
+        <translation>Groter model, nauwkeuriger</translation>
+    </message>
+    <message>
+        <source>Featured</source>
+        <translation>Uitgelicht</translation>
+    </message>
+    <message>
+        <source>Smaller model, works offline</source>
+        <translation>Kleiner model, werkt offline</translation>
+    </message>
+    <message>
+        <source>Install it now</source>
+        <translation>Nu installeren</translation>
+    </message>
+    <message>
+        <source>Install the offline AI</source>
+        <translation>De lokale AI installeren</translation>
+    </message>
+    <message>
+        <source>Installing the offline AI</source>
+        <translation>De lokale AI wordt geïnstalleerd</translation>
+    </message>
+    <message>
+        <source>Intel Mac: using the older AI model.</source>
+        <translation>Intel Mac: gebruikt het oudere AI-model.</translation>
+    </message>
+    <message>
+        <source>It needs &lt;b&gt;{gb} GB&lt;/b&gt; of free disk space.</source>
+        <translation>Dit heeft &lt;b&gt;{gb} GB&lt;/b&gt; vrije schijfruimte nodig.</translation>
+    </message>
+    <message>
+        <source>My computer</source>
+        <translation>Mijn computer</translation>
+    </message>
+    <message>
+        <source>My work</source>
+        <translation>Mijn werk</translation>
+    </message>
+    <message>
+        <source>No detections left. Each object you save with Cloud AI costs one. Switch to your own computer to keep working for free, or upgrade from the panel.</source>
+        <translation>Geen detections meer. Elk object dat je met Cloud AI opslaat kost er een. Schakel over naar je eigen computer om gratis door te werken, of upgrade via het paneel.</translation>
+    </message>
+    <message>
+        <source>No object found here. Try clicking somewhere else.</source>
+        <translation>Geen object gevonden op deze plek. Klik ergens anders.</translation>
+    </message>
+    <message>
+        <source>Not now</source>
+        <translation>Niet nu</translation>
+    </message>
+    <message>
+        <source>Your project and your files stay on your computer. One cloud detection per object you save.</source>
+        <translation>Je project en je bestanden blijven op je computer. Één clouddetectie per object dat je opslaat.</translation>
+    </message>
+    <message>
+        <source>One precision level fits {obj} in a zone this size - draw a larger zone for a choice.</source>
+        <translation>Eén precisieniveau past bij {obj} in een zone van dit formaat - teken een grotere zone voor een keuze.</translation>
+    </message>
+    <message>
+        <source>One-time setup</source>
+        <translation>Eenmalige installatie</translation>
+    </message>
+    <message>
+        <source>Other detections</source>
+        <translation>Andere detecties</translation>
+    </message>
+    <message>
+        <source>Pick a raster layer and accept the Terms to start.</source>
+        <translation>Kies een rasterlaag en accepteer de Voorwaarden om te beginnen.</translation>
+    </message>
+    <message>
+        <source>Preparing the install...</source>
+        <translation>Installatie voorbereiden...</translation>
+    </message>
+    <message>
+        <source>Pro is active on this account. Your cloud detections are ready.</source>
+        <translation>Pro is actief op dit account. Je clouddetecties staan klaar.</translation>
+    </message>
+    <message>
+        <source>Read the privacy policy</source>
+        <translation>Lees het privacybeleid</translation>
+    </message>
+    <message>
+        <source>Right-click a polygon on the map to delete it.</source>
+        <translation>Klik met de rechtermuisknop op een polygoon op de kaart om deze te verwijderen.</translation>
+    </message>
+    <message>
+        <source>Running low: {n} cloud detections left, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: {n} clouddetecties resterend, terug op {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Running low: {n} cloud detections left. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: {n} clouddetecties resterend. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Save a polygon first. Export writes every polygon you kept to a layer.</source>
+        <translation>Sla eerst een polygoon op. Exporteren schrijft elke polygoon die je hebt bewaard naar een laag.</translation>
+    </message>
+    <message>
+        <source>Saving object</source>
+        <translation>Object opslaan</translation>
+    </message>
+    <message>
+        <source>Semi-Auto</source>
+        <translation>Semi-Auto</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode installs local components that are not available for this Mac with this version of QGIS. Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>De Semi-Auto-modus installeert lokale onderdelen die niet beschikbaar zijn voor deze Mac met deze versie van QGIS. Gebruik in plaats daarvan de Automatische modus, die volledig in de cloud draait en geen lokale installatie nodig heeft.</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode is not supported</source>
+        <translation>Semi-Auto-modus wordt niet ondersteund</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode is not supported in this QGIS installation</source>
+        <translation>Semi-Auto-modus wordt niet ondersteund in deze QGIS-installatie</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode needs to install local dependencies, which is not supported inside this sandboxed QGIS installation (Flatpak or Snap). Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>De Semi-Auto-modus moet lokale afhankelijkheden installeren, wat niet wordt ondersteund binnen deze sandbox-QGIS-installatie (Flatpak of Snap). Gebruik in plaats daarvan de Automatische modus, die volledig in de cloud draait en geen lokale installatie nodig heeft.</translation>
+    </message>
+    <message>
+        <source>Session ended</source>
+        <translation>Sessie beëindigd</translation>
+    </message>
+    <message>
+        <source>Set up now</source>
+        <translation>Nu instellen</translation>
+    </message>
+    <message>
+        <source>Start Semi-Auto AI Segmentation</source>
+        <translation>Start Semi-Auto AI Segmentation</translation>
+    </message>
+    <message>
+        <source>Stop the install</source>
+        <translation>Installatie stoppen</translation>
+    </message>
+    <message>
+        <source>The AI is still loading. Try again in a few seconds.</source>
+        <translation>De AI wordt nog geladen. Probeer het over een paar seconden opnieuw.</translation>
+    </message>
+    <message>
+        <source>The AI was set up but could not start.</source>
+        <translation>De AI is ingesteld, maar kon niet starten.</translation>
+    </message>
+    <message>
+        <source>The click was cancelled.</source>
+        <translation>De klik is geannuleerd.</translation>
+    </message>
+    <message>
+        <source>The install did not finish. Retry it, or pick Cloud AI.</source>
+        <translation>De installatie is niet voltooid. Probeer het opnieuw, of kies Cloud AI.</translation>
+    </message>
+    <message>
+        <source>The model is unsure about this outline. Click again to correct it, or draw it by hand.</source>
+        <translation>Het model twijfelt over deze omlijning. Klik opnieuw om dit te corrigeren, of teken dit handmatig.</translation>
+    </message>
+    <message>
+        <source>The offline AI</source>
+        <translation>De lokale AI</translation>
+    </message>
+    <message>
+        <source>The offline AI is not installed yet.</source>
+        <translation>De lokale AI is nog niet geïnstalleerd.</translation>
+    </message>
+    <message>
+        <source>The offline AI is still downloading.</source>
+        <translation>De lokale AI wordt nog gedownload.</translation>
+    </message>
+    <message>
+        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and your cloud detections are not affected. Semi-Auto mode will download the files again next time you use it.</source>
+        <translation>Dit verwijdert de lokale AI-modelbestanden, meldt je af en reset de plugin. Je account en je clouddetecties worden niet beïnvloed. Semi-Auto-modus downloadt de bestanden de volgende keer opnieuw.</translation>
+    </message>
+    <message>
+        <source>This drive has {free} GB free, under the {need} GB the install needs. Free some space, or use Cloud AI.</source>
+        <translation>Deze schijf heeft {free} GB vrij, onder de {need} GB die de installatie nodig heeft. Maak ruimte vrij, of gebruik Cloud AI.</translation>
+    </message>
+    <message>
+        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Semi-Auto mode on it as is.</source>
+        <translation>Deze afbeelding heeft geen positie op de kaart, dus Automatisch kan niet plaatsen wat het vindt. Geef er een met de QGIS Georeferencer, of gebruik de Semi-Auto-modus erop zoals hij is.</translation>
+    </message>
+    <message>
+        <source>This model rates every object the same, so filtering by confidence would show all of them or none. Use Size below, or fix objects in the next step.</source>
+        <translation>Dit model beoordeelt elk object hetzelfde, dus filteren op betrouwbaarheid zou ze allemaal laten zien of geen enkele. Gebruik Grootte hieronder, of corrigeer objecten in de volgende stap.</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Semi-Auto mode cannot read it either.</source>
+        <translation>Dit raster is geroteerd. Voer eerst Warp (Reproject) erop uit om het recht te trekken. De Semi-Auto-modus kan het ook niet lezen.</translation>
+    </message>
+    <message>
+        <source>Use Cloud AI instead</source>
+        <translation>Gebruik in plaats daarvan Cloud AI</translation>
+    </message>
+    <message>
+        <source>Use my computer instead</source>
+        <translation>Gebruik in plaats daarvan mijn computer</translation>
+    </message>
+    <message>
+        <source>Where the segmentation runs:</source>
+        <translation>Waar de segmentatie draait:</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;about 10 minutes to install&lt;/b&gt;</source>
+        <translation>Alles blijft op deze computer {dot} &lt;b&gt;ongeveer 10 minuten om te installeren&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about 10 minutes to install&lt;/b&gt;</source>
+        <translation>Alles blijft op deze computer {dot} &lt;b&gt;{gb} GB en ongeveer 10 minuten om te installeren&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The offline AI answers your clicks on this computer. Your imagery stays here, and every click is free.</source>
+        <translation>De lokale AI beantwoordt je klikken op deze computer. Je beeldmateriaal blijft hier, en elke klik is gratis.</translation>
+    </message>
+    <message>
+        <source>This online layer returned no imagery for this area. Its server refused the request. Check the layer's URL in Layer Properties, or use another basemap.</source>
+        <translation>Deze online laag leverde geen beeldmateriaal voor dit gebied. De server ervan heeft het verzoek geweigerd. Controleer de URL van de laag in Laageigenschappen, of gebruik een andere achtergrondkaart.</translation>
+    </message>
+    <message>
+        <source>1 credit covers about 0.17 km² at default precision.</source>
+        <translation>1 credit dekt ongeveer 0,17 km² bij standaard precisie.</translation>
+    </message>
+    <message>
+        <source>Clear all {n}</source>
+        <translation>Alles wissen {n}</translation>
+    </message>
+    <message>
+        <source>Could not check your AI Segmentation account. If this lasts, sign out and sign in again.</source>
+        <translation>Kon je AI Segmentation-account niet controleren. Als dit aanhoudt, meld je af en weer aan.</translation>
+    </message>
+    <message>
+        <source>Could not load your account. Try again in a moment.</source>
+        <translation>Kon je account niet laden. Probeer het over een moment opnieuw.</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Check your internet connection, then try again.</source>
+        <translation>Kon TerraLab niet bereiken. Controleer je internetverbinding en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Editing by hand could not open on this polygon on its own. Try again, or fix it with the AI.</source>
+        <translation>Handmatige bewerking kon niet vanzelf worden geopend voor deze polygoon. Probeer het opnieuw, of corrigeer de polygoon met de AI.</translation>
+    </message>
+    <message>
+        <source>It downloads first, and takes about 10 minutes.</source>
+        <translation>Dit wordt eerst gedownload, en duurt ongeveer 10 minuten.</translation>
+    </message>
+    <message>
+        <source>It downloads first: {gb} GB and about 10 minutes.</source>
+        <translation>Dit wordt eerst gedownload: {gb} GB en ongeveer 10 minuten.</translation>
+    </message>
+    <message>
+        <source>Nothing in this category yet.</source>
+        <translation>Nog niets in deze categorie.</translation>
+    </message>
+    <message>
+        <source>One run covers up to {cap} cloud detections. This zone at this precision needs more. Draw a smaller zone, or lower the precision.</source>
+        <translation>Één run omvat tot {cap} clouddetecties. Deze zone op deze precisie heeft meer nodig. Teken een kleinere zone of verlaag de precisie.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here. It works once:
+{}</source>
+        <translation>QGIS kon geen browser openen. Open dit adres om het aanmelden af te ronden, en kom daarna hier terug. Het werkt eenmalig:\n{}</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here. It works once.</source>
+        <translation>QGIS kon geen browser openen. Het aanmeldadres is naar je klembord gekopieerd: plak het in een browser om af te ronden, en kom daarna hier terug. Het werkt eenmalig.</translation>
+    </message>
+    <message>
+        <source>Reading your logs...</source>
+        <translation>Je logs lezen...</translation>
+    </message>
+    <message>
+        <source>Sign in again to fix with the AI. Switched to editing by hand, which needs no account.</source>
+        <translation>Meld je opnieuw aan om te corrigeren met de AI. Overgeschakeld op handmatige bewerking, die geen account nodig heeft.</translation>
+    </message>
+    <message>
+        <source>The export did not finish. Your polygons are still on the map, so you can try again.</source>
+        <translation>Exporteren is niet voltooid. Je polygonen staan nog op de kaart, dus je kunt het opnieuw proberen.</translation>
+    </message>
+    <message>
+        <source>The install did not finish {dot} &lt;b&gt;retry it, or pick Cloud AI&lt;/b&gt;</source>
+        <translation>De installatie is niet voltooid {dot} &lt;b&gt;probeer het opnieuw, of kies Cloud AI&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The polygons could not be put into the new layer, so nothing was saved. They are still on the map, so you can try again.</source>
+        <translation>De polygonen konden niet in de nieuwe laag worden geplaatst, dus er is niets opgeslagen. Ze staan nog op de kaart, dus je kunt het opnieuw proberen.</translation>
+    </message>
+    <message>
+        <source>This layer has no usable position on the map. Open it in QGIS and check its extent.</source>
+        <translation>Deze laag heeft geen bruikbare positie op de kaart. Open de laag in QGIS en controleer de extent ervan.</translation>
+    </message>
+    <message>
+        <source>This run found nothing. Add the object yourself below, or press Exit and run again with another word or a smaller zone.</source>
+        <translation>Deze run vond niets. Voeg het object hieronder zelf toe, of druk op Afsluiten en voer de run opnieuw uit met een ander woord of een kleinere zone.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more cloud detections than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>Deze zone op deze precisie heeft meer clouddetecties nodig dan één run omvat. Teken een kleinere zone of verlaag de precisie.</translation>
+    </message>
+    <message>
+        <source>Undo every correction of this round at once. The count is in the label, so you can see what goes.</source>
+        <translation>Alle correcties van deze ronde in één keer ongedaan maken. Het aantal staat in het label, zodat je ziet wat verdwijnt.</translation>
+    </message>
+    <message>
+        <source>You are out of credits, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
+        <translation>Je hebt geen credits meer, dus de AI-correctie kan niet antwoorden. Overgeschakeld op handmatige bewerking, die gratis is.</translation>
+    </message>
+    <message>
+        <source>You are signed in on this computer, but QGIS cannot read your sign-in until you enter its master password.</source>
+        <translation>Je bent aangemeld op deze computer, maar QGIS kan je aanmelding pas lezen als je zijn hoofdwachtwoord invoert.</translation>
+    </message>
+    <message>
+        <source>AI: point at what to keep or trim, one cloud detection per polygon. Manual: move the corners yourself, free.</source>
+        <translation>AI: wijs aan wat te behouden of bij te snijden, één clouddetectie per polygoon. Handmatig: verplaats de hoeken zelf, gratis.</translation>
+    </message>
+    <message>
+        <source>Start now, nothing to install {dot} &lt;b&gt;1 cloud detection per object you save&lt;/b&gt;</source>
+        <translation>Begin nu, niets om te installeren {dot} &lt;b&gt;1 clouddetectie per object dat je opslaat&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The AI outlines it. One cloud detection per object.</source>
+        <translation>De AI omlijnde het. Één clouddetectie per object.</translation>
+    </message>
+    <message>
+        <source>Add an object the AI missed. In AI, point at it and the model outlines it for one cloud detection; in Manual, draw its corners for free.</source>
+        <translation>Voeg een object toe dat de AI heeft gemist. In AI, wijs ernaar aan en het model omlijnde het voor één clouddetectie; in Handmatig, teken de hoeken gratis.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>Deze zone bij deze nauwkeurigheid vereist meer dan één clouddetecties. Teken een kleinere zone, of verlaag de nauwkeurigheid. Gratis runs stoppen ruim onder die limiet, dus Pro behoudt meer nauwkeurigheid op een zone van deze grootte.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more cloud detections than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>Deze zone bij deze nauwkeurigheid vereist meer clouddetecties dan één run bestrijkt. Teken een kleinere zone, of verlaag de nauwkeurigheid. Gratis runs stoppen ruim onder die limiet, dus Pro behoudt meer nauwkeurigheid op een zone van deze grootte.</translation>
+    </message>
+    <message>
+        <source>Pick a raster layer at the top of the panel first.</source>
+        <translation>Kies eerst een rasterlaag bovenaan het paneel.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is too big for one run. Draw a smaller zone, or lower the precision.</source>
+        <translation>Deze zone op deze precisie is te groot voor één run. Teken een kleinere zone of verlaag de precisie.</translation>
+    </message>
+    <message>
+        <source>No cloud detections left this month. Semi-Auto mode runs on your computer, free and unlimited.</source>
+        <translation>Geen clouddetecties meer deze maand. Semi-Auto-modus draait op je computer, gratis en onbeperkt.</translation>
+    </message>
+    <message>
+        <source>This run costs more cloud detections than you have left. Lower the precision, or draw a smaller zone.</source>
+        <translation>Deze run kost meer clouddetecties dan je nog hebt. Verlaag de precisie of teken een kleinere zone.</translation>
+    </message>
+    <message>
+        <source>One free run covers fewer cloud detections than this. Lower the precision, or draw a smaller zone.</source>
+        <translation>Één gratis run omvat minder clouddetecties dan dit. Verlaag de precisie of teken een kleinere zone.</translation>
+    </message>
+    <message>
+        <source>Load imagery in QGIS, then pick it above to start.</source>
+        <translation>Laad beelden in QGIS en selecteer ze hierboven om te starten.</translation>
+    </message>
+    <message>
+        <source>One object at a time: click it, the AI outlines it. You choose where it runs, on our servers or on your own computer.</source>
+        <translation>Eén object tegelijk: klik erop en de AI tekent de omtrek. Jij kiest waar het draait, op onze servers of op je eigen computer.</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, get all of them in one run. Runs on our servers and uses your cloud detections.</source>
+        <translation>Teken een zone, noem één soort object en krijg ze allemaal in één run. Draait op onze servers en gebruikt je clouddetecties.</translation>
+    </message>
+    <message>
+        <source>This layer has no file to read. Pick another layer at the top of the panel, then start again.</source>
+        <translation>Deze laag heeft geen bestand om te lezen. Kies een ander laag bovenaan het paneel en start opnieuw.</translation>
+    </message>
+    <message>
+        <source>Writes a GeoPackage with the QGIS style built in, English field names, and how the run was made (prompt, source layer, date, precision). It opens styled and documented on a colleague's machine, with no plugin installed.</source>
+        <translation>Schrijft een GeoPackage met ingebouwde QGIS-stijl, Engelse veldnamen, en hoe de uitvoering is gemaakt (prompt, bronlaag, datum, precisie). Het opent gestijld en gedocumenteerd op de computer van een collega, zonder plugin geïnstalleerd.</translation>
+    </message>
+    <message>
+        <source>&quot;{selected}&quot; has no imagery here. You are looking at &quot;{other}&quot;. Pick it at the top of the panel, then click again.</source>
+        <translation>&quot;{selected}&quot; heeft hier geen beeldmateriaal. Je bekijkt &quot;{other}&quot;. Kies deze bovenaan het paneel en klik opnieuw.</translation>
+    </message>
+    <message>
+        <source>39 EUR a month, cancel anytime. Opens your TerraLab dashboard.</source>
+        <translation>39 EUR per maand, op elk moment opzegbaar. Opent je TerraLab-dashboard.</translation>
+    </message>
+    <message>
+        <source>Could not reach this layer&apos;s server. Check your connection, then click again.</source>
+        <translation>Kon de server van deze laag niet bereiken. Controleer je verbinding en klik opnieuw.</translation>
+    </message>
+    <message>
+        <source>Every run is kept with its image, ready to open months later.</source>
+        <translation>Elke run wordt bewaard met zijn afbeelding, maanden later nog te openen.</translation>
+    </message>
+    <message>
+        <source>Nothing to install, works right away.</source>
+        <translation>Niets te installeren, direct te gebruiken.</translation>
+    </message>
+    <message>
+        <source>Or click objects one by one in Semi-Auto, free on this computer.</source>
+        <translation>Of klik objecten één voor één aan in Semi-Auto, gratis op deze computer.</translation>
+    </message>
+    <message>
+        <source>Or end this session and work free on this computer. Your saved polygons are kept.</source>
+        <translation>Of beëindig deze sessie en werk gratis op deze computer. Je opgeslagen polygonen blijven behouden.</translation>
+    </message>
+    <message>
+        <source>Or work free with a smaller AI on this computer.</source>
+        <translation>Of werk gratis met een kleinere AI op deze computer.</translation>
+    </message>
+    <message>
+        <source>QGIS cannot read this raster format here. Convert it to GeoTIFF, then start again.</source>
+        <translation>QGIS kan deze rasterindeling hier niet lezen. Zet het om naar GeoTIFF en start opnieuw.</translation>
+    </message>
+    <message>
+        <source>QGIS waits while this installs. To segment right away, stop the install and use Cloud AI.</source>
+        <translation>QGIS wacht tijdens deze installatie. Stop de installatie en gebruik Cloud AI om direct te segmenteren.</translation>
+    </message>
+    <message>
+        <source>Runs on this computer {dot} &lt;b&gt;save as many as you like&lt;/b&gt;</source>
+        <translation>Draait op deze computer {dot} &lt;b&gt;sla er zoveel op als je wilt&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Setting up on your computer {dot} &lt;b&gt;wait for it to finish&lt;/b&gt;</source>
+        <translation>Wordt ingesteld op je computer {dot} &lt;b&gt;wacht tot dit is voltooid&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Small objects still show up on wide areas.</source>
+        <translation>Kleine objecten blijven zichtbaar op grote gebieden.</translation>
+    </message>
+    <message>
+        <source>Stop and use my computer</source>
+        <translation>Stop en gebruik mijn computer</translation>
+    </message>
+    <message>
+        <source>Stop the install?</source>
+        <translation>Installatie stoppen?</translation>
+    </message>
+    <message>
+        <source>Take back the last point you placed. Shortcut: Ctrl+Z</source>
+        <translation>Maak het laatst geplaatste punt ongedaan. Sneltoets: Ctrl+Z</translation>
+    </message>
+    <message>
+        <source>The layer you picked has no imagery here. You are looking at &quot;{other}&quot;. Pick it at the top of the panel, then click again.</source>
+        <translation>De laag die je koos heeft hier geen beeldmateriaal. Je bekijkt &quot;{other}&quot;. Kies deze bovenaan het paneel en klik opnieuw.</translation>
+    </message>
+    <message>
+        <source>The offline AI is not installed yet. Stop the install?</source>
+        <translation>De lokale AI is nog niet geïnstalleerd. Installatie stoppen?</translation>
+    </message>
+    <message>
+        <source>The same cloud AI, and the cleanest shapes.</source>
+        <translation>Dezelfde cloud AI, en de netste vormen.</translation>
+    </message>
+    <message>
+        <source>They come back on {date}.</source>
+        <translation>Ze komen terug op {date}.</translation>
+    </message>
+    <message>
+        <source>This layer has no imagery at this zoom. Zoom in until you see it on the map, then click again.</source>
+        <translation>Deze laag heeft geen beeldmateriaal op dit zoomniveau. Zoom in tot je het op de kaart ziet en klik opnieuw.</translation>
+    </message>
+    <message>
+        <source>This layer&apos;s file is no longer where QGIS expects it. Reload it from where the file is now, then start again.</source>
+        <translation>Het bestand van deze laag staat niet meer op de plek die QGIS verwacht. Laad het opnieuw vanaf de huidige locatie en start opnieuw.</translation>
+    </message>
+    <message>
+        <source>This layer&apos;s server refused the request. Pick another basemap at the top of the panel, then click again.</source>
+        <translation>De server van deze laag heeft het verzoek geweigerd. Kies een andere basiskaart bovenaan het paneel en klik opnieuw.</translation>
+    </message>
+    <message>
+        <source>This polygon stays on the map, and Export still works.</source>
+        <translation>Deze polygoon blijft op de kaart, en Exporteren werkt nog steeds.</translation>
+    </message>
+    <message>
+        <source>This polygon stays on the map, but it cannot be saved.</source>
+        <translation>Deze polygoon blijft op de kaart, maar kan niet worden opgeslagen.</translation>
+    </message>
+    <message>
+        <source>This raster has no bands to read. Pick another layer at the top of the panel.</source>
+        <translation>Dit raster heeft geen banden om te lezen. Kies een andere laag bovenaan het paneel.</translation>
+    </message>
+    <message>
+        <source>Undo point</source>
+        <translation>Punt ongedaan maken</translation>
+    </message>
+    <message>
+        <source>Use Semi-Auto</source>
+        <translation>Gebruik Semi-Auto</translation>
+    </message>
+    <message>
+        <source>Use my computer</source>
+        <translation>Gebruik mijn computer</translation>
+    </message>
+    <message>
+        <source>You place the corners, the same as on any QGIS layer. Free.</source>
+        <translation>Jij plaatst de hoekpunten, net als bij elke QGIS-laag. Gratis.</translation>
+    </message>
+    <message>
+        <source>You used all {n}. They come back on {date}.</source>
+        <translation>Je hebt alle {n} gebruikt. Ze komen terug op {date}.</translation>
+    </message>
+    <message>
+        <source>Your click is outside this layer. Click on the imagery itself, or pick another layer at the top of the panel.</source>
+        <translation>Je klik valt buiten deze laag. Klik op het beeldmateriaal zelf, of kies een andere laag bovenaan het paneel.</translation>
+    </message>
+    <message>
+        <source>Your cloud detections are used up</source>
+        <translation>Je clouddetecties zijn opgebruikt</translation>
+    </message>
+    <message>
+        <source>Your free cloud detections are used up</source>
+        <translation>Je gratis clouddetecties zijn opgebruikt</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto runs on your computer, free, with no counter.</source>
+        <translation>Je hebt je Automatic-tegoed voor deze maand gebruikt. Semi-Auto draait op je computer, gratis, zonder teller.</translation>
+    </message>
+    <message>
+        <source>{n} km² left</source>
+        <translation>{n} km² resterend</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month</source>
+        <translation>{n} km² Automatic resterend deze maand</translation>
+    </message>
+    <message>
+        <source>{used} of {total} km² of Automatic used this month</source>
+        <translation>{used} van {total} km² Automatic gebruikt deze maand</translation>
+    </message>
+    <message>
+        <source>{n} cloud objects left this month</source>
+        <translation>{n} cloudobjecten resterend deze maand</translation>
+    </message>
+    <message>
+        <source>{used} of {total} cloud objects saved this month</source>
+        <translation>{used} van {total} cloudobjecten opgeslagen deze maand</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}. Semi-Auto on this computer keeps working.</source>
+        <translation>Het komt terug op {date}. Semi-Auto op deze computer blijft werken.</translation>
+    </message>
+    <message>
+        <source>You covered your {n} km² of Automatic this month</source>
+        <translation>Je hebt je {n} km² Automatic voor deze maand opgebruikt</translation>
+    </message>
+    <message>
+        <source>This run needs {n} cloud detections and you have {left} left this month. Lower the precision or shrink the zone. Pro covers 300 km² of Automatic a month, on zones of any size.</source>
+        <translation>Deze run vereist {n} clouddetecties en je hebt er deze maand nog {left}. Verlaag de precisie of verklein de zone. Pro dekt 300 km² Automatic per maand, voor zones van elke grootte.</translation>
+    </message>
+    <message>
+        <source>One detection covers 0.04 to 0.25 km², depending on the precision you ask for.</source>
+        <translation>Eén detectie dekt 0.04 tot 0.25 km², afhankelijk van de gevraagde precisie.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: {used} van {total} km² Automatic gebruikt, terug op {date}. &lt;a href="{url}"&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: {used} van {total} km² Automatic gebruikt. &lt;a href="{url}"&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects this month</source>
+        <translation>Je hebt je {n} cloudobjecten deze maand opgeslagen</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: {used} van {total} cloudobjecten opgeslagen deze maand, terug op {date}. &lt;a href="{url}"&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: {used} van {total} cloudobjecten opgeslagen deze maand. &lt;a href="{url}"&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic every month, on zones of any size</source>
+        <translation>300 km² Automatic per maand, voor zones van elke grootte</translation>
+    </message>
+    <message>
+        <source>Finish this zone with Pro: 300 km² of Automatic a month.</source>
+        <translation>Rond deze zone af met Pro: 300 km² Automatic per maand.</translation>
+    </message>
+    <message>
+        <source>Zone too large. Reduce the area to {max} detections or fewer.</source>
+        <translation>Zone te groot. Verklein het gebied tot {max} detecties of minder.</translation>
+    </message>
+    <message>
+        <source>You saved your cloud objects for this month. Switch to your own computer to keep working free, or upgrade from the panel.</source>
+        <translation>Je hebt je cloudobjecten voor deze maand opgeslagen. Schakel over naar je eigen computer om gratis verder te werken, of upgrade via het paneel.</translation>
+    </message>
+    <message>
+        <source>Your cloud allowance for this month is used, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
+        <translation>Je maandelijkse cloudtegoed is gebruikt, dus de AI-correctie kan geen antwoord geven. Overgeschakeld naar handmatig bewerken, dat gratis is.</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out at {done}/{total}. Everything found so far is kept below and stays yours.</source>
+        <translation>Je maandelijkse tegoed raakte op bij {done}/{total}. Alles wat tot nu toe is gevonden, is hieronder bewaard en blijft van jou.</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI</source>
+        <translation>Pro: 2.000 objecten per maand in Semi-Auto met Cloud AI</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI, and 300 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro: 2.000 objecten per maand in Semi-Auto met Cloud AI, en 300 km² in Automatic. Dezelfde AI, dezelfde gratis klikken en correcties, op elke machine waarop je werkt.</translation>
+    </message>
+    <message>
+        <source>2,000 objects a month in Semi-Auto, 300 km² in Automatic. Cancel anytime.</source>
+        <translation>2.000 objecten per maand in Semi-Auto, 300 km² in Automatic. Op elk moment opzegbaar.</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic a month, on zones of any size.</source>
+        <translation>300 km² Automatic per maand, voor zones van elke grootte.</translation>
+    </message>
+    <message>
+        <source>The same AI on every machine you work on.</source>
+        <translation>Dezelfde AI op elke computer waarop je werkt.</translation>
+    </message>
+    <message>
+        <source>39 EUR a month, cancel anytime.</source>
+        <translation>39 EUR per maand, op elk moment opzegbaar.</translation>
+    </message>
+    <message>
+        <source>2,000 cloud objects every month in Semi-Auto</source>
+        <translation>2.000 cloudobjecten per maand in Semi-Auto</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month</source>
+        <translation>{n} van {total} cloudobjecten over in Semi-Auto deze maand</translation>
+    </message>
+    <message>
+        <source>{n} of {total} km² left in Automatic this month</source>
+        <translation>{n} van {total} km² over in Automatic deze maand</translation>
+    </message>
+    <message>
+        <source>Draw a whole city and let it run, at the finest precision.</source>
+        <translation>Teken een hele stad en laat het uitvoeren met de hoogste precisie.</translation>
+    </message>
+    <message>
+        <source>Or click objects one by one in Semi-Auto.</source>
+        <translation>Of klik objecten één voor één aan in Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>(optional)</source>
+        <translation>(optioneel)</translation>
+    </message>
+    <message>
+        <source>More precision sweeps your zone in a finer grid, so it catches smaller objects.</source>
+        <translation>Meer precisie scant je zone in een fijner raster, zodat ook kleinere objecten worden gedetecteerd.</translation>
+    </message>
+    <message>
+        <source>Your Automatic allowance ran out mid-zone.</source>
+        <translation>Je Automatic-tegoed raakte halverwege de zone op.</translation>
+    </message>
+    <message>
+        <source>Pro picks it up where it stopped and finishes the zone.</source>
+        <translation>Pro gaat verder waar het stopte en voltooit de zone.</translation>
+    </message>
+    <message>
+        <source>Finish with Pro</source>
+        <translation>Voltooien met Pro</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>Deze zone met deze precisie is groter dan één uitvoering aankan. Teken een kleinere zone of verlaag de precisie.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>Deze zone met deze precisie is groter dan één uitvoering aankan. Teken een kleinere zone of verlaag de precisie. Gratis uitvoeringen stoppen ruim onder die limiet, dus Pro behoudt meer precisie voor een zone van deze grootte.</translation>
+    </message>
+    <message>
+        <source>{n} km²</source>
+        <translation>{n} km²</translation>
+    </message>
+    <message>
+        <source>Automatic is counted by surface. Precision changes how finely the zone is scanned, never the price. A run never costs more than the zone you drew.</source>
+        <translation>Automatic wordt berekend op basis van oppervlak. Precisie bepaalt hoe fijn de zone wordt gescand, nooit de prijs. Een uitvoering kost nooit meer dan de zone die je hebt getekend.</translation>
+    </message>
+    <message>
+        <source>Pro raises the month to 300 km² of Automatic.</source>
+        <translation>Pro verhoogt je maandtegoed naar 300 km² Automatic.</translation>
+    </message>
+    <message>
+        <source>This zone is {zone} km². You have {left} km² left in Automatic this month.</source>
+        <translation>Deze zone is {zone} km². Je hebt deze maand nog {left} km² over in Automatic.</translation>
+    </message>
+    <message>
+        <source>Or draw a smaller zone.</source>
+        <translation>Of teken een kleinere zone.</translation>
+    </message>
+    <message>
+        <source>This zone is {area} km². Free runs stop at {max} km².</source>
+        <translation>Deze zone is {area} km². Gratis uitvoeringen stoppen bij {max} km².</translation>
+    </message>
+    <message>
+        <source>Pro has no size limit and runs the zone as you drew it.</source>
+        <translation>Pro heeft geen limiet voor de grootte en voert de zone uit zoals je die hebt getekend.</translation>
+    </message>
+    <message>
+        <source>Or make the zone smaller and run it free.</source>
+        <translation>Of maak de zone kleiner en voer deze gratis uit.</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left, back on {date}.</source>
+        <translation>Nog {n} km² Automatic over, opnieuw beschikbaar op {date}.</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month.</source>
+        <translation>Deze maand nog {n} km² Automatic over.</translation>
+    </message>
+    <message>
+        <source>{n} free detections left, back on {date}.</source>
+        <translation>Nog {n} gratis detecties over, opnieuw beschikbaar op {date}.</translation>
+    </message>
+    <message>
+        <source>{n} free detections left.</source>
+        <translation>Nog {n} gratis detecties over.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 300 km² of Automatic a month, so you keep working.</source>
+        <translation>Pro geeft je 300 km² Automatic per maand, zodat je kunt blijven werken.</translation>
+    </message>
+    <message>
+        <source>Advanced settings</source>
+        <translation>Geavanceerde instellingen</translation>
+    </message>
+    <message>
+        <source>Zoom in for a finer outline. The AI reads the image at your current zoom.</source>
+        <translation>Zoom in voor een nauwkeuriger omtrek. De AI leest de afbeelding op je huidige zoomniveau.</translation>
+    </message>
+    <message>
+        <source>Keep clicking with the same cloud AI, nothing to install.</source>
+        <translation>Blijf klikken met dezelfde Cloud AI, zonder iets te installeren.</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects in Semi-Auto this month</source>
+        <translation>Je hebt deze maand je {n} cloudobjecten in Semi-Auto opgeslagen</translation>
+    </message>
+    <message>
+        <source>Or keep clicking for free with a smaller AI on this computer.</source>
+        <translation>Of blijf gratis klikken met een kleinere AI op deze computer.</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto, back on {date}.</source>
+        <translation>{n} van {total} cloudobjecten over in Semi-Auto, opnieuw beschikbaar op {date}.</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month.</source>
+        <translation>{n} van {total} cloudobjecten over in Semi-Auto deze maand.</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left, back on {date}.</source>
+        <translation>Nog {n} clouddetecties over, opnieuw beschikbaar op {date}.</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left.</source>
+        <translation>Nog {n} clouddetecties over.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 2,000 cloud objects a month in Semi-Auto.</source>
+        <translation>Pro geeft je 2.000 cloudobjecten per maand in Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>More settings</source>
+        <translation>Meer instellingen</translation>
+    </message>
+    <message>
+        <source>{left} / {cap} km²</source>
+        <translation>{left} / {cap} km²</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} km² left in Automatic this month</source>
+        <translation>{left} van {cap} km² over in Automatic deze maand</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} cloud objects left in Semi-Auto this month</source>
+        <translation>{left} van {cap} cloudobjecten over in Semi-Auto deze maand</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone.</source>
+        <translation>Deze zone is groter dan het oppervlak dat je deze maand nog hebt. Teken een kleinere zone.</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}.</source>
+        <translation>Op {date} is het weer beschikbaar.</translation>
+    </message>
+    <message>
+        <source>A zone detection is already running. Wait for it to finish, or stop it, before starting another.</source>
+        <translation>Er wordt al een zone gedetecteerd. Wacht tot deze klaar is of stop de uitvoering voordat je een nieuwe start.</translation>
+    </message>
+    <message>
+        <source>Type what to find first. An example is optional.</source>
+        <translation>Typ eerst wat je wilt detecteren. Een voorbeeld is optioneel.</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then run Detect again.</source>
+        <translation>Je abonnement draait al op het maximale aantal computers. Sluit AI Segmentation op een van deze computers en voer Detect daarna opnieuw uit.</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the area you have left this month. Draw a smaller zone, or subscribe for a larger monthly area.</source>
+        <translation>Deze zone is groter dan het gebied dat je deze maand nog over hebt. Teken een kleinere zone of neem een abonnement met een groter maandgebied.</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out, so this run did not start.</source>
+        <translation>Je maandelijkse tegoed is op, dus deze uitvoering is niet gestart.</translation>
+    </message>
+    <message>
+        <source>"{word}" is hard to spot from above - "{term}" detects better. Your word still runs.</source>
+        <translation>"{word}" is van bovenaf moeilijk te herkennen, "{term}" detecteert beter. Je woord blijft werken.</translation>
+    </message>
+    <message>
+        <source>"{word}" cannot be seen from above. Pick an object on the ground - the Library has ready-to-use ones.</source>
+        <translation>"{word}" is van bovenaf niet zichtbaar. Kies een object op de grond, de Bibliotheek bevat direct bruikbare objecten.</translation>
+    </message>
+    <message>
+        <source>"{obj}" is not an object the AI knows well. The run may come back empty - a more common word finds more.</source>
+        <translation>"{obj}" is geen object dat de AI goed kent. Het resultaat kan leeg zijn, met een gangbaarder woord vind je meer.</translation>
+    </message>
+    <message>
+        <source>(~{n} min left)</source>
+        <translation>(~{n} min resterend)</translation>
+    </message>
+    <message>
+        <source>(~{n} sec left)</source>
+        <translation>(~{n} sec resterend)</translation>
+    </message>
+    <message>
+        <source>1 detection</source>
+        <translation>1 detectie</translation>
+    </message>
+    <message>
+        <source>1 free cloud detection remaining</source>
+        <translation>Nog 1 gratis clouddetectie beschikbaar</translation>
+    </message>
+    <message>
+        <source>1 shape edited this session</source>
+        <translation>1 vorm bewerkt in deze sessie</translation>
+    </message>
+    <message>
+        <source>AI not available</source>
+        <translation>AI niet beschikbaar</translation>
+    </message>
+    <message>
+        <source>Automatic is temporarily unavailable. Try again later.</source>
+        <translation>Automatisch is tijdelijk niet beschikbaar. Probeer het later opnieuw.</translation>
+    </message>
+    <message>
+        <source>Could not read the pixel grid of this raster. Check the layer opens and shows in QGIS, then try again.</source>
+        <translation>Kan het pixelraster van deze rasterlaag niet lezen. Controleer of de laag in QGIS wordt geopend en weergegeven en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Detection stopped before any result came back. Run Detect again when you are ready.</source>
+        <translation>De detectie is gestopt voordat er resultaten waren. Voer Detecteren opnieuw uit wanneer u klaar bent.</translation>
+    </message>
+    <message>
+        <source>Export now?</source>
+        <translation>Nu exporteren?</translation>
+    </message>
+    <message>
+        <source>Export what you saved and end this session?</source>
+        <translation>Wat u hebt opgeslagen exporteren en deze sessie beëindigen?</translation>
+    </message>
+    <message>
+        <source>Finish or close the review first.</source>
+        <translation>Voltooi of sluit eerst de controle.</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works until it comes back.</source>
+        <translation>Er is deze maand geen oppervlakte meer beschikbaar voor Automatisch. Semi-Auto blijft werken totdat Automatisch terugkomt.</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works, and Automatic comes back on {date}.</source>
+        <translation>Er is deze maand geen oppervlakte meer beschikbaar voor Automatisch. Semi-Auto blijft werken en Automatisch komt terug op {date}.</translation>
+    </message>
+    <message>
+        <source>None of the objects came out as a shape the file could take. Turn the cleanup settings down and try Finish again.</source>
+        <translation>Geen van de objecten kon worden omgezet in een vorm die het bestand kan opslaan. Verlaag de opschoningsinstellingen en probeer opnieuw te voltooien.</translation>
+    </message>
+    <message>
+        <source>Nothing is visible to save. Lower Confidence, or widen the size range, then try Finish again.</source>
+        <translation>Er is niets zichtbaar om op te slaan. Verlaag de Betrouwbaarheid of vergroot het groottebereik en probeer opnieuw te voltooien.</translation>
+    </message>
+    <message>
+        <source>Off until a selection is on screen. Click the object first, then Save polygon keeps it in your session; Export writes all kept polygons to a layer.</source>
+        <translation>Uitgeschakeld totdat er een selectie op het scherm staat. Klik eerst op het object. Met Polygoon opslaan blijft het in uw sessie; Exporteren schrijft alle bewaarde polygonen naar een laag.</translation>
+    </message>
+    <message>
+        <source>Removes the last point you placed on the object.</source>
+        <translation>Verwijdert het laatste punt dat u op het object hebt geplaatst.</translation>
+    </message>
+    <message>
+        <source>Saved all {n} objects found to {name}, including any the Confidence slider hid.</source>
+        <translation>Alle {n} gevonden objecten zijn opgeslagen in {name}, ook de objecten die door de schuifregelaar Betrouwbaarheid waren verborgen.</translation>
+    </message>
+    <message>
+        <source>Saved the 1 object found to {name}.</source>
+        <translation>Het gevonden object is opgeslagen in {name}.</translation>
+    </message>
+    <message>
+        <source>Sign in to run Automatic.</source>
+        <translation>Meld u aan om Automatisch uit te voeren.</translation>
+    </message>
+    <message>
+        <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>
+        <translation>Het paneel AI Segmentation is gesloten, dus er is niets om uit te detecteren. Open het paneel en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The AI did not load, so this click was not answered. Use the Install button in the panel to set it up again.</source>
+        <translation>De AI is niet geladen, dus deze klik werd niet verwerkt. Gebruik de knop Installeren in het paneel om de AI opnieuw in te stellen.</translation>
+    </message>
+    <message>
+        <source>The AI is still loading, so this click was not answered. Try again in a few seconds.</source>
+        <translation>De AI wordt nog geladen, dus deze klik werd niet verwerkt. Probeer het over enkele seconden opnieuw.</translation>
+    </message>
+    <message>
+        <source>The click tool stays on while this session is open. Stop the session to use another map tool.</source>
+        <translation>Het klikgereedschap blijft actief zolang deze sessie geopend is. Stop de sessie om een ander kaartgereedschap te gebruiken.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the 1 cloud detection already paid for.</source>
+        <translation>De detectie reageert niet meer. De al betaalde clouddetectie blijft behouden.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the {n} cloud detections already paid for.</source>
+        <translation>De detectie reageert niet meer. De {n} al betaalde clouddetecties blijven behouden.</translation>
+    </message>
+    <message>
+        <source>The object you are working on is not saved yet, so it will not be in the layer.</source>
+        <translation>Het object waaraan u werkt is nog niet opgeslagen en komt daarom niet in de laag.</translation>
+    </message>
+    <message>
+        <source>The offline AI did not load, so this session cannot start. Use the Install button in the panel to set it up again.</source>
+        <translation>De offline-AI is niet geladen, dus deze sessie kan niet starten. Gebruik de knop Installeren in het paneel om de AI opnieuw in te stellen.</translation>
+    </message>
+    <message>
+        <source>This computer is no longer signed in. Sign out, then sign in again to reconnect it.</source>
+        <translation>Deze computer is niet meer aangemeld. Meld u af en daarna opnieuw aan om de verbinding te herstellen.</translation>
+    </message>
+    <message>
+        <source>This sign-in code has expired. Click Cancel, then Sign in to get a new one.</source>
+        <translation>Deze aanmeldcode is verlopen. Klik op Annuleren en daarna op Aanmelden om een nieuwe code te krijgen.</translation>
+    </message>
+    <message>
+        <source>This will discard 1 polygon.</source>
+        <translation>Hierdoor wordt 1 polygoon verwijderd.</translation>
+    </message>
+    <message>
+        <source>This will discard {count} polygons.</source>
+        <translation>Hierdoor worden {count} polygonen verwijderd.</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone, or subscribe for a larger monthly surface.</source>
+        <translation>Deze zone is groter dan de resterende oppervlakte voor deze maand. Teken een kleinere zone of neem een abonnement voor een grotere maandelijkse oppervlakte.</translation>
+    </message>
+    <message>
+        <source>You can also open this address by hand:
+{}</source>
+        <translation>U kunt dit adres ook handmatig openen:
+{}</translation>
+    </message>
+    <message>
+        <source>You have 1 unsaved polygon.</source>
+        <translation>U hebt 1 niet-opgeslagen polygoon.</translation>
+    </message>
+    <message>
+        <source>You have been signed out. Sign in again to keep using the cloud features.</source>
+        <translation>U bent afgemeld. Meld u opnieuw aan om de cloudfuncties te blijven gebruiken.</translation>
+    </message>
+    <message>
+        <source>You have {count} unsaved polygons.</source>
+        <translation>U hebt {count} niet-opgeslagen polygonen.</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto on your computer keeps working, free, with no counter.</source>
+        <translation>U hebt uw maandelijkse limiet voor Automatisch gebruikt. Semi-Auto op uw computer blijft gratis werken, zonder teller.</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then try again.</source>
+        <translation>Uw abonnement wordt al op het maximale aantal computers gebruikt. Sluit AI Segmentation op een van deze computers en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>polygon</source>
+        <translation>polygoon</translation>
+    </message>
+    <message>
+        <source>{left} / {cap}</source>
+        <translation>{left} / {cap}</translation>
+    </message>
+    <message>
+        <source>{n} detections</source>
+        <translation>{n} detecties</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections remaining</source>
+        <translation>Nog {n} gratis clouddetecties beschikbaar</translation>
+    </message>
+    <message>
+        <source>{n} shapes edited this session</source>
+        <translation>{n} vormen bewerkt in deze sessie</translation>
+    </message>
+    <message>
+        <source>     {step} to build the AI engine again</source>
+        <translation>     {step} om de AI-engine opnieuw op te bouwen</translation>
+    </message>
+    <message>
+        <source>  - Antivirus software (Windows Defender, etc.) blocking pip</source>
+        <translation>  - Antivirussoftware (Windows Defender enz.) blokkeert pip</translation>
+    </message>
+    <message>
+        <source>  - Corrupted virtual environment</source>
+        <translation>  - Beschadigde virtuele omgeving</translation>
+    </message>
+    <message>
+        <source>  - exclude these hosts from inspection:</source>
+        <translation>  - sluit deze hosts uit van inspectie:</translation>
+    </message>
+    <message>
+        <source>  - install the network&apos;s root certificate on this machine, or</source>
+        <translation>  - installeer het hoofdcertificaat van het netwerk op deze computer, of</translation>
+    </message>
+    <message>
+        <source>  1. Add an antivirus exclusion for the folder:</source>
+        <translation>  1. Voeg een antivirusuitsluiting toe voor de map:</translation>
+    </message>
+    <message>
+        <source>  1. Close all QGIS windows (File &gt; Exit)</source>
+        <translation>  1. Sluit alle QGIS-vensters (Bestand &gt; Afsluiten)</translation>
+    </message>
+    <message>
+        <source>  1. Delete the folder: {folder}</source>
+        <translation>  1. Verwijder de map: {folder}</translation>
+    </message>
+    <message>
+        <source>  1. Free up disk space (empty the trash, remove large unused files)</source>
+        <translation>  1. Maak schijfruimte vrij (leeg de prullenbak en verwijder grote ongebruikte bestanden)</translation>
+    </message>
+    <message>
+        <source>  1. If that folder is inside OneDrive or another sync tool, pause
+     syncing (or mark the folder &apos;Always keep on this device&apos;)</source>
+        <translation>  1. Als die map zich in OneDrive of een andere synchronisatietool bevindt, pauzeer dan de
+     synchronisatie (of markeer de map als &apos;Altijd op dit apparaat bewaren&apos;)</translation>
+    </message>
+    <message>
+        <source>  1. Install the latest VC++ Redistributable (x64):
+     {url}</source>
+        <translation>  1. Installeer de nieuwste VC++ Redistributable (x64):
+     {url}</translation>
+    </message>
+    <message>
+        <source>  1. Temporarily disable real-time antivirus scanning</source>
+        <translation>  1. Schakel realtime-antivirusscanning tijdelijk uit</translation>
+    </message>
+    <message>
+        <source>  1. Upgrade your distribution to a version released after 2019</source>
+        <translation>  1. Upgrade uw distributie naar een versie die na 2019 is uitgebracht</translation>
+    </message>
+    <message>
+        <source>  1. Use a QGIS build bundling Python 3.12 or older, or</source>
+        <translation>  1. Gebruik een QGIS-build met Python 3.12 of ouder, of</translation>
+    </message>
+    <message>
+        <source>  1. {step} to build again with fresh data</source>
+        <translation>  1. {step} om opnieuw op te bouwen met nieuwe gegevens</translation>
+    </message>
+    <message>
+        <source>  2. Add an exclusion for the plugin folder:</source>
+        <translation>  2. Voeg een uitsluiting toe voor de pluginmap:</translation>
+    </message>
+    <message>
+        <source>  2. If it persists, update QGIS to the latest LTR release
+     (newer QGIS ships a newer Python) and try again</source>
+        <translation>  2. Als het probleem blijft bestaan, werk QGIS dan bij naar de nieuwste LTR-release
+     (nieuwere QGIS-versies bevatten een nieuwere Python-versie) en probeer het opnieuw</translation>
+    </message>
+    <message>
+        <source>  2. If you cannot upgrade, this plugin&apos;s AI engine is unfortunately
+     not supported on this machine</source>
+        <translation>  2. Als u niet kunt upgraden, wordt de AI-engine van deze plugin helaas
+     niet ondersteund op deze computer</translation>
+    </message>
+    <message>
+        <source>  2. On Apple Silicon, run the native (arm64) QGIS rather than the
+     Intel build under Rosetta</source>
+        <translation>  2. Gebruik op Apple Silicon de native (arm64) QGIS-versie in plaats van de
+     Intel-build onder Rosetta</translation>
+    </message>
+    <message>
+        <source>  2. Or set the AI_SEGMENTATION_CACHE_DIR environment variable to a
+     short local folder outside any synced area (e.g. C:\qgis_ai),
+     then restart QGIS</source>
+        <translation>  2. Stel anders de omgevingsvariabele AI_SEGMENTATION_CACHE_DIR in op een
+     korte lokale map buiten gesynchroniseerde gebieden (bijv. C:\qgis_ai),
+     en start QGIS vervolgens opnieuw</translation>
+    </message>
+    <message>
+        <source>  2. Reopen QGIS</source>
+        <translation>  2. Open QGIS opnieuw</translation>
+    </message>
+    <message>
+        <source>  2. Restart QGIS and try again</source>
+        <translation>  2. Start QGIS opnieuw en probeer het nogmaals</translation>
+    </message>
+    <message>
+        <source>  2. Restart your computer after installing</source>
+        <translation>  2. Start uw computer opnieuw op na de installatie</translation>
+    </message>
+    <message>
+        <source>  2. The environment is installed under: {location}</source>
+        <translation>  2. De omgeving is geïnstalleerd in: {location}</translation>
+    </message>
+    <message>
+        <source>  2. {step} to build everything again</source>
+        <translation>  2. {step} om alles opnieuw op te bouwen</translation>
+    </message>
+    <message>
+        <source>  3. Check folder permissions: {command}</source>
+        <translation>  3. Controleer de mapmachtigingen: {command}</translation>
+    </message>
+    <message>
+        <source>  3. If the error is still there after the reboot:</source>
+        <translation>  3. Als de fout na het opnieuw opstarten nog steeds optreedt:</translation>
+    </message>
+    <message>
+        <source>  3. If the issue persists, reinstall QGIS</source>
+        <translation>  3. Als het probleem blijft bestaan, installeer QGIS dan opnieuw</translation>
+    </message>
+    <message>
+        <source>  3. Open the AI Segmentation panel - installation will resume</source>
+        <translation>  3. Open het AI Segmentation-paneel - de installatie wordt hervat</translation>
+    </message>
+    <message>
+        <source>  3. Run QGIS as administrator (right-click &gt; Run as administrator)</source>
+        <translation>  3. Voer QGIS uit als beheerder (rechtermuisknop &gt; Als administrator uitvoeren)</translation>
+    </message>
+    <message>
+        <source>  3. To install on another drive, set the AI_SEGMENTATION_CACHE_DIR
+     environment variable to a folder on a disk with more space,
+     then restart QGIS and try again</source>
+        <translation>  3. Stel voor installatie op een andere schijf de omgevingsvariabele
+     AI_SEGMENTATION_CACHE_DIR in op een map op een schijf met meer ruimte,
+     start QGIS opnieuw op en probeer het nogmaals</translation>
+    </message>
+    <message>
+        <source>  3. {step} again</source>
+        <translation>  3. {step} opnieuw</translation>
+    </message>
+    <message>
+        <source>  3. {step} to build it again</source>
+        <translation>  3. {step} om het opnieuw op te bouwen</translation>
+    </message>
+    <message>
+        <source>  4. Check that no other Python (Anaconda, Miniconda, standalone Python)
+     puts conflicting torch DLLs on your system PATH.
+     Open a terminal and run: where python
+     If you see multiple results, remove the extra ones from PATH</source>
+        <translation>  4. Controleer of geen andere Python-versie (Anaconda, Miniconda, zelfstandige Python)
+     conflicterende torch-DLL&apos;s aan uw systeempad PATH toevoegt.
+     Open een terminal en voer uit: where python
+     Als u meerdere resultaten ziet, verwijder dan de extra vermeldingen uit PATH</translation>
+    </message>
+    <message>
+        <source>  4. If the issue persists, run QGIS as administrator</source>
+        <translation>  4. Als het probleem blijft bestaan, voer QGIS dan uit als beheerder</translation>
+    </message>
+    <message>
+        <source>  4. Try the installation again</source>
+        <translation>  4. Probeer de installatie opnieuw</translation>
+    </message>
+    <message>
+        <source>  4. Uninstall the plugin (Plugins &gt; Manage and Install Plugins &gt; Installed &gt; AI Segmentation)</source>
+        <translation>  4. Verwijder de plugin (Plugins &gt; Plugins beheren en installeren &gt; Geïnstalleerd &gt; AI Segmentation)</translation>
+    </message>
+    <message>
+        <source>  5. Restart QGIS</source>
+        <translation>  5. Start QGIS opnieuw op</translation>
+    </message>
+    <message>
+        <source>  6. Reinstall the plugin</source>
+        <translation>  6. Installeer de plugin opnieuw</translation>
+    </message>
+    <message>
+        <source>A required DLL failed to initialize.</source>
+        <translation>Een vereiste DLL kon niet worden geïnitialiseerd.</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to add a path-based allow rule for this folder:</source>
+        <translation>Vraag uw IT-afdeling om een padgebaseerde toestemmingsregel toe te voegen voor deze map:</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to either:</source>
+        <translation>Vraag uw IT-afdeling om een van de volgende acties uit te voeren:</translation>
+    </message>
+    <message>
+        <source>Cache error, retrying {package}... ({done}/{total})</source>
+        <translation>Cachefout, nieuwe poging voor {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Creating virtual environment...</source>
+        <translation>Virtuele omgeving maken...</translation>
+    </message>
+    <message>
+        <source>Disabling antivirus or running QGIS as administrator will not help.</source>
+        <translation>Het uitschakelen van antivirus of uitvoeren van QGIS als beheerder helpt niet.</translation>
+    </message>
+    <message>
+        <source>Downloaded {mb} MB, saving...</source>
+        <translation>{mb} MB gedownload, opslaan...</translation>
+    </message>
+    <message>
+        <source>Downloading PyTorch (~180 MB)... {elapsed}</source>
+        <translation>PyTorch downloaden (~180 MB)... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB</source>
+        <translation>Python downloaden: {done} MB</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB of {total} MB</source>
+        <translation>Python downloaden: {done} MB van {total} MB</translation>
+    </message>
+    <message>
+        <source>Downloading uv package installer...</source>
+        <translation>uv-pakketinstaller downloaden...</translation>
+    </message>
+    <message>
+        <source>Failed to create venv: this Python is missing its venv support.
+
+</source>
+        <translation>Kan venv niet maken: deze Python-installatie ondersteunt venv niet.
+
+</translation>
+    </message>
+    <message>
+        <source>How to fix this:</source>
+        <translation>Zo lost u dit op:</translation>
+    </message>
+    <message>
+        <source>If it still fails after restarting QGIS:</source>
+        <translation>Als het na het opnieuw starten van QGIS nog steeds mislukt:</translation>
+    </message>
+    <message>
+        <source>Install it, then retry:
+</source>
+        <translation>Installeer dit en probeer het daarna opnieuw:
+</translation>
+    </message>
+    <message>
+        <source>Install the venv module for your Python with your system&apos;s package manager, then retry.</source>
+        <translation>Installeer de venv-module voor uw Python met de pakketbeheerder van uw systeem en probeer het daarna opnieuw.</translation>
+    </message>
+    <message>
+        <source>Installation failed due to network restrictions.</source>
+        <translation>Installatie mislukt door netwerkbeperkingen.</translation>
+    </message>
+    <message>
+        <source>Installation failed: Python&apos;s SSL module is not available.</source>
+        <translation>Installatie mislukt: de SSL-module van Python is niet beschikbaar.</translation>
+    </message>
+    <message>
+        <source>Installation failed: no compatible AI engine build exists for this
+combination of Intel Mac and Python version.</source>
+        <translation>Installatie mislukt: er bestaat geen compatibele AI-engine-build voor deze
+combinatie van Intel Mac en Python-versie.</translation>
+    </message>
+    <message>
+        <source>Installation failed: the download server presented a certificate this computer does not trust.</source>
+        <translation>Installatie mislukt: de downloadserver presenteerde een certificaat dat deze computer niet vertrouwt.</translation>
+    </message>
+    <message>
+        <source>Installation failed: your Linux distribution is too old for the
+current AI engine. PyTorch wheels now require a recent system
+library (glibc 2.28+, i.e. Ubuntu 20.04 / Debian 10 / CentOS 8 or
+newer).</source>
+        <translation>Installatie mislukt: uw Linux-distributie is te oud voor de
+huidige AI-engine. PyTorch-wheels vereisen nu een recente systeem-
+bibliotheek (glibc 2.28+, dus Ubuntu 20.04 / Debian 10 / CentOS 8 of
+nieuwer).</translation>
+    </message>
+    <message>
+        <source>Installation failed: your disk ran out of space.</source>
+        <translation>Installatie mislukt: uw schijf heeft onvoldoende vrije ruimte.</translation>
+    </message>
+    <message>
+        <source>Installation was blocked, likely by antivirus software or security policy.</source>
+        <translation>Installatie geblokkeerd, waarschijnlijk door antivirussoftware of beveiligingsbeleid.</translation>
+    </message>
+    <message>
+        <source>Installing {package} (~180 MB)... ({done}/{total})</source>
+        <translation>{package} installeren (~180 MB)... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Installing {package}... ({done}/{total})</source>
+        <translation>{package} installeren... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Installing {package}... {elapsed}</source>
+        <translation>{package} installeren... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Intel (x86_64) Macs are supported only up to PyTorch 2.2.2, which
+ships for Python 3.8 to 3.12. Your Python is newer than that.</source>
+        <translation>Intel-Macs (x86_64) worden alleen ondersteund tot en met PyTorch 2.2.2, dat
+beschikbaar is voor Python 3.8 tot 3.12. Uw Python-versie is nieuwer.</translation>
+    </message>
+    <message>
+        <source>Network error, retry {attempt}/{total} in {wait}s...</source>
+        <translation>Netwerkfout, nieuwe poging {attempt}/{total} over {wait}s...</translation>
+    </message>
+    <message>
+        <source>Network error, retrying in {seconds}s...</source>
+        <translation>Netwerkfout, nieuwe poging over {seconds}s...</translation>
+    </message>
+    <message>
+        <source>Not enough free disk space to install dependencies: {free_gb:.1f} GB available at {cache_dir}, at least {min_free_gb:.1f} GB is required.
+
+Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
+        <translation>Onvoldoende vrije schijfruimte om afhankelijkheden te installeren: {free_gb:.1f} GB beschikbaar in {cache_dir}, minimaal {min_free_gb:.1f} GB vereist.
+
+Maak schijfruimte vrij of stel de omgevingsvariabele AI_SEGMENTATION_CACHE_DIR in op een map op een grotere schijf en start QGIS opnieuw op.</translation>
+    </message>
+    <message>
+        <source>Once the rule is in place, restart QGIS and try again.</source>
+        <translation>Start QGIS opnieuw op zodra de regel is ingesteld en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Open the AI Segmentation panel and click Install</source>
+        <translation>Open het AI Segmentation-paneel en klik op Installeren</translation>
+    </message>
+    <message>
+        <source>Please contact your IT department to allow access to:</source>
+        <translation>Neem contact op met uw IT-afdeling om toegang toe te staan tot:</translation>
+    </message>
+    <message>
+        <source>Please try:</source>
+        <translation>Probeer het volgende:</translation>
+    </message>
+    <message>
+        <source>Python standalone ready</source>
+        <translation>Zelfstandige Python gereed</translation>
+    </message>
+    <message>
+        <source>Retrying {package}... ({done}/{total})</source>
+        <translation>Nieuwe poging voor {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>SSL bypass retry for {package}... ({done}/{total})</source>
+        <translation>Nieuwe poging zonder SSL-controle voor {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>SSL error, retrying {package} (system certs)... ({done}/{total})</source>
+        <translation>SSL-fout, nieuwe poging voor {package} (systeemcertificaten)... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>The AI engine needs roughly {gb} GB free during installation.</source>
+        <translation>De AI-engine heeft tijdens de installatie ongeveer {gb} GB vrije schijfruimte nodig.</translation>
+    </message>
+    <message>
+        <source>The environment installs under: {location}</source>
+        <translation>De omgeving wordt geïnstalleerd in: {location}</translation>
+    </message>
+    <message>
+        <source>The install has not reported anything for a while. QGIS is yours again: leave this running, or stop it and use Cloud AI.</source>
+        <translation>De installatie heeft al enige tijd niets gemeld. QGIS is weer beschikbaar: laat dit draaien of stop het en gebruik Cloud AI.</translation>
+    </message>
+    <message>
+        <source>The installer process crashed unexpectedly (access violation).</source>
+        <translation>Het installatieproces is onverwacht vastgelopen (toegangsfout).</translation>
+    </message>
+    <message>
+        <source>The next installation will rebuild it from scratch automatically.</source>
+        <translation>Bij de volgende installatie wordt dit automatisch volledig opnieuw opgebouwd.</translation>
+    </message>
+    <message>
+        <source>The package resolver could not find a compatible set of versions.
+This usually comes from stale cached package data or a Python
+version the AI packages no longer support.</source>
+        <translation>De pakketoplosser kon geen compatibele set versies vinden.
+Dit komt meestal door verouderde gegevens in de cache of een Python-
+versie die niet meer door de AI-pakketten wordt ondersteund.</translation>
+    </message>
+    <message>
+        <source>The plugin always uses this folder, so one rule keeps working across updates.
+It contains a standalone Python runtime, the uv installer and Python packages,
+all downloaded from their official open-source sources.</source>
+        <translation>De plugin gebruikt altijd deze map, zodat één regel blijft werken na updates.
+De map bevat een zelfstandige Python-runtime, het uv-installatieprogramma en Python-pakketten,
+allemaal gedownload van hun officiële opensourcebronnen.</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s Python environment is damaged (files are missing inside it).</source>
+        <translation>De Python-omgeving van de plugin is beschadigd (er ontbreken bestanden).</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s local Python runtime is damaged and cannot start.
+This is usually caused by antivirus quarantine or an interrupted
+first installation.</source>
+        <translation>De lokale Python-runtime van de plugin is beschadigd en kan niet starten.
+Dit wordt meestal veroorzaakt door quarantaine door antivirussoftware of een onderbroken
+eerste installatie.</translation>
+    </message>
+    <message>
+        <source>This is usually caused by:</source>
+        <translation>Dit wordt meestal veroorzaakt door:</translation>
+    </message>
+    <message>
+        <source>This usually means the Python installation is incomplete or corrupted.</source>
+        <translation>Dit betekent meestal dat de Python-installatie onvolledig of beschadigd is.</translation>
+    </message>
+    <message>
+        <source>This usually means the install folder is cloud-synced (OneDrive/Dropbox), contains unusual characters, or the path grew past the Windows length limit.</source>
+        <translation>Dit betekent meestal dat de installatiemap met de cloud wordt gesynchroniseerd (OneDrive/Dropbox), ongebruikelijke tekens bevat of langer is dan de Windows-limiet.</translation>
+    </message>
+    <message>
+        <source>Try these steps in order:</source>
+        <translation>Voer deze stappen in volgorde uit:</translation>
+    </message>
+    <message>
+        <source>Upgrading pip...</source>
+        <translation>pip upgraden...</translation>
+    </message>
+    <message>
+        <source>Using system Python (NixOS)...</source>
+        <translation>Systeem-Python gebruiken (NixOS)...</translation>
+    </message>
+    <message>
+        <source>Using system Python (fallback)...</source>
+        <translation>Systeem-Python gebruiken (alternatief)...</translation>
+    </message>
+    <message>
+        <source>Using uv package installer...</source>
+        <translation>uv-pakketinstaller gebruiken...</translation>
+    </message>
+    <message>
+        <source>Verification complete</source>
+        <translation>Verificatie voltooid</translation>
+    </message>
+    <message>
+        <source>Verifying {package}... ({done}/{total})</source>
+        <translation>{package} verifiëren... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Virtual environment created</source>
+        <translation>Virtuele omgeving gemaakt</translation>
+    </message>
+    <message>
+        <source>Virtual environment created (uv)</source>
+        <translation>Virtuele omgeving gemaakt (uv)</translation>
+    </message>
+    <message>
+        <source>Virtual environment ready</source>
+        <translation>Virtuele omgeving gereed</translation>
+    </message>
+    <message>
+        <source>Windows refused a file path during installation.</source>
+        <translation>Windows weigerde een bestandspad tijdens de installatie.</translation>
+    </message>
+    <message>
+        <source>You can also try checking your proxy settings in QGIS (Settings &gt; Options &gt; Network).</source>
+        <translation>U kunt ook uw proxy-instellingen in QGIS controleren (Instellingen &gt; Opties &gt; Netwerk).</translation>
+    </message>
+    <message>
+        <source>Your network inspects secure connections and re-signs them with its own certificate, and that certificate is not in the computer&apos;s certificate store.</source>
+        <translation>Uw netwerk inspecteert beveiligde verbindingen en ondertekent ze opnieuw met een eigen certificaat. Dat certificaat staat niet in het certificaatarchief van de computer.</translation>
+    </message>
+    <message>
+        <source>Your organization&apos;s security policy (application control, e.g. AppLocker or WDAC)
+is blocking the plugin&apos;s local AI environment.</source>
+        <translation>Het beveiligingsbeleid van uw organisatie (toepassingsbeheer, bijv. AppLocker of WDAC)
+blokkeert de lokale AI-omgeving van de plugin.</translation>
+    </message>
+    <message>
+        <source>uv package installer ready</source>
+        <translation>uv-pakketinstaller gereed</translation>
+    </message>
+    <message>
+        <source>uv: ready</source>
+        <translation>uv: gereed</translation>
+    </message>
+    <message>
+        <source>uv: unavailable, using pip</source>
+        <translation>uv: niet beschikbaar, pip wordt gebruikt</translation>
+    </message>
+    <message>
+        <source>{free_gb:.1f} GB free at {cache_dir}, under the {min_free_gb:.0f} GB the local model needs. Installing the Automatic packages only. Free up space and install again to turn Semi-Auto mode on.</source>
+        <translation>{free_gb:.1f} GB vrij in {cache_dir}, minder dan de {min_free_gb:.0f} GB die het lokale model nodig heeft. Alleen de pakketten voor de modus Automatisch worden geïnstalleerd. Maak ruimte vrij en installeer opnieuw om de modus Semi-Auto in te schakelen.</translation>
+    </message>
+    <message>
+        <source>{package} unavailable</source>
+        <translation>{package} niet beschikbaar</translation>
+    </message>
+    <message>
+        <source>{step}. The plugin builds it again from scratch.</source>
+        <translation>{step}. De plugin bouwt dit volledig opnieuw op.</translation>
+    </message>
+    <message>
+        <source>✓ All dependencies installed</source>
+        <translation>✓ Alle afhankelijkheden geïnstalleerd</translation>
+    </message>
+    <message>
+        <source>✓ Automatic mode ready</source>
+        <translation>✓ Modus Automatisch gereed</translation>
+    </message>
+    <message>
+        <source>✓ {package} installed</source>
+        <translation>✓ {package} geïnstalleerd</translation>
+    </message>
+    <message>
+        <source>An old version is installed. Click Install to replace it.</source>
+        <translation>Er is een oude versie geïnstalleerd. Klik op Installeren om deze te vervangen.</translation>
+    </message>
+    <message>
+        <source>Some AI components are missing. Click Install to complete them.</source>
+        <translation>Sommige AI-componenten ontbreken. Klik op Installeren om ze te voltooien.</translation>
+    </message>
+    <message>
+        <source>The AI components are not installed. Click Install to add them.</source>
+        <translation>De AI-componenten zijn niet geïnstalleerd. Klik op Installeren om ze toe te voegen.</translation>
+    </message>
+    <message>
+        <source>The AI components are not ready. Click Install to set them up.</source>
+        <translation>De AI-componenten zijn niet gereed. Klik op Installeren om ze in te stellen.</translation>
+    </message>
+    <message>
+        <source>The AI components did not load. Click Install to repair them.</source>
+        <translation>De AI-componenten zijn niet geladen. Klik op Installeren om ze te herstellen.</translation>
+    </message>
+    <message>
+        <source>The AI components did not pass the check. Click Install to repair them.</source>
+        <translation>De AI-componenten zijn niet door de controle gekomen. Klik op Installeren om ze te herstellen.</translation>
+    </message>
+    <message>
+        <source>The AI components need an update. The update starts now.</source>
+        <translation>De AI-componenten moeten worden bijgewerkt. De update start nu.</translation>
+    </message>
+    <message>
+        <source>The AI runtime is damaged. Click Install to repair it.</source>
+        <translation>De AI-runtime is beschadigd. Klik op Installeren om deze te herstellen.</translation>
+    </message>
+    <message>
+        <source>The AI workspace is missing. Click Install to build it.</source>
+        <translation>De AI-werkruimte ontbreekt. Klik op Installeren om deze aan te maken.</translation>
+    </message>
+    <message>
+        <source>The last install did not finish. Click Install to start again.</source>
+        <translation>De vorige installatie is niet voltooid. Klik op Installeren om opnieuw te beginnen.</translation>
+    </message>
+    <message>
+        <source>The on-device AI is not installed. Click Install to add it.</source>
+        <translation>De AI op het apparaat is niet geïnstalleerd. Klik op Installeren om deze toe te voegen.</translation>
+    </message>
+    <message>
+        <source>Cannot close download file: {error}</source>
+        <translation>Kan downloadbestand niet sluiten: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot open download file: {error}</source>
+        <translation>Kan downloadbestand niet openen: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot save download: {error}</source>
+        <translation>Kan download niet opslaan: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot write download file: {error}</source>
+        <translation>Kan niet naar downloadbestand schrijven: {error}</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <translation>Download mislukt</translation>
+    </message>
+    <message>
+        <source>the download did not finish in time</source>
+        <translation>de download is niet op tijd voltooid</translation>
+    </message>
+    <message>
+        <source>the download stalled, no data was received</source>
+        <translation>de download is vastgelopen, er zijn geen gegevens ontvangen</translation>
+    </message>
+    <message>
+        <source>the network reported: {error}</source>
+        <translation>het netwerk meldde: {error}</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/plugin/manual_predict.py" line="0" />
+        <source>That click selected nothing. Move the points and click again.</source>
+        <translation>Met die klik is niets geselecteerd. Verplaats de punten en klik opnieuw.</translation>
+    </message>
+    <message>
+        <source>Clear selection (C)</source>
+        <translation>Selectie wissen (C)</translation>
+    </message>
+    <message>
+        <source>Removes the points and the shape you are working on. Saved polygons stay.</source>
+        <translation>Verwijdert de punten en de vorm waaraan u werkt. Opgeslagen polygonen blijven behouden.</translation>
+    </message>
+    <message>
+        <source>Clear the selection in progress</source>
+        <translation>Wis de selectie die wordt getekend</translation>
+    </message>
+    <message>
+        <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
+        <translation>Deze kaartbron heeft geen scherper beeld van dit gebied. De detectietaak gebruikt het scherpste beschikbare beeld en kost minder tegels dan geschat.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a file manager.</source>
+        <translation>QGIS kon geen bestandsbeheer openen.</translation>
+    </message>
+    <message>
+        <source>The folder is copied to your clipboard: paste it into your file manager.</source>
+        <translation>De map is naar het klembord gekopieerd: plak deze in uw bestandsbeheer.</translation>
+    </message>
+    <message>
+        <source>Copy the folder below and paste it into your file manager.</source>
+        <translation>Kopieer de map hieronder en plak deze in uw bestandsbeheer.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open your email app.</source>
+        <translation>QGIS kon uw e-mailapp niet openen.</translation>
+    </message>
+    <message>
+        <source>The support address is copied to your clipboard: paste it into your email app.</source>
+        <translation>Het supportadres is naar het klembord gekopieerd: plak dit in uw e-mailapp.</translation>
+    </message>
+    <message>
+        <source>Copy the support address below into your email app.</source>
+        <translation>Kopieer het supportadres hieronder naar uw e-mailapp.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser.</source>
+        <translation>QGIS kon geen browser openen.</translation>
+    </message>
+    <message>
+        <source>The address is copied to your clipboard: paste it into a browser to continue.</source>
+        <translation>Het adres is naar het klembord gekopieerd: plak dit in een browser om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Copy the address below and paste it into a browser.</source>
+        <translation>Kopieer het adres hieronder en plak dit in een browser.</translation>
+    </message>
+    <message>
+        <source>Open it yourself</source>
+        <translation>Zelf openen</translation>
+    </message>
+    <message>
+        <source>Personal, non-commercial use. A paid plan adds commercial use for one person.</source>
+        <translation>Persoonlijk, niet-commercieel gebruik. Een betaald abonnement omvat commercieel gebruik voor één persoon.</translation>
+    </message>
+    <message>
+        <source>Finishing the current AI task, then the install starts.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Right angles is off: this QGIS does not carry the shapely geometry library it needs. Every other shape control still works.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unavailable: this QGIS does not carry the shapely geometry library that squares the walls. A QGIS installed with its full package set carries it.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Report copied: paste it into your email</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sign in to reopen, export or run this detection again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Check for Updates</source>
+        <translation>Controleren op updates</translation>
+    </message>
+    <message>
+        <source>More from TerraLab...</source>
+        <translation>Meer van TerraLab...</translation>
+    </message>
+    <message>
+        <source>BEFORE</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>AFTER</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>(more than {n} min left)</source>
+        <translation>(meer dan {n} min over)</translation>
+    </message>
+    <message>
+        <source>(retry {done}/{total})</source>
+        <translation>(poging {done}/{total})</translation>
+    </message>
+    <message>
+        <source>0 shown - raise the Max size filter to reveal them</source>
+        <translation>0 getoond - verhoog het filter Max. grootte om ze te tonen</translation>
+    </message>
+    <message>
+        <source>1 charged</source>
+        <translation>1 in rekening gebracht</translation>
+    </message>
+    <message>
+        <source>1 cloud detection</source>
+        <translation>1 clouddetectie</translation>
+    </message>
+    <message>
+        <source>2. Send to support</source>
+        <translation>2. Verstuur naar ondersteuning</translation>
+    </message>
+    <message>
+        <source>200 km² of Automatic a month, on zones of any size.</source>
+        <translation>200 km² Automatic per maand, op zones van elke grootte.</translation>
+    </message>
+    <message>
+        <source>200 km² of Automatic every month, on zones of any size</source>
+        <translation>200 km² Automatic elke maand, op zones van elke grootte</translation>
+    </message>
+    <message>
+        <source>500 cloud objects every month in Semi-Auto</source>
+        <translation>500 cloudobjecten per maand in Semi-Auto</translation>
+    </message>
+    <message>
+        <source>A firewall or proxy may be blocking the download. Check your network settings in QGIS (Settings &gt; Options &gt; Network).</source>
+        <translation>Een firewall of proxy blokkeert mogelijk de download. Controleer uw netwerkinstellingen in QGIS (Instellingen &gt; Opties &gt; Netwerk).</translation>
+    </message>
+    <message>
+        <source>Account settings</source>
+        <translation>Accountinstellingen</translation>
+    </message>
+    <message>
+        <source>Added to the project: {0}.</source>
+        <translation>Toegevoegd aan het project: {0}.</translation>
+    </message>
+    <message>
+        <source>Advanced settings - name the object first</source>
+        <translation>Geavanceerde instellingen - benoem eerst het object</translation>
+    </message>
+    <message>
+        <source>All dependencies installed</source>
+        <translation>Alle afhankelijkheden geïnstalleerd</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is downloading the AI model. Wait for it to finish, then try again.</source>
+        <translation>Een ander QGIS-venster downloadt het AI-model. Wacht tot dit klaar is en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI components.</source>
+        <translation>Een ander QGIS-venster installeert de AI-onderdelen.</translation>
+    </message>
+    <message>
+        <source>Building the shapes</source>
+        <translation>Vormen worden gebouwd</translation>
+    </message>
+    <message>
+        <source>Cancelled before the model was asked for. Nothing was spent.</source>
+        <translation>Geannuleerd voordat het model werd opgevraagd. Er is niets verbruikt.</translation>
+    </message>
+    <message>
+        <source>Cancelled before the point was sent. Nothing was spent.</source>
+        <translation>Geannuleerd voordat het punt werd verzonden. Er is niets verbruikt.</translation>
+    </message>
+    <message>
+        <source>Cancelled before the zone was sent. Nothing was spent.</source>
+        <translation>Geannuleerd voordat de zone werd verzonden. Er is niets verbruikt.</translation>
+    </message>
+    <message>
+        <source>Cancelled while the model was loading. Nothing was spent.</source>
+        <translation>Geannuleerd terwijl het model werd geladen. Er is niets verbruikt.</translation>
+    </message>
+    <message>
+        <source>Cancelled. Kept the {0} object(s) already found, from the {1} tile(s) processed before the stop. The zone was charged when the run started, so the stop does not lower the bill. Added to the project: {2}.</source>
+        <translation>Geannuleerd. De {0} al gevonden object(en) uit de {1} verwerkte tegel(s) vóór het stoppen zijn behouden. De zone werd in rekening gebracht toen de run startte, dus stoppen verlaagt de rekening niet. Toegevoegd aan het project: {2}.</translation>
+    </message>
+    <message>
+        <source>Cancelled. The AI service had processed {0} tile(s) before the stop, and nothing was added to the project. Open the AI Segmentation panel and look for a run waiting for review before starting another one. Run '{1}' to see what is left on the plan.</source>
+        <translation>Geannuleerd. De AI-service had {0} tegel(s) verwerkt vóór het stoppen, en er is niets aan het project toegevoegd. Open het AI Segmentation-paneel en zoek naar een run die op beoordeling wacht voordat u een nieuwe start. Voer '{1}' uit om te zien wat er nog over is van uw abonnement.</translation>
+    </message>
+    <message>
+        <source>Cannot restart the download: {error}</source>
+        <translation>Kan de download niet herstarten: {error}</translation>
+    </message>
+    <message>
+        <source>Charged</source>
+        <translation>In rekening gebracht</translation>
+    </message>
+    <message>
+        <source>Check disk space and folder permissions, then try again.</source>
+        <translation>Controleer de schijfruimte en mapmachtigingen en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Checking the {size} MB download...</source>
+        <translation>De download van {size} MB wordt gecontroleerd...</translation>
+    </message>
+    <message>
+        <source>Click on the map to outline your zone.</source>
+        <translation>Klik op de kaart om uw zone te omlijnen.</translation>
+    </message>
+    <message>
+        <source>Click the object first. Save polygon keeps it in your session; Export writes all kept polygons to a layer.</source>
+        <translation>Klik eerst op het object. Polygoon opslaan bewaart het in uw sessie; Exporteren schrijft alle bewaarde polygonen naar een laag.</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Sluiten</translation>
+    </message>
+    <message>
+        <source>Cloud detections</source>
+        <translation>Clouddetecties</translation>
+    </message>
+    <message>
+        <source>Connecting to download server...</source>
+        <translation>Verbinden met downloadserver...</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Your runs are still there.</source>
+        <translation>Kon TerraLab niet bereiken. Uw runs zijn er nog steeds.</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Your saved runs are still there.</source>
+        <translation>Kon TerraLab niet bereiken. Uw opgeslagen runs zijn er nog steeds.</translation>
+    </message>
+    <message>
+        <source>Could not remove this run. Try again later.</source>
+        <translation>Kon deze run niet verwijderen. Probeer het later opnieuw.</translation>
+    </message>
+    <message>
+        <source>Date</source>
+        <translation>Datum</translation>
+    </message>
+    <message>
+        <source>Delete run</source>
+        <translation>Run verwijderen</translation>
+    </message>
+    <message>
+        <source>Dense area {current}/{total} · no extra cost</source>
+        <translation>Dicht gebied {current}/{total} · geen extra kosten</translation>
+    </message>
+    <message>
+        <source>Download failed after {attempts} attempts: {reason}</source>
+        <translation>Download mislukt na {attempts} pogingen: {reason}</translation>
+    </message>
+    <message>
+        <source>Download started...</source>
+        <translation>Download gestart...</translation>
+    </message>
+    <message>
+        <source>Downloading Python {version}...</source>
+        <translation>Python {version} wordt gedownload...</translation>
+    </message>
+    <message>
+        <source>Downloading {package} ({size})... {elapsed}</source>
+        <translation>{package} ({size}) wordt gedownload... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading {package}... {elapsed}</source>
+        <translation>{package} wordt gedownload... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading: {done} / {total} MB ({speed} MB/s, {eta})</source>
+        <translation>Downloaden: {done} / {total} MB ({speed} MB/s, {eta})</translation>
+    </message>
+    <message>
+        <source>Downloading: {done} MB ({speed} MB/s)</source>
+        <translation>Downloaden: {done} MB ({speed} MB/s)</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, get all of them in one run. Runs on our servers and uses your cloud objects.</source>
+        <translation>Teken een zone, benoem één soort object en krijg ze allemaal in één run. Draait op onze servers en gebruikt uw cloudobjecten.</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off).</source>
+        <translation>Verwijder punten die dichter bij deze afstand van een rechte rand liggen (0 = uit).</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;about {n} minutes to install&lt;/b&gt;</source>
+        <translation>Alles blijft op deze computer {dot} &lt;b&gt;ongeveer {n} minuten om te installeren&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about {n} minutes to install&lt;/b&gt;</source>
+        <translation>Alles blijft op deze computer {dot} &lt;b&gt;{gb} GB en ongeveer {n} minuten om te installeren&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Export</source>
+        <translation>Exporteren</translation>
+    </message>
+    <message>
+        <source>Exported</source>
+        <translation>Geëxporteerd</translation>
+    </message>
+    <message>
+        <source>Extracting Python...</source>
+        <translation>Python wordt uitgepakt...</translation>
+    </message>
+    <message>
+        <source>Failed</source>
+        <translation>Mislukt</translation>
+    </message>
+    <message>
+        <source>Found nothing</source>
+        <translation>Niets gevonden</translation>
+    </message>
+    <message>
+        <source>Found {0} object(s) across {1} processed tile(s). Run '{2}' to read what is left on the plan: the run is charged for the surface of its zone, so the tile count is not the cost.</source>
+        <translation>{0} object(en) gevonden in {1} verwerkte tegel(s). Voer '{2}' uit om te zien wat er nog over is van uw abonnement: de run wordt in rekening gebracht op basis van het oppervlak van de zone, dus het aantal tegels is niet de kostprijs.</translation>
+    </message>
+    <message>
+        <source>Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
+        <translation>Maak schijfruimte vrij, of stel de omgevingsvariabele AI_SEGMENTATION_CACHE_DIR in op een map op een grotere schijf, en start QGIS dan opnieuw op.</translation>
+    </message>
+    <message>
+        <source>GeoJSON and KML are written in EPSG:4326. Shapefile shortens field names to 10 characters.</source>
+        <translation>GeoJSON en KML worden geschreven in EPSG:4326. Shapefile verkort veldnamen tot 10 tekens.</translation>
+    </message>
+    <message>
+        <source>It downloads first, and takes about {n} minutes.</source>
+        <translation>Het wordt eerst gedownload, dit duurt ongeveer {n} minuten.</translation>
+    </message>
+    <message>
+        <source>It downloads first.</source>
+        <translation>Het wordt eerst gedownload.</translation>
+    </message>
+    <message>
+        <source>It downloads first: {gb} GB and about {n} minutes.</source>
+        <translation>Het wordt eerst gedownload: {gb} GB en ongeveer {n} minuten.</translation>
+    </message>
+    <message>
+        <source>It started {minutes} minutes ago.</source>
+        <translation>Het is {minutes} minuten geleden gestart.</translation>
+    </message>
+    <message>
+        <source>Keep clicking around the zone, at least 3 points.</source>
+        <translation>Blijf rond de zone klikken, minstens 3 punten.</translation>
+    </message>
+    <message>
+        <source>Layer is off screen</source>
+        <translation>Laag staat buiten beeld</translation>
+    </message>
+    <message>
+        <source>Loading your runs...</source>
+        <translation>Uw runs worden geladen...</translation>
+    </message>
+    <message>
+        <source>Local AI files</source>
+        <translation>Lokale AI-bestanden</translation>
+    </message>
+    <message>
+        <source>Looking at ({0}, {1}) on {2}.</source>
+        <translation>Kijken naar ({0}, {1}) op {2}.</translation>
+    </message>
+    <message>
+        <source>Looking for '{0}' on {1}.</source>
+        <translation>Zoeken naar '{0}' op {1}.</translation>
+    </message>
+    <message>
+        <source>Model download failed: {reason}. Retrying will not help. Update the plugin, or ask your IT administrator whether the download is being filtered.</source>
+        <translation>Downloaden van het model mislukt: {reason}. Opnieuw proberen helpt niet. Werk de plugin bij, of vraag uw IT-beheerder of de download wordt gefilterd.</translation>
+    </message>
+    <message>
+        <source>Model downloaded.</source>
+        <translation>Model gedownload.</translation>
+    </message>
+    <message>
+        <source>No internet connection. Check your connection and try again.</source>
+        <translation>Geen internetverbinding. Controleer uw verbinding en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>No run matches that search.</source>
+        <translation>Geen run komt overeen met deze zoekopdracht.</translation>
+    </message>
+    <message>
+        <source>No run matches that search. Load older runs to look further back.</source>
+        <translation>Geen run komt overeen met deze zoekopdracht. Laad oudere runs om verder terug te kijken.</translation>
+    </message>
+    <message>
+        <source>No runs yet. Your Automatic runs appear here, ready to reuse, restore or export.</source>
+        <translation>Nog geen runs. Uw Automatic-runs verschijnen hier, klaar om te hergebruiken, herstellen of exporteren.</translation>
+    </message>
+    <message>
+        <source>Not enough free disk space to download the AI model: {free} MB available, at least {needed} MB is required.</source>
+        <translation>Onvoldoende vrije schijfruimte om het AI-model te downloaden: {free} MB beschikbaar, minstens {needed} MB vereist.</translation>
+    </message>
+    <message>
+        <source>Nothing to export yet. Click an object and save it first.</source>
+        <translation>Nog niets om te exporteren. Klik eerst op een object en sla het op.</translation>
+    </message>
+    <message>
+        <source>Objects</source>
+        <translation>Objecten</translation>
+    </message>
+    <message>
+        <source>Outlined one object, score {0}.</source>
+        <translation>Eén object omlijnd, score {0}.</translation>
+    </message>
+    <message>
+        <source>Partial file ({size} MB) saved, it will resume on the next try.</source>
+        <translation>Gedeeltelijk bestand ({size} MB) opgeslagen, dit wordt hervat bij de volgende poging.</translation>
+    </message>
+    <message>
+        <source>Points the map back at this run, ready to detect the same object again. Nothing is spent until you do.</source>
+        <translation>Richt de kaart weer op deze run, klaar om hetzelfde object opnieuw te detecteren. Er wordt niets verbruikt totdat u dit doet.</translation>
+    </message>
+    <message>
+        <source>Preparing installation...</source>
+        <translation>Installatie wordt voorbereid...</translation>
+    </message>
+    <message>
+        <source>Preparing the imagery for the AI...</source>
+        <translation>Beeldmateriaal wordt voorbereid voor de AI...</translation>
+    </message>
+    <message>
+        <source>Pro gives you 200 km² of Automatic a month, so you keep working.</source>
+        <translation>Pro geeft u 200 km² Automatic per maand, zodat u kunt blijven werken.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 500 cloud objects a month in Semi-Auto.</source>
+        <translation>Pro geeft u 500 cloudobjecten per maand in Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>Pro raises the month to 200 km² of Automatic.</source>
+        <translation>Pro verhoogt de maand naar 200 km² Automatic.</translation>
+    </message>
+    <message>
+        <source>Pro: 500 cloud objects a month in Semi-Auto with Cloud AI, and 200 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro: 500 cloudobjecten per maand in Semi-Auto met Cloud AI, en 200 km² Automatic. Dezelfde AI, dezelfde gratis klikken en correcties, op elke computer waarop u werkt.</translation>
+    </message>
+    <message>
+        <source>Python {version} installed</source>
+        <translation>Python {version} geïnstalleerd</translation>
+    </message>
+    <message>
+        <source>QGIS would not open this layer for editing, so the manual tools could not start.</source>
+        <translation>QGIS kon deze laag niet openen voor bewerking, waardoor de handmatige hulpmiddelen niet konden starten.</translation>
+    </message>
+    <message>
+        <source>Raise the Max size filter to show objects first.</source>
+        <translation>Verhoog eerst het filter Max. grootte om objecten te tonen.</translation>
+    </message>
+    <message>
+        <source>Remove this run from your history? Its detections stay stored, but it will not be listed here any more.</source>
+        <translation>Deze run uit uw geschiedenis verwijderen? De detecties blijven opgeslagen, maar worden hier niet meer vermeld.</translation>
+    </message>
+    <message>
+        <source>Reshaping the objects...</source>
+        <translation>Objecten worden hervormd...</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>Resolutie</translation>
+    </message>
+    <message>
+        <source>Restored</source>
+        <translation>Hersteld</translation>
+    </message>
+    <message>
+        <source>Resuming download...</source>
+        <translation>Download wordt hervat...</translation>
+    </message>
+    <message>
+        <source>Retry {done}/{total} in {seconds}s...</source>
+        <translation>Poging {done}/{total} over {seconds}s...</translation>
+    </message>
+    <message>
+        <source>Run again</source>
+        <translation>Opnieuw uitvoeren</translation>
+    </message>
+    <message>
+        <source>Save all {found}</source>
+        <translation>Alle {found} opslaan</translation>
+    </message>
+    <message>
+        <source>Save the hidden objects too?</source>
+        <translation>Ook de verborgen objecten opslaan?</translation>
+    </message>
+    <message>
+        <source>Save the {visible} shown</source>
+        <translation>De getoonde {visible} opslaan</translation>
+    </message>
+    <message>
+        <source>Saved on this computer</source>
+        <translation>Opgeslagen op deze computer</translation>
+    </message>
+    <message>
+        <source>Saved to {folder}. Save the project to keep your results beside it.</source>
+        <translation>Opgeslagen in {folder}. Sla het project op om uw resultaten ernaast te bewaren.</translation>
+    </message>
+    <message>
+        <source>Session expired. Open the AI Segmentation panel and sign in again.</source>
+        <translation>Sessie verlopen. Open het AI Segmentation-paneel en meld u opnieuw aan.</translation>
+    </message>
+    <message>
+        <source>Shared borders is off above {cap} shapes. This result has {count}.</source>
+        <translation>Gedeelde grenzen is uitgeschakeld boven {cap} vormen. Dit resultaat heeft er {count}.</translation>
+    </message>
+    <message>
+        <source>Shared borders needs a position for the shapes and this result carries none.</source>
+        <translation>Gedeelde grenzen heeft een positie voor de vormen nodig, en dit resultaat bevat er geen.</translation>
+    </message>
+    <message>
+        <source>Sign in</source>
+        <translation>Aanmelden</translation>
+    </message>
+    <message>
+        <source>Sign in to keep detections here.</source>
+        <translation>Meld u aan om detecties hier te bewaren.</translation>
+    </message>
+    <message>
+        <source>Sign in to reopen, export or run this zone again.</source>
+        <translation>Meld u aan om deze zone opnieuw te openen, exporteren of uit te voeren.</translation>
+    </message>
+    <message>
+        <source>Sign in to see every run on your account.</source>
+        <translation>Meld u aan om alle runs van uw account te zien.</translation>
+    </message>
+    <message>
+        <source>Sign in to see your past runs.</source>
+        <translation>Meld u aan om uw eerdere runs te zien.</translation>
+    </message>
+    <message>
+        <source>Star a run or an object to keep it here.</source>
+        <translation>Markeer een run of object met een ster om het hier te bewaren.</translation>
+    </message>
+    <message>
+        <source>Starred objects</source>
+        <translation>Objecten met ster</translation>
+    </message>
+    <message>
+        <source>State: {0}. Ready: {1}.</source>
+        <translation>Status: {0}. Gereed: {1}.</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>Status</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Stoppen</translation>
+    </message>
+    <message>
+        <source>Stop reshaping here. The outlines already redrawn are kept.</source>
+        <translation>Stop hier met hervormen. De reeds opnieuw getekende omlijningen worden bewaard.</translation>
+    </message>
+    <message>
+        <source>Takes this run out of your history. Its detections stay stored.</source>
+        <translation>Haalt deze run uit uw geschiedenis. De detecties blijven opgeslagen.</translation>
+    </message>
+    <message>
+        <source>That click could not be handled. Please try again.</source>
+        <translation>Die klik kon niet worden verwerkt. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>That shape was not added. Adjust it with a click and try again.</source>
+        <translation>Die vorm is niet toegevoegd. Pas hem aan met een klik en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The AI engine cannot load on Windows</source>
+        <translation>De AI-engine kan niet worden geladen op Windows</translation>
+    </message>
+    <message>
+        <source>The AI is still loading. This session starts on its own as soon as it is ready.</source>
+        <translation>De AI wordt nog geladen. Deze sessie start vanzelf zodra deze klaar is.</translation>
+    </message>
+    <message>
+        <source>The AI service answers this in one go, so the progress bar stays still and QGIS stays busy. This can take several minutes. Do not start it again. The zone is charged when the run starts; Cancel stops the run and keeps what was found.</source>
+        <translation>De AI-service beantwoordt dit in één keer, dus de voortgangsbalk blijft stilstaan en QGIS blijft bezig. Dit kan enkele minuten duren. Start het niet opnieuw. De zone wordt in rekening gebracht wanneer de run start; Annuleren stopt de run en behoudt wat er is gevonden.</translation>
+    </message>
+    <message>
+        <source>The AI service is waking up. Holding your spot...</source>
+        <translation>De AI-service wordt wakker. Uw plek wordt vastgehouden...</translation>
+    </message>
+    <message>
+        <source>The local AI did not stop in time, so the install was not started. Close and reopen QGIS, then try again.</source>
+        <translation>De lokale AI stopte niet op tijd, waardoor de installatie niet is gestart. Sluit QGIS en open het opnieuw, en probeer het dan nogmaals.</translation>
+    </message>
+    <message>
+        <source>The model file arrived complete twice and did not match its checksum either time. Something between this computer and the download is altering the file, usually a proxy or a security appliance. Ask your IT administrator to let the download through untouched.</source>
+        <translation>Het modelbestand kwam twee keer volledig aan en kwam geen van beide keren overeen met de checksum. Iets tussen deze computer en de download verandert het bestand, meestal een proxy of beveiligingsapparaat. Vraag uw IT-beheerder om de download ongewijzigd door te laten.</translation>
+    </message>
+    <message>
+        <source>The model is not loaded yet. Waiting up to {0} seconds for it.</source>
+        <translation>Het model is nog niet geladen. Er wordt maximaal {0} seconden op gewacht.</translation>
+    </message>
+    <message>
+        <source>The object was outlined but saving it failed: {0}. The outline is still returned as POLYGON_WKT.</source>
+        <translation>Het object is omlijnd, maar het opslaan is mislukt: {0}. De omlijning wordt nog steeds geretourneerd als POLYGON_WKT.</translation>
+    </message>
+    <message>
+        <source>The plugin requires Visual C++ Redistributables to run the local AI engine.
+
+Please download and install:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+After installation, restart QGIS and try again.</source>
+        <translation>De plugin heeft Visual C++ Redistributables nodig om de lokale AI-engine uit te voeren.
+
+Download en installeer:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+Start na de installatie QGIS opnieuw op en probeer het nogmaals.</translation>
+    </message>
+    <message>
+        <source>The run finished but added no layer to the project. Look in the AI Segmentation panel: results waiting for review live there.</source>
+        <translation>De run is voltooid maar heeft geen laag aan het project toegevoegd. Kijk in het AI Segmentation-paneel: resultaten die op beoordeling wachten staan daar.</translation>
+    </message>
+    <message>
+        <source>This raster is outside the current map view, so clicks would land on nothing.</source>
+        <translation>Deze raster ligt buiten de huidige kaartweergave, waardoor klikken nergens op landen.</translation>
+    </message>
+    <message>
+        <source>This run found nothing. Add the object yourself below, or use "Re-run the whole zone" with another word or a smaller zone.</source>
+        <translation>Deze run heeft niets gevonden. Voeg het object hieronder zelf toe, of gebruik "Hele zone opnieuw uitvoeren" met een ander woord of een kleinere zone.</translation>
+    </message>
+    <message>
+        <source>Today</source>
+        <translation>Vandaag</translation>
+    </message>
+    <message>
+        <source>Undated</source>
+        <translation>Zonder datum</translation>
+    </message>
+    <message>
+        <source>Undo every correction of this round at once. The count is in the label, so you can see what goes. It asks once first.</source>
+        <translation>Maak alle correcties van deze ronde in één keer ongedaan. Het aantal staat in het label, zodat u ziet wat verdwijnt. Er wordt eerst één keer om bevestiging gevraagd.</translation>
+    </message>
+    <message>
+        <source>Undo every correction? Confirm</source>
+        <translation>Alle correcties ongedaan maken? Bevestigen</translation>
+    </message>
+    <message>
+        <source>Unknown error. Try again, or use Cloud AI instead.</source>
+        <translation>Onbekende fout. Probeer het opnieuw, of gebruik in plaats daarvan Cloud AI.</translation>
+    </message>
+    <message>
+        <source>Verifying Python installation...</source>
+        <translation>Python-installatie wordt gecontroleerd...</translation>
+    </message>
+    <message>
+        <source>Wait for it to finish, then try again.</source>
+        <translation>Wacht tot dit klaar is en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Yesterday</source>
+        <translation>Gisteren</translation>
+    </message>
+    <message>
+        <source>Your {n} free cloud detections are used up</source>
+        <translation>Uw {n} gratis clouddetecties zijn op</translation>
+    </message>
+    <message>
+        <source>Zone</source>
+        <translation>Zone</translation>
+    </message>
+    <message>
+        <source>Zone too large - draw a smaller zone</source>
+        <translation>Zone te groot - teken een kleinere zone</translation>
+    </message>
+    <message>
+        <source>Zone too large. Draw a zone of {max} tiles or fewer.</source>
+        <translation>Zone te groot. Teken een zone van {max} tegels of minder.</translation>
+    </message>
+    <message>
+        <source>Zoom to the layer first?</source>
+        <translation>Eerst inzoomen op de laag?</translation>
+    </message>
+    <message>
+        <source>the AI engine</source>
+        <translation>de AI-engine</translation>
+    </message>
+    <message>
+        <source>the AI model</source>
+        <translation>het AI-model</translation>
+    </message>
+    <message>
+        <source>the model file has been removed from that address</source>
+        <translation>het modelbestand is verwijderd van dat adres</translation>
+    </message>
+    <message>
+        <source>the model file is not at that address</source>
+        <translation>het modelbestand staat niet op dat adres</translation>
+    </message>
+    <message>
+        <source>the server refused access to the model file</source>
+        <translation>de server weigerde toegang tot het modelbestand</translation>
+    </message>
+    <message>
+        <source>{hidden} objects are hidden by the filters. Finish asks before it leaves them out.</source>
+        <translation>{hidden} objecten zijn verborgen door de filters. Voltooien vraagt eerst voordat ze worden weggelaten.</translation>
+    </message>
+    <message>
+        <source>{hidden} of the {found} objects found are hidden by the Confidence cutoff. They are not on screen, and Finish leaves them out.</source>
+        <translation>{hidden} van de {found} gevonden objecten zijn verborgen door de betrouwbaarheidsdrempel. Ze staan niet op het scherm, en Voltooien laat ze weg.</translation>
+    </message>
+    <message>
+        <source>{n} charged</source>
+        <translation>{n} in rekening gebracht</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections</source>
+        <translation>{n} clouddetecties</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections left, back on {date}.</source>
+        <translation>{n} gratis clouddetecties over, terug op {date}.</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections left.</source>
+        <translation>{n} gratis clouddetecties over.</translation>
+    </message>
+    <message>
+        <source>{n} ha</source>
+        <translation>{n} ha</translation>
+    </message>
+    <message>
+        <source>{n} km2</source>
+        <translation>{n} km2</translation>
+    </message>
+    <message>
+        <source>{package} installed</source>
+        <translation>{package} geïnstalleerd</translation>
+    </message>
+    <message>
+        <source>{used} of {cap} computers in use.</source>
+        <translation>{used} van {cap} computers in gebruik.</translation>
+    </message>
+    <message>
+        <source>~{minutes}m {seconds}s left</source>
+        <translation>~{minutes}m {seconds}s over</translation>
+    </message>
+    <message>
+        <source>~{seconds}s left</source>
+        <translation>~{seconds}s over</translation>
+    </message>
+    <message>
+        <source>Save the {visible} polygons shown as a layer.</source>
+        <translation>De weergegeven {visible} polygonen als laag opslaan.</translation>
+    </message>
+    <message>
+        <source>About a minute left</source>
+        <translation>Nog ongeveer een minuut</translation>
+    </message>
+    <message>
+        <source>About {m} min left</source>
+        <translation>Nog ongeveer {m} min</translation>
+    </message>
+    <message>
+        <source>Dense area · no extra cost</source>
+        <translation>Dicht gebied · geen extra kosten</translation>
+    </message>
+    <message>
+        <source>Less than a minute left</source>
+        <translation>Minder dan een minuut resterend</translation>
+    </message>
+    <message>
+        <source>about {m} min</source>
+        <translation>ongeveer {m} min</translation>
+    </message>
+    <message>
+        <source>under a minute</source>
+        <translation>minder dan een minuut</translation>
+    </message>
+    <message>
+        <source>{current} of {total} tiles</source>
+        <translation>{current} van {total} tegels</translation>
+    </message>
+    <message>
+        <source>{done} of {total} km²</source>
+        <translation>{done} van {total} km²</translation>
+    </message>
+    <message>
+        <source>{km2} km² · {eta}</source>
+        <translation>{km2} km² · {eta}</translation>
+    </message>
+    <message>
+        <source>{pct}% done</source>
+        <translation>{pct}% klaar</translation>
+    </message>
+    <message>
+        <source>Free includes one example per run, and this run has it.</source>
+        <translation>Gratis abonnement bevat één voorbeeld per run, en deze run heeft het al.</translation>
+    </message>
+    <message>
+        <source>Or run it with this one example.</source>
+        <translation>Of voer het uit met dit ene voorbeeld.</translation>
+    </message>
+    <message>
+        <source>Pro takes up to {max} examples per run, look-alikes to exclude included, so the AI finds exactly what you mean.</source>
+        <translation>Pro accepteert tot {max} voorbeelden per run, inclusief uit te sluiten gelijkende objecten, zodat de AI precies vindt wat je bedoelt.</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your example. Free includes one example per run.</source>
+        <translation>De AI vindt elk object dat lijkt op je voorbeeld. Gratis abonnement bevat één voorbeeld per run.</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples - you can draw up to {max}.</source>
+        <translation>De AI vindt elk object dat lijkt op je voorbeelden - je kunt er tot {max} tekenen.</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples.</source>
+        <translation>De AI vindt elk object dat lijkt op je voorbeelden.</translation>
+    </message>
+    <message>
+        <source>Need more this month? Write to us and we set up a plan that fits your volume.</source>
+        <translation>Deze maand meer nodig? Schrijf ons en we stellen een plan op dat bij uw volume past.</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} Semi-Auto objects left this month</source>
+        <translation>{left} van {cap} Semi-Auto-objecten over deze maand</translation>
+    </message>
+    <message>
+        <source>Copy email</source>
+        <translation>E-mailadres kopiëren</translation>
+    </message>
+    <message>
+        <source>Custom needs? Write to us: {email}</source>
+        <translation>Aangepaste behoeften? Schrijf naar: {email}</translation>
+    </message>
+    <message>
+        <source>Automatic is unavailable right now.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Describe what to find, show what it looks like, or do both. Both together is the most accurate.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Detect objects ({n} km² · {eta})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Detect objects ({n} km²)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Draw a smaller zone</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Each tile covers a lot of ground at this precision. Raise the precision in Advanced settings for sharper detections.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Exclude {n}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Reference {n}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Semi-Auto still works until it comes back.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Semi-Auto still works, and Automatic comes back on {date}.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Size of each object</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The AI drops objects that look like this.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The AI looks for more objects like this.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Try again in a few minutes. Your zone and your settings are kept.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Type what to find, or draw an example of it.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>What you asked for</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>You used your Automatic surface for this month.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>and / or</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Building the shapes on this computer - still working, everything already found is kept...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>After an Automatic run, its technical log lines are sent too.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Free allowance used up: this run covered {done} of the {zone} km² you drew.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Your zone is larger than what is left</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Your zone is {zone} km². You have {left} km² left this month.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>We can detect on the {done} km² outlined on the map (center of your zone).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Detect on {done} km²</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Upgrade to Pro: whole zone, no limit</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>"{obj}" is not an object the AI knows well. Drawing one example on the map shows it what to detect.</source>
+        <translation>"{obj}" is niet een object dat de AI goed kent. Door een voorbeeld op de kaart te tekenen, laat je zien wat hij moet detecteren.</translation>
+    </message>
+    <message>
+        <source>500 cloud objects a month with Pro</source>
+        <translation>500 cloudobjecten per maand met Pro</translation>
+    </message>
+    <message>
+        <source>A name plus an example works best.</source>
+        <translation>Een naam plus een voorbeeld werkt het best.</translation>
+    </message>
+    <message>
+        <source>A newer version is ready. Opens the QGIS plugin manager on it.</source>
+        <translation>Een nieuwere versie is klaar. Opent de QGIS plugin manager ervoor.</translation>
+    </message>
+    <message>
+        <source>AI Segmentation settings</source>
+        <translation>AI Segmentation-instellingen</translation>
+    </message>
+    <message>
+        <source>Account</source>
+        <translation>Account</translation>
+    </message>
+    <message>
+        <source>Account picture</source>
+        <translation>Accountfoto</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>Geavanceerd</translation>
+    </message>
+    <message>
+        <source>After</source>
+        <translation>Na</translation>
+    </message>
+    <message>
+        <source>After the grace period your data is erased for good. Until then, sign in on terra-lab.ai to cancel it.</source>
+        <translation>Na de respijtperiode worden je gegevens definitief gewist. Log tot die tijd in op terra-lab.ai om het te annuleren.</translation>
+    </message>
+    <message>
+        <source>After your account loads</source>
+        <translation>Nadat je account is geladen</translation>
+    </message>
+    <message>
+        <source>Aligning neighbouring outlines</source>
+        <translation>Aangrenzende contouren uitlijnen</translation>
+    </message>
+    <message>
+        <source>All {n} used. Back on {date}.</source>
+        <translation>Alle {n} opgebruikt. Terug op {date}.</translation>
+    </message>
+    <message>
+        <source>Also signs you out</source>
+        <translation>Meldt je ook af</translation>
+    </message>
+    <message>
+        <source>Applying the review settings</source>
+        <translation>De beoordelingsinstellingen toepassen</translation>
+    </message>
+    <message>
+        <source>Automatic km² left of {total}</source>
+        <translation>Automatische km² over van {total}</translation>
+    </message>
+    <message>
+        <source>Back on {date}.</source>
+        <translation>Terug op {date}.</translation>
+    </message>
+    <message>
+        <source>Before</source>
+        <translation>Voor</translation>
+    </message>
+    <message>
+        <source>Before and after comparison</source>
+        <translation>Vergelijking voor en na</translation>
+    </message>
+    <message>
+        <source>Before you start</source>
+        <translation>Voordat je begint</translation>
+    </message>
+    <message>
+        <source>Billing</source>
+        <translation>Facturatie</translation>
+    </message>
+    <message>
+        <source>By continuing you accept the {terms} and the {privacy}.</source>
+        <translation>Door verder te gaan accepteer je de {terms} en de {privacy}.</translation>
+    </message>
+    <message>
+        <source>Cancel the example, the detection, or exit Automatic</source>
+        <translation>Annuleer het voorbeeld, de detectie of verlaat de automatische modus</translation>
+    </message>
+    <message>
+        <source>Cancel this detection?</source>
+        <translation>Deze detectie annuleren?</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>Controleren op updates</translation>
+    </message>
+    <message>
+        <source>Check your connection.</source>
+        <translation>Controleer je verbinding.</translation>
+    </message>
+    <message>
+        <source>Choose the imagery to segment</source>
+        <translation>Kies de beelden om te segmenteren</translation>
+    </message>
+    <message>
+        <source>Clear</source>
+        <translation>Wissen</translation>
+    </message>
+    <message>
+        <source>Clear selection</source>
+        <translation>Selectie wissen</translation>
+    </message>
+    <message>
+        <source>Click each piece of the object you want to merge.</source>
+        <translation>Klik op elk onderdeel van het object dat je wilt samenvoegen.</translation>
+    </message>
+    <message>
+        <source>Close it on another computer.</source>
+        <translation>Sluit het op een andere computer.</translation>
+    </message>
+    <message>
+        <source>Closing AI Segmentation session</source>
+        <translation>AI Segmentation-sessie afsluiten</translation>
+    </message>
+    <message>
+        <source>Commercial use, higher limits</source>
+        <translation>Commercieel gebruik, hogere limieten</translation>
+    </message>
+    <message>
+        <source>Confidence cutoff</source>
+        <translation>Betrouwbaarheidsdrempel</translation>
+    </message>
+    <message>
+        <source>Continue</source>
+        <translation>Doorgaan</translation>
+    </message>
+    <message>
+        <source>Copy your logs, then send them to us.</source>
+        <translation>Kopieer je logs en stuur ze naar ons.</translation>
+    </message>
+    <message>
+        <source>Could not load your account</source>
+        <translation>Kan je account niet laden</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab</source>
+        <translation>Kan TerraLab niet bereiken</translation>
+    </message>
+    <message>
+        <source>Danger zone</source>
+        <translation>Gevarenzone</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>Verwijderen</translation>
+    </message>
+    <message>
+        <source>Delete account</source>
+        <translation>Account verwijderen</translation>
+    </message>
+    <message>
+        <source>Delete my account</source>
+        <translation>Mijn account verwijderen</translation>
+    </message>
+    <message>
+        <source>Delete this run?</source>
+        <translation>Deze run verwijderen?</translation>
+    </message>
+    <message>
+        <source>Delete your TerraLab account</source>
+        <translation>Verwijder je TerraLab-account</translation>
+    </message>
+    <message>
+        <source>Deletes the local model files, signs you out and resets the plugin. Your account and your cloud detections are not affected.</source>
+        <translation>Verwijdert de lokale modelbestanden, meldt je af en stelt de plugin opnieuw in. Je account en je clouddetecties worden niet aangetast.</translation>
+    </message>
+    <message>
+        <source>Deletes the offline AI files and signs you out. Your account stays.</source>
+        <translation>Verwijdert de offline AI-bestanden en meldt je af. Je account blijft behouden.</translation>
+    </message>
+    <message>
+        <source>Deleting account...</source>
+        <translation>Account verwijderen...</translation>
+    </message>
+    <message>
+        <source>Deleting...</source>
+        <translation>Verwijderen...</translation>
+    </message>
+    <message>
+        <source>Describe what to detect</source>
+        <translation>Beschrijf wat je wilt detecteren</translation>
+    </message>
+    <message>
+        <source>Detail level</source>
+        <translation>Detailniveau</translation>
+    </message>
+    <message>
+        <source>Detection stopped early. Everything found is kept below and stays yours.</source>
+        <translation>Detectie eerder gestopt. Alles wat is gevonden, staat hieronder en blijft van jou.</translation>
+    </message>
+    <message>
+        <source>Dismiss</source>
+        <translation>Sluiten</translation>
+    </message>
+    <message>
+        <source>Do more with Pro</source>
+        <translation>Doe meer met Pro</translation>
+    </message>
+    <message>
+        <source>Dock or undock this panel</source>
+        <translation>Dit paneel vast- of loskoppelen</translation>
+    </message>
+    <message>
+        <source>Done</source>
+        <translation>Klaar</translation>
+    </message>
+    <message>
+        <source>Double-click, or click the first point, to close the zone.</source>
+        <translation>Dubbelklik, of klik op het eerste punt, om de zone te sluiten.</translation>
+    </message>
+    <message>
+        <source>Each tile covers a lot of ground at this precision. Raise the precision for sharper detections.</source>
+        <translation>Elke tegel bestrijkt een groot oppervlak op deze precisie. Verhoog de precisie voor scherpere detecties.</translation>
+    </message>
+    <message>
+        <source>Edit</source>
+        <translation>Bewerken</translation>
+    </message>
+    <message>
+        <source>Edit a saved polygon?</source>
+        <translation>Een opgeslagen polygoon bewerken?</translation>
+    </message>
+    <message>
+        <source>End this segmentation session.</source>
+        <translation>Beëindig deze segmentatiesessie.</translation>
+    </message>
+    <message>
+        <source>Erases your account and its data. Every TerraLab plugin stops, and a paid plan stops renewing.</source>
+        <translation>Wist je account en de bijbehorende gegevens. Elke TerraLab plugin stopt en een betaald abonnement wordt niet meer verlengd.</translation>
+    </message>
+    <message>
+        <source>Every key the panel answers, grouped by where it works.</source>
+        <translation>Elke toets waar het paneel op reageert, gegroepeerd op waar hij werkt.</translation>
+    </message>
+    <message>
+        <source>Everything we make</source>
+        <translation>Alles wat we maken</translation>
+    </message>
+    <message>
+        <source>Export or exit the review first.</source>
+        <translation>Exporteer of verlaat eerst de beoordeling.</translation>
+    </message>
+    <message>
+        <source>Export or exit the review to switch modes.</source>
+        <translation>Exporteer of verlaat de beoordeling om van modus te wisselen.</translation>
+    </message>
+    <message>
+        <source>Export polygons to a layer</source>
+        <translation>Polygonen exporteren naar een laag</translation>
+    </message>
+    <message>
+        <source>Finer tiles find smaller objects. The grid shows on the map.</source>
+        <translation>Fijnere tegels vinden kleinere objecten. Het raster wordt op de kaart weergegeven.</translation>
+    </message>
+    <message>
+        <source>Finishing the last tiles</source>
+        <translation>De laatste tegels afronden</translation>
+    </message>
+    <message>
+        <source>First a download, about {n} minutes.</source>
+        <translation>Eerst een download van ongeveer {n} minuten.</translation>
+    </message>
+    <message>
+        <source>First a download.</source>
+        <translation>Eerst een download.</translation>
+    </message>
+    <message>
+        <source>First a {gb} GB download, about {n} minutes.</source>
+        <translation>Eerst een download van {gb} GB, ongeveer {n} minuten.</translation>
+    </message>
+    <message>
+        <source>Free allowance used: {done} of {zone} km² processed</source>
+        <translation>Gratis tegoed gebruikt: {done} van {zone} km² verwerkt</translation>
+    </message>
+    <message>
+        <source>Free takes one example per run</source>
+        <translation>Gratis gebruikt één voorbeeld per run</translation>
+    </message>
+    <message>
+        <source>Get Pro</source>
+        <translation>Neem Pro</translation>
+    </message>
+    <message>
+        <source>Guidance tips</source>
+        <translation>Gebruikstips</translation>
+    </message>
+    <message>
+        <source>How AI Segmentation uses your data</source>
+        <translation>Hoe AI Segmentation je gegevens gebruikt</translation>
+    </message>
+    <message>
+        <source>Image to segment</source>
+        <translation>Afbeelding om te segmenteren</translation>
+    </message>
+    <message>
+        <source>Install in QGIS</source>
+        <translation>Installeren in QGIS</translation>
+    </message>
+    <message>
+        <source>Installed</source>
+        <translation>Geïnstalleerd</translation>
+    </message>
+    <message>
+        <source>It is installed but did not start. Restart QGIS to use it.</source>
+        <translation>Het is geïnstalleerd maar niet gestart. Start QGIS opnieuw om het te gebruiken.</translation>
+    </message>
+    <message>
+        <source>It is installed but switched off. Turns it on and opens it.</source>
+        <translation>Het is geïnstalleerd maar uitgeschakeld. Zet hem aan en opent hem.</translation>
+    </message>
+    <message>
+        <source>It is outside the current map view.</source>
+        <translation>Het ligt buiten de huidige kaartweergave.</translation>
+    </message>
+    <message>
+        <source>It leaves your history. Its detections stay stored.</source>
+        <translation>Het verdwijnt uit je geschiedenis. De detecties blijven opgeslagen.</translation>
+    </message>
+    <message>
+        <source>Joining shared borders</source>
+        <translation>Gedeelde randen samenvoegen</translation>
+    </message>
+    <message>
+        <source>Joining the detected parts</source>
+        <translation>De gedetecteerde delen samenvoegen</translation>
+    </message>
+    <message>
+        <source>Keep running</source>
+        <translation>Blijven draaien</translation>
+    </message>
+    <message>
+        <source>Keep your polygon?</source>
+        <translation>Je polygoon behouden?</translation>
+    </message>
+    <message>
+        <source>Keep your polygons?</source>
+        <translation>Je polygonen behouden?</translation>
+    </message>
+    <message>
+        <source>Like the result?</source>
+        <translation>Bevalt het resultaat?</translation>
+    </message>
+    <message>
+        <source>Loading your plan...</source>
+        <translation>Je abonnement laden...</translation>
+    </message>
+    <message>
+        <source>Local model</source>
+        <translation>Lokaal model</translation>
+    </message>
+    <message>
+        <source>Manage</source>
+        <translation>Beheren</translation>
+    </message>
+    <message>
+        <source>Manage account in browser</source>
+        <translation>Account beheren in de browser</translation>
+    </message>
+    <message>
+        <source>Mark an object to detect more like it.</source>
+        <translation>Markeer een object om soortgelijke objecten te detecteren.</translation>
+    </message>
+    <message>
+        <source>More plugins</source>
+        <translation>Meer plugins</translation>
+    </message>
+    <message>
+        <source>Need more this month? Write to us and we set up a custom quota.</source>
+        <translation>Meer nodig deze maand? Schrijf ons en we stellen een aangepast quotum in.</translation>
+    </message>
+    <message>
+        <source>Needs a restart</source>
+        <translation>Herstart nodig</translation>
+    </message>
+    <message>
+        <source>Never your imagery or coordinates</source>
+        <translation>Nooit je beelden of coördinaten</translation>
+    </message>
+    <message>
+        <source>Next: {step}</source>
+        <translation>Volgende: {step}</translation>
+    </message>
+    <message>
+        <source>No account matches this sign-in. Sign in with the account that has your plan.</source>
+        <translation>Geen account komt overeen met deze aanmelding. Log in met het account waarop je abonnement staat.</translation>
+    </message>
+    <message>
+        <source>No matches in this zone. Add the object's name, like "building", or draw a clearer example, and try a smaller zone.</source>
+        <translation>Geen overeenkomsten in deze zone. Voeg de naam van het object toe, zoals "building", of teken een duidelijker voorbeeld, en probeer een kleinere zone.</translation>
+    </message>
+    <message>
+        <source>No usage counted yet this month.</source>
+        <translation>Er is deze maand nog geen gebruik geteld.</translation>
+    </message>
+    <message>
+        <source>No valid polygons could be created from the selection. Try adjusting the outline settings or making a new selection.</source>
+        <translation>Er konden geen geldige polygonen worden gemaakt uit de selectie. Probeer de contourinstellingen aan te passen of maak een nieuwe selectie.</translation>
+    </message>
+    <message>
+        <source>None of the objects came out as a shape the file could take. Turn the cleanup settings down and try Export again.</source>
+        <translation>Geen van de objecten had een vorm die het bestand aankan. Zet de opschooninstellingen lager en probeer Export opnieuw.</translation>
+    </message>
+    <message>
+        <source>Not processed: {x} km², dashed on the map</source>
+        <translation>Niet verwerkt: {x} km², gestreept op de kaart</translation>
+    </message>
+    <message>
+        <source>Nothing found in the first {n} tiles. Check the spelling of your prompt, try a simpler word, or check the zone and the imagery. The run continues and each tile still counts.</source>
+        <translation>Niets gevonden in de eerste {n} tegels. Controleer de spelling van je prompt, probeer een eenvoudiger woord, of controleer de zone en de beelden. De run gaat door en elke tegel telt nog steeds mee.</translation>
+    </message>
+    <message>
+        <source>Nothing has been found yet. The surface already scanned still counts.</source>
+        <translation>Er is nog niets gevonden. Het al gescande oppervlak telt nog steeds mee.</translation>
+    </message>
+    <message>
+        <source>Nothing is visible to save. Lower Confidence, or widen the size range, then try Export again.</source>
+        <translation>Er is niets zichtbaar om op te slaan. Verlaag de betrouwbaarheidsdrempel of verbreed het groottebereik en probeer Export opnieuw.</translation>
+    </message>
+    <message>
+        <source>Nothing was sent. Press the button again to read the notice.</source>
+        <translation>Er is niets verzonden. Druk nogmaals op de knop om de melding te lezen.</translation>
+    </message>
+    <message>
+        <source>On Pro, lifecycle and counts only, no content.</source>
+        <translation>Bij Pro alleen levenscyclus en tellingen, geen inhoud.</translation>
+    </message>
+    <message>
+        <source>Open dashboard</source>
+        <translation>Dashboard openen</translation>
+    </message>
+    <message>
+        <source>Open in QGIS</source>
+        <translation>Openen in QGIS</translation>
+    </message>
+    <message>
+        <source>Open terra-lab.ai</source>
+        <translation>terra-lab.ai openen</translation>
+    </message>
+    <message>
+        <source>Open the AI Segmentation page</source>
+        <translation>De AI Segmentation-pagina openen</translation>
+    </message>
+    <message>
+        <source>Opens a dialog</source>
+        <translation>Opent een dialoogvenster</translation>
+    </message>
+    <message>
+        <source>Opens the QGIS plugin manager on this plugin.</source>
+        <translation>Opent de QGIS plugin manager voor deze plugin.</translation>
+    </message>
+    <message>
+        <source>Or end this session and use a free AI on this computer. Saved polygons stay.</source>
+        <translation>Of beëindig deze sessie en gebruik een gratis AI op deze computer. Opgeslagen polygonen blijven behouden.</translation>
+    </message>
+    <message>
+        <source>Or run with this one.</source>
+        <translation>Of ga verder met deze.</translation>
+    </message>
+    <message>
+        <source>Or use a smaller free AI on this computer.</source>
+        <translation>Of gebruik een kleinere gratis AI op deze computer.</translation>
+    </message>
+    <message>
+        <source>Other TerraLab plugins...</source>
+        <translation>Andere TerraLab plugins...</translation>
+    </message>
+    <message>
+        <source>Payments happen on terra-lab.ai.</source>
+        <translation>Betalingen verlopen via terra-lab.ai.</translation>
+    </message>
+    <message>
+        <source>Permanent. Stops every TerraLab plugin.</source>
+        <translation>Definitief. Stopt elke TerraLab-plugin.</translation>
+    </message>
+    <message>
+        <source>Personal, non-commercial use only.</source>
+        <translation>Alleen voor persoonlijk, niet-commercieel gebruik.</translation>
+    </message>
+    <message>
+        <source>Plan, payment and invoices.</source>
+        <translation>Abonnement, betaling en facturen.</translation>
+    </message>
+    <message>
+        <source>Points, Simplify, Trim, Grow</source>
+        <translation>Punten, Vereenvoudigen, Trimmen, Groeien</translation>
+    </message>
+    <message>
+        <source>Points, Simplify, Trim, Grow, Size</source>
+        <translation>Punten, Vereenvoudigen, Trimmen, Groeien, Grootte</translation>
+    </message>
+    <message>
+        <source>Privacy Policy</source>
+        <translation>Privacybeleid</translation>
+    </message>
+    <message>
+        <source>Pro takes up to {max}, look-alikes to exclude included.</source>
+        <translation>Pro verwerkt tot {max}, inclusief de look-a-likes om uit te sluiten.</translation>
+    </message>
+    <message>
+        <source>Pro unlocks far more Automatic surface every month, on zones of any size.</source>
+        <translation>Pro ontgrendelt elke maand veel meer Automatic-oppervlakte, op zones van elke grootte.</translation>
+    </message>
+    <message>
+        <source>QGIS could not activate the temporary review layer. Close any other editing session, then try again.</source>
+        <translation>QGIS kon de tijdelijke reviewlaag niet activeren. Sluit eventuele andere bewerksessies en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>QGIS could not save these edits. Fix the geometry and click Save again.</source>
+        <translation>QGIS kon deze bewerkingen niet opslaan. Corrigeer de geometrie en klik opnieuw op Opslaan.</translation>
+    </message>
+    <message>
+        <source>Read the guide</source>
+        <translation>Lees de handleiding</translation>
+    </message>
+    <message>
+        <source>Remove AI files</source>
+        <translation>AI-bestanden verwijderen</translation>
+    </message>
+    <message>
+        <source>Removing duplicate fragments</source>
+        <translation>Dubbele fragmenten verwijderen</translation>
+    </message>
+    <message>
+        <source>Repaint your imagery from a sentence.</source>
+        <translation>Herverf je beeldmateriaal vanuit een zin.</translation>
+    </message>
+    <message>
+        <source>Reshapes the outline only: no new AI run, no credits.</source>
+        <translation>Vormt alleen de omtrek opnieuw: geen nieuwe AI-run, geen credits.</translation>
+    </message>
+    <message>
+        <source>Restart QGIS</source>
+        <translation>Herstart QGIS</translation>
+    </message>
+    <message>
+        <source>Run QGIS from a sentence.</source>
+        <translation>Laat QGIS vanuit een zin draaien.</translation>
+    </message>
+    <message>
+        <source>Run the whole zone with Pro</source>
+        <translation>Draai de hele zone met Pro</translation>
+    </message>
+    <message>
+        <source>Save 1 polygon to a layer before leaving?</source>
+        <translation>1 polygoon opslaan in een laag voordat u vertrekt?</translation>
+    </message>
+    <message>
+        <source>Save {count} polygons to a layer before leaving?</source>
+        <translation>{count} polygonen opslaan in een laag voordat u vertrekt?</translation>
+    </message>
+    <message>
+        <source>Saved</source>
+        <translation>Opgeslagen</translation>
+    </message>
+    <message>
+        <source>Scheduling the deletion. This window closes when the service answers.</source>
+        <translation>Verwijdering inplannen. Dit venster sluit zodra de service antwoordt.</translation>
+    </message>
+    <message>
+        <source>Scheduling the deletion...</source>
+        <translation>Verwijdering inplannen...</translation>
+    </message>
+    <message>
+        <source>See Pro</source>
+        <translation>Bekijk Pro</translation>
+    </message>
+    <message>
+        <source>See usage</source>
+        <translation>Bekijk gebruik</translation>
+    </message>
+    <message>
+        <source>See what Pro unlocks</source>
+        <translation>Bekijk wat Pro ontgrendelt</translation>
+    </message>
+    <message>
+        <source>Semi-Auto objects left of {total}</source>
+        <translation>Semi-Auto-objecten nog over van {total}</translation>
+    </message>
+    <message>
+        <source>Semi-Auto's offline AI files.</source>
+        <translation>De offline AI-bestanden van Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>Settings pages</source>
+        <translation>Instellingenpagina's</translation>
+    </message>
+    <message>
+        <source>Share of each outline's points to keep. 100% is the class default.
+Lower thins the smallest detail first while keeping the corners.</source>
+        <translation>Aandeel van de punten van elke omtrek dat bewaard blijft. 100% is de standaardwaarde van de klasse.
+Lager verwijdert eerst het kleinste detail, terwijl de hoeken behouden blijven.</translation>
+    </message>
+    <message>
+        <source>Shortcut: {key}</source>
+        <translation>Sneltoets: {key}</translation>
+    </message>
+    <message>
+        <source>Show again</source>
+        <translation>Opnieuw tonen</translation>
+    </message>
+    <message>
+        <source>Show the plugin's panel.</source>
+        <translation>Toon het paneel van de plugin.</translation>
+    </message>
+    <message>
+        <source>Shown once your account loads.</source>
+        <translation>Wordt getoond zodra je account is geladen.</translation>
+    </message>
+    <message>
+        <source>Sign in again.</source>
+        <translation>Log opnieuw in.</translation>
+    </message>
+    <message>
+        <source>Signed in as {email}</source>
+        <translation>Ingelogd als {email}</translation>
+    </message>
+    <message>
+        <source>Size range to keep</source>
+        <translation>Groottebereik om te behouden</translation>
+    </message>
+    <message>
+        <source>TerraLab</source>
+        <translation>TerraLab</translation>
+    </message>
+    <message>
+        <source>That address does not match the one on your account. Check it and try again.</source>
+        <translation>Dat adres komt niet overeen met het adres op je account. Controleer het en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>That would remove the whole selection, so it was undone.</source>
+        <translation>Dat zou de hele selectie verwijderen, dus het is ongedaan gemaakt.</translation>
+    </message>
+    <message>
+        <source>The AI detects every object that looks like your examples.</source>
+        <translation>De AI detecteert elk object dat op jouw voorbeelden lijkt.</translation>
+    </message>
+    <message>
+        <source>The AI is starting up, almost there...</source>
+        <translation>De AI start op, bijna klaar...</translation>
+    </message>
+    <message>
+        <source>The AI outlines it.</source>
+        <translation>De AI omlijnt het.</translation>
+    </message>
+    <message>
+        <source>The deletion could not be started. Try again in a few minutes.</source>
+        <translation>De verwijdering kon niet worden gestart. Probeer het over een paar minuten opnieuw.</translation>
+    </message>
+    <message>
+        <source>The deletion did not get an answer. Check your connection, then try again.</source>
+        <translation>De verwijdering kreeg geen antwoord. Controleer je verbinding en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping what was already found.</source>
+        <translation>De detectie reageert niet meer. Wat al is gevonden, wordt bewaard.</translation>
+    </message>
+    <message>
+        <source>The detections stay in your account until you delete them; the polygons you keep are written into your own project.</source>
+        <translation>De detecties blijven in je account staan totdat je ze verwijdert; de polygonen die je bewaart, worden in je eigen project geschreven.</translation>
+    </message>
+    <message>
+        <source>The file may be open in QGIS or in another program. Close it and try Export again.</source>
+        <translation>Het bestand is mogelijk geopend in QGIS of in een ander programma. Sluit het en probeer opnieuw te exporteren.</translation>
+    </message>
+    <message>
+        <source>The imagery is loading slowly...</source>
+        <translation>Het beeldmateriaal wordt langzaam geladen...</translation>
+    </message>
+    <message>
+        <source>The map area you detect on, and what you ask us to find in it, go to our servers only to run the detection.</source>
+        <translation>Het kaartgebied waarop je detecteert en wat je ons vraagt daarin te vinden, gaan alleen naar onze servers om de detectie uit te voeren.</translation>
+    </message>
+    <message>
+        <source>The object already found is kept and opens in the review. The surface already scanned still counts.</source>
+        <translation>Het eerder gevonden object blijft bewaard en wordt geopend in de review. De al gescande oppervlakte telt nog steeds mee.</translation>
+    </message>
+    <message>
+        <source>The request did not reach the service. Check your connection, then try again.</source>
+        <translation>Het verzoek bereikte de service niet. Controleer je verbinding en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The service answered for {n} tile(s) and this plugin could not read the results, so nothing was placed on the map. This is a fault on our side, not your zone or your wording. Send the report and we will look at it, and write to us so we can put the tiles back.</source>
+        <translation>De service heeft voor {n} tile(s) geantwoord en deze plugin kon de resultaten niet lezen, dus er is niets op de kaart geplaatst. Dit is een fout aan onze kant, niet aan je zone of je formulering. Stuur het rapport en wij bekijken het, en schrijf ons zodat we de tiles kunnen terugzetten.</translation>
+    </message>
+    <message>
+        <source>The shortcuts could not be listed.</source>
+        <translation>De sneltoetsen konden niet worden weergegeven.</translation>
+    </message>
+    <message>
+        <source>The tips you closed in the panel come back.</source>
+        <translation>De tips die je in het paneel hebt gesloten, komen terug.</translation>
+    </message>
+    <message>
+        <source>The written tutorial, on the TerraLab blog.</source>
+        <translation>De geschreven tutorial, op de TerraLab-blog.</translation>
+    </message>
+    <message>
+        <source>The {n} objects already found are kept and open in the review. The surface already scanned still counts.</source>
+        <translation>De {n} al gevonden objecten blijven bewaard en openen in de review. De al gescande oppervlakte telt nog steeds mee.</translation>
+    </message>
+    <message>
+        <source>This account is already scheduled for deletion, so it can no longer be used from QGIS. To cancel, sign in on terra-lab.ai.</source>
+        <translation>Voor dit account is al verwijdering ingepland, dus het kan niet meer vanuit QGIS worden gebruikt. Om te annuleren, log je in op terra-lab.ai.</translation>
+    </message>
+    <message>
+        <source>This account is already scheduled for deletion. Its data is erased on {}. To cancel, sign in on terra-lab.ai.</source>
+        <translation>Voor dit account is al verwijdering ingepland. De gegevens worden op {} gewist. Om te annuleren, log je in op terra-lab.ai.</translation>
+    </message>
+    <message>
+        <source>This account is already scheduled for deletion. To cancel, sign in on terra-lab.ai.</source>
+        <translation>Voor dit account is al verwijdering ingepland. Om te annuleren, log je in op terra-lab.ai.</translation>
+    </message>
+    <message>
+        <source>This computer is no longer signed in</source>
+        <translation>Deze computer is niet meer ingelogd</translation>
+    </message>
+    <message>
+        <source>This computer is no longer signed in. Sign in again, then try.</source>
+        <translation>Deze computer is niet meer ingelogd. Log opnieuw in en probeer het dan.</translation>
+    </message>
+    <message>
+        <source>This computer is not linked to a TerraLab account, so there is nothing to delete here.</source>
+        <translation>Deze computer is niet gekoppeld aan een TerraLab-account, dus er valt hier niets te verwijderen.</translation>
+    </message>
+    <message>
+        <source>This layer is filed under {crs}, which counts in degrees, but its coordinates are projected metres. Set the layer's CRS to the projected one the pixels are really in, in Layer Properties, before detecting.</source>
+        <translation>Deze laag staat geregistreerd onder {crs}, die in graden telt, maar de coördinaten zijn geprojecteerde meters. Stel in Laageigenschappen de CRS van de laag in op de geprojecteerde CRS waarin de pixels werkelijk zitten, voordat u detectie start.</translation>
+    </message>
+    <message>
+        <source>This layer is filed under {crs}, which counts in metres, but its coordinates are longitude and latitude. Detection would measure the whole image as under a millimetre of ground and return nothing. Set the layer's CRS to the one the pixels are really in (EPSG:4326 for plain longitude and latitude) in Layer Properties, or reproject it.</source>
+        <translation>Deze laag staat geregistreerd onder {crs}, die in meters telt, maar de coördinaten zijn lengte- en breedtegraad. Detectie zou de hele afbeelding meten als minder dan een millimeter grond en niets opleveren. Stel in Laageigenschappen de CRS van de laag in op de CRS waarin de pixels werkelijk zitten (EPSG:4326 voor gewone lengte- en breedtegraad) of herprojecteer de laag.</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone, or get Pro for a larger monthly surface.</source>
+        <translation>Deze zone is groter dan de oppervlakte die je deze maand nog over hebt. Teken een kleinere zone of neem Pro voor een grotere maandelijkse oppervlakte.</translation>
+    </message>
+    <message>
+        <source>Those shapes could not be merged. Nothing was changed.</source>
+        <translation>Die vormen konden niet worden samengevoegd. Er is niets gewijzigd.</translation>
+    </message>
+    <message>
+        <source>To cancel, sign in on terra-lab.ai before the grace period ends.</source>
+        <translation>Om te annuleren, log je vóór het einde van de respijtperiode in op terra-lab.ai.</translation>
+    </message>
+    <message>
+        <source>To confirm, you type your email address again.</source>
+        <translation>Ter bevestiging typ je je e-mailadres opnieuw.</translation>
+    </message>
+    <message>
+        <source>Too many attempts. Wait a moment, then try again.</source>
+        <translation>Te veel pogingen. Wacht even en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Too many attempts. Wait {} seconds, then try again.</source>
+        <translation>Te veel pogingen. Wacht {} seconden en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Try again in a moment.</source>
+        <translation>Probeer het over een moment opnieuw.</translation>
+    </message>
+    <message>
+        <source>Turn it on in Plugins &gt; Manage and Install Plugins.</source>
+        <translation>Zet het aan in Plugins &gt; Manage and Install Plugins.</translation>
+    </message>
+    <message>
+        <source>Turn on</source>
+        <translation>Inschakelen</translation>
+    </message>
+    <message>
+        <source>Turned off</source>
+        <translation>Uitgeschakeld</translation>
+    </message>
+    <message>
+        <source>Tutorials</source>
+        <translation>Tutorials</translation>
+    </message>
+    <message>
+        <source>Type that address to confirm.</source>
+        <translation>Typ dat adres ter bevestiging.</translation>
+    </message>
+    <message>
+        <source>Undo reopens the last polygon you saved.</source>
+        <translation>Ongedaan maken heropent de laatste polygoon die je hebt opgeslagen.</translation>
+    </message>
+    <message>
+        <source>Update available</source>
+        <translation>Update beschikbaar</translation>
+    </message>
+    <message>
+        <source>Update required</source>
+        <translation>Update vereist</translation>
+    </message>
+    <message>
+        <source>Update to keep using AI Segmentation. It takes one click in the QGIS Plugin Manager; the plugin reloads on its own.</source>
+        <translation>Update om AI Segmentation te blijven gebruiken. Het kost één klik in de QGIS Plugin Manager; de plugin herlaadt vanzelf.</translation>
+    </message>
+    <message>
+        <source>Usage</source>
+        <translation>Gebruik</translation>
+    </message>
+    <message>
+        <source>Usage statistics</source>
+        <translation>Gebruiksstatistieken</translation>
+    </message>
+    <message>
+        <source>Usage statistics linked to your account help us fix bugs; you can turn them off in Settings at any time.</source>
+        <translation>Gebruiksstatistieken die aan je account zijn gekoppeld, helpen ons bugs op te lossen; je kunt ze op elk moment uitschakelen in Instellingen.</translation>
+    </message>
+    <message>
+        <source>Video tutorial</source>
+        <translation>Video-tutorial</translation>
+    </message>
+    <message>
+        <source>Waking up the AI...</source>
+        <translation>De AI wordt wakker...</translation>
+    </message>
+    <message>
+        <source>What Pro unlocks, on the TerraLab website.</source>
+        <translation>Wat Pro ontgrendelt, op de TerraLab-website.</translation>
+    </message>
+    <message>
+        <source>What is left of your plan this month.</source>
+        <translation>Wat er deze maand nog over is van je abonnement.</translation>
+    </message>
+    <message>
+        <source>Written guide</source>
+        <translation>Geschreven handleiding</translation>
+    </message>
+    <message>
+        <source>You have {installed}.</source>
+        <translation>Je hebt {installed}.</translation>
+    </message>
+    <message>
+        <source>You place the corners.</source>
+        <translation>Je plaatst de hoeken.</translation>
+    </message>
+    <message>
+        <source>Your account address has not loaded yet. Close this window, open it again, then try.</source>
+        <translation>Het adres van je account is nog niet geladen. Sluit dit venster, open het opnieuw en probeer het dan.</translation>
+    </message>
+    <message>
+        <source>Your account and its data are erased. Every TerraLab plugin stops, and a paid plan stops renewing.</source>
+        <translation>Je account en de bijbehorende gegevens worden gewist. Elke TerraLab-plugin stopt en een betaald abonnement wordt niet meer verlengd.</translation>
+    </message>
+    <message>
+        <source>Your account is scheduled for deletion. Every TerraLab plugin is signed out on this computer now.</source>
+        <translation>Voor je account is verwijdering ingepland. Elke TerraLab-plugin is nu uitgelogd op deze computer.</translation>
+    </message>
+    <message>
+        <source>Your data is erased for good on {}. Until then, sign in on terra-lab.ai to cancel it.</source>
+        <translation>Je gegevens worden op {} definitief gewist. Log tot die tijd in op terra-lab.ai om het te annuleren.</translation>
+    </message>
+    <message>
+        <source>Your last payment may have failed</source>
+        <translation>Je laatste betaling is mogelijk mislukt</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out before the end of the zone. Everything found so far is kept below and stays yours.</source>
+        <translation>Je maandelijkse tegoed raakte op vóór het einde van de zone. Alles wat tot nu toe is gevonden, blijft hieronder bewaard en blijft van jou.</translation>
+    </message>
+    <message>
+        <source>Your plan is not active, so the cloud AI cannot run. Check your subscription to keep detecting.</source>
+        <translation>Je abonnement is niet actief, dus de cloud-AI kan niet draaien. Controleer je abonnement om te blijven detecteren.</translation>
+    </message>
+    <message>
+        <source>Your plan is on its maximum number of computers</source>
+        <translation>Je abonnement zit op het maximale aantal computers</translation>
+    </message>
+    <message>
+        <source>Your subscription is not active, so the service refused the request. Open your account on terra-lab.ai, then try again.</source>
+        <translation>Je abonnement is niet actief, dus de service heeft het verzoek geweigerd. Open je account op terra-lab.ai en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Your zone crosses itself. Draw it again without crossing lines.</source>
+        <translation>Je zone kruist zichzelf. Teken het opnieuw zonder elkaar kruisende lijnen.</translation>
+    </message>
+    <message>
+        <source>Your {zone} km² zone is larger than this month's free surface.</source>
+        <translation>Je zone van {zone} km² is groter dan de gratis oppervlakte van deze maand.</translation>
+    </message>
+    <message>
+        <source>Zoom</source>
+        <translation>Zoom</translation>
+    </message>
+    <message>
+        <source>Zoom to the layer?</source>
+        <translation>Inzoomen op de laag?</translation>
+    </message>
+    <message>
+        <source>by TerraLab</source>
+        <translation>door TerraLab</translation>
+    </message>
+    <message>
+        <source>cloud detections left of {total} this month</source>
+        <translation>cloud-detecties nog over van {total} deze maand</translation>
+    </message>
+    <message>
+        <source>free cloud detections left of {total} this month</source>
+        <translation>gratis cloud-detecties nog over van {total} deze maand</translation>
+    </message>
+    <message>
+        <source>free cloud detections left this month</source>
+        <translation>gratis cloud-detecties nog over deze maand</translation>
+    </message>
+    <message>
+        <source>its CRS</source>
+        <translation>zijn CRS</translation>
+    </message>
+    <message>
+        <source>objects outside it are hidden</source>
+        <translation>objecten daarbuiten zijn verborgen</translation>
+    </message>
+    <message>
+        <source>over {n}</source>
+        <translation>meer dan {n}</translation>
+    </message>
+    <message>
+        <source>{basemap} is a drawn map, not aerial imagery, so detection usually finds nothing on it and the tiles are still charged. Switch the layer to a satellite basemap (Google, Esri, Bing) or to your own raster first.</source>
+        <translation>{basemap} is een getekende kaart, geen luchtfoto, dus detectie vindt er meestal niets op en de tegels worden toch in rekening gebracht. Schakel de laag eerst over naar een satelliet-basemap (Google, Esri, Bing) of naar uw eigen raster.</translation>
+    </message>
+    <message>
+        <source>{count} points</source>
+        <translation>{count} punten</translation>
+    </message>
+    <message>
+        <source>{n} cloud objects used this month</source>
+        <translation>{n} cloud-objecten gebruikt deze maand</translation>
+    </message>
+    <message>
+        <source>{n} km² · {eta}</source>
+        <translation>{n} km² · {eta}</translation>
+    </message>
+    <message>
+        <source>{n} shapes picked. Press Enter to merge.</source>
+        <translation>{n} vormen geselecteerd. Druk op Enter om samen te voegen.</translation>
+    </message>
+    <message>
+        <source>{plan} · Personal, non-commercial</source>
+        <translation>{plan} · Persoonlijk, niet-commercieel</translation>
+    </message>
+    <message>
+        <source>{plan} · {status}</source>
+        <translation>{plan} · {status}</translation>
+    </message>
+</context>
+</TS>
