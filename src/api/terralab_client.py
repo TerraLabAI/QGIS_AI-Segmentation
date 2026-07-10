@@ -135,6 +135,16 @@ def _classify_qt_error(qt_error, error_string: str, http_status: int | None) -> 
         )
     if qt_error in (_ContentDenied, _AuthRequired):
         return "AUTH_ERROR", tr("Authentication failed. Please sign in again.")
+    # The server DID answer, with a failure status whose body was not
+    # parseable JSON (typically an infrastructure incident page). The user's
+    # connection worked, so "check your internet" points them at the wrong
+    # side. SERVER_ERROR is already transient for every consumer: the tile
+    # worker retries it and the revalidation path never signs out on it.
+    if http_status is not None and http_status >= 500:
+        return "SERVER_ERROR", tr(
+            "The service is temporarily unavailable (server error). "
+            "Your connection is fine - please try again in a few minutes."
+        )
     return "NO_INTERNET", tr("Network error. Check your internet connection.")
 
 

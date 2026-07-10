@@ -71,6 +71,11 @@ _QUEUE_RETRY_BUDGET_S = 300.0
 # Retry delays are jittered (AWS full-jitter rationale): N clients told
 # "retry in 5s" must not all come back at t+5.000 in one synchronized wave.
 _BUSY_JITTER = (0.85, 1.30)
+# How many upcoming tiles the streaming path asks the main thread to render
+# AHEAD of need (async jobs, overlapped with the in-flight inference). 2 keeps
+# the pipeline fed at the measured render/inference ratios without stacking
+# main-thread render jobs or holding more than a few tile images alive.
+_PREFETCH_DEPTH = 2
 # On a USER cancel we stop firing new tiles at once, then wait this long for
 # the handful ALREADY in flight to land so their billed masks are kept, not
 # thrown away. Bounded so one hung reply can never hold the stop open: past it
@@ -151,9 +156,17 @@ _MAX_CONSECUTIVE_TILE_FATALS = 5
 # hiccup, burst throttling), and a short-delay re-render succeeds once the
 # provider has fetched it. Left unretried, a run over a never-viewed area can
 # silently skip most of its tiles. Bounded so a REAL nodata hole (mosaic gap)
-# only costs a couple of cheap local renders before the existing skip path.
-_RENDER_RETRY_MAX = 2
+# only costs a few cheap local renders before the existing skip path. The
+# delay DOUBLES per attempt (1.5s, 3s, 6s): a provider hiccup lasting a few
+# seconds hits several concurrently-rendered tiles at once, and fixed-delay
+# retries all landed back inside the same hiccup window.
+_RENDER_RETRY_MAX = 3
 _RENDER_RETRY_DELAY_S = 1.5
+# After ANY blank/failed render, hold the render prefetch for a beat: a blank
+# means the imagery provider is struggling, and stacking more concurrent
+# fetches into that window makes the burst worse (measured as consecutive
+# skipped-tile runs). The tile in hand still renders synchronously.
+_PREFETCH_HOLDOFF_S = 4.0
 
 # Mid-run offline abort threshold. After the first successful tile the
 # offline fast-fail no longer trips at its small pre-success threshold; a
@@ -241,21 +254,33 @@ class TileRenderBridge(QObject):
         self, seq: int, tx: int, ty: int, tw: int, th: int,
         out_w: int, out_h: int,
     ) -> None:
-        """Render the tile on the main thread, store the QImage, wake the worker.
+        """Start this tile's render as an ASYNC job on the main thread.
 
-        (out_w, out_h) is the OUTPUT pixel size; when it differs from (tw, th)
-        the same ground extent renders at a finer scale (the saturated-tile
-        re-split path). 0 means "same as the rect", the normal 1:1 tile."""
-        from ..core.cloud_detection import render_tile_qimage
+        The slot returns immediately; the job's completion stores the QImage
+        and wakes the worker. Because the slot never blocks, several queued
+        requests start OVERLAPPING render jobs - that concurrency is the whole
+        point of the worker-side prefetch (the serialized per-tile render was
+        the measured wall-clock bottleneck of large runs, not the network or
+        the GPU). (out_w, out_h) is the OUTPUT pixel size; when it differs
+        from (tw, th) the same ground extent renders at a finer scale (the
+        saturated-tile re-split path). 0 means "same as the rect"."""
+        from ..core.cloud_detection import start_tile_render_job
 
-        img = None
+        started = False
         try:
             extent = self._tile_extent(tx, ty, tw, th)
-            img = render_tile_qimage(
-                self._layer, extent, out_w or tw, out_h or th)
+            started = start_tile_render_job(
+                self._layer, extent, out_w or tw, out_h or th,
+                lambda img, s=seq: self._store_result(s, img),
+            )
         except Exception as exc:  # noqa: BLE001 - never break the handshake
             logger.warning("TileRenderBridge: render failed at (%d,%d): %s", tx, ty, exc)
-            img = None
+            started = False
+        if not started:
+            self._store_result(seq, None)
+
+    def _store_result(self, seq: int, img) -> None:
+        """Store one render's outcome and wake every waiting collector."""
         self._mutex.lock()
         try:
             self._results[seq] = img
@@ -278,14 +303,13 @@ class TileRenderBridge(QObject):
         finally:
             self._mutex.unlock()
 
-    def render_tile(self, tx: int, ty: int, tw: int, th: int,
-                    out_w: int = 0, out_h: int = 0):
-        """Called FROM THE WORKER THREAD. Request a main-thread render of this
-        tile and block until it is done, returning the QImage (or None). The
-        worker drives one encode at a time from a single thread, so requests are
-        serialized. Returns None at once if cancelled, and unblocks the moment
-        cancel() is called even if the render never ran (deadlock guard).
-        (out_w, out_h) upscale the output past the rect size (0 = 1:1)."""
+    def request_render(self, tx: int, ty: int, tw: int, th: int,
+                       out_w: int = 0, out_h: int = 0) -> int | None:
+        """Called FROM THE WORKER THREAD. Post a render request WITHOUT
+        blocking and return its collect token (or None when cancelled). The
+        render runs as an async job on the main thread, so several requested
+        tiles render side by side while the worker keeps driving the network
+        window - this is the prefetch half of the pipeline."""
         self._mutex.lock()
         try:
             if self._cancelled:
@@ -296,18 +320,36 @@ class TileRenderBridge(QObject):
             self._mutex.unlock()
         # Emit OUTSIDE the lock so the queued slot can run on the main thread.
         self._render_requested.emit(seq, tx, ty, tw, th, out_w, out_h)
+        return seq
+
+    def collect_render(self, seq: int):
+        """Called FROM THE WORKER THREAD. Block until the requested render is
+        done and return its QImage (or None). Returns at once when the result
+        already landed, and unblocks the moment cancel() is called even if the
+        render never ran (the unload deadlock guard)."""
         self._mutex.lock()
         try:
             while seq not in self._done and not self._cancelled:
-                # Block until the main thread stores this render OR cancel() wakes
-                # us. The timeout is only a safety net (a tile render itself times
-                # out at 60s in render_tile_qimage); cancel() wakes immediately.
+                # Block until the main thread stores this render OR cancel()
+                # wakes us. The timeout is only a safety net (a render job
+                # itself times out at 60s); cancel() wakes immediately.
                 self._cond.wait(self._mutex, 30000)
             img = self._results.pop(seq, None)
             self._done.discard(seq)
             return img
         finally:
             self._mutex.unlock()
+
+    def render_tile(self, tx: int, ty: int, tw: int, th: int,
+                    out_w: int = 0, out_h: int = 0):
+        """Called FROM THE WORKER THREAD. Request a main-thread render of this
+        tile and block until it is done, returning the QImage (or None).
+        Composition of request_render + collect_render, kept as the simple
+        synchronous entry point (non-prefetched tiles, batched path, tests)."""
+        seq = self.request_render(tx, ty, tw, th, out_w, out_h)
+        if seq is None:
+            return None
+        return self.collect_render(seq)
 
 
 class AutoDetectionWorker(QThread):
@@ -440,12 +482,28 @@ class AutoDetectionWorker(QThread):
         # longer service a queued render, so the parked render_tile must be woken
         # by cancel(), not left to time out).
         self._tile_renderer_cancel = None
+        # Async render API (prefetch): request without blocking, collect when
+        # the tile is actually encoded. Only a real TileRenderBridge has it;
+        # plain-callable renderers (tests, mocks) keep the synchronous path.
+        self._render_request = None
+        self._render_collect = None
+        # tile_idx -> collect token of a render requested ahead of time.
+        self._prefetched: dict[int, int] = {}
+        # Monotonic instant before which the prefetch stays quiet (set by any
+        # blank/failed render: evidence the imagery provider is struggling).
+        self._prefetch_holdoff_until = 0.0
         bridge = getattr(tile_renderer, "__self__", None)
         if bridge is not None and hasattr(bridge, "cancel"):
             self._tile_renderer_cancel = bridge.cancel
+        if bridge is not None and hasattr(bridge, "request_render"):
+            self._render_request = bridge.request_render
+            self._render_collect = bridge.collect_render
         self._tiles = tiles  # list of (x, y, w, h)
         self._geo_transform = geo_transform
         self._crs_authid = crs_authid
+        # Lazily built QgsDistanceArea for the per-tile ground-resolution
+        # report (see _tile_pixel_size_m); one instance serves the whole run.
+        self._distance_area = None
         self._prompt = prompt
         self._auth = auth
         self._run_id = run_id or str(uuid.uuid4())
@@ -1089,6 +1147,49 @@ class AutoDetectionWorker(QThread):
 
         self._emit_terminal()
 
+    def _tile_pixel_size_m(self, bbox_native, png_bytes) -> float | None:
+        """True ground meters per SENT pixel for one encoded tile, or None.
+
+        Geodesic width of the tile at its mid-latitude divided by the encoded
+        image's pixel width, so a re-split quadrant (same ground extent, finer
+        pixel grid) reports its real, finer resolution. Analytics-grade and
+        fail-open: any failure reports unknown, never blocks the submission.
+        """
+        try:
+            from ..core.cloud_detection import encoded_image_size
+
+            size = encoded_image_size(png_bytes)
+            if not size or size[0] <= 0:
+                return None
+            da = self._distance_area
+            if da is None:
+                from qgis.core import (
+                    QgsCoordinateReferenceSystem,
+                    QgsDistanceArea,
+                    QgsProject,
+                )
+                da = QgsDistanceArea()
+                da.setSourceCrs(
+                    QgsCoordinateReferenceSystem(self._crs_authid),
+                    QgsProject.instance().transformContext(),
+                )
+                da.setEllipsoid("WGS84")
+                self._distance_area = da
+            from qgis.core import QgsPointXY
+
+            from ..core.qt_compat import DistanceMeters
+
+            xmin, ymin, xmax, ymax = bbox_native
+            ymid = (ymin + ymax) / 2.0
+            width = da.measureLine(
+                QgsPointXY(xmin, ymid), QgsPointXY(xmax, ymid))
+            width_m = da.convertLengthMeasurement(width, DistanceMeters)
+            if width_m <= 0:
+                return None
+            return round(width_m / size[0], 4)
+        except Exception:  # nosec B110 -- best-effort analytics field
+            return None
+
     def _build_submission(self, tile_idx: int, tile_spec, png_bytes) -> tuple[dict, dict]:
         """Build the (submission, tile_transform) pair for one encoded tile,
         shared by the batched and streaming paths."""
@@ -1108,7 +1209,7 @@ class AutoDetectionWorker(QThread):
                 "xmin": bbox_native[0], "ymin": bbox_native[1],
                 "xmax": bbox_native[2], "ymax": bbox_native[3],
             },
-            "pixel_size_m": None,
+            "pixel_size_m": self._tile_pixel_size_m(bbox_native, png_bytes),
             "max_masks": _MAX_MASKS_PER_TILE,
             "threshold": self._detection_threshold,
             "mask_threshold": None,
@@ -1191,6 +1292,9 @@ class AutoDetectionWorker(QThread):
                 )
                 reply = self._client.post_detection_async(nam, submission, self._auth)
                 in_flight[reply] = (tile_idx, tile_spec, tile_transform, png_bytes)
+                # This tile's inference just started: use its multi-second GPU
+                # wait to render the NEXT tiles concurrently on the main thread.
+                self._request_render_prefetch(pending)
                 return True
             return False
 
@@ -1332,6 +1436,11 @@ class AutoDetectionWorker(QThread):
             while (not self._stop_requested
                    and len(in_flight) < self._aimd.cap and fire_next()):  # noqa: W503
                 pass
+            # Keep the render pipeline fed even on cycles where no slot freed
+            # (e.g. only deferred retries matured): the prefetch is what hides
+            # the per-tile render behind the in-flight inference.
+            if not self._stop_requested:
+                self._request_render_prefetch(pending)
 
         # User cancel: before releasing sockets, drain the tiles ALREADY in
         # flight. The server bills a tile when it processes the request, so a
@@ -1466,6 +1575,34 @@ class AutoDetectionWorker(QThread):
             self._render_deferred.remove(entry)
             pending.appendleft((entry[1], entry[2]))
 
+    def _request_render_prefetch(self, pending: deque) -> None:
+        """Ask the main thread to render the next pending tiles NOW, while the
+        current window's inference is in flight.
+
+        The measured wall-clock bottleneck of large runs is the per-tile render
+        serialized between submits (effective concurrency 2.8-3.5 of a cap of
+        6, with the server queue at zero); prefetching hides the render behind
+        the multi-second GPU wait. Depth-bounded so at most a couple of jobs
+        run ahead; no-op when the renderer has no async API (tests, mocks) or
+        the run is stopping. Only fresh pending tiles are prefetched: resubmits
+        are already encoded, and deferred blank-retries only re-enter pending
+        once their retry delay matured (so the ladder's delay is preserved)."""
+        if self._render_request is None or self._stop_requested:
+            return
+        if time.monotonic() < getattr(self, "_prefetch_holdoff_until", 0.0):
+            return
+        for tile_idx, spec in list(pending)[:_PREFETCH_DEPTH]:
+            if len(self._prefetched) >= _PREFETCH_DEPTH:
+                return
+            if tile_idx in self._prefetched:
+                continue
+            tx, ty, tw, th = spec
+            out_w, out_h = self._tile_outsize.get(tile_idx, (0, 0))
+            seq = self._render_request(tx, ty, tw, th, out_w, out_h)
+            if seq is None:
+                return
+            self._prefetched[tile_idx] = seq
+
     def _encode_or_defer(self, tile_idx: int, spec) -> tuple:
         """Encode one tile with the blank/failed-render retry ladder.
 
@@ -1475,22 +1612,29 @@ class AutoDetectionWorker(QThread):
           ("skip", None)                    - permanently dropped (caller counts
                                               it done, exactly the old None path)
 
-        A blank or empty render is retried up to _RENDER_RETRY_MAX times after
-        _RENDER_RETRY_DELAY_S (an online basemap usually just had not fetched
-        that area yet); only when the ladder is exhausted is the tile counted in
-        tiles_skipped_blank / tiles_render_failed and skipped for good.
+        A blank or empty render is retried up to _RENDER_RETRY_MAX times with a
+        PER-ATTEMPT DOUBLING delay from _RENDER_RETRY_DELAY_S (an online
+        basemap usually just had not fetched that area yet, and a multi-second
+        provider hiccup must not swallow the whole ladder); only when the
+        ladder is exhausted is the tile counted in tiles_skipped_blank /
+        tiles_render_failed and skipped for good. A failure also holds the
+        render PREFETCH off for _PREFETCH_HOLDOFF_S so concurrent fetches stop
+        piling into a struggling provider.
         """
         tx, ty, tw, th = spec
         status, payload = self._encode_tile(tile_idx, tx, ty, tw, th)
         if status == "ok":
             self._render_attempts.pop(tile_idx, None)
             return ("ok", payload)
+        if status in ("blank", "render"):
+            self._prefetch_holdoff_until = time.monotonic() + _PREFETCH_HOLDOFF_S
         if status in ("blank", "render") and not self._stop_requested:
             attempts = self._render_attempts.get(tile_idx, 0)
             if attempts < _RENDER_RETRY_MAX:
                 self._render_attempts[tile_idx] = attempts + 1
+                delay = _RENDER_RETRY_DELAY_S * (2 ** attempts)
                 self._render_deferred.append(
-                    (time.monotonic() + _RENDER_RETRY_DELAY_S, tile_idx, spec))
+                    (time.monotonic() + delay, tile_idx, spec))
                 return ("defer", None)
         # Ladder exhausted (or a non-retryable failure): count + skip.
         if status == "blank":
@@ -1541,7 +1685,14 @@ class AutoDetectionWorker(QThread):
             # map by their own returned pixel grid, so the geo-referencing is
             # unaffected by the upscale.
             out_w, out_h = self._tile_outsize.get(tile_idx, (0, 0))
-            tile_img = self._tile_renderer(tx, ty, tw, th, out_w, out_h)
+            # A prefetched render (requested while earlier tiles were in
+            # flight) is collected here; it is usually already done. Tiles
+            # never prefetched take the synchronous request+wait path.
+            prefetch_seq = self._prefetched.pop(tile_idx, None)
+            if prefetch_seq is not None and self._render_collect is not None:
+                tile_img = self._render_collect(prefetch_seq)
+            else:
+                tile_img = self._tile_renderer(tx, ty, tw, th, out_w, out_h)
             if tile_img is None or tile_img.isNull():
                 # The render produced nothing: a provider/WMS hole or timeout,
                 # not real ground. Retryable (the caller's ladder decides when
@@ -1629,7 +1780,7 @@ class AutoDetectionWorker(QThread):
                     "xmax": bbox_native[2],
                     "ymax": bbox_native[3],
                 },
-                "pixel_size_m": None,
+                "pixel_size_m": self._tile_pixel_size_m(bbox_native, png_bytes),
                 "max_masks": _MAX_MASKS_PER_TILE,
                 "threshold": self._detection_threshold,
                 "mask_threshold": None,

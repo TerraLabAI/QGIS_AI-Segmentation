@@ -302,6 +302,12 @@ class ManualWorkflowMixin:
                     self.dock_widget.layer_combo.setLayer(self._current_layer)
                     self.dock_widget.layer_combo.blockSignals(False)
                     return
+                try:
+                    from ...core import telemetry
+                    telemetry.track_manual_abandoned(
+                        context="change_layer", polygon_count=polygon_count)
+                except Exception:
+                    pass  # nosec B110
 
             self._stopping_segmentation = True
             self.iface.mapCanvas().unsetMapTool(self.map_tool)
@@ -798,6 +804,7 @@ class ManualWorkflowMixin:
                 polygon_count=len(features_to_add),
                 refine_used=refine_used,
             )
+            telemetry.track_first_generation_milestone(mode="manual")
         except Exception:
             pass  # nosec B110
 
@@ -878,6 +885,12 @@ class ManualWorkflowMixin:
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
+            try:
+                from ...core import telemetry
+                telemetry.track_manual_abandoned(
+                    context="stop", polygon_count=polygon_count)
+            except Exception:
+                pass  # nosec B110
 
         self._stop_manual_session(keep_saves=False)
 

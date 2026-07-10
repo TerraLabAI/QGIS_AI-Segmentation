@@ -403,6 +403,17 @@ def is_antivirus_error(stderr: str) -> bool:
         "control de aplicaciones",
         "applocker",
         "blocked by your organization",
+        # Windows "an application control policy has blocked this file",
+        # locale-independent numeric forms (Python "[WinError 4551]" and
+        # uv "(os error 4551)").
+        "winerror 4551",
+        "os error 4551",
+        # Localized Windows wording for an application-control policy block;
+        # the OS message ships in the system language, so the English phrase
+        # above never matches on these machines.
+        "strategie de controle d'application",   # fr (accents stripped in logs)
+        "stratégie de contrôle d'application",   # fr
+        "beleid voor toepassingsbeheer",         # nl
     ]
     return any(p in stderr_lower for p in patterns)
 

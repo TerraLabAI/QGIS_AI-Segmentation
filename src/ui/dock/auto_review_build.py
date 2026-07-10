@@ -597,17 +597,21 @@ class DockAutoReviewBuildMixin:
         self.auto_export_btn.clicked.connect(self.auto_export_requested.emit)
         _review_layout.addWidget(self.auto_export_btn)
 
-        # Exemplar nudge: a single muted tip shown only when the
-        # run's scores were bottom-heavy AND no example was drawn. Clicking it
-        # routes through Adjust and run again and arms the example draw, so it
-        # sits with the "Start over" group it triggers. Hidden by default; the
-        # plugin drives it via show/hide_auto_exemplar_nudge.
+        # Exemplar nudge: shown only when the run's scores were bottom-heavy
+        # AND no example was drawn. Clicking it routes through Adjust and run
+        # again and arms the example draw, so it sits with the "Start over"
+        # group it triggers. Hidden by default; the plugin drives it via
+        # show/hide_auto_exemplar_nudge. Styled as a tinted callout, not a
+        # muted text link: the link form shipped at launch and no user ever
+        # clicked it, so the one lever that most improves weak runs (an
+        # example cuts empty tiles by two thirds) needs to read as a button.
         self.auto_exemplar_nudge_link = QPushButton("")
         self.auto_exemplar_nudge_link.setStyleSheet(
-            "QPushButton { border: none; background: transparent;"
-            " color: rgba(128,128,128,0.95); font-size: 11px; text-align: left;"
-            " padding: 2px 0px; }"
-            "QPushButton:hover { color: #1e88e5; text-decoration: underline; }")
+            "QPushButton { background: rgba(30,136,229,0.10);"
+            " border: 1px solid rgba(30,136,229,0.35); border-radius: 6px;"
+            " color: palette(text); font-size: 12px; text-align: left;"
+            " padding: 8px 10px; }"
+            "QPushButton:hover { background: rgba(30,136,229,0.20); }")
         self.auto_exemplar_nudge_link.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_exemplar_nudge_link.setVisible(False)
         self.auto_exemplar_nudge_link.clicked.connect(

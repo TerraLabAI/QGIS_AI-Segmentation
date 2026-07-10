@@ -395,9 +395,25 @@ def track_plugin_opened() -> None:
     track(ev.PLUGIN_OPENED)
 
 
-def track_plugin_activated() -> None:
-    """Fire when the activation key is validated."""
-    track(ev.PLUGIN_ACTIVATED)
+def track_plugin_activated(duration_ms: int | None = None) -> None:
+    """Fire when the activation key is validated. duration_ms is the elapsed
+    browser sign-in wait when the key came from the pairing flow."""
+    track(ev.PLUGIN_ACTIVATED, {"duration_ms": duration_ms})
+
+
+def track_pairing_started() -> None:
+    """Fire when the browser sign-in poll starts (success = plugin_activated)."""
+    track(ev.PAIRING_STARTED)
+
+
+def track_pairing_failed(error_code: str, duration_ms: int | None = None) -> None:
+    """error_code is the server rejection code, or "timeout" when the poll
+    window expired (a stable machine string, never a localized message)."""
+    track(ev.PAIRING_FAILED, {"error_code": error_code, "duration_ms": duration_ms})
+
+
+def track_pairing_cancelled(duration_ms: int | None = None) -> None:
+    track(ev.PAIRING_CANCELLED, {"duration_ms": duration_ms})
 
 
 def track_mode_switched(to_mode: str, had_unsaved_manual: bool = False,
@@ -433,6 +449,11 @@ def track_install_failed(error_class: str, duration_ms: int | None = None,
         "python_minor": python_minor,
         "retry_count": retry_count,
     })
+
+
+def track_install_cancelled(duration_ms: int | None = None) -> None:
+    """Fire when the user cancels the dependency install mid-way."""
+    track(ev.INSTALL_CANCELLED, {"duration_ms": duration_ms})
 
 
 def track_model_download_completed(model: str, duration_ms: int | None = None) -> None:
@@ -516,7 +537,11 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
                                 instances_visible_at_default: int, zero_at_default: bool,
                                 p50_tile_ms: int | None = None,
                                 p95_tile_ms: int | None = None,
-                                stop_reason: str = "completed") -> None:
+                                stop_reason: str = "completed",
+                                warming_ms: int = 0) -> None:
+    """warming_ms is the wall time the run spent in the server waiting room
+    (cold start / queue) as perceived by the user; 0 = the run never waited.
+    Per-tile latency lives server-side keyed by run_id, so no client percentiles."""
     track(ev.AUTO_DETECT_COMPLETED, {
         "run_id": run_id,
         "duration_ms": duration_ms,
@@ -528,27 +553,36 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
         "p50_tile_ms": p50_tile_ms,
         "p95_tile_ms": p95_tile_ms,
         "stop_reason": stop_reason,
+        "warming_ms": warming_ms,
     })
 
 
 def track_auto_detect_failed(run_id: str, error_class: str, tiles_done: int,
-                             duration_ms: int | None = None) -> None:
+                             duration_ms: int | None = None,
+                             warming_ms: int = 0) -> None:
     """error_class: NETWORK/AUTH/CREDITS_EXHAUSTED/SERVER/CANCELLED/TIMEOUT/UNKNOWN."""
     track(ev.AUTO_DETECT_FAILED, {
         "run_id": run_id,
         "error_class": error_class,
         "tiles_done": tiles_done,
         "duration_ms": duration_ms,
+        "warming_ms": warming_ms,
     })
 
 
 def track_auto_detect_cancelled(run_id: str, tiles_done: int, tiles_total: int,
-                                salvaged_to_review: bool) -> None:
+                                salvaged_to_review: bool,
+                                duration_ms: int | None = None,
+                                warming_ms: int = 0) -> None:
+    """duration_ms separates a reflex cancel from a gave-up-after-minutes one;
+    warming_ms says how much of that wait was the server waiting room."""
     track(ev.AUTO_DETECT_CANCELLED, {
         "run_id": run_id,
         "tiles_done": tiles_done,
         "tiles_total": tiles_total,
         "salvaged_to_review": bool(salvaged_to_review),
+        "duration_ms": duration_ms,
+        "warming_ms": warming_ms,
     })
 
 
@@ -584,6 +618,15 @@ def track_auto_zero_result(run_id: str, tiles: int, object_class: str,
         "tiles": tiles,
         "object_class": object_class,
         "had_exemplar": bool(had_exemplar),
+    })
+
+
+def track_zero_assist_clicked(kind: str, from_prompt: str,
+                              to_prompt: str = "") -> None:
+    track(ev.ZERO_ASSIST_CLICKED, {
+        "kind": kind,
+        "from_prompt": from_prompt,
+        "to_prompt": to_prompt,
     })
 
 
@@ -710,6 +753,31 @@ def track_manual_session_summary(saves: int, undos: int,
     })
 
 
+def track_manual_abandoned(context: str, polygon_count: int) -> None:
+    """Fire when the user CONFIRMS discarding unsaved manual work.
+    context: "change_layer" | "stop"."""
+    track(ev.MANUAL_ABANDONED, {
+        "context": context,
+        "polygon_count": polygon_count,
+    })
+
+
+_FIRST_SUCCESS_KEY = "AI_Segmentation/first_success_sent"
+
+
+def track_first_generation_milestone(mode: str) -> None:
+    """One-shot per machine: the user's first successful export ever (their
+    first real value moment, in either mode). mode: "auto" | "manual"."""
+    try:
+        settings = QSettings()
+        if bool(settings.value(_FIRST_SUCCESS_KEY, False, type=bool)):
+            return
+        settings.setValue(_FIRST_SUCCESS_KEY, True)
+    except Exception:  # nosec B110 - never break the export path
+        return
+    track(ev.FIRST_GENERATION_MILESTONE, {"mode": mode})
+
+
 # Monetization --------------------------------------------------------------
 
 
@@ -731,9 +799,10 @@ def track_pro_upsell_clicked(source: str = "upsell_card") -> None:
     track(ev.PRO_UPSELL_CLICKED, {"source": source})
 
 
-def track_free_taste_consumed(remaining: int) -> None:
-    """remaining = free detections left after this one."""
-    track(ev.FREE_TASTE_CONSUMED, {"remaining": remaining})
+def track_free_taste_consumed(remaining: int, run_id: str = "") -> None:
+    """remaining = free detections left after this one. run_id joins the taste
+    to the run that consumed it (best effort: "" when unknown)."""
+    track(ev.FREE_TASTE_CONSUMED, {"remaining": remaining, "run_id": run_id})
 
 
 def track_low_credit_banner_viewed(remaining: int, total: int) -> None:
@@ -746,7 +815,9 @@ def track_low_credit_banner_viewed(remaining: int, total: int) -> None:
 
 
 def track_detect_blocked(reason: str) -> None:
-    """reason: credits / zone_too_large / cost_over_balance."""
+    """reason: credits / zone_too_large / cost_over_balance / worker_busy /
+    no_layer / raster_shape / not_activated / kill_switch / no_auth /
+    prompt_<guard>."""
     track(ev.DETECT_BLOCKED, {"reason": reason})
 
 

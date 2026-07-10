@@ -180,7 +180,11 @@ class AutoFlowMixin:
         if is_free and prev_free is not None and free_left is not None and free_left < prev_free:
             try:
                 from ...core import telemetry
-                telemetry.track_free_taste_consumed(remaining=free_left)
+                telemetry.track_free_taste_consumed(
+                    remaining=free_left,
+                    # Best effort: the refresh follows the run that consumed it.
+                    run_id=self._auto_run_id or "",
+                )
             except Exception:
                 pass  # nosec B110
         if is_free:

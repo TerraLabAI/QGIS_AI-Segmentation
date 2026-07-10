@@ -22,6 +22,12 @@ def get_clean_env_for_venv() -> dict:
     ssl_cert_dir = env.get("SSL_CERT_DIR", "")
     if ssl_cert_dir and not os.path.isdir(ssl_cert_dir):
         env.pop("SSL_CERT_DIR", None)
+    # Same for its single-bundle sibling: a dangling SSL_CERT_FILE (left by an
+    # uninstalled Python distro or a rotated corporate CA bundle) breaks
+    # uv/rustls the same way.
+    ssl_cert_file = env.get("SSL_CERT_FILE", "")
+    if ssl_cert_file and not os.path.isfile(ssl_cert_file):
+        env.pop("SSL_CERT_FILE", None)
     env["PYTHONIOENCODING"] = "utf-8"
     return env
 

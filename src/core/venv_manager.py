@@ -1341,12 +1341,20 @@ def _run_pip_install(
     """
     poll_interval = 2  # seconds
 
-    # Create temp files for stdout and stderr
+    # Create temp files for stdout and stderr. On the CACHE_DIR volume (like
+    # the constraints file and _apply_cache_containment): the OS temp can sit
+    # on a full system drive while the user pointed AI_SEGMENTATION_CACHE_DIR
+    # at a roomy one, and these logs are re-read on a 2s tail loop.
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        _tmp_kwargs = {"dir": CACHE_DIR}
+    except OSError:
+        _tmp_kwargs = {}
     stdout_fd, stdout_path = tempfile.mkstemp(
-        suffix="_stdout.txt", prefix="pip_"
+        suffix="_stdout.txt", prefix="pip_", **_tmp_kwargs
     )
     stderr_fd, stderr_path = tempfile.mkstemp(
-        suffix="_stderr.txt", prefix="pip_"
+        suffix="_stderr.txt", prefix="pip_", **_tmp_kwargs
     )
 
     try:
@@ -1929,11 +1937,16 @@ def install_dependencies(
                             cancel_check=cancel_check,
                         )
 
-                # If failed, check for network errors and retry after delay
+                # If failed, check for network errors and retry after delay.
+                # A local permission block (AV / app-control policy / locked
+                # uv cache) can carry network-looking wording ("failed to
+                # download X: ... Access is denied (os error 5)"); retrying
+                # those as network blips wastes minutes and ends on a
+                # misleading firewall hint, so the permission signal wins.
                 if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
                     error_output = result.stderr or result.stdout or ""
 
-                    if _is_network_error(error_output):
+                    if _is_network_error(error_output) and not _is_antivirus_error(error_output):
                         for attempt in range(1, 5):  # up to 4 retries
                             wait = 5 * (2 ** (attempt - 1))  # 5, 10, 20, 40s
                             _log(
@@ -2115,6 +2128,14 @@ def install_dependencies(
                     )
                     return False, f"Failed to install {package_name}: proxy authentication required (407)"
 
+                # Check for antivirus/security-policy blocking BEFORE the
+                # network branch: a permission block inside a download step
+                # matches both classifiers, and "check your firewall" is the
+                # wrong advice for it.
+                if _is_antivirus_error(install_error_msg):
+                    _log(_get_pip_antivirus_help(venv_dir), Qgis.MessageLevel.Warning)
+                    return False, f"Failed to install {package_name}: blocked by antivirus or security policy"
+
                 # Check for network/connection errors (after retries exhausted)
                 if _is_network_error(install_error_msg):
                     _log(
@@ -2131,11 +2152,6 @@ def install_dependencies(
                         f"Failed to install {package_name}: no wheels with a matching "
                         "platform tag for this OS/architecture."
                     )
-
-                # Check for antivirus blocking
-                if _is_antivirus_error(install_error_msg):
-                    _log(_get_pip_antivirus_help(venv_dir), Qgis.MessageLevel.Warning)
-                    return False, f"Failed to install {package_name}: blocked by antivirus or security policy"
 
                 # Check for "unable to create process" (broken pip shim)
                 if _is_unable_to_create_process(install_error_msg):
@@ -2784,7 +2800,9 @@ def cleanup_old_libs() -> bool:
     _log("Detected old 'libs/' installation. Cleaning up...", Qgis.MessageLevel.Info)
 
     try:
-        shutil.rmtree(LIBS_DIR)
+        # Extended-length path: the legacy libs/ tree lives INSIDE the QGIS
+        # profile dir and nests torch, so it can exceed MAX_PATH on Windows.
+        shutil.rmtree(_win_extended_path(LIBS_DIR))
         _log("Old libs/ directory removed successfully", Qgis.MessageLevel.Success)
         return True
     except Exception as e:
@@ -2926,7 +2944,10 @@ def _create_venv_and_install(
         # Also remove the venv since it was built with the wrong Python
         if venv_exists():
             try:
-                shutil.rmtree(VENV_DIR)
+                # Same extended-length + ignore_errors handling as every other
+                # venv removal: a raw rmtree can fail on Windows MAX_PATH and
+                # leave a half-cleared tree that create_venv then builds into.
+                _cleanup_partial_venv(VENV_DIR)
                 _log("Removed stale venv after Python version mismatch", Qgis.MessageLevel.Info)
             except Exception as e:
                 _log(f"Failed to remove stale venv: {e}", Qgis.MessageLevel.Warning)

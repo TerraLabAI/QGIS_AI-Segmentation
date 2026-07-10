@@ -154,7 +154,10 @@ class ManualHandoffMixin:
         self._refine_handoff_active = True
         self._auto_refined_in_manual = True  # export will report the handoff was used
         try:
+            import time as _time
+
             from ...core import telemetry
+            self._refine_handoff_t0 = _time.monotonic()
             telemetry.track_refine_in_manual_entered(
                 run_id=self._auto_run_id or "",
                 instances=len(review.get("geoms", [])),
@@ -312,10 +315,14 @@ class ManualHandoffMixin:
             return
         self._collect_manual_refine_into_review()
         try:
+            import time as _time
+
             from ...core import telemetry
+            t0 = getattr(self, "_refine_handoff_t0", None)
             telemetry.track_refine_in_manual_back(
                 run_id=self._auto_run_id or "",
                 validated_count=len((self._auto_review or {}).get("geoms", [])),
+                duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None,
             )
         except Exception:
             pass  # nosec B110

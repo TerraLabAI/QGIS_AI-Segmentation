@@ -354,6 +354,20 @@ class ManualPredictMixin:
                 level=Qgis.MessageLevel.Critical
             )
             self._track_manual_run_failed()
+            # Classified error alongside the boolean failure: a DLL crash, a
+            # dead SAM subprocess and a transport error need different fixes.
+            try:
+                from ...core import telemetry
+                if "DLL" in error_str or "Visual C++" in error_str:
+                    code = "dll_init_failed"
+                elif "subprocess" in error_str.lower() or "rpc" in error_str.lower():
+                    code = "predict_worker_died"
+                else:
+                    code = "predict_runtime_error"
+                telemetry.track_plugin_error(
+                    stage="segment", error_code=code, message=error_str)
+            except Exception:
+                pass  # nosec B110
             if self._headless:
                 self._headless_error = error_str
                 return False
@@ -383,6 +397,14 @@ class ManualPredictMixin:
                 level=Qgis.MessageLevel.Critical
             )
             self._track_manual_run_failed()
+            try:
+                from ...core import telemetry
+                telemetry.track_plugin_error(
+                    stage="segment",
+                    error_code=type(e).__name__ or "predict_unexpected_error",
+                    message=str(e))
+            except Exception:
+                pass  # nosec B110
             if not self._headless:
                 self.iface.messageBar().pushMessage(
                     "AI Segmentation",

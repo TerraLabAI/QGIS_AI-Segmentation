@@ -9,7 +9,7 @@ REGISTRY_VERSION together.
 """
 from __future__ import annotations
 
-REGISTRY_VERSION = 8
+REGISTRY_VERSION = 9
 
 # --- Lifecycle ------------------------------------------------------------
 PLUGIN_FIRST_OPEN = "plugin_first_open"
@@ -19,7 +19,15 @@ MODE_SWITCHED = "mode_switched"
 INSTALL_STARTED = "install_started"
 INSTALL_COMPLETED = "install_completed"
 INSTALL_FAILED = "install_failed"
+INSTALL_CANCELLED = "install_cancelled"
 MODEL_DOWNLOAD_COMPLETED = "model_download_completed"
+# Browser sign-in (pairing) lifecycle; success is plugin_activated.
+PAIRING_STARTED = "pairing_started"
+PAIRING_FAILED = "pairing_failed"
+PAIRING_CANCELLED = "pairing_cancelled"
+# First successful export ever on this machine (one-shot, mode = auto|manual).
+# Shares the cross-product first-value event name used by the ecosystem.
+FIRST_GENERATION_MILESTONE = "first_generation_milestone"
 
 # --- Automatic funnel -----------------------------------------------------
 AUTO_START_CLICKED = "auto_start_clicked"
@@ -59,6 +67,8 @@ TUTORIAL_OPENED = "tutorial_opened"
 SEGMENTATION_RUN = "segmentation_run"
 MANUAL_EXPORT_DONE = "manual_export_done"
 MANUAL_SESSION_SUMMARY = "manual_session_summary"
+# Confirmed discard of unsaved manual work; context = change_layer | stop.
+MANUAL_ABANDONED = "manual_abandoned"
 
 # --- Monetization ---------------------------------------------------------
 PRO_UPSELL_VIEWED = "pro_upsell_viewed"
@@ -89,6 +99,9 @@ FLUSH_NOW = frozenset({
     CREDITS_EXHAUSTED, AUTO_ZERO_RESULT, AUTO_TILES_DEGRADED, AUTO_EXPORT_DONE,
     MANUAL_SESSION_SUMMARY, PLUGIN_ERROR, INSTALL_FAILED,
     HISTORY_RESTORED, HISTORY_EXPORTED,
+    # The session often ends right after these (quit after cancelling, browser
+    # handoff after pairing): the batch would die with it.
+    INSTALL_CANCELLED, PAIRING_FAILED, PAIRING_CANCELLED, FIRST_GENERATION_MILESTONE,
 })
 
 # Lifecycle events with no user-generated content; they ship as long as the
@@ -111,7 +124,12 @@ ALL_EVENTS = frozenset({
     INSTALL_STARTED,
     INSTALL_COMPLETED,
     INSTALL_FAILED,
+    INSTALL_CANCELLED,
     MODEL_DOWNLOAD_COMPLETED,
+    PAIRING_STARTED,
+    PAIRING_FAILED,
+    PAIRING_CANCELLED,
+    FIRST_GENERATION_MILESTONE,
     AUTO_START_CLICKED,
     ZONE_DRAWN,
     AUTO_ZONE_TOO_LARGE,
@@ -143,6 +161,7 @@ ALL_EVENTS = frozenset({
     SEGMENTATION_RUN,
     MANUAL_EXPORT_DONE,
     MANUAL_SESSION_SUMMARY,
+    MANUAL_ABANDONED,
     PRO_UPSELL_VIEWED,
     PRO_UPSELL_CLICKED,
     FREE_TASTE_CONSUMED,
@@ -171,7 +190,12 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     INSTALL_STARTED: (),
     INSTALL_COMPLETED: ("duration_ms",),
     INSTALL_FAILED: ("error_class",),
+    INSTALL_CANCELLED: (),
     MODEL_DOWNLOAD_COMPLETED: ("model",),
+    PAIRING_STARTED: (),
+    PAIRING_FAILED: ("error_code",),
+    PAIRING_CANCELLED: (),
+    FIRST_GENERATION_MILESTONE: ("mode",),
     AUTO_START_CLICKED: ("layer_kind",),
     ZONE_DRAWN: ("vertices", "area_km2"),
     AUTO_ZONE_TOO_LARGE: ("area_km2",),
@@ -207,6 +231,7 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     SEGMENTATION_RUN: ("success",),
     MANUAL_EXPORT_DONE: ("polygon_count",),
     MANUAL_SESSION_SUMMARY: ("saves",),
+    MANUAL_ABANDONED: ("context",),
     PRO_UPSELL_VIEWED: ("trigger",),
     PRO_UPSELL_CLICKED: ("source",),
     FREE_TASTE_CONSUMED: ("remaining",),

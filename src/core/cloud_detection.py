@@ -305,15 +305,15 @@ def visible_extent_for(extent: "QgsRectangle", width: int, height: int):
         return extent
 
 
-# The one in-flight per-tile render job (MAIN THREAD only, no locking needed).
-# The JIT tile render blocks in a nested event loop, so teardown code can run
-# re-entrantly inside it; tracking the live job lets that teardown cancel the
-# render synchronously BEFORE the raster layer it is reading can be deleted.
-_active_render_job = None
+# The in-flight per-tile render jobs (MAIN THREAD only, no locking needed).
+# The synchronous path blocks in a nested event loop, and the async prefetch
+# path can hold several jobs at once; tracking every live job lets teardown
+# cancel them synchronously BEFORE the raster layer they read can be deleted.
+_active_render_jobs: list = []
 
 
 def cancel_active_tile_render() -> None:
-    """Synchronously cancel the in-flight per-tile render, if any. MAIN THREAD.
+    """Synchronously cancel every in-flight per-tile render. MAIN THREAD.
 
     QgsMapRendererParallelJob.cancel() blocks until the render threads have
     stopped touching the layer, which closes the use-after-free window where a
@@ -321,15 +321,13 @@ def cancel_active_tile_render() -> None:
     would free the QgsRasterLayer under an active render job. As a bonus it
     makes Cancel feel instant instead of waiting out a slow basemap render.
     Safe no-op when nothing is rendering."""
-    global _active_render_job
-    job = _active_render_job
-    _active_render_job = None
-    if job is None:
-        return
-    try:
-        job.cancel()
-    except (RuntimeError, AttributeError):
-        pass
+    jobs = list(_active_render_jobs)
+    _active_render_jobs.clear()
+    for job in jobs:
+        try:
+            job.cancel()
+        except (RuntimeError, AttributeError):
+            pass
 
 
 def _configure_downsample_resampling(layer, qgis_module) -> bool:
@@ -496,37 +494,16 @@ def render_tile_qimage(
     Returns:
         A QImage on success, or None on timeout / failure.
     """
-    from qgis.core import QgsMapRendererParallelJob, QgsMapSettings
-    from qgis.PyQt.QtCore import QEventLoop, QSize, QTimer
-    from qgis.PyQt.QtGui import QColor
-
-    global _active_render_job
+    from qgis.core import QgsMapRendererParallelJob
+    from qgis.PyQt.QtCore import QEventLoop, QTimer
 
     if width <= 0 or height <= 0:
         logger.warning("render_tile_qimage: invalid dimensions %dx%d", width, height)
         return None
 
     try:
-        settings = QgsMapSettings()
-        settings.setOutputSize(QSize(int(width), int(height)))
-        settings.setExtent(tile_extent)
-        # Render a fine LOCAL raster through a resampling-configured clone so the
-        # coarse detection-resolution tile is cleanly averaged, not decimated
-        # nearest (which aliases object edges). Best-effort: None -> original
-        # layer, and online providers are never cloned. The clone MUST outlive
-        # the render job, so render_clone stays referenced here (never added to
-        # the project) until the QImage is extracted below, then is freed.
-        render_clone = _local_raster_render_clone(layer)
-        render_layer = render_clone if render_clone is not None else layer
-        settings.setLayers([render_layer])
-        settings.setDestinationCrs(layer.crs())
-        settings.setBackgroundColor(QColor(0, 0, 0))
-        _set_quality_render_flags(settings)
-        # Online basemaps MUST download their imagery tiles before the job
-        # finishes; otherwise an uncached area (never viewed at detection
-        # zoom) can render blank and the detection tile is silently skipped
-        # as "empty".
-        _set_blocking_remote_fetch(settings)
+        settings, render_clone = _tile_render_settings(
+            layer, tile_extent, width, height)
 
         job = QgsMapRendererParallelJob(settings)
         loop = QEventLoop()
@@ -535,13 +512,13 @@ def render_tile_qimage(
         # Publish the job so a teardown running re-entrantly INSIDE loop.exec()
         # (layer removal, project clear, unload, Cancel) can cancel it
         # synchronously before the rendered layer can be freed underneath it.
-        _active_render_job = job
+        _active_render_jobs.append(job)
         try:
             job.start()
             loop.exec()
         finally:
-            if _active_render_job is job:
-                _active_render_job = None
+            if job in _active_render_jobs:
+                _active_render_jobs.remove(job)
 
         if not job.isActive():
             img = job.renderedImage()
@@ -549,6 +526,8 @@ def render_tile_qimage(
             job.cancelWithoutBlocking()
             logger.warning("render_tile_qimage: render timed out after %d ms", timeout_ms)
             return None
+        # The clone (when any) must outlive the render; release it only now.
+        del render_clone
     except Exception as exc:  # noqa: BLE001
         logger.warning("render_tile_qimage: failed for %dx%d: %s", width, height, exc)
         return None
@@ -556,6 +535,110 @@ def render_tile_qimage(
     if img is None or img.isNull():
         return None
     return img
+
+
+def _tile_render_settings(layer, tile_extent, width: int, height: int):
+    """Shared QgsMapSettings recipe for one tile render (sync AND async paths).
+
+    Returns (settings, render_clone). The clone (None for online providers)
+    MUST be kept referenced until the job has finished: it backs the layer the
+    job reads. Render a fine LOCAL raster through a resampling-configured
+    clone so the coarse detection-resolution tile is cleanly averaged, not
+    decimated nearest (which aliases object edges)."""
+    from qgis.core import QgsMapSettings
+    from qgis.PyQt.QtCore import QSize
+    from qgis.PyQt.QtGui import QColor
+
+    settings = QgsMapSettings()
+    settings.setOutputSize(QSize(int(width), int(height)))
+    settings.setExtent(tile_extent)
+    render_clone = _local_raster_render_clone(layer)
+    render_layer = render_clone if render_clone is not None else layer
+    settings.setLayers([render_layer])
+    settings.setDestinationCrs(layer.crs())
+    settings.setBackgroundColor(QColor(0, 0, 0))
+    _set_quality_render_flags(settings)
+    # Online basemaps MUST download their imagery tiles before the job
+    # finishes; otherwise an uncached area (never viewed at detection
+    # zoom) can render blank and the detection tile is silently skipped
+    # as "empty".
+    _set_blocking_remote_fetch(settings)
+    return settings, render_clone
+
+
+def start_tile_render_job(
+    layer,
+    tile_extent,
+    width: int,
+    height: int,
+    on_done,
+    timeout_ms: int = 60000,
+) -> bool:
+    """Start ONE tile render as an ASYNC job and return immediately. MAIN THREAD.
+
+    ``on_done(img_or_None)`` is called exactly once on the main thread when the
+    job finishes, times out, or is torn down by cancel_active_tile_render()
+    (a cancelled job reports None). Unlike render_tile_qimage this never blocks
+    the caller, so several tile renders overlap: each parallel job renders in
+    its own threads, and the blocking remote fetches of N tiles run side by
+    side instead of one after the other. Returns False when the job could not
+    be started (on_done is then NOT called).
+    """
+    from qgis.core import QgsMapRendererParallelJob
+    from qgis.PyQt.QtCore import QTimer
+
+    if width <= 0 or height <= 0:
+        logger.warning("start_tile_render_job: invalid dimensions %dx%d", width, height)
+        return False
+    try:
+        settings, render_clone = _tile_render_settings(
+            layer, tile_extent, width, height)
+        job = QgsMapRendererParallelJob(settings)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("start_tile_render_job: failed for %dx%d: %s", width, height, exc)
+        return False
+
+    state = {"done": False, "clone": render_clone}
+
+    def _finish(timed_out: bool = False) -> None:
+        if state["done"]:
+            return
+        state["done"] = True
+        if job in _active_render_jobs:
+            _active_render_jobs.remove(job)
+        img = None
+        try:
+            if not job.isActive():
+                img = job.renderedImage()
+            else:
+                # Blocking cancel: the render threads must stop touching the
+                # layer/clone before we release our reference to it.
+                job.cancel()
+                if timed_out:
+                    logger.warning(
+                        "start_tile_render_job: render timed out after %d ms", timeout_ms)
+        except (RuntimeError, AttributeError):
+            img = None
+        state["clone"] = None
+        if img is not None and img.isNull():
+            img = None
+        try:
+            on_done(img)
+        except Exception:  # noqa: BLE001 - a broken callback must not leak jobs
+            logger.warning("start_tile_render_job: on_done callback failed")
+
+    job.finished.connect(_finish)
+    QTimer.singleShot(timeout_ms, lambda: _finish(timed_out=True))
+    _active_render_jobs.append(job)
+    try:
+        job.start()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("start_tile_render_job: start failed: %s", exc)
+        state["done"] = True
+        if job in _active_render_jobs:
+            _active_render_jobs.remove(job)
+        return False
+    return True
 
 
 def tile_is_blank_array(
@@ -784,6 +867,42 @@ def tile_png_to_base64(image_bytes: bytes) -> str:
     base64s the bytes encode_tile_png produced regardless of container format.
     """
     return base64.b64encode(image_bytes).decode("ascii")
+
+
+def encoded_image_size(data: bytes) -> tuple[int, int] | None:
+    """(width, height) of an encoded JPEG or PNG from its header bytes only.
+
+    The submission path needs the SENT pixel size, not the source-rect size:
+    a re-split quadrant ships the same ground extent at a finer pixel grid, so
+    reading the actual encoded dimensions is the one measure that is right at
+    every re-split depth. No decoder, no image library: PNG stores the size in
+    the fixed IHDR position, JPEG in the first SOF segment. Returns None for
+    anything unrecognized or truncated; callers treat that as unknown.
+    """
+    if len(data) >= 24 and data[:8] == b"\x89PNG\r\n\x1a\n":
+        return (
+            int.from_bytes(data[16:20], "big"),
+            int.from_bytes(data[20:24], "big"),
+        )
+    if len(data) >= 4 and data[:2] == b"\xff\xd8":
+        i = 2
+        n = len(data)
+        while i + 9 < n:
+            if data[i] != 0xFF:
+                i += 1
+                continue
+            marker = data[i + 1]
+            # Standalone markers carry no length segment.
+            if marker in (0x01, 0xD8) or 0xD0 <= marker <= 0xD7:
+                i += 2
+                continue
+            if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                h = int.from_bytes(data[i + 5:i + 7], "big")
+                w = int.from_bytes(data[i + 7:i + 9], "big")
+                return (w, h) if w > 0 and h > 0 else None
+            seg_len = int.from_bytes(data[i + 2:i + 4], "big")
+            i += 2 + max(seg_len, 2)
+    return None
 
 
 def decode_detection_response(

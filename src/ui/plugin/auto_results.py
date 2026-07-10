@@ -41,6 +41,48 @@ from .shared import (
 )
 
 
+def _diff_live_fid_map(old_map: dict, current: list):
+    """Diff the previous live selection set against the current one.
+
+    Pure bookkeeping (no QGIS types), so the live preview updates the provider
+    incrementally instead of truncating + re-adding every feature each repaint.
+
+    ``old_map`` maps a merger keeper fid -> (provider_fid, stamp, is_full,
+    score) for every object currently ON the layer. ``current`` is the ordered
+    list of (merger_fid, stamp, is_full, score) for every renderable-visible
+    object this repaint. ``stamp`` identifies the keeper geometry (bbox + vertex
+    count) and ``is_full`` is False for a cheap budget-fallback render, so a
+    later full refine of the SAME keeper still counts as a geometry change.
+
+    Returns (adds, geom_changes, attr_changes, deletes, kept_map):
+      adds         = merger fids new since last repaint (need a feature created)
+      geom_changes = {provider_fid: merger_fid} whose stamp or is_full changed
+      attr_changes = {provider_fid: merger_fid} whose score changed
+      deletes      = provider fids gone from the layer (retired or gated out)
+      kept_map     = the surviving old entries with stamp/is_full/score refreshed
+                     (the caller folds the added fids into it).
+    """
+    adds = []
+    geom_changes = {}
+    attr_changes = {}
+    kept_map = {}
+    seen = set()
+    for fid, stamp, is_full, score in current:
+        seen.add(fid)
+        rec = old_map.get(fid)
+        if rec is None:
+            adds.append(fid)
+            continue
+        prov_fid, old_stamp, old_is_full, old_score = rec
+        if old_stamp != stamp or old_is_full != is_full:
+            geom_changes[prov_fid] = fid
+        if old_score != score:
+            attr_changes[prov_fid] = fid
+        kept_map[fid] = (prov_fid, stamp, is_full, score)
+    deletes = [rec[0] for fid, rec in old_map.items() if fid not in seen]
+    return adds, geom_changes, attr_changes, deletes, kept_map
+
+
 class AutoResultsMixin:
     """Live results: selection/handoff layers, renderers, tile pump, finalize."""
 
@@ -407,9 +449,16 @@ class AutoResultsMixin:
             if self._auto_live_refine_px != px:
                 self._auto_live_refine_cache.clear()
                 self._auto_live_refine_px = px
+                self._auto_live_params = None
             if self._auto_live_measurer is None:
                 self._auto_live_measurer = self._make_auto_area_measurer()
-            params = self._fresh_review_params()
+            # Prompt, grid and confidence are all fixed for the duration of a
+            # run, so resolve the review preset once per run (it regex-scans
+            # the server policy's keyword tables) instead of on every repaint.
+            params = self._auto_live_params
+            if params is None:
+                params = self._fresh_review_params()
+                self._auto_live_params = params
             # Fill holes is a native, O(rings) drop of interior rings, so it is
             # decoupled from the expensive shape refine: when the preset fills
             # holes, apply it to EVERY over-budget object below (not just the ones
@@ -420,13 +469,20 @@ class AutoResultsMixin:
             fresh_cache = {}
             refine_deadline = _t.monotonic() + _AUTO_LIVE_REFINE_BUDGET_S
             pr = layer.dataProvider()
-            pr.truncate()
-            feats = []
-            # Colour by the merger's STABLE keeper id (det_id), not the loop
-            # position: the whole layer is truncated + re-added every repaint, so
-            # a positional index would re-hue every object each time a new tile
-            # merges. The fid is fixed once an object first appears, so its colour
-            # stays put as more tiles stream in.
+            fields = layer.fields()
+            score_idx = fields.indexOf("score")
+            # Build the CURRENT renderable set, then diff it against the previous
+            # one and push only the delta to the provider (add new objects, change
+            # grown/upgraded geometries and bumped scores, delete retired ones). A
+            # per-repaint truncate + re-add of every feature was the dominant GUI
+            # cost on dense runs (thousands of objects, O(N) every repaint); the
+            # diff keeps a quiet repaint (nothing merged) nearly free.
+            current: list = []          # ordered (fid, stamp, is_full, score)
+            geom_by_fid: dict = {}      # fid -> geometry to render
+            # Track by the merger's STABLE keeper id (det_id), not the loop
+            # position, so an object KEEPS its hue as more tiles stream in (the
+            # incremental writes carry det_id = fid unchanged, and the renderer
+            # hues on det_id).
             for fid, geom, score in self._auto_merger.result_scored_ided():
                 if geom is None or geom.isEmpty():
                     continue
@@ -452,12 +508,23 @@ class AutoResultsMixin:
                         refined = self._refine_geom_for_review(geom, params, px)
                         if refined is None or refined.isEmpty():
                             refined = geom
+                        # Coerce ONCE at cache-fill time: cache hits then skip
+                        # the per-repaint to_multipolygon deep copy below.
+                        refined = to_multipolygon(refined)
+                        if refined is None or refined.isEmpty():
+                            visible, refined = False, None
                     entry = (visible, refined, stamp)
+                # is_full flags a full-refine render (from the cache) vs a cheap
+                # budget-fallback render: the fallback is is_full=False, so the
+                # next repaint's full refine of the SAME keeper (same stamp) still
+                # registers as a geometry change below and upgrades the on-layer
+                # polygon in place (the budget-fallback convergence).
                 if entry is not None:
                     fresh_cache[fid] = entry
                     if not entry[0]:
                         continue  # preset min/max size or confidence gate
-                    geom = entry[1]
+                    gg = entry[1]  # already MultiPolygon (coerced at fill)
+                    is_full = True
                 elif score < conf:
                     continue
                 else:
@@ -476,43 +543,77 @@ class AutoResultsMixin:
                         sg = geom.simplify(live_tol)
                         if sg is not None and not sg.isEmpty():
                             geom = sg
-                # Last-line guard: a MultiPolygon provider rejects a
-                # GeometryCollection, so coerce to polygon-only MultiPolygon and
-                # skip anything with no areal content (never raise mid-repaint).
-                # No defensive copy: to_multipolygon never mutates its input (the
-                # Polygon branch copies internally; the MultiPolygon branch returns
-                # it as-is) and setGeometry copies into the feature, so the keeper
-                # stays intact. Dropping the per-keeper deep copy every 600ms
-                # repaint is a measurable saving once N is in the thousands.
-                gg = to_multipolygon(geom)
+                    # Last-line guard: a MultiPolygon provider rejects a
+                    # GeometryCollection, so coerce to polygon-only MultiPolygon and
+                    # skip anything with no areal content (never raise mid-repaint).
+                    # No defensive copy: to_multipolygon never mutates its input (the
+                    # Polygon branch copies internally; the MultiPolygon branch
+                    # returns it as-is) and setGeometry copies into the feature, so
+                    # the keeper stays intact.
+                    gg = to_multipolygon(geom)
+                    is_full = False
                 if gg is None or gg.isEmpty():
                     continue
-                feat = QgsFeature(layer.fields())
-                feat.setGeometry(gg)
-                feat.setAttributes(["", float(score), fid])
-                feats.append(feat)
+                current.append((fid, stamp, is_full, float(score)))
+                geom_by_fid[fid] = gg
             # Swap in the visited-fid cache: retired keepers (absorbed by a
             # merge) drop out here, so the cache never outgrows the live set.
             self._auto_live_refine_cache = fresh_cache
-            if feats:
-                _add_features_fast(pr, feats)
+            # Diff the current renderable set against the previous one and push
+            # only the delta to the provider.
+            old_map = self._auto_live_fid_map
+            adds, geom_changes, attr_changes, deletes, new_map = _diff_live_fid_map(
+                old_map, current)
+            by_fid = {f: (s, full, sc) for f, s, full, sc in current}
+            changed = False
+            if deletes:
+                pr.deleteFeatures(deletes)
+                changed = True
+            if adds:
+                add_feats = []
+                for f in adds:
+                    feat = QgsFeature(fields)
+                    feat.setGeometry(geom_by_fid[f])
+                    feat.setAttributes(["", by_fid[f][2], f])
+                    add_feats.append((f, feat))
+                # Plain addFeatures (NOT the FastInsert helper): FastInsert skips
+                # writing the assigned provider fids back onto the features, and
+                # we need them to target this object with a later change/delete.
+                pr.addFeatures([feat for _, feat in add_feats])
+                for f, feat in add_feats:
+                    pfid = feat.id()
+                    if pfid is not None and pfid >= 0:
+                        s, full, sc = by_fid[f]
+                        new_map[f] = (pfid, s, full, sc)
+                changed = True
+            if geom_changes:
+                pr.changeGeometryValues(
+                    {prov_fid: geom_by_fid[f] for prov_fid, f in geom_changes.items()})
+                changed = True
+            if attr_changes and score_idx >= 0:
+                pr.changeAttributeValues(
+                    {prov_fid: {score_idx: by_fid[f][2]}
+                     for prov_fid, f in attr_changes.items()})
+                changed = True
+            self._auto_live_fid_map = new_map
             # Live "found so far" count in the run label (same cadence as the
-            # repaint, so no extra throttle): a slow zone never reads as dead.
+            # repaint, so no extra throttle): a slow zone never reads as dead. The
+            # tracked fid map IS the current on-layer visible set.
             if self.dock_widget is not None:
                 try:
                     self.dock_widget.set_auto_run_found_count(
                         (self._auto_run_ctx or {}).get("prompt") or tr("Example match"),
-                        len(feats))
+                        len(new_map))
                 except (RuntimeError, AttributeError):
                     pass
-            # No updateExtents() here: it rescans every feature (O(N)) on each
-            # 600ms rebuild as the set grows. Rendering requests features by the
-            # canvas viewport via the spatial index, NOT the layer's cached
-            # extent, so the live preview draws correctly without it. The extent
-            # is refreshed once at review (_push_review_geoms) for zoom-to-layer.
-            # Immediate repaint (already throttled to once per _AUTO_LIVE_REPAINT_MS
-            # by the caller) so live detections stay visible as they arrive.
-            layer.triggerRepaint()
+            # No updateExtents() here: it rescans every feature (O(N)). Rendering
+            # requests features by the canvas viewport via the spatial index, NOT
+            # the layer's cached extent, so the live preview draws correctly
+            # without it. The extent is refreshed once at review
+            # (_push_review_geoms) for zoom-to-layer. Repaint only when the
+            # provider actually changed (already throttled by the caller).
+            if changed:
+                layer.triggerRepaint()
         except (RuntimeError, AttributeError):
             # Live-preview repaint is best-effort (the layer can be deleted from
             # under us mid-run). Narrow catch: do not mask geometry/merger bugs.
@@ -629,14 +730,21 @@ class AutoResultsMixin:
     def _request_auto_live_repaint(self) -> None:
         """Coalesce live-preview repaints: rebuilding the whole selection layer
         on every completed tile was a second per-tile GUI cost. Fire at most
-        once per _AUTO_LIVE_REPAINT_MS via a single-shot timer."""
+        once per _AUTO_LIVE_REPAINT_MS via a single-shot timer. Each repaint
+        truncates + re-adds the whole live set (O(N)), so the cadence stretches
+        as the set grows: on dense runs the extra latency is invisible (objects
+        already stream in continuously) but the saved GUI churn is not."""
         from qgis.PyQt.QtCore import QTimer
         if self._auto_repaint_timer is None:
             self._auto_repaint_timer = QTimer(self.iface.mainWindow())
             self._auto_repaint_timer.setSingleShot(True)
             self._auto_repaint_timer.timeout.connect(self._refresh_auto_live_from_merger)
         if not self._auto_repaint_timer.isActive():
-            self._auto_repaint_timer.start(_AUTO_LIVE_REPAINT_MS)
+            n = len(self._auto_live_refine_cache)
+            interval = _AUTO_LIVE_REPAINT_MS
+            if n >= 800:
+                interval = min(2500, interval + (n // 800) * 400)
+            self._auto_repaint_timer.start(interval)
 
     def _stop_auto_live_pump(self) -> None:
         """Stop the live tile pump machinery: queue, pump flag, per-run refine
@@ -650,6 +758,11 @@ class AutoResultsMixin:
         self._auto_live_refine_cache = {}
         self._auto_live_refine_px = -1.0
         self._auto_live_measurer = None
+        self._auto_live_params = None
+        # Invalidate the incremental provider mapping: the layer is recreated
+        # fresh per run, and the review rebuilds it (truncate + re-add), so no
+        # stale provider fid may survive into the next run or into review.
+        self._auto_live_fid_map = {}
         timer = self._auto_repaint_timer
         if timer is not None:
             try:
@@ -1222,6 +1335,7 @@ class AutoResultsMixin:
                     instances_visible_at_default=0,
                     zero_at_default=True,
                     stop_reason="completed",
+                    warming_ms=self._auto_warming_wait_ms(),
                 )
         except Exception:
             pass  # nosec B110
@@ -1328,12 +1442,19 @@ class AutoResultsMixin:
             # never opens reading "0 found". Set it BEFORE the filter phase below
             # so the visible set reflects the lowered cutoff; update the snapshot
             # params too. Headless keeps the seeded default (stable API contract).
-            start_conf = self._review_start_confidence()
+            raw_start_conf = self._review_start_confidence()
+            # Snap the cutoff to the review slider's 5% grid ONCE, at the source,
+            # so the stored filter value, the histogram cutoff and the seeded
+            # slider/spin all show the SAME number (the slider can only rest on
+            # 5% steps, so an unsnapped 0.17 used to read as 15% while the filter
+            # ran at 17%). The note flags below still read the UNSNAPPED value so
+            # a pure snap never masquerades as a deliberate lowering.
+            start_conf = self._snap_review_start_confidence(raw_start_conf)
             self._auto_confidence = start_conf
             state["params"]["conf"] = start_conf
             if not self._auto_headless_run and self.dock_widget is not None:
                 default_conf = self._effective_confidence_default()
-                auto_lowered = start_conf < default_conf - 1e-9
+                auto_lowered = raw_start_conf < default_conf - 1e-9
                 # "adaptive" = lowered while objects DO score above the default
                 # (distribution fit); the other reason is "nothing scored above".
                 adaptive_note = auto_lowered and any(
@@ -1484,6 +1605,21 @@ class AutoResultsMixin:
         out.sort(key=lambda gs: gs[1], reverse=True)
         self._auto_preview_geoms = out
         self._auto_preview_build_state = None
+
+    def _snap_review_start_confidence(self, conf: float) -> float:
+        """Snap a starting review cutoff to the review slider's 5% grid, clamped
+        to [0, review-max]. The slider can only rest on 5% steps, so snapping the
+        stored _auto_confidence (and thus the histogram cutoff and the seeded
+        widgets) to the same grid keeps all three on one value. 0 is preserved,
+        so a run whose best score is under 5% still opens showing every object."""
+        from ..dock.styles import _REVIEW_CONF_STEP, _REVIEW_CONF_MAX
+        try:
+            c = float(conf)
+        except (TypeError, ValueError):
+            return conf
+        pct = int(round(c * 100.0 / _REVIEW_CONF_STEP)) * _REVIEW_CONF_STEP
+        pct = max(0, min(_REVIEW_CONF_MAX, pct))
+        return pct / 100.0
 
     def _review_start_confidence(self) -> float:
         """Starting review cutoff. The default (0.30) unless either
@@ -1653,6 +1789,7 @@ class AutoResultsMixin:
                     instances_visible_at_default=visible_n,
                     zero_at_default=visible_n == 0,
                     stop_reason="completed",
+                    warming_ms=self._auto_warming_wait_ms(),
                 )
             telemetry.track_review_opened(
                 run_id=self._auto_run_id or "",
@@ -1686,15 +1823,66 @@ class AutoResultsMixin:
             msg = tr("Could not reach the service. Check your connection and try again.")
             log_msg = "Auto detection: run ended with no successful tiles (network/timeout)"
         else:
-            msg = tr("No detection in this zone.")
+            # Actionable, not just declarative: a paid run that found nothing
+            # is the worst moment of the flow, and the two levers that rescue
+            # it (a more concrete object word, a drawn example) are both one
+            # step away on this very screen.
+            msg = tr(
+                "No detection in this zone. Try a more specific object word, "
+                "or draw an example of one (best for unusual objects).")
             log_msg = "Auto detection: run completed with zero detections"
         if self.dock_widget and not self._auto_headless_run:
             try:
                 self.dock_widget.set_auto_status(
                     "error" if network_failed else "info", msg)
+                if not network_failed:
+                    # The two rescue levers named in the status, as one-click
+                    # chips (draw an example / prefill a stronger word). A
+                    # full example store would make the draw chip a silent
+                    # no-op on click, so it is not offered then (the synonym
+                    # chip alone is not worth the row: a full store means
+                    # examples were already the strategy).
+                    try:
+                        _can_add_example = not self._auto_exemplar_store.is_full_for(1)
+                    except (RuntimeError, AttributeError):
+                        _can_add_example = False
+                    if _can_add_example:
+                        self.dock_widget.show_auto_zero_assist(
+                            self.dock_widget.auto_prompt_input.text().strip())
                 self._set_zone_badge_enabled(True)
             except (RuntimeError, AttributeError):
                 pass
         QgsMessageLog.logMessage(
             log_msg, "AI Segmentation", level=Qgis.MessageLevel.Info,
         )
+
+    def _on_auto_zero_assist_clicked(self, kind: str, to_prompt: str) -> None:
+        """A zero-result rescue chip: record it, then perform the lever.
+
+        'draw_example' arms the one-shot example draw (all the usual no-op
+        guards in _on_add_exemplar_requested apply); 'synonym' prefills the
+        suggested word - setText fires textChanged, which hides the chips and
+        debounce-commits the new prompt, so the detail re-seed happens on the
+        normal path."""
+        from_prompt = ""
+        try:
+            from_prompt = self.dock_widget.auto_prompt_input.text().strip()
+        except (RuntimeError, AttributeError):
+            pass
+        try:
+            from ...core import telemetry
+            telemetry.track_zero_assist_clicked(kind, from_prompt, to_prompt)
+        except Exception:
+            pass  # nosec B110
+        try:
+            self.dock_widget.hide_auto_zero_assist()
+        except (RuntimeError, AttributeError):
+            pass
+        if kind == "synonym" and to_prompt:
+            try:
+                self.dock_widget.auto_prompt_input.setText(to_prompt)
+                self.dock_widget.auto_prompt_input.setFocus()
+            except (RuntimeError, AttributeError):
+                pass
+        elif kind == "draw_example":
+            self._on_add_exemplar_requested(1)

@@ -40,13 +40,21 @@ class AutoLifecycleMixin:
         Never raises: it runs on teardown paths (including unload) where a
         failure must not break the rest of the cleanup. _export_auto_review()
         clears the review and removes the selection layer on success.
+
+        Safety net: exports with include_hidden so detections the Confidence
+        cutoff is hiding are saved too (the visible set may be empty), since the
+        user never got to review them before leaving.
         """
         try:
             review = self._auto_review
-            if not (review and review.get("geoms")):
+            # The visible set (review["geoms"]) may be EMPTY when Confidence is
+            # hiding billed detections, but those must still not be lost: gate on
+            # whether the run found any objects at all, then export the full
+            # found set (include_hidden) below.
+            if not (review and self._auto_objects):
                 return
-            exported = self._export_auto_review()
-            if exported and self.dock_widget:
+            exported = self._export_auto_review(include_hidden=True)
+            if exported and exported[1] > 0 and self.dock_widget:
                 name, count = exported
                 try:
                     self.dock_widget.set_auto_status(
@@ -98,12 +106,40 @@ class AutoLifecycleMixin:
     def _on_auto_queue_state(self, position: int, depth: int, eta_s: int) -> None:
         """Slot: the worker hit (or left) the server's waiting room. Flips the
         progress bar's label to an honest "you're in line" state so a launch
-        spike never reads as a frozen run; (0, 0, 0) restores the tile count."""
+        spike never reads as a frozen run; (0, 0, 0) restores the tile count.
+
+        Also accumulates the wall time spent waiting, reported as warming_ms on
+        the run's terminal telemetry: the server only sees per-request timing,
+        never the user-perceived wait across the whole waiting-room stretch."""
+        import time as _time
+        if position or depth or eta_s:
+            if getattr(self, "_auto_warming_t0", None) is None:
+                self._auto_warming_t0 = _time.monotonic()
+        else:
+            t0 = getattr(self, "_auto_warming_t0", None)
+            if t0 is not None:
+                self._auto_warming_ms = (
+                    getattr(self, "_auto_warming_ms", 0)
+                    + int((_time.monotonic() - t0) * 1000))  # noqa: W503
+                self._auto_warming_t0 = None
         if self.dock_widget:
             try:
                 self.dock_widget.set_auto_queue_state(position, depth, eta_s)
             except (RuntimeError, AttributeError):
                 pass
+
+    def _auto_warming_wait_ms(self) -> int:
+        """Total waiting-room wall time for the current run, closing any still
+        open stretch (a run can end while the warming banner is up)."""
+        try:
+            import time as _time
+            total = getattr(self, "_auto_warming_ms", 0)
+            t0 = getattr(self, "_auto_warming_t0", None)
+            if t0 is not None:
+                total += int((_time.monotonic() - t0) * 1000)
+            return total
+        except Exception:
+            return 0
 
     def _on_auto_warning(self, msg: str) -> None:
         QgsMessageLog.logMessage(
@@ -167,6 +203,7 @@ class AutoLifecycleMixin:
                 error_class=error_class,
                 tiles_done=getattr(self._auto_worker, "tiles_succeeded", 0),
                 duration_ms=self._auto_duration_ms(),
+                warming_ms=self._auto_warming_wait_ms(),
             )
             # Pro-path failures that are OUR fault (server/timeout/unknown, not
             # a user NETWORK/AUTH/CANCELLED) also emit a plugin_error so the
@@ -289,6 +326,8 @@ class AutoLifecycleMixin:
                 tiles_done=tiles_succeeded,
                 tiles_total=tiles_total,
                 salvaged_to_review=tiles_succeeded > 0,
+                duration_ms=self._auto_duration_ms(),
+                warming_ms=self._auto_warming_wait_ms(),
             )
         except Exception:
             pass  # nosec B110

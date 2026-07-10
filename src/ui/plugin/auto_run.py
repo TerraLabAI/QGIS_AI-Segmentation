@@ -195,6 +195,7 @@ class AutoRunMixin:
         # down its last in-flight network call). Tell the user instead of
         # silently swallowing the click.
         if self._auto_worker is not None and self._auto_worker.isRunning():
+            self._tel_detect_blocked("worker_busy")
             if self.dock_widget:
                 try:
                     self.dock_widget.auto_status_banner.setText(
@@ -221,6 +222,7 @@ class AutoRunMixin:
 
         layer = self._get_active_raster_layer()
         if layer is None:
+            self._tel_detect_blocked("no_layer")
             QgsMessageLog.logMessage(
                 "Auto detection: no raster layer selected",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
@@ -234,6 +236,7 @@ class AutoRunMixin:
         # Runs BEFORE any billable work; mirrors the zone-outside-layer abort.
         guard_msg = self._auto_raster_guard_message(layer)
         if guard_msg is not None:
+            self._tel_detect_blocked("raster_shape")
             try:
                 self.dock_widget.set_auto_status("error", guard_msg)
             except (RuntimeError, AttributeError):
@@ -252,6 +255,7 @@ class AutoRunMixin:
 
         # Auth check.
         if not is_plugin_activated():
+            self._tel_detect_blocked("not_activated")
             QgsMessageLog.logMessage(
                 "Auto detection: plugin not activated",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
@@ -261,6 +265,7 @@ class AutoRunMixin:
         # Server-side kill switch (fails open if config is unreachable).
         from ...core.activation_manager import is_automatic_mode_enabled
         if not is_automatic_mode_enabled():
+            self._tel_detect_blocked("kill_switch")
             self.iface.messageBar().pushWarning(
                 "AI Segmentation",
                 tr("Automatic detection is temporarily unavailable. Please try again later."),
@@ -269,6 +274,7 @@ class AutoRunMixin:
 
         auth = get_auth_header()
         if not auth:
+            self._tel_detect_blocked("no_auth")
             QgsMessageLog.logMessage(
                 "Auto detection: no auth token available",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
@@ -333,6 +339,9 @@ class AutoRunMixin:
                     "The zone is outside the selected raster layer. "
                     "Pick the right layer or redraw the zone."
                 )
+                # The headless/MCP caller only sees a generic "did not start"
+                # unless the precise reason is handed back through this field.
+                self._headless_error = msg
                 try:
                     self.dock_widget.set_auto_status("error", msg)
                 except (RuntimeError, AttributeError):
@@ -365,6 +374,28 @@ class AutoRunMixin:
             )
             return
 
+        # Hard credit re-gate: the UI's Detect gate runs on a ~130ms cost
+        # debounce, so a quick zone/detail change can leave Detect live for a
+        # grid that now over-spends. Re-check the REAL culled tile count against
+        # the same balance the UI gate uses (set_auto_credit_estimate) and abort
+        # before any billable setup, re-showing that gate's red cost line. The
+        # headless/MCP path has no dock gate and manages its own budget.
+        if not self._auto_headless_run:
+            balance, _is_free = self._auto_credit_snapshot()
+            if balance is not None and len(tiles) > int(balance):
+                self._tel_detect_blocked("cost_over_balance")
+                if self.dock_widget:
+                    try:
+                        self.dock_widget.set_auto_credit_estimate(len(tiles))
+                    except (RuntimeError, AttributeError):
+                        pass
+                QgsMessageLog.logMessage(
+                    "Auto detection: {} tiles exceed the {} credit balance; "
+                    "aborting before billing".format(len(tiles), int(balance)),
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning,
+                )
+                return
+
         crs_authid = layer.crs().authid()
 
         # Per-tile JIT render: DO NOT render the whole zone up front. The old
@@ -383,21 +414,6 @@ class AutoRunMixin:
         # detections land exactly on the imagery and overlap strips are
         # geometrically identical across seams (the merger uses IoS/containment,
         # not pixel equality, so independent per-tile renders are fine).
-        from qgis.PyQt.QtWidgets import QApplication
-
-        # Hide the tile-grid preview the moment detection starts: during the run
-        # the user should see the segmentations appear cleanly, not the grid. The
-        # grid is debug-only now, re-shown on demand from the review panel.
-        self._clear_zone_tile_grid()
-
-        try:
-            self.dock_widget.set_auto_run_active(True)
-            self.dock_widget.auto_status_banner.setText(tr("Preparing tiles..."))
-            self.dock_widget.auto_status_banner.setVisible(True)
-        except (RuntimeError, AttributeError):
-            pass
-        QApplication.processEvents()
-
         import time as _time
         zone_extent = QgsRectangle(geo_bbox[0], geo_bbox[1], geo_bbox[2], geo_bbox[3])
         # The extent QGIS would actually render for (zone_extent, pixel_w,
@@ -553,6 +569,22 @@ class AutoRunMixin:
                 self._auto_gsd = 0.0
                 self._auto_run_id = None
                 return
+
+        # Every abort guard has passed (empty prompt, unplaceable example): flip
+        # to the in-run layout ONLY now, not before, so a start that bails never
+        # flashes the Detect/Exit row hidden-then-restored nor wipes the tile
+        # grid preview. Hide the grid here (the user watches segmentations appear
+        # cleanly during the run; it is debug-only, re-shown from the review).
+        from qgis.PyQt.QtWidgets import QApplication
+
+        self._clear_zone_tile_grid()
+        try:
+            self.dock_widget.set_auto_run_active(True)
+            self.dock_widget.auto_status_banner.setText(tr("Preparing tiles..."))
+            self.dock_widget.auto_status_banner.setVisible(True)
+        except (RuntimeError, AttributeError):
+            pass
+        QApplication.processEvents()
 
         from ...core.polygon_exporter import IncrementalMerger
 
@@ -728,6 +760,10 @@ class AutoRunMixin:
         # terminal); reset per run so a stale count never leaks across runs.
         self._auto_skipped_blank_tiles = 0
         self._auto_render_failed_tiles = 0
+        # Waiting-room (cold start / queue) wall time, accumulated by
+        # _on_auto_queue_state and reported as warming_ms at the terminal.
+        self._auto_warming_t0 = None
+        self._auto_warming_ms = 0
         try:
             from ...core import telemetry
             credits_before, is_free_tier = self._auto_credit_snapshot()
@@ -745,6 +781,14 @@ class AutoRunMixin:
                 credits_before=credits_before,
                 is_free_tier=is_free_tier,
             )
+        except Exception:
+            pass  # nosec B110
+
+    def _tel_detect_blocked(self, reason: str) -> None:
+        """Best-effort detect_blocked telemetry for the hard Detect guards."""
+        try:
+            from ...core import telemetry
+            telemetry.track_detect_blocked(reason)
         except Exception:
             pass  # nosec B110
 
@@ -1230,11 +1274,15 @@ class AutoRunMixin:
         self._auto_headless_run = True
         try:
             # Start detection. _last_auto_result is reset inside _start_auto_detection.
+            self._headless_error = None
             self._start_auto_detection()
 
             if self._auto_worker is None:
+                # Surface the precise abort reason when the start path recorded
+                # one; the generic catch-all is a last resort.
+                reason = getattr(self, "_headless_error", None)
                 return {
-                    "_error": (
+                    "_error": reason or (
                         "Detection did not start. Check the AI Segmentation log: "
                         "missing raster, not signed in, zone too large, or feature disabled."
                     )

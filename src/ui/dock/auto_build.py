@@ -821,6 +821,40 @@ class DockAutoBuildMixin:
         self.auto_status_banner.setVisible(False)
         _s3_layout.addWidget(self.auto_status_banner)
 
+        # 11a. Zero-result rescue chips, right under the status banner. A paid
+        # run that found nothing tells the user the two levers in the status
+        # text; these chips make each lever ONE CLICK instead of a hunt: draw
+        # an example of the object (arms the draw), and, when the server steer
+        # table knows a stronger word for this prompt, a one-click prefill.
+        # Hidden by default; driven by show/hide_auto_zero_assist. The row
+        # never outlives its status: set_auto_status hides it on every call.
+        _za_chip_qss = (
+            "QPushButton { background: rgba(30,136,229,0.10);"
+            " border: 1px solid rgba(30,136,229,0.35); border-radius: 6px;"
+            " color: palette(text); font-size: 12px; text-align: left;"
+            " padding: 6px 10px; }"
+            "QPushButton:hover { background: rgba(30,136,229,0.20); }")
+        self.auto_zero_assist_row = QWidget()
+        _za_col = QVBoxLayout(self.auto_zero_assist_row)
+        _za_col.setContentsMargins(0, 0, 0, 0)
+        _za_col.setSpacing(4)
+        self.auto_zero_example_chip = QPushButton("")
+        self.auto_zero_example_chip.setStyleSheet(_za_chip_qss)
+        self.auto_zero_example_chip.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auto_zero_example_chip.clicked.connect(
+            lambda: self.auto_zero_assist_clicked.emit("draw_example", ""))
+        _za_col.addWidget(self.auto_zero_example_chip)
+        self.auto_zero_synonym_chip = QPushButton("")
+        self.auto_zero_synonym_chip.setStyleSheet(_za_chip_qss)
+        self.auto_zero_synonym_chip.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auto_zero_synonym_chip.clicked.connect(
+            lambda: self.auto_zero_assist_clicked.emit(
+                "synonym", getattr(self, "_auto_zero_synonym", "") or ""))
+        _za_col.addWidget(self.auto_zero_synonym_chip)
+        self._auto_zero_synonym = ""
+        self.auto_zero_assist_row.setVisible(False)
+        _s3_layout.addWidget(self.auto_zero_assist_row)
+
         # 11b. Subscribe link for free users when a run stops on exhausted
         # credits (Moment C). A quiet text-link under the status; the partial
         # results are still kept in review. Hidden by default; shown by

@@ -401,7 +401,15 @@ class SegmentationMCPAPI:
             if error[0] != QgsVectorFileWriter.WriterError.NoError:
                 return {"_error": f"Failed to save GeoPackage: {error[1]}"}
 
-            result_layer = QgsVectorLayer(gpkg_path, layer_name, "ogr")
+            # Open the table by its explicit name (a GPKG table defaults to
+            # the file stem): a bare path leaves the sublayer choice to the
+            # provider, which some GDAL/QGIS builds resolve differently and
+            # then report the freshly written file as invalid.
+            table = os.path.splitext(os.path.basename(gpkg_path))[0]
+            result_layer = QgsVectorLayer(
+                f"{gpkg_path}|layername={table}", layer_name, "ogr")
+            if not result_layer.isValid():
+                result_layer = QgsVectorLayer(gpkg_path, layer_name, "ogr")
             if not result_layer.isValid():
                 return {"_error": "Created GeoPackage but layer is invalid"}
 

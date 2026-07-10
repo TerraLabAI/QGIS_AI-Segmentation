@@ -334,6 +334,14 @@ class AutoZoneMixin:
         tiles that fall outside the drawn shape (no render, no credits, no
         false positives on empty ground).
         """
+        # Repair the raw drawn polygon before any measuring or storage: a
+        # self-intersecting or bowtie outline (easy to draw by hand) breaks area
+        # math and tile culling. makeValid + keep only polygonal parts; fail-open
+        # to the raw polygon when the repair yields nothing usable.
+        from ...core.layer_conventions import repair_polygon
+        repaired = repair_polygon(QgsGeometry(geom))
+        if repaired is not None and not repaired.isEmpty():
+            geom = repaired
         # Wrong-layer guard: a zone with no raster data under it would bill
         # credits for blank tiles, so the commit is checked BEFORE any state
         # is stored (interactive path only; the MCP path sets _auto_zone
@@ -1095,7 +1103,13 @@ class AutoZoneMixin:
                 self._collect_manual_refine_into_review()
         except Exception:
             pass  # nosec B110 -- teardown must never raise mid-signal
-        self._auto_review = None  # NO autosave: the target project is gone
+        # Persist a still-pending (billed) review before dropping it: a paid
+        # detection must survive a project switch too, not just Finish/Exit. The
+        # export falls back to a standalone GeoPackage when the shared project
+        # gpkg is not writable, so it stays safe even as the old project winds
+        # down. Runs after the handoff fold-in above so hand edits are included.
+        self._autosave_pending_auto_review()
+        self._auto_review = None
         self._stop_auto_detection()  # hard teardown; joined later via cancelled
         self._refine_handoff_active = False
         if self.dock_widget and getattr(self.dock_widget, "_refine_handoff", False):

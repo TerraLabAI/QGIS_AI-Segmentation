@@ -213,6 +213,10 @@ class DockAutoStateMixin:
         text = self.auto_prompt_input.text()
         ok, _reason, _suggestion = validate_prompt(text)
         self._auto_prompt_valid = ok
+        # Editing the prompt makes the zero-result chips stale (their labels
+        # quote the old word); the synonym prefill lands here too and cleans
+        # itself up the same way.
+        self.hide_auto_zero_assist()
         self._apply_prompt_hint_on_edit()
         self._update_auto_detect_enabled()
         # Re-seed the object-aware detail default once the typed object settles.
@@ -1121,12 +1125,14 @@ class DockAutoStateMixin:
             except (RuntimeError, AttributeError):
                 pass
 
-    def _format_auto_review_count(self, visible: int, total: int, pct: int) -> str:
+    def _format_auto_review_count(self, visible: int, total: int, pct: int,
+                                  size_bound: bool = False) -> str:
         """ONE compact review readout line, always honest: green check + bold
         shown-count, then a muted tail with what the confidence cutoff hides.
         Sits at the top of the review card (it is the live readout of the
         filters below it). A run that found something NEVER reads as '0
-        detected'."""
+        detected'. ``size_bound`` (only when visible == 0) swaps the reveal hint
+        to the Min size filter when that, not Confidence, is hiding everything."""
         check = '<span style="color:#43a047;">&#10003;</span> '
         muted = 'style="color: rgba(128,128,128,0.95);"'
         if total <= 0:
@@ -1141,10 +1147,14 @@ class DockAutoStateMixin:
                 hidden=total - visible, pct=pct)
         else:
             # No green check at 0 visible: nothing is shown, but the count is
-            # honest and the tail tells the user how to reveal them.
+            # honest and the tail tells the user how to reveal them - naming the
+            # binding filter (Min size vs Confidence) so they pull the right one.
             bold = tr("{n} objects found").format(n=total)
-            tail = tr(
-                "0 shown at {pct}% - lower Confidence to reveal them").format(pct=pct)
+            if size_bound:
+                tail = tr("0 shown - lower the Min size filter to reveal them")
+            else:
+                tail = tr(
+                    "0 shown at {pct}% - lower Confidence to reveal them").format(pct=pct)
             return '<b>{bold}</b> <span {muted}>· {tail}</span>'.format(
                 bold=bold, muted=muted, tail=tail)
         return '{check}<b>{bold}</b> <span {muted}>· {tail}</span>'.format(
@@ -1300,17 +1310,25 @@ class DockAutoStateMixin:
             # preview push), so both counts and the pct are always consistent.
         self._update_auto_detect_enabled()
 
-    def update_auto_review_count(self, visible: int, total: int, pct: int) -> None:
+    def update_auto_review_count(self, visible: int, total: int, pct: int,
+                                 size_bound: bool = False) -> None:
         """Update the two-line review header + the Export button label after a
         live confidence re-filter. ``visible`` = objects shown now, ``total`` =
-        objects the run found, ``pct`` = current confidence cutoff."""
+        objects the run found, ``pct`` = current confidence cutoff. ``size_bound``
+        (only meaningful when visible == 0) means the Min size filter, not
+        Confidence, is what hides the objects, so the guidance names it."""
         try:
             self._auto_review_count_label.setText(
-                self._format_auto_review_count(visible, total, pct))
+                self._format_auto_review_count(visible, total, pct, size_bound))
             self.auto_export_btn.setText(tr("Export {n} polygons").format(n=visible))
             self.auto_export_btn.setEnabled(visible > 0)
-            self.auto_export_btn.setToolTip(
-                tr("Lower Confidence to show objects first.") if visible == 0 else "")
+            if visible == 0:
+                tip = (tr("Lower the Min size filter to show objects first.")
+                       if size_bound else
+                       tr("Lower Confidence to show objects first."))
+            else:
+                tip = ""
+            self.auto_export_btn.setToolTip(tip)
         except (RuntimeError, AttributeError):
             pass
 
@@ -1362,16 +1380,57 @@ class DockAutoStateMixin:
 
     def show_auto_exemplar_nudge(self, object_word: str) -> None:
         """Show the review exemplar nudge. Called by the plugin
-        only for bottom-heavy, no-exemplar runs."""
+        only for bottom-heavy, no-exemplar runs. The label must stay short:
+        QPushButton text does not wrap, so a long tip silently elides."""
         obj = object_word or tr("object")
         self.auto_exemplar_nudge_link.setText(
-            tr("Tip: draw an example of one {object} to catch more of them.").format(
+            "✏️  " + tr("Draw an example of one {object} to find more").format(
                 object=obj))
+        self.auto_exemplar_nudge_link.setToolTip(tr(
+            "Runs with a drawn example return far fewer empty results. "
+            "This re-runs the zone with the example draw armed (new credits)."))
         self.auto_exemplar_nudge_link.setVisible(True)
 
     def hide_auto_exemplar_nudge(self) -> None:
         try:
             self.auto_exemplar_nudge_link.setVisible(False)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def show_auto_zero_assist(self, object_word: str) -> None:
+        """Show the zero-result rescue chips under the status banner.
+
+        Called by the plugin right after the zero-detection status is posted
+        (never on the network-failure variant, where the levers do not apply).
+        The example chip always shows; the synonym chip only when the server
+        steer table knows a stronger word for this prompt, so the suggestion
+        stays server-tunable with no plugin release. Chip labels must stay
+        short: QPushButton text does not wrap."""
+        obj = (object_word or "").strip()
+        self.auto_zero_example_chip.setText(
+            "✏️  " + tr("Draw an example of one {object}").format(
+                object=obj or tr("object")))
+        self.auto_zero_example_chip.setToolTip(tr(
+            "Outline ONE example of the object on the map, then run again. "
+            "Runs with a drawn example return far fewer empty results."))
+        suggestion = ""
+        if obj:
+            try:
+                ok, reason, extra = validate_prompt(obj)
+                if ok and reason == "steer" and extra:
+                    suggestion = str(extra)
+            except Exception:  # nosec B110 -- the chip is best-effort rescue UI
+                suggestion = ""
+        self._auto_zero_synonym = suggestion
+        if suggestion:
+            self.auto_zero_synonym_chip.setText(
+                "💡  " + tr('Try "{word}" instead').format(word=suggestion))
+        self.auto_zero_synonym_chip.setVisible(bool(suggestion))
+        self.auto_zero_assist_row.setVisible(True)
+
+    def hide_auto_zero_assist(self) -> None:
+        try:
+            self.auto_zero_assist_row.setVisible(False)
         except (RuntimeError, AttributeError):
             pass
 
@@ -1523,6 +1582,7 @@ class DockAutoStateMixin:
 
     def set_auto_tile_progress(self, current: int, total: int) -> None:
         self.auto_status_banner.setVisible(False)
+        self.hide_auto_zero_assist()
         # Remembered so a cleared queue state can restore the live tile count.
         self._auto_progress_pair = (current, total)
         self._refresh_auto_progress_readout()
@@ -1661,6 +1721,9 @@ class DockAutoStateMixin:
         """Single surface for run feedback. kind: 'idle', 'progress', 'info',
         'error'. Exactly one of progress bar / status banner is visible at a
         time; 'idle' hides both and clears any stale text."""
+        # Any new status replaces the context the zero-result chips belonged
+        # to; the plugin re-shows them explicitly after the zero status.
+        self.hide_auto_zero_assist()
         if kind == "progress":
             self.auto_status_banner.setVisible(False)
             return  # set_auto_tile_progress drives the bar itself

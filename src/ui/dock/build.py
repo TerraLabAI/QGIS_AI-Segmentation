@@ -118,14 +118,17 @@ class DockBuildMixin:
         self._setup_activation_section()
         self._setup_segmentation_section()
         self._setup_automatic_page()
-        self.main_layout.addStretch()
-        # Both bottom nudges live here, AFTER the stretch, so they sit pinned at
-        # the bottom of the dock just above the footer CTAs instead of floating
-        # under the Start button. They are mutually exclusive by mode: the
-        # Try-Automatic band shows only on the Manual Start view
-        # (_update_try_automatic_hint_visibility), the first-steps guide band only
-        # on the Automatic Start step (_update_auto_tutorial_banner_visibility).
+        # The Manual Try-Automatic nudge sits directly under the Manual content
+        # (BEFORE the stretch) so it clusters with the Start view instead of
+        # leaving a void above it. It stays a main_layout item (NOT moved into
+        # start_container) so its show/hide keeps running through
+        # _update_try_automatic_hint_visibility, exactly as set up on 2026-07-04;
+        # only its position moved from below the stretch to above it.
         self.main_layout.addWidget(self.try_automatic_hint)
+        self.main_layout.addStretch()
+        # The Automatic first-steps guide band stays pinned to the dock bottom,
+        # just above the footer CTAs, on the Automatic Start step
+        # (_update_auto_tutorial_banner_visibility).
         self.main_layout.addWidget(self.auto_tutorial_banner)
         self._setup_update_notification()
         self._setup_about_section()
@@ -649,7 +652,14 @@ class DockBuildMixin:
             on_demo=self._on_manual_try_example,
         )
         self.no_rasters_widget.setVisible(False)
-        layout.addWidget(self.no_rasters_widget, 1)
+        # No layout stretch factor here (unlike the Automatic page, whose hero
+        # lives inside a QStackedWidget that absorbs the slack). A stretch factor
+        # counts even while the widget is hidden, so it would make this FLAT
+        # seg_widget layout report itself as vertically expanding on the Start
+        # view and inflate the bold "Select a raster" label to fill the void.
+        # The hero wrapper is Expanding on its own, so it still fills the empty
+        # state when it becomes visible.
+        layout.addWidget(self.no_rasters_widget)
 
         # Dynamic instruction label - styled as a card (slightly darker gray than refine panel)
         self.instructions_label = QLabel("")
@@ -757,13 +767,14 @@ class DockBuildMixin:
         self.manual_last_run_recap.setVisible(False)
         start_layout.addWidget(self.manual_last_run_recap)
 
-        # Cross-sell nudge: a compact dismissible blue band pointing
-        # at Automatic mode. Built here (with the rest of the Manual page) but NOT
-        # added to start_container: it is pinned to the very BOTTOM of the dock,
-        # just above the footer CTAs, via main_layout after the stretch.
-        # Its visibility is driven by
-        # _update_try_automatic_hint_visibility so it only shows on the Manual
-        # Start view, never during a session or in Automatic mode.
+        # Cross-sell nudge: a compact dismissible blue band pointing at Automatic
+        # mode. Built here with the rest of the Manual page but added to
+        # main_layout in _setup_ui (NOT to start_container), just under the
+        # Manual content and above the stretch, so it clusters with the Start
+        # view without a void above it. Because it lives outside start_container
+        # it is not auto-hidden by session/mode state, so its visibility is
+        # driven explicitly by _update_try_automatic_hint_visibility (Manual
+        # Start view only, never during a session or in Automatic mode).
         self.try_automatic_hint = DismissibleHint(
             HINT_TRY_AUTOMATIC,
             tr("New: Automatic mode finds every object in a zone at once."),

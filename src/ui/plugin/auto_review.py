@@ -314,7 +314,12 @@ class AutoReviewMixin:
                 features_to_add.append(feat)
             if features_to_add:
                 _add_features_fast(pr, features_to_add)
-            layer.updateExtents()
+            # updateExtents rescans every feature (O(N) on a memory provider):
+            # only the accurate release pass needs it (zoom-to-layer); the 40ms
+            # drag preview renders by viewport via the spatial index, so the
+            # stale cached extent is invisible mid-drag.
+            if repair:
+                layer.updateExtents()
             # triggerRepaint alone schedules the canvas update; the extra
             # mapCanvas().refresh() forced a full re-render of EVERY layer on
             # each (debounced) slider tick, which is what made review sliders lag.
@@ -355,31 +360,87 @@ class AutoReviewMixin:
         try:
             total = len(self._auto_objects)
             pct = int(round((self._auto_confidence or 0.0) * 100))
-            self.dock_widget.update_auto_review_count(visible, total, pct)
+            # When nothing is visible, tell the user which filter is actually
+            # hiding the objects so they reach for the right lever: the Min size
+            # filter can hide everything even when Confidence would show them.
+            size_bound = (visible == 0 and total > 0
+                          and self._review_zero_is_size_bound())
+            self.dock_widget.update_auto_review_count(
+                visible, total, pct, size_bound=size_bound)
         except (RuntimeError, AttributeError):
             pass
+
+    def _review_zero_is_size_bound(self) -> bool:
+        """With nothing visible, decide whether the Min size filter (not
+        Confidence) is what hides the objects: True when at least one found
+        object scores at/above the current Confidence cutoff (so Confidence is
+        NOT the binding filter and the size gate must be), so the header can
+        point at the lever that will actually reveal them."""
+        conf = self._auto_confidence or 0.0
+        removed = getattr(self, "_auto_manual_removed", None) or set()
+        for det_idx, (base, score, _area) in enumerate(self._auto_objects):
+            if det_idx in removed or base is None or base.isEmpty():
+                continue
+            if score >= conf:
+                return True
+        return False
 
     def _current_visible_review_count(self) -> int:
         """Objects currently shown in the review (the last pushed visible set)."""
         review = self._auto_review or {}
         return len(review.get("geoms", []))
 
-    def _export_auto_review(self) -> tuple[str | None, int] | None:
+    def _full_found_review_geoms(self) -> tuple[list, list | None]:
+        """The review's found objects with the Confidence gate dropped but the
+        current size + shape refine kept. The safety-net exit paths export this
+        so a billed detection hidden ONLY by the Confidence cutoff is never
+        lost. Hand-edited (protected) objects are merged back in, mirroring the
+        confidence reslice, so a Manual-refine detour survives the save too."""
+        review = self._auto_review or {}
+        pixel_size = review.get("pixel_size", 1.0) or 1.0
+        params = dict(self._widget_review_params())
+        params["conf"] = 0.0  # drop only the confidence gate; keep size + shape
+        geoms, scores = self._compute_visible_objects(
+            params, pixel_size, with_scores=True)
+        if self._auto_protected_geoms:
+            protected = self._auto_protected_geoms
+            kept = [g for g in geoms if not self._geom_overlaps_any(g, protected)]
+            geoms = self._dissolve_overlapping(kept + list(protected))
+            scores = None  # dissolve rewrote geoms; parallel scores no longer align
+        return geoms, scores
+
+    def _export_auto_review(self, include_hidden: bool = False
+                            ) -> tuple[str | None, int] | None:
         """Apply the refine settings to the pending review geometries, export
         them to a GeoPackage layer, clear the review state, and return
         (layer_name, polygon_count). Returns None when there is nothing to
         export. Shared by the interactive Export button and the headless MCP
         path so both commit the review identically.
+
+        ``include_hidden`` is set ONLY on the safety-net exit paths (teardown
+        autosave, the review Exit dialog's Save): a paid detection hidden by the
+        Confidence cutoff must not be silently lost, so when the visible set is
+        smaller than the full found set the FULL set is exported instead
+        (confidence gate dropped, the user's size + shape refine kept). The
+        normal Finish button leaves it False and exports exactly the visible set
+        the user sees.
         """
         review = self._auto_review
         if not review:
             return None
-        # Export EXACTLY the current VISIBLE set (review["geoms"] is already the
-        # confidence + size filtered, shape-refined objects), so what the user
-        # sees on the map is what gets saved. Copy each geom so the export's
-        # makeValid never mutates the stored review geometry.
+        # Normally export EXACTLY the current VISIBLE set (review["geoms"] is
+        # already the confidence + size filtered, shape-refined objects), so
+        # what the user sees on the map is what gets saved. The safety-net exit
+        # paths (include_hidden) instead export the full found set when the
+        # cutoff is hiding billed detections. Copy each geom below so the
+        # export's makeValid never mutates the stored review geometry.
         geoms = review["geoms"]
         scores = review.get("scores")
+        if include_hidden:
+            visible_n = sum(1 for g in geoms if g is not None and not g.isEmpty())
+            full_geoms, full_scores = self._full_found_review_geoms()
+            if len(full_geoms) > visible_n:
+                geoms, scores = full_geoms, full_scores
         if scores is not None and len(scores) != len(geoms):
             scores = None  # e.g. after a protected-geoms dissolve
         refined, refined_scores = [], []
@@ -423,6 +484,8 @@ class AutoReviewMixin:
                 display_mode=self._auto_display_mode,
                 refined_in_manual=getattr(self, "_auto_refined_in_manual", False),
             )
+            if refined:
+                telemetry.track_first_generation_milestone(mode="auto")
         except Exception:
             pass  # nosec B110
         self._auto_review = None
@@ -550,10 +613,22 @@ class AutoReviewMixin:
         visible = self._current_visible_review_count()
         total = len(self._auto_objects)
         if total > 0 and not self._auto_headless_run:
-            label = (tr("Save {visible} detections to a layer before leaving?")
-                     .format(visible=visible) if visible > 0 else
-                     tr("Save {total} detections (currently hidden by Confidence) "
-                        "to a layer before leaving?").format(total=total))
+            # Save exports the FULL found set (Confidence gate dropped, size +
+            # shape kept) whenever it is larger than the visible set, so a billed
+            # detection hidden by Confidence is never lost. The label must state
+            # the count that will ACTUALLY be saved, not the smaller visible one.
+            full_geoms, _full_scores = self._full_found_review_geoms()
+            save_count = max(len(full_geoms), visible)
+            hidden = save_count - visible
+            if hidden > 0:
+                label = tr(
+                    "Save {save} detections ({hidden} currently hidden by "
+                    "Confidence) to a layer before leaving?").format(
+                        save=save_count, hidden=hidden)
+            else:
+                label = tr(
+                    "Save {save} detections to a layer before leaving?").format(
+                        save=save_count)
             box = QMessageBox(self.iface.mainWindow())
             box.setWindowTitle(tr("Keep your detections?"))
             box.setText(label)
@@ -565,7 +640,10 @@ class AutoReviewMixin:
             box.exec()
             clicked = box.clickedButton()
             if clicked is save_btn:
-                self._export_auto_review()          # existing export path
+                # Safety net: the dialog offered to save detections hidden by
+                # Confidence, so export the FULL found set, not the (possibly
+                # empty) visible one, or the promise silently drops paid work.
+                self._export_auto_review(include_hidden=True)
                 self._reset_auto_for_new_run()
                 return
             if clicked is not drop_btn:

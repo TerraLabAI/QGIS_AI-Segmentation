@@ -129,6 +129,7 @@ class AISegmentationDockWidget(
     auto_add_exemplar_requested = pyqtSignal(int)   # draw an example (1 = positive, 0 = exclude)
     auto_exemplar_retry_requested = pyqtSignal()    # exemplar nudge: retry then arm the example draw
     auto_exemplar_remove_requested = pyqtSignal(str)  # user clicked x on an exemplar chip (id)
+    auto_zero_assist_clicked = pyqtSignal(str, str)  # zero-result rescue chip (kind, to_prompt)
     auto_escape_pressed = pyqtSignal()         # Escape in the Automatic flow (exit / cancel draw)
     auto_enter_pressed = pyqtSignal()          # Enter in the Automatic flow (detect / export review)
 

@@ -408,13 +408,18 @@ def download_python_standalone(
 
         # Try each URL variant (stripped first, plain as fallback), each
         # with up to 3 attempts and exponential backoff. QGIS network
-        # manager is used so QGIS proxy settings are respected.
+        # manager is used so QGIS proxy settings are respected. A variant is
+        # abandoned for the next one BOTH when it 404s and when it downloads
+        # but its interpreter fails the post-extract self-check: a stripped
+        # archive can be published yet unable to create a venv, and only the
+        # plain build recovers that machine.
         max_retries = 3
-        err = None
-        error_msg = ""
-        request = None
+        last_error = ""
         for url_idx, url in enumerate(urls):
             qurl = QUrl(url)
+            err = None
+            error_msg = ""
+            request = None
             for attempt in range(max_retries):
                 if cancel_check and cancel_check():
                     return False, "Download cancelled"
@@ -445,116 +450,121 @@ def download_python_standalone(
                             5, f"Network error, retrying in {wait}s...")
                     time.sleep(wait)
 
-            if err == QgsBlockingNetworkRequest.ErrorCode.NoError:
-                break
-
-            is_404 = "404" in error_msg or "Not Found" in error_msg
-            if is_404:
-                if url_idx + 1 < len(urls):
-                    _log(
-                        f"Archive variant not published ({url}), "
-                        "trying the fallback variant...",
-                        Qgis.MessageLevel.Warning)
-                    continue
-                error_msg = (
-                    f"Python {python_version} not available for this platform. "
-                    f"URL: {url}"
-                )
+            if err != QgsBlockingNetworkRequest.ErrorCode.NoError:
+                is_404 = "404" in error_msg or "Not Found" in error_msg
+                if is_404:
+                    if url_idx + 1 < len(urls):
+                        _log(
+                            f"Archive variant not published ({url}), "
+                            "trying the fallback variant...",
+                            Qgis.MessageLevel.Warning)
+                        continue
+                    error_msg = (
+                        f"Python {python_version} not available for this platform. "
+                        f"URL: {url}"
+                    )
+                    _log(error_msg, Qgis.MessageLevel.Critical)
+                    return False, error_msg
+                error_msg = f"Download failed: {error_msg}"
                 _log(error_msg, Qgis.MessageLevel.Critical)
                 return False, error_msg
 
-        if err != QgsBlockingNetworkRequest.ErrorCode.NoError:
-            error_msg = f"Download failed: {error_msg}"
-            _log(error_msg, Qgis.MessageLevel.Critical)
-            return False, error_msg
+            if cancel_check and cancel_check():
+                return False, "Download cancelled"
 
-        if cancel_check and cancel_check():
-            return False, "Download cancelled"
+            reply = request.reply()
+            content = reply.content()
 
-        reply = request.reply()
-        content = reply.content()
+            content_size = len(content)
+            if content_size == 0:
+                return False, "Download failed: received empty file (0 bytes)"
+            min_expected = 10 * 1024 * 1024  # 10 MB
+            if content_size < min_expected:
+                _log(
+                    f"Download suspiciously small: {content_size} bytes (expected >10 MB)", Qgis.MessageLevel.Warning)
+                return False, (
+                    f"Download failed: file too small ({content_size / (1024 * 1024):.1f} MB). "
+                    "A firewall or proxy may be blocking the download."
+                )
 
-        content_size = len(content)
-        if content_size == 0:
-            return False, "Download failed: received empty file (0 bytes)"
-        min_expected = 10 * 1024 * 1024  # 10 MB
-        if content_size < min_expected:
-            _log(
-                f"Download suspiciously small: {content_size} bytes (expected >10 MB)", Qgis.MessageLevel.Warning)
-            return False, (
-                f"Download failed: file too small ({content_size / (1024 * 1024):.1f} MB). "
-                "A firewall or proxy may be blocking the download."
-            )
-
-        if progress_callback:
-            total_mb = content_size / (1024 * 1024)
-            progress_callback(50, f"Downloaded {total_mb:.1f} MB, saving...")
-
-        # Write content to temp file
-        with open(temp_path, "wb") as f:
-            f.write(content.data())
-
-        # Validate archive magic bytes (catch proxy/firewall HTML pages)
-        with open(temp_path, "rb") as f:
-            magic = f.read(4)
-        is_gzip = magic[:2] == b"\x1f\x8b"
-        is_zip = magic[:2] == b"PK"
-        if not is_gzip and not is_zip:
-            try:
-                preview_text = bytes(content.data()[:200]).decode(
-                    "utf-8", errors="replace")[:150]
-            except Exception:
-                preview_text = "(binary data)"
-            return False, (
-                "Download failed: file is not a valid archive. "
-                "A firewall or proxy may have returned an error page. "
-                f"Preview: {preview_text}"
-            )
-
-        # Cryptographically verify the payload BEFORE extracting/executing it.
-        asset_name = url.rsplit("/", 1)[-1]
-        ok, verify_msg = _verify_python_payload(temp_path, asset_name)
-        if not ok:
-            _log(verify_msg, Qgis.MessageLevel.Warning)
-            return False, verify_msg
-
-        _log(f"Download complete ({content_size} bytes), extracting...", Qgis.MessageLevel.Info)
-
-        if progress_callback:
-            progress_callback(55, "Extracting Python...")
-
-        # Remove existing standalone dir if it exists
-        if os.path.exists(STANDALONE_DIR):
-            shutil.rmtree(STANDALONE_DIR)
-
-        os.makedirs(STANDALONE_DIR, exist_ok=True)
-
-        # Extract archive with path traversal protection
-        if temp_path.endswith(".tar.gz") or temp_path.endswith(".tgz"):
-            with tarfile.open(temp_path, "r:gz") as tar:
-                _safe_extract_tar(tar, STANDALONE_DIR)
-        else:
-            with zipfile.ZipFile(temp_path, "r") as z:
-                _safe_extract_zip(z, STANDALONE_DIR)
-
-        # Create python3 symlink if missing (archive symlinks skipped for safety)
-        if sys.platform != "win32":
-            _create_python_symlinks(os.path.join(STANDALONE_DIR, "python"))
-
-        if progress_callback:
-            progress_callback(80, "Verifying Python installation...")
-
-        # Verify installation
-        success, verify_msg = verify_standalone_python()
-
-        if success:
             if progress_callback:
-                progress_callback(100, f"✓ Python {python_version} installed")
-            _log("Python standalone installed successfully", Qgis.MessageLevel.Success)
-            return True, f"Python {python_version} installed successfully"
-        # Clean up broken installation so _get_system_python() won't find it
-        remove_standalone_python()
-        return False, f"Verification failed: {verify_msg}"
+                total_mb = content_size / (1024 * 1024)
+                progress_callback(50, f"Downloaded {total_mb:.1f} MB, saving...")
+
+            # Write content to temp file
+            with open(temp_path, "wb") as f:
+                f.write(content.data())
+
+            # Validate archive magic bytes (catch proxy/firewall HTML pages)
+            with open(temp_path, "rb") as f:
+                magic = f.read(4)
+            is_gzip = magic[:2] == b"\x1f\x8b"
+            is_zip = magic[:2] == b"PK"
+            if not is_gzip and not is_zip:
+                try:
+                    preview_text = bytes(content.data()[:200]).decode(
+                        "utf-8", errors="replace")[:150]
+                except Exception:
+                    preview_text = "(binary data)"
+                return False, (
+                    "Download failed: file is not a valid archive. "
+                    "A firewall or proxy may have returned an error page. "
+                    f"Preview: {preview_text}"
+                )
+
+            # Cryptographically verify the payload BEFORE extracting/executing it.
+            asset_name = url.rsplit("/", 1)[-1]
+            ok, verify_msg = _verify_python_payload(temp_path, asset_name)
+            if not ok:
+                _log(verify_msg, Qgis.MessageLevel.Warning)
+                return False, verify_msg
+
+            _log(f"Download complete ({content_size} bytes), extracting...", Qgis.MessageLevel.Info)
+
+            if progress_callback:
+                progress_callback(55, "Extracting Python...")
+
+            # Remove existing standalone dir if it exists
+            if os.path.exists(STANDALONE_DIR):
+                shutil.rmtree(STANDALONE_DIR)
+
+            os.makedirs(STANDALONE_DIR, exist_ok=True)
+
+            # Extract archive with path traversal protection
+            if temp_path.endswith(".tar.gz") or temp_path.endswith(".tgz"):
+                with tarfile.open(temp_path, "r:gz") as tar:
+                    _safe_extract_tar(tar, STANDALONE_DIR)
+            else:
+                with zipfile.ZipFile(temp_path, "r") as z:
+                    _safe_extract_zip(z, STANDALONE_DIR)
+
+            # Create python3 symlink if missing (archive symlinks skipped for safety)
+            if sys.platform != "win32":
+                _create_python_symlinks(os.path.join(STANDALONE_DIR, "python"))
+
+            if progress_callback:
+                progress_callback(80, "Verifying Python installation...")
+
+            # Verify installation
+            success, verify_msg = verify_standalone_python()
+
+            if success:
+                if progress_callback:
+                    progress_callback(100, f"✓ Python {python_version} installed")
+                _log("Python standalone installed successfully", Qgis.MessageLevel.Success)
+                return True, f"Python {python_version} installed successfully"
+            # Clean up broken installation so _get_system_python() won't find it
+            remove_standalone_python()
+            last_error = f"Verification failed: {verify_msg}"
+            if url_idx + 1 < len(urls):
+                _log(
+                    f"Extracted interpreter failed its self-check ({verify_msg}); "
+                    "trying the fallback archive variant...",
+                    Qgis.MessageLevel.Warning)
+                continue
+            return False, last_error
+
+        return False, last_error or "Download failed"
 
     except InterruptedError:
         return False, "Download cancelled"

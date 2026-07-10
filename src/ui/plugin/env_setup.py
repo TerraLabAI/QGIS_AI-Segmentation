@@ -460,6 +460,17 @@ class EnvSetupMixin:
             self._last_key_validation_unix = 0.0
             if self.dock_widget:
                 self.dock_widget.set_activated_state(False)
+            # A forced sign-out is a churn-grade moment (device limit hit,
+            # subscription lapsed, key revoked): make it visible post-hoc.
+            try:
+                from ...core import telemetry
+                telemetry.track_plugin_error(
+                    stage="activate",
+                    error_code=(code or "key_rejected").lower(),
+                    message="stored key rejected on revalidation",
+                )
+            except Exception:
+                pass  # nosec B110
             return
         self._notify_connection_issue(code, message)
 
@@ -507,8 +518,24 @@ class EnvSetupMixin:
         self._pairing_worker.pairing_failed.connect(self._on_pairing_failed)
         self._pairing_worker.pairing_timeout.connect(self._on_pairing_timeout)
         QgsApplication.taskManager().addTask(self._pairing_worker)
+        import time as _time
+        self._pairing_t0 = _time.monotonic()
+        try:
+            from ...core import telemetry
+            telemetry.track_pairing_started()
+        except Exception:
+            pass  # nosec B110
         QgsMessageLog.logMessage(
             "Pairing started", "AI Segmentation", level=Qgis.MessageLevel.Info)
+
+    def _pairing_elapsed_ms(self) -> int | None:
+        """Elapsed ms since the current browser sign-in poll started."""
+        try:
+            import time as _time
+            t0 = getattr(self, "_pairing_t0", None)
+            return int((_time.monotonic() - t0) * 1000) if t0 else None
+        except Exception:
+            return None
 
     def _on_pairing_succeeded(self, key: str):
         from ...core.activation_manager import save_auth_token
@@ -533,7 +560,7 @@ class EnvSetupMixin:
             pass
         try:
             from ...core.telemetry import track_plugin_activated
-            track_plugin_activated()
+            track_plugin_activated(duration_ms=self._pairing_elapsed_ms())
         except Exception:  # nosec B110
             pass
         QgsMessageLog.logMessage(
@@ -543,6 +570,14 @@ class EnvSetupMixin:
         if self.dock_widget:
             self.dock_widget.show_pairing_idle()
             self.dock_widget.set_activation_message(message, is_error=True)
+        try:
+            from ...core import telemetry
+            telemetry.track_pairing_failed(
+                error_code=code or "unknown",
+                duration_ms=self._pairing_elapsed_ms(),
+            )
+        except Exception:
+            pass  # nosec B110
         QgsMessageLog.logMessage(
             f"Pairing failed ({code})", "AI Segmentation",
             level=Qgis.MessageLevel.Warning)
@@ -554,6 +589,14 @@ class EnvSetupMixin:
                 tr("Sign-in timed out. Click Connect to try again."),
                 is_error=True,
             )
+        try:
+            from ...core import telemetry
+            telemetry.track_pairing_failed(
+                error_code="timeout",
+                duration_ms=self._pairing_elapsed_ms(),
+            )
+        except Exception:
+            pass  # nosec B110
         QgsMessageLog.logMessage(
             "Pairing timed out", "AI Segmentation", level=Qgis.MessageLevel.Info)
 
@@ -621,6 +664,11 @@ class EnvSetupMixin:
 
     def _on_cancel_pairing(self, code: str = ""):
         self._cancel_pairing_worker()
+        try:
+            from ...core import telemetry
+            telemetry.track_pairing_cancelled(duration_ms=self._pairing_elapsed_ms())
+        except Exception:
+            pass  # nosec B110
         if code:
             # Retire the code server-side so a later Confirm in the browser
             # shows "expired" instead of binding a key nobody is polling for.
@@ -815,16 +863,9 @@ class EnvSetupMixin:
             return
 
         if success:
-            try:
-                import time as _time
-                from ...core import telemetry
-                t0 = getattr(self, "_install_t0", 0.0)
-                telemetry.track_install_completed(
-                    duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None,
-                    python_minor=sys.version_info.minor,
-                )
-            except Exception:
-                pass  # nosec B110
+            # install_completed fires in _on_verify_finished: a venv that fails
+            # verification (broken torch DLL) is a FAILED install to the user,
+            # so counting it completed here skewed the install funnel.
             # Run verification + device detection off main thread
             self.dock_widget.set_install_progress(80, tr("Verifying installation..."))
             self._verify_worker = VerifyWorker()
@@ -841,7 +882,13 @@ class EnvSetupMixin:
             error_title = tr("Installation Failed")
             error_code = "installation_failed"
             msg_lower = message.lower() if message else ""
-            if any(p in msg_lower for p in [
+            from ...core.pip_diagnostics import is_disk_full
+            if "not enough free disk space" in msg_lower or is_disk_full(msg_lower):
+                # Preflight or mid-install disk exhaustion: the message already
+                # carries the free-up / AI_SEGMENTATION_CACHE_DIR guidance.
+                error_title = tr("Not Enough Disk Space")
+                error_code = "disk_space"
+            elif any(p in msg_lower for p in [
                 "ssl", "certificate verify", "sslerror",
                 "unable to get local issuer",
                 # uv (rustls) wording, no "ssl" substring anywhere
@@ -914,6 +961,21 @@ class EnvSetupMixin:
         if not self.dock_widget:
             return
         if is_valid:
+            # The install only counts as completed once the venv VERIFIES:
+            # firing at deps-install success counted broken-torch installs
+            # (DLL blocked) as completed and understated install_failed.
+            try:
+                import time as _time
+                from ...core import telemetry
+                t0 = getattr(self, "_install_t0", 0.0)
+                if t0:
+                    telemetry.track_install_completed(
+                        duration_ms=int((_time.monotonic() - t0) * 1000),
+                        python_minor=sys.version_info.minor,
+                    )
+                    self._install_t0 = 0.0
+            except Exception:
+                pass  # nosec B110
             self.dock_widget.set_dependency_status(True, "✓ " + tr("Dependencies ready"))
             if message and not message.startswith("device_error"):
                 QgsMessageLog.logMessage(
@@ -939,17 +1001,49 @@ class EnvSetupMixin:
             self.dock_widget.set_dependency_status(
                 False, "{} {}".format(tr("Verification failed:"), message))
             self._abort_refine_install()
+            # A broken native module (torch DLL blocked by a missing VC++
+            # runtime) is the dominant verify failure: route it to the
+            # actionable fix-it steps instead of a dead-end generic dialog.
+            from ...core.pip_diagnostics import get_vcpp_help, is_dll_init_error
+            error_title = tr("Verification Failed")
+            error_code = "verification_failed"
+            body = "{}\n{}".format(
+                tr("Virtual environment was created but verification failed:"),
+                message)
+            low = (message or "").lower()
+            if is_dll_init_error(low) or "required dll failed to initialize" in low:
+                error_title = tr("A Component Failed to Load")
+                error_code = "dll_init_failed"
+                body = "{}\n\n{}".format(message, get_vcpp_help())
             show_error_report(
                 self.iface.mainWindow(),
-                tr("Verification Failed"),
-                "{}\n{}".format(
-                    tr("Virtual environment was created but verification failed:"),
-                    message),
-                error_code="verification_failed")
+                error_title,
+                body,
+                error_code=error_code)
+            try:
+                import time as _time
+                from ...core import telemetry
+                t0 = getattr(self, "_install_t0", 0.0)
+                telemetry.track_install_failed(
+                    error_class=error_code,
+                    duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None,
+                    python_minor=sys.version_info.minor,
+                )
+            except Exception:
+                pass  # nosec B110
 
     def _on_cancel_install(self):
         if self.deps_install_worker and self.deps_install_worker.isRunning():
             self.deps_install_worker.cancel()
+            try:
+                import time as _time
+
+                from ...core import telemetry
+                t0 = getattr(self, "_install_t0", 0.0)
+                telemetry.track_install_cancelled(
+                    duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None)
+            except Exception:
+                pass  # nosec B110
             QgsMessageLog.logMessage(
                 "Installation cancelled by user",
                 "AI Segmentation",
@@ -974,6 +1068,8 @@ class EnvSetupMixin:
 
         self.dock_widget.set_install_progress(80, tr("Downloading AI model..."))
         try:
+            import time as _time
+            self._model_download_t0 = _time.monotonic()
             self.download_worker = DownloadWorker()
             self.download_worker.progress.connect(self._on_download_progress)
             self.download_worker.done.connect(self._on_download_finished)
@@ -999,10 +1095,14 @@ class EnvSetupMixin:
             return
         if success:
             try:
+                import time as _time
+
                 from ...core import telemetry
                 from ...core.model_config import USE_SAM2
+                t0 = getattr(self, "_model_download_t0", 0.0)
                 telemetry.track_model_download_completed(
-                    model="sam2" if USE_SAM2 else "sam1")
+                    model="sam2" if USE_SAM2 else "sam1",
+                    duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None)
             except Exception:
                 pass  # nosec B110
             self.dock_widget.set_install_progress(95, tr("Loading AI model..."))

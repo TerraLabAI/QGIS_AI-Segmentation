@@ -710,7 +710,9 @@ def _iou(g1: QgsGeometry, g2: QgsGeometry) -> float:
     return _overlap_metrics(g1, g2)[0]
 
 
-def _ios_and_span(g1: QgsGeometry, g2: QgsGeometry) -> tuple[float, float]:
+def _ios_and_span(g1: QgsGeometry, g2: QgsGeometry,
+                  a1: float | None = None,
+                  a2: float | None = None) -> tuple[float, float]:
     """Return (IoS, overlap_span) for two polygons.
 
     IoS = intersection area over the SMALLER polygon's area (see _overlap_metrics).
@@ -719,7 +721,9 @@ def _ios_and_span(g1: QgsGeometry, g2: QgsGeometry) -> tuple[float, float]:
     dimension runs the length of the object along the seam, so a large
     overlap_span (comparable to the tile-overlap width) is the tell-tale of a
     seam split even when the overlap AREA (IoS) is tiny relative to a big object.
-    Both are 0 on empty/degenerate input.
+    Both are 0 on empty/degenerate input. ``a1``/``a2`` let a caller that
+    already computed the polygon areas skip the O(vertices) recompute
+    (QgsGeometry.area() is not cached).
     """
     if g1 is None or g2 is None or g1.isEmpty() or g2.isEmpty():
         return 0.0, 0.0
@@ -730,7 +734,10 @@ def _ios_and_span(g1: QgsGeometry, g2: QgsGeometry) -> tuple[float, float]:
         inter_area = inter.area()
         if inter_area <= 0.0:
             return 0.0, 0.0
-        a1, a2 = g1.area(), g2.area()
+        if a1 is None:
+            a1 = g1.area()
+        if a2 is None:
+            a2 = g2.area()
         min_area = a1 if a1 < a2 else a2
         ios = inter_area / min_area if min_area > 0.0 else 0.0
         bb = inter.boundingBox()
@@ -1279,7 +1286,7 @@ class IncrementalMerger:
             min_area = cand_area if cand_area < keeper_area else keeper_area
             if min_area <= 0.0 or (iw * ih) / min_area < min_threshold:
                 continue
-            ios, span = _ios_and_span(geom, keeper)
+            ios, span = _ios_and_span(geom, keeper, a1=cand_area, a2=keeper_area)
             if ios >= threshold:
                 matches.append(fid)
                 continue

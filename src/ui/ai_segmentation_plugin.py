@@ -346,6 +346,13 @@ class AISegmentationPlugin(
         self._auto_live_refine_cache: dict = {}
         self._auto_live_refine_px: float = -1.0
         self._auto_live_measurer = None  # QgsDistanceArea | None
+        self._auto_live_params = None  # per-run memo of the review preset
+        # Live preview provider mapping: merger keeper fid -> (provider_fid,
+        # stamp, is_full, score). Lets the live repaint update the selection
+        # layer incrementally (add/change/delete only the delta) instead of
+        # truncating + re-adding every feature. Reset per run via
+        # _stop_auto_live_pump; the layer is recreated fresh each run.
+        self._auto_live_fid_map: dict = {}
         # End-of-run refine is also cooperative: refining hundreds of objects in
         # one synchronous pass froze QGIS at the very end of a run. _auto_finalize
         # _state holds the in-flight batch; _gen invalidates a stale step if a new
@@ -743,6 +750,7 @@ class AISegmentationPlugin(
                 (self.dock_widget.auto_add_exemplar_requested, self._on_add_exemplar_requested),
                 (self.dock_widget.auto_exemplar_retry_requested, self._on_auto_exemplar_retry_clicked),
                 (self.dock_widget.auto_exemplar_remove_requested, self._on_exemplar_remove_requested),
+                (self.dock_widget.auto_zero_assist_clicked, self._on_auto_zero_assist_clicked),
                 (self.dock_widget.auto_escape_pressed, self._on_auto_escape_shortcut),
                 (self.dock_widget.auto_enter_pressed, self._route_enter),
                 (self.dock_widget.auto_review_confidence_changed, self._on_auto_review_confidence_changed),
@@ -1027,6 +1035,7 @@ class AISegmentationPlugin(
         self.dock_widget.auto_exemplar_retry_requested.connect(
             self._on_auto_exemplar_retry_clicked)
         self.dock_widget.auto_exemplar_remove_requested.connect(self._on_exemplar_remove_requested)
+        self.dock_widget.auto_zero_assist_clicked.connect(self._on_auto_zero_assist_clicked)
         self.dock_widget.auto_escape_pressed.connect(self._on_auto_escape_shortcut)
         self.dock_widget.auto_enter_pressed.connect(self._route_enter)
         self.dock_widget.auto_review_confidence_changed.connect(

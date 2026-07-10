@@ -75,10 +75,12 @@ def build_no_imagery_hero(on_demo, *, glyph: str = "🗺️"):
     structurally instead of in words.
 
     Layout: a transparent, vertically-EXPANDING wrapper holds the compact
-    blue-tinted card at the TOP with a single stretch below it, so wherever it
-    is dropped (with stretch factor 1) the card pins to the top and the surplus
-    falls below - the plugin reads top-to-bottom, so the empty state starts at
-    the top too, never centered or bottom-drifting. Caller wires visibility +
+    blue-tinted card at the TOP with a single stretch below it, so the card pins
+    to the top and the surplus falls below - the plugin reads top-to-bottom, so
+    the empty state starts at the top too, never centered or bottom-drifting.
+    The wrapper's Expanding policy does the filling on its own; do NOT add a
+    layout stretch factor in a flat (non-stacked) parent layout, or the hidden
+    hero leaks vertical-expand into siblings. Caller wires visibility +
     placement.
     """
     wrapper = QWidget()
