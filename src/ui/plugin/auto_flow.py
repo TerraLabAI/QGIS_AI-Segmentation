@@ -283,9 +283,12 @@ class AutoFlowMixin:
     def _maybe_warmup_auto(self) -> None:
         """Best-effort cloud cold-start ping, off the GUI thread.
 
-        Fired when the user enters the Automatic flow (Start clicked, which
-        opens the draw-zone step) and again when the zone is drawn, so the
-        idle backend is warming up by the time they hit Detect.
+        Fired at each rising-intent step of the Automatic flow so the idle
+        backend overlaps the user's setup and is warm by the time they hit
+        Detect: entering the draw-zone step (Start clicked), the zone drawn,
+        the prompt committed, and a detail-slider move. The prompt-commit
+        trigger is the universal one (every run passes through it); the others
+        buy extra runway when they fire first.
         Debounced to at most once per ~30s and gated on cloud access (an
         activated key); every failure is silent. Never blocks the main thread.
         """
@@ -868,6 +871,13 @@ class AutoFlowMixin:
         refines it (see _on_auto_run_plan_ready)."""
         self._reseed_auto_detail_from_blob(object_class)
         self._fetch_auto_run_plan(object_class)
+        # A committed prompt is the highest-intent, most universal pre-Detect
+        # signal: it is the ONE step every run passes through (the zone-draw and
+        # slider triggers miss a user who lands on the prompt step with a zone
+        # already set and runs without touching the slider). Warm here so the
+        # backend is spinning up while they read the estimate and reach Detect.
+        # Self-limited: debounced ~30s, no-op mid-run and when already warm.
+        self._maybe_warmup_auto()
 
     def _reseed_auto_detail_from_blob(self, object_class: str = "") -> None:
         """Re-pick the detail level when the object class changes (debounced).
