@@ -10,11 +10,10 @@ from qgis.PyQt.QtCore import QRectF, QSize, Qt
 from qgis.PyQt.QtGui import QColor, QPainter, QPen
 from qgis.PyQt.QtWidgets import QWidget
 
-# Brand palette - mirrors dockwidget constants. Duplicated here so the
-# widget remains importable without circular dependency.
-_BRAND_BLUE = "#1e88e5"
-_BRAND_GREEN = "#8bac27"
-_BRAND_RED = "#ef5350"
+from .dock.styles import BRAND_BLUE as _BRAND_BLUE
+from .dock.styles import BRAND_GREEN as _BRAND_GREEN
+from .dock.styles import ERROR_TEXT as _BRAND_RED
+
 _LOW_ORANGE = "#ff8f00"  # free-tier low-credit nudge (amber, not alarm red)
 _TRACK_RGBA = (128, 128, 128, 64)  # rgba(128,128,128,0.25)
 _LOW_THRESHOLD = 0.20

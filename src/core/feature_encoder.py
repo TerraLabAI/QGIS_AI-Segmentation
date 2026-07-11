@@ -519,19 +519,21 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
         - crop_info: dict with 'bounds' (minx, miny, maxx, maxy) and 'img_shape' (H, W)
         - error: error string or None on success
     """
+    # Handle GDAL-only formats (JP2, ECW, etc.) with direct windowed read.
+    # Checked BEFORE the rasterio import: this path reads through QGIS's own
+    # GDAL, so it must keep working when the venv rasterio is broken/missing.
+    if _needs_gdal_conversion(raster_path):
+        return _read_crop_with_gdal(
+            raster_path, center_x, center_y, crop_size,
+            scale_factor, layer_extent
+        )
+
     try:
         import rasterio
         from rasterio.enums import Resampling
         from rasterio.windows import Window
     except ImportError:
         return None, None, "rasterio is not available", "crop_error_rasterio_unavailable"
-
-    # Handle GDAL-only formats (JP2, ECW, etc.) with direct windowed read
-    if _needs_gdal_conversion(raster_path):
-        return _read_crop_with_gdal(
-            raster_path, center_x, center_y, crop_size,
-            scale_factor, layer_extent
-        )
 
     try:
         with rasterio.open(raster_path) as src:
@@ -655,99 +657,169 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
         )
 
 
-def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
-                                   crop_size=1024):
-    """Extract a crop_size x crop_size RGB crop from an online layer.
+class OnlineCropFetcher:
+    """Step-driven online-tile crop fetch.
 
-    Args:
-        layer: QgsRasterLayer (WMS, WMTS, XYZ, WCS, ArcGIS)
-        center_x, center_y: Center of crop in layer CRS coordinates
-        canvas_mupp: Map units per pixel
-        crop_size: Size of the crop in pixels (default 1024)
+    One provider block read + stabilization check is one ``step()``. The
+    caller drives the retry back-off between steps: the interactive path
+    schedules them with QTimer so the waits never block the GUI thread, while
+    extract_crop_from_online_layer drives the same steps in a plain blocking
+    loop for the headless/recovery contract. The retry policy (attempt count,
+    progressive delays, blank-tile handling) lives here once, so both paths
+    behave identically.
 
-    Returns:
-        (image_np, crop_info, error) - same format as extract_crop_from_raster
+    The provider is the user's LIVE layer provider. The resampling state the
+    fetch forces (provider resampling on, bilinear zoomed-in/out) is
+    snapshotted by begin() and reverted by restore(); the caller MUST call
+    restore() on every exit so the user's layer is never left mutated.
     """
-    from qgis.core import QgsRectangle
 
-    provider = layer.dataProvider()
-    if provider is None:
-        return None, None, tr("Layer data provider is not available."), "crop_error_online_provider_unavailable"
+    _MAX_RETRIES = 8
+    _RETRY_DELAY = 1.0
 
-    half_size = crop_size * canvas_mupp / 2.0
-    extent = QgsRectangle(
-        center_x - half_size, center_y - half_size,
-        center_x + half_size, center_y + half_size
-    )
+    def __init__(self, layer, center_x, center_y, canvas_mupp, crop_size=1024):
+        from qgis.core import QgsRectangle
 
-    QgsMessageLog.logMessage(
-        f"Online crop request: center=({center_x:.6f}, {center_y:.6f}), "
-        f"mupp={canvas_mupp:.6f}, extent=({extent.xMinimum():.2f}, {extent.yMinimum():.2f}, "
-        f"{extent.xMaximum():.2f}, {extent.yMaximum():.2f}), CRS={layer.crs().authid()}",
-        "AI Segmentation", level=Qgis.MessageLevel.Info
-    )
+        self._layer = layer
+        self._crop_size = crop_size
+        self.error = None
+        self.error_code = None
+        self._mutated = False
+        self._orig_in = None
+        self._orig_out = None
+        self._orig_enabled = None
+        self._attempt = 0
+        self._prev_data = None
+        self._reload_pending = False
 
-    try:
-        provider.enableProviderResampling(True)
-        original_method = provider.zoomedInResamplingMethod()
-        provider.setZoomedInResamplingMethod(
-            provider.ResamplingMethod.Bilinear)
-        provider.setZoomedOutResamplingMethod(
-            provider.ResamplingMethod.Bilinear)
+        provider = layer.dataProvider()
+        self._provider = provider
+        if provider is None:
+            self.error = tr("Layer data provider is not available.")
+            self.error_code = "crop_error_online_provider_unavailable"
+            return
 
-        # Retry fetching tiles: when the user pans to a new area, the
-        # provider cache may not have the tiles yet.  A short delay
-        # between attempts gives QGIS time to download them.
-        # We also re-fetch after getting a valid block to detect
-        # mixed-resolution tiles (stale cache from different zoom).
-        from qgis.core import QgsApplication
-        max_retries = 8
-        retry_delay = 1.0
-        block = None
-        prev_data = None
-        for attempt in range(max_retries):
-            block = provider.block(1, extent, crop_size, crop_size)
-            if block is not None and block.isValid():
-                cur_data = bytes(block.data())
-                # An all-zero block means the tiles have not downloaded yet
-                # (or the area has no coverage). Two blank reads in a row must
-                # NOT count as "stabilized": otherwise a slow network trips the
-                # equality check below and abandons the retry budget after ~1s,
-                # shipping a blank crop (crop_error_online_blank_tiles). Only
-                # real pixel content can end the loop early; blank reads always
-                # fall through to the progressive retry/wait branch.
-                if cur_data.strip(b"\x00"):
-                    if prev_data is not None and cur_data == prev_data:
-                        # Image stabilized - tiles are consistent
-                        break
-                    prev_data = cur_data
-                    if attempt == 0:
-                        # First valid fetch - always re-fetch once to
-                        # check if tiles are still loading/updating
-                        provider.reloadData()
-                        deadline = time.monotonic() + 0.5
-                        while time.monotonic() < deadline:
-                            QgsApplication.processEvents()
-                            time.sleep(0.05)
-                        continue
-            if attempt < max_retries - 1:
-                delay = retry_delay * (1 + attempt * 0.5)  # Progressive: 1.0, 1.5, 2.0, ...
-                QgsMessageLog.logMessage(
-                    f"Online tile fetch attempt {attempt + 1} - "
-                    f"retrying in {delay:.1f}s...",
-                    "AI Segmentation", level=Qgis.MessageLevel.Warning
-                )
-                deadline = time.monotonic() + delay
-                while time.monotonic() < deadline:
-                    QgsApplication.processEvents()
-                    time.sleep(0.05)
-                provider.reloadData()
+        half_size = crop_size * canvas_mupp / 2.0
+        self._extent = QgsRectangle(
+            center_x - half_size, center_y - half_size,
+            center_x + half_size, center_y + half_size
+        )
+        QgsMessageLog.logMessage(
+            f"Online crop request: center=({center_x:.6f}, {center_y:.6f}), "
+            f"mupp={canvas_mupp:.6f}, extent=({self._extent.xMinimum():.2f}, "
+            f"{self._extent.yMinimum():.2f}, {self._extent.xMaximum():.2f}, "
+            f"{self._extent.yMaximum():.2f}), CRS={layer.crs().authid()}",
+            "AI Segmentation", level=Qgis.MessageLevel.Info
+        )
 
-        provider.setZoomedInResamplingMethod(original_method)
+    def begin(self):
+        """Snapshot the live provider's resampling state, then force bilinear
+        for the fetch. Safe to call once; restore() reverts whatever was
+        captured, even if a setter below raises partway through."""
+        if self._provider is None:
+            return
+        provider = self._provider
+        try:
+            self._orig_in = provider.zoomedInResamplingMethod()
+            self._orig_out = provider.zoomedOutResamplingMethod()
+        except (AttributeError, RuntimeError):
+            # Provider without the resampling API: fetch at native resampling,
+            # nothing to revert.
+            return
+        # isProviderResamplingEnabled() is the getter paired with
+        # enableProviderResampling(); on a build that lacks it the enabled flag
+        # stays unknown (None) and restore() leaves it on.
+        if hasattr(provider, "isProviderResamplingEnabled"):
+            try:
+                self._orig_enabled = provider.isProviderResamplingEnabled()
+            except (AttributeError, RuntimeError):
+                self._orig_enabled = None
+        # Past this point a revert is owed regardless of what the setters do.
+        self._mutated = True
+        try:
+            provider.enableProviderResampling(True)
+            provider.setZoomedInResamplingMethod(
+                provider.ResamplingMethod.Bilinear)
+            provider.setZoomedOutResamplingMethod(
+                provider.ResamplingMethod.Bilinear)
+        except (AttributeError, RuntimeError):
+            pass
 
+    def restore(self):
+        """Revert the provider resampling state captured by begin().
+        Idempotent and best-effort (the provider may be mid-teardown when a
+        superseded async fetch unwinds)."""
+        if not self._mutated:
+            return
+        self._mutated = False
+        provider = self._provider
+        try:
+            provider.setZoomedInResamplingMethod(self._orig_in)
+            provider.setZoomedOutResamplingMethod(self._orig_out)
+            if self._orig_enabled is not None:
+                provider.enableProviderResampling(self._orig_enabled)
+        except (AttributeError, RuntimeError):
+            pass
+
+    def step(self):
+        """Perform one block read + stabilization check. Returns (action,
+        delay_seconds):
+
+        - ("stabilized", 0.0): two equal non-blank reads; go to finish().
+        - ("refetch", 0.5): first valid non-blank read; reload issued, wait
+          then step() again.
+        - ("retry", delay): not stable yet; wait ``delay`` then step() again
+          (the reload is issued at the START of the next step, matching the
+          blocking loop's wait-then-reload order).
+        - ("exhausted", 0.0): retry budget spent; go to finish() with whatever
+          the provider returned.
+        """
+        provider = self._provider
+        if self._reload_pending:
+            # The prior retry has served its back-off; refresh the tiles now,
+            # exactly as the blocking loop reloaded before each re-read.
+            provider.reloadData()
+            self._reload_pending = False
+        attempt = self._attempt
+        block = provider.block(1, self._extent, self._crop_size, self._crop_size)
+        if block is not None and block.isValid():
+            cur_data = bytes(block.data())
+            # An all-zero block means the tiles have not downloaded yet (or the
+            # area has no coverage). Two blank reads in a row must NOT count as
+            # "stabilized": a slow network would trip the equality check and
+            # abandon the retry budget after ~1s, shipping a blank crop. Only
+            # real pixel content can end the loop early; blank reads always
+            # fall through to the progressive retry branch.
+            if cur_data.strip(b"\x00"):
+                if self._prev_data is not None and cur_data == self._prev_data:
+                    return ("stabilized", 0.0)
+                self._prev_data = cur_data
+                if attempt == 0:
+                    # First valid fetch: reload once and re-check whether the
+                    # tiles are still loading/updating.
+                    provider.reloadData()
+                    self._attempt = attempt + 1
+                    return ("refetch", 0.5)
+        if attempt < self._MAX_RETRIES - 1:
+            delay = self._RETRY_DELAY * (1 + attempt * 0.5)  # 1.0, 1.5, 2.0, ...
+            QgsMessageLog.logMessage(
+                f"Online tile fetch attempt {attempt + 1} - "
+                f"retrying in {delay:.1f}s...",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning
+            )
+            self._reload_pending = True
+            self._attempt = attempt + 1
+            return ("retry", delay)
+        return ("exhausted", 0.0)
+
+    def finish(self):
+        """Read the band data for the stabilized extent and build the crop.
+        Returns the extract_crop_from_raster-style 4-tuple (image_np,
+        crop_info, error, error_code)."""
+        provider = self._provider
         # Fetch bands using unified helper
         bands_result, is_argb, fetch_err = _fetch_online_bands(
-            provider, extent, crop_size, crop_size)
+            provider, self._extent, self._crop_size, self._crop_size)
 
         # If provider fetch failed, try canvas renderer fallback
         if fetch_err is not None:
@@ -757,7 +829,7 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
                 "AI Segmentation", level=Qgis.MessageLevel.Warning
             )
             image_np, render_err = _render_layer_to_image(
-                layer, extent, crop_size, crop_size)
+                self._layer, self._extent, self._crop_size, self._crop_size)
             if render_err is not None:
                 return None, None, tr(
                     "Failed to fetch tiles from the online layer. "
@@ -786,7 +858,7 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
             # renderer reads what QGIS actually displays, so one render-path
             # retry rescues the stale-cache case before giving up.
             rendered, render_err = _render_layer_to_image(
-                layer, extent, crop_size, crop_size)
+                self._layer, self._extent, self._crop_size, self._crop_size)
             if render_err is None and rendered is not None and int(rendered.sum()) > 0:
                 QgsMessageLog.logMessage(
                     "Blank tiles from provider, rescued by renderer fallback",
@@ -804,12 +876,56 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
                 ), "crop_error_online_blank_tiles"
 
         crop_info = {
-            "bounds": (extent.xMinimum(), extent.yMinimum(),
-                       extent.xMaximum(), extent.yMaximum()),
+            "bounds": (self._extent.xMinimum(), self._extent.yMinimum(),
+                       self._extent.xMaximum(), self._extent.yMaximum()),
             "img_shape": (height, width),
         }
-
         return image_np, crop_info, None, None
 
-    except Exception as e:
+
+def _blocking_wait(seconds):
+    """Block the calling thread for ``seconds`` while pumping the event loop.
+    Used only by the synchronous (headless/recovery) online fetch driver; the
+    interactive path schedules its waits off the event loop instead."""
+    from qgis.core import QgsApplication
+
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        QgsApplication.processEvents()
+        time.sleep(0.05)
+
+
+def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
+                                   crop_size=1024):
+    """Extract a crop_size x crop_size RGB crop from an online layer.
+
+    SYNCHRONOUS and blocking (up to ~18s of tile-fetch retries): used by the
+    headless/MCP and recovery callers, whose contract is a blocking call. The
+    interactive path drives the same OnlineCropFetcher steps asynchronously so
+    the GUI never freezes.
+
+    Args:
+        layer: QgsRasterLayer (WMS, WMTS, XYZ, WCS, ArcGIS)
+        center_x, center_y: Center of crop in layer CRS coordinates
+        canvas_mupp: Map units per pixel
+        crop_size: Size of the crop in pixels (default 1024)
+
+    Returns:
+        (image_np, crop_info, error, error_code) - same format as
+        extract_crop_from_raster.
+    """
+    fetcher = OnlineCropFetcher(layer, center_x, center_y, canvas_mupp, crop_size)
+    if fetcher.error is not None:
+        return None, None, fetcher.error, fetcher.error_code
+    try:
+        fetcher.begin()
+        while True:
+            action, delay = fetcher.step()
+            if action in ("stabilized", "exhausted"):
+                break
+            _blocking_wait(delay)
+        return fetcher.finish()
+    except Exception as e:  # noqa: BLE001
         return None, None, str(e), "crop_error_online_exception"
+    finally:
+        fetcher.restore()

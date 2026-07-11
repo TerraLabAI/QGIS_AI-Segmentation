@@ -2,7 +2,6 @@
 (design-system values shared with AI Edit), plus tiny style helpers."""
 from __future__ import annotations
 
-from ...core.i18n import tr
 
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
@@ -69,6 +68,11 @@ _SLIDER_QSS = (
     f"QSlider::handle:horizontal {{ background: {BRAND_BLUE}; border: 2px solid palette(base);"
     " width: 16px; height: 16px; margin: -7px 0; border-radius: 10px; }"
     f"QSlider::handle:horizontal:hover {{ background: {BRAND_BLUE_HOVER}; }}"
+    # Disabled = fully grey (no brand blue anywhere): the gated Detail slider
+    # must read as "not usable yet" at a glance, not as a broken live control.
+    "QSlider::sub-page:horizontal:disabled { background: rgba(128,128,128,0.30); }"
+    "QSlider::handle:horizontal:disabled { background: rgba(128,128,128,0.45);"
+    " border: 2px solid palette(base); }"
 )
 
 # Subtle bordered "card" used to group the Automatic step-2 sections (the
@@ -79,6 +83,205 @@ _SLIDER_QSS = (
 _CARD_QSS = (
     "QWidget#{name} {{ background-color: rgba(128, 128, 128, 0.06);"
     " border: 1px solid rgba(128, 128, 128, 0.22); border-radius: 6px; }}"
+)
+
+# Standard inner margins for a card built from _CARD_QSS, so sibling cards
+# align to the pixel: (left, top, right, bottom).
+_CARD_MARGINS = (10, 8, 10, 10)
+
+# NOTE: no colored edge ornaments. A left "spine" stripe and title ticks were
+# tried and rejected (Yvann, 2026-07-11: colored slots on text edges read as
+# generic AI-tool design). Cards carry hierarchy through content, never
+# through a colored border.
+
+# ---------------------------------------------------------------------------
+# Semantic message taxonomy: one hue carries ONE meaning, shared across both
+# TerraLab plugins. Every message lives in a styled container (never naked
+# text); text stays palette(text) so both QGIS themes read.
+#   neutral  = instruction, how to do something (never coloured)
+#   info     = guidance in the brand blue (THE only blue)
+#   armed    = a map tool is armed and waiting for a draw/click (denser blue)
+#   success  = done/measured outcome, in the lime accent (the CTA green
+#              means "advance", it never announces success)
+#   warning  = caution, translucent amber (readable on dark and light)
+#   error    = failure; *_TRANSIENT is the denser variant for toasts that
+#              replace content instead of sitting beside it
+#   premium  = paid capability, blue family with a distinct treatment
+#              (star prefix + underlined action link), never inline in
+#              other guidance text
+# Fill/border pairs, per kind.
+_MSG_TINTS = {
+    "neutral": ("rgba(128, 128, 128, 0.12)", "rgba(128, 128, 128, 0.25)"),
+    "info": ("rgba(30, 136, 229, 0.08)", "rgba(30, 136, 229, 0.22)"),
+    "armed": ("rgba(30, 136, 229, 0.12)", "rgba(30, 136, 229, 0.40)"),
+    "success": ("rgba(139, 172, 39, 0.14)", "rgba(139, 172, 39, 0.45)"),
+    "warning": ("rgba(245, 166, 35, 0.12)", "rgba(245, 166, 35, 0.45)"),
+    "error": ("rgba(229, 72, 77, 0.14)", "rgba(229, 72, 77, 0.45)"),
+    "error_transient": ("rgba(229, 72, 77, 0.25)", "rgba(229, 72, 77, 0.60)"),
+    "premium": ("rgba(30, 136, 229, 0.12)", "rgba(30, 136, 229, 0.40)"),
+}
+
+# Star prefix for premium/upsell copy (D9b treatment).
+_PREMIUM_STAR = "★"
+
+# Message-kind glyph prefixes. Statuses (armed/success/warning/error) carry
+# quiet monochrome TEXT glyphs, plain characters tinted by the label's own
+# text color (U+FE0E forces text presentation on macOS); mass-emoji reads as
+# cheap. The ONE exception is info/tips: the lightbulb emoji, warmer than a
+# flat i-icon for guidance (Yvann's call 2026-07-11 evening).
+_MSG_GLYPHS = {
+    "neutral": "",
+    "info": "💡",
+    "armed": "✎",
+    "success": "✓",
+    "warning": "⚠︎",
+    "error": "✕",
+    "error_transient": "✕",
+    "premium": _PREMIUM_STAR,
+}
+
+
+def _msg_text(kind: str, text: str) -> str:
+    """Prefix a message with its kind's quiet monochrome glyph (two spaces,
+    matching the chip convention). Kinds without a glyph pass through."""
+    glyph = _MSG_GLYPHS.get(kind, "")
+    return f"{glyph}  {text}" if glyph else text
+
+
+def _msg_label_qss(kind: str) -> str:
+    """QSS for a single-QLabel message of the given taxonomy kind."""
+    fill, border = _MSG_TINTS[kind]
+    text = ERROR_TEXT if kind.startswith("error") else "palette(text)"
+    return (
+        f"QLabel {{ background-color: {fill}; border: 1px solid {border};"
+        f" border-radius: 4px; padding: 8px; font-size: 12px;"
+        f" color: {text}; }}"
+    )
+
+
+def _msg_card_qss(name: str, kind: str) -> str:
+    """QSS for a message CARD (a named QWidget with child labels) of the
+    given taxonomy kind. Child labels stay transparent so the tint lives on
+    the card only; remember WA_StyledBackground on the widget."""
+    fill, border = _MSG_TINTS[kind]
+    text = ERROR_TEXT if kind.startswith("error") else "palette(text)"
+    return (
+        f"QWidget#{name} {{ background-color: {fill};"
+        f" border: 1px solid {border}; border-radius: 6px; }}"
+        f"QLabel {{ background: transparent; border: none; color: {text}; }}"
+    )
+
+
+def _micro_header(text: str):
+    """Micro section header: a quiet 10px bold label in NORMAL case, THE one
+    way to introduce a subsection inside a card (Outline / Selection /
+    Detection and friends). Deliberately typographic only: no uppercase, no
+    letter-spacing, no colored tick or ornament (Yvann's calls 2026-07-11).
+    Returns a QWidget whose ``header_label`` attribute is the QLabel, for
+    dynamic call sites."""
+    from qgis.PyQt.QtWidgets import QHBoxLayout, QLabel, QWidget
+
+    w = QWidget()
+    row = QHBoxLayout(w)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(6)
+    lbl = QLabel(text)
+    lbl.setStyleSheet(
+        "font-size: 10px; font-weight: bold;"
+        " color: palette(text); background: transparent; border: none;")
+    row.addWidget(lbl)
+    row.addStretch(1)
+    w.header_label = lbl
+    return w
+
+
+def _card_divider():
+    """1px full-width separator between the sub-blocks of ONE card (the
+    review card's Confidence / View-as / Refine zones). Quiet neutral grey,
+    never a colored ornament."""
+    from qgis.PyQt.QtWidgets import QFrame
+
+    line = QFrame()
+    line.setFrameShape(QFrame.Shape.NoFrame)
+    line.setFixedHeight(1)
+    line.setStyleSheet("background: rgba(128, 128, 128, 0.16); border: none;")
+    return line
+
+
+def _step_dial(num: int, state: str = "todo"):
+    """20px round step dial for ordered page steps: ``todo`` is a grey
+    outline number, ``active`` a filled brand-blue number, ``done`` a lime
+    outlined check. Returns a fixed-size QLabel."""
+    from qgis.PyQt.QtCore import Qt
+    from qgis.PyQt.QtWidgets import QLabel
+
+    lbl = QLabel("✓" if state == "done" else str(num))
+    lbl.setFixedSize(20, 20)
+    lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    if state == "active":
+        qss = (f"background: {BRAND_BLUE}; color: #000000; border: none;"
+               " border-radius: 10px; font-size: 11px; font-weight: 700;")
+    elif state == "done":
+        qss = (f"background: transparent; color: {BRAND_GREEN};"
+               " border: 1px solid rgba(139, 172, 39, 0.75);"
+               " border-radius: 10px; font-size: 11px; font-weight: 700;")
+    else:
+        qss = ("background: transparent; color: rgba(128, 128, 128, 0.95);"
+               " border: 1px solid rgba(128, 128, 128, 0.45);"
+               " border-radius: 10px; font-size: 11px; font-weight: 600;")
+    lbl.setStyleSheet(qss)
+    return lbl
+
+
+def _sign_badge(symbol: str, color: str):
+    """16px circular outline badge for the +/- click legend (extend/trim).
+    One helper so every legend renders the same badge."""
+    from qgis.PyQt.QtCore import Qt
+    from qgis.PyQt.QtWidgets import QLabel
+
+    badge = QLabel(symbol)
+    badge.setFixedSize(16, 16)
+    badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    badge.setStyleSheet(
+        f"background: transparent; border: 1px solid {color};"
+        f" border-radius: 8px; color: {color};"
+        " font-weight: bold; font-size: 11px;")
+    return badge
+
+
+# Framed section header-button with a chevron: a full-width control that
+# reads as clickable at a glance (collapsible sections: the review's Shape
+# settings, the Manual refine panel). Normal-case title (no uppercase, no
+# letter-spacing). Hover warms the text/border blue.
+_SECTION_TOGGLE_QSS = (
+    "QPushButton { font-size: 11px; color: palette(text);"
+    " font-weight: bold; background-color: rgba(128, 128, 128, 0.10);"
+    " border: 1px solid rgba(128, 128, 128, 0.30); border-radius: 4px;"
+    " padding: 8px 10px; text-align: left; }"
+    f"QPushButton:hover {{ color: {BRAND_BLUE};"
+    " border-color: rgba(30, 136, 229, 0.7); }"
+)
+
+# Theme-safe combobox for combos living inside a styled card. A parent card
+# stylesheet knocks the child QComboBox off the app palette on the dark QGIS
+# theme (selected text painted black on the dark base), so the combo names
+# its colors explicitly via palette roles, which follow both themes.
+_COMBO_THEME_QSS = (
+    "QComboBox { color: palette(text); background-color: palette(base);"
+    " border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 3px;"
+    " padding: 2px 8px; }"
+    "QComboBox QAbstractItemView { color: palette(text);"
+    " background-color: palette(base);"
+    " selection-background-color: rgba(30, 136, 229, 0.35); }"
+)
+
+# Thin determinate progress line (3px) on a faint grey track: progress reads
+# as a quiet instrument strip, not a heavy native bar. Call sites must
+# setTextVisible(False); the measured status text lives in a label beside it.
+_PROGRESS_THIN_QSS = (
+    "QProgressBar { background: rgba(128, 128, 128, 0.25); border: none;"
+    " border-radius: 2px; max-height: 3px; min-height: 3px; }"
+    f"QProgressBar::chunk {{ background: {BRAND_BLUE}; border-radius: 2px; }}"
 )
 
 # Manual-session instruction label: the framed card look (default) and the
@@ -104,22 +307,6 @@ _INSTRUCTIONS_HINT_QSS = (
     " color: rgba(128,128,128,0.95);"
     "}"
 )
-
-
-def _auto_step_header(num: int, title: str, optional: bool = False) -> str:
-    """Rich-text 'N - Title' header for an Automatic step-2 card: a brand-blue
-    step number, a bold title, and a muted '- optional' suffix when the step
-    can be skipped. The three cards then read top to bottom as an ordered
-    checklist (describe, then optionally show an example, then set detail),
-    which is the 'do one thing at a time' shape the page is built around."""
-    opt = ""
-    if optional:
-        opt = (' <span style="color: rgba(128,128,128,0.85);'
-               ' font-weight: normal;">- {}</span>').format(tr("optional"))
-    return (
-        f'<span style="color: {BRAND_BLUE}; font-weight: 700;">{num}</span>'
-        f'&nbsp;&middot;&nbsp;<span style="font-weight: 700;">{title}</span>{opt}'
-    )
 
 
 # Design-system QSS constants, identical to AI Edit (dock_widget.py).
@@ -179,6 +366,136 @@ _BTN_GHOST = (
     f"QPushButton:disabled {{ background-color: rgba(128, 128, 128, 0.08);"
     f" border: 1px solid rgba(128, 128, 128, 0.15); color: {DISABLED_TEXT}; }}"
 )
+
+# Flagship "AI magic" button: a STATIC full-rainbow gradient fill (bright
+# spectrum, red through violet), the one sanctioned multi-hue element in
+# the palette. Reserved for THE flagship AI action of a screen (today only
+# the review's Refine in Manual mode); never two magic elements on one
+# screen, and never as a message tint. Static by design: no animation, no
+# timers, plain QSS. Bold white text over the bright stops.
+_BTN_MAGIC = (
+    "QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
+    " stop:0 #fa5252, stop:0.17 #fd7e14, stop:0.34 #fab005,"
+    " stop:0.5 #40c057, stop:0.66 #15aabf, stop:0.83 #4c6ef5,"
+    " stop:1 #ae3ec9);"
+    " color: #ffffff; font-weight: 700;"
+    " padding: 8px 16px; border: none; border-radius: 4px; }"
+    "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
+    " stop:0 #e03131, stop:0.17 #e8590c, stop:0.34 #f08c00,"
+    " stop:0.5 #2f9e44, stop:0.66 #0c8599, stop:0.83 #3b5bdb,"
+    " stop:1 #9c36b5); color: #ffffff; }"
+    f"QPushButton:disabled {{ background: {BRAND_DISABLED};"
+    f" color: {DISABLED_TEXT}; }}"
+)
+
+# Outline-blue secondary button: blue is the plugin's "temporary / still
+# editing" colour, so an outlined blue action reads as "keep working on this
+# result" next to a green "done" primary (e.g. the library picker next to
+# the prompt).
+_BTN_BLUE_OUTLINE = (
+    f"QPushButton {{ background-color: transparent; color: {BRAND_BLUE};"
+    f" border: 1px solid {BRAND_BLUE}; border-radius: 4px; font-weight: 600;"
+    " padding: 6px 12px; }"
+    "QPushButton:hover { background-color: rgba(30, 136, 229, 0.12); }"
+    f"QPushButton:disabled {{ color: {DISABLED_TEXT};"
+    f" border-color: {DISABLED_TEXT}; }}"
+)
+
+# Outline-red destructive secondary: quieter than the soft-fill _BTN_RED, for
+# a destructive action that sits in a row NEXT TO a filled primary (the row's
+# single loud button stays the primary).
+_BTN_RED_OUTLINE = (
+    f"QPushButton {{ background-color: transparent; color: {BRAND_RED};"
+    " border: 1px solid rgba(211, 47, 47, 0.55); border-radius: 4px;"
+    " padding: 6px 12px; }"
+    "QPushButton:hover { background-color: rgba(211, 47, 47, 0.12); }"
+    f"QPushButton:disabled {{ color: {DISABLED_TEXT};"
+    " border-color: rgba(128, 128, 128, 0.35); }"
+)
+
+# Quiet text-link buttons: a blue link for a navigational/upsell side action,
+# and a muted grey one for a de-emphasized escape hatch (hover warms it red,
+# e.g. Cancel detection). Both underline on hover only.
+_BTN_LINK = (
+    f"QPushButton {{ background: transparent; border: none; color: {BRAND_BLUE};"
+    " font-size: 11px; text-align: left; padding: 2px 0px; }"
+    "QPushButton:hover { text-decoration: underline; }"
+)
+_BTN_LINK_MUTED = (
+    "QPushButton { background: transparent; border: none;"
+    " color: rgba(128, 128, 128, 0.9); font-size: 11px; padding: 4px 8px; }"
+    f"QPushButton:hover {{ color: {ERROR_TEXT}; text-decoration: underline; }}"
+)
+
+# One-click suggestion chip (blue family): a small tinted action that fills
+# in a prompt or arms a tool, e.g. the zero-result rescue chips.
+_CHIP_QSS = (
+    "QPushButton { background: rgba(30, 136, 229, 0.10);"
+    " border: 1px solid rgba(30, 136, 229, 0.35); border-radius: 6px;"
+    " color: palette(text); font-size: 12px; text-align: left;"
+    " padding: 6px 10px; }"
+    "QPushButton:hover { background: rgba(30, 136, 229, 0.20); }"
+)
+
+# Neutral outlined chip (the AI Edit prompt-row "Library" look): a quiet grey
+# pill at rest, TerraLab-green tint on hover/press. For guided-path side
+# buttons that sit NEXT TO an input and must not compete with the primary
+# flow (an outlined brand-blue button there read as a competing action).
+_BTN_CHIP = (
+    "QPushButton { background: rgba(128, 128, 128, 0.08);"
+    " border: 1px solid rgba(128, 128, 128, 0.40); border-radius: 6px;"
+    " padding: 6px 12px; font-size: 12px; color: palette(text); }"
+    "QPushButton:hover { background: rgba(139, 172, 39, 0.18);"
+    " border-color: rgba(139, 172, 39, 0.65); }"
+    "QPushButton:pressed { background: rgba(139, 172, 39, 0.32);"
+    " border-color: rgba(139, 172, 39, 0.85); }"
+    "QPushButton:disabled { color: rgba(128, 128, 128, 0.40);"
+    " background: transparent; border-color: rgba(128, 128, 128, 0.20); }"
+)
+
+# Quiet one-line recap card (neutral grey family) for last-run summaries.
+_RECAP_CARD_QSS = (
+    "QLabel { font-size: 11px; color: palette(text);"
+    " border: 1px solid rgba(128, 128, 128, 0.35);"
+    " border-radius: 6px; padding: 6px 8px;"
+    " background: rgba(128, 128, 128, 0.09); }"
+)
+
+
+def _btn_toggle_qss(rgb: tuple[int, int, int], text: str, armed_text: str,
+                    weight: int = 700, quiet: bool = False) -> str:
+    """Armable toggle button (tinted outline at rest, solid fill while the
+    ``armed`` dynamic property is true). One generator so every draw-arming
+    button (example, exclude) shares the exact same states.
+
+    ``quiet=True`` gives a ghost rest state (neutral border, plain text) that
+    only takes the color on hover/armed: for optional-path toggles that must
+    not compete with the screen's real primary."""
+    r, g, b = rgb
+    solid = f"rgb({r}, {g}, {b})"
+    if quiet:
+        rest = (
+            "QPushButton { background: transparent; color: palette(text);"
+            " border: 1px solid rgba(128, 128, 128, 0.40); border-radius: 6px;"
+            " padding: 6px 12px; font-size: 12px; }"
+            f"QPushButton:hover {{ background: rgba({r}, {g}, {b}, 0.14);"
+            f" border-color: rgba({r}, {g}, {b}, 0.55); }}"
+        )
+    else:
+        rest = (
+            f"QPushButton {{ background: rgba({r}, {g}, {b}, 0.12); color: {text};"
+            f" border: 1px solid rgba({r}, {g}, {b}, 0.55); border-radius: 6px;"
+            f" padding: 9px 16px; font-size: 12px; font-weight: {weight}; }}"
+            f"QPushButton:hover {{ background: rgba({r}, {g}, {b}, 0.22); }}"
+        )
+    return (
+        rest
+        + f'QPushButton[armed="true"] {{ background: {solid}; color: {armed_text};'  # noqa: W503
+        + f" border: 1px solid {solid}; }}"  # noqa: W503
+        + "QPushButton:disabled { background: transparent;"  # noqa: W503
+        + " color: rgba(128, 128, 128, 0.5); border-color: rgba(128, 128, 128, 0.3); }"  # noqa: W503
+    )
+
 
 _BTN_GRAY = (
     f"QPushButton {{ background-color: {BRAND_GRAY}; color: #000000;"

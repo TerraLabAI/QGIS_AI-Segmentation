@@ -57,6 +57,20 @@ def review_policy(policy: dict | None = None) -> dict:
     return review if isinstance(review, dict) else {}
 
 
+def review_noise_floor(policy: dict | None = None) -> float:
+    """Confidence fraction below which a detection is excluded from the review
+    entirely: it never counts in the total, never renders, and the review
+    confidence controls cannot dial below it. Read from the server
+    ``review.noise_floor``; the fallback is ONE generic client value (0.05),
+    never a mirror of a tuned table. Clamped to [0, 1)."""
+    val = review_policy(policy).get("noise_floor")
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        f = float(val)
+        if 0.0 <= f < 1.0:
+            return f
+    return 0.05
+
+
 def merge_policy(policy: dict | None = None) -> dict:
     """The review.merge sub-policy (merge/dedup scalars + token/category lists).
 
@@ -65,6 +79,33 @@ def merge_policy(policy: dict | None = None) -> dict:
     review = review_policy(policy)
     merge = review.get("merge") if isinstance(review, dict) else None
     return merge if isinstance(merge, dict) else {}
+
+
+def exemplar_only_merge_separate(policy: dict | None = None) -> bool:
+    """Merge policy for an EXEMPLAR-only run (empty prompt token): the one case
+    with no token signal at all for SEPARATE (count distinct objects) vs MAP
+    (continuous cover union). Reads the server policy's ``exemplar_only`` key
+    ("map" or "separate"); the fallback is the counting-safe default (True),
+    one generic value, never a mirror of the tuned per-object table."""
+    val = merge_policy(policy).get("exemplar_only")
+    if isinstance(val, str) and val.strip().lower() == "map":
+        return False
+    return True
+
+
+def map_likeness_min_share(policy: dict | None = None) -> float:
+    """Minimum map-likeness for an EXEMPLAR-only run to be grouped as continuous
+    cover (MAP) rather than counted as distinct objects.
+
+    Map-likeness is the area-weighted mean tile coverage of the run's fragments
+    (near zero for small countable objects, high for continuous cover). Read
+    from the server ``review.merge`` policy (``map_likeness_min_share``); the
+    fallback is ONE generic client value (0.15), never a mirror of the tuned
+    server tables."""
+    val = merge_policy(policy).get("map_likeness_min_share")
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        return float(val)
+    return 0.15
 
 
 def max_concurrent(policy: dict | None = None) -> int:
@@ -162,6 +203,16 @@ def seed_tile_cap(policy: dict | None = None) -> int:
     return int(_seed_float("seed_tile_cap", AUTO_SEED_TILE_CAP, policy))
 
 
+def free_run_fraction(policy: dict | None = None) -> float:
+    """Max share of the lifetime free allowance one run may cost (0-1].
+
+    Free-tier runs are capped so a single Detect can never drain the whole
+    trial; subscribers are never capped. Fallback 0.25 (one quarter of the
+    allowance, so the trial always covers several full runs)."""
+    val = _seed_float("free_run_fraction", 0.25, policy)
+    return val if 0.0 < val <= 1.0 else 0.25
+
+
 def object_min_px(policy: dict | None = None) -> int:
     """Minimum pixels across for an object to count as resolvable."""
     return int(_seed_float("object_min_px", AUTO_OBJECT_MIN_PX, policy))
@@ -180,6 +231,21 @@ def quality_floor_mupp(policy: dict | None = None) -> float:
 def native_oversample_max(policy: dict | None = None) -> float:
     """How far past a source's native resolution a render may go (linear)."""
     return _seed_float("native_oversample_max", NATIVE_OVERSAMPLE_MAX, policy)
+
+
+def detail_over_ratio(policy: dict | None = None) -> float:
+    """Fraction of the object's target resolution below which the detail
+    slider guidance flags the level as past diminishing returns (finer
+    resolution than the object needs mostly adds cost and can fragment
+    large objects across tiles). Subscriber ratio; free tier uses
+    detail_over_ratio_free."""
+    return _seed_float("detail_over_ratio", 0.4, policy)
+
+
+def detail_over_ratio_free(policy: dict | None = None) -> float:
+    """Free-tier variant of detail_over_ratio: warns earlier on the Fine
+    end, because a free run spends scarce lifetime trial credits."""
+    return _seed_float("detail_over_ratio_free", 0.5, policy)
 
 
 def recall_floor(fallback: float, policy: dict | None = None) -> float:
@@ -203,6 +269,20 @@ def confidence_default(policy: dict | None = None) -> float:
     return _seed_float("confidence_default", AUTO_DEFAULT_CONFIDENCE, policy)
 
 
+def confidence_default_exemplar_only(policy: dict | None = None) -> float:
+    """The starting confidence cutoff for an EXEMPLAR-only run (a drawn example,
+    no text prompt), used for BOTH the live preview and the post-run review so
+    they open at the same value. Higher than the text default because, without
+    an open-vocabulary text prior, the model surfaces more weak look-alikes.
+    Read from the server ``seed.confidence_default_exemplar_only``; the fallback
+    is ONE generic client value, never a mirror of a tuned table."""
+    from .review_defaults import AUTO_DEFAULT_CONFIDENCE_EXEMPLAR_ONLY
+
+    return _seed_float(
+        "confidence_default_exemplar_only",
+        AUTO_DEFAULT_CONFIDENCE_EXEMPLAR_ONLY, policy)
+
+
 def resplit_charge_every(policy: dict | None = None) -> int:
     """How re-split quadrants are billed by the server: 1 credit per this many
     quadrants (1 = every quadrant billed, the pre-discount behavior; 4 = one
@@ -213,6 +293,52 @@ def resplit_charge_every(policy: dict | None = None) -> int:
     if isinstance(val, int) and not isinstance(val, bool) and val >= 0:
         return val
     return 1
+
+
+def saturation_policy(policy: dict | None = None) -> dict:
+    """The seed.saturation sub-policy (saturated-tile re-split tuning)."""
+    sat = seed_policy(policy).get("saturation")
+    return sat if isinstance(sat, dict) else {}
+
+
+def _sat_float(key: str, fallback: float, policy: dict | None) -> float:
+    """A numeric saturation scalar, or the caller's fallback constant."""
+    val = saturation_policy(policy).get(key)
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        return float(val)
+    return fallback
+
+
+def mask_cap_trigger_frac(fallback: float, policy: dict | None = None) -> float:
+    """Fraction of the per-inference mask ceiling at/above which a tile counts
+    as truncated (drives the re-split ladder and the dense hint). Fallback is
+    the client's own constant, passed in by the caller."""
+    return _sat_float("cap_trigger_frac", fallback, policy)
+
+
+def subdiv_max_depth(fallback: int, policy: dict | None = None) -> int:
+    """Saturated-tile re-split recursion ceiling (fallback: client constant)."""
+    val = _sat_float("subdiv_max_depth", float(fallback), policy)
+    return int(val) if val >= 0 else fallback
+
+
+def max_tile_coverage(fallback: float, policy: dict | None = None) -> float:
+    """Tile-coverage fraction above which a SEPARATE-mode mask must pass the
+    compactness check (failure-blob gate). Fallback: client constant."""
+    return _sat_float("max_tile_coverage", fallback, policy)
+
+
+def hard_tile_coverage(fallback: float, policy: dict | None = None) -> float:
+    """Tile-coverage fraction above which a SEPARATE-mode mask is dropped as a
+    fill-everything failure regardless of shape. Fallback: client constant."""
+    return _sat_float("hard_tile_coverage", fallback, policy)
+
+
+def adaptive_confidence_policy(policy: dict | None = None) -> dict:
+    """The review.adaptive_confidence sub-policy (data-driven starting-cutoff
+    tuning). Empty dict when absent: the client's generic constants apply."""
+    val = review_policy(policy).get("adaptive_confidence")
+    return val if isinstance(val, dict) else {}
 
 
 def exemplar_policy(policy: dict | None = None) -> dict:

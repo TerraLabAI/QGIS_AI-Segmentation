@@ -447,8 +447,9 @@ class SegmentationMCPAPI:
             the full raster extent is used.
         object_class : str
             Class of objects to detect, e.g. "Building", "Tree", "Car". May be
-            empty ONLY when at least one positive exemplar is given (the cloud model needs
-            either a text prompt or a visual example).
+            empty ONLY when at least TWO positive exemplars are given: a single
+            reference detects poorly, so the example-only path needs a pair (the
+            cloud model needs either a text prompt or two visual examples).
         layer_name : str | None
             Optional raster layer name. If None, uses the currently selected
             layer.
@@ -474,9 +475,30 @@ class SegmentationMCPAPI:
         """
         plugin = self._plugin
 
+        from .core.detect_gate import can_detect
+
+        has_text = bool(object_class and object_class.strip())
         has_exemplars = bool(exemplars)
-        if (not object_class or not object_class.strip()) and not has_exemplars:
+        if not has_text and not has_exemplars:
             return {"_error": "object_class must be a non-empty string (or pass exemplars)."}
+        # Reference-image detection needs at least two positive exemplars when
+        # there is no text prompt: a single one detects poorly. Reject the weak
+        # one-positive-no-text call up front with a clear error rather than
+        # running (and billing) a poor detection. The run guard in
+        # _start_auto_detection enforces the same rule as a backstop.
+        positives = 0
+        for ex in (exemplars or []):
+            try:
+                if int(ex.get("label", 1)) == 1:
+                    positives += 1
+            except (TypeError, ValueError, AttributeError):
+                positives += 1  # malformed label defaults to positive
+        if not can_detect(has_text, positives):
+            return {"_error": (
+                "Reference-image detection needs at least two positive exemplars "
+                "(label 1) when object_class is empty. Add another example, or "
+                "pass object_class."
+            )}
 
         if not hasattr(plugin, "_run_auto_detect_headless"):
             return {

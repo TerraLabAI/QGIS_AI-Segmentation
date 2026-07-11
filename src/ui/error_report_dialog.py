@@ -1,7 +1,6 @@
 """
 Error report dialog for the AI Segmentation plugin.
 Minimal dialog: error message + copy logs + email contact + TerraLab link.
-Also provides a bug report dialog for user-initiated reports.
 """
 
 from __future__ import annotations
@@ -309,102 +308,15 @@ class ErrorReportDialog(QDialog):
         error_label.setStyleSheet("font-size: 12px; color: palette(text);")
         layout.addWidget(error_label)
 
-        # Short support code (head of the last run id): lets the user quote it
-        # even without copying the full log blob, and lets support match the
-        # report to the exact server-archived run. Shown only when a run
-        # happened this session.
-        try:
-            from ..core.telemetry import get_last_run_id
-            _run_id = get_last_run_id()
-        except Exception:
-            _run_id = None
-        if _run_id:
-            code_label = QLabel(tr("Support code: {code}").format(code=_run_id[:8]))
-            code_label.setTextFormat(Qt.TextFormat.PlainText)
-            code_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            code_label.setStyleSheet("font-size: 11px; color: palette(text);")
-            layout.addWidget(code_label)
-
         # Help text
         help_label = QLabel(
             "{}\n\n{}".format(
-                tr("Copy your logs with the button below and send them to our email."),
-                tr("We'll fix your issue :)"))
+                tr("Copy your logs with the button below and send them to our support email."),
+                tr("We'll get this fixed for you :)"))
         )
         help_label.setWordWrap(True)
         help_label.setStyleSheet("font-size: 11px; color: palette(text);")
         layout.addWidget(help_label)
-
-        # Step 1: Copy logs button (full width) - green primary
-        self._copy_btn = QPushButton(tr("1. Click to copy logs"))
-        self._copy_btn.setStyleSheet(_BTN_GREEN)
-        self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._copy_btn.clicked.connect(self._on_copy)
-        layout.addWidget(self._copy_btn)
-
-        # Arrow pointing down, centered (muted flow hint)
-        arrow_label = QLabel("\u25BC")
-        arrow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        arrow_label.setStyleSheet(_ARROW_STYLE)
-        layout.addWidget(arrow_label)
-
-        # Step 2: Email button (full width) - blue secondary, opens mailto link
-        self._email_btn = QPushButton(tr("2. Click to send to {}").format(SUPPORT_EMAIL))
-        self._email_btn.setToolTip(tr("Open email client"))
-        self._email_btn.setStyleSheet(_BTN_BLUE)
-        self._email_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._email_btn.clicked.connect(self._on_open_email)
-        layout.addWidget(self._email_btn)
-
-    def _on_copy(self):
-        """Copy diagnostic info to clipboard."""
-        clipboard = QApplication.clipboard()
-        clipboard.setText(self._diagnostic_info)
-        self._copy_btn.setText(tr("Copied!"))
-        from qgis.PyQt.QtCore import QTimer
-        QTimer.singleShot(2000, lambda: self._copy_btn.setText(tr("1. Click to copy logs")))
-
-    def _on_open_email(self):
-        """Open email client with support address."""
-        from urllib.parse import quote
-
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
-        subject = quote("AI Segmentation - Bug Report")
-        QDesktopServices.openUrl(QUrl(f"mailto:{SUPPORT_EMAIL}?subject={subject}"))
-
-
-class BugReportDialog(QDialog):
-    """
-    User-initiated bug report dialog.
-    Friendly tone, no error context - user reports something on their own.
-    """
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(tr("Report a Bug"))
-        self.setModal(True)
-        self.setMinimumWidth(400)
-        self.setMaximumWidth(500)
-
-        self._diagnostic_info = _collect_diagnostic_info("")
-
-        self._setup_ui()
-
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(16, 16, 16, 16)
-
-        # Friendly message
-        msg_label = QLabel(
-            "{}\n\n{}".format(
-                tr("Something not working?"),
-                tr("Copy your logs and send them to us, we'll look into it :)"))
-        )
-        msg_label.setWordWrap(True)
-        msg_label.setStyleSheet("font-size: 12px; color: palette(text);")
-        layout.addWidget(msg_label)
 
         # Step 1: Copy logs button (full width) - green primary
         self._copy_btn = QPushButton(tr("1. Click to copy logs"))
@@ -511,9 +423,3 @@ def _short_code(_title: str = "") -> str:
     to, which is a code smell to fix at the call site, not here.
     """
     return "unspecified_error"
-
-
-def show_bug_report(parent):
-    """Convenience function to show the bug report dialog."""
-    dialog = BugReportDialog(parent)
-    dialog.exec()

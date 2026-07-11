@@ -35,6 +35,19 @@ class _IndentDelegate(QStyledItemDelegate):
         return hint
 
 
+# Layer-tree group names whose rasters never win the DEFAULT pick: the AI Edit
+# plugin parks its generated rasters in an "AI-Edit" group at the top of the
+# tree, right over the map view, so the "topmost raster in view" heuristic
+# always grabbed one of them - and an AI Edit output is rarely the imagery the
+# user wants to segment. They stay listed and selectable; they just lose the
+# automatic pick unless they are the only rasters in the project.
+_DEPRIORITIZED_GROUP_NAMES = {"ai-edit", "ai edit"}
+
+
+def _is_deprioritized_group(name: str) -> bool:
+    return (name or "").strip().lower() in _DEPRIORITIZED_GROUP_NAMES
+
+
 class LayerTreeComboBox(QComboBox):
     """Drop-down that mirrors the QGIS Layer panel order with group headers.
 
@@ -49,6 +62,7 @@ class LayerTreeComboBox(QComboBox):
         super().__init__(parent)
         self._current_layer_id = None  # track selection across refreshes
         self._layer_ids = []  # ordered list of selectable layer IDs
+        self._deprioritized_ids = set()  # rasters under an AI Edit group
         self._refreshing = False
         self._frozen = False  # when True, ignore layer-tree changes (locked flow)
 
@@ -153,6 +167,7 @@ class LayerTreeComboBox(QComboBox):
         prev_id = self._current_layer_id
         self.clear()
         self._layer_ids = []
+        self._deprioritized_ids = set()
 
         root = QgsProject.instance().layerTreeRoot()
         self._traverse(root)
@@ -166,22 +181,24 @@ class LayerTreeComboBox(QComboBox):
                     restored = True
                     break
 
-        # If not restored, pick best raster: prefer one visible in current map view
+        # If not restored, pick best raster: prefer one visible in current map
+        # view, choosing among NON-deprioritized rasters first (AI Edit outputs
+        # only ever win the default when they are the only rasters around).
         if not restored:
-            best_idx = None
+            selectable = [i for i in range(self.count())
+                          if self.itemData(i) is not None]
+            preferred = [i for i in selectable
+                         if self.itemData(i) not in self._deprioritized_ids]
+            pool = preferred or selectable
+            best_idx = pool[0] if pool else None  # fallback: first of the pool
             try:
                 from qgis.utils import iface
                 canvas_extent = iface.mapCanvas().extent()
                 canvas_crs = iface.mapCanvas().mapSettings().destinationCrs()
                 from qgis.core import QgsCoordinateTransform
-                for i in range(self.count()):
-                    layer_id = self.itemData(i)
-                    if layer_id is None:
-                        continue
-                    if best_idx is None:
-                        best_idx = i  # fallback: first selectable
-                    layer = QgsProject.instance().mapLayer(layer_id)
-                    if layer and layer.extent().isEmpty():
+                for i in pool:
+                    layer = QgsProject.instance().mapLayer(self.itemData(i))
+                    if layer is None or layer.extent().isEmpty():
                         continue
                     # Transform layer extent to canvas CRS for comparison
                     try:
@@ -193,12 +210,8 @@ class LayerTreeComboBox(QComboBox):
                     if layer_extent.intersects(canvas_extent):
                         best_idx = i
                         break  # topmost visible raster in current view
-            except Exception:
-                # Fallback: just pick first selectable
-                for i in range(self.count()):
-                    if self.itemData(i) is not None:
-                        best_idx = i
-                        break
+            except Exception:  # nosec B110
+                pass  # headless (tests): keep the first-of-pool fallback
             if best_idx is not None:
                 self.setCurrentIndex(best_idx)
 
@@ -224,8 +237,10 @@ class LayerTreeComboBox(QComboBox):
                     return True
         return False
 
-    def _traverse(self, node, depth=0):
-        """Recursively walk the layer tree and add items."""
+    def _traverse(self, node, depth=0, deprioritized=False):
+        """Recursively walk the layer tree and add items. ``deprioritized``
+        marks the whole subtree of an AI Edit output group: its rasters are
+        listed as usual but recorded so the default pick skips them."""
         from qgis.core import QgsApplication
 
         visible_children = []
@@ -253,7 +268,9 @@ class LayerTreeComboBox(QComboBox):
                     item.setEnabled(False)
                     item.setSelectable(False)
                     item.setData(depth, depth_role)
-                self._traverse(child, depth + 1)
+                self._traverse(
+                    child, depth + 1,
+                    deprioritized or _is_deprioritized_group(child.name()))
 
             elif QgsLayerTree.isLayer(child):
                 layer = child.layer()
@@ -266,6 +283,8 @@ class LayerTreeComboBox(QComboBox):
                 if item:
                     item.setData(depth, depth_role)
                 self._layer_ids.append(layer.id())
+                if deprioritized:
+                    self._deprioritized_ids.add(layer.id())
 
     def _on_index_changed(self, index):
         """Handle user selection change."""

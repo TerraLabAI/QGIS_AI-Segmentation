@@ -23,6 +23,7 @@ from .shared import (
     _RECALL_FLOOR,
     _RECALL_FLOOR_EXEMPLAR_ONLY,
     _provider_name_for_log,
+    park_orphaned_worker,
 )
 
 # A cooperative stop normally confirms within ~3s (the poll loop breaks within
@@ -381,8 +382,12 @@ class AutoRunMixin:
         # before any billable setup, re-showing that gate's red cost line. The
         # headless/MCP path has no dock gate and manages its own budget.
         if not self._auto_headless_run:
+            from ...core.credit_gate import run_affordable
+
             balance, _is_free = self._auto_credit_snapshot()
-            if balance is not None and len(tiles) > int(balance):
+            # credit_gate.run_affordable owns the boundary: blocked only when
+            # the culled tile count STRICTLY exceeds the balance (== is allowed).
+            if not run_affordable(len(tiles), balance):
                 self._tel_detect_blocked("cost_over_balance")
                 if self.dock_widget:
                     try:
@@ -465,8 +470,17 @@ class AutoRunMixin:
         # Pick the merge policy default from the object type (overridable in the
         # review): discrete countable objects stay SEPARATE; continuous features
         # (roads, rivers, water, land cover) merge tile-split pieces. Set before
-        # the merger is built below so the live preview already uses it.
-        self._auto_merge_separate = self._default_merge_separate(prompt)
+        # the merger is built below so the live preview already uses it. An
+        # EMPTY prompt with drawn exemplars carries no token signal at all: it
+        # streams the live preview as continuous cover (MAP) and the client
+        # decides count-vs-map automatically at the end of the run from the run's
+        # own masks (see _finalize_drain_done), with a one-click review override.
+        if prompt:
+            self._auto_merge_separate = self._default_merge_separate(prompt)
+            self._auto_merge_mode_source = "prompt"
+        else:
+            self._auto_merge_separate = False
+            self._auto_merge_mode_source = "signal"
 
         # Exemplar boxes in xyxy PIXEL coords on the full-resolution zone grid.
         # Kept for the degenerate-exemplar guard + size logging below. The actual
@@ -497,6 +511,33 @@ class AutoRunMixin:
             QgsMessageLog.logMessage(
                 "Auto detection: empty prompt and no exemplars; aborting before "
                 "any credit is spent",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning,
+            )
+            self._auto_gsd = 0.0
+            self._auto_run_id = None
+            return
+
+        # Two-positive rule for the pure example path: with no text prompt, a
+        # single reference detects poorly, so require at least two positives.
+        # A text prompt lifts this (examples are then a bonus on top). Blocks
+        # BEFORE any billable call, exactly like the empty-query guard above, so
+        # a weak one-positive run never spends a credit. Also covers the
+        # interactive Enter path and the headless/MCP path (via _headless_error).
+        from ...core.detect_gate import MIN_EXAMPLE_POSITIVES, can_detect
+        positives = self._auto_exemplar_store.positives()
+        if not can_detect(bool(prompt), positives):
+            msg = tr("Add a second example, or type what to find.")
+            try:
+                self.dock_widget.set_auto_run_active(False)
+                self.dock_widget.set_auto_status("error", msg)
+            except (RuntimeError, AttributeError):
+                pass
+            self._headless_error = msg
+            self.iface.messageBar().pushWarning("AI Segmentation", msg)
+            QgsMessageLog.logMessage(
+                "Auto detection: example-only run needs at least {} positive "
+                "examples; aborting before any credit is spent".format(
+                    MIN_EXAMPLE_POSITIVES),
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
             self._auto_gsd = 0.0
@@ -548,8 +589,13 @@ class AutoRunMixin:
             # worker has no coarse fallback to crop from: if every example fails
             # to render, the user's drawn reference would be silently dropped
             # and the run would bill tiles as a misleading text-only detection.
-            # Guard it exactly like the empty-payload case above.
-            exemplar_stamps = self._build_exemplar_stamps(layer)
+            # Guard it exactly like the empty-payload case above. The zone grid
+            # (geo_bbox is the aspect-corrected extent) rides along so each
+            # stamp carries its full-image pixel box: on the one tile that
+            # fully contains it, the worker sends the box at the REAL in-situ
+            # object instead of pasting the crop there.
+            exemplar_stamps = self._build_exemplar_stamps(
+                layer, geo_bbox, pixel_w, pixel_h)
             if not exemplar_stamps:
                 msg = tr(
                     "Could not place the example on the image. Redraw the "
@@ -578,6 +624,12 @@ class AutoRunMixin:
         from qgis.PyQt.QtWidgets import QApplication
 
         self._clear_zone_tile_grid()
+        # Drop the zone's light blue fill for the WHOLE run, not just the
+        # review: the wash over the streaming detections made them read darker
+        # and more opaque live than the same objects after the run (the review
+        # already hides it). The zone outline stays; error/zero paths and
+        # "Adjust and run again" restore the fill.
+        self._set_zone_band_fill_visible(False)
         try:
             self.dock_widget.set_auto_run_active(True)
             self.dock_widget.auto_status_banner.setText(tr("Preparing tiles..."))
@@ -621,20 +673,44 @@ class AutoRunMixin:
         )
         # Confidence becomes a live post-run filter: capture the pre-run cutoff
         # for the live merge, and reset the scored-geom store this run fills.
-        # The cutoff is the PROMPT's shape-class default when the server policy
-        # carries one (natural objects score lower than built ones, so a flat
-        # cutoff would hide live detections the review then reveals), else the
-        # generic spin value.
-        from ...core.review_presets import class_confidence_for
+        # An EXEMPLAR-only run (a drawn example, no text) opens at the higher
+        # exemplar-only default so the live preview does not flood with weak
+        # look-alikes the review would then cut: live and review start from the
+        # SAME cutoff. A text run keeps the PROMPT's shape-class default when
+        # the server policy carries one (natural objects score lower than built
+        # ones, so a flat cutoff would hide live detections the review reveals),
+        # else the generic spin value.
+        from ...core.review_presets import (
+            class_confidence_for, review_start_confidence_default,
+        )
 
-        class_conf = class_confidence_for(prompt)
-        self._auto_confidence = (
-            class_conf if class_conf is not None
-            else self.dock_widget.get_auto_confidence())
+        if bool(has_exemplars) and not prompt:
+            self._auto_confidence = review_start_confidence_default("", True)
+        else:
+            class_conf = class_confidence_for(prompt)
+            self._auto_confidence = (
+                class_conf if class_conf is not None
+                else self.dock_widget.get_auto_confidence())
         self._auto_raw_count = 0
         self._auto_dense_tiles = 0
         self._auto_objects = []
         self._auto_preview_geoms = []
+        self._reset_review_refine_cache()
+        # Exemplar-only count-vs-map auto decision: on an empty-prompt run the
+        # worker collects raw (NMS-only, un-gated) fragments; the pump retains
+        # them (bounded) and accumulates the area-weighted mean tile coverage so
+        # finalize can decide MAP vs SEPARATE from the run's own masks. The tile
+        # ground area the coverage is measured against is constant per run.
+        from ...core.tile_manager import TILE_SIZE
+        self._auto_is_exemplar_only = bool(has_exemplars) and not prompt
+        self._auto_raw_fragments = [] if self._auto_is_exemplar_only else None
+        self._auto_raw_n_total = 0
+        self._auto_raw_cov_sum = 0.0
+        self._auto_raw_cov_sq_sum = 0.0
+        self._auto_tile_ground_area = (
+            (TILE_SIZE * self._auto_gsd) ** 2
+            if self._auto_is_exemplar_only and self._auto_gsd > 0 else 0.0)
+        self._auto_merge_override_used = False
         self._auto_protected_geoms = []  # fresh run: no hand-edited objects yet
         self._auto_manual_removed = set()
         # CRS/GSD are known here from the render; do not reset them (a stale
@@ -749,6 +825,9 @@ class AutoRunMixin:
             merge_scalars=self._auto_merge_scalars,
             subdivide_budget=self._auto_subdivide_budget(
                 len(tiles), bool(exemplar_stamps)),
+            # Exemplar-only runs collect raw (NMS-only) fragments so the client
+            # can decide count-vs-map after the run and offer a review override.
+            collect_raw=self._auto_is_exemplar_only,
         )
 
         # Telemetry: the paid run is now committed (all guards passed, worker
@@ -771,15 +850,17 @@ class AutoRunMixin:
                 run_id=self._auto_run_id,
                 tiles=len(tiles),
                 zone_km2=self._auto_zone_area_km2(),
-                # Example-only run: label it so analytics can tell it apart from a
-                # blank prompt. English literal (not localized) keeps aggregation
-                # clean across locales; the payload still carries only the object.
+                # Example-only run: label it so analytics can tell it apart from
+                # a blank prompt. English literal (not localized) keeps
+                # aggregation clean across locales.
                 object_class=prompt or "Example match",
                 detail=self._get_auto_detail_level(),
                 exemplar_count=self._auto_exemplar_store.count(),
                 est_credits=len(tiles),
                 credits_before=credits_before,
-                is_free_tier=is_free_tier,
+                is_free_tier=bool(is_free_tier),
+                merge_mode="separate" if self._auto_merge_separate else "map",
+                merge_mode_source=getattr(self, "_auto_merge_mode_source", "prompt"),
             )
         except Exception:
             pass  # nosec B110
@@ -801,25 +882,18 @@ class AutoRunMixin:
         never be the thing that trips mid-run exhaustion on its own."""
         if has_stamps:
             return 0
-        # The floor lets a SMALL dense zone walk the whole ladder: 4 base
-        # tiles that all saturate need 16 quadrants at depth 1 and up to 48
-        # more at depth 2 before every inference is under the ceiling; depth 1
-        # alone is often not enough on very dense scenes. Large runs scale at
-        # 2x the base grid, bounded by the same absolute cap.
-        cap = min(96, max(64, 2 * base_tiles))
+        # credit_gate.subdivide_budget owns the cap (min(96, max(64, 2*base)))
+        # and the credit clamp; subdivide_cap is the same ceiling before any
+        # clamp. The every<=0 short-circuit stays here so the credit snapshot is
+        # not read when quadrants ride the parent's charge (no clamp needed).
+        from ...core.credit_gate import subdivide_budget, subdivide_cap
         from ...core.detection_policy import resplit_charge_every
 
         every = resplit_charge_every()
         if every <= 0:
-            # The server serves quadrants on the parent tile's charge: a
-            # re-split can never drain the credit allowance, no clamp needed.
-            return cap
+            return subdivide_cap(base_tiles)
         credits, _is_free = self._auto_credit_snapshot()
-        if credits is None:
-            return cap
-        # The server bills 1 credit per `every` quadrants, so the credits left
-        # after the base grid stretch that much further.
-        return max(0, min(cap, (int(credits) - base_tiles) * every))
+        return subdivide_budget(credits, base_tiles, every)
 
     def _launch_auto_worker(
         self,
@@ -838,6 +912,7 @@ class AutoRunMixin:
         exemplar_stamps: list | None = None,
         merge_scalars: dict | None = None,
         subdivide_budget: int = 0,
+        collect_raw: bool = False,
     ) -> None:
         """Build, wire and start the detection worker; flip the dock to its
         running state. The worker renders + encodes each tile on its own thread
@@ -875,6 +950,7 @@ class AutoRunMixin:
             seam_min_dim=self._auto_seam_min_dim(),
             merge_scalars=merge_scalars,
             subdivide_budget=subdivide_budget,
+            collect_raw=collect_raw,
         )
         # Explicit QueuedConnection: these slots touch QGIS objects on the main
         # thread and the worker emits from its own thread. AutoConnection would
@@ -892,6 +968,11 @@ class AutoRunMixin:
         self._auto_worker.cancelled.connect(self._on_auto_cancelled, _queued)
         self._auto_worker.queue_state.connect(self._on_auto_queue_state, _queued)
         self._auto_worker.start()
+        # Canvas preview jobs re-render (and on online basemaps re-FETCH) the
+        # out-of-view margin after every repaint; during live tile streaming
+        # that is pure waste stacked on our own coalesced repaints. Paused for
+        # the run, restored by _stop_auto_live_pump at every terminal.
+        self._pause_preview_jobs()
 
         total_display = progress_total if progress_total else len(tiles)
         self.dock_widget.set_auto_run_active(True)
@@ -984,6 +1065,18 @@ class AutoRunMixin:
                 sig.disconnect(slot)
             except (TypeError, RuntimeError):
                 pass
+        # If the thread is still executing (the very reason this watchdog
+        # fired), _on_auto_cancelled must NOT be allowed to drop the last
+        # reference to it: garbage-collecting a running QThread hard-aborts
+        # QGIS, and freeing the busy guard would let a second run start over
+        # the wedged thread. Park a strong reference (released when the thread
+        # finishes) first, exactly as the unload path does.
+        try:
+            still_running = worker.isRunning()
+        except RuntimeError:
+            still_running = False
+        if still_running:
+            park_orphaned_worker(worker)
         # Route through the normal cancelled handler: it nulls the worker,
         # salvages any billed partials into review, and restores step-2.
         self._on_auto_cancelled()

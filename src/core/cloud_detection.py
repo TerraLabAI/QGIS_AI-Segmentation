@@ -33,22 +33,31 @@ _RLE_FORMAT: str = "offset_count_row_major_one_based"
 _TILE_IMAGE_FORMAT: str = "JPEG"
 _TILE_JPEG_QUALITY: int = 90
 
-# Reference-example ("exemplar") crops are pasted in ONE row along a tile's top
-# edge (composite_tile_with_stamps). The whole band MUST stay inside the vertical
-# tile overlap, so any ground it hides is always re-seen clean by the tile above
-# (stamp-region detections are dropped). stamp_size_cap enforces that invariant
-# for any exemplar count; both the worker (pre-sizing) and the compositor (layout)
-# read it, so the two never drift.
+# Reference-example ("exemplar") crops are pasted in ONE horizontal row along one
+# edge of a tile (composite_tile_with_stamps). The whole band MUST stay inside the
+# vertical tile overlap, so the ground it hides is always re-seen clean by the
+# neighbouring row (stamp-region detections are dropped). A normal tile bands its
+# TOP edge, whose ground is re-seen by the tile above. The FIRST grid row has no
+# tile above, so when a row below overlaps enough the top row bands its BOTTOM
+# edge instead (the mirror case, gated by top_row_bottom_stamp_ok): that ground
+# then falls in the overlap and is re-seen clean by the row below. stamp_size_cap
+# keeps the band inside the overlap for any exemplar count; both the worker
+# (pre-sizing) and the compositor (layout) read it, so the two never drift.
 _STAMP_PAD: int = 3            # gap around each pasted crop
-_STAMP_MAX: int = 160         # visual cap on a pasted crop's longest side
+# A pasted crop's longest side must fit inside the inter-row overlap band with its
+# padding, so the ground it hides is re-seen clean by the neighbouring row. That
+# is the binding constraint (it equals the band budget below); stamp_size_cap also
+# caps by each crop's share of the tile width, whichever is smaller.
+_STAMP_MAX: int = 195
 
 
 def stamp_size_cap(n: int) -> int:
-    """Longest-side pixel cap for ``n`` exemplar crops sharing one top-edge row.
+    """Longest-side pixel cap for ``n`` exemplar crops sharing one band row.
 
     Two ceilings keep the band inside the overlap for any ``n``: its height must
-    fit the vertical overlap band, and ``n`` crops must fit the tile width. The
-    binding (smallest) ceiling wins; ``_STAMP_MAX`` usually binds for small ``n``.
+    fit the vertical overlap band (minus padding), and ``n`` crops must fit the
+    tile width. The binding (smallest) ceiling wins; the band budget binds for
+    every supported count and the width share only bites at larger ``n``.
     """
     from .tile_manager import OVERLAP_FRACTION, TILE_SIZE
 
@@ -57,6 +66,61 @@ def stamp_size_cap(n: int) -> int:
     band_budget = overlap_px - 2 * _STAMP_PAD
     width_budget = (TILE_SIZE - _STAMP_PAD) // n - _STAMP_PAD
     return max(1, min(_STAMP_MAX, band_budget, width_budget))
+
+
+def in_situ_exemplar_box(
+    full_box, tx: int, ty: int, tw: int, th: int,
+) -> list[float] | None:
+    """Tile-local pixel box for an exemplar this tile FULLY contains, else None.
+
+    ``full_box`` is the exemplar's drawn box in FULL-image pixel coords (xyxy,
+    UNCLAMPED). On the one tile whose grid rect contains the whole box, the
+    worker sends the example box pointing at the REAL in-situ object instead of
+    at a pasted crop (and skips that crop's paste there), so the model sees the
+    object in its true context and fewer real pixels are occluded. A box that
+    straddles a tile edge, or overflows the zone image, must NOT be sent
+    in-situ (a partial view is not a faithful reference): this returns None and
+    the caller keeps the pasted-stamp path for that exemplar on that tile. The
+    mapped box is clamped to the tile and rejected when degenerate (< 1 px on a
+    side).
+    """
+    if not full_box or len(full_box) != 4:
+        return None
+    try:
+        x0, y0, x1, y1 = (float(v) for v in full_box)
+    except (TypeError, ValueError):
+        return None
+    # Full containment in the tile's grid rect; an unclamped box overflowing
+    # the zone image fails this for every tile, by construction.
+    if not (x0 >= tx and y0 >= ty and x1 <= tx + tw and y1 <= ty + th):
+        return None
+    bx0 = min(max(x0 - tx, 0.0), float(tw))
+    by0 = min(max(y0 - ty, 0.0), float(th))
+    bx1 = min(max(x1 - tx, 0.0), float(tw))
+    by1 = min(max(y1 - ty, 0.0), float(th))
+    if bx1 - bx0 < 1.0 or by1 - by0 < 1.0:
+        return None
+    return [bx0, by0, bx1, by1]
+
+
+def top_row_bottom_stamp_ok(
+    top_ty: int, top_th: int, next_ty: int, band_content_h: int,
+    pad: int = _STAMP_PAD,
+) -> bool:
+    """Whether the TOP grid row can stamp its band on the BOTTOM edge safely.
+
+    The top row has no row above to re-see its top-band ground clean, so it may
+    band its bottom edge instead and let the row BELOW re-see that ground. That
+    only works when the row below does not itself band the same strip: the top
+    row's bottom band and the next row's top band must not cover shared ground.
+    Bottom band ground is ``[top_ty + top_th - pad - band_content_h, ...)``; the
+    next row's top band ground is ``[next_ty, next_ty + pad + band_content_h)``.
+    They are clear of each other exactly when the inequality below holds; when the
+    overlap is too small they would hide the same strip, so the top row keeps its
+    top band (the top-edge residual is unchanged, never traded for an interior
+    hole). ``band_content_h`` is the tallest stamp, an upper bound on the band.
+    """
+    return next_ty + pad + band_content_h <= top_ty + top_th - pad - band_content_h
 
 
 # Blank-tile skip: a tile that renders as essentially one colour (nodata fill,
@@ -199,6 +263,7 @@ def render_zone_to_image(
     width: int,
     height: int,
     timeout_ms: int = 120000,
+    resample_local: bool = False,
 ):
     """Render a whole zone to one QImage off the main thread, without freezing.
 
@@ -220,6 +285,11 @@ def render_zone_to_image(
         width:   Output image width in pixels.
         height:  Output image height in pixels.
         timeout_ms: Hard cap so a stalled network render cannot hang forever.
+        resample_local: Render a fine LOCAL raster through the same averaged
+                     downsample clone the tile path uses, so a stamp shrunk to
+                     the run resolution is smoothed, not decimated nearest, and
+                     carries the SAME texture statistics as the tiles it must
+                     match. No-op for online providers (already resampled).
 
     Returns:
         (QImage, QgsRectangle actual_extent) on success, or (None, None).
@@ -233,11 +303,19 @@ def render_zone_to_image(
         return None, None
 
     t0 = time.monotonic()
+    render_clone = None
     try:
         settings = QgsMapSettings()
         settings.setOutputSize(QSize(width, height))
         settings.setExtent(extent)
-        settings.setLayers([layer])
+        # A local raster is decimated nearest when shrunk to the run resolution
+        # by default; render through the resampling clone so the stamp matches
+        # the tiles' averaged texture. None (and unchanged behaviour) for online
+        # providers or when the caller does not opt in.
+        if resample_local:
+            render_clone = _local_raster_render_clone(layer)
+        render_layer = render_clone if render_clone is not None else layer
+        settings.setLayers([render_layer])
         settings.setDestinationCrs(layer.crs())
         settings.setBackgroundColor(QColor(0, 0, 0))
         _set_quality_render_flags(settings)
@@ -263,6 +341,9 @@ def render_zone_to_image(
             job.cancelWithoutBlocking()
             logger.warning("render_zone_to_image: render timed out after %d ms", timeout_ms)
             return None, None
+        # The clone (when any) backed the render layer; release it now the job
+        # has finished, mirroring the tile render path's cleanup.
+        del render_clone
     except Exception as exc:
         logger.warning("render_zone_to_image: failed for %dx%d: %s", width, height, exc)
         return None, None
@@ -752,9 +833,9 @@ def encode_tile_png(
     return (tx, ty, cw, ch), data
 
 
-def composite_tile_with_stamps(img, tx, ty, tw, th, stamps):
+def composite_tile_with_stamps(img, tx, ty, tw, th, stamps, bottom=False):
     """Encode one tile, with reference-example crops STAMPED in a single row along
-    its top edge (composite-per-tile). The cloud model's exemplars are same-image only, so to make
+    one edge (composite-per-tile). The cloud model's exemplars are same-image only, so to make
     one drawn example work on every tile we paste its natural-context crop into
     each tile and point the example box at the OBJECT inside the pasted pixels.
 
@@ -771,12 +852,15 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps):
                 stamping, where ``obj_box`` is ``[x0,y0,x1,y1]`` in crop-pixel
                 coords framing the drawn object (or None to use the whole crop).
                 A plain ``(crop, label)`` pair is also accepted (whole-crop box).
+        bottom: paste the band along the BOTTOM edge instead of the top (the
+                first-row mirror case; see top_row_bottom_stamp_ok). Either way
+                the band stays inside the inter-row overlap.
 
     Returns ``((tx, ty, cw, ch), jpeg_bytes, exemplar_boxes, stamp_norm)`` where
     ``exemplar_boxes`` are ``[{"box":[x0,y0,x1,y1], "label":1|0}]`` in TILE pixel
-    coords and ``stamp_norm`` is ``[0,0,nx,ny]`` (normalized) covering the stamp
-    region so detections that land on it (the example itself) can be dropped.
-    Returns None on an empty/failed tile.
+    coords and ``stamp_norm`` is ``[nx0,ny0,nx1,ny1]`` (normalized): the REAL
+    pasted rectangle wherever the band landed, so detections that fall on it (the
+    example itself) can be dropped. Returns None on an empty/failed tile.
     """
     from qgis.PyQt.QtCore import QBuffer, QRect
 
@@ -790,23 +874,25 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps):
     sub = img.copy(QRect(tx, ty, cw, ch))
 
     boxes: list[dict] = []
+    min_x = min_y = None
     max_x = 0
     max_y = 0
     pad = _STAMP_PAD
     if stamps:
         from .tile_manager import OVERLAP_FRACTION, TILE_SIZE
 
-        # Stamps go in a SINGLE HORIZONTAL row along the TOP edge. The band must
-        # never reach below the vertical tile overlap, or ground hidden under it
-        # is not guaranteed to be re-seen clean by the tile above (stamp-region
-        # detections are dropped). Stamps are pre-sized (stamp_size_cap) so all
-        # of them fit one row inside this budget; anything that still would not
-        # fit (only possible on a degenerate narrow edge tile) is skipped here,
-        # never wrapped onto a second row that would poke past the overlap.
+        # Stamps go in a SINGLE HORIZONTAL row pinned to the top edge, or the
+        # bottom edge when `bottom` is set (the first grid row's mirror case).
+        # The band must never reach past the vertical tile overlap, or ground
+        # hidden under it is not guaranteed to be re-seen clean by the
+        # neighbouring row (stamp-region detections are dropped). Stamps are
+        # pre-sized (stamp_size_cap) so all of them fit one row inside this
+        # budget; anything that still would not fit (only possible on a
+        # degenerate narrow edge tile) is skipped here, never wrapped onto a
+        # second row that would poke past the overlap.
         band_h = min(ch, int(TILE_SIZE * OVERLAP_FRACTION))
         painter = QPainter(sub)
         x = pad
-        y = pad
         for stamp in stamps:
             if len(stamp) == 3:
                 crop, label, obj_box = stamp
@@ -818,8 +904,11 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps):
             # Row full: stop (never wrap down past the overlap band).
             if x + sw + pad > cw and x > pad:
                 break
-            if y + sh + pad > band_h:  # would reach below the overlap: skip
+            if sh + pad > band_h:  # taller than the overlap band: skip
                 continue
+            # Pin to the chosen edge: `pad` from the top, or `pad` from the
+            # bottom so the band still lies inside the bottom overlap strip.
+            y = (ch - pad - sh) if bottom else pad
             painter.drawImage(QRect(x, y, sw, sh), crop)
             # Send a box tight to the object (obj_box) offset by the paste
             # position, clamped to the pasted crop. The whole pasted crop still
@@ -837,6 +926,8 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps):
                 "box": [float(bx0), float(by0), float(bx1), float(by1)],
                 "label": int(label),
             })
+            min_x = x if min_x is None else min(min_x, x)
+            min_y = y if min_y is None else min(min_y, y)
             max_x = max(max_x, x + sw)
             max_y = max(max_y, y + sh)
             x += sw + pad
@@ -844,8 +935,12 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps):
 
     stamp_norm = None
     if boxes:
+        # The REAL pasted rectangle (normalized), padded by one gap on each side
+        # and clamped to the tile. For top placement min_y ~ pad so ny0 ~ 0
+        # (the historical [0,0,nx,ny]); for bottom placement it hugs the bottom.
         stamp_norm = [
-            0.0, 0.0,
+            max(0.0, (min_x - pad) / cw),
+            max(0.0, (min_y - pad) / ch),
             min(1.0, (max_x + pad) / cw),
             min(1.0, (max_y + pad) / ch),
         ]

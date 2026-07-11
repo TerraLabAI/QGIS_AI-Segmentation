@@ -17,6 +17,7 @@ from ...core.i18n import tr
 from ..background_workers import DepsInstallWorker, DownloadWorker, VerifyWorker
 from ..error_report_dialog import show_error_report
 from .shared import (
+    SETTINGS_KEY_LAST_MANUAL_SESSION_TS,
     _get_change_path_instructions,
 )
 
@@ -247,7 +248,7 @@ class EnvSetupMixin:
             import time
             from qgis.PyQt.QtCore import QSettings
             ts = QSettings().value(
-                "AISegmentation/last_manual_session_ts", 0, type=int)
+                SETTINGS_KEY_LAST_MANUAL_SESSION_TS, 0, type=int)
             return 0 < ts and (time.time() - ts) < days * 86400
         except Exception:  # noqa: BLE001 - heuristic only
             return False
@@ -279,19 +280,17 @@ class EnvSetupMixin:
             )
             if self._headless:
                 return
-            # Show user-friendly error dialog
-            from qgis.PyQt.QtWidgets import QMessageBox
-            msg_box = QMessageBox(self.iface.mainWindow())
-            msg_box.setIcon(QMessageBox.Icon.Critical)
-            msg_box.setWindowTitle(tr("PyTorch Error"))
-            msg_box.setText(tr("PyTorch cannot load on Windows"))
-            msg_box.setInformativeText(
+            # Show user-friendly error dialog (same converged helper every
+            # other error path here uses: copy-logs + email, not a bare OK box)
+            show_error_report(
+                self.iface.mainWindow(),
+                tr("PyTorch cannot load on Windows"),
                 tr("The plugin requires Visual C++ Redistributables to run PyTorch.\n\n"
                    "Please download and install:\n"
                    "https://aka.ms/vs/17/release/vc_redist.x64.exe\n\n"
-                   "After installation, restart QGIS and try again."))
-            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg_box.exec()
+                   "After installation, restart QGIS and try again."),
+                error_code="pytorch_dll_error",
+            )
         else:
             QgsMessageLog.logMessage(
                 f"Could not determine device info: {info}",
@@ -882,7 +881,11 @@ class EnvSetupMixin:
             error_title = tr("Installation Failed")
             error_code = "installation_failed"
             msg_lower = message.lower() if message else ""
-            from ...core.pip_diagnostics import is_disk_full
+            from ...core.pip_diagnostics import (
+                get_app_control_help,
+                is_app_control_error,
+                is_disk_full,
+            )
             if "not enough free disk space" in msg_lower or is_disk_full(msg_lower):
                 # Preflight or mid-install disk exhaustion: the message already
                 # carries the free-up / AI_SEGMENTATION_CACHE_DIR guidance.
@@ -904,6 +907,14 @@ class EnvSetupMixin:
                 error_title = tr("Restart QGIS Required")
                 error_msg = get_file_locked_help()
                 error_code = "restart_qgis_required"
+            elif is_app_control_error(msg_lower):
+                # AppLocker/WDAC style managed policy: checked BEFORE the
+                # generic "blocked" branch below, whose change-path advice is
+                # a dead end (the policy blocks any user-writable location).
+                from ...core.venv_manager import CACHE_DIR
+                error_title = tr("Blocked by IT Security Policy")
+                error_msg = get_app_control_help(CACHE_DIR)
+                error_code = "app_control_policy"
             elif any(p in msg_lower for p in [
                 "access is denied", "winerror 5", "winerror 225",
                 "permission denied", "blocked",
@@ -1004,14 +1015,27 @@ class EnvSetupMixin:
             # A broken native module (torch DLL blocked by a missing VC++
             # runtime) is the dominant verify failure: route it to the
             # actionable fix-it steps instead of a dead-end generic dialog.
-            from ...core.pip_diagnostics import get_vcpp_help, is_dll_init_error
+            from ...core.pip_diagnostics import (
+                get_app_control_help,
+                get_vcpp_help,
+                is_app_control_error,
+                is_dll_init_error,
+            )
             error_title = tr("Verification Failed")
             error_code = "verification_failed"
             body = "{}\n{}".format(
                 tr("Virtual environment was created but verification failed:"),
                 message)
             low = (message or "").lower()
-            if is_dll_init_error(low) or "required dll failed to initialize" in low:
+            if is_app_control_error(low):
+                # A managed policy (AppLocker/WDAC) blocking a DLL also prints
+                # "DLL load failed": checked first so the user gets the IT
+                # allow-rule guidance, not the VC++ runtime steps.
+                from ...core.venv_manager import CACHE_DIR
+                error_title = tr("Blocked by IT Security Policy")
+                error_code = "app_control_policy"
+                body = "{}\n\n{}".format(message, get_app_control_help(CACHE_DIR))
+            elif is_dll_init_error(low) or "required dll failed to initialize" in low:
                 error_title = tr("A Component Failed to Load")
                 error_code = "dll_init_failed"
                 body = "{}\n\n{}".format(message, get_vcpp_help())
@@ -1052,6 +1076,12 @@ class EnvSetupMixin:
 
     def _auto_download_checkpoint(self):
         """Auto-download model after deps install if not already present."""
+        # Guard: reachable from four paths (install finish, verify finish,
+        # dependency-ready shortcut, retry); a second start while one is
+        # already running would corrupt the checkpoint download.
+        if self.download_worker is not None and self.download_worker.isRunning():
+            return
+
         # This path only runs at the tail of a fresh install/repair: the user
         # is onboarding and will click Start within moments, so ask
         # _on_predictor_loaded to warm the model as soon as it is ready.

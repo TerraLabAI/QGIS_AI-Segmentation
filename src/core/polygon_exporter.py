@@ -705,11 +705,6 @@ def _overlap_metrics(g1: QgsGeometry, g2: QgsGeometry) -> tuple[float, float]:
         return 0.0, 0.0
 
 
-def _iou(g1: QgsGeometry, g2: QgsGeometry) -> float:
-    """Intersection-over-Union of two QgsGeometry polygons (see _overlap_metrics)."""
-    return _overlap_metrics(g1, g2)[0]
-
-
 def _ios_and_span(g1: QgsGeometry, g2: QgsGeometry,
                   a1: float | None = None,
                   a2: float | None = None) -> tuple[float, float]:
@@ -834,9 +829,9 @@ def apply_geometry_refinement(
         except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
             pass
     if ortho:
-        # Same parameters as refine_detection_geometry: tiny snap tolerance,
-        # plenty of iterations, and only nudge segments already within 15
-        # degrees of 0/90 (a genuinely diagonal wall is left alone).
+        # Tiny snap tolerance, plenty of iterations, and only nudge segments
+        # already within 15 degrees of 0/90 (a genuinely diagonal wall is
+        # left alone).
         try:
             r = g.orthogonalize(1.0e-8, 1000, 15.0)
             if r is not None and not r.isEmpty():
@@ -901,6 +896,66 @@ def apply_right_angles(geom: "QgsGeometry", destair_tol: float = 0.0) -> "QgsGeo
     except Exception:  # noqa: BLE001 -- refine is best-effort
         return geom
     return g
+
+
+def shape_polygon_geometry(
+    geom: "QgsGeometry",
+    mupp: float,
+    simplify_px: int = 0,
+    smooth: bool = False,
+    expand_px: int = 0,
+    fill_holes: bool = False,
+    ortho: bool = False,
+) -> "QgsGeometry":
+    """Apply the Manual refine controls to an EXISTING polygon geometry.
+
+    The Refine-in-Manual handoff edits detections that have no source mask
+    (their shape came from the cloud run), so the mask-space refinement
+    pipeline cannot run. This is its geometry-space twin: same controls,
+    same order (fill holes, expand/contract, simplify, right angles, round
+    corners), with pixel-denominated controls converted to ground units via
+    ``mupp`` (map units per pixel of the source raster). Callers keep the
+    PRISTINE geometry and re-shape from it on every settings change, so the
+    operation stays non-destructive. Best-effort: returns the input on any
+    failure, never raises.
+    """
+    if geom is None or geom.isEmpty() or not mupp or mupp <= 0:
+        return geom
+    g = QgsGeometry(geom)
+    try:
+        if fill_holes:
+            parts = g.asMultiPolygon() if g.isMultipart() else [g.asPolygon()]
+            shells = [[rings[0]] for rings in parts if rings]
+            if shells:
+                r = QgsGeometry.fromMultiPolygonXY(shells)
+                if r is not None and not r.isEmpty():
+                    g = r
+        if expand_px:
+            r = g.buffer(expand_px * mupp, 8)
+            if r is not None and not r.isEmpty():
+                g = r
+        # Same px -> tolerance scale as the Manual mask pipeline
+        # (_compute_simplification_tolerance), so the spinbox value means the
+        # same thing whether the polygon came from a local mask or the cloud.
+        tolerance = simplify_px * mupp * 0.5 if simplify_px > 0 else 0.0
+        if tolerance > 0:
+            r = g.simplify(tolerance)
+            if r is not None and not r.isEmpty():
+                g = r
+        if ortho:
+            g = apply_right_angles(
+                g, destair_tol=max(0.0, 3 * mupp * 0.5 - tolerance))
+        if smooth:
+            r = g.smooth(1, 0.25, -1.0, 120.0)
+            if r is not None and not r.isEmpty():
+                g = r
+        if g.isGeosValid() is False:
+            r = g.makeValid()
+            if r is not None and not r.isEmpty():
+                g = r
+    except Exception:  # noqa: BLE001 -- refine is best-effort
+        return geom
+    return g if g is not None and not g.isEmpty() else geom
 
 
 def suppress_redundant_hypotheses(
@@ -1294,8 +1349,16 @@ class IncrementalMerger:
             # low IoS but its overlap strip runs the object's length along the
             # seam, so its span reaches a seam-strip width. Distinct large
             # neighbours are spatially apart, so their overlap span is small.
+            # The span requirement takes a tolerance: mask edges land a pixel
+            # or two short of the tile border and the simplify pass shaves the
+            # strip further, so a genuine seam strip measures slightly UNDER
+            # the theoretical overlap width; requiring the full width lets
+            # near-exact seam splits through as overlapping duplicates. An
+            # incidental corner touch between distinct neighbours stays far
+            # below this scale.
             if both_large and seam_span_armed:
-                if ios >= self._seam_span_ios and span >= self._seam_min_dim:
+                if (ios >= self._seam_span_ios
+                        and span >= 0.85 * self._seam_min_dim):  # noqa: W503
                     matches.append(fid)
                     continue
             # Robust same-object dedup (non-seam only): decent overlap + nearly
@@ -1489,70 +1552,6 @@ class IncrementalMerger:
             (fid, self._keepers[fid], self._scores.get(fid, 0.0))
             for fid in self._live_ids
         ]
-
-
-def refine_detection_geometry(
-    geom: "QgsGeometry",
-    gsd: float,
-    simplify_k: float = 2.5,
-    rectangularity_threshold: float = 0.85,
-) -> "QgsGeometry":
-    """Turn a raw SAM detection polygon into a clean GIS-grade footprint.
-
-    SAM masks have 1-pixel staircase edges. The pipeline the literature
-    converges on: simplify to a ground-sample-distance-relative tolerance, then
-    branch by shape:
-
-      - Man-made / rectangular objects (buildings, roofs, pools, solar panels):
-        orthogonalize so corners snap to right angles (QgsGeometry.orthogonalize,
-        native C++, no extra dependency).
-      - Organic objects (trees, water, fields): Chaikin-smooth the outline
-        (QgsGeometry.smooth, native C++) so it reads as a natural curve.
-
-    The branch is decided by rectangularity = area / oriented-bounding-box area;
-    >= 0.85 is man-made. Simplify always runs first (regularizing a jagged
-    polygon would lock in the noise).
-
-    Sources: buildingregulariser (simplify @ 2-3x GSD then regularize), QGIS
-    orthogonalize/smooth, Visvalingam/Douglas-Peucker simplification guidance.
-
-    Args:
-        geom: Polygon/multipolygon to refine.
-        gsd:  Ground sample distance (map units per pixel) of the source render.
-        simplify_k: Simplify tolerance as a multiple of gsd (2-3 recommended).
-        rectangularity_threshold: area/obb-area above which to orthogonalize.
-
-    Returns:
-        The refined geometry (or the input unchanged on any failure).
-    """
-    if geom is None or geom.isEmpty():
-        return geom
-    try:
-        if gsd and gsd > 0:
-            simplified = geom.simplify(simplify_k * gsd)
-            if simplified is not None and not simplified.isEmpty():
-                geom = simplified
-
-        rectangularity = 0.0
-        try:
-            obb = geom.orientedMinimumBoundingBox()
-            obb_area = obb[1] if obb and len(obb) > 1 else 0.0
-            if obb_area and obb_area > 0:
-                rectangularity = geom.area() / obb_area
-        except Exception:
-            rectangularity = 0.0
-
-        if rectangularity >= rectangularity_threshold:
-            ortho = geom.orthogonalize(1.0e-8, 1000, 15.0)
-            if ortho is not None and not ortho.isEmpty():
-                geom = ortho
-        else:
-            smoothed = geom.smooth(1, 0.25, -1.0, 120.0)
-            if smoothed is not None and not smoothed.isEmpty():
-                geom = smoothed
-    except Exception:
-        return geom
-    return geom
 
 
 # ---------------------------------------------------------------------------

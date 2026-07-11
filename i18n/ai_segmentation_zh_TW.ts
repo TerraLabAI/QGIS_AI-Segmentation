@@ -4,10 +4,6 @@
 <context>
     <name>AISegmentation</name>
     <message>
-        <source>Display colors:</source>
-        <translation>顯示顏色：</translation>
-    </message>
-    <message>
         <source>Normal</source>
         <translation>正常</translation>
     </message>
@@ -22,10 +18,6 @@
     <message>
         <source>Outline</source>
         <translation>輪廓</translation>
-    </message>
-    <message>
-        <source>How detections are coloured on the map (visual only): Normal outline, Confidence heatmap (green sure, red uncertain), or a random colour per object to tell them apart.</source>
-        <translation>偵測結果在地圖上的顯色方式（僅影響外觀）：一般輪廓、信心度熱區圖（綠色代表確定、紅色代表不確定），或依物件顯示隨機顏色以便區分。</translation>
     </message>
     <message>
         <source>Retry</source>
@@ -48,26 +40,6 @@
         <translation>描述要尋找的內容</translation>
     </message>
     <message>
-        <source>solar panel, building, tree…</source>
-        <translation>solar panel, building, tree…</translation>
-    </message>
-    <message>
-        <source>1-2 words, English</source>
-        <translation>1-2 個字，英文</translation>
-    </message>
-    <message>
-        <source>optional</source>
-        <translation>選填</translation>
-    </message>
-    <message>
-        <source>Show an example</source>
-        <translation>顯示範例</translation>
-    </message>
-    <message>
-        <source>Outline one object; the AI finds the rest. No good name for it? Examples alone work too.</source>
-        <translation>圈選一個物件，AI 會找出其他相似物件。想不到合適的名稱？只用範例也可以。</translation>
-    </message>
-    <message>
         <source>Exclude a look-alike</source>
         <translation>排除相似物件</translation>
     </message>
@@ -88,14 +60,6 @@
         <translation>範例比對</translation>
     </message>
     <message>
-        <source>Include</source>
-        <translation>納入</translation>
-    </message>
-    <message>
-        <source>Exclude</source>
-        <translation>排除</translation>
-    </message>
-    <message>
         <source>Mark an object to find more like it.</source>
         <translation>標記一個物件以尋找更多類似的物件。</translation>
     </message>
@@ -104,110 +68,12 @@
         <translation>標記一個誤判物件，以剔除類似的結果。</translation>
     </message>
     <message>
-        <source>Draw on map</source>
-        <translation>在地圖上繪製</translation>
-    </message>
-    <message>
-        <source>Outline one object on the map; SAM finds all similar ones.</source>
-        <translation>在地圖上圈選一個物件，SAM 會找出所有相似物件。</translation>
-    </message>
-    <message>
         <source>Finer detail finds smaller objects.</source>
         <translation>更精細的細節可偵測更小的物件。</translation>
     </message>
     <message>
-        <source>{n} object(s) detected</source>
-        <translation>偵測到 {n} 個物件</translation>
-    </message>
-    <message>
-        <source>Adjust below, then export</source>
-        <translation>在下方調整，然後 Export</translation>
-    </message>
-    <message>
         <source>Refine in Manual mode</source>
         <translation>在手動模式中細修</translation>
-    </message>
-    <message>
-        <source>Some objects off? Refine them in Manual mode first.</source>
-        <translation>有些物件不太準確？請先在手動模式中細修。</translation>
-    </message>
-    <message>
-        <source>Now outline one object on the map, then double-click to finish.</source>
-        <translation>現在在地圖上圈選一個物件，再雙擊以完成。</translation>
-    </message>
-    <message>
-        <source>Now outline one false positive on the map, then double-click to finish.</source>
-        <translation>現在在地圖上圈選一個誤判物件，再雙擊以完成。</translation>
-    </message>
-    <message>
-        <source>Refine in Manual</source>
-        <translation>在手動模式中細修</translation>
-    </message>
-    <message>
-        <source>Open these detections in Manual mode to fix specific objects with point-and-click, then return here to Finish.</source>
-        <translation>在手動模式中開啟這些偵測結果，以點擊方式修正特定物件，完成後返回此處按「完成」。</translation>
-    </message>
-    <message>
-        <source>Refining Automatic results</source>
-        <translation>正在細修自動偵測結果</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/build.py" line="0"/>
-        <source>Fine-tune the detections, then go back to review to export.</source>
-        <translation>微調偵測結果，再返回檢視畫面進行 Export。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
-        <source>Editing this detection.</source>
-        <translation>正在編輯此偵測結果。</translation>
-    </message>
-    <message>
-        <source>Editing this detection</source>
-        <translation>正在編輯此偵測結果</translation>
-    </message>
-    <message>
-        <source>adds area</source>
-        <translation>新增區域</translation>
-    </message>
-    <message>
-        <source>removes area</source>
-        <translation>移除區域</translation>
-    </message>
-    <message>
-        <source>keeps it (turns green)</source>
-        <translation>保留它（會變成綠色）</translation>
-    </message>
-    <message>
-        <source>removes the object</source>
-        <translation>移除該物件</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
-        <source>Press S to keep it (turns green) · Delete removes it</source>
-        <translation>按 S 保留它（會變成綠色）· 按 Delete 移除它</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
-        <source>Click a blue detection to open it for editing.</source>
-        <translation>點擊藍色的偵測結果以開啟編輯。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
-        <source>Left-click adds area, right-click removes it. Press S to keep it (turns green).</source>
-        <translation>左鍵點擊新增區域，右鍵點擊移除區域。按 S 保留它（會變成綠色）。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
-        <source>{kept} of {total} kept - 'Back to review' to export.</source>
-        <translation>已保留 {kept}／{total} 個－點擊「返回檢視」進行 Export。</translation>
-    </message>
-    <message>
-        <source>Back to review</source>
-        <translation>返回檢視</translation>
-    </message>
-    <message>
-        <source>Finish or go back to review to switch modes.</source>
-        <translation>請先完成或返回檢視，才能切換模式。</translation>
     </message>
     <message>
         <source>Finish or exit the review to switch modes.</source>
@@ -218,28 +84,8 @@
         <translation>正在準備手動模式，載入本機模型...</translation>
     </message>
     <message>
-        <source>Blue = detections to review, one at a time.</source>
-        <translation>藍色＝待檢視的偵測結果，一次處理一個。</translation>
-    </message>
-    <message>
-        <source>Left-click a detection to edit it (adds area); right-click to remove a part</source>
-        <translation>左鍵點擊偵測結果以編輯（新增區域）；右鍵點擊以移除部分區域</translation>
-    </message>
-    <message>
-        <source>Press S to validate it (turns green), then move on to the next one.</source>
-        <translation>按 S 確認它（會變成綠色），然後繼續下一個。</translation>
-    </message>
-    <message>
         <source>Locked - refined in Manual mode</source>
         <translation>已鎖定－已在手動模式中細修</translation>
-    </message>
-    <message>
-        <source>Confidence is locked while you refine in Manual mode.</source>
-        <translation>在手動模式中細修時，信心度會鎖定。</translation>
-    </message>
-    <message>
-        <source>Refining in Manual needs the local model. Open Manual mode once to finish setup, then try again.</source>
-        <translation>在手動模式中細修需要本機模型。請先開啟手動模式完成設定，再試一次。</translation>
     </message>
     <message>
         <source>Detection</source>
@@ -472,18 +318,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>選擇點陣圖圖層（GeoTIFF、WMS、XYZ 圖磚等）</translation>
     </message>
     <message>
-        <source>No raster layer found. Add a GeoTIFF, image file, or online layer (WMS, XYZ) to your project.</source>
-        <translation>找不到點陣圖圖層。請將 GeoTIFF、影像檔或線上圖層（WMS、XYZ）加入您的專案。</translation>
-    </message>
-    <message>
-        <source>No layer found. Add a raster or online layer to your project.</source>
-        <translation>找不到圖層。請將點陣圖或線上圖層加入您的專案。</translation>
-    </message>
-    <message>
-        <source>Start AI Segmentation</source>
-        <translation>開始 AI Segmentation</translation>
-    </message>
-    <message>
         <source>Save polygon</source>
         <translation>儲存多邊形</translation>
     </message>
@@ -518,14 +352,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>Click and drag to pan the map</source>
         <translation>點擊並拖曳以平移地圖</translation>
-    </message>
-    <message>
-        <source>Shortcuts</source>
-        <translation>快速鍵</translation>
-    </message>
-    <message>
-        <source>Save current polygon to your session</source>
-        <translation>將目前的多邊形儲存至此工作階段</translation>
     </message>
     <message>
         <source>The AI model works best on one element at a time.</source>
@@ -570,14 +396,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>Fill interior holes in the selection</source>
         <translation>填補選取範圍內部的孔洞</translation>
-    </message>
-    <message>
-        <source>Min area:</source>
-        <translation>最小面積：</translation>
-    </message>
-    <message>
-        <source>Remove polygons smaller than this area (in pixels)</source>
-        <translation>移除面積小於此值的多邊形（以像素計）</translation>
     </message>
     <message>
         <source>Shape</source>
@@ -636,10 +454,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>請等待 SAM 模型載入完成。</translation>
     </message>
     <message>
-        <source>Load Failed</source>
-        <translation>載入失敗</translation>
-    </message>
-    <message>
         <source>Layer Creation Failed</source>
         <translation>建立圖層失敗</translation>
     </message>
@@ -654,10 +468,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>Could not save layer to file:</source>
         <translation>無法將圖層儲存至檔案：</translation>
-    </message>
-    <message>
-        <source>Layer was saved but could not be loaded:</source>
-        <translation>圖層已儲存，但無法載入：</translation>
     </message>
     <message>
         <source>You have {count} unsaved polygon(s).</source>
@@ -684,10 +494,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>請使用「Export 至圖層」來保留它們。</translation>
     </message>
     <message>
-        <source>This will end the current segmentation session.</source>
-        <translation>這將結束目前的分割工作階段。</translation>
-    </message>
-    <message>
         <source>Do you want to continue?</source>
         <translation>是否要繼續？</translation>
     </message>
@@ -700,24 +506,12 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>警告：您即將編輯一個已儲存的多邊形。</translation>
     </message>
     <message>
-        <source>New to AI Segmentation?</source>
-        <translation>第一次使用 AI Segmentation？</translation>
-    </message>
-    <message>
-        <source>Watch our tutorial</source>
-        <translation>觀看我們的教學影片</translation>
-    </message>
-    <message>
         <source>Contact us</source>
         <translation>聯絡我們</translation>
     </message>
     <message>
         <source>Bug, question, feature request?</source>
         <translation>錯誤回報、問題或功能建議？</translation>
-    </message>
-    <message>
-        <source>We'd love to hear from you!</source>
-        <translation>我們很樂意聽取您的意見！</translation>
     </message>
     <message>
         <source>Copy email address</source>
@@ -740,10 +534,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>設定</translation>
     </message>
     <message>
-        <source>Help</source>
-        <translation>說明</translation>
-    </message>
-    <message>
         <source>Terms</source>
         <translation>條款</translation>
     </message>
@@ -764,12 +554,12 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>使用 AI 分割點陣影像中的地物</translation>
     </message>
     <message>
-        <source>Copy your logs with the button below and send them to our email.</source>
-        <translation>使用下方按鈕複製您的日誌，並寄送至我們的電子郵件。</translation>
+        <source>Copy your logs with the button below and send them to our support email.</source>
+        <translation>使用下方按鈕複製您的記錄檔，並寄至我們的支援信箱。</translation>
     </message>
     <message>
-        <source>We'll fix your issue :)</source>
-        <translation>我們會修復您的問題 :)</translation>
+        <source>We'll get this fixed for you :)</source>
+        <translation>我們會盡快為您修復 :)</translation>
     </message>
     <message>
         <source>1. Click to copy logs</source>
@@ -798,14 +588,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>Click is outside the &apos;{layer}&apos; raster. To segment another raster, stop the current segmentation first.</source>
         <translation>點擊位置在「{layer}」點陣圖範圍之外。若要分割其他點陣圖，請先停止目前的分割。</translation>
-    </message>
-    <message>
-        <source>Big update dropped — v{version} is here!</source>
-        <translation>重大更新來了－v{version} 正式推出！</translation>
-    </message>
-    <message>
-        <source>Grab it now</source>
-        <translation>立即更新</translation>
     </message>
     <message>
         <source>{ext} format is not directly supported. GDAL is not available.
@@ -864,10 +646,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>無法從線上圖層取得圖磚，請檢查您的網路連線。</translation>
     </message>
     <message>
-        <source>Online layer returned blank tiles for this area. Try panning to an area with data coverage.</source>
-        <translation>線上圖層在此區域傳回空白圖磚。請嘗試平移至有資料覆蓋的區域。</translation>
-    </message>
-    <message>
         <source>Crop Error</source>
         <translation>裁切錯誤</translation>
     </message>
@@ -884,22 +662,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>回報錯誤</translation>
     </message>
     <message>
-        <source>Disconnected parts detected in your polygon.</source>
-        <translation>偵測到您的多邊形中有不連續的部分。</translation>
-    </message>
-    <message>
-        <source>For best accuracy, segment one element at a time.</source>
-        <translation>為求最佳準確度，請一次分割一個地物。</translation>
-    </message>
-    <message>
-        <source>Layer: {}</source>
-        <translation>圖層：{}</translation>
-    </message>
-    <message>
-        <source>Polygon saved! Click on another element to segment, or export your polygons.</source>
-        <translation>多邊形已儲存！點擊其他地物繼續分割，或 Export 您的多邊形。</translation>
-    </message>
-    <message>
         <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
         <translation>偵測到不連續的部分。為求最佳準確度，請一次分割一個地物。</translation>
     </message>
@@ -912,32 +674,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>正在更新...</translation>
     </message>
     <message>
-        <source>Check for Updates</source>
-        <translation>檢查更新</translation>
-    </message>
-    <message>
-        <source>More from TerraLab...</source>
-        <translation>更多 TerraLab 產品...</translation>
-    </message>
-    <message>
         <source>Missing Visual C++ Redistributable. Install it, restart your computer, then click Retry.</source>
         <translation>缺少 Visual C++ Redistributable。請安裝後重新啟動電腦，再點擊「重試」。</translation>
     </message>
     <message>
         <source>Retry</source>
         <translation>重試</translation>
-    </message>
-    <message>
-        <source>Cannot Write Export</source>
-        <translation>無法寫入 Export</translation>
-    </message>
-    <message>
-        <source>Cannot create export directory '{path}': {reason}</source>
-        <translation>無法建立 Export 目錄「{path}」：{reason}</translation>
-    </message>
-    <message>
-        <source>The export directory '{path}' is not writable. Choose a different location.</source>
-        <translation>Export 目錄「{path}」不可寫入，請選擇其他位置。</translation>
     </message>
     <message>
         <source>Loading AI model...</source>
@@ -956,10 +698,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>模型載入失敗</translation>
     </message>
     <message>
-        <source>Click landed outside the current element — segment one element at a time. Saving the current selection and starting a new one.</source>
-        <translation>點擊位置超出目前的地物範圍－請一次分割一個地物。目前的選取範圍已儲存，並開始新的選取。</translation>
-    </message>
-    <message>
         <source>New here?</source>
         <translation>第一次使用嗎？</translation>
     </message>
@@ -976,68 +714,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>您的連線似乎不穩定或已被封鎖。請檢查：(1) 網路是否正常運作，(2) 若您在公司網路環境中，QGIS > 偏好設定 > 選項 > 網路是否已設定代理伺服器，(3) 防火牆是否允許連線至 pypi.org 及 files.pythonhosted.org。</translation>
     </message>
     <message>
-        <source>Sign in to TerraLab</source>
-        <translation>登入 TerraLab</translation>
-    </message>
-    <message>
-        <source>Two steps to start using AI Segmentation</source>
-        <translation>兩步驟開始使用 AI Segmentation</translation>
-    </message>
-    <message>
-        <source>1. Sign up or sign in on terra-lab.ai to get your key</source>
-        <translation>1. 在 terra-lab.ai 註冊或登入以取得您的金鑰</translation>
-    </message>
-    <message>
-        <source>2. Paste your key below to activate</source>
-        <translation>2. 在下方貼上您的金鑰以啟用</translation>
-    </message>
-    <message>
-        <source>1. Sign up / Sign in</source>
-        <translation>1. 註冊／登入</translation>
-    </message>
-    <message>
-        <source>Get Your Key</source>
-        <translation>取得您的金鑰</translation>
-    </message>
-    <message>
-        <source>2. Paste your activation key</source>
-        <translation>2. 貼上您的啟用金鑰</translation>
-    </message>
-    <message>
-        <source>Sign in to get your key</source>
-        <translation>登入以取得您的金鑰</translation>
-    </message>
-    <message>
-        <source>Create your free TerraLab account or sign in, then copy your activation key from the dashboard.</source>
-        <translation>建立免費的 TerraLab 帳戶或登入，然後從控制台複製您的啟用金鑰。</translation>
-    </message>
-    <message>
-        <source>Activate</source>
-        <translation>啟用</translation>
-    </message>
-    <message>
-        <source>Please enter your activation key.</source>
-        <translation>請輸入您的啟用金鑰。</translation>
-    </message>
-    <message>
         <source>Checking...</source>
         <translation>正在檢查...</translation>
-    </message>
-    <message>
-        <source>Activation key verified!</source>
-        <translation>啟用金鑰已驗證！</translation>
-    </message>
-    <message>
-        <source>Invalid activation key.</source>
-        <translation>啟用金鑰無效。</translation>
-    </message>
-    <message>
-        <source>Cannot reach server. Check your internet connection.</source>
-        <translation>無法連上伺服器，請檢查您的網路連線。</translation>
-    </message>
-    <message>
-        <source>Signed in!</source>
-        <translation>已登入！</translation>
     </message>
     <message>
         <source>AI Edit</source>
@@ -1060,40 +738,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>正在載入帳戶資訊...</translation>
     </message>
     <message>
-        <source>Manage account on terra-lab.ai</source>
-        <translation>在 terra-lab.ai 管理帳戶</translation>
-    </message>
-    <message>
-        <source>Show</source>
-        <translation>顯示</translation>
-    </message>
-    <message>
-        <source>Hide</source>
-        <translation>隱藏</translation>
-    </message>
-    <message>
-        <source>Change activation key</source>
-        <translation>變更啟用金鑰</translation>
-    </message>
-    <message>
-        <source>Plan</source>
-        <translation>方案</translation>
-    </message>
-    <message>
-        <source>Free</source>
-        <translation>免費</translation>
-    </message>
-    <message>
         <source>Canceled</source>
         <translation>已取消</translation>
-    </message>
-    <message>
-        <source>Email</source>
-        <translation>電子郵件</translation>
-    </message>
-    <message>
-        <source>Key</source>
-        <translation>金鑰</translation>
     </message>
     <message>
         <source>Model File Corrupted</source>
@@ -1130,10 +776,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Didn't open? Open the page again</source>
         <translation>沒有開啟嗎？再次開啟頁面</translation>
-    </message>
-    <message>
-        <source>Couldn't open your browser. Use the manual key option below.</source>
-        <translation>無法開啟您的瀏覽器，請使用下方的手動金鑰選項。</translation>
     </message>
     <message>
         <source>Sign-in timed out. Click Connect to try again.</source>
@@ -1221,16 +863,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Sign in to use Automatic mode</source>
-        <translation>登入以使用自動模式</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Your free detections are used up</source>
-        <translation>您的免費偵測次數已用完</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Subscribe to keep detecting without limits:</source>
         <translation>訂閱以繼續無限制偵測：</translation>
     </message>
@@ -1240,74 +872,9 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>訂閱 Pro</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Detect every building, tree, or road automatically</source>
-        <translation>自動偵測每一棟建築物、每一棵樹或每一條道路</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>No installation required, no GPU, no limits</source>
-        <translation>無需安裝、無需 GPU、無使用限制</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Built for large-scale digitization projects</source>
-        <translation>專為大型數化專案而設計</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/zone_selection_maptool.py" line="0"/>
-        <source>Clear this zone</source>
-        <translation>清除此範圍</translation>
-    </message>
-    <message>
         <location filename="../src/ui/zone_selection_maptool.py" line="0"/>
         <source>Cancel the running detection first</source>
         <translation>請先取消進行中的偵測</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>What do you want to detect?</source>
-        <translation>您想偵測什麼？</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Where should the AI look?</source>
-        <translation>AI 應該在哪裡尋找？</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Change</source>
-        <translation>變更</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>What to detect...</source>
-        <translation>要偵測的物件...</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Hold the left mouse button and drag to draw a box on the map.</source>
-        <translation>按住滑鼠左鍵並拖曳，在地圖上繪製方框。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>{n} tile(s) = {n} credit(s)</source>
-        <translation>{n} 個圖磚＝{n} 點數</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Object: {obj}</source>
-        <translation>物件：{obj}</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Detecting "{obj}"...</source>
-        <translation>正在偵測「{obj}」...</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Ground resolution per pixel. A smaller value lets the model detect smaller objects.</source>
-        <translation>每像素的地面解析度。數值越小，模型可偵測到的物件越小。</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -1361,11 +928,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>High demand · your spot is held…</source>
-        <translation>需求量大·您的名額已保留…</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Spot reserved · starting in a few seconds…</source>
         <translation>已保留名額·數秒後開始…</translation>
     </message>
@@ -1381,11 +943,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>{n} credits remaining (resets {date})</source>
-        <translation>剩餘 {n} 點數（將於 {date} 重設）</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>{n} credits remaining</source>
         <translation>剩餘 {n} 點數</translation>
     </message>
@@ -1395,44 +952,14 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>剩餘 {n} 次免費偵測</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Drawing...</source>
-        <translation>正在繪製...</translation>
-    </message>
-    <message>
         <location filename="../src/ui/account_settings_dialog.py" line="0"/>
         <source>{n} free detection(s) remaining (lifetime)</source>
         <translation>剩餘 {n} 次免費偵測（終身額度）</translation>
     </message>
     <message>
         <location filename="../src/ui/account_settings_dialog.py" line="0"/>
-        <source>Upgrade to Pro on terra-lab.ai</source>
-        <translation>在 terra-lab.ai 升級至 Pro</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/account_settings_dialog.py" line="0"/>
-        <source>Pro</source>
-        <translation>Pro</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/account_settings_dialog.py" line="0"/>
         <source>{remaining} / {total} credits</source>
         <translation>{remaining} / {total} 點數</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/account_settings_dialog.py" line="0"/>
-        <source>resets {date}</source>
-        <translation>於 {date} 重設</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/account_settings_dialog.py" line="0"/>
-        <source>Free uses</source>
-        <translation>免費使用次數</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/account_settings_dialog.py" line="0"/>
-        <source>Credits</source>
-        <translation>點數</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
@@ -1446,11 +973,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
-        <source>Could not render the zone. Try a smaller area or another layer.</source>
-        <translation>無法繪製此範圍，請嘗試縮小範圍或使用其他圖層。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
         <source>Cancelling...</source>
         <translation>正在取消...</translation>
     </message>
@@ -1461,38 +983,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
-        <source>Found {n} object(s) but could not save the result file. Check folder permissions and the log.</source>
-        <translation>找到 {n} 個物件，但無法儲存結果檔案。請檢查資料夾權限與日誌。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
-        <source>Could not save the result file. Check the log.</source>
-        <translation>無法儲存結果檔案，請查看日誌。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
-        <source>No detections found. Try a different prompt or zoom level.</source>
-        <translation>找不到任何偵測結果。請嘗試不同的提示詞或縮放層級。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
-        <source>Resume detection</source>
-        <translation>繼續偵測</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
         <source>Detection failed. Check your connection and try again.</source>
         <translation>偵測失敗，請檢查您的連線並再試一次。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
-        <source>Not enough credits to continue. The finished tiles are kept.</source>
-        <translation>點數不足，無法繼續。已完成的圖磚會予以保留。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
-        <source>Zone too large. Reduce the area to 50 tiles or fewer.</source>
-        <translation>範圍過大，請將範圍縮小至 50 個圖磚以內。</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
@@ -1508,34 +1000,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
         <source>The zone is outside the selected raster layer. Pick the right layer or redraw the zone.</source>
         <translation>範圍超出所選點陣圖圖層之外。請選擇正確的圖層或重新繪製範圍。</translation>
-    </message>
-    <message>
-        <source>Next</source>
-        <translation>下一步</translation>
-    </message>
-    <message>
-        <source>Export to layer</source>
-        <translation>Export 至圖層</translation>
-    </message>
-    <message>
-        <source>{n} object(s) detected - adjust below, then export</source>
-        <translation>偵測到 {n} 個物件－在下方調整，然後 Export</translation>
-    </message>
-    <message>
-        <source>Exported {n} polygon(s) to {name}</source>
-        <translation>已 Export {n} 個多邊形至 {name}</translation>
-    </message>
-    <message>
-        <source>Round corners</source>
-        <translation>圓角</translation>
-    </message>
-    <message>
-        <source>Fill holes</source>
-        <translation>填補孔洞</translation>
-    </message>
-    <message>
-        <source>Expand/Shrink:</source>
-        <translation>擴張／收縮：</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -1561,11 +1025,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Available when detection finishes</source>
         <translation>偵測完成後即可使用</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
-        <source>Finishing up... {done}/{total}</source>
-        <translation>正在完成... {done}/{total}</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -1596,31 +1055,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Hide detections larger than this ground area. 0 = no limit.</source>
         <translation>隱藏面積大於此地面面積的偵測結果。0＝無限制。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Finer detail finds smaller objects and costs more credits.</source>
-        <translation>更精細的細節可偵測更小的物件，但會耗費更多點數。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>≈ {n} credits</source>
-        <translation>≈ {n} 點數</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Finish</source>
-        <translation>完成</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>{n} object(s) detected - adjust below, then Finish</source>
-        <translation>偵測到 {n} 個物件－在下方調整，再按「完成」</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
-        <source>Out of credits. Keep what was found below, then Finish.</source>
-        <translation>點數已用盡。請保留下方找到的結果，再按「完成」。</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
@@ -1684,16 +1118,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>What do you want to segment?</source>
-        <translation>您想分割什麼？</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>e.g. building, solar panel (in English)</source>
-        <translation>例如：building、solar panel（請使用英文）</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Popular</source>
         <translation>熱門</translation>
     </message>
@@ -1701,16 +1125,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
         <source>Library</source>
         <translation>範例庫</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
-        <source>Browse objects with before / after examples.</source>
-        <translation>瀏覽附有前後對比範例的物件。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
-        <source>The prompt is sent to the AI in English. Describe the object in 1-2 words (e.g. building, solar panel).</source>
-        <translation>提示詞會以英文傳送給 AI。請用 1-2 個字描述物件（例如：building、solar panel）。</translation>
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
@@ -1774,26 +1188,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
-        <source>RECENT</source>
-        <translation>最近</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
-        <source>Recently detected</source>
-        <translation>最近偵測</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
-        <source>BROWSE</source>
-        <translation>瀏覽</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
-        <source>Objects you detect will appear here.</source>
-        <translation>您偵測過的物件會顯示於此。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
         <source>today</source>
         <translation>今天</translation>
     </message>
@@ -1824,18 +1218,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
-        <source>Pick an object to see a before / after, then use it.</source>
-        <translation>選擇一個物件以檢視前後對比，然後套用它。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
         <source>Search objects... e.g. building, solar panel</source>
         <translation>搜尋物件... 例如：building、solar panel</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
-        <source>Prompt:</source>
-        <translation>提示詞：</translation>
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
@@ -1904,16 +1288,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>All shown at {pct}% confidence</source>
-        <translation>全部以 {pct}% 信心度顯示</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>{visible} shown at {pct}% · {hidden} more below this confidence</source>
-        <translation>已顯示 {visible} 個（{pct}%）·另有 {hidden} 個低於此信心度</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>0 shown at {pct}% - lower Confidence to reveal them</source>
         <translation>在 {pct}% 下顯示 0 個－請降低信心度以顯示它們</translation>
     </message>
@@ -1934,11 +1308,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Objects not quite right? Refine them in Manual mode.</source>
-        <translation>物件不太準確？請在手動模式中細修。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Export {n} polygons</source>
         <translation>Export {n} 個多邊形</translation>
     </message>
@@ -1946,11 +1315,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Lower Confidence to show objects first.</source>
         <translation>請先降低信心度以顯示物件。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Adjust &amp; run again</source>
-        <translation>調整並重新執行</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -1974,16 +1338,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Save {visible} detections to a layer before leaving?</source>
-        <translation>離開前要將 {visible} 個偵測結果儲存至圖層嗎？</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Save {total} detections (currently hidden by Confidence) to a layer before leaving?</source>
-        <translation>離開前要將 {total} 個偵測結果（目前因信心度設定而隱藏）儲存至圖層嗎？</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Save &amp;&amp; exit</source>
         <translation>儲存並離開</translation>
     </message>
@@ -1994,48 +1348,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>No {object} found in this zone</source>
-        <translation>在此範圍內未找到任何 {object}</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>This run used {n} credits. Things that usually fix it:</source>
-        <translation>此次執行耗費了 {n} 點數。以下方法通常有幫助：</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Check the word is English and singular (building, not batiments)</source>
-        <translation>確認字詞為英文且為單數形式（例如 building，而非 batiments）</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Draw an example of one object (step 2)</source>
-        <translation>繪製一個物件的範例（步驟 2）</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Raise Detail so small objects are visible</source>
-        <translation>提高細節以顯示較小的物件</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Try a smaller or different zone</source>
-        <translation>嘗試使用較小或不同的範圍</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Detecting "{obj}"... · {n} found so far</source>
-        <translation>正在偵測「{obj}」...·目前已找到 {n} 個</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>How many objects sit at each confidence level.</source>
         <translation>各信心度層級所包含的物件數量。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>Your 500 free detections are used up</source>
-        <translation>您的 500 次免費偵測已用完</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_build.py" line="0"/>
@@ -2099,11 +1413,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>Click on the map to drop points around the area you want to scan.</source>
-        <translation>點擊地圖以在要掃描的區域周圍放置點。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
         <source>Exit</source>
         <translation>退出</translation>
     </message>
@@ -2119,18 +1428,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>Draw an example</source>
-        <translation>繪製範例</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
         <source>Subscribe to finish this zone: 10,000 credits/month.</source>
         <translation>訂閱以完成此範圍：每月 10,000 點數。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>Blue = detected object</source>
-        <translation>藍色＝偵測到的物件</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_build.py" line="0"/>
@@ -2146,11 +1445,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dock/auto_build.py" line="0"/>
         <source>Open these detections in Manual mode to fix specific objects point-by-point, then come back and export.</source>
         <translation>在手動模式中開啟這些偵測結果，逐點修正特定物件，完成後返回並進行 Export。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>Try instead:</source>
-        <translation>請改試：</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
@@ -2174,73 +1468,13 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>Keep clicking to add points ({n} so far, 3 minimum).</source>
-        <translation>持續點擊以新增點（目前 {n} 個，最少需 3 個）。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>{n} points. Double-click or press Enter to finish, or click the first point to close.</source>
-        <translation>已有 {n} 個點。雙擊或按 Enter 完成，或點擊起點以封閉範圍。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>~ {credits} credits</source>
-        <translation>~ {credits} 點數</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>{remaining} left</source>
-        <translation>剩餘 {remaining}</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>{remaining} free left</source>
-        <translation>剩餘 {remaining} 個免費</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>~ {credits} credits · </source>
-        <translation>~ {credits} 點數 · </translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>will stop after {remaining}</source>
-        <translation>將於 {remaining} 後停止</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>1 credit ~ 0.17 km2 at default detail.</source>
         <translation>在預設細節下，1 點數約等於 0.17 平方公里。</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>Tip: draw an example of one {object} to catch more of them.</source>
-        <translation>提示：繪製一個 {object} 的範例，可找到更多類似物件。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>object</source>
         <translation>物件</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>Dense area: raise Detail to catch every object.</source>
-        <translation>密集區域：請提高細節以捕捉所有物件。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/cards.py" line="0"/>
-        <source>Restore</source>
-        <translation>還原</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/cards.py" line="0"/>
-        <source>Delete forever</source>
-        <translation>永久刪除</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/cards.py" line="0"/>
-        <source>Deleted {when} · purges in {n} days</source>
-        <translation>已於 {when} 刪除·將於 {n} 天後清除</translation>
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/cards.py" line="0"/>
@@ -2354,11 +1588,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
-        <source>Delete</source>
-        <translation>刪除</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
         <source>Drop this object back into the prompt box for a new detection.</source>
         <translation>將此物件放回提示詞欄位，以進行新的偵測。</translation>
     </message>
@@ -2404,11 +1633,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
-        <source>Recently deleted</source>
-        <translation>最近刪除</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
         <source>Templates</source>
         <translation>範本</translation>
     </message>
@@ -2426,16 +1650,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
         <source>Star a detection to keep it here.</source>
         <translation>將偵測結果加入收藏即可保留在此。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
-        <source>Deleted runs wait here for 30 days, then they are purged for good.</source>
-        <translation>已刪除的執行紀錄會在此保留 30 天，之後將永久清除。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
-        <source>This permanently removes the stored previews and masks. Exported layers are never touched.</source>
-        <translation>這會永久移除已儲存的預覽與遮罩。已 Export 的圖層絕不會受影響。</translation>
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
@@ -2466,11 +1680,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dock/about.py" line="0"/>
         <source>Add area</source>
         <translation>新增區域</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
-        <source>All detections kept. Go 'Back to review' to export.</source>
-        <translation>所有偵測結果均已保留。請點擊「返回檢視」進行 Export。</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/about.py" line="0"/>
@@ -2518,11 +1727,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>無法重建此次執行的偵測結果。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
-        <source>Delete removes this object</source>
-        <translation>按 Delete 可移除此物件</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/about.py" line="0"/>
         <source>Delete the active object</source>
         <translation>刪除目前的物件</translation>
@@ -2563,11 +1767,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>一般</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/build.py" line="0"/>
-        <source>Hand-refined objects are always kept, whatever the confidence.</source>
-        <translation>手動細修過的物件永遠會保留，無論信心度為何。</translation>
-    </message>
-    <message>
         <location filename="../src/ui/plugin/manual_handoff.py" line="0"/>
         <source>Install now</source>
         <translation>立即安裝</translation>
@@ -2588,11 +1787,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>左鍵點擊</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
-        <source>Left-click adds area · Right-click removes area</source>
-        <translation>左鍵點擊新增區域·右鍵點擊移除區域</translation>
-    </message>
-    <message>
         <location filename="../src/core/layer_conventions.py" line="0"/>
         <source>Manual</source>
         <translation>手動</translation>
@@ -2611,11 +1805,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>Max detail for this zone - draw a larger zone for finer detail.</source>
         <translation>此範圍已達最高細節－請繪製較大的範圍以取得更精細的細節。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/build.py" line="0"/>
-        <source>Merges your edits back into the review. Nothing is exported yet.</source>
-        <translation>將您的編輯合併回檢視畫面，尚未進行任何 Export。</translation>
     </message>
     <message>
         <location filename="../src/core/venv_manager.py" line="0"/>
@@ -2663,24 +1852,9 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>多邊形已儲存（共 {n} 個）。點擊其他地物，或完成後 Export。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
-        <source>Press S to keep it (turns green)</source>
-        <translation>按 S 保留它（會變成綠色）</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>Refine detections</source>
-        <translation>細修偵測結果</translation>
-    </message>
-    <message>
         <location filename="../src/ui/plugin/auto_results.py" line="0"/>
         <source>Refine seeds</source>
         <translation>細修種子</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/plugin/manual_handoff.py" line="0"/>
-        <source>Refining uses the free local AI, which is not installed yet. Install it now (a few minutes, automatic)? Your detections stay safely in the review.</source>
-        <translation>細修功能會使用免費的本機 AI，但尚未安裝。要立即安裝嗎？（僅需幾分鐘，全自動）您的偵測結果會安全保留在檢視畫面中。</translation>
     </message>
     <message>
         <location filename="../src/core/checkpoint_manager.py" line="0"/>
@@ -2748,11 +1922,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>所選的點陣圖已被移除，已找到的結果會予以保留。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/build.py" line="0"/>
-        <source>Tip: S saves, Enter exports, Ctrl+Z undoes a click.</source>
-        <translation>提示：S 鍵儲存，Enter 鍵 Export，Ctrl+Z 復原上一次點擊。</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/about.py" line="0"/>
         <source>Undo the last point</source>
         <translation>復原上一個點</translation>
@@ -2761,11 +1930,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dock/state.py" line="0"/>
         <source>Writes a GeoPackage layer with your {n} kept polygons.</source>
         <translation>將您保留的 {n} 個多邊形寫入 GeoPackage 圖層。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/plugin/auto_results.py" line="0"/>
-        <source>Yellow = confident · Purple = uncertain</source>
-        <translation>黃色＝確定·紫色＝不確定</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -2778,39 +1942,14 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>範圍過大，請將範圍縮小至 {max} 個圖磚以內。</translation>
     </message>
     <message>
-        <location filename="../src/api/terralab_client.py" line="0"/>
-        <source>objects</source>
-        <translation>物件</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>{kept} of {total} detections kept - click a blue detection to edit it</source>
-        <translation>已保留 {kept}／{total} 個偵測結果－點擊藍色的偵測結果以編輯</translation>
-    </message>
-    <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>{n} of {total} free detections left</source>
         <translation>剩餘 {n}／{total} 次免費偵測</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>{remaining} free detections left.</source>
-        <translation>剩餘 {remaining} 次免費偵測。</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>≈ 1 tile = 1 credit</source>
         <translation>≈ 1 個圖磚＝1 點數</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>Keep this result</source>
-        <translation>保留此結果</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>Start over</source>
-        <translation>重新開始</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
@@ -2836,16 +1975,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
         <source>Adjust and run again</source>
         <translation>調整並重新執行</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>Keep this result</source>
-        <translation>保留此結果</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>Start over</source>
-        <translation>重新開始</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
@@ -2915,10 +2044,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>找出您範圍內同一類型的所有物件－繪製範圍、命名物件，即可一次取得所有多邊形。</translation>
     </message>
     <message>
-        <source>Tip: draw an example on the map to boost detection of unusual objects.</source>
-        <translation>提示：在地圖上繪製範例，可提升對不常見物件的偵測效果。</translation>
-    </message>
-    <message>
         <source>Tip: lower Confidence to reveal more detections, raise it to keep only the best.</source>
         <translation>提示：降低信心度可顯示更多偵測結果，提高信心度則只保留最佳結果。</translation>
     </message>
@@ -2969,6 +2094,620 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Couldn&apos;t open your browser. Check your connection and click Sign in / Sign up to start again.</source>
         <translation>無法開啟您的瀏覽器。請檢查您的連線，再點擊「登入／註冊」重新開始。</translation>
+    </message>
+    <message>
+        <source>0 shown - lower the Min size filter to reveal them</source>
+        <translation>顯示 0 個－降低最小尺寸篩選即可顯示它們</translation>
+    </message>
+    <message>
+        <source>1 detection selected</source>
+        <translation>已選取 1 個偵測結果</translation>
+    </message>
+    <message>
+        <source>1 removed</source>
+        <translation>已移除 1 個</translation>
+    </message>
+    <message>
+        <source>1 shape edited</source>
+        <translation>已編輯 1 個形狀</translation>
+    </message>
+    <message>
+        <source>10,000 credits every month. Cancel anytime.</source>
+        <translation>每月 10,000 點數。隨時可取消。</translation>
+    </message>
+    <message>
+        <source>A Component Failed to Load</source>
+        <translation>元件載入失敗</translation>
+    </message>
+    <message>
+        <source>AI Segmentation</source>
+        <translation>AI Segmentation</translation>
+    </message>
+    <message>
+        <source>AI data removed, but some items could not be fully cleared. You can delete the folder manually.</source>
+        <translation>AI 資料已移除，但部分項目未能完全清除。您可以手動刪除該資料夾。</translation>
+    </message>
+    <message>
+        <source>Accept the Terms and Privacy Policy first.</source>
+        <translation>請先接受服務條款與隱私政策。</translation>
+    </message>
+    <message>
+        <source>Add an example</source>
+        <translation>新增範例</translation>
+    </message>
+    <message>
+        <source>An install or detection is still running. Wait for it to finish, then try again.</source>
+        <translation>安裝或偵測仍在進行中，請等待完成後再試一次。</translation>
+    </message>
+    <message>
+        <source>Any GeoTIFF, WMS or XYZ basemap.</source>
+        <translation>支援任何 GeoTIFF、WMS 或 XYZ 底圖。</translation>
+    </message>
+    <message>
+        <source>At this detail {obj} is too small to spot - raise the detail.</source>
+        <translation>在此細節層級下，{obj}太小而難以發現－請提高細節。</translation>
+    </message>
+    <message>
+        <source>Automatic detection needs a georeferenced raster. Use Manual mode for this image.</source>
+        <translation>自動偵測需要具有地理參照的點陣圖。此影像請使用手動模式。</translation>
+    </message>
+    <message>
+        <source>Available once the current install or detection finishes.</source>
+        <translation>目前的安裝或偵測完成後即可使用。</translation>
+    </message>
+    <message>
+        <source>Blocked by IT Security Policy</source>
+        <translation>已被 IT 安全性原則封鎖</translation>
+    </message>
+    <message>
+        <source>Browse the library (view only while detecting).</source>
+        <translation>瀏覽範例庫（偵測期間僅供檢視）。</translation>
+    </message>
+    <message>
+        <source>Click a detection on the map</source>
+        <translation>點擊地圖上的偵測結果</translation>
+    </message>
+    <message>
+        <source>Click an empty spot to deselect.</source>
+        <translation>點擊空白處即可取消選取。</translation>
+    </message>
+    <message>
+        <source>Could not reach the service. Check your connection and try again.</source>
+        <translation>無法連線至服務，請檢查您的連線並再試一次。</translation>
+    </message>
+    <message>
+        <source>Could not read pixels from this {ext} file. The file may be corrupt, truncated, or use a compression your GDAL build cannot decode.
+Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) before using AI Segmentation.</source>
+        <translation>無法從此 {ext} 檔案讀取像素。檔案可能已損毀、被截斷，或使用了您的 GDAL 版本無法解碼的壓縮方式。
+請嘗試在 QGIS 中開啟以確認是否能正常顯示，或在使用 AI Segmentation 之前將其轉換為 GeoTIFF（.tif）。</translation>
+    </message>
+    <message>
+        <source>Could not remove the AI data. Try again.</source>
+        <translation>無法移除 AI 資料，請再試一次。</translation>
+    </message>
+    <message>
+        <source>Couldn't load the demo imagery. Check your internet connection, or add your own layer.</source>
+        <translation>無法載入示範影像，請檢查您的網路連線，或新增您自己的圖層。</translation>
+    </message>
+    <message>
+        <source>Detected object</source>
+        <translation>已偵測物件</translation>
+    </message>
+    <message>
+        <source>Detection failed. Please try again.</source>
+        <translation>偵測失敗，請再試一次。</translation>
+    </message>
+    <message>
+        <source>Done, back to Automatic review</source>
+        <translation>完成，返回自動檢視</translation>
+    </message>
+    <message>
+        <source>Downloaded AI data removed. You have been signed out.</source>
+        <translation>已移除下載的 AI 資料，您已登出。</translation>
+    </message>
+    <message>
+        <source>Draw an example of one {object}</source>
+        <translation>繪製一個{object}的範例</translation>
+    </message>
+    <message>
+        <source>Draw an example of one {object} to find more</source>
+        <translation>繪製一個{object}的範例以尋找更多</translation>
+    </message>
+    <message>
+        <source>Draw on the map</source>
+        <translation>在地圖上繪製</translation>
+    </message>
+    <message>
+        <source>Edit shape</source>
+        <translation>編輯形狀</translation>
+    </message>
+    <message>
+        <source>Edit your detections</source>
+        <translation>編輯您的偵測結果</translation>
+    </message>
+    <message>
+        <source>Editing this shape</source>
+        <translation>正在編輯此形狀</translation>
+    </message>
+    <message>
+        <source>Extra detail keeps helping {obj} in this zone.</source>
+        <translation>在此範圍中，提高細節仍能持續改善{obj}的偵測效果。</translation>
+    </message>
+    <message>
+        <source>Filter and refine, then export.</source>
+        <translation>篩選並細修，然後 Export。</translation>
+    </message>
+    <message>
+        <source>Free plan</source>
+        <translation>免費方案</translation>
+    </message>
+    <message>
+        <source>Go back to the Automatic review to switch modes.</source>
+        <translation>請返回自動檢視以切換模式。</translation>
+    </message>
+    <message>
+        <source>Grouped as continuous cover.</source>
+        <translation>已合併為連續覆蓋區域。</translation>
+    </message>
+    <message>
+        <source>Hide parts larger than this ground area. 0 = no limit.</source>
+        <translation>隱藏面積大於此地面面積的部分。0＝無限制。</translation>
+    </message>
+    <message>
+        <source>Hide parts smaller than this ground area. Use it to drop tiny noise blobs. 0 = keep all.</source>
+        <translation>隱藏面積小於此地面面積的部分，可用於剔除微小的雜訊斑點。0＝全部保留。</translation>
+    </message>
+    <message>
+        <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a random colour per object to tell them apart.</source>
+        <translation>地圖上偵測結果的著色方式（僅影響顯示）：一般填色、輪廓、信心度熱力圖，或依物件隨機著色以利區分。</translation>
+    </message>
+    <message>
+        <source>Invalid CRS</source>
+        <translation>無效的座標參考系統</translation>
+    </message>
+    <message>
+        <source>Kept as distinct objects.</source>
+        <translation>已保留為獨立物件。</translation>
+    </message>
+    <message>
+        <source>Last session: {count} polygon(s) exported · {area} km2</source>
+        <translation>上次工作階段：已 Export {count} 個多邊形 · {area} 平方公里</translation>
+    </message>
+    <message>
+        <source>Left-click adds what you click to the shape</source>
+        <translation>左鍵點擊可將點擊處加入形狀</translation>
+    </message>
+    <message>
+        <source>Load example imagery</source>
+        <translation>載入範例影像</translation>
+    </message>
+    <message>
+        <source>Load your own imagery</source>
+        <translation>載入您自己的影像</translation>
+    </message>
+    <message>
+        <source>Lower the Min size filter to show objects first.</source>
+        <translation>請先降低最小尺寸篩選以顯示物件。</translation>
+    </message>
+    <message>
+        <source>Manage account</source>
+        <translation>管理帳戶</translation>
+    </message>
+    <message>
+        <source>Manual Mode Not Supported</source>
+        <translation>不支援手動模式</translation>
+    </message>
+    <message>
+        <source>Manual mode installs local components that are not available for this Mac with this version of QGIS. Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>手動模式需要安裝本機元件，但在此 Mac 與此版本的 QGIS 下不支援。請改用自動模式，它完全在雲端執行，不需要本機安裝。</translation>
+    </message>
+    <message>
+        <source>Manual mode is not supported in this QGIS installation</source>
+        <translation>此 QGIS 安裝環境不支援手動模式</translation>
+    </message>
+    <message>
+        <source>Manual mode needs to install local dependencies, which is not supported inside this sandboxed QGIS installation (Flatpak or Snap). Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>手動模式需要安裝本機相依套件，但在此沙盒化的 QGIS 環境（Flatpak 或 Snap）中不支援。請改用自動模式，它完全在雲端執行，不需要本機安裝。</translation>
+    </message>
+    <message>
+        <source>Name the object (or draw an example) first - Detail then tunes itself to it.</source>
+        <translation>請先命名物件（或繪製範例），細節會隨之自動調整。</translation>
+    </message>
+    <message>
+        <source>New here? Our 5-minute tutorial walks you through a full detection, step by step.</source>
+        <translation>第一次使用嗎？我們的 5 分鐘教學會逐步帶您完成一次完整的偵測。</translation>
+    </message>
+    <message>
+        <source>No detection in this zone. Try a more specific object word, or draw an example of one (best for unusual objects).</source>
+        <translation>此範圍內沒有偵測結果。請嘗試更具體的物件詞彙，或繪製一個範例（對不常見的物件效果最佳）。</translation>
+    </message>
+    <message>
+        <source>Not Enough Disk Space</source>
+        <translation>磁碟空間不足</translation>
+    </message>
+    <message>
+        <source>Not enough credits: {n} tiles, only {left} left. Reduce the detail or zone, or subscribe.</source>
+        <translation>點數不足：需要 {n} 個圖磚，僅剩 {left} 個。請降低細節或縮小範圍，或訂閱。</translation>
+    </message>
+    <message>
+        <source>Not enough credits: {n} tiles, only {left} left. Reduce the detail or zone.</source>
+        <translation>點數不足：需要 {n} 個圖磚，僅剩 {left} 個。請降低細節或縮小範圍。</translation>
+    </message>
+    <message>
+        <source>Online layer returned blank tiles for this area. The current zoom level may be outside the service's range, or this area has no coverage. Zoom to a level where the layer is visible on the map, then try again.</source>
+        <translation>線上圖層在此區域傳回了空白圖磚。目前的縮放層級可能超出該服務的支援範圍，或此區域沒有涵蓋資料。請縮放至圖層能在地圖上顯示的層級後再試一次。</translation>
+    </message>
+    <message>
+        <source>Open the step-by-step tutorial</source>
+        <translation>開啟逐步教學</translation>
+    </message>
+    <message>
+        <source>Open the tutorial</source>
+        <translation>開啟教學</translation>
+    </message>
+    <message>
+        <source>Opens terra-lab.ai in your browser.</source>
+        <translation>在瀏覽器中開啟 terra-lab.ai。</translation>
+    </message>
+    <message>
+        <source>Opens the shape so clicks can extend or trim it. Key: E, or double-click it on the map</source>
+        <translation>開啟形狀編輯，點擊可延伸或裁剪。快捷鍵：E，或在地圖上點兩下</translation>
+    </message>
+    <message>
+        <source>Opens your terra-lab.ai account in the browser.</source>
+        <translation>在瀏覽器中開啟您的 terra-lab.ai 帳戶。</translation>
+    </message>
+    <message>
+        <source>Opens your terra-lab.ai dashboard in the browser.</source>
+        <translation>在瀏覽器中開啟您的 terra-lab.ai 控制台。</translation>
+    </message>
+    <message>
+        <source>Optional</source>
+        <translation>選填</translation>
+    </message>
+    <message>
+        <source>Outline ONE example of the object on the map, then run again. Runs with a drawn example return far fewer empty results.</source>
+        <translation>在地圖上勾勒出該物件的一個範例，然後重新執行。附帶繪製範例的執行結果為空的情況會大幅減少。</translation>
+    </message>
+    <message>
+        <source>Planning AI Segmentation run</source>
+        <translation>正在規劃 AI Segmentation 執行</translation>
+    </message>
+    <message>
+        <source>Preparing Manual mode...</source>
+        <translation>正在準備手動模式...</translation>
+    </message>
+    <message>
+        <source>Pro plan</source>
+        <translation>Pro 方案</translation>
+    </message>
+    <message>
+        <source>Refine</source>
+        <translation>細修</translation>
+    </message>
+    <message>
+        <source>Refining uses the free local AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and refining will open automatically when it is ready.</source>
+        <translation>細修功能使用免費的本機 AI，但尚未安裝。現在安裝嗎？（需要幾分鐘，於背景進行）。您可以在此期間繼續檢視，安裝完成後細修面板會自動開啟。</translation>
+    </message>
+    <message>
+        <source>Regrouping detections...</source>
+        <translation>正在重新分組偵測結果...</translation>
+    </message>
+    <message>
+        <source>Remove downloaded AI data</source>
+        <translation>移除已下載的 AI 資料</translation>
+    </message>
+    <message>
+        <source>Remove the downloaded AI data from this computer?</source>
+        <translation>要從這台電腦中移除已下載的 AI 資料嗎？</translation>
+    </message>
+    <message>
+        <source>Removes it from the results. Key: Delete (Ctrl+Z restores it)</source>
+        <translation>從結果中移除。快捷鍵：Delete（Ctrl+Z 可還原）</translation>
+    </message>
+    <message>
+        <source>Removing...</source>
+        <translation>正在移除...</translation>
+    </message>
+    <message>
+        <source>Returns to the Automatic review with your edits. The export happens there.</source>
+        <translation>攜帶您的編輯返回自動檢視，Export 在那裡完成。</translation>
+    </message>
+    <message>
+        <source>Review detections</source>
+        <translation>檢視偵測結果</translation>
+    </message>
+    <message>
+        <source>Right level for {obj} in this zone.</source>
+        <translation>此細節層級適合此範圍內的{obj}。</translation>
+    </message>
+    <message>
+        <source>Right-click removes it from the shape</source>
+        <translation>右鍵點擊可將其從形狀中移除</translation>
+    </message>
+    <message>
+        <source>Rotated raster</source>
+        <translation>旋轉的點陣圖</translation>
+    </message>
+    <message>
+        <source>Runs with a drawn example return far fewer empty results. This re-runs the zone with the example draw armed (new credits).</source>
+        <translation>附帶繪製範例的執行結果為空的情況會大幅減少。此操作會在啟用範例繪製的狀態下重新執行該範圍（消耗新的點數）。</translation>
+    </message>
+    <message>
+        <source>Save shape</source>
+        <translation>儲存形狀</translation>
+    </message>
+    <message>
+        <source>Save {save} detections ({hidden} currently hidden by Confidence) to a layer before leaving?</source>
+        <translation>離開前是否將 {save} 個偵測結果（其中 {hidden} 個目前因信心度而被隱藏）儲存至圖層？</translation>
+    </message>
+    <message>
+        <source>Save {save} detections to a layer before leaving?</source>
+        <translation>離開前是否將 {save} 個偵測結果儲存至圖層？</translation>
+    </message>
+    <message>
+        <source>Saves this shape and closes the edit. Key: S</source>
+        <translation>儲存此形狀並關閉編輯。快捷鍵：S</translation>
+    </message>
+    <message>
+        <source>Segment library (view only)</source>
+        <translation>分割範例庫（僅供檢視）</translation>
+    </message>
+    <message>
+        <source>Segmentation failed. Please try again.</source>
+        <translation>分割失敗，請再試一次。</translation>
+    </message>
+    <message>
+        <source>Setting up Manual mode in the background. You can keep reviewing; refining opens automatically when it is ready.</source>
+        <translation>正在背景設定手動模式。您可以繼續檢視，準備就緒後細修面板會自動開啟。</translation>
+    </message>
+    <message>
+        <source>Setting up Manual mode in the background...</source>
+        <translation>正在背景設定手動模式...</translation>
+    </message>
+    <message>
+        <source>Shape and size settings</source>
+        <translation>形狀與尺寸設定</translation>
+    </message>
+    <message>
+        <source>Shape settings</source>
+        <translation>形狀設定</translation>
+    </message>
+    <message>
+        <source>Sharper than {obj} usually needs - catches the smallest ones.</source>
+        <translation>細節高於{obj}通常所需的程度，可捕捉到最小的物件。</translation>
+    </message>
+    <message>
+        <source>Skipped {n} empty tiles (not charged).</source>
+        <translation>已略過 {n} 個空白圖磚（不計費）。</translation>
+    </message>
+    <message>
+        <source>Small {obj} may be missed at this level.</source>
+        <translation>在此層級下，較小的{obj}可能會被遺漏。</translation>
+    </message>
+    <message>
+        <source>Something went wrong saving your detections. Please try again.</source>
+        <translation>儲存偵測結果時發生錯誤，請再試一次。</translation>
+    </message>
+    <message>
+        <source>Something went wrong starting the detection. Please try again.</source>
+        <translation>啟動偵測時發生錯誤，請再試一次。</translation>
+    </message>
+    <message>
+        <source>Started at {pct}% - the usual sweet spot for this object type.</source>
+        <translation>從 {pct}% 開始－這是該物件類型通常的最佳值。</translation>
+    </message>
+    <message>
+        <source>Started at {pct}% to fit this run's scores - raise to tighten.</source>
+        <translation>根據此次執行的評分，起始信心度為 {pct}%－提高數值可收緊結果。</translation>
+    </message>
+    <message>
+        <source>Stopping - keeping the tiles already found…</source>
+        <translation>正在停止－已發現的圖磚將予以保留…</translation>
+    </message>
+    <message>
+        <source>Stopping…</source>
+        <translation>正在停止…</translation>
+    </message>
+    <message>
+        <source>Support code: {code}</source>
+        <translation>支援代碼：{code}</translation>
+    </message>
+    <message>
+        <source>Team or organization?</source>
+        <translation>團隊或組織使用？</translation>
+    </message>
+    <message>
+        <source>The AI finds every object similar to your example.</source>
+        <translation>AI 會找出所有與您範例相似的物件。</translation>
+    </message>
+    <message>
+        <source>The AI is starting up, almost there… {n}s</source>
+        <translation>AI 正在啟動，即將就緒… {n} 秒</translation>
+    </message>
+    <message>
+        <source>The AI service is waking up. Holding your spot…</source>
+        <translation>AI 服務正在喚醒，正在為您保留名額…</translation>
+    </message>
+    <message>
+        <source>The detection service had a problem. Your credits for the failed tiles were refunded. Please try again.</source>
+        <translation>偵測服務發生問題，失敗圖磚所耗費的點數已退還，請再試一次。</translation>
+    </message>
+    <message>
+        <source>The detection service is busy right now. Please try again in a moment.</source>
+        <translation>偵測服務目前忙碌中，請稍後再試。</translation>
+    </message>
+    <message>
+        <source>The service is temporarily unavailable (server error). Your connection is fine - please try again in a few minutes.</source>
+        <translation>服務暫時無法使用（伺服器錯誤）。您的連線沒有問題－請幾分鐘後再試一次。</translation>
+    </message>
+    <message>
+        <source>There's a problem with your subscription. Open Settings to update your payment method or review your plan.</source>
+        <translation>您的訂閱發生問題，請開啟設定以更新付款方式或查看您的方案。</translation>
+    </message>
+    <message>
+        <source>There's a problem with your subscription. Your last payment may have failed. Open your account to update your payment method or review your plan.</source>
+        <translation>您的訂閱發生問題，上次付款可能失敗了。請開啟您的帳戶以更新付款方式或查看您的方案。</translation>
+    </message>
+    <message>
+        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Manual mode will download the files again next time you use it.</source>
+        <translation>這會刪除本機的 AI 模型檔案、將您登出並重設外掛程式。您的帳戶與點數不受影響。下次使用手動模式時會重新下載檔案。</translation>
+    </message>
+    <message>
+        <source>This detail level is a Pro feature. Lower the detail, or</source>
+        <translation>此細節層級為 Pro 功能。請降低細節，或</translation>
+    </message>
+    <message>
+        <source>This layer has no valid coordinate reference system. Set one in Layer Properties before detecting.</source>
+        <translation>此圖層沒有有效的座標參考系統。請在偵測前於圖層屬性中進行設定。</translation>
+    </message>
+    <message>
+        <source>This layer has no valid coordinate reference system. Set one in Layer Properties before segmenting.</source>
+        <translation>此圖層沒有有效的座標參考系統。請在分割前於圖層屬性中進行設定。</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF before segmenting.</source>
+        <translation>此點陣圖已旋轉，請在分割前將其轉換為軸對齊的 GeoTIFF。</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF, or use Manual mode.</source>
+        <translation>此點陣圖已旋轉，請將其轉換為軸對齊的 GeoTIFF，或使用手動模式。</translation>
+    </message>
+    <message>
+        <source>This raster uses a geographic CRS (degrees), which distorts the imagery sent to the AI. For best results, reproject it to a projected CRS (e.g. UTM).</source>
+        <translation>此點陣圖使用地理座標系統（度），會導致傳送給 AI 的影像失真。為取得最佳效果，請將其重新投影為投影座標系統（例如 UTM）。</translation>
+    </message>
+    <message>
+        <source>Tip: this raster has no overviews (pyramids). Build them (Raster menu, Miscellaneous, Build Overviews) to make detection much faster.</source>
+        <translation>提示：此點陣圖沒有概觀影像（金字塔）。建立概觀影像（點陣圖選單 &gt; 雜項 &gt; 建立概觀影像）可大幅加快偵測速度。</translation>
+    </message>
+    <message>
+        <source>Try "{word}" instead</source>
+        <translation>請改用「{word}」</translation>
+    </message>
+    <message>
+        <source>Try '{term}' - it's a better prompt.</source>
+        <translation>請嘗試「{term}」－這是更好的提示詞。</translation>
+    </message>
+    <message>
+        <source>Try an object from the Library - it's a better prompt.</source>
+        <translation>請嘗試範例庫中的物件－這是更好的提示詞。</translation>
+    </message>
+    <message>
+        <source>Undo click</source>
+        <translation>復原點擊</translation>
+    </message>
+    <message>
+        <source>Undoes the last change to this shape. Key: Ctrl+Z</source>
+        <translation>復原此形狀的上一次變更。快捷鍵：Ctrl+Z</translation>
+    </message>
+    <message>
+        <source>Update now</source>
+        <translation>立即更新</translation>
+    </message>
+    <message>
+        <source>Update payment method</source>
+        <translation>更新付款方式</translation>
+    </message>
+    <message>
+        <source>Version {version} is available.</source>
+        <translation>有新版本 {version} 可供使用。</translation>
+    </message>
+    <message>
+        <source>Very fine for {obj} - large ones may come back split in parts.</source>
+        <translation>對{obj}而言細節過高－較大的物件可能會被拆分成多個部分傳回。</translation>
+    </message>
+    <message>
+        <source>View as continuous cover</source>
+        <translation>顯示為連續覆蓋區域</translation>
+    </message>
+    <message>
+        <source>View as distinct objects</source>
+        <translation>顯示為獨立物件</translation>
+    </message>
+    <message>
+        <source>View detections as:</source>
+        <translation>偵測結果顯示方式：</translation>
+    </message>
+    <message>
+        <source>Waking up the AI… {n}s</source>
+        <translation>正在喚醒 AI… {n} 秒</translation>
+    </message>
+    <message>
+        <source>We read every message.</source>
+        <translation>我們會仔細閱讀每一則訊息。</translation>
+    </message>
+    <message>
+        <source>Write to us:</source>
+        <translation>聯絡我們：</translation>
+    </message>
+    <message>
+        <source>Your 300 free detections are used up</source>
+        <translation>您的 300 次免費偵測已用完</translation>
+    </message>
+    <message>
+        <source>Your reference</source>
+        <translation>您的參考影像</translation>
+    </message>
+    <message>
+        <source>confident</source>
+        <translation>信心度高</translation>
+    </message>
+    <message>
+        <source>polygons</source>
+        <translation>多邊形</translation>
+    </message>
+    <message>
+        <source>some files could not be deleted</source>
+        <translation>部分檔案無法刪除</translation>
+    </message>
+    <message>
+        <source>uncertain</source>
+        <translation>信心度低</translation>
+    </message>
+    <message>
+        <source>upgrade to unlock it</source>
+        <translation>升級以解鎖</translation>
+    </message>
+    <message>
+        <source>your object</source>
+        <translation>您的物件</translation>
+    </message>
+    <message>
+        <source>{area} km2</source>
+        <translation>{area} 平方公里</translation>
+    </message>
+    <message>
+        <source>{n} detections selected</source>
+        <translation>已選取 {n} 個偵測結果</translation>
+    </message>
+    <message>
+        <source>{n} found so far</source>
+        <translation>目前已發現 {n} 個</translation>
+    </message>
+    <message>
+        <source>{n} removed</source>
+        <translation>已移除 {n} 個</translation>
+    </message>
+    <message>
+        <source>{n} shapes edited</source>
+        <translation>已編輯 {n} 個形狀</translation>
+    </message>
+    <message>
+        <source>{n} tiles could not be loaded from the layer server; results may be incomplete.</source>
+        <translation>無法從圖層伺服器載入 {n} 個圖磚，結果可能不完整。</translation>
+    </message>
+    <message>
+        <source>{n} tiles had no imagery and were not analyzed (not charged). Check the imagery layer loads over this area, then run Detect again.</source>
+        <translation>{n} 個圖磚沒有影像資料，未進行分析（不計費）。請確認影像圖層在此區域能正常載入，然後重新執行偵測。</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved to layer "{name}"</source>
+        <translation>已將 {n} 個{object}儲存至圖層「{name}」</translation>
+    </message>
+    <message>
+        <source>{used} credits used</source>
+        <translation>已使用 {used} 點數</translation>
     </message>
 </context>
 </TS>

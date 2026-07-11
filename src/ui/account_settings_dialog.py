@@ -561,6 +561,16 @@ class AccountSettingsDialog(QDialog):
                 "font-size: 10px; color: rgba(128,128,128,0.9);")
             card_layout.addWidget(benefit)
 
+        contact = QLabel(
+            tr("Team or organization?") + " "
+            + tr("Write to us:") + " <b>yvann.barbot@terra-lab.ai</b>"
+        )
+        contact.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        contact.setWordWrap(True)
+        contact.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        contact.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.9);")
+        card_layout.addWidget(contact)
+
         return card
 
     def _build_dependencies_card(self) -> QFrame:

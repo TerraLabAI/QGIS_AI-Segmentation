@@ -16,7 +16,7 @@ _TIMEOUT_SUBMIT_DETECTION = 45_000   # ms: submit is small (base64 PNG inline)
 # fallback like the backend route had), so a cold-start tile (idle backend
 # model load, ~18-60s) must not trip the client timeout - that would retry and
 # DOUBLE-CHARGE a tile the server already billed + computed. 110s waits a cold
-# start out while staying under the inference service request timeout (120s).
+# start out while staying under the detection endpoint's request timeout (120s).
 _TIMEOUT_SUBMIT_DETECTION_DIRECT = 110_000
 _TIMEOUT_POLL_DETECTION = 15_000     # ms: poll is GET with tiny JSON response
 _TIMEOUT_WARMUP = 5_000              # ms: warmup is a tiny best-effort ping
@@ -31,8 +31,8 @@ _HostNotFound = getattr(_NE, "HostNotFoundError", getattr(QNetworkReply, "HostNo
 _ConnRefused = getattr(_NE, "ConnectionRefusedError", getattr(QNetworkReply, "ConnectionRefusedError", None))
 _Timeout = getattr(_NE, "TimeoutError", getattr(QNetworkReply, "TimeoutError", None))
 # What Qt actually emits when a request's setTransferTimeout deadline expires:
-# OperationCanceledError, NOT TimeoutError. A cold-starting / busy inference
-# service that answers slower than the submit deadline lands here, so it must
+# OperationCanceledError, NOT TimeoutError. A cold-starting / busy detection
+# host that answers slower than the submit deadline lands here, so it must
 # be read as "the service is warming up" (a transient, retry-worthy wait), not
 # as the user's connection dying. reply.abort() on our own cancel path also
 # raises this, but the cancel path never classifies+retries an aborted reply.
@@ -120,7 +120,7 @@ def _classify_qt_error(qt_error, error_string: str, http_status: int | None) -> 
     if qt_error == _Timeout or (_OpCanceled is not None and qt_error == _OpCanceled):
         # No HTTP status means the socket never got an answer within the
         # deadline: on the detection hot path this is a cold-starting / busy
-        # GPU, not a dead link. Code TIMEOUT keeps it a transient retry AND
+        # detection host, not a dead link. Code TIMEOUT keeps it a transient retry AND
         # (unlike NO_INTERNET) makes the worker surface the "your spot is held"
         # waiting state instead of blaming the user's connection.
         if http_status is None:
@@ -156,8 +156,8 @@ class TerraLabClient:
         if base_url is None:
             base_url = self._read_base_url()
         self.base_url = base_url.rstrip("/")
-        # Cloud detection (per-tile /predict) can talk DIRECTLY to the inference
-        # service instead of going through the main backend, removing a network
+        # Cloud detection (per-tile /predict) can talk DIRECTLY to the detection
+        # endpoint instead of going through the main backend, removing a network
         # hop on the hot path. When a direct URL is configured the per-tile calls
         # use it (+ the direct route shapes); otherwise everything stays on
         # base_url unchanged. Resolved once at construction.
@@ -172,7 +172,7 @@ class TerraLabClient:
     @staticmethod
     def _read_detection_base_url() -> str:
         """Base URL for the per-tile cloud detection calls, when they should go
-        DIRECT to the inference service (one hop) instead of via the main backend.
+        DIRECT to the detection endpoint (one hop) instead of via the main backend.
 
         Resolution: an .env.local `TERRALAB_DETECTION_URL` (dev opt-in) wins, else the
         shipped default below. Empty string => not direct: detection keeps using
@@ -229,7 +229,7 @@ class TerraLabClient:
 
     def _detection_predict_url(self) -> str:
         """Absolute URL for the per-tile predict call. Direct mode hits the
-        inference service's /predict; otherwise the main backend route."""
+        detection endpoint's /predict; otherwise the main backend route."""
         if self.detection_direct:
             return f"{self.detection_base_url}/predict"
         return f"{self.detection_base_url}/api/ai-segmentation/predict"
@@ -626,7 +626,7 @@ class TerraLabClient:
         """
         try:
             if self.detection_direct:
-                # Direct mode: ping the inference service's open /health probe
+                # Direct mode: ping the detection endpoint's open /health probe
                 # (GET, no body). It answers {"status": "ok"} once the model is
                 # loaded, warming the idle instance.
                 result = self._request(

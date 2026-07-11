@@ -354,6 +354,73 @@ def get_vcpp_help() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Application-control policy blocks (AppLocker / WDAC style)
+# ---------------------------------------------------------------------------
+
+# Corporate application-control policies block unsigned executables and DLLs
+# (the standalone Python, uv, and package DLLs the plugin installs). Unlike an
+# antivirus quarantine, neither disabling real-time scanning nor running QGIS
+# as administrator helps: only an IT-managed allow rule does. (#82)
+_APP_CONTROL_PATTERNS = [
+    # "an application control policy has blocked this file"
+    "application control",
+    "applocker",
+    "blocked by group policy",
+    "blocked by your organization",
+    # Locale-independent numeric forms: Python "[WinError 4551]" and
+    # uv "(os error 4551)".
+    "winerror 4551",
+    "os error 4551",
+    # Localized Windows wording for an application-control policy block;
+    # the OS message ships in the system language, so the English phrase
+    # above never matches on these machines.
+    "control de aplicaciones",                # es
+    "strategie de controle d'application",    # fr (accents stripped in logs)
+    "stratégie de contrôle d'application",    # fr
+    "beleid voor toepassingsbeheer",          # nl
+]
+
+
+def is_app_control_error(output: str) -> bool:
+    """Detect an application-control policy block (AppLocker/WDAC style).
+
+    A strict subset of is_antivirus_error: policy blocks need different
+    guidance (a path-based allow rule set by IT) because the antivirus
+    advice (disable scanning, run as admin) is a dead end against a
+    centrally managed policy.
+    """
+    lower = output.lower()
+    return any(p in lower for p in _APP_CONTROL_PATTERNS)
+
+
+def get_app_control_help(install_dir: str = "") -> str:
+    """Actionable help when an application-control policy blocks the plugin.
+
+    The binaries the plugin installs are downloaded from their official
+    open-source sources and are not code-signed, so strict policies block
+    them. A path-based allow rule on the install folder survives plugin
+    updates (no per-update re-signing), which is why it is the recommended
+    fix for IT departments.
+    """
+    location = install_dir or "~/.qgis_ai_segmentation"
+    return (
+        "Your organization's security policy (application control, "
+        "e.g. AppLocker or WDAC)\n"
+        "is blocking the plugin's local AI environment.\n\n"
+        "Disabling antivirus or running QGIS as administrator will not help.\n\n"
+        "Ask your IT department to add a path-based allow rule "
+        "for this folder:\n"
+        f"  {location}\n\n"
+        "The plugin always uses this folder, so one rule keeps working "
+        "across updates.\n"
+        "It contains a standalone Python runtime, the uv installer and "
+        "Python packages,\n"
+        "all downloaded from their official open-source sources.\n\n"
+        "Once the rule is in place, restart QGIS and try again."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Antivirus / permission errors
 # ---------------------------------------------------------------------------
 
@@ -386,6 +453,9 @@ def is_antivirus_error(stderr: str) -> bool:
     stderr_lower = stderr.lower()
     patterns = [
         *_ACCESS_DENIED_LOCALIZED,
+        # Application-control policy blocks are a subset: is_app_control_error
+        # narrows them down for the targeted IT allow-rule guidance.
+        *_APP_CONTROL_PATTERNS,
         "winerror 5",
         "winerror 225",
         "winerror 110",        # ERROR_OPEN_FAILED - AV scan race on new wheel
@@ -398,22 +468,6 @@ def is_antivirus_error(stderr: str) -> bool:
         "permission denied",
         "operation did not complete successfully because the file contains a virus",
         "blocked by your administrator",
-        "blocked by group policy",
-        "application control policy",
-        "control de aplicaciones",
-        "applocker",
-        "blocked by your organization",
-        # Windows "an application control policy has blocked this file",
-        # locale-independent numeric forms (Python "[WinError 4551]" and
-        # uv "(os error 4551)").
-        "winerror 4551",
-        "os error 4551",
-        # Localized Windows wording for an application-control policy block;
-        # the OS message ships in the system language, so the English phrase
-        # above never matches on these machines.
-        "strategie de controle d'application",   # fr (accents stripped in logs)
-        "stratégie de contrôle d'application",   # fr
-        "beleid voor toepassingsbeheer",         # nl
     ]
     return any(p in stderr_lower for p in patterns)
 

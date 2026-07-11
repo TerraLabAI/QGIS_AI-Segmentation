@@ -21,6 +21,8 @@ from ...core.i18n import tr
 from ...core.telemetry import slot_guard
 from .shared import (
     _add_features_fast,
+    _add_features_with_ids,
+    _debounce_timer,
 )
 
 # Single-slot memo for the merge-policy token/category sets, keyed on the policy
@@ -163,6 +165,41 @@ class AutoReviewMixin:
         }
         self._step_auto_finalize_refine()
 
+    @slot_guard(stage="segment")
+    def _on_auto_merge_override_requested(self) -> None:
+        """Review override for an exemplar-only run: re-group the detections the
+        OTHER count-vs-map way from the retained raw fragments. No re-detection,
+        no credits, no dialog: re-merge, rebuild the canonical objects, rebuild
+        the confidence-drag preview cache, then reslice the visible set and swap
+        the muted line's wording."""
+        if not self._auto_review or not getattr(self, "_auto_is_exemplar_only", False):
+            return
+        if self._auto_raw_fragments is None:
+            return  # retention overflowed: re-grouping is unavailable
+        target_separate = not self._auto_merge_separate
+        if self.dock_widget is not None:
+            try:
+                self.dock_widget.set_auto_status(
+                    "progress", tr("Regrouping detections..."))
+            except (RuntimeError, AttributeError):
+                pass
+        if not self._rebuild_auto_objects_for_mode(target_separate):
+            return
+        self._auto_merge_mode_source = "override"
+        self._auto_merge_override_used = True
+        # Rebuild the confidence-drag preview cache for the new object set, then
+        # reslice the visible set at the current review settings.
+        self._start_build_preview_cache(
+            (self._auto_review or {}).get("pixel_size", 1.0))
+        self._start_auto_reslice()
+        if self.dock_widget is not None:
+            try:
+                self.dock_widget.set_merge_override(
+                    "separate" if target_separate else "map")
+                self.dock_widget.set_auto_status("idle")
+            except (RuntimeError, AttributeError):
+                pass
+
     def _on_auto_show_tiles_toggled(self, show: bool) -> None:
         """Review debug toggle: overlay the tile grid on the finished result, or
         hide it again. The grid is cleared while a run is in flight (so the user
@@ -190,6 +227,11 @@ class AutoReviewMixin:
         if not self._auto_review:
             return
         conf = max(0.0, min(1.0, percent / 100.0))
+        # Adopt the cutoff NOW, not on the accurate pass: the preview's push
+        # refreshes the count header, whose pct reads _auto_confidence. With a
+        # dense result the accurate reslice takes seconds, so a stale value
+        # here left the header saying "below 90%" while the dial sat at 85.
+        self._auto_confidence = conf
         preview = []
         pscores = []
         pids = []
@@ -198,7 +240,10 @@ class AutoReviewMixin:
         removed = getattr(self, "_auto_manual_removed", None) or set()
         if self._auto_preview_geoms:
             # Fast path: the cache is built (sorted by score desc), so the cutoff
-            # is a prefix slice - no per-tick simplify.
+            # is a prefix slice - no per-tick simplify. The stamp names the cache
+            # build: within one build an object's preview geometry never changes,
+            # so a drag tick pushes only the prefix DELTA (adds/deletes).
+            stamp = ("prev", self._auto_preview_build_gen)
             for geom, score, det_idx in self._auto_preview_geoms:
                 if score < conf:
                     break  # everything after is below the cutoff
@@ -212,6 +257,7 @@ class AutoReviewMixin:
             # the canonical WHOLE objects directly (correct, just heavier). Whole
             # objects, never fragments, so a drag never shows half a building. The
             # accurate size filter + shape refine still runs on release.
+            stamp = ("base", 0)
             for det_idx, (g, s, _a) in enumerate(self._auto_objects):
                 if det_idx in removed:
                     continue
@@ -219,7 +265,8 @@ class AutoReviewMixin:
                     preview.append(g)
                     pscores.append(s)
                     pids.append(self._object_fid_for(det_idx))
-        self._push_review_geoms(preview, repair=False, scores=pscores, ids=pids)
+        self._push_review_geoms(preview, repair=False, scores=pscores, ids=pids,
+                                stamp=stamp)
 
     def _on_auto_review_confidence_changed(self, percent: int) -> None:
         """Review confidence slider released: re-filter the stored detections at
@@ -232,16 +279,8 @@ class AutoReviewMixin:
         # Telemetry: count the move and emit one review_confidence_final after
         # the slider settles (2s of no further change).
         self._review_conf_moves = getattr(self, "_review_conf_moves", 0) + 1
-        from qgis.PyQt.QtCore import QTimer
-        timer = getattr(self, "_review_conf_timer", None)
-        if timer is None:
-            # The plugin controller is a plain class, not a QObject; parent the
-            # timer to the dock so Qt owns (and tears down) its lifetime.
-            timer = QTimer(self.dock_widget)
-            timer.setSingleShot(True)
-            timer.timeout.connect(self._emit_review_confidence_final)
-            self._review_conf_timer = timer
-        timer.start(2000)
+        _debounce_timer(self, "_review_conf_timer", self.dock_widget, 2000,
+                        self._emit_review_confidence_final)
 
     def _emit_review_confidence_final(self) -> None:
         if not self._auto_review:
@@ -269,64 +308,70 @@ class AutoReviewMixin:
             return
         self._push_review_geoms(
             self._auto_review["geoms"], scores=self._auto_review.get("scores"),
-            ids=self._auto_review.get("ids"))
+            ids=self._auto_review.get("ids"),
+            stamp=self._auto_review.get("stamp"))
 
     def _push_review_geoms(self, geoms: list, repair: bool = True,
                            scores: list | None = None,
-                           ids: list | None = None) -> None:
-        """Write geoms onto the live review selection layer (truncate + add +
-        repaint) and update the review count. Shared by the accurate refresh and
-        the fast confidence-drag preview. ``repair=False`` skips the per-geom
-        makeValid for the fast path (raw geoms are usually valid; the accurate
-        pass on release repairs anyway). ``scores`` is an optional parallel list
-        (same order/length as ``geoms``) written to the per-object 'score' field
-        so the review heatmap colors each detection; a neutral 1.0 fallback keeps
-        any post-handoff or mismatched case green/trusted rather than crashing.
-        ``ids`` is the parallel canonical-detection index written to 'det_id':
-        the Random display mode hues on it so an object keeps its colour across
-        reslices (NULL fallback lets the renderer hue on $id instead)."""
+                           ids: list | None = None,
+                           stamp: tuple | None = None,
+                           partial: bool = False) -> None:
+        """Write geoms onto the live review selection layer and update the
+        review count. Shared by the accurate refresh and the fast confidence-
+        drag preview.
+
+        With ``stamp`` + ``ids`` the push is INCREMENTAL: the provider gets only
+        the delta (add / delete / changed geometry) against _review_fid_map,
+        keyed on det_id. ``stamp`` names the geometry provenance (preview-cache
+        build vs refine-cache shape key), so identical det_id + stamp means the
+        on-layer geometry is already current and nothing is written. This is
+        what makes a confidence-drag tick or a filter-only reslice O(delta)
+        instead of a full truncate + re-add of every feature. Without a stamp
+        (unknown provenance: protected-dissolve output, handoff harvest) the
+        push falls back to the full truncate + re-add.
+
+        ``repair=False`` skips the per-geom makeValid for the fast path (raw
+        geoms are usually valid; the accurate pass repairs at cache-fill).
+        ``scores`` feeds the review heatmap (1.0 fallback keeps a mismatched
+        case green/trusted); ``ids`` is the canonical det_id the Random display
+        mode hues on (NULL fallback lets the renderer hue on $id).
+
+        ``partial=True`` is the PROGRESSIVE mode used mid-reslice: geoms not in
+        this batch are LEFT on the layer (their old shape) instead of deleted,
+        and the header/extents stay untouched, so a long shape-refine visibly
+        sweeps the map instead of freezing on the old state until the end. It
+        only ever applies through the incremental diff (never a truncate)."""
         layer = self._auto_selection_layer
         if layer is None:
             return
         try:
             if not layer.isValid():
                 return
-            from ...core.layer_conventions import repair_polygon, to_multipolygon
-
-            pr = layer.dataProvider()
-            pr.truncate()
-            features_to_add = []
-            for i, geom in enumerate(geoms):
-                if geom is None or geom.isEmpty():
-                    continue
-                if repair:
-                    geom = to_multipolygon(repair_polygon(geom) or geom)
-                else:
-                    geom = to_multipolygon(geom) or geom
-                if geom is None or geom.isEmpty():
-                    continue
-                feat = QgsFeature(layer.fields())
-                feat.setGeometry(geom)
-                feat.setAttributes(
-                    ["", float(scores[i]) if (scores is not None and i < len(scores))
-                     else 1.0,
-                     int(ids[i]) if (ids is not None and i < len(ids)) else None])
-                features_to_add.append(feat)
-            if features_to_add:
-                _add_features_fast(pr, features_to_add)
+            count = -1
+            if (stamp is not None and ids is not None
+                    and len(ids) == len(geoms)):  # noqa: W503
+                count = self._diff_push_review_geoms(
+                    layer, geoms, scores, ids, stamp, keep_missing=partial)
+            if count < 0:
+                if partial:
+                    return  # progressive apply needs the diff path; skip quietly
+                count = self._full_push_review_geoms(
+                    layer, geoms, repair, scores, ids, stamp)
             # updateExtents rescans every feature (O(N) on a memory provider):
             # only the accurate release pass needs it (zoom-to-layer); the 40ms
             # drag preview renders by viewport via the spatial index, so the
             # stale cached extent is invisible mid-drag.
-            if repair:
+            if repair and not partial:
                 layer.updateExtents()
             # triggerRepaint alone schedules the canvas update; the extra
             # mapCanvas().refresh() forced a full re-render of EVERY layer on
             # each (debounced) slider tick, which is what made review sliders lag.
             layer.triggerRepaint()
+            if partial:
+                return  # header + extents settle on the final complete push
             # Keep the review count honest with the size filter (it can hide
             # detections): show how many are actually on the layer now.
-            self._update_review_header(len(features_to_add))
+            self._update_review_header(count)
         except Exception as e:  # noqa: BLE001
             # Review must never crash the UI, so the guard stays broad; but a
             # swallowed geometry error was fully silent. Log once per rebuild
@@ -337,6 +382,137 @@ class AutoReviewMixin:
                 QgsMessageLog.logMessage(
                     f"Auto review: geometry rebuild error: {e}",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
+
+    def _diff_push_review_geoms(self, layer, geoms: list, scores: list | None,
+                                ids: list, stamp: tuple,
+                                keep_missing: bool = False) -> int:
+        """Incremental provider update against _review_fid_map. Returns the
+        visible count written, or -1 when a diff is not possible (unknown
+        provider contents, a missing/duplicate det_id) so the caller falls back
+        to the full push. Geometry writes coerce to MultiPolygon lazily (only
+        the delta pays the copy). ``keep_missing`` (progressive mid-reslice
+        batches) leaves entries absent from this batch untouched on the layer
+        instead of deleting them; the final complete push reconciles."""
+        from .auto_results import _diff_live_fid_map
+        pr = layer.dataProvider()
+        old_map = self._review_fid_map
+        if not old_map and pr.featureCount() > 0:
+            return -1  # cannot trust a diff against unknown provider contents
+        current = []
+        geom_by_id = {}
+        score_by_id = {}
+        for i, geom in enumerate(geoms):
+            if geom is None or geom.isEmpty():
+                continue
+            det_id = ids[i]
+            if det_id is None or det_id in geom_by_id:
+                return -1  # unknown or ambiguous identity: full push instead
+            s = (float(scores[i])
+                 if scores is not None and i < len(scores) and scores[i] is not None
+                 else 1.0)
+            current.append((det_id, stamp, True, s))
+            geom_by_id[det_id] = geom
+            score_by_id[det_id] = s
+        adds, geom_changes, attr_changes, deletes, new_map = _diff_live_fid_map(
+            old_map, current)
+        if keep_missing:
+            # Progressive batch: entries not processed yet keep their old
+            # shape on the layer and their old mapping.
+            deletes = []
+            for det_id, rec in old_map.items():
+                if det_id not in new_map and det_id not in geom_by_id:
+                    new_map[det_id] = rec
+        from ...core.layer_conventions import to_multipolygon
+
+        def _mp(g):
+            return to_multipolygon(g) or g
+
+        if deletes:
+            pr.deleteFeatures(deletes)
+        if adds:
+            fields = layer.fields()
+            add_feats = []
+            for det_id in adds:
+                feat = QgsFeature(fields)
+                feat.setGeometry(_mp(geom_by_id[det_id]))
+                feat.setAttributes(["", score_by_id[det_id], int(det_id)])
+                add_feats.append((det_id, feat))
+            # The assigned provider fids (needed so a later tick can target
+            # these objects) come back on the RETURNED copies; addFeatures
+            # never mutates its inputs.
+            ok, added = _add_features_with_ids(pr, [f for _, f in add_feats])
+            if ok and len(added) == len(add_feats):
+                for (det_id, _f), out in zip(add_feats, added):
+                    pfid = out.id()
+                    if pfid is not None and pfid >= 0:
+                        new_map[det_id] = (
+                            pfid, stamp, True, score_by_id[det_id])
+        if geom_changes:
+            pr.changeGeometryValues(
+                {pf: _mp(geom_by_id[d]) for pf, d in geom_changes.items()})
+        if attr_changes:
+            score_idx = layer.fields().indexOf("score")
+            if score_idx >= 0:
+                pr.changeAttributeValues(
+                    {pf: {score_idx: score_by_id[d]}
+                     for pf, d in attr_changes.items()})
+        self._review_fid_map = new_map
+        return len(current)
+
+    def _full_push_review_geoms(self, layer, geoms: list, repair: bool,
+                                scores: list | None, ids: list | None,
+                                stamp: tuple | None) -> int:
+        """Full truncate + re-add of the visible set (the pre-diff behaviour).
+        Rebuilds _review_fid_map when identity (ids + stamp) is available so the
+        NEXT push can diff; otherwise clears it (later pushes stay full until a
+        stamped one bootstraps)."""
+        from ...core.layer_conventions import repair_polygon, to_multipolygon
+        pr = layer.dataProvider()
+        pr.truncate()
+        self._review_fid_map = {}
+        with_identity = (stamp is not None and ids is not None
+                         and len(ids) == len(geoms))  # noqa: W503
+        features_to_add = []
+        for i, geom in enumerate(geoms):
+            if geom is None or geom.isEmpty():
+                continue
+            if repair:
+                geom = to_multipolygon(repair_polygon(geom) or geom)
+            else:
+                geom = to_multipolygon(geom) or geom
+            if geom is None or geom.isEmpty():
+                continue
+            feat = QgsFeature(layer.fields())
+            feat.setGeometry(geom)
+            score = (float(scores[i])
+                     if scores is not None and i < len(scores)
+                     and scores[i] is not None else 1.0)  # noqa: W503
+            det_id = ids[i] if ids is not None and i < len(ids) else None
+            feat.setAttributes(
+                ["", score, int(det_id) if det_id is not None else None])
+            features_to_add.append((det_id, score, feat))
+        if features_to_add:
+            if with_identity:
+                # The provider fids that bootstrap the next incremental push
+                # come back on the RETURNED copies; addFeatures never mutates
+                # its inputs.
+                ok, added = _add_features_with_ids(
+                    pr, [f for _, _, f in features_to_add])
+                fid_map = {}
+                complete = ok and len(added) == len(features_to_add)
+                if complete:
+                    for (det_id, score, _f), out in zip(features_to_add, added):
+                        pfid = out.id()
+                        if (det_id is None or pfid is None or pfid < 0
+                                or det_id in fid_map):
+                            complete = False
+                            break
+                        fid_map[det_id] = (pfid, stamp, True, score)
+                if complete:
+                    self._review_fid_map = fid_map
+            else:
+                _add_features_fast(pr, [f for _, _, f in features_to_add])
+        return len(features_to_add)
 
     def _on_auto_refine_changed_debounced(self) -> None:
         """Slot connected to auto_refine_changed; restarts the 150 ms debounce timer.
@@ -389,6 +565,24 @@ class AutoReviewMixin:
         """Objects currently shown in the review (the last pushed visible set)."""
         review = self._auto_review or {}
         return len(review.get("geoms", []))
+
+    def _full_found_review_count(self) -> int:
+        """How many objects the safety-net export would save (Confidence gate
+        dropped, Min/Max size kept), WITHOUT running the shape refine: the Exit
+        dialog label must be instant, and refining the whole hidden cohort
+        synchronously froze QGIS for seconds on a dense review. The rare
+        refine-emptied geometry can make this off by a hair; the actual Save
+        export recomputes exactly."""
+        params = dict(self._widget_review_params())
+        params["conf"] = 0.0
+        removed = getattr(self, "_auto_manual_removed", None) or set()
+        n = 0
+        for det_idx, (base, score, area) in enumerate(self._auto_objects):
+            if det_idx in removed or base is None or base.isEmpty():
+                continue
+            if self._passes_review_filters(score, area, params):
+                n += 1
+        return n
 
     def _full_found_review_geoms(self) -> tuple[list, list | None]:
         """The review's found objects with the Confidence gate dropped but the
@@ -490,10 +684,12 @@ class AutoReviewMixin:
             pass  # nosec B110
         self._auto_review = None
         self._auto_objects = []
+        self._reset_review_refine_cache()
         self._remove_auto_selection_layer()
         self._auto_protected_geoms = []
         self._auto_manual_removed = set()
         self._auto_refined_in_manual = False
+        self._clear_auto_raw_fragments()
         # A background install started from this review is now orphaned (the
         # review is committed): drop the pending refine so a late predictor load
         # does not auto-open a handoff on a gone or a different review.
@@ -518,22 +714,6 @@ class AutoReviewMixin:
         if exported is None:
             return
         name, count = exported
-        status = tr("Saved {n} polygon(s) to {name}").format(n=count, name=name or "")
-        # Free users: teach the meter by appending the balance (Moment E). The
-        # run already consumed its credits DURING detection, so the cached
-        # snapshot is the correct post-run value.
-        try:
-            credits_left, is_free = self._auto_credit_snapshot()
-            if is_free and credits_left is not None:
-                status += " " + tr("{remaining} free detections left.").format(
-                    remaining=credits_left)
-        except (RuntimeError, AttributeError):
-            pass
-        if self.dock_widget:
-            try:
-                self.dock_widget.set_auto_status("info", status)
-            except (RuntimeError, AttributeError):
-                pass
         # Capture the remaining recap facts while the run context + clip polygon
         # still exist (reset clears the zone). credits_used = billed tiles of the
         # run; credits_left = post-run balance snapshot (may be None if the usage
@@ -543,10 +723,25 @@ class AutoReviewMixin:
             recap_used = (self._auto_run_ctx or {}).get("total")
             recap_left, _is_free = self._auto_credit_snapshot()
         except Exception:  # nosec B110 -- recap is best-effort
-            recap_area, recap_used, recap_left = 0.0, None, None
+            recap_area, recap_used, recap_left = None, None, None
         self._reset_auto_for_new_run()
-        # Value recap on the Start page (session only). Entirely best-effort:
-        # the export already succeeded, so the recap must never raise here.
+        # ONE message right after Finish: the success line carries the whole
+        # story (count, layer, km2, credits); the value recap is only STORED
+        # and takes over once the success line is dismissed (next Start click
+        # or mode switch), so the two never show together. Both are entirely
+        # best-effort: the export already succeeded, so nothing here may
+        # raise. Set AFTER the reset, which clears the Start page, so the
+        # success line survives the return to Start.
+        try:
+            if self.dock_widget:
+                self.dock_widget.set_auto_export_success(
+                    count, name or "",
+                    object_word=recap_prompt or None,
+                    area_km2=recap_area,
+                    credits_used=recap_used,
+                )
+        except Exception:  # nosec B110 -- never break Finish on the success line
+            pass
         try:
             if self.dock_widget and recap_used is not None:
                 self.dock_widget.set_last_run_recap(
@@ -568,6 +763,7 @@ class AutoReviewMixin:
         # A committed run consumed its plan; the next run re-fetches per prompt.
         self._auto_run_plan = None
         self._cancel_task("_auto_run_plan_task")
+        self._cancel_task("_auto_token_task")
         self._auto_zone = None
         self._auto_zone_polygon = None
         self._clear_auto_canvas()
@@ -587,6 +783,7 @@ class AutoReviewMixin:
         and supersedes any in-flight cooperative finalize/reslice."""
         self._auto_review = None
         self._auto_objects = []
+        self._reset_review_refine_cache()
         self._remove_auto_selection_layer()
         self._auto_protected_geoms = []
         self._auto_manual_removed = set()
@@ -594,6 +791,7 @@ class AutoReviewMixin:
         self._auto_finalize_gen += 1
         self._auto_finalize_state = None
         self._auto_preview_geoms = []
+        self._clear_auto_raw_fragments()
         # Orphan any background install started from this review (see above).
         self._clear_refine_install_pending()
         # Turn the review UI OFF here, in the one shared discard spot: the
@@ -615,10 +813,10 @@ class AutoReviewMixin:
         if total > 0 and not self._auto_headless_run:
             # Save exports the FULL found set (Confidence gate dropped, size +
             # shape kept) whenever it is larger than the visible set, so a billed
-            # detection hidden by Confidence is never lost. The label must state
-            # the count that will ACTUALLY be saved, not the smaller visible one.
-            full_geoms, _full_scores = self._full_found_review_geoms()
-            save_count = max(len(full_geoms), visible)
+            # detection hidden by Confidence is never lost. The label states the
+            # count that will be saved via the CHEAP filter-only count (the full
+            # shape refine of the hidden cohort used to freeze this click).
+            save_count = max(self._full_found_review_count(), visible)
             hidden = save_count - visible
             if hidden > 0:
                 label = tr(

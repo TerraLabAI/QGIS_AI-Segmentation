@@ -23,6 +23,7 @@ from ...core.i18n import tr
 from ...core.prompt_manager import FrozenCropSession
 from ...core.qt_compat import PolygonGeometry
 from ..canvas_palette import PENDING_FILL, PENDING_STROKE
+from .shared import _debounce_timer
 
 
 class ManualHandoffMixin:
@@ -49,10 +50,12 @@ class ManualHandoffMixin:
         return None
 
     def _update_handoff_progress(self) -> None:
-        """Push the kept (hand-refined) count to the handoff banner counter."""
+        """Push the kept count to the handoff header progress. Kept = validated
+        (green on the canvas), so the dock bar and the map always agree; a
+        shape-only tweak protects an object but does not turn it green."""
         if not (self._refine_handoff_active and self.dock_widget):
             return
-        kept = sum(1 for p in self.saved_polygons if p.get("manual_touched"))
+        kept = sum(1 for p in self.saved_polygons if p.get("validated"))
         try:
             self.dock_widget.update_handoff_progress(kept)
         except (RuntimeError, AttributeError):
@@ -167,6 +170,11 @@ class ManualHandoffMixin:
         # Hide (do NOT discard) the blue review layer: the manual session shows
         # the same detections as editable saved polygons.
         self._remove_auto_selection_layer()
+        # Hide the Automatic canvas overlays for the hand-edit: the green
+        # example outline reads as one more editable polygon and the zone
+        # band/grid only distract. Restored on Back to review / discard.
+        self._set_exemplar_bands_visible(False)
+        self._set_auto_zone_overlays_visible(False)
         try:
             # Confidence stays editable: hand-edited objects are protected across
             # a confidence change (see _auto_protected_geoms), so no lock needed.
@@ -238,10 +246,17 @@ class ManualHandoffMixin:
             self._refine_smooth = 5 if params.get("smooth") else 0
             self._refine_fill_holes = bool(params.get("fill_holes"))
             self._refine_ortho = bool(params.get("ortho"))
+            # Min/Max size carry over 1:1 (both sides are true ground m2), so
+            # the Shape settings arrive calibrated exactly like the review the
+            # user just tuned.
+            self._refine_min_size_m2 = max(0.0, float(params.get("min_a") or 0.0))
+            self._refine_max_size_m2 = max(0.0, float(params.get("max_a") or 0.0))
             self.dock_widget.set_refine_values(
                 self._refine_simplify, self._refine_smooth,
                 self._refine_expand, self._refine_fill_holes,
                 right_angles=self._refine_ortho)
+            self.dock_widget.set_size_filter_values(
+                self._refine_min_size_m2, self._refine_max_size_m2)
         except (RuntimeError, AttributeError):
             pass
         self._import_review_geoms_as_saved(review)
@@ -259,6 +274,11 @@ class ManualHandoffMixin:
         validated on the green layer. Base Manual saves are unaffected (real green
         bands, no memory layer)."""
         geoms = review.get("geoms") or []
+        # Parallel identity lists (may be None after older flows): score feeds
+        # the review heatmap on return, det_id keeps the Random per-instance
+        # colour stable across the whole handoff round trip.
+        scores = review.get("scores") or []
+        ids = review.get("ids") or []
         crs = review.get("crs")
         authid = crs.authid() if crs is not None and crs.isValid() else None
         # The seed layers live in the SOURCE RASTER CRS (the run CRS the geoms are
@@ -273,9 +293,18 @@ class ManualHandoffMixin:
                 layer_crs = authid
         if layer_crs:
             self._ensure_handoff_layers(layer_crs)
-        for g in geoms:
+        # Synthetic det_id sequence for objects with no canonical id (hand-drawn
+        # saves, legacy reviews without ids): keeps every entry hue-stable and
+        # the return arrays free of NULLs. Starts above the largest real id.
+        max_id = max((int(i) for i in ids if i is not None), default=-1)
+        self._handoff_det_id_seq = max_id + 1
+        for n, g in enumerate(geoms):
             if g is None or g.isEmpty():
                 continue
+            det_id = ids[n] if n < len(ids) and ids[n] is not None else None
+            if det_id is None:
+                det_id = self._next_handoff_det_id()
+            score = scores[n] if n < len(scores) and scores[n] is not None else None
             # Carry protection across repeat refine visits: a geom matching a
             # previously hand-edited one is re-imported already marked touched, so
             # it stays protected from confidence re-filtering.
@@ -294,9 +323,17 @@ class ManualHandoffMixin:
                 "refine_fill_holes": self._refine_fill_holes,
                 "refine_ortho": self._refine_ortho,
                 "refine_min_area": self._refine_min_area,
+                "refine_min_size_m2": self._refine_min_size_m2,
+                "refine_max_size_m2": self._refine_max_size_m2,
                 "manual_touched": self._geom_overlaps_any(g, self._auto_protected_geoms),
-                # Not yet hand-validated: drawn on the blue pending layer.
+                # Not yet hand-validated: drawn on the pending layer.
                 "validated": False,
+                # Per-instance identity, carried through the whole handoff so
+                # the Random colour and the review heatmap survive the round
+                # trip (they used to be dropped here, which flattened Manual
+                # refine to one uniform blue).
+                "det_id": int(det_id),
+                "score": float(score) if score is not None else None,
             })
             # None placeholder keeps the two lists index-locked; the geometry is
             # drawn by _handoff_pending_layer, not a per-object band.
@@ -355,22 +392,32 @@ class ManualHandoffMixin:
                 QgsMessageLog.logMessage(
                     f"Refine handoff: save fold error: {e}",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
-            geoms = []
+            # The save no-ops while a crop encode is in flight: an object still
+            # OPEN for editing was popped from saved_polygons at open time, so
+            # without this fold it would vanish from the harvest entirely.
+            if self._is_refining_saved_object:
+                self._close_active_edit_to_pending()
+            entries = []
             protected = []
             for pg in self.saved_polygons:
                 g = self._entry_geom(pg)
                 if g is not None and not g.isEmpty():
-                    geoms.append(g)
+                    entries.append((g, pg.get("det_id"), pg.get("score")))
                     if pg.get("manual_touched"):
                         protected.append(g)
             # Dissolve any remaining overlaps so the committed output is uniform
             # (never stacked layers), while distinct touching objects stay split.
-            review["geoms"] = self._dissolve_overlapping(geoms)
-            # The geoms were rewritten, so the parallel score/id lists no longer
-            # align: drop them (neutral heatmap, $id random colours) rather than
-            # colour the wrong objects.
-            review["scores"] = None
-            review["ids"] = None
+            # Identity-aware: a dissolved group keeps its first member's det_id
+            # (so the Random colour survives the round trip) and its max score,
+            # instead of dropping both lists and reshuffling every colour.
+            geoms, ids, scores = self._dissolve_overlapping_entries(entries)
+            review["geoms"] = geoms
+            review["scores"] = scores
+            review["ids"] = ids
+            # Harvested geoms are hand-edited/dissolved, NOT the refine cache's
+            # output: drop the provenance stamp so the next review push does a
+            # full rebuild instead of wrongly diffing against pre-handoff state.
+            review["stamp"] = None
             # Remember the hand-edited objects so a later confidence change keeps
             # them and only re-filters the untouched auto detections.
             self._auto_protected_geoms = protected
@@ -428,6 +475,9 @@ class ManualHandoffMixin:
         layer = getattr(self, "_handoff_source_layer", None)
         self._refine_handoff_active = False
         self._handoff_source_layer = None
+        # Bring the Automatic canvas overlays back (hidden for the hand-edit).
+        self._set_exemplar_bands_visible(True)
+        self._set_auto_zone_overlays_visible(True)
         if layer is not None:
             self._remove_auto_selection_layer()
             self._auto_selection_layer = self._create_auto_selection_layer(layer)
@@ -478,12 +528,19 @@ class ManualHandoffMixin:
         self._auto_protected_geoms = []
         self._auto_manual_removed = set()
         self._handoff_source_layer = None
+        self._set_exemplar_bands_visible(True)
+        self._set_auto_zone_overlays_visible(True)
         self._teardown_manual_session()
         if self.dock_widget:
             try:
                 self.dock_widget._refine_handoff = False
                 self.dock_widget.set_protected_note(False)
                 self.dock_widget.refine_handoff_banner.setVisible(False)
+                self.dock_widget.back_to_review_btn.setVisible(False)
+                self.dock_widget.handoff_state_card.setVisible(False)
+                # Zero + hide the footer tally so it cannot linger under a torn
+                # down handoff (the recap gates on the now-cleared flag).
+                self.dock_widget._reset_handoff_counters()
                 self.dock_widget.mode_switch.setEnabled(True)
             except (RuntimeError, AttributeError):
                 pass
@@ -506,15 +563,401 @@ class ManualHandoffMixin:
         pg["geom_obj"] = g
         return g
 
-    def _hit_test_saved_polygon(self, raster_pt):
-        """Index of the topmost saved polygon containing raster_pt, else None.
-        Iterates last-first so the most recently added object wins overlaps."""
-        pt = QgsGeometry.fromPointXY(raster_pt)
-        for i in range(len(self.saved_polygons) - 1, -1, -1):
-            g = self._entry_geom(self.saved_polygons[i])
-            if g is not None and not g.isEmpty() and g.contains(pt):
+    def _saved_index_of(self, entry):
+        """Index of an entry in saved_polygons by IDENTITY (entries are stable
+        dict objects; indices shift on structural changes), else None."""
+        for i, pg in enumerate(self.saved_polygons):
+            if pg is entry:
                 return i
         return None
+
+    def _hit_test_saved_entry(self, raster_pt):
+        """The topmost saved ENTRY containing raster_pt, else None. Last-drawn
+        wins overlaps. Uses the token-keyed handoff spatial index when present
+        so hover stays cheap over thousands of seeds; falls back to the plain
+        scan outside the handoff."""
+        pt = QgsGeometry.fromPointXY(raster_pt)
+        # The click must land on what the USER SEES on top. In the handoff the
+        # kept layer is created after (so renders above) the pending layer, so
+        # a kept entry beats any pending one it overlaps; ties break to the
+        # highest provider fid (the memory provider iterates fids ascending, so
+        # the highest fid within a layer is drawn last = on top). Base Manual
+        # draws one band per entry in append order, so there the list index IS
+        # the z-order.
+        prefer_kept = bool(self._refine_handoff_active)
+
+        def _pick(cands):
+            best = None
+            for order, pg in cands:
+                g = self._entry_geom(pg)
+                if g is None or g.isEmpty() or not g.contains(pt):
+                    continue
+                kept = 1 if (prefer_kept and pg.get("validated")) else 0
+                key = (kept, order)
+                if best is None or key > best[0]:
+                    best = (key, pg)
+            return None if best is None else best[1]
+
+        index = getattr(self, "_handoff_hit_index", None)
+        if index is not None:
+            from qgis.core import QgsRectangle
+            x, y = raster_pt.x(), raster_pt.y()
+            tok2entry = getattr(self, "_handoff_tok2entry", None) or {}
+            cands = []
+            for tok in index.intersects(QgsRectangle(x, y, x, y)):
+                pg = tok2entry.get(tok)
+                if pg is not None:
+                    cands.append((pg.get("_hfid", -1), pg))
+            return _pick(cands)
+        return _pick(enumerate(self.saved_polygons))
+
+    def _hit_test_saved_polygon(self, raster_pt):
+        """Index wrapper over _hit_test_saved_entry for the callers that need
+        the list position (select / open-for-edit)."""
+        entry = self._hit_test_saved_entry(raster_pt)
+        return None if entry is None else self._saved_index_of(entry)
+
+    # --- selection-first review of the imported detections --------------------
+    # Resting-state model (mirrors the annotation-review standard: selection is
+    # never destructive and never triggers the 3-8s SAM encode): hover
+    # highlights, click selects, Ctrl+click multi-selects, Suppr deletes the
+    # selection instantly, S keeps it, a second click (or E / double-click)
+    # opens ONE object for actual SAM editing.
+
+    def _selected_saved_indices(self) -> list:
+        """Current selection as indices into saved_polygons (identity-matched:
+        entries are stable dict objects, indices shift on structural changes)."""
+        sel = getattr(self, "_handoff_selected_entries", None) or []
+        if not sel:
+            return []
+        return [i for i, pg in enumerate(self.saved_polygons)
+                if any(pg is e for e in sel)]
+
+    def _select_saved_polygon(self, idx: int, additive: bool = False) -> None:
+        """Select the idx-th saved polygon (Ctrl+click toggles membership)."""
+        if not (0 <= idx < len(self.saved_polygons)):
+            return
+        entry = self.saved_polygons[idx]
+        sel = list(getattr(self, "_handoff_selected_entries", None) or [])
+        if additive:
+            for e in sel:
+                if e is entry:
+                    sel = [x for x in sel if x is not entry]
+                    break
+            else:
+                sel.append(entry)
+        else:
+            sel = [entry]
+        self._handoff_selected_entries = sel
+        self._refresh_handoff_selection_band()
+        self._notify_handoff_selection()
+        self._schedule_handoff_crop_prewarm()
+
+    def _deselect_saved_polygons(self) -> None:
+        """Clear the selection (Esc / click on empty ground)."""
+        timer = getattr(self, "_handoff_prewarm_timer", None)
+        if timer is not None:
+            try:
+                timer.stop()
+            except RuntimeError:
+                self._handoff_prewarm_timer = None  # C++ side gone (unload)
+        if getattr(self, "_handoff_selected_entries", None):
+            self._handoff_selected_entries = []
+            self._refresh_handoff_selection_band()
+            self._notify_handoff_selection()
+
+    # --- speculative selection prewarm ---------------------------------------
+    # Opening a detection for SAM editing needs its crop encoded (~3-8s on
+    # CPU). The select-then-act flow gives that time away for free: the moment
+    # ONE detection is selected, its crop encode can start in the background,
+    # so a following Edit (E / double-click / the state-card button) opens with
+    # the crop already warm and the first editing click predicts instantly.
+
+    def _schedule_handoff_crop_prewarm(self) -> None:
+        """(Re)arm the selection-prewarm debounce. 400 ms: long enough that a
+        double-click's opening press never races the open's own encode, short
+        enough that a deliberate select-then-Edit gets the crop warm. Armed
+        only for a SINGLE selected entry on a LOCAL raster (an online crop
+        extraction blocks the GUI on tile fetches, unacceptable per selection
+        click)."""
+        if not self._refine_handoff_active or self.dock_widget is None:
+            return
+        timer = getattr(self, "_handoff_prewarm_timer", None)
+        sel = getattr(self, "_handoff_selected_entries", None) or []
+        if len(sel) != 1 or self._is_online_layer or self._headless:
+            if timer is not None:
+                timer.stop()
+            return
+        _debounce_timer(self, "_handoff_prewarm_timer", self.dock_widget, 400,
+                        self._maybe_prewarm_selected_crop)
+
+    def _handoff_crop_spec_for(self, geom, anchor_pt) -> tuple:
+        """Deterministic crop identity for one detection: center + scale from
+        the object's bbox corners (+ an interior anchor, which never widens the
+        bounds), exactly what the open computes, so the prewarm and the open
+        agree on whether an encode is already covered."""
+        bb = geom.boundingBox()
+        pts = [(bb.xMinimum(), bb.yMinimum()), (bb.xMaximum(), bb.yMaximum()),
+               (anchor_pt.x(), anchor_pt.y())]
+        cx, cy, scale = self._compute_crop_center_and_mupp(pts)
+        return cx, cy, scale
+
+    def _maybe_prewarm_selected_crop(self) -> None:
+        """Speculatively encode the single selected detection's crop (silent:
+        no busy cursor, quiet extraction). Every guard re-checks at fire time;
+        a stale or wasted prewarm is harmless because the first editing click
+        self-heals through _check_crop_status either way."""
+        if not self._refine_handoff_active or self._encoding_in_progress:
+            return
+        if (self.predictor is None or self._headless or self._is_online_layer
+                or self._is_refining_saved_object  # noqa: W503
+                or self.current_mask is not None):  # noqa: W503
+            return
+        sel = getattr(self, "_handoff_selected_entries", None) or []
+        if len(sel) != 1:
+            return
+        g = self._entry_geom(sel[0])
+        if g is None or g.isEmpty():
+            return
+        anchor = g.pointOnSurface()
+        if anchor is None or anchor.isEmpty():
+            return
+        pt = anchor.asPoint()
+        cx, cy, scale = self._handoff_crop_spec_for(
+            g, QgsPointXY(pt.x(), pt.y()))
+        spec = (round(cx, 6), round(cy, 6), round(float(scale or 0.0), 6))
+        if (spec == getattr(self, "_handoff_crop_spec", None)
+                and self._current_crop_info is not None):  # noqa: W503
+            return  # this object's crop is already encoded
+        image_np, crop_info = self._extract_crop_only(
+            QgsPointXY(cx, cy), scale, quiet=True)
+        if image_np is None:
+            return
+        self._handoff_crop_spec = spec
+        QgsMessageLog.logMessage(
+            "Refine handoff: prewarming selected detection's crop",
+            "AI Segmentation", level=Qgis.MessageLevel.Info)
+        self._start_manual_encode(image_np, crop_info, None, show_busy=False)
+
+    def _notify_handoff_selection(self) -> None:
+        """Push the selection count to the dock state card."""
+        sel = getattr(self, "_handoff_selected_entries", None) or []
+        if self.dock_widget:
+            try:
+                self.dock_widget.set_handoff_selected(len(sel))
+            except (RuntimeError, AttributeError):
+                pass
+
+    def _refresh_handoff_selection_band(self) -> None:
+        """Redraw the white selection outline over the selected entries. Prunes
+        entries that left saved_polygons (deleted/opened) from the selection."""
+        alive = []
+        for e in getattr(self, "_handoff_selected_entries", None) or []:
+            if any(e is pg for pg in self.saved_polygons):
+                alive.append(e)
+        self._handoff_selected_entries = alive
+        band = getattr(self, "_handoff_selection_band", None)
+        if not alive:
+            if band is not None:
+                band.reset(PolygonGeometry)
+            return
+        if band is None:
+            from qgis.PyQt.QtGui import QColor
+            band = QgsRubberBand(self.iface.mapCanvas(), PolygonGeometry)
+            # QGIS-native selection yellow, NOT white: the white hover outline
+            # and a white selection were near-twins, so Delete acted on a
+            # selection made earlier while the user thought it acted on the
+            # polygon under the cursor. Yellow = selected is the reflex every
+            # QGIS user already has.
+            band.setColor(QColor(255, 255, 0, 255))
+            band.setFillColor(QColor(255, 255, 0, 60))
+            band.setWidth(3)
+            self._handoff_selection_band = band
+        band.reset(PolygonGeometry)
+        displays = []
+        for e in alive:
+            g = self._entry_geom(e)
+            if g is None or g.isEmpty():
+                continue
+            display = QgsGeometry(g)
+            self._transform_geometry_to_canvas_crs(display)
+            # Flatten multiparts: collectGeometry must only see single parts
+            # to build one clean MultiPolygon on every QGIS 3.22-4.x build.
+            if display.isMultipart():
+                displays.extend(display.asGeometryCollection())
+            else:
+                displays.append(display)
+        if displays:
+            # One collected geometry: every addGeometry call recomputes the
+            # band's bounding rect and schedules a canvas update, which adds
+            # up on a large Ctrl+multi-selection.
+            band.setToGeometry(QgsGeometry.collectGeometry(displays), None)
+        band.show()
+
+    def _set_handoff_hover(self, idx) -> None:
+        """Show/clear the hover highlight (thin white outline) for idx/None."""
+        entry = self.saved_polygons[idx] if idx is not None else None
+        self._set_handoff_hover_entry(entry)
+
+    def _set_handoff_hover_entry(self, entry) -> None:
+        """Entry-identity variant of _set_handoff_hover: the hover path works
+        on entries directly, skipping the O(N) entry-to-index resolution on
+        every mouse move."""
+        if entry is getattr(self, "_handoff_hover_entry", None):
+            return
+        self._handoff_hover_entry = entry
+        band = getattr(self, "_handoff_hover_band", None)
+        if entry is None:
+            if band is not None:
+                band.reset(PolygonGeometry)
+            return
+        if band is None:
+            from qgis.PyQt.QtGui import QColor
+            band = QgsRubberBand(self.iface.mapCanvas(), PolygonGeometry)
+            band.setColor(QColor(255, 255, 255, 170))
+            band.setFillColor(QColor(255, 255, 255, 18))
+            band.setWidth(2)
+            self._handoff_hover_band = band
+        g = self._entry_geom(entry)
+        if g is None or g.isEmpty():
+            return
+        display = QgsGeometry(g)
+        self._transform_geometry_to_canvas_crs(display)
+        band.reset(PolygonGeometry)
+        band.addGeometry(display, None)
+        band.show()
+
+    def _encode_blocks_ui(self) -> bool:
+        """True while a FOREGROUND (busy-cursor) encode owns the pipe, which is
+        when resting-state gestures defer to it. A silent speculative prewarm
+        must never freeze hover or swallow the double-click open: those are
+        pure canvas work, and the open attaches to the in-flight prewarm."""
+        return bool(self._encoding_in_progress) and bool(
+            getattr(self, "_encode_cursor_set", True))
+
+    def _on_handoff_cursor_moved(self, point) -> None:
+        """Map-tool hover: highlight the detection under the cursor (handoff
+        only; pure canvas work, never a model call)."""
+        if not self._refine_handoff_active or self._encode_blocks_ui():
+            return
+        if not self.saved_polygons:
+            return
+        try:
+            raster_pt = self._transform_to_raster_crs(point)
+        except (RuntimeError, AttributeError):
+            return
+        self._set_handoff_hover_entry(self._hit_test_saved_entry(raster_pt))
+
+    def _click_was_additive(self) -> bool:
+        """True when the last map-tool click carried Ctrl/Cmd or Shift (additive
+        selection). Qt maps Cmd to ControlModifier on macOS."""
+        tool = self.map_tool
+        if tool is None:
+            return False
+        from qgis.PyQt.QtCore import Qt
+        mods = getattr(tool, "last_click_modifiers", Qt.KeyboardModifier.NoModifier)
+        return bool(mods & (Qt.KeyboardModifier.ControlModifier
+                            | Qt.KeyboardModifier.ShiftModifier))  # noqa: W503
+
+    def _on_canvas_double_click(self, point) -> None:
+        """Double-click on a detection = open it for editing (the first press of
+        the pair already selected it). Resting state only: while editing, the
+        first press was already routed (point or switch), so this no-ops."""
+        if not self._refine_handoff_active or self._encode_blocks_ui():
+            return
+        if (self.current_mask is not None or self._active_crop_points_positive
+                or self._is_refining_saved_object):  # noqa: W503
+            return
+        try:
+            raster_pt = self._transform_to_raster_crs(point)
+        except (RuntimeError, AttributeError):
+            return
+        if not self._is_point_in_raster_extent(raster_pt):
+            return
+        idx = self._hit_test_saved_polygon(raster_pt)
+        if idx is not None:
+            self._open_saved_polygon_for_edit(idx, raster_pt)
+
+    def _delete_selected_saved_polygons(self) -> bool:
+        """Instantly delete the selected detections (NO SAM round trip: this is
+        a list removal + repaint). One undo unit on the stack. Returns True if
+        anything was deleted."""
+        idxs = self._selected_saved_indices()
+        if not idxs:
+            return False
+        unit = []
+        inc_ok = True
+        for i in sorted(idxs, reverse=True):
+            pg = self.saved_polygons.pop(i)
+            if i < len(self.saved_rubber_bands):
+                self._safe_remove_rubber_band(self.saved_rubber_bands.pop(i))
+            # Remove BEFORE the undo copy so the snapshot never carries the
+            # (now dead) provider bookkeeping keys.
+            inc_ok = self._handoff_remove_entry_feature(pg) and inc_ok
+            unit.append(dict(pg))
+        self._push_deleted_unit(unit)
+        self._handoff_selected_entries = []
+        self._refresh_handoff_selection_band()
+        self._set_handoff_hover(None)
+        self._notify_handoff_selection()
+        if not inc_ok:
+            self._rebuild_handoff_layers()
+        if self.dock_widget:
+            try:
+                self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
+                if self._refine_handoff_active:
+                    self.dock_widget.note_handoff_shape_removed(len(unit))
+            except (RuntimeError, AttributeError):
+                pass
+        self._update_handoff_progress()
+        QgsMessageLog.logMessage(
+            f"{len(unit)} object(s) deleted. Ctrl+Z restores them.",
+            "AI Segmentation", level=Qgis.MessageLevel.Info)
+        return True
+
+    def _on_handoff_edit_clicked(self) -> None:
+        """State-card Edit shape: opens the single selected detection (the
+        button only shows when exactly one is selected)."""
+        self._edit_selected_saved_polygon()
+
+    def _on_handoff_delete_clicked(self) -> None:
+        """State-card Remove: deletes the open edit or the selection."""
+        self._on_delete_active_object()
+
+    def _edit_selected_saved_polygon(self) -> bool:
+        """Open the (single) selected detection for SAM editing, seeded at its
+        interior point. Returns True if an edit session started."""
+        idxs = self._selected_saved_indices()
+        if len(idxs) != 1:
+            return False
+        idx = idxs[0]
+        g = self._entry_geom(self.saved_polygons[idx])
+        if g is None or g.isEmpty():
+            return False
+        anchor = g.pointOnSurface()
+        if anchor is None or anchor.isEmpty():
+            return False
+        pt = anchor.asPoint()
+        self._open_saved_polygon_for_edit(idx, QgsPointXY(pt.x(), pt.y()))
+        return True
+
+    def _open_saved_polygon_for_edit(self, idx: int, raster_pt, label: int = 1) -> None:
+        """Enter SAM editing on one saved detection: clear the selection/hover
+        first (the entry is about to leave saved_polygons), then activate."""
+        self._handoff_selected_entries = []
+        self._refresh_handoff_selection_band()
+        self._set_handoff_hover(None)
+        self._notify_handoff_selection()
+        self._activate_saved_polygon_for_refine(idx, raster_pt, label=label)
+
+    def _push_deleted_unit(self, unit: list) -> None:
+        """Append one undo unit (list of entry dicts) to the delete stack."""
+        stack = getattr(self, "_deleted_objects_stack", None)
+        if stack is None:
+            stack = []
+            self._deleted_objects_stack = stack
+        stack.append(unit)
+        del stack[:-25]  # bounded: 25 undo units is plenty for a review pass
 
     # Fraction of the SMALLER object's area that must overlap for a new save to
     # be treated as "completing" an existing detection (vs a distinct object).
@@ -530,10 +973,20 @@ class ManualHandoffMixin:
         touch are left alone. Returns the (possibly grown) geometry."""
         if not self._refine_handoff_active or geom is None or geom.isEmpty():
             return geom
+        # This is the single choke point for a saved shape in the handoff (the
+        # Save-shape button and the S key both land here), so it drives the
+        # footer's "edited" tally.
+        if self.dock_widget:
+            try:
+                self.dock_widget.note_handoff_shape_edited()
+            except (RuntimeError, AttributeError):
+                pass
         merged = geom
         merged_bb = merged.boundingBox()
         new_polys: list = []
         new_bands: list = []
+        absorbed_any = False
+        inc_ok = True
         for i in range(len(self.saved_polygons)):
             pg = self.saved_polygons[i]
             rb = self.saved_rubber_bands[i] if i < len(self.saved_rubber_bands) else None
@@ -553,6 +1006,8 @@ class ManualHandoffMixin:
                             merged_bb = merged.boundingBox()
                             absorb = True
             if absorb:
+                absorbed_any = True
+                inc_ok = self._handoff_remove_entry_feature(pg) and inc_ok
                 if rb is not None:
                     self._safe_remove_rubber_band(rb)
             else:
@@ -563,7 +1018,17 @@ class ManualHandoffMixin:
                 new_bands.append(rb)
         self.saved_polygons = new_polys
         self.saved_rubber_bands = new_bands
-        self._rebuild_handoff_layers()
+        # The common case absorbs NOTHING: zero provider work (the full
+        # both-layers rebuild used to run on every single Save here).
+        if absorbed_any:
+            if not inc_ok:
+                self._rebuild_handoff_layers()
+            else:
+                try:
+                    self._refresh_handoff_selection_band()
+                    self._set_handoff_hover(None)
+                except (RuntimeError, AttributeError):
+                    pass
         return merged
 
     def _geom_overlaps_any(self, geom, others) -> bool:
@@ -623,6 +1088,123 @@ class ManualHandoffMixin:
             nid += 1
         return [g for g in keep.values() if g is not None]
 
+    def _merge_kept_with_protected(self, geoms: list, protected: list) -> list:
+        """Re-merge a re-filtered auto detection set against hand-edited
+        ``protected`` geometries, scoped to the protected neighbourhood so the
+        tail stays O(protected), not O(all detections).
+
+        Drops any detection that overlaps a protected geom by area (same
+        object, so the manual edit wins), then dissolves ONLY the protected
+        geoms plus the kept detections whose bounding box touches a protected
+        bounding box. The dissolve threshold equals the filter threshold, so a
+        detection that survived the filter can never reach the dissolve
+        threshold against a protected geom; the only pairs the dissolve can
+        actually merge live in that neighbourhood, so the untouched remainder
+        (kept detections whose bbox touches no protected geom) is appended
+        as-is."""
+        prot = [g for g in protected if g is not None and not g.isEmpty()]
+        if not prot:
+            return [g for g in geoms if g is not None and not g.isEmpty()]
+        from qgis.core import QgsFeature, QgsSpatialIndex
+        # One index over the small protected set, queried per detection (the
+        # linear scan per geom is gone). The candidate list it returns is the
+        # same bbox pre-filter _geom_overlaps_any applies, so scanning it is
+        # identical to scanning all of protected.
+        index = QgsSpatialIndex()
+        pmap: dict = {}
+        for i, g in enumerate(prot):
+            feat = QgsFeature(i)
+            feat.setGeometry(g)
+            index.insertFeature(feat)
+            pmap[i] = g
+        near: list = []
+        remainder: list = []
+        for g in geoms:
+            if g is None or g.isEmpty():
+                continue
+            cands = [pmap[fid] for fid in index.intersects(g.boundingBox())]
+            if not cands:
+                # No protected bbox to touch: this detection can never merge.
+                remainder.append(g)
+                continue
+            if self._geom_overlaps_any(g, cands):
+                continue  # same object as a protected geom: the manual edit wins
+            near.append(g)
+        return self._dissolve_overlapping(near + prot) + remainder
+
+    def _next_handoff_det_id(self) -> int:
+        """Next synthetic per-instance id for entries with no canonical det_id
+        (hand-drawn saves, legacy reviews). Monotonic within the session."""
+        seq = getattr(self, "_handoff_det_id_seq", None)
+        if seq is None:
+            seq = 100000  # clear of any plausible canonical id range
+        self._handoff_det_id_seq = seq + 1
+        return seq
+
+    def _dissolve_overlapping_entries(self, entries: list):
+        """Identity-aware `_dissolve_overlapping`: entries are (geom, det_id,
+        score) triples. Overlapping-by-area geometries union into one whose
+        det_id is the FIRST member's (colour stability) and whose score is the
+        max (a stitched object is as confident as its best part). Returns the
+        aligned (geoms, ids, scores) lists; ids are always ints (synthetic ones
+        were assigned at entry creation), scores may carry a 1.0 fallback."""
+        from qgis.core import QgsFeature, QgsSpatialIndex
+        items = [(g, i, s) for g, i, s in entries
+                 if g is not None and not g.isEmpty()]
+        if len(items) <= 1:
+            geoms = [g for g, _i, _s in items]
+            ids = [int(i) if i is not None else self._next_handoff_det_id()
+                   for _g, i, _s in items]
+            scores = [float(s) if s is not None else 1.0 for _g, _i, s in items]
+            return geoms, ids, scores
+        index = QgsSpatialIndex()
+        keep: dict = {}
+        nid = 0
+        for g, det_id, score in items:
+            merged = g
+            m_id = det_id
+            m_score = score
+            matches = []
+            for fid in index.intersects(merged.boundingBox()):
+                rec = keep.get(fid)
+                if rec is None:
+                    continue
+                h = rec[0]
+                if not merged.intersects(h):
+                    continue
+                inter = merged.intersection(h)
+                if inter is None or inter.isEmpty():
+                    continue
+                smaller = min(merged.area(), h.area())
+                if smaller > 0 and inter.area() / smaller >= self._COMPLETE_OVERLAP_FRAC:
+                    matches.append(fid)
+            for fid in matches:
+                h, h_id, h_score = keep[fid]
+                union = merged.combine(h)
+                if union is not None and not union.isEmpty():
+                    merged = union
+                    # The EARLIER keeper's identity wins: its colour is what the
+                    # user has been looking at since the run streamed in.
+                    if h_id is not None:
+                        m_id = h_id if m_id is None else min(m_id, h_id)
+                    if h_score is not None:
+                        m_score = h_score if m_score is None else max(m_score, h_score)
+                    keep[fid] = None
+            feat = QgsFeature(nid)
+            feat.setGeometry(merged)
+            index.insertFeature(feat)
+            keep[nid] = (merged, m_id, m_score)
+            nid += 1
+        geoms, ids, scores = [], [], []
+        for rec in keep.values():
+            if rec is None:
+                continue
+            g, i, s = rec
+            geoms.append(g)
+            ids.append(int(i) if i is not None else self._next_handoff_det_id())
+            scores.append(float(s) if s is not None else 1.0)
+        return geoms, ids, scores
+
     def _weld_active_into_overlaps(self) -> None:
         """Live 'complete-don't-stack' during a refine handoff: if the active SAM
         selection now overlaps existing saved detection(s) by area, fold each into
@@ -633,6 +1215,12 @@ class ManualHandoffMixin:
         (cheap) plus a bbox-pruned overlap scan. Touching-only neighbours (~0
         shared area) are left alone, preserving the instance count."""
         if not self._refine_handoff_active:
+            return
+        if self._is_refining_saved_object:
+            # An OPEN edit absorbs its neighbours at Save time only
+            # (_absorb_overlapping_saved): a live weld here would delete them
+            # outside the Ctrl+Z history (undo would shrink the object but
+            # never bring the neighbours back).
             return
         if self.current_mask is None or self.current_transform_info is None:
             return
@@ -647,6 +1235,7 @@ class ManualHandoffMixin:
         new_polys: list = []
         new_bands: list = []
         folded = False
+        inc_ok = True
         for i in range(len(self.saved_polygons)):
             pg = self.saved_polygons[i]
             rb = self.saved_rubber_bands[i] if i < len(self.saved_rubber_bands) else None
@@ -663,6 +1252,7 @@ class ManualHandoffMixin:
             if absorb:
                 self._frozen_sessions.append(FrozenCropSession(polygon=g))
                 folded = True
+                inc_ok = self._handoff_remove_entry_feature(pg) and inc_ok
                 if rb is not None:
                     self._safe_remove_rubber_band(rb)
             else:
@@ -673,7 +1263,14 @@ class ManualHandoffMixin:
         if folded:
             self.saved_polygons = new_polys
             self.saved_rubber_bands = new_bands
-            self._rebuild_handoff_layers()
+            if not inc_ok:
+                self._rebuild_handoff_layers()
+            else:
+                try:
+                    self._refresh_handoff_selection_band()
+                    self._set_handoff_hover(None)
+                except (RuntimeError, AttributeError):
+                    pass
             if self.dock_widget:
                 try:
                     self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
@@ -688,6 +1285,11 @@ class ManualHandoffMixin:
         self.current_score = 0.0
         self.current_transform_info = None
         self.current_low_res_mask = None
+        # Geometry-based edit session state dies with the active object too.
+        self._unfrozen_display_polygon = None
+        self._refine_geom_history = []
+        self._refine_edit_pristine = None
+        self._refine_edit_last_applied = None
         try:
             self.prompts.clear()
         except (RuntimeError, AttributeError):
@@ -702,20 +1304,41 @@ class ManualHandoffMixin:
         if self.dock_widget:
             try:
                 self.dock_widget.set_point_count(0, 0)
+                self.dock_widget.set_handoff_editing(False)
             except (RuntimeError, AttributeError):
                 pass
 
     def _on_delete_active_object(self) -> None:
-        """Delete the object currently OPEN for editing. One-shot undo
-        (Ctrl+Z) restores it. Only active during a refine handoff or when a
-        saved object is open for editing."""
+        """Delete the object currently OPEN for editing, or (when nothing is
+        open) the current SELECTION. Ctrl+Z restores from the delete stack.
+        Only active during a refine handoff or when a saved object is open."""
         if not (self._refine_handoff_active or self._is_refining_saved_object):
             return
-        # Snapshot for undo: prefer the exact original entry re-opened for edit;
-        # otherwise synthesize one from the current active mask geometry.
+        # Selection-first: with no active edit, Suppr rejects the selected
+        # detections instantly (no SAM round trip, no open-first detour).
+        if (self.current_mask is None and self._active_refine_origin_entry is None
+                and not self._active_crop_points_positive):  # noqa: W503
+            self._delete_selected_saved_polygons()
+            return
+        # Snapshot for undo: prefer the exact entry re-opened for edit, updated
+        # to the CURRENTLY EDITED shape (what the user saw at delete time, not
+        # the pre-edit original); otherwise synthesize one from the active mask.
         origin = self._active_refine_origin_entry
         if origin is not None:
             backup = dict(origin)
+            base = self._harvest_open_edit_geometry()
+            if base is not None and not base.isEmpty():
+                backup["geometry_wkt"] = base.asWkt()
+                # Keep the cached geometry consistent with the WKT (a stale
+                # geom_obj would win in _entry_geom after a restore).
+                backup["geom_obj"] = QgsGeometry(base)
+                # And drop any pre-edit pristine anchor for the same reason.
+                backup.pop("shape_base_wkt", None)
+            # Editing clicks and reshapes are hand edits: a restore must keep
+            # the object protected from confidence re-filtering (mirrors
+            # close-to-pending).
+            if getattr(self, "_refine_geom_history", None) or any(self.prompts.point_count):
+                backup["manual_touched"] = True
         else:
             wkt = None
             if self.current_mask is not None and self.current_transform_info is not None:
@@ -732,14 +1355,21 @@ class ManualHandoffMixin:
                 "geometry_wkt": wkt,
                 "transform_info": {"crs": authid} if authid else None,
                 "manual_touched": self._refine_handoff_active,
+                "det_id": self._next_handoff_det_id(),
+                "score": None,
             }
-        self._deleted_object_backup = backup
+        self._push_deleted_unit([backup])
+        # Drop any click remembered during this edit's encode (its context is
+        # gone; replaying it later would select something out of nowhere).
+        self._discard_pending_manual_click()
         self._clear_active_mask_without_saving()
         self._is_refining_saved_object = False
         self._active_refine_origin_entry = None
         if self.dock_widget:
             try:
                 self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
+                if self._refine_handoff_active:
+                    self.dock_widget.note_handoff_shape_removed(1)
             except (RuntimeError, AttributeError):
                 pass
         self._update_handoff_progress()
@@ -748,35 +1378,44 @@ class ManualHandoffMixin:
             "AI Segmentation", level=Qgis.MessageLevel.Info)
 
     def _restore_deleted_object(self) -> bool:
-        """Re-append a Delete-key backup as a PENDING blue saved polygon. Returns
-        True if a restore happened."""
-        backup = self._deleted_object_backup
-        if not backup:
+        """Pop the last delete-stack UNIT (one Delete press = one unit, possibly
+        several selected objects) and re-append its entries as PENDING saved
+        polygons, identity intact. Returns True if a restore happened."""
+        stack = getattr(self, "_deleted_objects_stack", None) or []
+        if not stack:
             return False
-        self._deleted_object_backup = None
-        wkt = backup.get("geometry_wkt")
-        g = QgsGeometry.fromWkt(wkt) if wkt else None
-        if g is None or g.isEmpty():
+        unit = stack.pop()
+        restored = 0
+        inc_ok = True
+        for backup in unit:
+            wkt = backup.get("geometry_wkt")
+            g = QgsGeometry.fromWkt(wkt) if wkt else None
+            if g is None or g.isEmpty():
+                continue
+            entry = dict(backup)
+            entry["validated"] = False  # a restored object is pending again
+            self.saved_polygons.append(entry)
+            if self._refine_handoff_active:
+                # Drawn by the pending layer; None keeps saved_rubber_bands
+                # index-locked with saved_polygons.
+                self.saved_rubber_bands.append(None)
+                inc_ok = self._handoff_add_entry_feature(entry) and inc_ok
+            else:
+                # Base Manual re-edit: pending (not-yet-validated) blue band.
+                rb = QgsRubberBand(
+                    self.iface.mapCanvas(), PolygonGeometry)
+                rb.setColor(PENDING_FILL)
+                rb.setStrokeColor(PENDING_STROKE)
+                rb.setWidth(2)
+                display_geom = QgsGeometry(g)
+                self._transform_geometry_to_canvas_crs(display_geom)
+                rb.setToGeometry(display_geom, None)
+                self.saved_rubber_bands.append(rb)
+            restored += 1
+        if not restored:
             return False
-        entry = dict(backup)
-        entry["validated"] = False  # a restored object is pending (blue) again
-        self.saved_polygons.append(entry)
-        if self._refine_handoff_active:
-            # Drawn by the blue pending layer; None keeps saved_rubber_bands
-            # index-locked with saved_polygons.
-            self.saved_rubber_bands.append(None)
+        if self._refine_handoff_active and not inc_ok:
             self._rebuild_handoff_layers()
-        else:
-            # Base Manual re-edit: pending (not-yet-validated) blue band.
-            rb = QgsRubberBand(
-                self.iface.mapCanvas(), PolygonGeometry)
-            rb.setColor(PENDING_FILL)
-            rb.setStrokeColor(PENDING_STROKE)
-            rb.setWidth(2)
-            display_geom = QgsGeometry(g)
-            self._transform_geometry_to_canvas_crs(display_geom)
-            rb.setToGeometry(display_geom, None)
-            self.saved_rubber_bands.append(rb)
         if self.dock_widget:
             try:
                 self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
@@ -786,16 +1425,18 @@ class ManualHandoffMixin:
         return True
 
     def _activate_saved_polygon_for_refine(self, idx, raster_pt, label: int = 1) -> None:
-        """Re-open an imported detection as the active SAM mask so +/- clicks
-        reshape it: encode a crop fitting the whole object, seed SAM with the
-        object's rasterized mask, register the click, and predict. Falls back to
-        keeping the original shape selected if the local model diverges.
+        """Open an imported detection for editing WITHOUT re-predicting it.
 
-        label=1: the click is the first POSITIVE point (grow/keep at the click).
-        label=0: the click is a NEGATIVE point (carve at the click) - a positive
-        anchor is added at the polygon's interior so SAM keeps the rest of the
-        shape while the negative removes the clicked area. This lets a right-click
-        directly carve an over-segmented detection with no prior left-click."""
+        Opening keeps the shape exactly as the Automatic run (or a previous
+        edit) produced it. Editing then behaves exactly like base Manual: the
+        first click predicts WITH the object as prior (its polygon is
+        rasterized into SAM's mask_input by _run_prediction), so a click just
+        outside the shape grows it along the underlying object instead of
+        dropping an unrelated island, and every later click continues the same
+        refinement chain (accumulated points + logits). The crop encode starts
+        here, async, so the first editing click is fast. `label` is kept for
+        signature stability; the opening gesture no longer doubles as an
+        editing click."""
         entry = self.saved_polygons[idx]
         geom = QgsGeometry.fromWkt(entry.get("geometry_wkt") or "")
         if geom is None or geom.isEmpty():
@@ -804,102 +1445,208 @@ class ManualHandoffMixin:
         popped = self.saved_polygons.pop(idx)
         if idx < len(self.saved_rubber_bands):
             self._safe_remove_rubber_band(self.saved_rubber_bands.pop(idx))
-        # It just left saved_polygons, so refresh the seed layers to drop it (it
-        # now shows as the active mask band, not on the pending/kept layer).
-        self._rebuild_handoff_layers()
+        # It just left saved_polygons: drop only ITS feature from the seed
+        # layers (the full both-layers rebuild per open WAS the double-click
+        # lag on big handoffs).
+        if not self._handoff_remove_entry_feature(popped):
+            self._rebuild_handoff_layers()
         # This object is now OPEN for editing: rendered in pending-blue with a
         # bolder outline (no separate hue) and the Delete key enabled. Keep the
         # original entry so a Delete-undo can restore it.
         self._is_refining_saved_object = True
         self._active_refine_origin_entry = dict(popped)
+        # Per-polygon Shape settings: the panel shows THIS object's stored
+        # values, and the pristine geometry anchors non-destructive re-shaping
+        # (a settings change always recomputes from it, never compounds).
+        self._seed_refine_panel_from_entry(popped)
+        self._refine_edit_pristine = QgsGeometry(geom)
+        self._refine_edit_last_applied = self._entry_refine_tuple(popped)
         if self.dock_widget:
             try:
                 self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
+                self.dock_widget.set_handoff_editing(True)
             except (RuntimeError, AttributeError):
                 pass
 
-        # Keep the object VISIBLE during the async encode (PERF-01): it just left
-        # the saved layer, so without this it would blank out for the 3-8s encode.
-        # Show it as the display-only unfrozen polygon; the tail's prediction
-        # replaces it (or the failure fallback keeps it).
+        # The session starts geometry-only (no mask, no prompt points): the
+        # display polygon IS the shape until the first editing click seeds a
+        # Manual mask session from it. Frozen sessions from a previous edit
+        # are cleared defensively so a leak could not be unioned into this
+        # object.
+        self.current_mask = None
+        self.current_score = 0.0
+        self.current_low_res_mask = None
+        self._frozen_sessions = []
+        self._mask_state_history = []
+        self._refine_geom_history = []
+        self.prompts.clear()
+        self._active_crop_points_positive = []
+        self._active_crop_points_negative = []
+        if self.map_tool:
+            try:
+                self.map_tool.clear_markers()
+            except (RuntimeError, AttributeError):
+                pass
         self._unfrozen_display_polygon = geom
         self._update_mask_visualization()
 
         # Encode a crop that fits the WHOLE object (bbox corners + click), so a
         # large detection is not clipped by a click-centered 1024px crop. The
-        # encode is async on the interactive path (PERF-01): the seed + predict
-        # tail runs from the completion callback, not synchronously here.
-        bb = geom.boundingBox()
-        pts = [(bb.xMinimum(), bb.yMinimum()), (bb.xMaximum(), bb.yMaximum()),
-               (raster_pt.x(), raster_pt.y())]
-        cx, cy, scale = self._compute_crop_center_and_mupp(pts)
-
-        def _seed_and_predict():
-            # Seed SAM with the object's mask rasterized into the crop pixel grid
-            # so the refine starts from the cloud detection, not a blank slate.
-            seed = self._rasterize_polygon_to_crop(geom)
-            if seed is not None and seed.any():
-                self.current_low_res_mask = self._binary_mask_to_logits(seed)
-
-            # Register the click for this refine. A positive click is the first
-            # positive point. A negative click carves: anchor a positive at the
-            # polygon interior (so SAM keeps the rest of the shape) and add the
-            # click as a negative point.
-            self.prompts.clear()
-            self._active_crop_points_positive = []
-            self._active_crop_points_negative = []
-            if label == 0:
-                anchor = geom.pointOnSurface()
-                if anchor is not None and not anchor.isEmpty():
-                    ap = anchor.asPoint()
-                    self._active_crop_points_positive.append((ap.x(), ap.y()))
-                    self.prompts.add_positive_point(ap.x(), ap.y())
-                self._active_crop_points_negative.append((raster_pt.x(), raster_pt.y()))
-                self.prompts.add_negative_point(raster_pt.x(), raster_pt.y())
-            else:
-                self._active_crop_points_positive.append((raster_pt.x(), raster_pt.y()))
-                self.prompts.add_positive_point(raster_pt.x(), raster_pt.y())
-            self._mask_state_history = []
-
-            if not self._run_prediction():
-                self.current_low_res_mask = None
-                self._unfrozen_display_polygon = geom
-                self._update_mask_visualization()
-                return
-
-            # Guard the cloud-vs-local-SAM mismatch: if local SAM returned an
-            # (almost) empty mask, keep the original object as the active shape
-            # so it never vanishes; the user's +/- clicks then drive it directly.
-            if self.current_mask is None or int(self.current_mask.sum()) == 0:
-                self.current_mask = None
-                self.current_low_res_mask = None
-                self._unfrozen_display_polygon = geom
-                self._update_mask_visualization()
-
-        if not self._extract_and_encode_crop(
-                QgsPointXY(cx, cy), mupp_override=scale, on_encoded=_seed_and_predict):
-            # Crop extraction failed synchronously (interactive) or the encode
-            # failed (headless): keep the object visible so it is not lost.
-            self._unfrozen_display_polygon = geom
-            self._update_mask_visualization()
+        # encode is async on the interactive path (PERF-01); clicks that land
+        # while it runs are remembered and replayed on completion. When the
+        # speculative selection prewarm already encoded (or is encoding) this
+        # exact crop, skip the duplicate extract + encode entirely: the first
+        # editing click lands on a warm crop. A wrong skip only costs the
+        # normal self-heal re-encode at first click, never correctness.
+        cx, cy, scale = self._handoff_crop_spec_for(geom, raster_pt)
+        spec = (round(cx, 6), round(cy, 6), round(float(scale or 0.0), 6))
+        if spec == getattr(self, "_handoff_crop_spec", None) and (
+                self._encoding_in_progress
+                or self._current_crop_covers_bbox(geom.boundingBox())):  # noqa: W503
             return
+        # Record the spec only AFTER the encode actually started: a False
+        # return (pipe busy with another crop, extraction error) must not
+        # stamp this spec, or a later re-open could skip its encode over a
+        # neighbouring crop that merely covers the bbox at the wrong scale.
+        if self._extract_and_encode_crop(QgsPointXY(cx, cy), mupp_override=scale):
+            self._handoff_crop_spec = spec
 
-    def _rasterize_polygon_to_crop(self, geom):
-        """Rasterize a raster-CRS polygon into the current crop's pixel grid (the
-        inverse of mask_to_polygons). Returns a uint8 H x W mask, or None."""
+    def _refine_edit_session_active(self) -> bool:
+        """True while a detection is open for editing: the geometry state
+        before the first editing click (display polygon only), or the live
+        Manual mask session after it (current_mask / frozen crop parts).
+        Self-heals the half-open state (flag set but no shape at all, e.g.
+        after an interrupted teardown) so a stray click can never fall through
+        to the base-Manual new-object path inside a handoff."""
+        if not self._is_refining_saved_object:
+            return False
+        if self.current_mask is not None or self._frozen_sessions:
+            return True
+        base = self._unfrozen_display_polygon
+        if base is None or base.isEmpty():
+            self._is_refining_saved_object = False
+            self._active_refine_origin_entry = None
+            self._refine_geom_history = []
+            if self.dock_widget:
+                try:
+                    self.dock_widget.set_handoff_editing(False)
+                except (RuntimeError, AttributeError):
+                    pass
+            return False
+        return True
+
+    def _close_active_edit_to_pending(self) -> None:
+        """Close the open edit session WITHOUT validating it: the object (with
+        any deltas applied) returns to the pending set, identity intact. Used
+        by Esc and by the harvest fallback when a Save is not possible (encode
+        in flight). No-op when no edit is open."""
+        if not self._is_refining_saved_object:
+            return
+        base = self._harvest_open_edit_geometry()
+        origin = self._active_refine_origin_entry or {}
+        appended = None
+        if base is not None and not base.isEmpty():
+            entry = dict(origin)
+            entry["geometry_wkt"] = base.asWkt()
+            entry["geom_obj"] = QgsGeometry(base)
+            # The edited shape supersedes any pre-edit pristine anchor; a
+            # stale one would make a later Shape-settings change erase the
+            # deltas by re-shaping from the old geometry.
+            entry.pop("shape_base_wkt", None)
+            entry["validated"] = False
+            # Editing clicks and Shape-settings changes count as hand edits
+            # (protected from confidence re-filtering); an untouched close
+            # keeps the original flag.
+            if getattr(self, "_refine_geom_history", None) or any(self.prompts.point_count):
+                entry["manual_touched"] = True
+            self.saved_polygons.append(entry)
+            appended = entry
+            if self._refine_handoff_active:
+                # Drawn by the pending layer; None keeps the lists index-locked.
+                self.saved_rubber_bands.append(None)
+            else:
+                rb = QgsRubberBand(self.iface.mapCanvas(), PolygonGeometry)
+                rb.setColor(PENDING_FILL)
+                rb.setStrokeColor(PENDING_STROKE)
+                rb.setWidth(2)
+                display_geom = QgsGeometry(base)
+                self._transform_geometry_to_canvas_crs(display_geom)
+                rb.setToGeometry(display_geom, None)
+                self.saved_rubber_bands.append(rb)
+        self._is_refining_saved_object = False
+        self._active_refine_origin_entry = None
+        # A click remembered during this edit's encode belongs to a context
+        # that no longer exists: without this, it would replay seconds later
+        # in the resting state and select something out of nowhere.
+        self._discard_pending_manual_click()
+        # Clears the display band, markers, dock counts and the editing flag;
+        # also nulls _unfrozen_display_polygon and the delta history.
+        self._clear_active_mask_without_saving()
+        # The open already dropped this object's feature at activate time, so
+        # only the (re)appended entry needs drawing: one incremental add, not
+        # a full rebuild of both seed layers.
+        if appended is not None and not self._handoff_add_entry_feature(appended):
+            self._rebuild_handoff_layers()
+        if self.dock_widget:
+            try:
+                self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
+            except (RuntimeError, AttributeError):
+                pass
+        self._update_handoff_progress()
+
+    def _refine_polygon_mask_input(self):
+        """SAM mask_input (low-res logits) built from the OPEN object's current
+        display geometry, rasterized onto the encoded crop grid. This is the
+        base-Manual context seed: the first editing click predicts WITH the
+        object as prior, so it refines the whole shape (a click beside the
+        polygon grows it along the underlying object) instead of segmenting an
+        unrelated element. None when there is no crop or no geometry."""
         info = self._current_crop_info
-        if info is None:
+        base = self._unfrozen_display_polygon
+        if info is None or base is None or base.isEmpty():
             return None
-        try:
-            import json
+        mask = self._rasterize_geom_to_crop(
+            base, info["bounds"], info["img_shape"])
+        if mask is None or not mask.any():
+            return None
+        return self._binary_mask_to_logits(mask)
 
-            from rasterio.features import rasterize
+    def _harvest_open_edit_geometry(self):
+        """The open edit's CURRENT shape as one geometry, exactly what the
+        canvas shows: the pre-click display polygon, or (after editing clicks)
+        the refined active mask, composed with any frozen crop parts. None
+        when the session holds no shape at all."""
+        parts = [s.polygon for s in self._frozen_sessions
+                 if s.polygon is not None and not s.polygon.isEmpty()]
+        base = self._unfrozen_display_polygon
+        if base is not None and not base.isEmpty():
+            parts.append(base)
+        active = self._refined_active_mask_geometry()
+        if active is not None and not active.isEmpty():
+            parts.append(active)
+        if not parts:
+            return None
+        if len(parts) == 1:
+            return QgsGeometry(parts[0])
+        combined = QgsGeometry.unaryUnion(parts)
+        if combined is None or combined.isEmpty():
+            return None
+        return combined
+
+    def _rasterize_geom_to_crop(self, geom, bounds, img_shape):
+        """Rasterize a raster-CRS geometry onto the crop pixel grid (bool
+        mask), for pixel-space overlap scoring. None on any failure."""
+        try:
+            import json as _json
+
+            from rasterio import features
             from rasterio.transform import from_bounds as transform_from_bounds
-            minx, miny, maxx, maxy = info["bounds"]
-            h, w = info["img_shape"]
-            transform = transform_from_bounds(minx, miny, maxx, maxy, w, h)
-            geojson = json.loads(geom.asJson())
-            return rasterize([(geojson, 1)], out_shape=(h, w), transform=transform,
-                             fill=0, all_touched=True, dtype="uint8")
-        except Exception:  # noqa: BLE001
+            minx, miny, maxx, maxy = bounds
+            h, w = img_shape
+            tfm = transform_from_bounds(minx, miny, maxx, maxy, w, h)
+            shape = _json.loads(geom.asJson())
+            m = features.rasterize(
+                [(shape, 1)], out_shape=(h, w), transform=tfm, fill=0)
+            return m.astype(bool)
+        except Exception:  # noqa: BLE001 -- scoring aid only, never fatal
             return None

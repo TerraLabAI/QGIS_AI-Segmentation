@@ -160,6 +160,10 @@ class AutoLifecycleMixin:
             "AI Segmentation", level=Qgis.MessageLevel.Warning,
         )
         self._set_zone_badge_enabled(True)
+        # The run start dropped the zone fill (live/review visual parity); a
+        # failed run lands back on the prompt step, where the kept zone should
+        # read plainly again.
+        self._set_zone_band_fill_visible(True)
         # T20: an expired/invalid session gets its own copy + the sign-in
         # surface, and the billed partial results are salvaged into the review
         # (mirrors the credits-exhausted tail) instead of being dropped.

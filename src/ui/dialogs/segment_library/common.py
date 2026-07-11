@@ -15,8 +15,9 @@ from qgis.PyQt.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 from ....core import qt_compat as QtC
 from ....core.i18n import tr
 from ....core.presets.segmentation_presets_client import absolute_demo_url
+from ...dock.styles import BRAND_BLUE, BTN_GREEN, BTN_GREEN_HOVER
 
-_BRAND_GREEN = "#43a047"       # AI Segmentation primary (Detect / Use)
+_BRAND_GREEN = BTN_GREEN       # AI Segmentation primary (Detect / Use)
 
 # ---------------------------------------------------------------------------
 # QSS (mirrors AI Edit prompt_templates/common.py + generation_detail/styles.py)
@@ -58,7 +59,7 @@ _USE_HINT_REST = (
     " background: transparent; border: none; }"
 )
 _USE_HINT_HOVER = (
-    "QLabel { color: #2e7d32; font-size: 12px; font-weight: 700;"
+    f"QLabel {{ color: {BTN_GREEN_HOVER}; font-size: 12px; font-weight: 700;"
     " background: transparent; border: none; }"
 )
 _META_QSS = (
@@ -68,9 +69,10 @@ _META_QSS = (
 _EMPTY_MSG = "color: palette(text); padding: 24px;"
 
 _BLUE_BTN_QSS = (
-    "QPushButton { background-color: #1e88e5; color: #ffffff; border: none;"
+    f"QPushButton {{ background-color: {BRAND_BLUE}; color: #ffffff; border: none;"
     " border-radius: 6px; padding: 9px 18px; font-weight: bold;"
     " font-size: 13px; }"
+    # #1565c0 has no styles.py equivalent (BRAND_BLUE_HOVER is #1976d2).
     "QPushButton:hover { background-color: #1565c0; }"
     "QPushButton:disabled { background-color: rgba(128,128,128,0.25);"
     " color: rgba(128,128,128,0.8); }"
@@ -100,7 +102,7 @@ _SECTION_STYLE = (
 )
 # Type/category tag above the title. Brand-green tint, hugs its content.
 _BADGE_STYLE = (
-    "QLabel { color: #43a047; background: rgba(67,160,71,0.13);"
+    f"QLabel {{ color: {_BRAND_GREEN}; background: rgba(67,160,71,0.13);"
     " border: 1px solid rgba(67,160,71,0.40); border-radius: 9px;"
     " font-size: 10px; font-weight: 800; letter-spacing: 1.0px;"
     " padding: 2px 9px; }"
@@ -141,7 +143,7 @@ _ACTION_BTN = (
 _PRIMARY_BTN = (
     f"QPushButton {{ background: {_BRAND_GREEN}; border: none; border-radius: 4px;"
     " padding: 8px 14px; font-size: 12px; font-weight: 600; color: #ffffff; }}"
-    "QPushButton:hover { background: #2e7d32; }"
+    f"QPushButton:hover {{ background: {BTN_GREEN_HOVER}; }}"
     "QPushButton:disabled { background: rgba(128,128,128,0.25);"
     " color: rgba(128,128,128,0.6); }"
 )

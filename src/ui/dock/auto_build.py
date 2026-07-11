@@ -19,7 +19,6 @@ from qgis.PyQt.QtWidgets import (
     QDoubleSpinBox,
     QSlider,
     QStackedWidget,
-    QStyle,
     QVBoxLayout,
     QWidget,
 )
@@ -42,14 +41,28 @@ from ...core.tile_manager import MAX_DETAIL_LEVEL
 from .styles import (
     _BTN_BLUE,
     _BTN_BLUE_PRIMARY,
+    _BTN_CHIP,
     _BTN_GHOST,
     _BTN_GREEN,
+    _BTN_LINK,
+    _BTN_LINK_MUTED,
+    _CARD_MARGINS,
     _CARD_QSS,
+    _CHIP_QSS,
+    _MSG_GLYPHS,
+    _PROGRESS_THIN_QSS,
+    _RECAP_CARD_QSS,
     _SLIDER_QSS,
-    _auto_step_header,
+    _btn_toggle_qss,
+    _micro_header,
+    _msg_card_qss,
+    _msg_label_qss,
+    _step_dial,
 )
 from .guidance import (
     BLUE_TINT,
+    GREEN_TINT,
+    HINT_EXEMPLAR_TIP,
     HINT_START_AUTO,
     HINT_TUTORIAL_FIRST_STEPS,
     NEUTRAL_TINT,
@@ -80,11 +93,12 @@ class DockAutoBuildMixin:
         # exhausted (non-subscribers). Until then the upsell stays out of the
         # way: a credit ring + Subscribe pill live in the dock footer instead.
         self.auto_upsell_card = QFrame()
+        self.auto_upsell_card.setObjectName("autoUpsellCard")
+        self.auto_upsell_card.setAttribute(
+            Qt.WidgetAttribute.WA_StyledBackground, True)
         self.auto_upsell_card.setStyleSheet(
-            "QFrame { background-color: rgba(25, 118, 210, 0.08);"
-            " border: 1px solid rgba(25, 118, 210, 0.2); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; }"
-            "QPushButton { border: none; }"
+            _msg_card_qss("autoUpsellCard", "info")
+            + "QPushButton { border: none; }"  # ui-ok: child-button border reset inside the card, not a button style
         )
         upsell_layout = QVBoxLayout(self.auto_upsell_card)
         upsell_layout.setContentsMargins(10, 10, 10, 10)
@@ -250,11 +264,14 @@ class DockAutoBuildMixin:
         # under the Start button. One plain sentence; no free/paid wording,
         # no cloud/local wording. Dismissible (small x); only
         # on step 0, so it never shows mid-flow. Re-enable from Account Settings.
+        # Green like its Manual sibling: the two mode descriptions are the
+        # same kind of information, so they wear the same coat.
         self.auto_start_caption = DismissibleHint(
             HINT_START_AUTO,
             tr("Finds every object of one kind in your zone - draw a zone, "
                "name the object, get all the polygons at once."),
-            tint=BLUE_TINT,
+            tint=GREEN_TINT,
+            show_glyph=False,  # a mode description, not a tip
         )
         _s1_layout.addWidget(self.auto_start_caption)
 
@@ -272,14 +289,21 @@ class DockAutoBuildMixin:
         self.auto_last_run_recap = QLabel()
         self.auto_last_run_recap.setWordWrap(True)
         self.auto_last_run_recap.setTextFormat(Qt.TextFormat.PlainText)
-        self.auto_last_run_recap.setStyleSheet(
-            "font-size: 11px; color: palette(text);"
-            " border: 1px solid rgba(120, 144, 156, 90);"
-            " border-radius: 6px; padding: 6px 8px;"
-            " background: rgba(120, 144, 156, 22);"
-        )
+        self.auto_last_run_recap.setStyleSheet(_RECAP_CARD_QSS)
         self.auto_last_run_recap.setVisible(False)
         _s1_layout.addWidget(self.auto_last_run_recap)
+
+        # Post-export success line: after Finish the flow returns here and the
+        # run status is wiped, so without this the user never learns WHERE the
+        # result went. A one-line lime success message naming the layer, set
+        # AFTER the reset (which clears it), dismissed on the next Start / mode
+        # switch. PlainText so a layer name with an & stays literal.
+        self.auto_export_success = QLabel()
+        self.auto_export_success.setWordWrap(True)
+        self.auto_export_success.setTextFormat(Qt.TextFormat.PlainText)
+        self.auto_export_success.setStyleSheet(_msg_label_qss("success"))
+        self.auto_export_success.setVisible(False)
+        _s1_layout.addWidget(self.auto_export_success)
 
         # ---- Step 1: Draw-zone hero (mirrors AI Edit's empty state) ----
         # Drawing arms automatically when the step opens, so the page shows a
@@ -327,12 +351,13 @@ class DockAutoBuildMixin:
         _s2_layout.addLayout(_zone_exit_row)
 
         # ---- Step 2: describe, then (optionally) show an example, then detail.
-        # Three calm cards, one job each, read top to bottom as an ordered
-        # checklist so the user does one thing at a time instead of facing a
-        # wall of parameters. Card 1 (text prompt) is the primary, always-visible
-        # input; card 2 (a drawn example) is an optional quality booster; card 3
-        # is the detail level. Detect enables on EITHER a valid prompt or one
-        # positive example, so neither card 1 nor card 2 is strictly mandatory.
+        # Three calm cards, one job each, read top to bottom so the user does
+        # one thing at a time instead of facing a wall of parameters. Only the
+        # required path is numbered (1 describe, 2 detail); the example card
+        # sits between them UNNUMBERED and marked Optional, so it never reads
+        # as a mandatory step (a plain description is the recommended path).
+        # Detect enables on EITHER a valid prompt or one positive example, so
+        # neither the prompt nor the example card is strictly mandatory.
 
         # --- Card 1: describe what to find (the text prompt). ---
         self.auto_prompt_card = QWidget()
@@ -341,13 +366,20 @@ class DockAutoBuildMixin:
             Qt.WidgetAttribute.WA_StyledBackground, True)
         self.auto_prompt_card.setStyleSheet(_CARD_QSS.format(name="autoPromptCard"))
         _prompt_card_layout = QVBoxLayout(self.auto_prompt_card)
-        _prompt_card_layout.setContentsMargins(10, 8, 10, 10)
+        _prompt_card_layout.setContentsMargins(*_CARD_MARGINS)
         _prompt_card_layout.setSpacing(6)
-        self._auto_prompt_header = QLabel(
-            _auto_step_header(1, tr("Describe what to find")))
+        # Step 1 header: a filled step dial + bold title (design-system D11
+        # ordered-step treatment), read top to bottom as a checklist.
+        _prompt_hdr_row = QHBoxLayout()
+        _prompt_hdr_row.setContentsMargins(0, 0, 0, 0)
+        _prompt_hdr_row.setSpacing(6)
+        _prompt_hdr_row.addWidget(_step_dial(1, "active"))
+        self._auto_prompt_header = QLabel(tr("Describe what to find"))
         self._auto_prompt_header.setStyleSheet(
-            "font-size: 11px; color: palette(text);")
-        _prompt_card_layout.addWidget(self._auto_prompt_header)
+            "font-size: 12px; font-weight: bold; color: palette(text);")
+        _prompt_hdr_row.addWidget(self._auto_prompt_header)
+        _prompt_hdr_row.addStretch(1)
+        _prompt_card_layout.addLayout(_prompt_hdr_row)
 
         # Input row: the prompt box and the Library button side by side, equal
         # heights. The Library is the guided path to a working prompt (curated
@@ -368,17 +400,14 @@ class DockAutoBuildMixin:
         self.auto_prompt_input.textChanged.connect(self._on_auto_search_text_changed)
         self.auto_prompt_input.returnPressed.connect(self._on_auto_search_return_pressed)
         _prompt_row.addWidget(self.auto_prompt_input, 1)
-        self.auto_library_btn = QPushButton("▦  " + tr("Library"))
+        # The AI Edit prompt-row look: a quiet neutral chip named "Library"
+        # (the place, not the content - "Browse objects" read as jargon), so
+        # the guided path is there without competing with the input.
+        self.auto_library_btn = QPushButton(tr("Library"))
         self.auto_library_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_library_btn.setToolTip(
             tr("Browse ready-to-use objects with before / after previews."))
-        self.auto_library_btn.setStyleSheet(
-            "QPushButton { background: rgba(30,136,229,0.10); color: #1e88e5;"
-            " border: 1px solid rgba(30,136,229,0.55); border-radius: 6px;"
-            " padding: 7px 12px; font-size: 12px; font-weight: 600; }"
-            "QPushButton:hover { background: rgba(30,136,229,0.20); }"
-            "QPushButton:disabled { background: transparent;"
-            " color: rgba(128,128,128,0.5); border-color: rgba(128,128,128,0.3); }")
+        self.auto_library_btn.setStyleSheet(_BTN_CHIP)
         self.auto_library_btn.clicked.connect(self.auto_library_requested.emit)
         _prompt_row.addWidget(self.auto_library_btn, 0)
         _prompt_card_layout.addLayout(_prompt_row)
@@ -394,13 +423,13 @@ class DockAutoBuildMixin:
 
         _s3_layout.addWidget(self.auto_prompt_card)
 
-        # --- Card 2: show an example (optional). A drawn example is the cloud model's
-        # single biggest quality lever (it matches on appearance, so it wins on
-        # rare / hard-to-name / aerial objects where text alone fails). A single
-        # Draw-example button arms the draw tool; the object is masked to the
-        # drawn outline so surrounding ground never leaks into the reference.
-        # Everything lives in auto_exemplar_panel so a single visibility toggle
-        # controls the whole card. Gated behind _EXEMPLARS_ENABLED.
+        # --- Optional example card, ALWAYS VISIBLE like its step siblings
+        # (a collapsed row read as noise, not as an option). Optionality is a
+        # clearly readable "Optional" pill on the header, the title stays a
+        # plain noun ("Add an example") and the button inside keeps the map
+        # verb ("Draw an example"), so no two lines repeat each other. The
+        # explainer under the header says why/how; it yields to the armed
+        # instruction or the drawn thumbnails. Gated behind _EXEMPLARS_ENABLED.
         self.auto_exemplar_panel = QWidget()
         self.auto_exemplar_panel.setObjectName("autoExemplarCard")
         self.auto_exemplar_panel.setAttribute(
@@ -408,31 +437,53 @@ class DockAutoBuildMixin:
         self.auto_exemplar_panel.setStyleSheet(
             _CARD_QSS.format(name="autoExemplarCard"))
         _ex_outer = QVBoxLayout(self.auto_exemplar_panel)
-        _ex_outer.setContentsMargins(10, 8, 10, 10)
+        _ex_outer.setContentsMargins(*_CARD_MARGINS)
         _ex_outer.setSpacing(6)
-        _ex_header = QLabel(
-            _auto_step_header(2, tr("Show an example"), optional=True))
-        _ex_header.setStyleSheet("font-size: 11px; color: palette(text);")
-        _ex_outer.addWidget(_ex_header)
-        # Read-only caption, shown in its place during a run: the reference stays
-        # on screen (browsable) but every editing affordance is gone.
-        self._auto_exemplar_header = _ex_header
+
+        # Header row: bold title + a bordered "Optional" pill (readable in
+        # both themes, unlike the old small grey word). Wrapped in one widget
+        # so the in-run read-only swap can hide the whole header at once.
+        self._auto_exemplar_expanded = True
+        self._auto_exemplar_header = QWidget()
+        _ex_hdr_row = QHBoxLayout(self._auto_exemplar_header)
+        _ex_hdr_row.setContentsMargins(0, 0, 0, 0)
+        _ex_hdr_row.setSpacing(8)
+        _ex_title = QLabel(tr("Add an example"))
+        _ex_title.setStyleSheet(
+            "font-size: 12px; font-weight: bold; color: palette(text);")
+        _ex_hdr_row.addWidget(_ex_title)
+        _ex_optional = QLabel(tr("Optional"))
+        _ex_optional.setStyleSheet(
+            "font-size: 10px; color: palette(text);"
+            " border: 1px solid rgba(128,128,128,0.45); border-radius: 8px;"
+            " padding: 1px 8px;")
+        _ex_hdr_row.addWidget(_ex_optional)
+        _ex_hdr_row.addStretch(1)
+        _ex_outer.addWidget(self._auto_exemplar_header)
+
+        # Card content (editing controls + thumbnails), always visible; the
+        # container survives so the in-run read-only swap keeps working.
+        self.auto_exemplar_content = QWidget()
+        _ex_card_col = QVBoxLayout(self.auto_exemplar_content)
+        _ex_card_col.setContentsMargins(0, 0, 0, 0)
+        _ex_card_col.setSpacing(6)
+
+        # Read-only caption, shown during a run: the reference stays on
+        # screen (browsable) but every editing affordance is gone.
         self.auto_exemplar_readonly_caption = QLabel(tr("Your reference"))
         self.auto_exemplar_readonly_caption.setStyleSheet(
             "font-size: 11px; color: palette(text);")
         self.auto_exemplar_readonly_caption.setVisible(False)
-        _ex_outer.addWidget(self.auto_exemplar_readonly_caption)
-        # All the editing controls (hint + draw/exclude buttons + armed line)
-        # live in one container so a single toggle removes them for the
-        # read-only in-run variant, leaving just the reference thumbnails.
+        _ex_card_col.addWidget(self.auto_exemplar_readonly_caption)
+        # All the editing controls (draw/exclude buttons + armed line) live in
+        # one container so a single toggle removes them for the read-only
+        # in-run variant, leaving just the reference thumbnails.
         self.auto_exemplar_edit_controls = QWidget()
         _ex_edit_col = QVBoxLayout(self.auto_exemplar_edit_controls)
         _ex_edit_col.setContentsMargins(0, 0, 0, 0)
         _ex_edit_col.setSpacing(6)
-        _ex_hint = QLabel(tr("Outline one object; the AI finds the rest."))
-        _ex_hint.setWordWrap(True)
-        _ex_hint.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.9);")
-        _ex_edit_col.addWidget(_ex_hint)
+
+        self._auto_exemplar_count = 0
 
         # The draw-example button IS the action button: clicking it arms the draw
         # tool directly (no separate "Draw" step). It is big, full-width and
@@ -441,36 +492,28 @@ class DockAutoBuildMixin:
         # The armed state is driven by the plugin via set_auto_exemplar_armed, so
         # a cancel (Escape) or a finished draw both clear it. The [armed] dynamic
         # property toggles the filled look without rebuilding the stylesheet.
-        _ex_inc_style = (
-            "QPushButton { background: rgba(67,160,71,0.14); color: #6bbf6f;"
-            " border: 1px solid rgba(67,160,71,0.55); border-radius: 6px;"
-            " padding: 9px 16px; font-size: 12px; font-weight: 700; }"
-            "QPushButton:hover { background: rgba(67,160,71,0.24); }"
-            'QPushButton[armed="true"] { background: #43a047; color: #06210b;'
-            " border: 1px solid #43a047; }"
-            "QPushButton:disabled { background: transparent;"
-            " color: rgba(128,128,128,0.5); border-color: rgba(128,128,128,0.3); }"
-        )
+        # Quiet ghost rest state: the example path is optional, so its button
+        # must never compete with Detect (the screen's one loud primary). It
+        # takes the green only on hover, and fills solid while armed.
+        _ex_inc_style = _btn_toggle_qss(
+            (67, 160, 71), "#6bbf6f", "#06210b", quiet=True)
         # The exclude button is the red counterpart: it drops false positives
-        # by pointing at a look-alike the model should NOT return. Secondary and
-        # rare, so it appears only once at least one positive example exists (see
-        # set_exemplars); the primary flow stays a single green button.
-        _ex_exc_style = (
-            "QPushButton { background: rgba(229,57,53,0.10); color: #e57373;"
-            " border: 1px solid rgba(229,57,53,0.50); border-radius: 6px;"
-            " padding: 9px 16px; font-size: 12px; font-weight: 600; }"
-            "QPushButton:hover { background: rgba(229,57,53,0.20); }"
-            'QPushButton[armed="true"] { background: #e53935; color: #2a0606;'
-            " border: 1px solid #e53935; }"
-            "QPushButton:disabled { background: transparent;"
-            " color: rgba(128,128,128,0.5); border-color: rgba(128,128,128,0.3); }"
-        )
+        # by pointing at a look-alike the model should NOT return. It is a bonus
+        # refinement, unlocked ONLY once two positive examples exist (a single
+        # reference is too weak to refine, and reference-image detection needs a
+        # pair to work well): it starts HIDDEN and set_exemplars reveals it at
+        # two positives. Quiet even then, so the primary flow stays one green
+        # button.
+        _ex_exc_style = _btn_toggle_qss(
+            (229, 57, 53), "#e57373", "#2a0606", weight=600, quiet=True)
         _ex_mode_row = QHBoxLayout()
         _ex_mode_row.setContentsMargins(0, 0, 0, 0)
         _ex_mode_row.setSpacing(8)
-        self.auto_ex_inc_btn = QPushButton(tr("Draw an example"))
+        # "Draw on the map" (the how), never a re-statement of the card title
+        # "Add an example" (the what): the two lines must not repeat.
+        self.auto_ex_inc_btn = QPushButton(tr("Draw on the map"))
         self.auto_ex_inc_btn.setStyleSheet(_ex_inc_style)
-        self.auto_ex_inc_btn.setMinimumHeight(34)
+        self.auto_ex_inc_btn.setMinimumHeight(28)
         self.auto_ex_inc_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_ex_inc_btn.setToolTip(tr("Mark an object to find more like it."))
         self.auto_ex_inc_btn.clicked.connect(
@@ -478,28 +521,37 @@ class DockAutoBuildMixin:
         _ex_mode_row.addWidget(self.auto_ex_inc_btn, 1)
         self.auto_ex_exc_btn = QPushButton(tr("Exclude a look-alike"))
         self.auto_ex_exc_btn.setStyleSheet(_ex_exc_style)
-        self.auto_ex_exc_btn.setMinimumHeight(34)
+        self.auto_ex_exc_btn.setMinimumHeight(28)
         self.auto_ex_exc_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_ex_exc_btn.setToolTip(
             tr("Mark a false positive to drop things like it."))
         self.auto_ex_exc_btn.clicked.connect(
             lambda: self.auto_add_exemplar_requested.emit(0))
+        # Hidden until two positive examples exist (set_exemplars reveals it).
         self.auto_ex_exc_btn.setVisible(False)
         _ex_mode_row.addWidget(self.auto_ex_exc_btn, 0)
         _ex_edit_col.addLayout(_ex_mode_row)
+
+        # One short blue tip UNDER the button (dismissible with the tiny x,
+        # like every other blue hint): what an example buys, in one line. It
+        # also yields to the armed instruction or the drawn thumbnails (see
+        # _refresh_auto_exemplar_explainer).
+        self.auto_exemplar_explainer = DismissibleHint(
+            HINT_EXEMPLAR_TIP,
+            tr("The AI finds every object similar to your example."),
+            tint=BLUE_TINT,
+        )
+        _ex_edit_col.addWidget(self.auto_exemplar_explainer)
 
         # Armed instruction line: hidden until a button arms the draw tool, then
         # a blue callout telling the user to outline an object on the map. This
         # is the "in-between" feedback that the click started a draw action.
         self.auto_exemplar_armed_hint = QLabel("")
         self.auto_exemplar_armed_hint.setWordWrap(True)
-        self.auto_exemplar_armed_hint.setStyleSheet(
-            "QLabel { background-color: rgba(30,136,229,0.12);"
-            " border: 1px solid rgba(30,136,229,0.40); border-radius: 6px;"
-            " padding: 7px 9px; font-size: 11px; color: palette(text); }")
+        self.auto_exemplar_armed_hint.setStyleSheet(_msg_label_qss("armed"))
         self.auto_exemplar_armed_hint.setVisible(False)
         _ex_edit_col.addWidget(self.auto_exemplar_armed_hint)
-        _ex_outer.addWidget(self.auto_exemplar_edit_controls)
+        _ex_card_col.addWidget(self.auto_exemplar_edit_controls)
 
         # Reference thumbnail strip: one card per drawn example (AI-Edit
         # _ThumbWidget look - thumbnail + numbered badge + hover-x), rebuilt by
@@ -509,7 +561,15 @@ class DockAutoBuildMixin:
         self._auto_exemplar_chips_layout.setContentsMargins(0, 2, 0, 0)
         self._auto_exemplar_chips_layout.setSpacing(6)
         self._auto_exemplar_chips_layout.addStretch()
-        _ex_outer.addWidget(self.auto_exemplar_chips)
+        _ex_card_col.addWidget(self.auto_exemplar_chips)
+
+        _ex_outer.addWidget(self.auto_exemplar_content)
+
+        # The exemplar-only count-vs-map policy is no longer asked up front: an
+        # empty-prompt run streams as continuous cover and the client decides
+        # count-vs-map automatically from the run's own masks at the end, with a
+        # one-click override offered in the post-run review (see the review panel).
+
         self.auto_exemplar_panel.setVisible(False)
         _s3_layout.addWidget(self.auto_exemplar_panel)
 
@@ -525,16 +585,18 @@ class DockAutoBuildMixin:
             Qt.WidgetAttribute.WA_StyledBackground, True)
         self.auto_detail_row.setStyleSheet(_CARD_QSS.format(name="autoDetailCard"))
         _detail_outer = QVBoxLayout(self.auto_detail_row)
-        _detail_outer.setContentsMargins(10, 8, 10, 10)
+        _detail_outer.setContentsMargins(*_CARD_MARGINS)
         _detail_outer.setSpacing(4)
-        # Header row: "Detail" on the left, the live credit cost on the right,
-        # so the price of the chosen level is read at a glance (the map shows
-        # the matching tile grid). No tile-count or m/px jargon here.
+        # Header row: step dial + "Detail" on the left, the live credit cost on
+        # the right, so the price of the chosen level is read at a glance (the
+        # map shows the matching tile grid). No tile-count or m/px jargon here.
         _detail_hdr = QHBoxLayout()
         _detail_hdr.setContentsMargins(0, 0, 0, 0)
-        _detail_lbl = QLabel(_auto_step_header(3, tr("Detail")))
+        _detail_hdr.setSpacing(6)
+        _detail_hdr.addWidget(_step_dial(2, "active"))
+        _detail_lbl = QLabel(tr("Detail"))
         _detail_lbl.setStyleSheet(
-            "font-size: 11px; color: palette(text);")
+            "font-size: 12px; font-weight: bold; color: palette(text);")
         _detail_hdr.addWidget(_detail_lbl)
         _detail_hdr.addStretch()
         # The live credit cost sits in the detail header (it tracks the slider
@@ -568,11 +630,6 @@ class DockAutoBuildMixin:
             "Higher detail splits the zone into more tiles. Each tile costs"
             " 1 credit and captures smaller objects."))
         self.auto_detail_slider.valueChanged.connect(self._on_auto_detail_changed)
-        # Gated until the object is defined (typed prompt or drawn example):
-        # the default is object-aware, so an adjustment made before naming the
-        # object got thrown away by the prompt-commit re-seed. See
-        # _apply_auto_detail_gate (driven from _update_auto_detect_enabled).
-        self.auto_detail_slider.setEnabled(False)
         _slider_row.addWidget(self.auto_detail_slider, 1)
         _fine_lbl = QLabel(tr("More"))
         _fine_lbl.setStyleSheet("font-size: 10px; color: palette(text);")
@@ -587,6 +644,17 @@ class DockAutoBuildMixin:
         self.auto_detail_hint.setWordWrap(True)
         self.auto_detail_hint.setStyleSheet(
             "font-size: 10px; color: palette(text);")
+        # Free-plan per-run credit cap state: the slider keeps its full (Pro)
+        # travel; past the cap the ESTIMATE gates Detect (red cost line, see
+        # set_auto_credit_estimate) and this hint becomes an upgrade link.
+        self._auto_free_run_cap = None
+        self._auto_premium_gated = False
+        self._detail_cap_upsell_tracked = False
+        # Object-aware slider verdict (state, object word), pushed by the
+        # plugin from the credit-estimate chokepoint; None until known.
+        self._auto_detail_feedback = None
+        self.auto_detail_hint.linkActivated.connect(
+            self._on_detail_cap_upgrade_link)
         _detail_outer.addWidget(self.auto_detail_hint)
 
         # Conditional amber warning, shown by set_auto_detail_gsd_warning when
@@ -595,21 +663,18 @@ class DockAutoBuildMixin:
         # reads as a real callout, not recoloured hint text. Hidden by default;
         # the neutral hint hides while it shows so guidance never stacks.
         self.auto_detail_warning = QWidget()
+        self.auto_detail_warning.setObjectName("autoDetailWarning")
+        self.auto_detail_warning.setAttribute(
+            Qt.WidgetAttribute.WA_StyledBackground, True)
         self.auto_detail_warning.setStyleSheet(
-            "QWidget { background-color: rgb(255, 230, 150);"
-            " border: 1px solid rgba(255, 152, 0, 0.6); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; color: #333333; }"
-        )
+            _msg_card_qss("autoDetailWarning", "warning"))
         _warn_layout = QHBoxLayout(self.auto_detail_warning)
         _warn_layout.setContentsMargins(8, 6, 8, 6)
         _warn_layout.setSpacing(8)
-        _warn_icon = QLabel()
-        _wstyle = self.auto_detail_warning.style()
-        _wico = _wstyle.pixelMetric(QStyle.PixelMetric.PM_SmallIconSize)
-        _warn_icon.setPixmap(
-            _wstyle.standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
-            .pixmap(_wico, _wico))
-        _warn_icon.setFixedSize(_wico, _wico)
+        # Monochrome text glyph, tinted by the label color (never the
+        # colored system icon; the taxonomy glyphs stay black and white).
+        _warn_icon = QLabel(_MSG_GLYPHS["warning"])
+        _warn_icon.setStyleSheet("font-size: 12px;")
         _warn_layout.addWidget(_warn_icon, 0, Qt.AlignmentFlag.AlignTop)
         self.auto_detail_warning_label = QLabel(tr(
             "This area is large for this detail level. Raise detail or zoom"
@@ -620,6 +685,12 @@ class DockAutoBuildMixin:
         self.auto_detail_warning.setVisible(False)
         _detail_outer.addWidget(self.auto_detail_warning)
         self.auto_detail_row.setVisible(False)
+        # Gated (whole card disabled + dimmed) until the object is defined
+        # (typed prompt or drawn example): the default is object-aware, so an
+        # adjustment made before naming the object got thrown away by the
+        # prompt-commit re-seed. See _apply_auto_detail_gate (driven from
+        # _update_auto_detect_enabled).
+        self._apply_auto_detail_gate(False)
 
         # The locked layer header above the stack already names the raster the
         # run reads, so no separate recap label is needed on this step.
@@ -632,22 +703,17 @@ class DockAutoBuildMixin:
         # starts from, but it is kept hidden in the prompt step.
         self.auto_settings_box = QWidget()
         self.auto_settings_box.setObjectName("autoSettingsBox")
+        self.auto_settings_box.setAttribute(
+            Qt.WidgetAttribute.WA_StyledBackground, True)
         self.auto_settings_box.setStyleSheet(
-            "QWidget#autoSettingsBox { background-color: rgba(128, 128, 128, 0.08);"
-            " border: 1px solid rgba(128, 128, 128, 0.2); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; }"
+            _CARD_QSS.format(name="autoSettingsBox")
+            + "QLabel { background: transparent; border: none; }"
         )
         _settings_layout = QVBoxLayout(self.auto_settings_box)
-        _settings_layout.setContentsMargins(10, 8, 10, 10)
+        _settings_layout.setContentsMargins(*_CARD_MARGINS)
         _settings_layout.setSpacing(6)
 
-        _settings_hdr = QLabel(tr("Detection").upper())
-        _settings_hdr.setStyleSheet(
-            "font-size: 10px; color: palette(text); font-weight: bold; "
-            "background: transparent; border: none; "
-            "border-bottom: 1px solid rgba(128, 128, 128, 0.35); "
-            "padding: 2px 0px 4px 0px; margin-bottom: 2px; letter-spacing: 1px;")
-        _settings_layout.addWidget(_settings_hdr)
+        _settings_layout.addWidget(_micro_header(tr("Detection")))
 
         _conf_row = QHBoxLayout()
         _conf_label = QLabel(tr("Confidence:"))
@@ -751,7 +817,7 @@ class DockAutoBuildMixin:
         self.auto_progress_card.setStyleSheet(
             _CARD_QSS.format(name="autoProgressCard"))
         _prog_col = QVBoxLayout(self.auto_progress_card)
-        _prog_col.setContentsMargins(10, 8, 10, 10)
+        _prog_col.setContentsMargins(*_CARD_MARGINS)
         _prog_col.setSpacing(6)
         # Row 1: tile count (+ live found count) on the left, percent right.
         _prog_row1 = QHBoxLayout()
@@ -771,14 +837,11 @@ class DockAutoBuildMixin:
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         _prog_row1.addWidget(self.auto_progress_pct_label, 0)
         _prog_col.addLayout(_prog_row1)
-        # Row 2: the bar (taller than the old slim one, brand blue, rounded).
+        # Row 2: a thin instrument progress line (3px, brand blue on a faint
+        # track); the measured status text lives in the labels beside it.
         self.auto_tile_progress = QProgressBar()
         self.auto_tile_progress.setTextVisible(False)
-        self.auto_tile_progress.setFixedHeight(8)
-        self.auto_tile_progress.setStyleSheet(
-            "QProgressBar { background: rgba(128,128,128,0.15); border: none;"
-            " border-radius: 4px; }"
-            "QProgressBar::chunk { background: #1e88e5; border-radius: 4px; }")
+        self.auto_tile_progress.setStyleSheet(_PROGRESS_THIN_QSS)
         _prog_col.addWidget(self.auto_tile_progress)
         # Row 3 (conditional): the queue / cold-start status line (Sending to
         # the AI…, spot reserved / ETA). Hidden while tiles flow normally.
@@ -797,10 +860,7 @@ class DockAutoBuildMixin:
         # hides cancel entirely; long tiled runs still need one).
         self.auto_cancel_btn = QPushButton(tr("Cancel detection"))
         self.auto_cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.auto_cancel_btn.setStyleSheet(
-            "QPushButton { background: transparent; border: none;"
-            " color: rgba(128,128,128,0.9); font-size: 11px; padding: 4px 8px; }"
-            "QPushButton:hover { color: #ef5350; text-decoration: underline; }")
+        self.auto_cancel_btn.setStyleSheet(_BTN_LINK_MUTED)
         self.auto_cancel_btn.setVisible(False)
         self.auto_cancel_btn.clicked.connect(self._on_auto_cancel_clicked)
         _cancel_row = QHBoxLayout()
@@ -813,11 +873,7 @@ class DockAutoBuildMixin:
         # 11. Status banner
         self.auto_status_banner = QLabel("")
         self.auto_status_banner.setWordWrap(True)
-        self.auto_status_banner.setStyleSheet(
-            "background-color: rgba(128, 128, 128, 0.08);"
-            " border: 1px solid rgba(128, 128, 128, 0.2);"
-            " border-radius: 4px; padding: 8px; color: palette(text); font-size: 12px;"
-        )
+        self.auto_status_banner.setStyleSheet(_msg_label_qss("info"))
         self.auto_status_banner.setVisible(False)
         _s3_layout.addWidget(self.auto_status_banner)
 
@@ -828,24 +884,18 @@ class DockAutoBuildMixin:
         # table knows a stronger word for this prompt, a one-click prefill.
         # Hidden by default; driven by show/hide_auto_zero_assist. The row
         # never outlives its status: set_auto_status hides it on every call.
-        _za_chip_qss = (
-            "QPushButton { background: rgba(30,136,229,0.10);"
-            " border: 1px solid rgba(30,136,229,0.35); border-radius: 6px;"
-            " color: palette(text); font-size: 12px; text-align: left;"
-            " padding: 6px 10px; }"
-            "QPushButton:hover { background: rgba(30,136,229,0.20); }")
         self.auto_zero_assist_row = QWidget()
         _za_col = QVBoxLayout(self.auto_zero_assist_row)
         _za_col.setContentsMargins(0, 0, 0, 0)
         _za_col.setSpacing(4)
         self.auto_zero_example_chip = QPushButton("")
-        self.auto_zero_example_chip.setStyleSheet(_za_chip_qss)
+        self.auto_zero_example_chip.setStyleSheet(_CHIP_QSS)
         self.auto_zero_example_chip.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_zero_example_chip.clicked.connect(
             lambda: self.auto_zero_assist_clicked.emit("draw_example", ""))
         _za_col.addWidget(self.auto_zero_example_chip)
         self.auto_zero_synonym_chip = QPushButton("")
-        self.auto_zero_synonym_chip.setStyleSheet(_za_chip_qss)
+        self.auto_zero_synonym_chip.setStyleSheet(_CHIP_QSS)
         self.auto_zero_synonym_chip.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_zero_synonym_chip.clicked.connect(
             lambda: self.auto_zero_assist_clicked.emit(
@@ -861,10 +911,7 @@ class DockAutoBuildMixin:
         # set_auto_exhausted_subscribe_visible.
         self.auto_exhausted_subscribe_link = QPushButton(
             tr("Subscribe to finish this zone: 10,000 credits/month."))
-        self.auto_exhausted_subscribe_link.setStyleSheet(
-            "QPushButton { border: none; background: transparent; color: #1e88e5;"
-            " font-size: 11px; text-align: left; padding: 2px 0px; }"
-            "QPushButton:hover { text-decoration: underline; }")
+        self.auto_exhausted_subscribe_link.setStyleSheet(_BTN_LINK)
         self.auto_exhausted_subscribe_link.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_exhausted_subscribe_link.setVisible(False)
         self.auto_exhausted_subscribe_link.clicked.connect(self._on_upgrade_clicked)

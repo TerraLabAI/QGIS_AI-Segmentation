@@ -21,6 +21,10 @@ _FIELD_TYPE_INT = field_type_int()
 # QSettings keys for tutorial flags
 SETTINGS_KEY_TUTORIAL_SHOWN = "AISegmentation/tutorial_simple_shown"
 
+# QSettings key for the last Manual-session timestamp (drives the predictive
+# model warm-up on a returning Manual user, see env_setup._manual_used_recently).
+SETTINGS_KEY_LAST_MANUAL_SESSION_TS = "AISegmentation/last_manual_session_ts"
+
 # Free-trial zone cap: a free-tier user's Automatic zone may not exceed this
 # geodesic area (km2, ~2.2 x 2.2 km). All features and detail levels stay
 # available under the cap; subscribers are never capped. Enforced at zone
@@ -176,6 +180,38 @@ def _add_features_fast(provider, features) -> None:
         provider.addFeatures(features, _FAST_INSERT)
     else:
         provider.addFeatures(features)
+
+
+def _add_features_with_ids(provider, features):
+    """Bulk-add features and return (ok, added) where ``added`` holds the
+    provider's ASSIGNED feature copies. PyQGIS never writes the new ids back
+    onto the features you pass in (the C++ in-out list arrives as a sip copy,
+    so reading .id() on an input after the call yields the invalid sentinel):
+    any caller that needs the provider fids must read them off ``added``."""
+    res = provider.addFeatures(features)
+    if isinstance(res, tuple):
+        ok, added = res
+        return bool(ok), list(added or [])
+    return bool(res), []
+
+
+def _debounce_timer(owner, attr_name: str, parent, interval_ms: int, slot) -> None:
+    """Lazily create (once) and (re)start a single-shot debounce timer stored
+    as ``owner.<attr_name>``. The plugin controller is a plain class, not a
+    QObject, so ``parent`` must be a QObject the caller already relies on to
+    own the timer's lifetime (usually ``self.dock_widget``). The slot is
+    connected only at creation, never re-connected on later calls; every call
+    restarts the countdown (trailing-edge debounce), so the slot fires once
+    ``interval_ms`` has passed with no further call."""
+    from qgis.PyQt.QtCore import QTimer
+
+    timer = getattr(owner, attr_name, None)
+    if timer is None:
+        timer = QTimer(parent)
+        timer.setSingleShot(True)
+        timer.timeout.connect(slot)
+        setattr(owner, attr_name, timer)
+    timer.start(interval_ms)
 
 
 def _provider_name_for_log(layer) -> str:

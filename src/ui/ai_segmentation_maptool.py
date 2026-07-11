@@ -25,6 +25,13 @@ class AISegmentationMapTool(QgsMapTool):
 
     positive_click = pyqtSignal(QgsPointXY)
     negative_click = pyqtSignal(QgsPointXY)
+    # Second press of a double-click (the first press already emitted
+    # positive/negative_click): the refine handoff opens the clicked detection
+    # for editing on it.
+    double_click = pyqtSignal(QgsPointXY)
+    # Plain cursor motion (not while Space-panning): the refine handoff uses it
+    # for the hover highlight. Cheap consumers only; emitted on every move.
+    cursor_moved = pyqtSignal(QgsPointXY)
     tool_deactivated = pyqtSignal()
     undo_requested = pyqtSignal()
     save_polygon_requested = pyqtSignal()
@@ -43,6 +50,10 @@ class AISegmentationMapTool(QgsMapTool):
         self._markers: list[QgsVertexMarker] = []
         self._space_panning = False
         self._pan_last_point = None
+        # Modifiers of the LAST emitted click, read by the plugin handlers
+        # (Ctrl+click = additive selection in the refine handoff). Stored as an
+        # attribute so the click signal signatures stay stable.
+        self.last_click_modifiers = Qt.KeyboardModifier.NoModifier
 
     def activate(self):
         super().activate()
@@ -122,6 +133,7 @@ class AISegmentationMapTool(QgsMapTool):
         pt = event_pos(event)
         point = self.toMapCoordinates(pt)
 
+        self.last_click_modifiers = event.modifiers()
         if event.button() == Qt.MouseButton.LeftButton:
             self.add_marker(point, is_positive=True)
             self.positive_click.emit(point)
@@ -129,8 +141,19 @@ class AISegmentationMapTool(QgsMapTool):
             self.add_marker(point, is_positive=False)
             self.negative_click.emit(point)
 
+    def canvasDoubleClickEvent(self, event):
+        if not self._active or self._space_panning:
+            return
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.last_click_modifiers = event.modifiers()
+            self.double_click.emit(self.toMapCoordinates(event_pos(event)))
+
     def canvasMoveEvent(self, event):
         if not self._space_panning:
+            try:
+                self.cursor_moved.emit(self.toMapCoordinates(event_pos(event)))
+            except RuntimeError:
+                pass
             return
 
         current = event_pos(event)

@@ -24,7 +24,7 @@ from qgis.PyQt.QtGui import QColor
 
 from ...core.i18n import tr
 from ...core.qt_compat import PolygonGeometry
-from ..canvas_palette import CHROME_BLUE, GRID_LINE, ZONE_FILL, ZONE_STROKE
+from ..canvas_palette import GRID_LINE, ZONE_FILL, ZONE_STROKE
 from ..shortcut_filter import ShortcutFilter
 from .shared import FREE_TRIAL_MAX_ZONE_KM2
 
@@ -571,11 +571,16 @@ class AutoZoneMixin:
             self.dock_widget.set_auto_detail_visible(self._auto_zone is not None)
             # Cap the slider at the useful level so the cursor never moves in
             # the void. Done before the grid compute so the estimate below
-            # reflects the (possibly) clamped detail value.
+            # reflects the (possibly) clamped detail value. The free-run cap
+            # NEVER shortens the slider: a free user keeps the full (Pro)
+            # travel and the dock gates Detect instead when the estimate
+            # exceeds the cap (see set_auto_credit_estimate), so the locked
+            # range is seen, not hidden.
             if self._auto_zone is not None:
                 zone_in_layer = self._reproject_zone_to_layer_crs(self._auto_zone, layer)
                 self.dock_widget.set_auto_detail_max(
                     self._max_useful_detail(layer, zone_in_layer))
+                self.dock_widget.set_auto_free_run_cap(self._free_run_tile_cap())
 
         grid = self._compute_auto_grid(layer)
         if grid is None:
@@ -612,7 +617,7 @@ class AutoZoneMixin:
         if self.dock_widget and self._auto_zone is not None:
             self.dock_widget.set_auto_credit_estimate(credit_count)
             # GSD guard: warn when the chosen detail leaves the imagery coarser
-            # than the cloud model's quality floor (~0.5 m/px ground resolution).
+            # than the detection quality threshold (0.5 m/px ground resolution).
             try:
                 zone_in_layer = self._reproject_zone_to_layer_crs(self._auto_zone, layer)
                 sized = self._grid_for_detail(
@@ -620,7 +625,20 @@ class AutoZoneMixin:
                 if sized is not None:
                     ground_mupp = self._mupp_to_meters(layer, zone_in_layer, sized[2])
                     self.dock_widget.set_auto_detail_gsd_warning(ground_mupp >= 0.5)
+                    # Object-aware slider guidance: same debounced chokepoint,
+                    # so it tracks drags, prompt commits and zone redraws.
+                    self._push_detail_feedback(layer, zone_in_layer, ground_mupp)
             except (RuntimeError, AttributeError):
+                pass
+            # Same chokepoint re-checks the example too-small warning: raising
+            # the slider renders every stored example at more pixels, which
+            # can clear a warning shown at draw time (see ExemplarsMixin.
+            # _refresh_exemplar_size_warning). Guarded on its own so an
+            # exemplar-refresh hiccup never breaks the credit estimate this
+            # method exists to compute.
+            try:
+                self._refresh_exemplar_size_warning()
+            except (RuntimeError, AttributeError, TypeError, ValueError):
                 pass
 
         if credit_count == -1:
@@ -704,6 +722,7 @@ class AutoZoneMixin:
             rb.setWidth(2)
             step_x = (maxx - minx) / cols
             step_y = (maxy - miny) / rows
+            cells = []
             for i in range(cols):
                 for j in range(rows):
                     cx0 = minx + i * step_x
@@ -715,8 +734,28 @@ class AutoZoneMixin:
                             cell = cell.intersection(poly)  # clip to the shape
                             if cell.isEmpty():
                                 continue
-                    # addGeometry(geom, layer) reprojects layer CRS -> canvas CRS.
-                    rb.addGeometry(cell, layer)
+                    cells.append(cell)
+            if not cells:
+                return
+            # ONE collected geometry + ONE setToGeometry: every addGeometry
+            # call recomputes the band's bounding rect and schedules a canvas
+            # update, so per-cell adds cost up to MAX_TILES synchronous updates
+            # per slider tick. setToGeometry(geom, layer) still reprojects
+            # layer CRS -> canvas CRS exactly like the per-cell adds did.
+            # Flatten first: a boundary cell clipped by the zone polygon can be
+            # a MultiPolygon, and collectGeometry must only see single parts to
+            # build one clean MultiPolygon on every QGIS 3.22-4.x build.
+            parts = []
+            for cell in cells:
+                if cell.isMultipart():
+                    parts.extend(cell.asGeometryCollection())
+                else:
+                    parts.append(cell)
+            # CRS overload, NOT the layer: setToGeometry has no QgsMapLayer
+            # overload (unlike addGeometry), so passing the raster layer is a
+            # TypeError on every QGIS build. The CRS reprojects layer -> canvas
+            # exactly like the per-cell addGeometry(cell, layer) did.
+            rb.setToGeometry(QgsGeometry.collectGeometry(parts), layer.crs())
             self._zone_grid_rubber_band = rb
         except (RuntimeError, AttributeError, ZeroDivisionError):
             pass
@@ -834,37 +873,12 @@ class AutoZoneMixin:
                 kept.append(tile)
         return kept or tiles
 
-    def _show_zone_rubber_band(self, rect: QgsRectangle) -> None:
-        """Display a persistent blue rectangle on the canvas for the drawn zone."""
-        self._clear_zone_rubber_band()
-        try:
-            canvas = self.iface.mapCanvas()
-            rb = QgsRubberBand(canvas, PolygonGeometry)
-            # Legacy rectangle zone: same chrome blue as the polygon zone, at its
-            # own (heavier) alpha. Derived from the palette CHROME_BLUE so no raw
-            # literal lives here.
-            _rect_fill = QColor(CHROME_BLUE)
-            _rect_fill.setAlpha(40)         # blue, 16% opacity
-            _rect_stroke = QColor(CHROME_BLUE)
-            _rect_stroke.setAlpha(180)      # blue, 71% opacity
-            rb.setColor(_rect_fill)
-            rb.setStrokeColor(_rect_stroke)
-            rb.setWidth(2)
-            rb.addPoint(QgsPointXY(rect.xMinimum(), rect.yMinimum()), False)
-            rb.addPoint(QgsPointXY(rect.xMaximum(), rect.yMinimum()), False)
-            rb.addPoint(QgsPointXY(rect.xMaximum(), rect.yMaximum()), False)
-            rb.addPoint(QgsPointXY(rect.xMinimum(), rect.yMaximum()), True)
-            self._zone_rubber_band = rb
-            self._show_zone_delete_badge(canvas, rect)
-        except (RuntimeError, AttributeError):
-            pass
-
     def _show_zone_polygon_band(self, geom: QgsGeometry) -> None:
         """Persistent branded outline of the drawn polygon zone + delete badge.
 
-        Mirrors _show_zone_rubber_band but follows the polygon shape instead of
-        a rectangle. The geometry is already in canvas CRS, so setToGeometry is
-        called with layer=None (no reprojection)."""
+        Follows the polygon shape (no rectangle special-case). The geometry is
+        already in canvas CRS, so setToGeometry is called with layer=None (no
+        reprojection)."""
         self._clear_zone_rubber_band()
         try:
             canvas = self.iface.mapCanvas()
@@ -1075,6 +1089,21 @@ class AutoZoneMixin:
         if self._zone_rubber_band is not None:
             self._safe_remove_rubber_band(self._zone_rubber_band)
             self._zone_rubber_band = None
+
+    def _set_auto_zone_overlays_visible(self, visible: bool) -> None:
+        """Show/hide the zone outline band, its x badge and the tile grid
+        WITHOUT removing them (their state survives). The Refine-in-Manual
+        handoff hides them (they belong to the Automatic review and only
+        distract while hand-editing); Back to review restores them."""
+        for attr in ("_zone_rubber_band", "_zone_grid_rubber_band",
+                     "_zone_delete_badge"):
+            item = getattr(self, attr, None)
+            if item is None:
+                continue
+            try:
+                item.setVisible(visible)
+            except (RuntimeError, AttributeError):
+                pass
 
     def _clear_auto_canvas(self) -> None:
         """Single owner for removing every Automatic-flow canvas artifact

@@ -13,10 +13,11 @@ Design notes:
   GUI thread; the caller reports a friendly busy message on failure.
 - A leftover lock from a process that has since died must not wedge every
   future install, so a lock is broken when its recorded PID is provably not
-  alive, when the content is corrupted, when the file is older than two hours
-  (a recycled PID, or when liveness cannot be probed, e.g. some Windows cases),
-  or when it records OUR OWN pid but we do not hold it (an install thread
-  hard-killed on unload; only a live DIFFERENT process must ever block us).
+  alive, when the content is corrupted, when the file is older than
+  ``_STALE_AGE_S`` (a recycled PID, or when liveness cannot be probed, e.g.
+  some Windows cases), or when it records OUR OWN pid but we do not hold it
+  (an install thread hard-killed on unload; only a live DIFFERENT process
+  must ever block us).
 
 Pure standard library on purpose: no QGIS import, so it stays importable and
 unit-testable outside a QGIS Python.
@@ -29,9 +30,14 @@ import time
 
 # When liveness cannot be determined (e.g. Windows OpenProcess returns an
 # ambiguous error), fall back to age: an install that has not touched the lock
-# in this long is assumed dead. Comfortably above the slowest real install
-# (torch download caps at 90 min) so a legitimately slow run is never broken.
-_STALE_AGE_S = 2 * 60 * 60  # 2 hours
+# in this long is assumed dead. There is no heartbeat, so this must exceed the
+# SUMMED per-package subprocess timeouts of a single install
+# (venv_manager.py): torch 5400s + torchvision 1200s + four standard
+# packages at 600s each = 9000s (2.5h), plus the Python/uv downloads and any
+# retries on top. 5 hours stays comfortably above that worst case so a
+# legitimately slow install on a slow link is never broken by a second QGIS
+# instance.
+_STALE_AGE_S = 5 * 60 * 60  # 5 hours
 
 # Default lock filename, resolved lazily against the same cache dir the rest of
 # the plugin uses so callers can simply ``acquire_install_lock()``.

@@ -42,6 +42,7 @@ HINT_TRY_AUTOMATIC = "try_automatic"
 # a zero-result friction banner, both pointing at the step-by-step guide.
 HINT_TUTORIAL_FIRST_STEPS = "tutorial_first_steps"
 HINT_TUTORIAL_ZERO_RESULTS = "tutorial_zero_results"
+HINT_EXEMPLAR_TIP = "exemplar_tip"
 ALL_HINTS = [
     HINT_START_MANUAL,
     HINT_START_AUTO,
@@ -49,6 +50,7 @@ ALL_HINTS = [
     HINT_TRY_AUTOMATIC,
     HINT_TUTORIAL_FIRST_STEPS,
     HINT_TUTORIAL_ZERO_RESULTS,
+    HINT_EXEMPLAR_TIP,
 ]
 
 # Step-by-step guide. Defined once here; every touchpoint derives its own
@@ -160,6 +162,7 @@ class DismissibleHint(QWidget):
         action_text: str | None = None,
         visibility_gate=None,
         action_color: tuple[int, int, int] | None = None,
+        show_glyph: bool = True,
         parent=None,
     ):
         super().__init__(parent)
@@ -191,7 +194,11 @@ class DismissibleHint(QWidget):
         close_btn.setFixedSize(20, 20)
         close_btn.clicked.connect(self._on_close)
 
-        body_lbl = QLabel(body)
+        # Tip prefix from the taxonomy (the lightbulb, the one emoji kind).
+        # show_glyph=False for mode DESCRIPTIONS (what Manual/Automatic do):
+        # they state a fact, they do not tip.
+        from .styles import _msg_text
+        body_lbl = QLabel(_msg_text("info", body) if show_glyph else body)
         body_lbl.setWordWrap(True)
         body_lbl.setStyleSheet(_BODY_STYLE)
 

@@ -26,12 +26,15 @@ from ...core.activation_manager import (
 from ...core.i18n import tr
 from .styles import (
     BRAND_BLUE,
+    BRAND_BLUE_HOVER,
     _BTN_BLUE,
     _BTN_GREEN,
     _FOOTER_CTA_BTN_STYLE,
     _FOOTER_ICON_BTN_STYLE,
     _FOOTER_MENU_STYLE,
     _HELP_ICON_BTN_STYLE,
+    _msg_card_qss,
+    _msg_label_qss,
 )
 from .widgets import (
     _FooterIconButton,
@@ -51,11 +54,7 @@ class DockAboutMixin:
         container_layout.addStretch()
 
         self.update_notification_label = QLabel("")
-        self.update_notification_label.setStyleSheet(
-            "background-color: rgba(25, 118, 210, 0.15); "
-            "border: 2px solid rgba(25, 118, 210, 0.4); border-radius: 6px; "
-            "padding: 6px 12px; font-size: 12px; font-weight: bold; color: palette(text);"
-        )
+        self.update_notification_label.setStyleSheet(_msg_label_qss("info"))
         self.update_notification_label.setOpenExternalLinks(False)
         self.update_notification_label.linkActivated.connect(
             self._on_open_plugin_manager)
@@ -74,10 +73,13 @@ class DockAboutMixin:
             if plugin_data and plugin_data.get("status") == "upgradeable":
                 available_version = plugin_data.get(
                     "version_available", "?")
-                text = '{} <a href="#update" style="color: #1976d2; font-weight: bold; font-size: 13px;">{}</a>'.format(
-                    tr("Big update dropped - v{version} is here!").format(
-                        version=available_version),
-                    tr("Grab it now"))
+                message = tr("Version {version} is available.").format(
+                    version=available_version)
+                link_text = tr("Update now")
+                text = (
+                    f'{message} <a href="#update" style="color: {BRAND_BLUE};'
+                    f' font-weight: bold;">{link_text}</a>'
+                )
                 self.update_notification_label.setText(text)
                 self.update_notification_widget.setVisible(True)
         except Exception:
@@ -95,11 +97,9 @@ class DockAboutMixin:
         """Setup the info box and links section."""
         # Info box for segmentation mode (subtle blue style)
         self.batch_info_widget = QWidget()
-        self.batch_info_widget.setStyleSheet(
-            "QWidget { background-color: rgba(100, 149, 237, 0.15); "
-            "border: 1px solid rgba(100, 149, 237, 0.3); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; }"
-        )
+        self.batch_info_widget.setObjectName("batchInfoCard")
+        self.batch_info_widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.batch_info_widget.setStyleSheet(_msg_card_qss("batchInfoCard", "info"))
         batch_info_layout = QHBoxLayout(self.batch_info_widget)
         batch_info_layout.setContentsMargins(8, 6, 8, 6)
         batch_info_layout.setSpacing(8)
@@ -154,10 +154,10 @@ class DockAboutMixin:
         # Filled brand-blue pill (stronger than the old ghost outline): white
         # text on a solid blue, lighter blue on hover. Kept small.
         self._subscribe_pill.setStyleSheet(
-            f"QPushButton {{ border: none; color: #ffffff;"
+            f"QPushButton {{ border: none; color: #ffffff;"  # ui-ok: footer pill shape, documented one-off
             f" background: {BRAND_BLUE}; border-radius: 8px; padding: 2px 10px;"
             f" font-size: 11px; font-weight: bold; }}"
-            f"QPushButton:hover {{ background: #42a5f5; }}"
+            f"QPushButton:hover {{ background: {BRAND_BLUE_HOVER}; }}"
         )
         self._subscribe_pill.clicked.connect(self._on_upgrade_clicked)
         self._subscribe_pill.setVisible(False)
@@ -360,7 +360,7 @@ class DockAboutMixin:
 
         msg = QLabel(
             tr("Bug, question, feature request?") + "\n"
-            + tr("We'd love to hear from you!")  # noqa: W503
+            + tr("We read every message.")  # noqa: W503
         )
         msg.setWordWrap(True)
         msg.setStyleSheet("font-size: 12px; color: palette(text);")
@@ -372,14 +372,14 @@ class DockAboutMixin:
         lay.addWidget(email_label)
 
         # Primary action: green filled (design-system CTA), like the dock's
-        # own primary buttons. The click feedback swaps the label to "Copied!".
+        # own primary buttons. The click feedback swaps the label to "Copied".
         copy_btn = QPushButton(tr("Copy email address"))
         copy_btn.setStyleSheet(_BTN_GREEN)
         copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         copy_btn.clicked.connect(
             lambda: (
                 QApplication.clipboard().setText(support_email),
-                copy_btn.setText(tr("Copied!")),
+                copy_btn.setText(tr("Copied")),
             )
         )
         lay.addWidget(copy_btn)

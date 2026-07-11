@@ -14,6 +14,7 @@ from ...core.i18n import tr
 from ...core.qt_compat import DistanceMeters
 from ...core.telemetry import slot_guard
 from .shared import (
+    _debounce_timer,
     _WEBMERC_MUPP_Z0,
 )
 
@@ -77,6 +78,7 @@ class AutoFlowMixin:
         # Drop any pending/stored run plan so it cannot leak across the switch.
         self._auto_run_plan = None
         self._cancel_task("_auto_run_plan_task")
+        self._cancel_task("_auto_token_task")
         self._auto_zone = None
         self._auto_zone_polygon = None
         self._clear_auto_canvas()
@@ -202,20 +204,22 @@ class AutoFlowMixin:
         self.dock_widget.set_auto_credits(credits, reset_date,
                                           is_subscriber=not is_free,
                                           total=total)
+        # The plan gates the detail slider (free-run cap): re-derive the cap
+        # now that the plan is known, so a subscriber's slider uncaps (and a
+        # free user's caps) without waiting for the next slider move. Idle
+        # zone-set state only; a live run or review owns the cost label.
+        if (self._auto_zone is not None and self._auto_worker is None
+                and self._auto_review is None):
+            self._update_credit_estimate()
 
     def _auto_credit_snapshot(self) -> tuple[int | None, bool]:
         """Return (credits_before, is_free_tier) from the last fetched usage.
 
         Best-effort for telemetry: (None, True) when usage was never fetched."""
-        usage = self._last_usage or {}
-        is_free = bool(usage.get("is_free_tier", True))
-        if is_free:
-            credits = usage.get("free_detections_remaining")
-        else:
-            used = usage.get("images_used", 0) or 0
-            limit = usage.get("images_limit", 0) or 0
-            credits = max(0, limit - used)
-        return credits, is_free
+        # credit_gate.credit_snapshot owns the usage -> (credits, is_free) rule.
+        from ...core.credit_gate import credit_snapshot
+
+        return credit_snapshot(self._last_usage or {})
 
     def _auto_zone_area_km2(self) -> float:
         """Geodesic area (km2) of the active run's clip polygon; 0.0 if unknown."""
@@ -401,7 +405,7 @@ class AutoFlowMixin:
         tweak stands for THAT object only, a different prompt re-seeds.
         """
         self._auto_detail_user_locked = True
-        self._auto_detail_lock_prompt = self._current_auto_object_class().lower()
+        self._auto_detail_lock_prompt = self._resolved_auto_object_class().lower()
         # Debounce the cost/grid recompute: each tick runs compute_grid + up to
         # MAX_TILES polygon-clip GEOS calls on the GUI thread, so dragging the
         # slider across many levels would stutter. Coalesce to ~130ms of
@@ -419,30 +423,14 @@ class AutoFlowMixin:
         """Debounce _update_credit_estimate for rapid slider moves (~130ms of
         inactivity), so a drag recomputes the grid/cost once it settles instead
         of on every intermediate tick."""
-        from qgis.PyQt.QtCore import QTimer
-        timer = getattr(self, "_credit_est_timer", None)
-        if timer is None:
-            # The plugin controller is a plain class, not a QObject; parent the
-            # timer to the dock so Qt owns (and tears down) its lifetime.
-            timer = QTimer(self.dock_widget)
-            timer.setSingleShot(True)
-            timer.timeout.connect(self._update_credit_estimate)
-            self._credit_est_timer = timer
-        timer.start(130)
+        _debounce_timer(self, "_credit_est_timer", self.dock_widget, 130,
+                        self._update_credit_estimate)
 
     def _schedule_detail_telemetry(self, source: str) -> None:
         """Debounce detail_changed telemetry to ~1s of slider inactivity."""
-        from qgis.PyQt.QtCore import QTimer
         self._detail_tel_source = source
-        timer = getattr(self, "_detail_tel_timer", None)
-        if timer is None:
-            # The plugin controller is a plain class, not a QObject; parent the
-            # timer to the dock so Qt owns (and tears down) its lifetime.
-            timer = QTimer(self.dock_widget)
-            timer.setSingleShot(True)
-            timer.timeout.connect(self._emit_detail_telemetry)
-            self._detail_tel_timer = timer
-        timer.start(1000)
+        _debounce_timer(self, "_detail_tel_timer", self.dock_widget, 1000,
+                        self._emit_detail_telemetry)
 
     def _emit_detail_telemetry(self) -> None:
         try:
@@ -700,6 +688,40 @@ class AutoFlowMixin:
             prev_mupp = mupp
         return best
 
+    def _free_run_tile_cap(self) -> int | None:
+        """Per-run tile (credit) cap for free-tier users; None for subscribers.
+
+        A single free run may only cost a fraction of the lifetime free
+        allowance (server policy `seed.free_run_fraction`), so one Detect can
+        never drain the trial: the remaining runs are where the product proves
+        itself. The cap gates DETECT, never the slider: the user drags through
+        the full Pro range and sees an upgrade message past the cap (the locked
+        capability stays visible). The auto seeds also respect it, so the
+        suggested default never lands in the gated range. Before the usage
+        fetch lands the user is treated as free (the safe default); the
+        estimate re-runs when the fetch arrives, so a subscriber ungates the
+        moment their plan is known.
+        """
+        from ...core.credit_gate import free_run_tile_cap
+        from ...core.detection_policy import free_run_fraction
+
+        usage = self._last_usage or {}
+        if not usage.get("is_free_tier", True):
+            return None
+        # credit_gate.free_run_tile_cap owns the cap arithmetic (the round(),
+        # the older-server total fallback, and the >= 1 floor). The subscriber
+        # None stays here: it is a tier decision, not cap arithmetic.
+        return free_run_tile_cap(usage.get("free_detections_total"), free_run_fraction())
+
+    def _seed_tile_cap_for_plan(self) -> int:
+        """The hard seed tile cap, tightened to the free-run cap on free tier,
+        so the auto-picked default never proposes a level the plan gates."""
+        from ...core.detection_policy import seed_tile_cap
+
+        cap = seed_tile_cap()
+        free_cap = self._free_run_tile_cap()
+        return cap if free_cap is None else min(cap, free_cap)
+
     def _default_detail_for_zone(self, layer, zone_in_layer) -> int:
         """Cheapest detail level whose ground resolution reaches the seed target.
 
@@ -713,14 +735,13 @@ class AutoFlowMixin:
         better default. The object-aware seed refines this per prompt.
         """
         from ...core.detection_policy import (
-            seed_tile_cap,
             soft_tile_budget,
             sweet_spot_max_mupp,
             zone_seed_mupp,
         )
 
         seed_mupp = zone_seed_mupp()
-        tile_cap = seed_tile_cap()
+        tile_cap = self._seed_tile_cap_for_plan()
         soft_budget = soft_tile_budget()
         sweet_max = sweet_spot_max_mupp()
         best_within_budget = 1
@@ -792,13 +813,12 @@ class AutoFlowMixin:
         """
         from ...core.detection_policy import (
             object_min_px,
-            seed_tile_cap,
             soft_tile_budget,
         )
 
         cap = self._max_useful_detail(layer, zone_in_layer)
         min_px = object_min_px()
-        tile_cap = seed_tile_cap()
+        tile_cap = self._seed_tile_cap_for_plan()
         soft_budget = soft_tile_budget()
         resolvable_n = None
         finest_in_budget = 1
@@ -833,6 +853,41 @@ class AutoFlowMixin:
         except (RuntimeError, AttributeError):
             return ""
 
+    def _resolve_object_token(self, raw: str) -> str:
+        """English cloud-model token for a possibly-localized prompt.
+
+        The offline lexicon resolves a localized object word to its English
+        token synchronously, so the detail seed and every prompt-keyed policy
+        lookup key on the SAME token the run will send ("jardin" seeds like
+        "garden"). An English or lexicon-missing word passes through unchanged;
+        a miss beyond the offline lexicon is resolved asynchronously by the
+        server fallback. Cached per prompt so the debounced commit never
+        re-queries the catalogue on every keystroke settle.
+        """
+        raw = (raw or "").strip()
+        if not raw:
+            return ""
+        cache = getattr(self, "_auto_token_cache", None)
+        if cache is None:
+            cache = {}
+            self._auto_token_cache = cache
+        key = raw.lower()
+        if key in cache:
+            return cache[key]
+        try:
+            from ..dock.prompt_guard import resolve_object_token
+            token = resolve_object_token(raw)
+        except Exception:  # noqa: BLE001 -- resolution is best-effort
+            token = raw
+        cache[key] = token
+        return token
+
+    def _resolved_auto_object_class(self) -> str:
+        """The current prompt resolved to its English token. The box keeps
+        showing the user's own words; the seed and policy lookups key on this
+        so a localized prompt behaves like its English equivalent."""
+        return self._resolve_object_token(self._current_auto_object_class())
+
     def _apply_default_detail(self, zone_rect) -> None:
         """Seed the detail slider with a good default for a freshly drawn zone.
 
@@ -852,7 +907,7 @@ class AutoFlowMixin:
             return
         try:
             zone_in_layer = self._reproject_zone_to_layer_crs(zone_rect, layer)
-            object_class = self._current_auto_object_class()
+            object_class = self._resolved_auto_object_class()
             if object_class:
                 detail = self._auto_detail_for_object(
                     layer, zone_in_layer, object_class)
@@ -868,9 +923,20 @@ class AutoFlowMixin:
 
         The synchronous blob seed is the source of truth the moment the prompt
         settles; the run plan, when it lands and still matches this prompt,
-        refines it (see _on_auto_run_plan_ready)."""
-        self._reseed_auto_detail_from_blob(object_class)
-        self._fetch_auto_run_plan(object_class)
+        refines it (see _on_auto_run_plan_ready).
+
+        A localized prompt is resolved to its English token first (offline
+        lexicon), so the object tiers match ("jardin" seeds like "garden"). The
+        box keeps the user's own words; only the lookups key on the token."""
+        raw = (object_class or "").strip()
+        token = self._resolve_object_token(raw)
+        self._reseed_auto_detail_from_blob(token)
+        self._fetch_auto_run_plan(token)
+        # A localized word the offline lexicon does not cover (a rare language)
+        # cannot seed the object tiers yet: ask the server for its English token
+        # and re-seed when it lands, if this prompt is still the one shown.
+        if raw and token == raw:
+            self._fetch_auto_token(raw)
         # A committed prompt is the highest-intent, most universal pre-Detect
         # signal: it is the ONE step every run passes through (the zone-draw and
         # slider triggers miss a user who lands on the prompt step with a zone
@@ -1032,7 +1098,7 @@ class AutoFlowMixin:
         prompt = (prompt or "").strip()
         if not prompt:
             return
-        if prompt.lower() != self._current_auto_object_class().strip().lower():
+        if prompt.lower() != self._resolved_auto_object_class().strip().lower():
             return  # the user moved on to a different object since the fetch
         self._auto_run_plan = {"prompt": prompt, "plan": plan}
         self._reseed_auto_detail_from_plan(prompt, plan)
@@ -1040,6 +1106,76 @@ class AutoFlowMixin:
     def _on_auto_run_plan_failed(self) -> None:
         """Run-plan fetch failed/timed out: keep the blob path silently."""
         self._auto_run_plan_task = None
+
+    # ---- Async server token resolution (offline-lexicon miss) --------------
+
+    def _fetch_auto_token(self, raw: str) -> None:
+        """Fire-and-forget: resolve a prompt the offline lexicon could not to
+        its English token via the server, so the detail seed can key on it
+        without waiting for Detect.
+
+        Off the GUI thread via a hidden task; never blocks, fails open (the raw
+        prompt keeps the generic seed on any error). A no-op for an already
+        English object word (nothing to translate) and mid-run/review (the
+        prompt is locked then). A late answer re-seeds only while the prompt is
+        still the one shown (see _on_auto_token_ready)."""
+        raw = (raw or "").strip()
+        if not raw or not self.dock_widget:
+            return
+        if self._auto_worker is not None or self._auto_review is not None:
+            return
+        try:
+            from ..dock.prompt_guard import is_known_object
+            if is_known_object(raw):
+                return  # already an English object word: nothing to resolve
+        except Exception:  # noqa: BLE001 -- best-effort gate  # nosec B110
+            pass
+        # Only one in flight; a newer commit supersedes the older request.
+        self._cancel_task("_auto_token_task")
+        try:
+            from qgis.core import QgsApplication
+
+            from ...api.prompt_translation import resolve_english_prompt
+            from ...workers.generic_request_task import GenericRequestTask
+            task = GenericRequestTask(
+                tr("Resolving object name"),
+                lambda: {"token": resolve_english_prompt(raw)},
+                hidden=True,
+            )
+            task.succeeded.connect(
+                lambda res, r=raw: self._on_auto_token_ready(r, res))
+            task.failed.connect(lambda *_a: self._on_auto_token_failed())
+            self._auto_token_task = task
+            QgsApplication.taskManager().addTask(task)
+        except Exception:  # noqa: BLE001 -- translation is best-effort
+            self._auto_token_task = None  # nosec B110
+
+    def _on_auto_token_ready(self, raw: str, result: object) -> None:
+        """Main thread: cache the server-resolved token and re-seed the detail,
+        but only while ``raw`` is still the committed prompt. The blob re-seed
+        enforces the manual slider lock, so a user who took over the slider is
+        never overridden."""
+        self._auto_token_task = None
+        token = result.get("token") if isinstance(result, dict) else None
+        if not isinstance(token, str) or not token:
+            return
+        raw = (raw or "").strip()
+        if not raw or token.strip().lower() == raw.lower():
+            return  # server confirmed it was already English: nothing to swap
+        if raw.lower() != self._current_auto_object_class().strip().lower():
+            return  # the user moved on to a different object since the fetch
+        cache = getattr(self, "_auto_token_cache", None)
+        if cache is None:
+            cache = {}
+            self._auto_token_cache = cache
+        cache[raw.lower()] = token
+        # Re-seed with the resolved token and refresh the run plan under it.
+        self._reseed_auto_detail_from_blob(token)
+        self._fetch_auto_run_plan(token)
+
+    def _on_auto_token_failed(self) -> None:
+        """Token resolution failed/timed out: keep the raw-prompt path."""
+        self._auto_token_task = None
 
     def _reseed_auto_detail_from_plan(self, prompt: str, plan: dict) -> None:
         """Re-seed the detail slider from the plan's target resolution, reusing
@@ -1051,7 +1187,7 @@ class AutoFlowMixin:
         if self._auto_worker is not None or self._auto_review is not None:
             return
         prompt = (prompt or "").strip()
-        if not prompt or prompt.lower() != self._current_auto_object_class().strip().lower():
+        if not prompt or prompt.lower() != self._resolved_auto_object_class().strip().lower():
             return
         if (self._auto_detail_user_locked
                 and getattr(self, "_auto_detail_lock_prompt", "") == prompt.lower()):  # noqa: W503
@@ -1074,6 +1210,92 @@ class AutoFlowMixin:
             self._update_credit_estimate()
         except (RuntimeError, AttributeError):
             pass
+
+    def _push_detail_feedback(self, layer, zone_in_layer, ground_mupp: float) -> None:
+        """Classify the CURRENT detail level against the named object and this
+        zone, and hand the verdict to the dock's one-line slider guidance.
+
+        The verdict compares the level the user chose with the level the seed
+        logic recommends for the same prompt + zone (so the guidance moves with
+        the object AND the zone), plus two physical bounds: the object no
+        longer resolvable at this resolution (too coarse to spot), and a
+        resolution far finer than the object's target (past diminishing
+        returns: extra credits, and large objects fragment across tiles).
+        Runs at the debounced credit-estimate chokepoint, so it tracks every
+        slider drag, prompt commit, zone redraw and layer switch.
+        """
+        if self.dock_widget is None:
+            return
+        if ground_mupp <= 0:
+            self.dock_widget.set_auto_detail_feedback(None, "")
+            return
+        obj = self._current_auto_object_class()
+        # Key the sizing verdict on the resolved English token (so a localized
+        # prompt is judged like its English equivalent), but display the user's
+        # own word in the hint.
+        obj_token = self._resolve_object_token(obj)
+        has_reference = False
+        try:
+            has_reference = self._auto_exemplar_store.count() > 0
+        except (RuntimeError, AttributeError):
+            pass
+        if not obj and not has_reference:
+            # No object defined: the detail card is gated with its own hint.
+            self.dock_widget.set_auto_detail_feedback(None, "")
+            return
+        try:
+            from ...core.detection_policy import (
+                detail_over_ratio,
+                detail_over_ratio_free,
+                object_min_px,
+            )
+
+            obj_m, target_mupp = self._object_detail_profile(obj_token)
+            value = self._get_auto_detail_level()
+            recommended = self._recommended_detail_now(layer, zone_in_layer, obj_token)
+            target_met = ground_mupp <= target_mupp
+            # Free runs spend scarce lifetime trial credits, so their
+            # past-diminishing-returns nudge fires earlier than a subscriber's.
+            is_subscriber = bool(getattr(
+                self.dock_widget, "_auto_is_subscriber", False))
+            over_ratio = (detail_over_ratio() if is_subscriber
+                          else detail_over_ratio_free())
+            if obj_m / ground_mupp < object_min_px():
+                state = "coarse"
+            elif ground_mupp < target_mupp * over_ratio:
+                state = "over"
+            elif value > recommended:
+                # Past a budget-capped recommendation extra detail genuinely
+                # helps; past a target-met one it is mostly extra cost.
+                state = "above" if target_met else "helps"
+            elif value < recommended:
+                state = "below"
+            else:
+                state = "recommended"
+            self.dock_widget.set_auto_detail_feedback(state, obj)
+        except (RuntimeError, AttributeError, ValueError, ZeroDivisionError):
+            pass
+
+    def _recommended_detail_now(self, layer, zone_in_layer, object_class: str) -> int:
+        """The level the seed logic recommends RIGHT NOW for this prompt + zone.
+
+        Recomputed live (never cached) so a layer or zone change can never
+        leave the guidance comparing against a stale pick. Prefers the active
+        server run plan's target when one matches the prompt, exactly like the
+        seed appliers, so the guidance never disagrees with the seed."""
+        plan = self._active_run_plan(object_class) if object_class else None
+        if plan:
+            target_mupp = plan.get("target_mupp")
+            if (isinstance(target_mupp, (int, float))
+                    and not isinstance(target_mupp, bool) and target_mupp > 0):  # noqa: W503
+                obj_m = plan.get("object_size_m")
+                obj_m = (float(obj_m) if isinstance(obj_m, (int, float))
+                         and not isinstance(obj_m, bool) and obj_m > 0 else 10.0)  # noqa: W503
+                return self._auto_detail_for_target(
+                    layer, zone_in_layer, obj_m, float(target_mupp))
+        if object_class:
+            return self._auto_detail_for_object(layer, zone_in_layer, object_class)
+        return self._default_detail_for_zone(layer, zone_in_layer)
 
     def _mupp_to_meters(self, layer, zone_in_layer, mupp: float) -> float:
         """Convert a layer-CRS resolution (CRS units per pixel) to meters per

@@ -38,14 +38,18 @@ from .styles import (
     BRAND_BLUE,
     _BTN_BLUE,
     _BTN_EXPORT_DISABLED,
-    _BTN_GHOST,
     _BTN_GRAY,
     _BTN_GREEN,
     _BTN_GREEN_AUTH,
     _BTN_PAIR_CANCEL,
     _BTN_PAIR_NEUTRAL,
     _BTN_RED,
+    _CARD_MARGINS,
+    _CARD_QSS,
     _INSTRUCTIONS_CARD_QSS,
+    _PROGRESS_THIN_QSS,
+    _RECAP_CARD_QSS,
+    _msg_card_qss,
 )
 from .guidance import (
     BLUE_TINT,
@@ -182,12 +186,14 @@ class DockBuildMixin:
         self._update_full_ui()
 
     def _on_manual_try_example(self) -> None:
-        """Manual first-run hero 'Try it on an example'. The ready-made demo
-        place is an Automatic showcase (basemap + zone + primed prompt, one
-        click to Detect), so switch to Automatic and run it. The loaded basemap
-        persists across the switch, so the user can flip back to Manual and
-        click on the same imagery. Deferred a tick so the mode switch settles
-        (mode_changed resets the Automatic flow to Start) before the demo loads."""
+        """Manual first-run hero 'Try it on an example'. The demo simply loads
+        a ready-made basemap and frames a rich scene; Automatic is the lead
+        mode, so switch there and load it. The demo only selects the layer and
+        leaves the user on the Start step (they draw the zone and click Start
+        themselves). The basemap persists across the switch, so the user can
+        flip back to Manual and click on the same imagery. Deferred a tick so
+        the mode switch settles (mode_changed resets the Automatic flow to
+        Start) before the demo loads."""
         self._on_mode_selected(Mode.AUTOMATIC)
         QTimer.singleShot(0, self.auto_demo_requested.emit)
 
@@ -204,100 +210,22 @@ class DockBuildMixin:
         except (RuntimeError, AttributeError):
             pass
 
-    def begin_refine_handoff(self, seed_total: int = 0) -> None:
-        """Enter Manual mode to refine the Automatic results, preserving state.
-
-        Drives the mode change by emitting mode_changed directly instead of going
-        through the segmented control's mode_selected: a Manual session IS active
-        during the round trip, so _on_mode_selected's run-active guard would
-        otherwise refuse the switch. The plugin's _on_mode_changed handler sees the
-        handoff flag and skips its usual destructive reset. ``seed_total`` is the
-        detection count seeded into the session, for the banner progress counter.
-        """
-        self._refine_handoff = True
-        self._handoff_seed_total = int(seed_total)
-        self.refine_handoff_banner.setVisible(True)
-        self.mode_switch.setEnabled(False)
-        self.mode_switch.setToolTip(
-            tr("Finish or go back to review to switch modes."))
-        self._mode = Mode.INTERACTIVE
-        self.mode_switch.blockSignals(True)
-        self.mode_switch.set_mode(Mode.INTERACTIVE)
-        self.mode_switch.blockSignals(False)
-        self.mode_changed.emit(Mode.INTERACTIVE)
-        self._update_full_ui()
-
-    def end_refine_handoff(self, target_mode: Mode) -> None:
-        """Leave the refine handoff, returning to target_mode (usually Automatic)."""
-        self._refine_handoff = False
-        self.set_refine_handoff_preparing(False)
-        self.refine_handoff_banner.setVisible(False)
-        self.mode_switch.setEnabled(True)
-        self.mode_switch.setToolTip("")
-        self._mode = target_mode
-        self.mode_switch.blockSignals(True)
-        self.mode_switch.set_mode(target_mode)
-        self.mode_switch.blockSignals(False)
-        self.mode_changed.emit(target_mode)
-        self._update_full_ui()
-
     def set_protected_note(self, visible: bool) -> None:
-        """Show/hide the truth note that hand-refined objects survive any
-        confidence change.
-
-        Confidence stays EDITABLE after a Manual refine: hand-edited objects are
-        protected via geometry (_auto_protected_geoms), so re-filtering only
-        re-derives the untouched auto detections. The old lock (disabling the
-        slider) was dead; this replaces it with an honest note.
-        """
+        """Retired note (Yvann 2026-07-11: it earned no pixels). Hand-refined
+        objects ARE still protected via geometry (_auto_protected_geoms); the
+        review just no longer narrates it. Kept as a no-op hide so the many
+        call sites need no change."""
         try:
-            self._auto_conf_lock_note.setText(
-                tr("Hand-refined objects are always kept, whatever the confidence."))
-            self._auto_conf_lock_note.setVisible(bool(visible))
+            self._auto_conf_lock_note.setVisible(False)
         except (RuntimeError, AttributeError):
             pass
-
-    def set_refine_handoff_preparing(self, preparing: bool) -> None:
-        """Reflect that the local model is still loading after a Refine click.
-
-        The predictor loads asynchronously; while it comes up there is nothing to
-        refine yet, so the banner says so and the Back button is disabled (there
-        is no manual edit to harvest). The plugin completes the import and clears
-        this state once the model is ready.
-        """
-        try:
-            self._refine_banner_lbl.setText(
-                tr("Preparing Manual mode, loading the local model...")
-                if preparing else tr("Refining Automatic results"))
-            # The purpose subtitle only makes sense once refining can begin;
-            # hide it while the model is still loading (nothing to fine-tune yet).
-            self._refine_banner_sub.setVisible(not preparing)
-            # Back to review must stay clickable even while preparing: it only
-            # needs _restore_auto_review_after_handoff (no predictor), so a stuck
-            # or slow model load can never trap the user in the handoff.
-        except (RuntimeError, AttributeError):
-            pass
-
-    def update_handoff_progress(self, kept: int) -> None:
-        """Track how many seeded detections have been kept (turned green) so
-        far. The count surfaces in the compact instructions hint ("N of M
-        detections kept - click a blue detection to edit it"); the banner stays
-        a plain "Refining Automatic results" (the old "· 8/43 kept" suffix read
-        as cryptic)."""
-        self._handoff_kept = int(kept)
-        self._update_instructions()
 
     def _setup_welcome_section(self):
         """Setup the welcome section."""
         self.welcome_widget = QWidget()
-        self.welcome_widget.setStyleSheet("""
-            QWidget {
-                background-color: rgba(25, 118, 210, 0.08);
-                border: 1px solid rgba(25, 118, 210, 0.2);
-                border-radius: 4px;
-            }
-            QLabel { background: transparent; border: none; }
-        """)
+        self.welcome_widget.setObjectName("welcomeCard")
+        self.welcome_widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.welcome_widget.setStyleSheet(_msg_card_qss("welcomeCard", "info"))
         layout = QVBoxLayout(self.welcome_widget)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(4)
@@ -316,6 +244,10 @@ class DockBuildMixin:
 
     def _setup_setup_section(self):
         """Unified setup section: deps install + model download in one flow."""
+        # Untitled, unframed QGroupBox used purely as a layout container (no
+        # visible title, no frame): the design-system card look does not apply
+        # here by design, so this is an intentional exception, not an
+        # oversight.
         self.setup_group = QGroupBox("")
         self.setup_group.setStyleSheet(
             "QGroupBox { border: none; margin: 0; padding: 0; }"
@@ -328,11 +260,13 @@ class DockBuildMixin:
 
         self.setup_progress = QProgressBar()
         self.setup_progress.setRange(0, 100)
+        self.setup_progress.setStyleSheet(_PROGRESS_THIN_QSS)
+        self.setup_progress.setTextVisible(False)
         self.setup_progress.setVisible(False)
         layout.addWidget(self.setup_progress)
 
         self.setup_progress_label = QLabel("")
-        self.setup_progress_label.setStyleSheet("color: palette(text); font-size: 10px;")
+        self.setup_progress_label.setStyleSheet("color: palette(text); font-size: 11px;")
         self.setup_progress_label.setVisible(False)
         layout.addWidget(self.setup_progress_label)
 
@@ -349,7 +283,7 @@ class DockBuildMixin:
         self.install_path_label.setWordWrap(True)
         self.install_path_label.setStyleSheet(
             "color: palette(text);"
-            "font-size: 10px;"
+            "font-size: 11px;"
             "padding: 4px 6px;"
             "background-color: palette(base);"
             "border: 1px solid rgba(128, 128, 128, 0.35);"
@@ -362,7 +296,7 @@ class DockBuildMixin:
         self.cancel_toggle.setArrowType(Qt.ArrowType.RightArrow)
         self.cancel_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.cancel_toggle.setStyleSheet(
-            "color: palette(text); font-size: 10px; border: none;")
+            "color: palette(text); font-size: 11px; border: none;")
         self.cancel_toggle.setVisible(False)
         self.cancel_toggle.clicked.connect(self._toggle_cancel_button)
         layout.addWidget(self.cancel_toggle)
@@ -379,7 +313,7 @@ class DockBuildMixin:
             else:
                 sam1_text = tr("Update QGIS to 3.34+ for the latest AI model")
             sam1_info = QLabel(sam1_text)
-            sam1_info.setStyleSheet("color: palette(text); font-size: 10px;")
+            sam1_info.setStyleSheet("color: palette(text); font-size: 11px;")
             layout.addWidget(sam1_info)
 
         # Hidden until a state that needs it: set_dependency_status(ok=False)
@@ -450,13 +384,9 @@ class DockBuildMixin:
         # card with two check rows.
         hint_card = QFrame()
         hint_card.setObjectName("signinHintCard")
-        hint_card.setStyleSheet(
-            "QFrame#signinHintCard {"
-            " border: 1px solid rgba(128,128,128,0.35);"
-            " border-radius: 6px;"
-            " background-color: rgba(128,128,128,0.08); }")
+        hint_card.setStyleSheet(_CARD_QSS.format(name="signinHintCard"))
         hint_card_layout = QVBoxLayout(hint_card)
-        hint_card_layout.setContentsMargins(10, 8, 10, 8)
+        hint_card_layout.setContentsMargins(*_CARD_MARGINS)
         hint_card_layout.setSpacing(5)
 
         def _hint_row(text):
@@ -587,48 +517,6 @@ class DockBuildMixin:
         layout.setContentsMargins(0, 8, 0, 0)
         layout.setSpacing(8)
 
-        # Refine-handoff banner: shown only while Manual mode is refining the
-        # Automatic results. A quiet blue info-card (temporary = blue, matching
-        # the pending-blue seeds on the canvas) with a clear title, a muted
-        # one-line subtitle that carries the purpose, and a secondary (ghost)
-        # Back-to-review action, so it informs without shouting the way a solid
-        # box + bright button did. Hidden in a normal Manual-from-scratch session.
-        self.refine_handoff_banner = QWidget()
-        self.refine_handoff_banner.setObjectName("refineHandoffBanner")
-        self.refine_handoff_banner.setStyleSheet(
-            "QWidget#refineHandoffBanner { background-color: rgba(30,136,229,0.08);"
-            " border: 1px solid rgba(30,136,229,0.35); border-radius: 4px; }"
-            "QLabel { background: transparent; border: none; color: palette(text); }"
-        )
-        _banner_col = QVBoxLayout(self.refine_handoff_banner)
-        _banner_col.setContentsMargins(10, 8, 8, 8)
-        _banner_col.setSpacing(3)
-        _banner_row = QHBoxLayout()
-        _banner_row.setContentsMargins(0, 0, 0, 0)
-        _banner_row.setSpacing(8)
-        self._refine_banner_lbl = QLabel(tr("Refining Automatic results"))
-        self._refine_banner_lbl.setStyleSheet(
-            "font-weight: bold; font-size: 12px;")
-        _banner_row.addWidget(self._refine_banner_lbl)
-        _banner_row.addStretch()
-        self.back_to_review_btn = QPushButton(tr("Back to review"))
-        self.back_to_review_btn.setStyleSheet(_BTN_GHOST)
-        self.back_to_review_btn.setMinimumHeight(28)
-        self.back_to_review_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.back_to_review_btn.setToolTip(
-            tr("Merges your edits back into the review. Nothing is exported yet."))
-        self.back_to_review_btn.clicked.connect(self.back_to_review_requested.emit)
-        _banner_row.addWidget(self.back_to_review_btn)
-        _banner_col.addLayout(_banner_row)
-        self._refine_banner_sub = QLabel(
-            tr("Fine-tune the detections, then go back to review to export."))
-        self._refine_banner_sub.setWordWrap(True)
-        self._refine_banner_sub.setStyleSheet(
-            "font-size: 11px; color: rgba(128,128,128,0.95);")
-        _banner_col.addWidget(self._refine_banner_sub)
-        self.refine_handoff_banner.setVisible(False)
-        layout.addWidget(self.refine_handoff_banner)
-
         layer_label = QLabel(tr("Select a Raster Layer to Segment:"))
         layer_label.setStyleSheet("font-weight: bold; color: palette(text);")
         layout.addWidget(layer_label)
@@ -642,6 +530,12 @@ class DockBuildMixin:
         self.layer_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.layer_combo.setMinimumWidth(0)
         layout.addWidget(self.layer_combo)
+
+        # Refine-handoff header (title + Back to review + kept progress),
+        # shown only while Manual mode refines the Automatic results. It sits
+        # UNDER the locked layer combo so the page reads top-down as
+        # "this raster, this task, this state" (see dock/handoff.py).
+        self._setup_handoff_header(layout)
 
         # No-rasters state = the SAME first-run hero the Automatic page shows
         # (shared helper), so both modes read identically: the imagery is the
@@ -671,6 +565,10 @@ class DockBuildMixin:
         self._instructions_compact = False
         self.instructions_label.setVisible(False)
         layout.addWidget(self.instructions_label)
+
+        # Refine-handoff state card (replaces the instructions label while a
+        # handoff is active; see dock/handoff.py).
+        self._setup_handoff_state_card(layout)
 
         # Container for start button
         self.start_container = QWidget()
@@ -745,6 +643,7 @@ class DockBuildMixin:
                "You go one object at a time, checking and saving each "
                "polygon yourself."),
             tint=GREEN_TINT,
+            show_glyph=False,  # a mode description, not a tip
         )
         start_layout.addWidget(self.manual_start_caption)
 
@@ -758,12 +657,7 @@ class DockBuildMixin:
         self.manual_last_run_recap = QLabel()
         self.manual_last_run_recap.setWordWrap(True)
         self.manual_last_run_recap.setTextFormat(Qt.TextFormat.PlainText)
-        self.manual_last_run_recap.setStyleSheet(
-            "font-size: 11px; color: palette(text);"
-            " border: 1px solid rgba(120, 144, 156, 90);"
-            " border-radius: 6px; padding: 6px 8px;"
-            " background: rgba(120, 144, 156, 22);"
-        )
+        self.manual_last_run_recap.setStyleSheet(_RECAP_CARD_QSS)
         self.manual_last_run_recap.setVisible(False)
         start_layout.addWidget(self.manual_last_run_recap)
 
@@ -808,6 +702,11 @@ class DockBuildMixin:
 
         # Collapsible Refine mask panel
         self._setup_refine_panel(layout)
+
+        # Refine-handoff exit: the full-width "Done, back to review" primary
+        # (see dock/handoff.py). Placed after the Shape settings so the page
+        # reads top-down as edit, then leave.
+        self._setup_handoff_footer(layout)
 
         # Primary action buttons (reduced height)
         self.save_mask_button = QPushButton(tr("Save polygon (S)"))

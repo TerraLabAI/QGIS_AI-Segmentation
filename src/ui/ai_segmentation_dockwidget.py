@@ -24,6 +24,7 @@ from .dock.build import DockBuildMixin
 from .dock.auto_build import DockAutoBuildMixin
 from .dock.auto_review_build import DockAutoReviewBuildMixin
 from .dock.refine import DockRefineMixin
+from .dock.handoff import DockHandoffMixin
 from .dock.about import DockAboutMixin
 from .dock.activation_state import DockActivationMixin
 from .dock.auto_state import DockAutoStateMixin
@@ -67,7 +68,6 @@ from .dock.styles import (  # noqa: F401 - re-exported for other modules
     _REVIEW_CONF_SPIN_MIN,
     _REVIEW_CONF_STEP,
     _SLIDER_QSS,
-    _auto_step_header,
     _snap_review_conf,
 )
 from .dock.widgets import (  # noqa: F401 - re-exported for other modules
@@ -85,6 +85,7 @@ class AISegmentationDockWidget(
     DockAutoBuildMixin,
     DockAutoReviewBuildMixin,
     DockRefineMixin,
+    DockHandoffMixin,
     DockAboutMixin,
     DockActivationMixin,
     DockAutoStateMixin,
@@ -105,10 +106,13 @@ class AISegmentationDockWidget(
     # simplify, smooth, expand, fill_holes, right_angles
     # (min_area is auto-computed server-side and no longer in the UI)
     refine_settings_changed = pyqtSignal(int, int, int, bool, bool)
+    # Min/Max size window in ground m2 (0 = off). Emitted right BEFORE
+    # refine_settings_changed on the same debounce tick (store-only handler).
+    size_filter_changed = pyqtSignal(float, float)
     mode_changed = pyqtSignal(object)          # emits Mode value
     auto_detect_requested = pyqtSignal()       # user clicked Detect in Automatic mode
     auto_library_requested = pyqtSignal()      # user clicked Library (open prompt gallery)
-    auto_demo_requested = pyqtSignal()         # first-run hero: load the demo place (basemap + zone + prompt)
+    auto_demo_requested = pyqtSignal()         # first-run hero: load the demo basemap and select it (user runs flow)
     history_rerun_requested = pyqtSignal(dict)  # Recent card "Run again here" (stored run entry)
     history_reuse_prompt_requested = pyqtSignal(str)  # Recent card "Same object, new zone" (prompt token)
     zone_draw_requested = pyqtSignal()         # zone drawing should (re)start on the canvas
@@ -125,10 +129,13 @@ class AISegmentationDockWidget(
     auto_review_exit_requested = pyqtSignal()  # user clicked Exit in review (Save/Discard dialog)
     auto_refine_in_manual_requested = pyqtSignal()  # hand the reviewed detections to Manual mode
     back_to_review_requested = pyqtSignal()    # return from a Manual refine handoff to Auto review
+    handoff_edit_requested = pyqtSignal()      # state card Edit shape (single selected detection)
+    handoff_delete_requested = pyqtSignal()    # state card Remove (selection or the open edit)
     auto_exit_requested = pyqtSignal()         # user clicked Exit on the prompt step
     auto_add_exemplar_requested = pyqtSignal(int)   # draw an example (1 = positive, 0 = exclude)
     auto_exemplar_retry_requested = pyqtSignal()    # exemplar nudge: retry then arm the example draw
     auto_exemplar_remove_requested = pyqtSignal(str)  # user clicked x on an exemplar chip (id)
+    auto_merge_override_requested = pyqtSignal()  # review: re-group the auto count-vs-map decision
     auto_zero_assist_clicked = pyqtSignal(str, str)  # zero-result rescue chip (kind, to_prompt)
     auto_escape_pressed = pyqtSignal()         # Escape in the Automatic flow (exit / cancel draw)
     auto_enter_pressed = pyqtSignal()          # Enter in the Automatic flow (detect / export review)
@@ -201,6 +208,15 @@ class AISegmentationDockWidget(
         # detections kept - click a blue detection to edit it").
         self._handoff_seed_total: int = 0
         self._handoff_kept: int = 0
+        # How many detections are currently SELECTED in the handoff (selection-
+        # first review): drives the "N selected" guidance card state.
+        self._handoff_selected: int = 0
+        # True while a detection is OPEN for editing in the handoff (the state
+        # card swaps to the editing actions).
+        self._handoff_editing: bool = False
+        # True while the local model is still loading after a Refine click:
+        # the handoff header says so and the state card stays hidden.
+        self._handoff_preparing: bool = False
         # Count of positive ("find similar") visual exemplars currently set, so
         # Detect can enable on exemplars alone (no text prompt required).
         self._auto_positive_exemplars: int = 0

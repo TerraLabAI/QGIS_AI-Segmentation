@@ -254,6 +254,22 @@ def english_token_for(text: str) -> str | None:
     return None
 
 
+def resolve_object_token(text: str) -> str:
+    """The English cloud-model token for a possibly-localized prompt.
+
+    A thin wrapper over ``english_token_for``: returns the English token when
+    the offline lexicon (or catalogue label index) resolves the prompt, and the
+    prompt itself otherwise (already English, or a word the offline lexicon does
+    not cover). Synchronous and cheap, so it is safe on the debounced prompt
+    commit; the async server fallback lives at the caller. Never rewrites what
+    the user sees, only what the policy lookups key on.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    return english_token_for(raw) or raw
+
+
 _VOCAB_CACHE: set[str] | None = None
 _VOCAB_CACHE_POLICY_ID: int | None = None
 

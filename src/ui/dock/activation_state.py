@@ -19,6 +19,7 @@ from ...core.activation_manager import (
 from ...core.i18n import tr
 from .styles import (
     _BTN_GREEN_AUTH,
+    _msg_label_qss,
 )
 from .widgets import (
     Mode,
@@ -63,12 +64,12 @@ class DockActivationMixin:
         self._show_activation_message(text, is_error)
 
     def _show_activation_message(self, text: str, is_error: bool = False):
-        """Display a message in the activation section."""
+        """Display a message in the activation section, framed per the
+        message taxonomy (error = accent-red text on a red-tinted card,
+        success = a lime-tinted card with plain text)."""
         self.activation_message_label.setText(text)
-        if is_error:
-            self.activation_message_label.setStyleSheet("color: #ef5350; font-size: 11px;")
-        else:
-            self.activation_message_label.setStyleSheet("color: #66bb6a; font-size: 11px;")
+        kind = "error" if is_error else "success"
+        self.activation_message_label.setStyleSheet(_msg_label_qss(kind))
         self.activation_message_label.setVisible(True)
 
     def _update_full_ui(self):

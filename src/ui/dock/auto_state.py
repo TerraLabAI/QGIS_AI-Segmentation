@@ -13,10 +13,12 @@ from qgis.PyQt.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
     QComboBox,
+    QGraphicsOpacityEffect,
     QLineEdit,
 )
 
 
+from ...core.credit_gate import insufficient as _credit_insufficient
 from ...core.i18n import tr
 from ...core.review_defaults import (
     AUTO_REVIEW_CLEAN_DEFAULT as _AUTO_REVIEW_CLEAN_DEFAULT,
@@ -29,7 +31,14 @@ from ...core.review_defaults import (
 from ...core.tile_manager import MAX_DETAIL_LEVEL
 from .prompt_guard import is_known_object, validate_prompt
 from .styles import (
+    BRAND_BLUE,
+    BRAND_GREEN,
     ERROR_TEXT,
+    _PREMIUM_STAR,
+    _REVIEW_CONF_MIN,
+    _REVIEW_CONF_SPIN_MIN,
+    _msg_label_qss,
+    _msg_text,
     _snap_review_conf,
 )
 from .widgets import (
@@ -109,8 +118,10 @@ class DockAutoStateMixin:
         # it never lingers into this fresh run's steps (it is shown on the Start
         # step right after Finish, and belongs only to that just-finished run).
         self.set_auto_status("idle")
-        # Leaving step 0 for a fresh run retires the previous run's value recap.
+        # Leaving step 0 for a fresh run retires the previous run's value recap
+        # and the post-export success line.
         self.clear_last_run_recap()
+        self.clear_auto_export_success()
         try:
             from ...core import telemetry
             telemetry.track_auto_start_clicked(
@@ -146,6 +157,9 @@ class DockAutoStateMixin:
         layer. Idempotent.
         """
         self._auto_started = False
+        # Any hard teardown / mode switch retires the post-export success line
+        # (the export path re-shows it AFTER calling this).
+        self.clear_auto_export_success()
         # Leaving the flow retires the free-trial zone-cap message.
         self.set_auto_zone_rejected(None)
         self.hide_auto_exemplar_nudge()
@@ -167,6 +181,8 @@ class DockAutoStateMixin:
         self.auto_prompt_input.blockSignals(False)
         self._auto_prompt_valid = False
         self._set_prompt_info()
+        # The object is gone with the prompt: drop its slider verdict too.
+        self._auto_detail_feedback = None
         # The prompt was cleared with signals blocked (no textChanged), so
         # refresh the Detect + Detail gates explicitly: the next run must
         # start with the Detail slider gated again until an object exists.
@@ -177,22 +193,32 @@ class DockAutoStateMixin:
         self._go_to_auto_step(0)
 
     def _apply_auto_detail_gate(self, has_object: bool) -> None:
-        """Grey the Detail slider until the object is defined (typed prompt or
-        drawn example). The slider's default is object-aware, so an adjustment
-        made BEFORE the object was named was thrown away by the prompt-commit
-        re-seed: gating the control makes the order explicit.
-        The programmatic seed still lands (setValue works while disabled).
-        The one-line hint explains the greyed state instead of leaving a dead
-        control unexplained."""
+        """Grey the whole Detail card until the object is defined (typed prompt
+        or drawn example). The slider's default is object-aware, so an
+        adjustment made BEFORE the object was named was thrown away by the
+        prompt-commit re-seed: gating the control makes the order explicit.
+        Disabling the container blocks every child, and the opacity dim makes
+        the gate unmistakable (a same-color disabled slider read as broken);
+        the slider QSS adds a grey :disabled track on top so no brand blue
+        survives the dim. The programmatic seed still lands (setValue works
+        while disabled). The one-line hint explains the greyed state instead
+        of leaving a dead control unexplained."""
         try:
-            slider = self.auto_detail_slider
-            if slider.isEnabled() == has_object:
+            card = self.auto_detail_row
+            if card.isEnabled() == has_object:
                 return
-            slider.setEnabled(has_object)
+            card.setEnabled(has_object)
             if has_object:
-                self.auto_detail_hint.setText(
-                    tr("Finer detail finds smaller objects."))
+                card.setGraphicsEffect(None)
+                # Route through the shared refresher so a capped slider keeps
+                # its capped wording (free-plan upsell or zone advice).
+                self._refresh_auto_detail_hint()
             else:
+                dim = QGraphicsOpacityEffect(card)
+                dim.setOpacity(0.45)
+                card.setGraphicsEffect(dim)
+                self.auto_detail_hint.setStyleSheet(
+                    "font-size: 10px; color: palette(text);")
                 self.auto_detail_hint.setText(tr(
                     "Name the object (or draw an example) first - Detail "
                     "then tunes itself to it."))
@@ -396,18 +422,40 @@ class DockAutoStateMixin:
     def _apply_prompt_hint_on_edit(self) -> None:
         """Keep the note under the prompt box in sync while the user types or
         draws examples. A non-empty prompt clears any stale guard message (the
-        guard only fires on commit). An empty prompt with at least one positive
-        example shows a positive 'examples drive the search' note instead of
-        nothing, so an example-only run never looks like a missing prompt."""
+        guard only fires on commit). With no prompt and examples drawn the note
+        is count-aware: one positive nudges toward a second (Detect stays gated
+        until two exist, since reference-image detection is far better with a
+        pair); two or more say the examples now drive the run.
+
+        This writes the prompt-info line (auto_prompt_info), a DIFFERENT label
+        from the example card's shared armed/size-warning hint
+        (auto_exemplar_armed_hint), so the two never fight one label. When the
+        card is showing the too-small size warning it is the more urgent,
+        actionable message, so the second-example nudge yields to it (one calm
+        info per state); show/clear of that warning re-run this method so the
+        nudge returns once the warning clears."""
         try:
             has_text = bool(self.auto_prompt_input.text().strip())
         except (RuntimeError, AttributeError):
             return
-        if not has_text and (self._EXEMPLARS_ENABLED
-                             and getattr(self, "_auto_positive_exemplars", 0) > 0):  # noqa: W503,E501
-            self._set_prompt_info(tr("Your examples drive the search."), info=True)
-        else:
+        positives = (getattr(self, "_auto_positive_exemplars", 0)
+                     if self._EXEMPLARS_ENABLED else 0)
+        if has_text or positives <= 0:
+            # A prompt clears any stale note; no example means nothing to say.
             self._set_prompt_info()
+            return
+        if positives == 1:
+            if getattr(self, "_auto_exemplar_hint_kind", None) == "warning":
+                # The too-small size warning owns the guidance for this state.
+                self._set_prompt_info()
+                return
+            self._set_prompt_info(
+                tr("Add a second example - two references detect far better "
+                   "than one."),
+                info=True)
+            return
+        # Two or more positives: the example-only run is ready.
+        self._set_prompt_info(tr("Your examples drive the search."), info=True)
 
     def _prompt_guidance_message(self, reason: str | None, suggestion: str | None) -> str:
         msgs = {
@@ -535,7 +583,42 @@ class DockAutoStateMixin:
             self.auto_review_confidence_slider.blockSignals(True)
             self.auto_review_confidence_slider.setValue(value)
             self.auto_review_confidence_slider.blockSignals(False)
+        # The slider mirror above is signal-blocked, so move the histogram's
+        # kept/dimmed boundary here too (the slider path does it on its own move).
+        if getattr(self, "auto_conf_histogram", None) is not None:
+            self.auto_conf_histogram.set_cutoff(value / 100.0)
         self._schedule_conf_refilter()
+
+    def seed_review_confidence(self, pct: int) -> None:
+        """Signal-free mirror of the starting cutoff into the review slider and
+        spinbox. The review page seeds its widgets from the pre-run dial when it
+        opens, but the async finalize computes the real starting cutoff (class
+        default / adaptive) AFTER that, so it pushes the final value here; the
+        handle, the spin, the histogram boundary and the count line then all
+        read the same number."""
+        try:
+            value = int(pct)
+            self.auto_review_confidence_slider.blockSignals(True)
+            self.auto_review_confidence_slider.setValue(value)
+            self.auto_review_confidence_slider.blockSignals(False)
+            self.auto_review_confidence_spin.blockSignals(True)
+            self.auto_review_confidence_spin.setValue(value)
+            self.auto_review_confidence_spin.blockSignals(False)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def set_review_conf_floor(self, floor_pct: int) -> None:
+        """Clamp the review confidence controls so neither the slider nor the
+        spinbox can dial below the run's noise floor: sub-floor detections are
+        excluded from the review, so a cutoff under it would filter nothing.
+        Keeps the design constants as the minimum; only raises them."""
+        slider_min = max(_REVIEW_CONF_MIN, int(floor_pct))
+        spin_min = max(_REVIEW_CONF_SPIN_MIN, int(floor_pct))
+        try:
+            self.auto_review_confidence_slider.setMinimum(slider_min)
+            self.auto_review_confidence_spin.setMinimum(spin_min)
+        except (RuntimeError, AttributeError):
+            pass
 
     def _schedule_conf_refilter(self) -> None:
         """Coalesce rapid confidence changes so the heavy re-merge runs once."""
@@ -602,17 +685,130 @@ class DockAutoStateMixin:
         slider.blockSignals(False)
         self._refresh_auto_detail_hint()
 
+    def set_auto_free_run_cap(self, cap: int | None) -> None:
+        """Per-run credit cap for the free plan (None = subscriber, uncapped).
+
+        Set by the plugin from the credit-estimate chokepoint, right before
+        the estimate itself lands. The slider keeps its full (Pro) travel; the
+        cap gates DETECT instead: set_auto_credit_estimate compares the live
+        estimate against it and flips the premium gate."""
+        self._auto_free_run_cap = int(cap) if cap is not None else None
+
+    def _set_auto_premium_gated(self, gated: bool) -> None:
+        """Flip the free-plan premium gate (estimate above the per-run cap).
+
+        Greys Detect (via _update_auto_detect_enabled, run by the caller) and
+        swaps the detail hint to the upgrade link. The upsell view is tracked
+        once per gate episode (rising edge)."""
+        gated = bool(gated)
+        if gated == self._auto_premium_gated:
+            return
+        self._auto_premium_gated = gated
+        if gated and not self._detail_cap_upsell_tracked:
+            self._detail_cap_upsell_tracked = True
+            try:
+                from ...core import telemetry
+                telemetry.track_pro_upsell_viewed(trigger="detail_cap")
+            except Exception:
+                pass  # nosec B110
+        elif not gated:
+            # Next gate episode counts as a fresh upsell view.
+            self._detail_cap_upsell_tracked = False
+        self._refresh_auto_detail_hint()
+
+    def _on_detail_cap_upgrade_link(self, _href: str = "") -> None:
+        """Upgrade link inside the detail hint: same dashboard URL as every
+        other upsell surface, its own telemetry source."""
+        from qgis.PyQt.QtCore import QUrl
+        from qgis.PyQt.QtGui import QDesktopServices
+        try:
+            from ...core import telemetry
+            telemetry.track_pro_upsell_clicked(source="detail_cap")
+        except Exception:
+            pass  # nosec B110
+        QDesktopServices.openUrl(QUrl(self._build_upgrade_url()))
+
+    def set_auto_detail_feedback(self, state: str | None, object_word: str) -> None:
+        """Live verdict for the CURRENT slider level against the named object
+        and the drawn zone, computed by the plugin at the credit-estimate
+        chokepoint. States: coarse / below / recommended / helps / above /
+        over (None clears). Stored here and rendered by
+        _refresh_auto_detail_hint, which owns the priority order."""
+        word = (object_word or "").strip()
+        if len(word) > 24:
+            word = word[:24] + "..."
+        self._auto_detail_feedback = (state, word) if state else None
+        self._refresh_auto_detail_hint()
+
     def _refresh_auto_detail_hint(self) -> None:
-        """Swap the muted line under the detail slider when the handle sits at
-        a maximum the zone size capped below MAX_DETAIL_LEVEL, so a slider that
-        stops early never reads as broken. Same label, text swap only (no
-        layout jump); the normal hint returns as soon as the user is below the
-        cap or the cap is the full range."""
+        """Swap the muted line under the detail slider by state. Premium-gated
+        (the free plan, not the zone, is what blocks this level) shows the
+        upgrade link; then the object-aware verdict when one is known, so the
+        guidance moves live with the slider, the prompt and the zone; the
+        handle sitting at a zone/native-capped maximum keeps the
+        draw-a-larger-zone advice when raising detail is the (impossible)
+        fix, so a slider that stops early never reads as broken. Same label,
+        text swap only (no layout jump)."""
         s = self.auto_detail_slider
         capped = s.maximum() < MAX_DETAIL_LEVEL and s.value() >= s.maximum()
-        self.auto_detail_hint.setText(
-            tr("Max detail for this zone - draw a larger zone for finer detail.")
-            if capped else tr("Finer detail finds smaller objects."))
+        feedback = getattr(self, "_auto_detail_feedback", None)
+        _plain_hint = "font-size: 10px; color: palette(text);"
+        if self._auto_premium_gated:
+            # Premium taxonomy: a dedicated blue-family line with the star
+            # prefix and an underlined upgrade link (never inline in guidance).
+            self.auto_detail_hint.setStyleSheet(_msg_label_qss("premium"))
+            self.auto_detail_hint.setText(
+                _PREMIUM_STAR + " "
+                + tr("This detail level is a Pro feature. Lower the detail, or")
+                + f' <a href="upgrade" style="color: {BRAND_BLUE};'
+                + ' text-decoration: underline;">'
+                + tr("upgrade to unlock it")
+                + "</a>.")
+            return
+        if feedback and not (capped and feedback[0] in ("coarse", "below")):
+            # "Raise the detail" advice is a dead end at a capped maximum;
+            # the capped branch below gives the actionable fix instead.
+            state, word = feedback
+            obj = f'"{word}"' if word else tr("your object")
+            if state == "coarse":
+                self.auto_detail_hint.setStyleSheet(_msg_label_qss("warning"))
+                self.auto_detail_hint.setText(_msg_text("warning", tr(
+                    "At this detail {obj} is too small to spot - raise the"
+                    " detail.").format(obj=obj)))
+            elif state == "over":
+                # Quality fact only (large objects can fragment past this
+                # point); never a nudge about credits - the cost line above
+                # already says the price, guidance stays informational.
+                self.auto_detail_hint.setStyleSheet(_msg_label_qss("warning"))
+                self.auto_detail_hint.setText(_msg_text("warning", tr(
+                    "Very fine for {obj} - large ones may come back split"
+                    " in parts.").format(obj=obj)))
+            elif state == "above":
+                self.auto_detail_hint.setStyleSheet(_plain_hint)
+                self.auto_detail_hint.setText(tr(
+                    "Sharper than {obj} usually needs - catches the smallest"
+                    " ones.").format(obj=obj))
+            elif state == "helps":
+                self.auto_detail_hint.setStyleSheet(_plain_hint)
+                self.auto_detail_hint.setText(tr(
+                    "Extra detail keeps helping {obj} in this zone.").format(
+                        obj=obj))
+            elif state == "below":
+                self.auto_detail_hint.setStyleSheet(_plain_hint)
+                self.auto_detail_hint.setText(tr(
+                    "Small {obj} may be missed at this level.").format(obj=obj))
+            else:  # recommended
+                self.auto_detail_hint.setStyleSheet(_plain_hint)
+                self.auto_detail_hint.setText("✓ " + tr(
+                    "Right level for {obj} in this zone.").format(obj=obj))
+            return
+        if capped:
+            self.auto_detail_hint.setStyleSheet(_plain_hint)
+            self.auto_detail_hint.setText(tr(
+                "Max detail for this zone - draw a larger zone for finer detail."))
+        else:
+            self.auto_detail_hint.setStyleSheet(_plain_hint)
+            self.auto_detail_hint.setText(tr("Finer detail finds smaller objects."))
 
     def on_zone_deleted_from_canvas(self) -> None:
         """Called by the plugin when the user clicks the zone's x badge."""
@@ -751,14 +947,9 @@ class DockAutoStateMixin:
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             label.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextBrowserInteraction)
-            # Quiet warning card: amber border + faint tint, readable text on
-            # both themes (palette(text), never palette(mid)).
-            label.setStyleSheet(
-                "font-size: 12px; color: palette(text);"
-                "border: 1px solid rgba(240, 160, 60, 160);"
-                "border-radius: 6px; padding: 8px;"
-                "background: rgba(240, 160, 60, 26);"
-            )
+            # Quiet warning card: translucent amber tint from the message
+            # taxonomy, readable text on both themes (palette(text)).
+            label.setStyleSheet(_msg_label_qss("warning"))
             label.linkActivated.connect(self._on_zone_cap_link_activated)
             try:
                 self.auto_zone_hero.layout().addWidget(label)
@@ -774,7 +965,7 @@ class DockAutoStateMixin:
             'Draw a smaller zone, or <a href="{url}">subscribe</a> to '
             "segment areas of any size."
         ).format(url=self._build_upgrade_url())
-        label.setText("{}<br/>{}".format(line1, line2))
+        label.setText("{}<br/>{}".format(_msg_text("warning", line1), line2))
         label.setVisible(True)
 
     def _on_zone_cap_link_activated(self, url: str) -> None:
@@ -851,12 +1042,7 @@ class DockAutoStateMixin:
         label.setTextFormat(Qt.TextFormat.RichText)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         label.setOpenExternalLinks(False)
-        label.setStyleSheet(
-            "font-size: 11px; color: palette(text);"
-            "border: 1px solid rgba(240, 160, 60, 160);"
-            "border-radius: 6px; padding: 6px 8px;"
-            "background: rgba(240, 160, 60, 26);"
-        )
+        label.setStyleSheet(_msg_label_qss("warning"))
         label.linkActivated.connect(self._on_low_credit_link_activated)
         anchor = getattr(self, "auto_start_caption", None)
         idx = layout.indexOf(anchor) if anchor is not None else -1
@@ -1077,6 +1263,29 @@ class DockAutoStateMixin:
         except (RuntimeError, AttributeError):
             pass
 
+    # -- Optional-example section collapse ---------------------------------
+
+    def _refresh_auto_exemplar_explainer(self, armed: bool = False) -> None:
+        """The one-line example tip shows only while the section is fresh: an
+        armed draw (the instruction line) or an existing reference (the
+        thumbnails) replaces it, so the card never stacks guidance. A tip the
+        user closed with its x stays closed (DismissibleHint persistence)."""
+        from .guidance import HINT_EXEMPLAR_TIP, is_hint_dismissed
+        try:
+            show = (not armed
+                    and not getattr(self, "_auto_exemplar_count", 0)  # noqa: W503
+                    and not is_hint_dismissed(HINT_EXEMPLAR_TIP))  # noqa: W503
+            self.auto_exemplar_explainer.setVisible(show)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _set_auto_exemplar_expanded(self, expanded: bool) -> None:
+        """Compat no-op: the example card is always visible now (the collapsed
+        dropdown read as noise, not as an option). Callers that auto-opened it
+        (armed draw, existing reference, flow reset) need nothing anymore."""
+        self._auto_exemplar_expanded = True
+        self.auto_exemplar_content.setVisible(True)
+
     def _set_exemplar_readonly(self, readonly: bool) -> None:
         """Swap the reference panel between its editable form and the in-run
         read-only form: hide the header/hint/buttons, show a quiet caption, and
@@ -1086,6 +1295,11 @@ class DockAutoStateMixin:
             self._auto_exemplar_header.setVisible(not readonly)
             self.auto_exemplar_readonly_caption.setVisible(readonly)
             self.auto_exemplar_edit_controls.setVisible(not readonly)
+            # In-run the collapse header is gone, so the content card must
+            # show on its own (it holds the caption + thumbnails); back in
+            # edit mode the user's collapse state resumes.
+            self.auto_exemplar_content.setVisible(
+                readonly or self._auto_exemplar_expanded)
             layout = self._auto_exemplar_chips_layout
             for i in range(layout.count()):
                 w = layout.itemAt(i).widget()
@@ -1132,8 +1346,10 @@ class DockAutoStateMixin:
         Sits at the top of the review card (it is the live readout of the
         filters below it). A run that found something NEVER reads as '0
         detected'. ``size_bound`` (only when visible == 0) swaps the reveal hint
-        to the Min size filter when that, not Confidence, is hiding everything."""
-        check = '<span style="color:#43a047;">&#10003;</span> '
+        to the Min size filter when that, not Confidence, is hiding everything.
+        The check is the lime success accent (the CTA green never announces
+        success)."""
+        check = f'<span style="color:{BRAND_GREEN};">&#10003;</span> '
         muted = 'style="color: rgba(128,128,128,0.95);"'
         if total <= 0:
             # Empty runs use the guidance box instead of this label; safe fallback.
@@ -1212,10 +1428,10 @@ class DockAutoStateMixin:
         if active and reset_controls:
             # Fresh review: reset the per-control shape-adjust telemetry dedup set.
             self._review_shape_tracked = set()
-            # The collapsible "Refine detections" section starts closed on every
-            # NEW review (setVisible only, no control signals) so Confidence and
-            # the action buttons stay above the fold. A refine handoff return
-            # (reset_controls=False) keeps whatever the user had open.
+            # The collapsible "Shape and size settings" section starts closed
+            # on every NEW review (setVisible only, no control signals) so
+            # Confidence and Export stay above the fold. A refine handoff
+            # return (reset_controls=False) keeps whatever the user had open.
             self.set_auto_shape_expanded(False)
         # The top mode toggle is disabled during review: switching modes here is
         # the destructive path that discards (and red-autosaves) the review. The
@@ -1372,7 +1588,7 @@ class DockAutoStateMixin:
         combo.blockSignals(False)
 
     def set_display_legend(self, text: str) -> None:
-        """Set the muted legend line under the Display colors combo (what the
+        """Set the muted legend line under the View-detections-as combo (what the
         colours mean for the selected mode). No-op if the label is absent."""
         legend = getattr(self, "auto_display_legend", None)
         if legend is not None:
@@ -1384,7 +1600,7 @@ class DockAutoStateMixin:
         QPushButton text does not wrap, so a long tip silently elides."""
         obj = object_word or tr("object")
         self.auto_exemplar_nudge_link.setText(
-            "✏️  " + tr("Draw an example of one {object} to find more").format(
+            "✎  " + tr("Draw an example of one {object} to find more").format(
                 object=obj))
         self.auto_exemplar_nudge_link.setToolTip(tr(
             "Runs with a drawn example return far fewer empty results. "
@@ -1408,7 +1624,7 @@ class DockAutoStateMixin:
         short: QPushButton text does not wrap."""
         obj = (object_word or "").strip()
         self.auto_zero_example_chip.setText(
-            "✏️  " + tr("Draw an example of one {object}").format(
+            "✎  " + tr("Draw an example of one {object}").format(
                 object=obj or tr("object")))
         self.auto_zero_example_chip.setToolTip(tr(
             "Outline ONE example of the object on the map, then run again. "
@@ -1424,7 +1640,7 @@ class DockAutoStateMixin:
         self._auto_zero_synonym = suggestion
         if suggestion:
             self.auto_zero_synonym_chip.setText(
-                "💡  " + tr('Try "{word}" instead').format(word=suggestion))
+                "→  " + tr('Try "{word}" instead').format(word=suggestion))
         self.auto_zero_synonym_chip.setVisible(bool(suggestion))
         self.auto_zero_assist_row.setVisible(True)
 
@@ -1458,12 +1674,16 @@ class DockAutoStateMixin:
 
     def set_last_run_recap(self, count: int, object_word: str, area_km2,
                            credits_used, credits_left=None) -> None:
-        """Show the session-only value recap on the Automatic Start page after a
-        successful Finish: one quiet line summarizing what the run produced.
+        """Store the session-only value recap for the Automatic Start page: one
+        quiet line summarizing what the last run produced.
 
-        Best-effort by contract (the export already committed): never raises, so
-        a recap problem can never surface as a failed Finish. Balance is dropped
-        when unknown (the post-run usage refresh has not returned yet)."""
+        One message per state: right after a Finish the success line already
+        tells the whole story, so while it is visible the recap only STORES its
+        text and stays hidden; dismissing the success line (next Start click or
+        mode switch) reveals it as the session memory. Best-effort by contract
+        (the export already committed): never raises, so a recap problem can
+        never surface as a failed Finish. Balance is dropped when unknown (the
+        post-run usage refresh has not returned yet)."""
         try:
             recap = getattr(self, "auto_last_run_recap", None)
             if recap is None:
@@ -1482,17 +1702,70 @@ class DockAutoStateMixin:
                     "· {used} credits used"
                 ).format(count=count, object=obj, area=area, used=credits_used)
             recap.setText(text)
-            recap.setVisible(True)
+            # isHidden (the widget's OWN flag), not isVisible: the latter is
+            # False whenever an ancestor is hidden, which would wrongly show
+            # both messages when this runs while the dock is not on screen.
+            success = getattr(self, "auto_export_success", None)
+            recap.setVisible(success is None or success.isHidden())
         except Exception:  # nosec B110 -- recap is best-effort, never break Finish
             pass
 
     def clear_last_run_recap(self) -> None:
-        """Hide the last-run recap card (session only; called when a new run
-        starts). Safe to call when the card was never built."""
+        """Retire the last-run recap card (text included, so a later success
+        dismissal cannot resurface a stale run's numbers). Called when a new
+        run starts. Safe to call when the card was never built."""
         try:
             recap = getattr(self, "auto_last_run_recap", None)
             if recap is not None:
+                recap.setText("")
                 recap.setVisible(False)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def set_auto_export_success(self, count: int, layer_name: str,
+                                object_word=None, area_km2=None,
+                                credits_used=None) -> None:
+        """Show the post-export success line on the Start page: what was saved,
+        where, and the run's measured value (km2 / credits) when known, so it
+        is the ONE message right after a Finish (the recap card stays hidden
+        until this line is dismissed). Set AFTER reset_auto_to_start (which
+        clears it), so it survives the return to Start; dismissed on the next
+        Start click or mode switch. Best-effort; never raises into a committed
+        export."""
+        try:
+            lbl = getattr(self, "auto_export_success", None)
+            if lbl is None:
+                return
+            obj = (object_word or "").strip() or tr("polygons")
+            text = tr('{n} {object} saved to layer "{name}"').format(
+                n=count, object=obj, name=layer_name or "")
+            if area_km2 is not None:
+                text += " · " + tr("{area} km2").format(
+                    area=self._format_recap_area(area_km2))
+            if credits_used is not None:
+                text += " · " + tr("{used} credits used").format(
+                    used=credits_used)
+            lbl.setText(_msg_text("success", text))
+            lbl.setVisible(True)
+            # One message per state: the recap card repeats this story, so it
+            # waits behind the success line (see clear_auto_export_success).
+            recap = getattr(self, "auto_last_run_recap", None)
+            if recap is not None:
+                recap.setVisible(False)
+        except Exception:  # nosec B110 -- success line is best-effort
+            pass
+
+    def clear_auto_export_success(self) -> None:
+        """Hide the post-export success line (a new Start, a mode switch, any
+        reset), and let the stored last-run recap take over as the quiet
+        session memory. Safe to call when the labels were never built."""
+        try:
+            lbl = getattr(self, "auto_export_success", None)
+            if lbl is not None:
+                lbl.setVisible(False)
+            recap = getattr(self, "auto_last_run_recap", None)
+            if recap is not None and bool(recap.text()):
+                recap.setVisible(True)
         except (RuntimeError, AttributeError):
             pass
 
@@ -1508,6 +1781,7 @@ class DockAutoStateMixin:
             self.auto_credit_cost_label.setToolTip("")
             self._auto_zone_too_large = True
             self._auto_insufficient_credits = False
+            self._set_auto_premium_gated(False)
         else:
             # Make the per-tile billing explicit right before Detect: the run
             # scans the zone tile by tile and spends 1 credit per tile, so the
@@ -1526,8 +1800,19 @@ class DockAutoStateMixin:
             # same in-context pattern as the "Zone too large" block. This
             # replaces the old amber "will stop after N" partial-run allowance,
             # which let a run burn straight down to 0 and stop mid-zone.
-            insufficient = remaining is not None and credits > int(remaining)
+            # credit_gate.insufficient owns the boundary: block only when the
+            # estimate STRICTLY exceeds the balance (== is allowed), the same
+            # rule as the auto_run pre-submit re-gate.
+            insufficient = _credit_insufficient(credits, remaining)
             self._auto_insufficient_credits = insufficient
+            # Free-plan per-run cap: the slider deliberately keeps its full
+            # (Pro) travel, so past the cap the run is blocked HERE, with the
+            # upgrade as the named fix. The balance gate wins when both apply
+            # (an underfunded run can never launch regardless of plan).
+            cap = self._auto_free_run_cap
+            self._set_auto_premium_gated(
+                not insufficient and not self._auto_is_subscriber
+                and cap is not None and credits > cap)
             if insufficient:
                 # A subscriber is already paying, so point them at the levers they
                 # can pull now (detail/zone); only free users get the subscribe CTA.
@@ -1543,6 +1828,17 @@ class DockAutoStateMixin:
                             n=credits, left=int(remaining))
                 self.auto_credit_cost_label.setStyleSheet(
                     f"color: {ERROR_TEXT}; font-weight: bold; font-size: 11px;")
+            elif self._auto_premium_gated:
+                # Premium taxonomy (blue + star), never the error red: this is
+                # a paid-capability gate, not a failure. The cost line stays
+                # the SHORT equation (it sits on the Detail header row, a long
+                # sentence would widen the dock); the premium hint box under
+                # the slider carries the explanation and the upgrade link.
+                text = _PREMIUM_STAR + " " + (
+                    tr("≈ 1 tile = 1 credit") if credits == 1
+                    else tr("≈ {n} tiles = {n} credits").format(n=credits))
+                self.auto_credit_cost_label.setStyleSheet(
+                    f"color: {BRAND_BLUE}; font-size: 11px; font-weight: bold;")
             else:
                 self.auto_credit_cost_label.setStyleSheet(
                     "color: palette(text); font-size: 11px;")
@@ -1733,16 +2029,9 @@ class DockAutoStateMixin:
             self.auto_status_banner.setText("")
             return
         if kind == "error":
-            self.auto_status_banner.setStyleSheet(
-                "background-color: rgba(239, 83, 80, 0.10);"
-                " border: 1px solid rgba(239, 83, 80, 0.45);"
-                " border-radius: 4px; padding: 8px;"
-                f" color: {ERROR_TEXT}; font-size: 12px;")
+            self.auto_status_banner.setStyleSheet(_msg_label_qss("error"))
         else:
-            self.auto_status_banner.setStyleSheet(
-                "background-color: rgba(128, 128, 128, 0.08);"
-                " border: 1px solid rgba(128, 128, 128, 0.2);"
-                " border-radius: 4px; padding: 8px;"
-                " color: palette(text); font-size: 12px;")
-        self.auto_status_banner.setText(message)
+            self.auto_status_banner.setStyleSheet(_msg_label_qss("info"))
+        self.auto_status_banner.setText(
+            _msg_text("error" if kind == "error" else "info", message))
         self.auto_status_banner.setVisible(True)

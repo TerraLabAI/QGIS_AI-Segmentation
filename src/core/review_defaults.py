@@ -18,6 +18,16 @@ from __future__ import annotations
 # every plausible mask comes back so the slider re-filters client-side, free.
 AUTO_DEFAULT_CONFIDENCE = 0.30
 
+# Exemplar-ONLY runs (a drawn example, no text prompt) open both the live
+# preview and the post-run review at a HIGHER starting cutoff than a text run.
+# Without an open-vocabulary text prior the model surfaces more weak
+# look-alikes, so a higher start hides that tier by default (the slider still
+# recovers them). Kept above AUTO_DEFAULT_CONFIDENCE so raising it never makes
+# the review open below the text default. The real tuned value is
+# server-delivered; this is only the ONE generic client fallback, never a
+# mirror of a tuned table.
+AUTO_DEFAULT_CONFIDENCE_EXEMPLAR_ONLY = 0.45
+
 # The review's "px" unit is DYNAMIC: 1 px = one pixel of the run's returned
 # masks (worker-observed, `_auto_refine_pixel_size`), NOT a fixed ground size
 # and NOT the source raster's native pixel. So the same default is gentle on a
@@ -57,6 +67,22 @@ AUTO_REVIEW_EXPAND_DEFAULT = 0
 AUTO_REVIEW_FILL_HOLES_DEFAULT = True
 
 # ---------------------------------------------------------------------------
+# Manual refine-panel defaults ("Refine selection" in base Manual, "Shape
+# settings" in a Refine-in-Manual handoff). Used to be hardcoded independently
+# at 5 call sites (plugin __init__, session reset, saved-polygon-restore
+# fallback, and the dock's widget setup + slider reset); a drift between them
+# silently changed what a fresh session or a restored polygon lacking the
+# field started with. Grep-proof: defined once here.
+# ---------------------------------------------------------------------------
+REFINE_SIMPLIFY_DEFAULT = 3
+REFINE_SMOOTH_DEFAULT = 0
+REFINE_EXPAND_DEFAULT = 0
+REFINE_FILL_HOLES_DEFAULT = True
+REFINE_ORTHO_DEFAULT = False
+REFINE_MIN_SIZE_M2_DEFAULT = 0.0
+REFINE_MAX_SIZE_M2_DEFAULT = 0.0
+
+# ---------------------------------------------------------------------------
 # Adaptive review starting confidence
 #
 # The fixed default cutoff assumes the model's score scale is the same for
@@ -87,6 +113,37 @@ _ADAPTIVE_MIN_ANCHOR = 10
 _ADAPTIVE_FLOOR = 0.15
 
 
+def _adaptive_params() -> tuple[int, float, float, float, int, float]:
+    """The adaptive-confidence tuning scalars, server-overridable.
+
+    The server policy's ``review.adaptive_confidence`` block (when present)
+    overrides any of them, so this heuristic is re-tunable fleet-wide without
+    a plugin release; the module constants above are the client fallbacks."""
+    lo, hi = _ADAPTIVE_AREA_RATIO_BAND
+    min_objects, hidden_trigger = _ADAPTIVE_MIN_OBJECTS, _ADAPTIVE_HIDDEN_TRIGGER
+    min_anchor, floor = _ADAPTIVE_MIN_ANCHOR, _ADAPTIVE_FLOOR
+    try:
+        from .detection_policy import adaptive_confidence_policy
+
+        pol = adaptive_confidence_policy()
+
+        def _num(key: str, fb: float) -> float:
+            v = pol.get(key)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                return float(v)
+            return fb
+
+        min_objects = int(_num("min_objects", min_objects))
+        hidden_trigger = _num("hidden_trigger", hidden_trigger)
+        lo = _num("area_ratio_lo", lo)
+        hi = _num("area_ratio_hi", hi)
+        min_anchor = int(_num("min_anchor", min_anchor))
+        floor = _num("floor", floor)
+    except Exception:  # noqa: BLE001 -- policy is best-effort  # nosec B110
+        pass
+    return min_objects, hidden_trigger, lo, hi, min_anchor, floor
+
+
 def adaptive_review_confidence(
     scored: list[tuple[float, float]],
     default: float = AUTO_DEFAULT_CONFIDENCE,
@@ -103,30 +160,31 @@ def adaptive_review_confidence(
     is the hidden cohort's 25th score percentile, floored, snapped down to the
     review slider's 5% grid, and always strictly below ``default``.
     """
+    (min_objects, hidden_trigger, ratio_lo, ratio_hi,
+     min_anchor, floor) = _adaptive_params()
     n = len(scored)
-    if n < _ADAPTIVE_MIN_OBJECTS:
+    if n < min_objects:
         return None
     below = [(s, a) for s, a in scored if s < default]
-    if len(below) / n <= _ADAPTIVE_HIDDEN_TRIGGER:
+    if len(below) / n <= hidden_trigger:
         return None
     if merge_separate:
         low_areas = sorted(a for s, a in below if a > 0)
         high_areas = sorted(a for s, a in scored if s >= default and a > 0)
-        if len(high_areas) < _ADAPTIVE_MIN_ANCHOR or not low_areas:
+        if len(high_areas) < min_anchor or not low_areas:
             return None
         med_low = low_areas[len(low_areas) // 2]
         med_high = high_areas[len(high_areas) // 2]
         if med_high <= 0:
             return None
         ratio = med_low / med_high
-        lo, hi = _ADAPTIVE_AREA_RATIO_BAND
-        if not (lo <= ratio <= hi):
+        if not (ratio_lo <= ratio <= ratio_hi):
             return None
     low_scores = sorted(s for s, _a in below)
     p25 = low_scores[int(0.25 * (len(low_scores) - 1))]
-    cutoff = max(_ADAPTIVE_FLOOR, p25)
+    cutoff = max(floor, p25)
     step = int(cutoff * 100 / 5.0) * 5  # snap DOWN to the slider's 5% grid
     step = min(step, int(round(default * 100)) - 5)
-    if step < int(_ADAPTIVE_FLOOR * 100):
+    if step < int(floor * 100):
         return None
     return step / 100.0

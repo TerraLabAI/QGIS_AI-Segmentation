@@ -24,6 +24,15 @@ from ..core.prompt_manager import FrozenCropSession, PromptManager
 from ..core.review_defaults import (
     AUTO_DEFAULT_CONFIDENCE as _AUTO_DEFAULT_CONFIDENCE,
 )
+from ..core.review_defaults import (
+    REFINE_EXPAND_DEFAULT,
+    REFINE_FILL_HOLES_DEFAULT,
+    REFINE_MAX_SIZE_M2_DEFAULT,
+    REFINE_MIN_SIZE_M2_DEFAULT,
+    REFINE_ORTHO_DEFAULT,
+    REFINE_SIMPLIFY_DEFAULT,
+    REFINE_SMOOTH_DEFAULT,
+)
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
 from .error_report_dialog import start_log_collector, stop_log_collector
@@ -33,6 +42,7 @@ from .plugin.auto_run import AutoRunMixin
 from .plugin.auto_results import AutoResultsMixin
 from .plugin.auto_review import AutoReviewMixin
 from .plugin.manual_handoff import ManualHandoffMixin
+from .plugin.handoff_shape import HandoffShapeMixin
 from .plugin.exemplars import ExemplarsMixin
 from .plugin.auto_lifecycle import AutoLifecycleMixin
 from .plugin.auto_zone import AutoZoneMixin
@@ -50,6 +60,7 @@ class AISegmentationPlugin(
     AutoResultsMixin,
     AutoReviewMixin,
     ManualHandoffMixin,
+    HandoffShapeMixin,
     ExemplarsMixin,
     AutoLifecycleMixin,
     AutoZoneMixin,
@@ -92,8 +103,30 @@ class AISegmentationPlugin(
         # The original saved entry re-opened for editing, so a Delete-undo can
         # restore it exactly.
         self._active_refine_origin_entry = None
-        # One-shot undo backup for a Delete-key object removal.
-        self._deleted_object_backup = None
+        # Undo stack for Delete-key removals: each unit is a list of entry
+        # dicts (one Suppr press = one unit, possibly several selected objects).
+        self._deleted_objects_stack: list = []
+        # Selection-first review state (refine handoff): the selected entry
+        # dicts, their white selection outline, and the hover highlight band.
+        self._handoff_selected_entries: list = []
+        self._handoff_selection_band = None
+        self._handoff_hover_band = None
+        self._handoff_hover_entry = None
+        # Bbox spatial index over saved_polygons, keyed by a stable per-entry
+        # token (_htok) so single-object changes maintain it incrementally;
+        # _handoff_tok2entry resolves a token back to its entry and
+        # _handoff_hit_tok_seq mints tokens (never reused in-session).
+        self._handoff_hit_index = None
+        self._handoff_tok2entry: dict = {}
+        self._handoff_hit_tok_seq: int = 0
+        # Speculative selection prewarm (refine handoff): debounce timer + the
+        # crop spec (center/scale) of the last handoff-initiated encode, so the
+        # open can skip a duplicate encode the selection already started.
+        self._handoff_prewarm_timer = None
+        self._handoff_crop_spec: tuple | None = None
+        # Synthetic det_id sequence for hand-drawn/legacy entries (see
+        # _next_handoff_det_id).
+        self._handoff_det_id_seq = None
         # Geometries the user hand-edited/added/carved during a refine handoff.
         # They are PROTECTED: a confidence change re-filters only the untouched
         # auto detections and never drops these, so the slider stays usable after
@@ -135,13 +168,19 @@ class AISegmentationPlugin(
         self._headless = False
         self._headless_error = None
 
-        # Refinement settings (#12, #23: defaults tuned for ease-of-use)
-        self._refine_simplify = 3
-        self._refine_smooth = 0
-        self._refine_expand = 0
-        self._refine_fill_holes = True
-        self._refine_ortho = False
+        # Refinement settings (#12, #23: defaults tuned for ease-of-use).
+        # Shared with the dock and the session-reset/restore fallbacks via
+        # core/review_defaults.py (no local copies to keep in sync).
+        self._refine_simplify = REFINE_SIMPLIFY_DEFAULT
+        self._refine_smooth = REFINE_SMOOTH_DEFAULT
+        self._refine_expand = REFINE_EXPAND_DEFAULT
+        self._refine_fill_holes = REFINE_FILL_HOLES_DEFAULT
+        self._refine_ortho = REFINE_ORTHO_DEFAULT
         self._refine_min_area = 200  # overridden by _compute_auto_min_area() × 2
+        # User Min/Max size window in ground m2 (0 = off); a Refine-in-Manual
+        # handoff seeds these from the Automatic review's size filters.
+        self._refine_min_size_m2 = REFINE_MIN_SIZE_M2_DEFAULT
+        self._refine_max_size_m2 = REFINE_MAX_SIZE_M2_DEFAULT
 
         self._is_non_georeferenced_mode = False  # Track if current layer is non-georeferenced
         self._is_online_layer = False  # Track if current layer is online (WMS, XYZ, etc.)
@@ -257,6 +296,24 @@ class AISegmentationPlugin(
         # False = merge tile-split objects (map continuous features). Smart
         # default per object type at run start; user-overridable in the review.
         self._auto_merge_separate: bool = True
+        # How the merge policy was decided: "prompt" (object token), "signal"
+        # (exemplar-only auto count-vs-map from the run's own masks) or
+        # "override" (the user re-grouped it in the review). Telemetry only.
+        self._auto_merge_mode_source: str = "prompt"
+        # Exemplar-only count-vs-map auto decision: the retained raw per-tile
+        # fragments (None = not an exemplar-only run, or retention overflowed).
+        # The map-likeness signal is the area-weighted mean tile coverage of the
+        # non-failure fragments (sum(cov^2)/sum(cov), cov = fragment area / tile
+        # ground area, failure blobs above the hard cap excluded): high for
+        # continuous cover, near zero for small countable objects. Accumulated as
+        # two running sums plus a fragment count (0 = signal cannot run).
+        self._auto_is_exemplar_only: bool = False
+        self._auto_raw_fragments: list | None = None
+        self._auto_raw_n_total: int = 0
+        self._auto_raw_cov_sum: float = 0.0
+        self._auto_raw_cov_sq_sum: float = 0.0
+        self._auto_tile_ground_area: float = 0.0
+        self._auto_merge_override_used: bool = False
         self._auto_selection_layer = None  # QgsVectorLayer | None (in-progress results)
         # Review display colour mode: 'normal' / 'outline' / 'confidence' /
         # 'random' (visual only; never touches geometry, filters or export).
@@ -279,6 +336,12 @@ class AISegmentationPlugin(
         # generic path stands. Fire-and-forget, fails open.
         self._auto_run_plan: dict | None = None
         self._auto_run_plan_task = None  # GenericRequestTask | None
+        # Localized prompt -> English cloud-model token, resolved once per prompt
+        # on commit (offline lexicon, with an async server fallback) so the
+        # detail seed keys on the SAME token the run will send. Display stays the
+        # user's own words; this only steers the policy lookups.
+        self._auto_token_cache: dict[str, str] = {}
+        self._auto_token_task = None  # GenericRequestTask | None
         # MCP headless result bookkeeping (plan #79): set by signal handlers.
         self._last_auto_result: dict | None = None
         # Timing/observability for the auto run: render duration (the upfront
@@ -359,6 +422,20 @@ class AISegmentationPlugin(
         # run starts or the flow is torn down before the refine finishes.
         self._auto_finalize_state: dict | None = None
         self._auto_finalize_gen: int = 0
+        # Reslice refine cache: the refined (repaired, MultiPolygon-coerced)
+        # geometry per canonical object index, valid for ONE shape-params key at
+        # a time (see _review_shape_key). A filter-only reslice (Confidence /
+        # Min / Max size) then reuses every refined geometry instead of re-
+        # running the GEOS refine on the whole visible set; a shape-params
+        # change naturally resets the key and recomputes. Reset whenever
+        # _auto_objects is rebuilt (_reset_review_refine_cache).
+        self._auto_reslice_cache: dict = {"key": None, "geoms": {}}
+        # Review provider mapping: det_id -> (provider_fid, stamp, is_full,
+        # score), the review twin of _auto_live_fid_map. Lets a reslice or a
+        # confidence-drag tick update the selection layer incrementally
+        # (add/change/delete only the delta) instead of truncating + re-adding
+        # every feature. Reset whenever the selection layer is (re)created.
+        self._review_fid_map: dict = {}
 
     @staticmethod
     def _safe_remove_rubber_band(rb):
@@ -538,6 +615,11 @@ class AISegmentationPlugin(
         self.map_tool = AISegmentationMapTool(self.iface.mapCanvas())
         self.map_tool.positive_click.connect(self._on_positive_click)
         self.map_tool.negative_click.connect(self._on_negative_click)
+        # Refine-handoff selection model: double-click opens a detection for
+        # editing, cursor motion drives the hover highlight (both no-op outside
+        # the handoff).
+        self.map_tool.double_click.connect(self._on_canvas_double_click)
+        self.map_tool.cursor_moved.connect(self._on_handoff_cursor_moved)
         self.map_tool.tool_deactivated.connect(self._on_tool_deactivated)
         self.map_tool.undo_requested.connect(self._on_undo)
         self.map_tool.save_polygon_requested.connect(self._on_save_polygon)
@@ -648,10 +730,24 @@ class AISegmentationPlugin(
         QTimer.singleShot(0, _apply)
 
     def _on_project_read_sweep_temp(self, *_args):
-        """Remove stale Private working layers a saved project brought back."""
+        """Remove stale Private working layers a saved project brought back.
+
+        Deferred one event-loop turn: removing layers WHILE QGIS is still
+        restoring the project races the snapping-config restore and leaves a
+        dangling layer pointer in QgsSnappingConfig, which then crashes the
+        NEXT project save (often the save-on-exit; upstream qgis/QGIS#42651).
+        """
         try:
-            from ..core.output_store import sweep_stale_temp_layers
-            sweep_stale_temp_layers()
+            from qgis.PyQt.QtCore import QTimer
+
+            def _sweep():
+                try:
+                    from ..core.output_store import sweep_stale_temp_layers
+                    sweep_stale_temp_layers()
+                except Exception:  # nosec B110
+                    pass
+
+            QTimer.singleShot(0, _sweep)
         except Exception:  # nosec B110
             pass
 
@@ -722,6 +818,7 @@ class AISegmentationPlugin(
                 (self.dock_widget.undo_requested, self._on_undo),
                 (self.dock_widget.stop_segmentation_requested, self._on_stop_segmentation),
                 (self.dock_widget.refine_settings_changed, self._on_refine_settings_changed),
+                (self.dock_widget.size_filter_changed, self._on_size_filter_changed),
                 (self.dock_widget.settings_clicked, self._on_settings_clicked),
                 (self.dock_widget.pairing_requested, self._on_pairing_requested),
                 (self.dock_widget.pairing_cancel_requested, self._on_cancel_pairing),
@@ -742,10 +839,14 @@ class AISegmentationPlugin(
                 (self.dock_widget.auto_retry_requested, self._on_auto_retry_clicked),
                 (self.dock_widget.auto_review_exit_requested, self._on_auto_review_exit_clicked),
                 (self.dock_widget.auto_display_mode_changed, self._on_auto_display_mode_changed),
+                (self.dock_widget.auto_merge_override_requested,
+                 self._on_auto_merge_override_requested),
                 (self.dock_widget.auto_library_requested, self._on_auto_library_clicked),
                 (self.dock_widget.auto_demo_requested, self._on_auto_demo_requested),
                 (self.dock_widget.auto_refine_in_manual_requested, self._on_refine_in_manual_clicked),
                 (self.dock_widget.back_to_review_requested, self._on_back_to_review_clicked),
+                (self.dock_widget.handoff_edit_requested, self._on_handoff_edit_clicked),
+                (self.dock_widget.handoff_delete_requested, self._on_handoff_delete_clicked),
                 (self.dock_widget.auto_exit_requested, self._on_auto_exit_clicked),
                 (self.dock_widget.auto_add_exemplar_requested, self._on_add_exemplar_requested),
                 (self.dock_widget.auto_exemplar_retry_requested, self._on_auto_exemplar_retry_clicked),
@@ -809,6 +910,7 @@ class AISegmentationPlugin(
         self._cancel_task("_usage_fetch_task")
         self._cancel_task("_warmup_task")
         self._cancel_task("_auto_run_plan_task")
+        self._cancel_task("_auto_token_task")
 
         # 3. Disconnect worker signals before termination to prevent callbacks on deleted UI
         _qthread_workers = [
@@ -1001,6 +1103,7 @@ class AISegmentationPlugin(
         self.dock_widget.undo_requested.connect(self._on_undo)
         self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
         self.dock_widget.refine_settings_changed.connect(self._on_refine_settings_changed)
+        self.dock_widget.size_filter_changed.connect(self._on_size_filter_changed)
         self.dock_widget.settings_clicked.connect(self._on_settings_clicked)
         self.dock_widget.pairing_requested.connect(self._on_pairing_requested)
         self.dock_widget.pairing_cancel_requested.connect(self._on_cancel_pairing)
@@ -1026,9 +1129,14 @@ class AISegmentationPlugin(
         self.dock_widget.auto_retry_requested.connect(self._on_auto_retry_clicked)
         self.dock_widget.auto_review_exit_requested.connect(self._on_auto_review_exit_clicked)
         self.dock_widget.auto_display_mode_changed.connect(self._on_auto_display_mode_changed)
+        self.dock_widget.auto_merge_override_requested.connect(
+            self._on_auto_merge_override_requested)
         self.dock_widget.auto_refine_in_manual_requested.connect(
             self._on_refine_in_manual_clicked)
         self.dock_widget.back_to_review_requested.connect(self._on_back_to_review_clicked)
+        # Handoff state-card actions (Edit shape / Remove).
+        self.dock_widget.handoff_edit_requested.connect(self._on_handoff_edit_clicked)
+        self.dock_widget.handoff_delete_requested.connect(self._on_handoff_delete_clicked)
         self.dock_widget.auto_exit_requested.connect(self._on_auto_exit_clicked)
         # Visual exemplar controls (+ Example / + Exclude / chip remove).
         self.dock_widget.auto_add_exemplar_requested.connect(self._on_add_exemplar_requested)

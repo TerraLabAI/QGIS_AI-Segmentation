@@ -46,17 +46,27 @@ except OSError as e:
     sys.stdout = _real_stdout
     err_str = str(e)
     err_lower = err_str.lower()
-    # Detect Application Control / AppLocker blocking DLL loading
+    # Detect Application Control / AppLocker blocking DLL loading. This
+    # worker runs standalone in the venv (no plugin imports), so the
+    # pattern list mirrors pip_diagnostics._APP_CONTROL_PATTERNS: the
+    # locale-independent "4551" code plus localized Windows wordings.
     if any(m in err_lower for m in (
         "application control", "applocker", "blocked by your organization",
-        "blocked by group policy",
+        "blocked by group policy", "winerror 4551", "os error 4551",
+        "control de aplicaciones",                # es
+        "strategie de controle d'application",    # fr (accents stripped)
+        "stratégie de contrôle d'application",    # fr
+        "beleid voor toepassingsbeheer",          # nl
     )):
         error_msg = {
             "type": "error",
             "message": (
-                "A security policy is blocking the AI engine.\n\n"
-                "Ask your IT administrator to whitelist the plugin's "
-                "Python environment folder, then restart QGIS."
+                "Your organization's security policy is blocking the "
+                "AI engine.\n\n"
+                "Ask your IT administrator to add a path-based allow rule "
+                "for the plugin's environment folder "
+                "(~/.qgis_ai_segmentation). One rule keeps working across "
+                "updates. Then restart QGIS."
             ),
         }
     # Catch Windows DLL loading errors (shm.dll, etc.)

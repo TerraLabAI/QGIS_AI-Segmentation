@@ -80,10 +80,19 @@ class ShortcutFilter(QObject):
             if getattr(plugin, "_on_delete_active_object", None):
                 plugin._on_delete_active_object()
                 return True
-        # Plain Backspace (no modifier) = undo the last click, mirroring the
-        # zone-draw tool's Backspace-undo. Kept AFTER the modifier branch
-        # above so Ctrl/Cmd+Backspace keeps meaning delete, never undo.
+        # Plain Backspace (no modifier): on Mac keyboards the big delete key
+        # IS Backspace, so with detections SELECTED and nothing open for
+        # editing it must delete the selection (like Key_Delete), never fall
+        # into undo and resurrect an unrelated saved polygon. Otherwise it
+        # stays undo-the-last-click, mirroring the zone-draw tool. Kept AFTER
+        # the modifier branch above so Ctrl/Cmd+Backspace keeps meaning delete.
         if key == Qt.Key.Key_Backspace and not modifiers:
+            if (getattr(plugin, "_handoff_selected_entries", None)
+                    and plugin.current_mask is None  # noqa: W503
+                    and not plugin._active_crop_points_positive  # noqa: W503
+                    and getattr(plugin, "_on_delete_active_object", None)):  # noqa: W503
+                plugin._on_delete_active_object()
+                return True
             plugin._on_undo()
             return True
         if (key == Qt.Key.Key_S
@@ -92,10 +101,22 @@ class ShortcutFilter(QObject):
                                       | Qt.KeyboardModifier.ShiftModifier))):  # noqa: W503
             plugin._on_save_polygon()
             return True
+        # E opens the single selected detection for SAM editing (the keyboard
+        # twin of the second click / double-click).
+        if (key == Qt.Key.Key_E and not modifiers
+                and getattr(plugin, "_edit_selected_saved_polygon", None)):  # noqa: W503
+            if plugin._edit_selected_saved_polygon():
+                return True
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             plugin._on_export_layer()
             return True
         if key == Qt.Key.Key_Escape:
+            # Selection-first: Esc clears the selection before it ever means
+            # "stop the session".
+            if (getattr(plugin, "_handoff_selected_entries", None)
+                    and getattr(plugin, "_deselect_saved_polygons", None)):  # noqa: W503
+                plugin._deselect_saved_polygons()
+                return True
             plugin._on_stop_segmentation()
             return True
         if key in (Qt.Key.Key_Left, Qt.Key.Key_Right,

@@ -24,7 +24,10 @@ from qgis.PyQt.QtWidgets import (
 from ...core.i18n import tr
 from .styles import (
     _BTN_BLUE_PRIMARY,
+    BRAND_BLUE,
+    BRAND_BLUE_HOVER,
     BRAND_GREEN,
+    BTN_GREEN,
 )
 
 
@@ -133,7 +136,7 @@ def build_no_imagery_hero(on_demo, *, glyph: str = "🗺️"):
     col.addLayout(_div)
     col.addSpacing(2)
 
-    demo_btn = QPushButton(tr("Try it on an example"))
+    demo_btn = QPushButton(tr("Load example imagery"))
     demo_btn.setCursor(Qt.CursorShape.PointingHandCursor)
     demo_btn.setMinimumHeight(30)
     demo_btn.setStyleSheet(_BTN_BLUE_PRIMARY)
@@ -332,7 +335,7 @@ _MODE_SWITCH_QSS = (
     "  border: 1px solid rgba(128,128,128,0.22);"
     "  border-radius: 8px;"
     "}"
-    "QPushButton {"
+    "QPushButton {"  # ui-ok: segment halves of the mode switch, a self-contained component
     "  background: transparent;"
     "  border: none;"
     "  border-radius: 6px;"
@@ -344,12 +347,12 @@ _MODE_SWITCH_QSS = (
     "  background: rgba(128,128,128,0.18);"
     "}"
     'QPushButton:checked[mode="interactive"] {'
-    "  background: #43a047;"
+    f"  background: {BTN_GREEN};"
     "  color: #ffffff;"
     "  font-weight: 600;"
     "}"
     'QPushButton:checked[mode="automatic"] {'
-    "  background: #1e88e5;"
+    f"  background: {BRAND_BLUE};"
     "  color: #ffffff;"
     "  font-weight: 600;"
     "}"
@@ -391,9 +394,9 @@ class _ModeSwitch(QFrame):
         # and the grey inactive container.
         self._pro_badge = QLabel("PRO", self)
         self._pro_badge.setStyleSheet(
-            "background-color: rgba(255,255,255,0.92); color: #1565c0;"
+            "background-color: rgba(255,255,255,0.92); color: {blue};"
             " border-radius: 3px; padding: 0px 4px;"
-            " font-size: 9px; font-weight: bold;"
+            " font-size: 9px; font-weight: bold;".format(blue=BRAND_BLUE)
         )
         self._pro_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._pro_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -506,12 +509,13 @@ def checkbox_indicator_qss(dock) -> str:
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(*box, 4, 4)
         p.end()
-        # Checked: brand-blue filled box + white check.
+        # Checked: brand-blue filled box + white check (the darker hover
+        # shade reads better than the base blue behind a white checkmark).
         pm_on = QPixmap(sz, sz)
         pm_on.fill(Qt.GlobalColor.transparent)
         p = QPainter(pm_on)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        blue = QColor("#1976d2")
+        blue = QColor(BRAND_BLUE_HOVER)
         p.setPen(QPen(blue, 1.5))
         p.setBrush(blue)
         p.drawRoundedRect(*box, 4, 4)

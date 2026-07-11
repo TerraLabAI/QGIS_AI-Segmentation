@@ -19,10 +19,22 @@ from .install_lock import InstallLock
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA, SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN
 from .pip_diagnostics import (
+    get_app_control_help as _get_app_control_help,
+)
+from .pip_diagnostics import (
     get_crash_help as _get_crash_help,
 )
 from .pip_diagnostics import (
+    get_disk_full_help as _get_disk_full_help,
+)
+from .pip_diagnostics import (
     get_file_locked_help as _get_file_locked_help,
+)
+from .pip_diagnostics import (
+    get_glibc_too_old_help as _get_glibc_too_old_help,
+)
+from .pip_diagnostics import (
+    get_macos_intel_help as _get_macos_intel_help,
 )
 from .pip_diagnostics import (
     get_pip_antivirus_help as _get_pip_antivirus_help,
@@ -40,13 +52,25 @@ from .pip_diagnostics import (
     is_antivirus_error as _is_antivirus_error,
 )
 from .pip_diagnostics import (
+    is_app_control_error as _is_app_control_error,
+)
+from .pip_diagnostics import (
+    is_disk_full as _is_disk_full,
+)
+from .pip_diagnostics import (
     is_dll_init_error as _is_dll_init_error,
 )
 from .pip_diagnostics import (
     is_file_locked_error as _is_file_locked_error,
 )
 from .pip_diagnostics import (
+    is_glibc_too_old as _is_glibc_too_old,
+)
+from .pip_diagnostics import (
     is_hash_mismatch as _is_hash_mismatch,
+)
+from .pip_diagnostics import (
+    is_macos_intel_no_wheel as _is_macos_intel_no_wheel,
 )
 from .pip_diagnostics import (
     is_network_error as _is_network_error,
@@ -822,6 +846,41 @@ def venv_exists(venv_dir: str = None) -> bool:
 
     python_path = get_venv_python_path(venv_dir)
     return os.path.exists(python_path)
+
+
+def purge_package_from_venv(package_name: str, venv_dir: str = None) -> None:
+    """Best-effort removal of one package's artifacts from site-packages.
+
+    Used before a repair install when a package is present but broken
+    (import fails, dist-info quarantined by antivirus): pip can consider
+    such a package already satisfied and skip it, leaving the breakage in
+    place. Removing the import dir, the bundled-libs dir and the dist-info
+    guarantees the next install lays down a fresh wheel. Never raises.
+    """
+    if venv_dir is None:
+        venv_dir = VENV_DIR
+    site_packages = get_venv_site_packages(venv_dir)
+    if not site_packages or not os.path.isdir(site_packages):
+        return
+    dir_name = package_name.replace("-", "_")
+    targets = [
+        os.path.join(site_packages, dir_name),
+        # delvewheel-repaired Windows wheels keep native DLLs next to the
+        # package (e.g. rasterio.libs); a stale copy would shadow the fresh one
+        os.path.join(site_packages, dir_name + ".libs"),
+    ]
+    targets.extend(glob.glob(os.path.join(site_packages, f"{dir_name}-*.dist-info")))
+    for target in targets:
+        if not os.path.exists(target):
+            continue
+        try:
+            if os.path.isdir(target):
+                shutil.rmtree(_win_extended_path(target), ignore_errors=True)
+            else:
+                os.remove(target)
+            _log(f"Purged broken package artifact: {target}", Qgis.MessageLevel.Info)
+        except OSError as e:
+            _log(f"Could not purge {target}: {e}", Qgis.MessageLevel.Warning)
 
 
 def _cleanup_partial_venv(venv_dir: str):
@@ -2128,6 +2187,26 @@ def install_dependencies(
                     )
                     return False, f"Failed to install {package_name}: proxy authentication required (407)"
 
+                # An application-control policy (AppLocker/WDAC) needs the
+                # IT allow-rule guidance, not the antivirus advice below.
+                # The "application control" marker must survive into the
+                # returned message so the install-failed dialog routes it.
+                if _is_app_control_error(install_error_msg):
+                    _log(_get_app_control_help(CACHE_DIR), Qgis.MessageLevel.Warning)
+                    return False, (
+                        f"Failed to install {package_name}: blocked by an "
+                        "application control policy"
+                    )
+
+                # Check for disk-full errors: the 4 GB preflight can still
+                # miss a mid-extract ENOSPC (torch/CUDA wheels are large).
+                # Must run BEFORE the antivirus check below: a failed write
+                # from a full disk also surfaces as a Windows permission
+                # error, which that classifier would otherwise misattribute.
+                if _is_disk_full(install_error_msg):
+                    _log(_get_disk_full_help(CACHE_DIR), Qgis.MessageLevel.Warning)
+                    return False, f"Failed to install {package_name}: no space left on device"
+
                 # Check for antivirus/security-policy blocking BEFORE the
                 # network branch: a permission block inside a download step
                 # matches both classifiers, and "check your firewall" is the
@@ -2145,6 +2224,24 @@ def install_dependencies(
                         Qgis.MessageLevel.Warning
                     )
                     return False, f"Failed to install {package_name}: network error"
+
+                # Linux distro too old for the current manylinux wheels: a more
+                # specific, actionable variant of the generic platform-tag
+                # branch below, so it must run first.
+                if sys.platform.startswith("linux") and _is_glibc_too_old(install_error_msg):
+                    _log(_get_glibc_too_old_help(), Qgis.MessageLevel.Warning)
+                    return False, f"Failed to install {package_name}: glibc too old for this AI engine"
+
+                # Intel macOS with a Python newer than PyTorch's last Intel-mac
+                # wheel (2.2.2, cp38-cp312): same underlying pip message as the
+                # generic branch below, but this one has a real fix. Also self-
+                # gated on darwin/x86_64 inside the classifier.
+                if _is_macos_intel_no_wheel(install_error_msg):
+                    _log(_get_macos_intel_help(), Qgis.MessageLevel.Warning)
+                    return False, (
+                        f"Failed to install {package_name}: no AI engine build for "
+                        "this Intel Mac + Python version"
+                    )
 
                 # Check for platform-unsupported wheels
                 if "no matching platform tag" in install_error_msg.lower():
@@ -2169,7 +2266,10 @@ def install_dependencies(
                         _log(gdal_help, Qgis.MessageLevel.Warning)
                         return False, f"Failed to install {package_name}: GDAL library not found"
 
-                return False, f"Failed to install {package_name}: {install_error_msg[:200]}"
+                # Carry the TAIL of the error, not the head: the real error is
+                # logged from the tail above, and downstream classifiers
+                # (env_setup.py) match keywords against this returned string.
+                return False, f"Failed to install {package_name}: {install_error_msg[-400:]}"
 
         # Post-install numpy version safety net:
         # Check and force-downgrade if needed.
@@ -2481,6 +2581,15 @@ def verify_venv(
                 # folder, NOT to reinstall or install a VC++ runtime. Checked
                 # BEFORE the DLL branch, which the same "DLL load failed" text
                 # would otherwise trigger (#bug-kees).
+                if _is_app_control_error(full_error):
+                    # Managed policy: keep the returned message short with the
+                    # "application control" marker so the verify-failed dialog
+                    # routes it to the IT allow-rule guidance.
+                    _log(_get_app_control_help(CACHE_DIR), Qgis.MessageLevel.Warning)
+                    return False, (
+                        f"Package {package_name} is blocked by an application "
+                        "control policy"
+                    )
                 if _is_antivirus_error(full_error):
                     _log(_get_pip_antivirus_help(venv_dir), Qgis.MessageLevel.Warning)
                     return False, (
@@ -2629,13 +2738,11 @@ def verify_venv(
                         if name == package_name:
                             pkg_spec = f"{name}{spec}"
                             break
-                    reinstall_cmd = [
-                        python_path, "-m", "pip", "install",
-                        "--force-reinstall", "--no-deps",
-                        "--disable-pip-version-check",
-                        "--prefer-binary",
-                        pkg_spec,
-                    ]
+                    reinstall_cmd = _build_install_cmd(
+                        python_path,
+                        ["install", "--force-reinstall", "--no-deps",
+                         "--disable-pip-version-check",
+                         "--prefer-binary", pkg_spec])
                     try:
                         subprocess.run(  # nosec B603
                             reinstall_cmd,
@@ -3126,11 +3233,38 @@ def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
         if name != "setuptools"
     }
 
+    # Installed-distribution metadata present in site-packages. A package dir
+    # can survive while its *.dist-info was quarantined by antivirus or lost
+    # to an interrupted install; pip then no longer knows the package exists
+    # and the import is usually broken too. Requiring the dist-info catches
+    # that "phantom ready" state (panel says ready, first crop fails with
+    # "rasterio is not available") while staying filesystem-only.
+    def _norm(name: str) -> str:
+        return re.sub(r"[-_.]+", "_", name).lower()
+
+    try:
+        dist_names = {
+            _norm(entry.split("-", 1)[0])
+            for entry in os.listdir(site_packages)
+            if entry.endswith(".dist-info")
+        }
+    except OSError as e:
+        _log(f"Quick check: cannot list site-packages: {e}",
+             Qgis.MessageLevel.Warning)
+        return False, "site-packages directory not readable"
+
     for package_name, dir_name in package_markers.items():
         pkg_dir = os.path.join(site_packages, dir_name)
         if not os.path.exists(pkg_dir):
             _log(f"Quick check: {package_name} not found at {pkg_dir}", Qgis.MessageLevel.Warning)
             return False, f"Package {package_name} not found"
+        if _norm(package_name) not in dist_names:
+            _log(
+                f"Quick check: {package_name} has no dist-info in "
+                f"{site_packages} (broken install, e.g. antivirus quarantine)",
+                Qgis.MessageLevel.Warning,
+            )
+            return False, f"Package {package_name} is damaged"
 
     _log(f"Quick check: all packages found in {site_packages}",
          Qgis.MessageLevel.Info)

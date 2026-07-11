@@ -69,7 +69,7 @@ def _store_to_auth_manager(key: str) -> str:
 def get_activation_key(settings=None) -> str:
     s = settings or QgsSettings()
     authcfg_id = s.value(_AUTHCFG_KEY, "", type=str)
-    if authcfg_id:
+    if authcfg_id and _can_use_auth_manager():
         key = _read_from_auth_manager(authcfg_id)
         if key:
             return key

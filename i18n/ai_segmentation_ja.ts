@@ -4,10 +4,6 @@
 <context>
     <name>AISegmentation</name>
     <message>
-        <source>Display colors:</source>
-        <translation>表示カラー:</translation>
-    </message>
-    <message>
         <source>Normal</source>
         <translation>通常</translation>
     </message>
@@ -22,10 +18,6 @@
     <message>
         <source>Outline</source>
         <translation>輪郭</translation>
-    </message>
-    <message>
-        <source>How detections are coloured on the map (visual only): Normal outline, Confidence heatmap (green sure, red uncertain), or a random colour per object to tell them apart.</source>
-        <translation>検出結果を地図上でどう色分けするか(表示のみ): 通常の輪郭表示、信頼度ヒートマップ(緑が確実、赤が不確実)、またはオブジェクトごとに異なるランダムな色で区別する表示です。</translation>
     </message>
     <message>
         <source>Retry</source>
@@ -48,26 +40,6 @@
         <translation>検出したいものを入力</translation>
     </message>
     <message>
-        <source>solar panel, building, tree…</source>
-        <translation>太陽光パネル、建物、木…</translation>
-    </message>
-    <message>
-        <source>1-2 words, English</source>
-        <translation>1〜2語、英語で</translation>
-    </message>
-    <message>
-        <source>optional</source>
-        <translation>任意</translation>
-    </message>
-    <message>
-        <source>Show an example</source>
-        <translation>例を示す</translation>
-    </message>
-    <message>
-        <source>Outline one object; the AI finds the rest. No good name for it? Examples alone work too.</source>
-        <translation>1つのオブジェクトを描くと、AIが残りを見つけます。良い名前が思いつかない場合は、例だけでも機能します。</translation>
-    </message>
-    <message>
         <source>Exclude a look-alike</source>
         <translation>似ているものを除外</translation>
     </message>
@@ -88,14 +60,6 @@
         <translation>例による一致検索</translation>
     </message>
     <message>
-        <source>Include</source>
-        <translation>含める</translation>
-    </message>
-    <message>
-        <source>Exclude</source>
-        <translation>除外</translation>
-    </message>
-    <message>
         <source>Mark an object to find more like it.</source>
         <translation>オブジェクトを指定すると、似たものをさらに検出します。</translation>
     </message>
@@ -104,104 +68,12 @@
         <translation>誤検出を指定すると、似たものを除外します。</translation>
     </message>
     <message>
-        <source>Draw on map</source>
-        <translation>地図上に描く</translation>
-    </message>
-    <message>
-        <source>Outline one object on the map; SAM finds all similar ones.</source>
-        <translation>地図上で1つのオブジェクトを描くと、SAMが似たものをすべて検出します。</translation>
-    </message>
-    <message>
         <source>Finer detail finds smaller objects.</source>
         <translation>詳細度を上げるほど小さなオブジェクトを検出できます。</translation>
     </message>
     <message>
-        <source>{n} object(s) detected</source>
-        <translation>{n} 件のオブジェクトを検出</translation>
-    </message>
-    <message>
-        <source>Adjust below, then export</source>
-        <translation>以下で調整してからExport</translation>
-    </message>
-    <message>
         <source>Refine in Manual mode</source>
         <translation>手動モードで調整</translation>
-    </message>
-    <message>
-        <source>Some objects off? Refine them in Manual mode first.</source>
-        <translation>一部のオブジェクトが正しくない場合は、まず手動モードで調整してください。</translation>
-    </message>
-    <message>
-        <source>Now outline one object on the map, then double-click to finish.</source>
-        <translation>地図上で1つのオブジェクトを描き、ダブルクリックで終了してください。</translation>
-    </message>
-    <message>
-        <source>Now outline one false positive on the map, then double-click to finish.</source>
-        <translation>地図上で誤検出を1つ描き、ダブルクリックで終了してください。</translation>
-    </message>
-    <message>
-        <source>Refine in Manual</source>
-        <translation>手動モードで調整</translation>
-    </message>
-    <message>
-        <source>Open these detections in Manual mode to fix specific objects with point-and-click, then return here to Finish.</source>
-        <translation>これらの検出結果を手動モードで開き、クリック操作で個々のオブジェクトを修正した後、ここに戻って「完了」してください。</translation>
-    </message>
-    <message>
-        <source>Refining Automatic results</source>
-        <translation>自動検出結果を調整中</translation>
-    </message>
-    <message>
-        <source>Fine-tune the detections, then go back to review to export.</source>
-        <translation>検出結果を調整し、レビューに戻ってExportしてください。</translation>
-    </message>
-    <message>
-        <source>Editing this detection.</source>
-        <translation>この検出結果を編集中です。</translation>
-    </message>
-    <message>
-        <source>Editing this detection</source>
-        <translation>この検出結果を編集中</translation>
-    </message>
-    <message>
-        <source>adds area</source>
-        <translation>領域を追加</translation>
-    </message>
-    <message>
-        <source>removes area</source>
-        <translation>領域を削除</translation>
-    </message>
-    <message>
-        <source>keeps it (turns green)</source>
-        <translation>保持します(緑になります)</translation>
-    </message>
-    <message>
-        <source>removes the object</source>
-        <translation>オブジェクトを削除します</translation>
-    </message>
-    <message>
-        <source>Press S to keep it (turns green) · Delete removes it</source>
-        <translation>S キーで保持(緑になります) · Delete で削除</translation>
-    </message>
-    <message>
-        <source>Click a blue detection to open it for editing.</source>
-        <translation>青色の検出結果をクリックすると編集できます。</translation>
-    </message>
-    <message>
-        <source>Left-click adds area, right-click removes it. Press S to keep it (turns green).</source>
-        <translation>左クリックで領域を追加、右クリックで削除します。S キーで保持(緑になります)。</translation>
-    </message>
-    <message>
-        <source>{kept} of {total} kept - 'Back to review' to export.</source>
-        <translation>{total} 件中 {kept} 件を保持 - Export するには「レビューに戻る」。</translation>
-    </message>
-    <message>
-        <source>Back to review</source>
-        <translation>レビューに戻る</translation>
-    </message>
-    <message>
-        <source>Finish or go back to review to switch modes.</source>
-        <translation>モードを切り替えるには、完了するかレビューに戻ってください。</translation>
     </message>
     <message>
         <source>Finish or exit the review to switch modes.</source>
@@ -212,28 +84,8 @@
         <translation>手動モードを準備中、ローカルモデルを読み込んでいます...</translation>
     </message>
     <message>
-        <source>Blue = detections to review, one at a time.</source>
-        <translation>青 = レビュー待ちの検出結果(1件ずつ確認します)。</translation>
-    </message>
-    <message>
-        <source>Left-click a detection to edit it (adds area); right-click to remove a part</source>
-        <translation>左クリックで検出結果を編集(領域を追加)、右クリックで一部を削除</translation>
-    </message>
-    <message>
-        <source>Press S to validate it (turns green), then move on to the next one.</source>
-        <translation>S キーで確定(緑になります)し、次に進んでください。</translation>
-    </message>
-    <message>
         <source>Locked - refined in Manual mode</source>
         <translation>ロック中 - 手動モードで調整済み</translation>
-    </message>
-    <message>
-        <source>Confidence is locked while you refine in Manual mode.</source>
-        <translation>手動モードで調整している間、信頼度はロックされます。</translation>
-    </message>
-    <message>
-        <source>Refining in Manual needs the local model. Open Manual mode once to finish setup, then try again.</source>
-        <translation>手動モードでの調整にはローカルモデルが必要です。手動モードを一度開いて設定を完了し、再試行してください。</translation>
     </message>
     <message>
         <source>Detection</source>
@@ -466,18 +318,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>ラスタレイヤを選択(GeoTIFF、WMS、XYZタイルなど)</translation>
     </message>
     <message>
-        <source>No raster layer found. Add a GeoTIFF, image file, or online layer (WMS, XYZ) to your project.</source>
-        <translation>ラスタレイヤが見つかりません。GeoTIFF、画像ファイル、またはオンラインレイヤ(WMS、XYZ)をプロジェクトに追加してください。</translation>
-    </message>
-    <message>
-        <source>No layer found. Add a raster or online layer to your project.</source>
-        <translation>レイヤが見つかりません。ラスタまたはオンラインレイヤをプロジェクトに追加してください。</translation>
-    </message>
-    <message>
-        <source>Start AI Segmentation</source>
-        <translation>AI Segmentationを開始</translation>
-    </message>
-    <message>
         <source>Save polygon</source>
         <translation>ポリゴンを保存</translation>
     </message>
@@ -512,14 +352,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>Click and drag to pan the map</source>
         <translation>クリックしてドラッグすると地図がパンします</translation>
-    </message>
-    <message>
-        <source>Shortcuts</source>
-        <translation>ショートカット</translation>
-    </message>
-    <message>
-        <source>Save current polygon to your session</source>
-        <translation>現在のポリゴンをセッションに保存</translation>
     </message>
     <message>
         <source>The AI model works best on one element at a time.</source>
@@ -564,14 +396,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>Fill interior holes in the selection</source>
         <translation>選択範囲内の穴を埋めます</translation>
-    </message>
-    <message>
-        <source>Min area:</source>
-        <translation>最小面積:</translation>
-    </message>
-    <message>
-        <source>Remove polygons smaller than this area (in pixels)</source>
-        <translation>この面積(ピクセル単位)より小さいポリゴンを除外します</translation>
     </message>
     <message>
         <source>Shape</source>
@@ -630,10 +454,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>SAMモデルの読み込みが完了するまでお待ちください。</translation>
     </message>
     <message>
-        <source>Load Failed</source>
-        <translation>読み込み失敗</translation>
-    </message>
-    <message>
         <source>Layer Creation Failed</source>
         <translation>レイヤの作成に失敗</translation>
     </message>
@@ -648,10 +468,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>Could not save layer to file:</source>
         <translation>レイヤをファイルに保存できませんでした:</translation>
-    </message>
-    <message>
-        <source>Layer was saved but could not be loaded:</source>
-        <translation>レイヤは保存されましたが読み込めませんでした:</translation>
     </message>
     <message>
         <source>You have {count} unsaved polygon(s).</source>
@@ -678,10 +494,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>保持するには「レイヤへExport」を使用してください。</translation>
     </message>
     <message>
-        <source>This will end the current segmentation session.</source>
-        <translation>現在のセグメンテーションセッションが終了します。</translation>
-    </message>
-    <message>
         <source>Do you want to continue?</source>
         <translation>続けますか?</translation>
     </message>
@@ -694,24 +506,12 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>警告: 既に保存済みのポリゴンを編集しようとしています。</translation>
     </message>
     <message>
-        <source>New to AI Segmentation?</source>
-        <translation>AI Segmentationを初めて使いますか?</translation>
-    </message>
-    <message>
-        <source>Watch our tutorial</source>
-        <translation>チュートリアルを見る</translation>
-    </message>
-    <message>
         <source>Contact us</source>
         <translation>お問い合わせ</translation>
     </message>
     <message>
         <source>Bug, question, feature request?</source>
         <translation>バグ報告、質問、機能リクエストはありますか?</translation>
-    </message>
-    <message>
-        <source>We'd love to hear from you!</source>
-        <translation>ぜひご意見をお聞かせください!</translation>
     </message>
     <message>
         <source>Copy email address</source>
@@ -734,10 +534,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>設定</translation>
     </message>
     <message>
-        <source>Help</source>
-        <translation>ヘルプ</translation>
-    </message>
-    <message>
         <source>Terms</source>
         <translation>利用規約</translation>
     </message>
@@ -758,12 +554,12 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>AIでラスタ画像上の要素をセグメント化</translation>
     </message>
     <message>
-        <source>Copy your logs with the button below and send them to our email.</source>
-        <translation>下のボタンでログをコピーし、メールで送信してください。</translation>
+        <source>Copy your logs with the button below and send them to our support email.</source>
+        <translation>下のボタンでログをコピーし、サポート宛のメールアドレスに送信してください。</translation>
     </message>
     <message>
-        <source>We'll fix your issue :)</source>
-        <translation>問題を解決します :)</translation>
+        <source>We'll get this fixed for you :)</source>
+        <translation>こちらで対応いたします :)</translation>
     </message>
     <message>
         <source>1. Click to copy logs</source>
@@ -792,14 +588,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>Click is outside the &apos;{layer}&apos; raster. To segment another raster, stop the current segmentation first.</source>
         <translation>クリック位置がラスタ「{layer}」の外側です。別のラスタをセグメント化するには、まず現在のセグメンテーションを停止してください。</translation>
-    </message>
-    <message>
-        <source>Big update dropped — v{version} is here!</source>
-        <translation>大型アップデート登場 — v{version} が公開されました!</translation>
-    </message>
-    <message>
-        <source>Grab it now</source>
-        <translation>今すぐ入手</translation>
     </message>
     <message>
         <source>{ext} format is not directly supported. GDAL is not available.
@@ -858,10 +646,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>オンラインレイヤからタイルを取得できませんでした。ネットワーク接続を確認してください。</translation>
     </message>
     <message>
-        <source>Online layer returned blank tiles for this area. Try panning to an area with data coverage.</source>
-        <translation>この範囲ではオンラインレイヤが空のタイルを返しました。データが存在する範囲に移動してみてください。</translation>
-    </message>
-    <message>
         <source>Crop Error</source>
         <translation>切り出しエラー</translation>
     </message>
@@ -878,22 +662,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>バグを報告</translation>
     </message>
     <message>
-        <source>Disconnected parts detected in your polygon.</source>
-        <translation>ポリゴン内に分断された部分が検出されました。</translation>
-    </message>
-    <message>
-        <source>For best accuracy, segment one element at a time.</source>
-        <translation>精度を高めるには、一度に1つの要素をセグメント化してください。</translation>
-    </message>
-    <message>
-        <source>Layer: {}</source>
-        <translation>レイヤ: {}</translation>
-    </message>
-    <message>
-        <source>Polygon saved! Click on another element to segment, or export your polygons.</source>
-        <translation>ポリゴンを保存しました!別の要素をクリックしてセグメント化するか、ポリゴンをExportしてください。</translation>
-    </message>
-    <message>
         <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
         <translation>分断された部分が検出されました。精度を高めるには、一度に1つの要素をセグメント化してください。</translation>
     </message>
@@ -906,32 +674,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>更新中...</translation>
     </message>
     <message>
-        <source>Check for Updates</source>
-        <translation>更新を確認</translation>
-    </message>
-    <message>
-        <source>More from TerraLab...</source>
-        <translation>TerraLabの他のツール...</translation>
-    </message>
-    <message>
         <source>Missing Visual C++ Redistributable. Install it, restart your computer, then click Retry.</source>
         <translation>Visual C++ Redistributableが見つかりません。インストールしてコンピュータを再起動し、「再試行」をクリックしてください。</translation>
     </message>
     <message>
         <source>Retry</source>
         <translation>再試行</translation>
-    </message>
-    <message>
-        <source>Cannot Write Export</source>
-        <translation>Exportを書き込めません</translation>
-    </message>
-    <message>
-        <source>Cannot create export directory '{path}': {reason}</source>
-        <translation>Exportディレクトリ「{path}」を作成できません: {reason}</translation>
-    </message>
-    <message>
-        <source>The export directory '{path}' is not writable. Choose a different location.</source>
-        <translation>Exportディレクトリ「{path}」に書き込めません。別の場所を選択してください。</translation>
     </message>
     <message>
         <source>Loading AI model...</source>
@@ -950,10 +698,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>モデルの読み込みに失敗しました</translation>
     </message>
     <message>
-        <source>Click landed outside the current element — segment one element at a time. Saving the current selection and starting a new one.</source>
-        <translation>クリック位置が現在の要素の外側でした — 一度に1つの要素をセグメント化してください。現在の選択を保存し、新しい要素を開始します。</translation>
-    </message>
-    <message>
         <source>New here?</source>
         <translation>初めてご利用ですか?</translation>
     </message>
@@ -970,68 +714,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>接続が不安定またはブロックされている可能性があります。次を確認してください: (1) インターネット接続が有効であること、(2) 社内ネットワークを使用している場合はQGIS &gt;「設定」&gt;「オプション」&gt;「ネットワーク」でプロキシが設定されていること、(3) ファイアウォールがpypi.orgおよびfiles.pythonhosted.orgへの接続を許可していること。</translation>
     </message>
     <message>
-        <source>Sign in to TerraLab</source>
-        <translation>TerraLabにサインイン</translation>
-    </message>
-    <message>
-        <source>Two steps to start using AI Segmentation</source>
-        <translation>AI Segmentationの利用開始まで2ステップ</translation>
-    </message>
-    <message>
-        <source>1. Sign up or sign in on terra-lab.ai to get your key</source>
-        <translation>1. terra-lab.aiでサインアップまたはサインインしてキーを取得</translation>
-    </message>
-    <message>
-        <source>2. Paste your key below to activate</source>
-        <translation>2. 下にキーを貼り付けて有効化</translation>
-    </message>
-    <message>
-        <source>1. Sign up / Sign in</source>
-        <translation>1. サインアップ / サインイン</translation>
-    </message>
-    <message>
-        <source>Get Your Key</source>
-        <translation>キーを取得</translation>
-    </message>
-    <message>
-        <source>2. Paste your activation key</source>
-        <translation>2. 有効化キーを貼り付け</translation>
-    </message>
-    <message>
-        <source>Sign in to get your key</source>
-        <translation>サインインしてキーを取得</translation>
-    </message>
-    <message>
-        <source>Create your free TerraLab account or sign in, then copy your activation key from the dashboard.</source>
-        <translation>無料のTerraLabアカウントを作成またはサインインし、ダッシュボードから有効化キーをコピーしてください。</translation>
-    </message>
-    <message>
-        <source>Activate</source>
-        <translation>有効化</translation>
-    </message>
-    <message>
-        <source>Please enter your activation key.</source>
-        <translation>有効化キーを入力してください。</translation>
-    </message>
-    <message>
         <source>Checking...</source>
         <translation>確認中...</translation>
-    </message>
-    <message>
-        <source>Activation key verified!</source>
-        <translation>有効化キーを確認しました!</translation>
-    </message>
-    <message>
-        <source>Invalid activation key.</source>
-        <translation>有効化キーが無効です。</translation>
-    </message>
-    <message>
-        <source>Cannot reach server. Check your internet connection.</source>
-        <translation>サーバーに接続できません。インターネット接続を確認してください。</translation>
-    </message>
-    <message>
-        <source>Signed in!</source>
-        <translation>サインインしました!</translation>
     </message>
     <message>
         <source>AI Edit</source>
@@ -1054,40 +738,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>アカウント情報を読み込み中...</translation>
     </message>
     <message>
-        <source>Manage account on terra-lab.ai</source>
-        <translation>terra-lab.aiでアカウントを管理</translation>
-    </message>
-    <message>
-        <source>Show</source>
-        <translation>表示</translation>
-    </message>
-    <message>
-        <source>Hide</source>
-        <translation>非表示</translation>
-    </message>
-    <message>
-        <source>Change activation key</source>
-        <translation>有効化キーを変更</translation>
-    </message>
-    <message>
-        <source>Plan</source>
-        <translation>プラン</translation>
-    </message>
-    <message>
-        <source>Free</source>
-        <translation>無料</translation>
-    </message>
-    <message>
         <source>Canceled</source>
         <translation>解約済み</translation>
-    </message>
-    <message>
-        <source>Email</source>
-        <translation>メール</translation>
-    </message>
-    <message>
-        <source>Key</source>
-        <translation>キー</translation>
     </message>
     <message>
         <source>Model File Corrupted</source>
@@ -1124,10 +776,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Didn't open? Open the page again</source>
         <translation>開きませんでしたか?ページを再度開く</translation>
-    </message>
-    <message>
-        <source>Couldn't open your browser. Use the manual key option below.</source>
-        <translation>ブラウザを開けませんでした。下の手動キー入力オプションを使用してください。</translation>
     </message>
     <message>
         <source>Sign-in timed out. Click Connect to try again.</source>
@@ -1210,14 +858,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>モードを切り替える前に、実行中の検出をキャンセルしてください。</translation>
     </message>
     <message>
-        <source>Sign in to use Automatic mode</source>
-        <translation>自動モードを使用するにはサインインしてください</translation>
-    </message>
-    <message>
-        <source>Your free detections are used up</source>
-        <translation>無料の検出回数を使い切りました</translation>
-    </message>
-    <message>
         <source>Subscribe to keep detecting without limits:</source>
         <translation>無制限に検出を続けるにはサブスクライブしてください:</translation>
     </message>
@@ -1226,60 +866,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>Proにサブスクライブ</translation>
     </message>
     <message>
-        <source>Detect every building, tree, or road automatically</source>
-        <translation>すべての建物、樹木、道路を自動で検出</translation>
-    </message>
-    <message>
-        <source>No installation required, no GPU, no limits</source>
-        <translation>インストール不要、GPU不要、制限なし</translation>
-    </message>
-    <message>
-        <source>Built for large-scale digitization projects</source>
-        <translation>大規模なデジタル化プロジェクト向け</translation>
-    </message>
-    <message>
-        <source>Clear this zone</source>
-        <translation>このゾーンを消去</translation>
-    </message>
-    <message>
         <source>Cancel the running detection first</source>
         <translation>まず実行中の検出をキャンセルしてください</translation>
-    </message>
-    <message>
-        <source>What do you want to detect?</source>
-        <translation>何を検出しますか?</translation>
-    </message>
-    <message>
-        <source>Where should the AI look?</source>
-        <translation>AIはどこを探すべきですか?</translation>
-    </message>
-    <message>
-        <source>Change</source>
-        <translation>変更</translation>
-    </message>
-    <message>
-        <source>What to detect...</source>
-        <translation>検出対象...</translation>
-    </message>
-    <message>
-        <source>Hold the left mouse button and drag to draw a box on the map.</source>
-        <translation>マウスの左ボタンを押しながらドラッグして地図上にボックスを描いてください。</translation>
-    </message>
-    <message>
-        <source>{n} tile(s) = {n} credit(s)</source>
-        <translation>{n} 枚のタイル = {n} クレジット</translation>
-    </message>
-    <message>
-        <source>Object: {obj}</source>
-        <translation>オブジェクト: {obj}</translation>
-    </message>
-    <message>
-        <source>Detecting "{obj}"...</source>
-        <translation>「{obj}」を検出中...</translation>
-    </message>
-    <message>
-        <source>Ground resolution per pixel. A smaller value lets the model detect smaller objects.</source>
-        <translation>1ピクセルあたりの地上分解度です。値を小さくするほど、モデルは小さなオブジェクトを検出できます。</translation>
     </message>
     <message>
         <source>Detail</source>
@@ -1322,10 +910,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>順番を確保済み · もうすぐ開始…</translation>
     </message>
     <message>
-        <source>High demand · your spot is held…</source>
-        <translation>混雑中 · 順番を確保しています…</translation>
-    </message>
-    <message>
         <source>Spot reserved · starting in a few seconds…</source>
         <translation>順番を確保済み · 数秒後に開始…</translation>
     </message>
@@ -1338,10 +922,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>{m} 分</translation>
     </message>
     <message>
-        <source>{n} credits remaining (resets {date})</source>
-        <translation>残り {n} クレジット({date} にリセット)</translation>
-    </message>
-    <message>
         <source>{n} credits remaining</source>
         <translation>残り {n} クレジット</translation>
     </message>
@@ -1350,36 +930,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>無料検出の残り {n} 件</translation>
     </message>
     <message>
-        <source>Drawing...</source>
-        <translation>描画中...</translation>
-    </message>
-    <message>
         <source>{n} free detection(s) remaining (lifetime)</source>
         <translation>無料検出の残り {n} 件(生涯累計)</translation>
     </message>
     <message>
-        <source>Upgrade to Pro on terra-lab.ai</source>
-        <translation>terra-lab.aiでProにアップグレード</translation>
-    </message>
-    <message>
-        <source>Pro</source>
-        <translation>Pro</translation>
-    </message>
-    <message>
         <source>{remaining} / {total} credits</source>
         <translation>{remaining} / {total} クレジット</translation>
-    </message>
-    <message>
-        <source>resets {date}</source>
-        <translation>{date} にリセット</translation>
-    </message>
-    <message>
-        <source>Free uses</source>
-        <translation>無料利用回数</translation>
-    </message>
-    <message>
-        <source>Credits</source>
-        <translation>クレジット</translation>
     </message>
     <message>
         <source>Auto detection (live)</source>
@@ -1390,10 +946,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>タイルを準備中...</translation>
     </message>
     <message>
-        <source>Could not render the zone. Try a smaller area or another layer.</source>
-        <translation>ゾーンを描画できませんでした。範囲を小さくするか、別のレイヤを試してください。</translation>
-    </message>
-    <message>
         <source>Cancelling...</source>
         <translation>キャンセル中...</translation>
     </message>
@@ -1402,32 +954,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>前回の処理を終了しています。少々お待ちください...</translation>
     </message>
     <message>
-        <source>Found {n} object(s) but could not save the result file. Check folder permissions and the log.</source>
-        <translation>{n} 件のオブジェクトが見つかりましたが、結果ファイルを保存できませんでした。フォルダの権限とログを確認してください。</translation>
-    </message>
-    <message>
-        <source>Could not save the result file. Check the log.</source>
-        <translation>結果ファイルを保存できませんでした。ログを確認してください。</translation>
-    </message>
-    <message>
-        <source>No detections found. Try a different prompt or zoom level.</source>
-        <translation>検出結果がありません。別のプロンプトまたはズームレベルを試してください。</translation>
-    </message>
-    <message>
-        <source>Resume detection</source>
-        <translation>検出を再開</translation>
-    </message>
-    <message>
         <source>Detection failed. Check your connection and try again.</source>
         <translation>検出に失敗しました。接続を確認して再試行してください。</translation>
-    </message>
-    <message>
-        <source>Not enough credits to continue. The finished tiles are kept.</source>
-        <translation>続行するのに十分なクレジットがありません。完了したタイルは保持されます。</translation>
-    </message>
-    <message>
-        <source>Zone too large. Reduce the area to 50 tiles or fewer.</source>
-        <translation>ゾーンが大きすぎます。範囲を50タイル以下に縮小してください。</translation>
     </message>
     <message>
         <source>Automatic detection is temporarily unavailable. Please try again later.</source>
@@ -1440,34 +968,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>The zone is outside the selected raster layer. Pick the right layer or redraw the zone.</source>
         <translation>ゾーンが選択したラスタレイヤの外側にあります。正しいレイヤを選ぶか、ゾーンを再描画してください。</translation>
-    </message>
-    <message>
-        <source>Next</source>
-        <translation>次へ</translation>
-    </message>
-    <message>
-        <source>Export to layer</source>
-        <translation>レイヤへExport</translation>
-    </message>
-    <message>
-        <source>{n} object(s) detected - adjust below, then export</source>
-        <translation>{n} 件のオブジェクトを検出 - 以下で調整してからExport</translation>
-    </message>
-    <message>
-        <source>Exported {n} polygon(s) to {name}</source>
-        <translation>{n} 件のポリゴンを {name} にExportしました</translation>
-    </message>
-    <message>
-        <source>Round corners</source>
-        <translation>角を丸める</translation>
-    </message>
-    <message>
-        <source>Fill holes</source>
-        <translation>穴を埋める</translation>
-    </message>
-    <message>
-        <source>Expand/Shrink:</source>
-        <translation>拡張/縮小:</translation>
     </message>
     <message>
         <source>Less</source>
@@ -1488,10 +988,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Available when detection finishes</source>
         <translation>検出完了後に利用可能</translation>
-    </message>
-    <message>
-        <source>Finishing up... {done}/{total}</source>
-        <translation>仕上げ処理中... {done}/{total}</translation>
     </message>
     <message>
         <source>Min size:</source>
@@ -1516,26 +1012,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Hide detections larger than this ground area. 0 = no limit.</source>
         <translation>この地上面積より大きい検出結果を隠します。0 = 無制限。</translation>
-    </message>
-    <message>
-        <source>Finer detail finds smaller objects and costs more credits.</source>
-        <translation>詳細度を上げると小さなオブジェクトを検出できますが、クレジット消費も増えます。</translation>
-    </message>
-    <message>
-        <source>≈ {n} credits</source>
-        <translation>≈ {n} クレジット</translation>
-    </message>
-    <message>
-        <source>Finish</source>
-        <translation>完了</translation>
-    </message>
-    <message>
-        <source>{n} object(s) detected - adjust below, then Finish</source>
-        <translation>{n} 件のオブジェクトを検出 - 以下で調整してから「完了」</translation>
-    </message>
-    <message>
-        <source>Out of credits. Keep what was found below, then Finish.</source>
-        <translation>クレジットがなくなりました。以下で見つかった結果を保持し、「完了」してください。</translation>
     </message>
     <message>
         <source>Saved {n} polygon(s) to {name}</source>
@@ -1586,28 +1062,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>AI Segmentationを準備中</translation>
     </message>
     <message>
-        <source>What do you want to segment?</source>
-        <translation>何をセグメント化しますか?</translation>
-    </message>
-    <message>
-        <source>e.g. building, solar panel (in English)</source>
-        <translation>例: building, solar panel(英語で)</translation>
-    </message>
-    <message>
         <source>Popular</source>
         <translation>人気</translation>
     </message>
     <message>
         <source>Library</source>
         <translation>ライブラリ</translation>
-    </message>
-    <message>
-        <source>Browse objects with before / after examples.</source>
-        <translation>ビフォー/アフター例つきでオブジェクトを閲覧します。</translation>
-    </message>
-    <message>
-        <source>The prompt is sent to the AI in English. Describe the object in 1-2 words (e.g. building, solar panel).</source>
-        <translation>プロンプトは英語でAIに送信されます。オブジェクトを1〜2語で表現してください(例: building, solar panel)。</translation>
     </message>
     <message>
         <source>Use just 1-2 words for the object.</source>
@@ -1658,22 +1118,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>セグメントライブラリ</translation>
     </message>
     <message>
-        <source>RECENT</source>
-        <translation>最近</translation>
-    </message>
-    <message>
-        <source>Recently detected</source>
-        <translation>最近検出したもの</translation>
-    </message>
-    <message>
-        <source>BROWSE</source>
-        <translation>閲覧</translation>
-    </message>
-    <message>
-        <source>Objects you detect will appear here.</source>
-        <translation>検出したオブジェクトがここに表示されます。</translation>
-    </message>
-    <message>
         <source>today</source>
         <translation>今日</translation>
     </message>
@@ -1698,16 +1142,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>セグメントライブラリを読み込み中</translation>
     </message>
     <message>
-        <source>Pick an object to see a before / after, then use it.</source>
-        <translation>オブジェクトを選ぶとビフォー/アフターが表示され、そのまま使用できます。</translation>
-    </message>
-    <message>
         <source>Search objects... e.g. building, solar panel</source>
         <translation>オブジェクトを検索... 例: building, solar panel</translation>
-    </message>
-    <message>
-        <source>Prompt:</source>
-        <translation>プロンプト:</translation>
     </message>
     <message>
         <source>Fuzzy edges: this one may need cleanup after detection.</source>
@@ -1762,14 +1198,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>オブジェクトが見つかりませんでした</translation>
     </message>
     <message>
-        <source>All shown at {pct}% confidence</source>
-        <translation>すべて信頼度 {pct}% で表示中</translation>
-    </message>
-    <message>
-        <source>{visible} shown at {pct}% · {hidden} more below this confidence</source>
-        <translation>{visible} 件を信頼度 {pct}% で表示中 · さらに {hidden} 件がこの信頼度未満</translation>
-    </message>
-    <message>
         <source>0 shown at {pct}% - lower Confidence to reveal them</source>
         <translation>信頼度 {pct}% では0件 - 表示するには信頼度を下げてください</translation>
     </message>
@@ -1786,20 +1214,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>信頼度の高いものだけ</translation>
     </message>
     <message>
-        <source>Objects not quite right? Refine them in Manual mode.</source>
-        <translation>オブジェクトが正確でない場合は、手動モードで調整してください。</translation>
-    </message>
-    <message>
         <source>Export {n} polygons</source>
         <translation>{n} 個のポリゴンをExport</translation>
     </message>
     <message>
         <source>Lower Confidence to show objects first.</source>
         <translation>まず信頼度を下げてオブジェクトを表示してください。</translation>
-    </message>
-    <message>
-        <source>Adjust &amp; run again</source>
-        <translation>調整して再実行</translation>
     </message>
     <message>
         <source>Discard these detections?</source>
@@ -1818,14 +1238,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>検出結果を保持しますか?</translation>
     </message>
     <message>
-        <source>Save {visible} detections to a layer before leaving?</source>
-        <translation>終了する前に {visible} 件の検出結果をレイヤに保存しますか?</translation>
-    </message>
-    <message>
-        <source>Save {total} detections (currently hidden by Confidence) to a layer before leaving?</source>
-        <translation>終了する前に、信頼度により現在隠れている {total} 件の検出結果をレイヤに保存しますか?</translation>
-    </message>
-    <message>
         <source>Save &amp;&amp; exit</source>
         <translation>保存して終了</translation>
     </message>
@@ -1834,40 +1246,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>破棄して終了</translation>
     </message>
     <message>
-        <source>No {object} found in this zone</source>
-        <translation>このゾーンでは {object} が見つかりませんでした</translation>
-    </message>
-    <message>
-        <source>This run used {n} credits. Things that usually fix it:</source>
-        <translation>この実行では {n} クレジットを使用しました。通常改善に役立つ方法:</translation>
-    </message>
-    <message>
-        <source>Check the word is English and singular (building, not batiments)</source>
-        <translation>単語が英語の単数形であることを確認してください(building で、batiments のような複数形/他言語は不可)</translation>
-    </message>
-    <message>
-        <source>Draw an example of one object (step 2)</source>
-        <translation>1つのオブジェクトの例を描く(ステップ2)</translation>
-    </message>
-    <message>
-        <source>Raise Detail so small objects are visible</source>
-        <translation>詳細度を上げて小さなオブジェクトを見えるようにする</translation>
-    </message>
-    <message>
-        <source>Try a smaller or different zone</source>
-        <translation>より小さい、または別のゾーンを試す</translation>
-    </message>
-    <message>
-        <source>Detecting "{obj}"... · {n} found so far</source>
-        <translation>「{obj}」を検出中... · これまでに {n} 件</translation>
-    </message>
-    <message>
         <source>How many objects sit at each confidence level.</source>
         <translation>各信頼度レベルにあるオブジェクトの数です。</translation>
-    </message>
-    <message>
-        <source>Your 500 free detections are used up</source>
-        <translation>無料の検出500件を使い切りました</translation>
     </message>
     <message>
         <source>10,000 detections every month (~1,700 km2)</source>
@@ -1918,10 +1298,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>1つのオブジェクトを描き、最初の点をクリックして閉じてください。</translation>
     </message>
     <message>
-        <source>Click on the map to drop points around the area you want to scan.</source>
-        <translation>スキャンしたい範囲の周りに、地図をクリックして点を配置してください。</translation>
-    </message>
-    <message>
         <source>Exit</source>
         <translation>終了</translation>
     </message>
@@ -1934,16 +1310,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>ビフォー/アフタープレビューつきの、すぐに使えるオブジェクトを閲覧します。</translation>
     </message>
     <message>
-        <source>Draw an example</source>
-        <translation>例を描く</translation>
-    </message>
-    <message>
         <source>Subscribe to finish this zone: 10,000 credits/month.</source>
         <translation>このゾーンを完了するにはサブスクライブしてください: 月10,000クレジット。</translation>
-    </message>
-    <message>
-        <source>Blue = detected object</source>
-        <translation>青 = 検出されたオブジェクト</translation>
     </message>
     <message>
         <source>Filter detections by confidence. Lower shows more (and noisier), higher keeps only the strongest. Free and instant.</source>
@@ -1956,10 +1324,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Open these detections in Manual mode to fix specific objects point-by-point, then come back and export.</source>
         <translation>これらの検出結果を手動モードで開き、個々のオブジェクトを1点ずつ修正してから戻ってExportしてください。</translation>
-    </message>
-    <message>
-        <source>Try instead:</source>
-        <translation>代わりに試してください:</translation>
     </message>
     <message>
         <source>"{word}" will run as "{token}".</source>
@@ -1978,60 +1342,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>ライブラリにはすぐに使えるオブジェクトがあります。</translation>
     </message>
     <message>
-        <source>Keep clicking to add points ({n} so far, 3 minimum).</source>
-        <translation>クリックを続けて点を追加してください(現在 {n} 点、最低3点)。</translation>
-    </message>
-    <message>
-        <source>{n} points. Double-click or press Enter to finish, or click the first point to close.</source>
-        <translation>{n} 点。ダブルクリックまたは Enter で終了、または最初の点をクリックして閉じてください。</translation>
-    </message>
-    <message>
-        <source>~ {credits} credits</source>
-        <translation>~ {credits} クレジット</translation>
-    </message>
-    <message>
-        <source>{remaining} left</source>
-        <translation>残り {remaining}</translation>
-    </message>
-    <message>
-        <source>{remaining} free left</source>
-        <translation>無料残り {remaining}</translation>
-    </message>
-    <message>
-        <source>~ {credits} credits · </source>
-        <translation>~ {credits} クレジット · </translation>
-    </message>
-    <message>
-        <source>will stop after {remaining}</source>
-        <translation>残り {remaining} で停止します</translation>
-    </message>
-    <message>
         <source>1 credit ~ 0.17 km2 at default detail.</source>
         <translation>デフォルトの詳細度では 1クレジット ~ 0.17km2 です。</translation>
     </message>
     <message>
-        <source>Tip: draw an example of one {object} to catch more of them.</source>
-        <translation>ヒント: {object} の例を1つ描くと、より多く検出できます。</translation>
-    </message>
-    <message>
         <source>object</source>
         <translation>オブジェクト</translation>
-    </message>
-    <message>
-        <source>Dense area: raise Detail to catch every object.</source>
-        <translation>密集した範囲: すべてのオブジェクトを捉えるには詳細度を上げてください。</translation>
-    </message>
-    <message>
-        <source>Restore</source>
-        <translation>復元</translation>
-    </message>
-    <message>
-        <source>Delete forever</source>
-        <translation>完全に削除</translation>
-    </message>
-    <message>
-        <source>Deleted {when} · purges in {n} days</source>
-        <translation>削除日 {when} · {n} 日後に完全削除</translation>
     </message>
     <message>
         <source>{tiles} tiles · {objects} objects · {credits} credits</source>
@@ -2122,10 +1438,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>Export...</translation>
     </message>
     <message>
-        <source>Delete</source>
-        <translation>削除</translation>
-    </message>
-    <message>
         <source>Drop this object back into the prompt box for a new detection.</source>
         <translation>このオブジェクトをプロンプト欄に戻して新しく検出できます。</translation>
     </message>
@@ -2162,10 +1474,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>お気に入り</translation>
     </message>
     <message>
-        <source>Recently deleted</source>
-        <translation>最近削除したもの</translation>
-    </message>
-    <message>
         <source>Templates</source>
         <translation>テンプレート</translation>
     </message>
@@ -2180,14 +1488,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Star a detection to keep it here.</source>
         <translation>検出結果にスターを付けるとここに保持されます。</translation>
-    </message>
-    <message>
-        <source>Deleted runs wait here for 30 days, then they are purged for good.</source>
-        <translation>削除された実行はここに30日間保持された後、完全に削除されます。</translation>
-    </message>
-    <message>
-        <source>This permanently removes the stored previews and masks. Exported layers are never touched.</source>
-        <translation>これにより保存されたプレビューとマスクが完全に削除されます。Export済みのレイヤには影響しません。</translation>
     </message>
     <message>
         <source>Could not load this run's stored detections. Try again later.</source>
@@ -2212,10 +1512,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Add area</source>
         <translation>領域を追加</translation>
-    </message>
-    <message>
-        <source>All detections kept. Go 'Back to review' to export.</source>
-        <translation>すべての検出結果を保持しました。Exportするには「レビューに戻る」を選択してください。</translation>
     </message>
     <message>
         <source>Arrow keys</source>
@@ -2254,10 +1550,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>この実行の検出結果を再構築できませんでした。</translation>
     </message>
     <message>
-        <source>Delete removes this object</source>
-        <translation>Delete でこのオブジェクトを削除</translation>
-    </message>
-    <message>
         <source>Delete the active object</source>
         <translation>アクティブなオブジェクトを削除</translation>
     </message>
@@ -2290,10 +1582,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>全般</translation>
     </message>
     <message>
-        <source>Hand-refined objects are always kept, whatever the confidence.</source>
-        <translation>手動で調整したオブジェクトは信頼度に関わらず常に保持されます。</translation>
-    </message>
-    <message>
         <source>Install now</source>
         <translation>今すぐインストール</translation>
     </message>
@@ -2310,10 +1598,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>左クリック</translation>
     </message>
     <message>
-        <source>Left-click adds area · Right-click removes area</source>
-        <translation>左クリックで領域を追加 · 右クリックで領域を削除</translation>
-    </message>
-    <message>
         <source>Manual</source>
         <translation>手動</translation>
     </message>
@@ -2328,10 +1612,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Max detail for this zone - draw a larger zone for finer detail.</source>
         <translation>このゾーンでの詳細度は上限です - より細かい詳細度を得るには、より大きなゾーンを描いてください。</translation>
-    </message>
-    <message>
-        <source>Merges your edits back into the review. Nothing is exported yet.</source>
-        <translation>編集内容をレビューに反映します。まだExportはされていません。</translation>
     </message>
     <message>
         <source>OK</source>
@@ -2370,20 +1650,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>ポリゴンを保存しました(合計 {n} 件)。別の要素をクリックするか、完了したらExportしてください。</translation>
     </message>
     <message>
-        <source>Press S to keep it (turns green)</source>
-        <translation>S キーで保持(緑になります)</translation>
-    </message>
-    <message>
-        <source>Refine detections</source>
-        <translation>検出結果を調整</translation>
-    </message>
-    <message>
         <source>Refine seeds</source>
         <translation>調整対象の検出結果</translation>
-    </message>
-    <message>
-        <source>Refining uses the free local AI, which is not installed yet. Install it now (a few minutes, automatic)? Your detections stay safely in the review.</source>
-        <translation>調整には無料のローカルAIを使用しますが、まだインストールされていません。今すぐインストールしますか(数分、自動)?検出結果はレビュー内に安全に保持されます。</translation>
     </message>
     <message>
         <source>Remove</source>
@@ -2438,20 +1706,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>選択したラスタが削除されました。これまでに見つかった結果は保持されます。</translation>
     </message>
     <message>
-        <source>Tip: S saves, Enter exports, Ctrl+Z undoes a click.</source>
-        <translation>ヒント: S で保存、Enter でExport、Ctrl+Z でクリックを取り消せます。</translation>
-    </message>
-    <message>
         <source>Undo the last point</source>
         <translation>最後の点を取り消す</translation>
     </message>
     <message>
         <source>Writes a GeoPackage layer with your {n} kept polygons.</source>
         <translation>保持した {n} 件のポリゴンをGeoPackageレイヤに書き込みます。</translation>
-    </message>
-    <message>
-        <source>Yellow = confident · Purple = uncertain</source>
-        <translation>黄色 = 確実 · 紫 = 不確実</translation>
     </message>
     <message>
         <source>Your zone is outside "{layer}". Pick the right layer or draw inside it.</source>
@@ -2462,32 +1722,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>ゾーンが大きすぎます。範囲を {max} タイル以下に縮小してください。</translation>
     </message>
     <message>
-        <source>objects</source>
-        <translation>オブジェクト</translation>
-    </message>
-    <message>
-        <source>{kept} of {total} detections kept - click a blue detection to edit it</source>
-        <translation>{total} 件中 {kept} 件の検出結果を保持 - 青色の検出結果をクリックして編集</translation>
-    </message>
-    <message>
         <source>{n} of {total} free detections left</source>
         <translation>無料検出 {total} 件中 {n} 件が残っています</translation>
     </message>
     <message>
-        <source>{remaining} free detections left.</source>
-        <translation>無料検出の残り {remaining} 件です。</translation>
-    </message>
-    <message>
         <source>≈ 1 tile = 1 credit</source>
         <translation>≈ 1タイル = 1クレジット</translation>
-    </message>
-    <message>
-        <source>Keep this result</source>
-        <translation>この結果を保持</translation>
-    </message>
-    <message>
-        <source>Start over</source>
-        <translation>やり直す</translation>
     </message>
     <message>
         <source>Adjust and run again</source>
@@ -2508,14 +1748,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Adjust and run again</source>
         <translation>調整して再実行</translation>
-    </message>
-    <message>
-        <source>Keep this result</source>
-        <translation>この結果を保持</translation>
-    </message>
-    <message>
-        <source>Start over</source>
-        <translation>やり直す</translation>
     </message>
     <message>
         <source>all shown</source>
@@ -2582,10 +1814,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>ゾーン内の同じ種類のオブジェクトをすべて検出します - ゾーンを描き、オブジェクト名を入力すると、すべてのポリゴンを一度に取得できます。</translation>
     </message>
     <message>
-        <source>Tip: draw an example on the map to boost detection of unusual objects.</source>
-        <translation>ヒント: 地図上に例を描くと、珍しいオブジェクトの検出精度が上がります。</translation>
-    </message>
-    <message>
         <source>Tip: lower Confidence to reveal more detections, raise it to keep only the best.</source>
         <translation>ヒント: 信頼度を下げるとより多くの検出結果が表示され、上げると最良のものだけが残ります。</translation>
     </message>
@@ -2636,6 +1864,620 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Couldn&apos;t open your browser. Check your connection and click Sign in / Sign up to start again.</source>
         <translation>ブラウザを開けませんでした。接続を確認し、「サインイン / サインアップ」をクリックして再度開始してください。</translation>
+    </message>
+    <message>
+        <source>0 shown - lower the Min size filter to reveal them</source>
+        <translation>0件 - 表示するには最小サイズフィルタを下げてください</translation>
+    </message>
+    <message>
+        <source>1 detection selected</source>
+        <translation>検出 1件を選択中</translation>
+    </message>
+    <message>
+        <source>1 removed</source>
+        <translation>1件削除</translation>
+    </message>
+    <message>
+        <source>1 shape edited</source>
+        <translation>1件の形状を編集</translation>
+    </message>
+    <message>
+        <source>10,000 credits every month. Cancel anytime.</source>
+        <translation>月10,000クレジット。いつでもキャンセル可能です。</translation>
+    </message>
+    <message>
+        <source>A Component Failed to Load</source>
+        <translation>コンポーネントの読み込みに失敗しました</translation>
+    </message>
+    <message>
+        <source>AI Segmentation</source>
+        <translation>AI Segmentation</translation>
+    </message>
+    <message>
+        <source>AI data removed, but some items could not be fully cleared. You can delete the folder manually.</source>
+        <translation>AIデータを削除しましたが、一部の項目を完全に削除できませんでした。フォルダは手動で削除できます。</translation>
+    </message>
+    <message>
+        <source>Accept the Terms and Privacy Policy first.</source>
+        <translation>まず利用規約とプライバシーポリシーに同意してください。</translation>
+    </message>
+    <message>
+        <source>Add an example</source>
+        <translation>例を追加</translation>
+    </message>
+    <message>
+        <source>An install or detection is still running. Wait for it to finish, then try again.</source>
+        <translation>インストールまたは検出が実行中です。完了するまで待ってから再試行してください。</translation>
+    </message>
+    <message>
+        <source>Any GeoTIFF, WMS or XYZ basemap.</source>
+        <translation>GeoTIFF、WMS、XYZベースマップのいずれでも使用できます。</translation>
+    </message>
+    <message>
+        <source>At this detail {obj} is too small to spot - raise the detail.</source>
+        <translation>この詳細度では{obj}が小さすぎて見つけられません - 詳細度を上げてください。</translation>
+    </message>
+    <message>
+        <source>Automatic detection needs a georeferenced raster. Use Manual mode for this image.</source>
+        <translation>自動検出には位置情報付きのラスタが必要です。この画像には手動モードを使用してください。</translation>
+    </message>
+    <message>
+        <source>Available once the current install or detection finishes.</source>
+        <translation>現在のインストールまたは検出が完了すると利用できます。</translation>
+    </message>
+    <message>
+        <source>Blocked by IT Security Policy</source>
+        <translation>ITセキュリティポリシーによりブロックされました</translation>
+    </message>
+    <message>
+        <source>Browse the library (view only while detecting).</source>
+        <translation>ライブラリを閲覧(検出中は閲覧のみ)</translation>
+    </message>
+    <message>
+        <source>Click a detection on the map</source>
+        <translation>地図上の検出結果をクリック</translation>
+    </message>
+    <message>
+        <source>Click an empty spot to deselect.</source>
+        <translation>何もない場所をクリックすると選択解除されます。</translation>
+    </message>
+    <message>
+        <source>Could not reach the service. Check your connection and try again.</source>
+        <translation>サービスに接続できませんでした。接続を確認して再試行してください。</translation>
+    </message>
+    <message>
+        <source>Could not read pixels from this {ext} file. The file may be corrupt, truncated, or use a compression your GDAL build cannot decode.
+Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) before using AI Segmentation.</source>
+        <translation>この{ext}ファイルからピクセルを読み込めませんでした。ファイルが破損・切り詰められているか、お使いのGDALビルドがデコードできない圧縮形式を使用している可能性があります。
+QGISで開いて表示できるか確認するか、AI Segmentationを使用する前にGeoTIFF(.tif)に変換してください。</translation>
+    </message>
+    <message>
+        <source>Could not remove the AI data. Try again.</source>
+        <translation>AIデータを削除できませんでした。再試行してください。</translation>
+    </message>
+    <message>
+        <source>Couldn't load the demo imagery. Check your internet connection, or add your own layer.</source>
+        <translation>デモ画像を読み込めませんでした。インターネット接続を確認するか、独自のレイヤを追加してください。</translation>
+    </message>
+    <message>
+        <source>Detected object</source>
+        <translation>検出されたオブジェクト</translation>
+    </message>
+    <message>
+        <source>Detection failed. Please try again.</source>
+        <translation>検出に失敗しました。再試行してください。</translation>
+    </message>
+    <message>
+        <source>Done, back to Automatic review</source>
+        <translation>完了、自動レビューに戻る</translation>
+    </message>
+    <message>
+        <source>Downloaded AI data removed. You have been signed out.</source>
+        <translation>ダウンロード済みのAIデータを削除しました。サインアウトされました。</translation>
+    </message>
+    <message>
+        <source>Draw an example of one {object}</source>
+        <translation>{object}の例を1つ描く</translation>
+    </message>
+    <message>
+        <source>Draw an example of one {object} to find more</source>
+        <translation>{object}の例を1つ描いて、他を検索</translation>
+    </message>
+    <message>
+        <source>Draw on the map</source>
+        <translation>地図上に描く</translation>
+    </message>
+    <message>
+        <source>Edit shape</source>
+        <translation>形状を編集</translation>
+    </message>
+    <message>
+        <source>Edit your detections</source>
+        <translation>検出結果を編集</translation>
+    </message>
+    <message>
+        <source>Editing this shape</source>
+        <translation>この形状を編集中</translation>
+    </message>
+    <message>
+        <source>Extra detail keeps helping {obj} in this zone.</source>
+        <translation>このゾーンでは{obj}に対して詳細度を上げるとさらに効果があります。</translation>
+    </message>
+    <message>
+        <source>Filter and refine, then export.</source>
+        <translation>絞り込みと調整をしてからExportしてください。</translation>
+    </message>
+    <message>
+        <source>Free plan</source>
+        <translation>無料プラン</translation>
+    </message>
+    <message>
+        <source>Go back to the Automatic review to switch modes.</source>
+        <translation>モードを切り替えるには自動レビューに戻ってください。</translation>
+    </message>
+    <message>
+        <source>Grouped as continuous cover.</source>
+        <translation>連続した被覆としてグループ化されています。</translation>
+    </message>
+    <message>
+        <source>Hide parts larger than this ground area. 0 = no limit.</source>
+        <translation>この地上面積より大きい部分を隠します。0 = 無制限。</translation>
+    </message>
+    <message>
+        <source>Hide parts smaller than this ground area. Use it to drop tiny noise blobs. 0 = keep all.</source>
+        <translation>この地上面積より小さい部分を隠します。小さなノイズを除外するのに使えます。0 = すべて表示。</translation>
+    </message>
+    <message>
+        <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a random colour per object to tell them apart.</source>
+        <translation>地図上での検出結果の色分け方法(表示のみ):通常の塗りつぶし、輪郭、信頼度ヒートマップ、またはオブジェクトごとのランダムな色で見分ける、から選べます。</translation>
+    </message>
+    <message>
+        <source>Invalid CRS</source>
+        <translation>無効な座標参照系</translation>
+    </message>
+    <message>
+        <source>Kept as distinct objects.</source>
+        <translation>個別のオブジェクトとして保持されています。</translation>
+    </message>
+    <message>
+        <source>Last session: {count} polygon(s) exported · {area} km2</source>
+        <translation>前回のセッション: {count} 件のポリゴンをExport · {area} km2</translation>
+    </message>
+    <message>
+        <source>Left-click adds what you click to the shape</source>
+        <translation>左クリックでクリックした部分を形状に追加</translation>
+    </message>
+    <message>
+        <source>Load example imagery</source>
+        <translation>サンプル画像を読み込む</translation>
+    </message>
+    <message>
+        <source>Load your own imagery</source>
+        <translation>独自の画像を読み込む</translation>
+    </message>
+    <message>
+        <source>Lower the Min size filter to show objects first.</source>
+        <translation>まず最小サイズフィルタを下げてオブジェクトを表示してください。</translation>
+    </message>
+    <message>
+        <source>Manage account</source>
+        <translation>アカウントを管理</translation>
+    </message>
+    <message>
+        <source>Manual Mode Not Supported</source>
+        <translation>手動モードはサポートされていません</translation>
+    </message>
+    <message>
+        <source>Manual mode installs local components that are not available for this Mac with this version of QGIS. Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>手動モードは、このMacとこのバージョンのQGISでは利用できないローカルコンポーネントをインストールします。代わりに、クラウド上で完全に動作しローカルインストールが不要な自動モードをご利用ください。</translation>
+    </message>
+    <message>
+        <source>Manual mode is not supported in this QGIS installation</source>
+        <translation>このQGISインストールでは手動モードはサポートされていません</translation>
+    </message>
+    <message>
+        <source>Manual mode needs to install local dependencies, which is not supported inside this sandboxed QGIS installation (Flatpak or Snap). Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>手動モードはローカルの依存関係のインストールが必要ですが、このサンドボックス化されたQGIS環境(FlatpakまたはSnap)ではサポートされていません。代わりに、クラウド上で完全に動作しローカルインストールが不要な自動モードをご利用ください。</translation>
+    </message>
+    <message>
+        <source>Name the object (or draw an example) first - Detail then tunes itself to it.</source>
+        <translation>まずオブジェクトの名前を入力する(または例を描く)と、詳細度が自動的に調整されます。</translation>
+    </message>
+    <message>
+        <source>New here? Our 5-minute tutorial walks you through a full detection, step by step.</source>
+        <translation>初めてですか?5分のチュートリアルで、検出の一連の流れをステップごとにご案内します。</translation>
+    </message>
+    <message>
+        <source>No detection in this zone. Try a more specific object word, or draw an example of one (best for unusual objects).</source>
+        <translation>このゾーンに検出結果がありません。より具体的なオブジェクト名を試すか、例を1つ描いてください(珍しいオブジェクトに最適です)。</translation>
+    </message>
+    <message>
+        <source>Not Enough Disk Space</source>
+        <translation>ディスク容量が不足しています</translation>
+    </message>
+    <message>
+        <source>Not enough credits: {n} tiles, only {left} left. Reduce the detail or zone, or subscribe.</source>
+        <translation>クレジットが不足しています: {n} タイルに対して残り {left} のみです。詳細度またはゾーンを縮小するか、サブスクライブしてください。</translation>
+    </message>
+    <message>
+        <source>Not enough credits: {n} tiles, only {left} left. Reduce the detail or zone.</source>
+        <translation>クレジットが不足しています: {n} タイルに対して残り {left} のみです。詳細度またはゾーンを縮小してください。</translation>
+    </message>
+    <message>
+        <source>Online layer returned blank tiles for this area. The current zoom level may be outside the service's range, or this area has no coverage. Zoom to a level where the layer is visible on the map, then try again.</source>
+        <translation>オンラインレイヤがこの範囲で空白のタイルを返しました。現在のズームレベルがサービスの対応範囲外か、この範囲にデータがない可能性があります。レイヤが地図上に表示されるズームレベルに変更してから、再試行してください。</translation>
+    </message>
+    <message>
+        <source>Open the step-by-step tutorial</source>
+        <translation>ステップごとのチュートリアルを開く</translation>
+    </message>
+    <message>
+        <source>Open the tutorial</source>
+        <translation>チュートリアルを開く</translation>
+    </message>
+    <message>
+        <source>Opens terra-lab.ai in your browser.</source>
+        <translation>ブラウザでterra-lab.aiを開きます。</translation>
+    </message>
+    <message>
+        <source>Opens the shape so clicks can extend or trim it. Key: E, or double-click it on the map</source>
+        <translation>形状を編集モードにし、クリックで拡張・削減できるようにします。キー: E、または地図上でダブルクリック</translation>
+    </message>
+    <message>
+        <source>Opens your terra-lab.ai account in the browser.</source>
+        <translation>ブラウザでterra-lab.aiアカウントを開きます。</translation>
+    </message>
+    <message>
+        <source>Opens your terra-lab.ai dashboard in the browser.</source>
+        <translation>ブラウザでterra-lab.aiダッシュボードを開きます。</translation>
+    </message>
+    <message>
+        <source>Optional</source>
+        <translation>任意</translation>
+    </message>
+    <message>
+        <source>Outline ONE example of the object on the map, then run again. Runs with a drawn example return far fewer empty results.</source>
+        <translation>地図上でオブジェクトの例を1つだけ輪郭で囲み、再度実行してください。例を描いて実行すると、空の結果が大幅に減ります。</translation>
+    </message>
+    <message>
+        <source>Planning AI Segmentation run</source>
+        <translation>AI Segmentationの実行を計画中</translation>
+    </message>
+    <message>
+        <source>Preparing Manual mode...</source>
+        <translation>手動モードを準備中...</translation>
+    </message>
+    <message>
+        <source>Pro plan</source>
+        <translation>Proプラン</translation>
+    </message>
+    <message>
+        <source>Refine</source>
+        <translation>調整</translation>
+    </message>
+    <message>
+        <source>Refining uses the free local AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and refining will open automatically when it is ready.</source>
+        <translation>調整には無料のローカルAIを使用しますが、まだインストールされていません。今すぐインストールしますか?(数分、バックグラウンドで実行されます)。インストール中もレビューを続けることができ、準備が整うと調整パネルが自動的に開きます。</translation>
+    </message>
+    <message>
+        <source>Regrouping detections...</source>
+        <translation>検出結果を再グループ化中...</translation>
+    </message>
+    <message>
+        <source>Remove downloaded AI data</source>
+        <translation>ダウンロード済みのAIデータを削除</translation>
+    </message>
+    <message>
+        <source>Remove the downloaded AI data from this computer?</source>
+        <translation>このコンピュータからダウンロード済みのAIデータを削除しますか?</translation>
+    </message>
+    <message>
+        <source>Removes it from the results. Key: Delete (Ctrl+Z restores it)</source>
+        <translation>結果から削除します。キー: Delete(Ctrl+Zで元に戻せます)</translation>
+    </message>
+    <message>
+        <source>Removing...</source>
+        <translation>削除中...</translation>
+    </message>
+    <message>
+        <source>Returns to the Automatic review with your edits. The export happens there.</source>
+        <translation>編集内容を反映して自動レビューに戻ります。Exportはそこで行います。</translation>
+    </message>
+    <message>
+        <source>Review detections</source>
+        <translation>検出結果をレビュー</translation>
+    </message>
+    <message>
+        <source>Right level for {obj} in this zone.</source>
+        <translation>このゾーンの{obj}に適した詳細度です。</translation>
+    </message>
+    <message>
+        <source>Right-click removes it from the shape</source>
+        <translation>右クリックで形状から削除</translation>
+    </message>
+    <message>
+        <source>Rotated raster</source>
+        <translation>回転したラスタ</translation>
+    </message>
+    <message>
+        <source>Runs with a drawn example return far fewer empty results. This re-runs the zone with the example draw armed (new credits).</source>
+        <translation>例を描いて実行すると、空の結果が大幅に減ります。これはゾーンを例描画有効の状態で再実行します(新たなクレジットを消費します)。</translation>
+    </message>
+    <message>
+        <source>Save shape</source>
+        <translation>形状を保存</translation>
+    </message>
+    <message>
+        <source>Save {save} detections ({hidden} currently hidden by Confidence) to a layer before leaving?</source>
+        <translation>終了する前に、{save} 件の検出結果(うち {hidden} 件は現在信頼度により非表示)をレイヤに保存しますか?</translation>
+    </message>
+    <message>
+        <source>Save {save} detections to a layer before leaving?</source>
+        <translation>終了する前に、{save} 件の検出結果をレイヤに保存しますか?</translation>
+    </message>
+    <message>
+        <source>Saves this shape and closes the edit. Key: S</source>
+        <translation>この形状を保存して編集を終了します。キー: S</translation>
+    </message>
+    <message>
+        <source>Segment library (view only)</source>
+        <translation>セグメントライブラリ(閲覧のみ)</translation>
+    </message>
+    <message>
+        <source>Segmentation failed. Please try again.</source>
+        <translation>セグメンテーションに失敗しました。再試行してください。</translation>
+    </message>
+    <message>
+        <source>Setting up Manual mode in the background. You can keep reviewing; refining opens automatically when it is ready.</source>
+        <translation>バックグラウンドで手動モードをセットアップしています。レビューは続けることができ、準備が整うと調整パネルが自動的に開きます。</translation>
+    </message>
+    <message>
+        <source>Setting up Manual mode in the background...</source>
+        <translation>バックグラウンドで手動モードをセットアップ中...</translation>
+    </message>
+    <message>
+        <source>Shape and size settings</source>
+        <translation>形状とサイズの設定</translation>
+    </message>
+    <message>
+        <source>Shape settings</source>
+        <translation>形状の設定</translation>
+    </message>
+    <message>
+        <source>Sharper than {obj} usually needs - catches the smallest ones.</source>
+        <translation>{obj}に通常必要な精度より高く、最も小さいものまで捉えます。</translation>
+    </message>
+    <message>
+        <source>Skipped {n} empty tiles (not charged).</source>
+        <translation>空のタイル {n} 件をスキップしました(課金なし)。</translation>
+    </message>
+    <message>
+        <source>Small {obj} may be missed at this level.</source>
+        <translation>このレベルでは小さな{obj}が見逃される可能性があります。</translation>
+    </message>
+    <message>
+        <source>Something went wrong saving your detections. Please try again.</source>
+        <translation>検出結果の保存中に問題が発生しました。再試行してください。</translation>
+    </message>
+    <message>
+        <source>Something went wrong starting the detection. Please try again.</source>
+        <translation>検出の開始中に問題が発生しました。再試行してください。</translation>
+    </message>
+    <message>
+        <source>Started at {pct}% - the usual sweet spot for this object type.</source>
+        <translation>{pct}% から開始 - このオブジェクトタイプに通常最適な値です。</translation>
+    </message>
+    <message>
+        <source>Started at {pct}% to fit this run's scores - raise to tighten.</source>
+        <translation>この実行のスコアに合わせて {pct}% から開始しました - 上げるとより厳しく絞り込めます。</translation>
+    </message>
+    <message>
+        <source>Stopping - keeping the tiles already found…</source>
+        <translation>停止中 - すでに見つかったタイルは保持します…</translation>
+    </message>
+    <message>
+        <source>Stopping…</source>
+        <translation>停止中…</translation>
+    </message>
+    <message>
+        <source>Support code: {code}</source>
+        <translation>サポートコード: {code}</translation>
+    </message>
+    <message>
+        <source>Team or organization?</source>
+        <translation>チームや組織でのご利用ですか?</translation>
+    </message>
+    <message>
+        <source>The AI finds every object similar to your example.</source>
+        <translation>AIがあなたの例に似たすべてのオブジェクトを見つけます。</translation>
+    </message>
+    <message>
+        <source>The AI is starting up, almost there… {n}s</source>
+        <translation>AIを起動中です、もうすぐです… {n}秒</translation>
+    </message>
+    <message>
+        <source>The AI service is waking up. Holding your spot…</source>
+        <translation>AIサービスを起動しています。順番を確保しています…</translation>
+    </message>
+    <message>
+        <source>The detection service had a problem. Your credits for the failed tiles were refunded. Please try again.</source>
+        <translation>検出サービスで問題が発生しました。失敗したタイルのクレジットは返金されました。再試行してください。</translation>
+    </message>
+    <message>
+        <source>The detection service is busy right now. Please try again in a moment.</source>
+        <translation>検出サービスは現在混雑しています。しばらくしてから再試行してください。</translation>
+    </message>
+    <message>
+        <source>The service is temporarily unavailable (server error). Your connection is fine - please try again in a few minutes.</source>
+        <translation>サービスは一時的に利用できません(サーバーエラー)。接続には問題ありません - 数分後に再試行してください。</translation>
+    </message>
+    <message>
+        <source>There's a problem with your subscription. Open Settings to update your payment method or review your plan.</source>
+        <translation>サブスクリプションに問題があります。設定を開いて、お支払い方法の更新またはプランの確認を行ってください。</translation>
+    </message>
+    <message>
+        <source>There's a problem with your subscription. Your last payment may have failed. Open your account to update your payment method or review your plan.</source>
+        <translation>サブスクリプションに問題があります。前回のお支払いが失敗した可能性があります。アカウントを開いて、お支払い方法の更新またはプランの確認を行ってください。</translation>
+    </message>
+    <message>
+        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Manual mode will download the files again next time you use it.</source>
+        <translation>これによりローカルのAIモデルファイルが削除され、サインアウトしてプラグインがリセットされます。アカウントとクレジットには影響しません。次回手動モードを使用する際に、ファイルは再度ダウンロードされます。</translation>
+    </message>
+    <message>
+        <source>This detail level is a Pro feature. Lower the detail, or</source>
+        <translation>この詳細度はPro機能です。詳細度を下げるか、</translation>
+    </message>
+    <message>
+        <source>This layer has no valid coordinate reference system. Set one in Layer Properties before detecting.</source>
+        <translation>このレイヤには有効な座標参照系がありません。検出する前にレイヤプロパティで設定してください。</translation>
+    </message>
+    <message>
+        <source>This layer has no valid coordinate reference system. Set one in Layer Properties before segmenting.</source>
+        <translation>このレイヤには有効な座標参照系がありません。セグメント化する前にレイヤプロパティで設定してください。</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF before segmenting.</source>
+        <translation>このラスタは回転しています。セグメント化する前に、軸に整列したGeoTIFFに変換してください。</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF, or use Manual mode.</source>
+        <translation>このラスタは回転しています。軸に整列したGeoTIFFに変換するか、手動モードを使用してください。</translation>
+    </message>
+    <message>
+        <source>This raster uses a geographic CRS (degrees), which distorts the imagery sent to the AI. For best results, reproject it to a projected CRS (e.g. UTM).</source>
+        <translation>このラスタは地理座標系(度単位)を使用しており、AIに送信される画像が歪んでしまいます。最良の結果を得るには、投影座標系(UTMなど)に再投影してください。</translation>
+    </message>
+    <message>
+        <source>Tip: this raster has no overviews (pyramids). Build them (Raster menu, Miscellaneous, Build Overviews) to make detection much faster.</source>
+        <translation>ヒント: このラスタにはオーバービュー(ピラミッド)がありません。作成する(ラスタメニュー &gt; その他 &gt; オーバービューの作成)と、検出が大幅に高速化されます。</translation>
+    </message>
+    <message>
+        <source>Try "{word}" instead</source>
+        <translation>代わりに「{word}」を試してください</translation>
+    </message>
+    <message>
+        <source>Try '{term}' - it's a better prompt.</source>
+        <translation>「{term}」を試してください - より良いプロンプトです。</translation>
+    </message>
+    <message>
+        <source>Try an object from the Library - it's a better prompt.</source>
+        <translation>ライブラリからオブジェクトを試してください - より良いプロンプトです。</translation>
+    </message>
+    <message>
+        <source>Undo click</source>
+        <translation>クリックを元に戻す</translation>
+    </message>
+    <message>
+        <source>Undoes the last change to this shape. Key: Ctrl+Z</source>
+        <translation>この形状への直前の変更を元に戻します。キー: Ctrl+Z</translation>
+    </message>
+    <message>
+        <source>Update now</source>
+        <translation>今すぐ更新</translation>
+    </message>
+    <message>
+        <source>Update payment method</source>
+        <translation>支払い方法を更新</translation>
+    </message>
+    <message>
+        <source>Version {version} is available.</source>
+        <translation>バージョン {version} が利用可能です。</translation>
+    </message>
+    <message>
+        <source>Very fine for {obj} - large ones may come back split in parts.</source>
+        <translation>{obj}には非常に細かい設定です - 大きなものは分割されて返される場合があります。</translation>
+    </message>
+    <message>
+        <source>View as continuous cover</source>
+        <translation>連続した被覆として表示</translation>
+    </message>
+    <message>
+        <source>View as distinct objects</source>
+        <translation>個別のオブジェクトとして表示</translation>
+    </message>
+    <message>
+        <source>View detections as:</source>
+        <translation>検出結果の表示方法:</translation>
+    </message>
+    <message>
+        <source>Waking up the AI… {n}s</source>
+        <translation>AIを起動中… {n}秒</translation>
+    </message>
+    <message>
+        <source>We read every message.</source>
+        <translation>いただいたメッセージはすべて拝見しています。</translation>
+    </message>
+    <message>
+        <source>Write to us:</source>
+        <translation>お問い合わせ先:</translation>
+    </message>
+    <message>
+        <source>Your 300 free detections are used up</source>
+        <translation>300件の無料検出をすべて使い切りました</translation>
+    </message>
+    <message>
+        <source>Your reference</source>
+        <translation>あなたの参照画像</translation>
+    </message>
+    <message>
+        <source>confident</source>
+        <translation>信頼度が高い</translation>
+    </message>
+    <message>
+        <source>polygons</source>
+        <translation>ポリゴン</translation>
+    </message>
+    <message>
+        <source>some files could not be deleted</source>
+        <translation>一部のファイルを削除できませんでした</translation>
+    </message>
+    <message>
+        <source>uncertain</source>
+        <translation>信頼度が低い</translation>
+    </message>
+    <message>
+        <source>upgrade to unlock it</source>
+        <translation>アップグレードすると利用できます</translation>
+    </message>
+    <message>
+        <source>your object</source>
+        <translation>あなたのオブジェクト</translation>
+    </message>
+    <message>
+        <source>{area} km2</source>
+        <translation>{area} km2</translation>
+    </message>
+    <message>
+        <source>{n} detections selected</source>
+        <translation>{n} 件の検出を選択中</translation>
+    </message>
+    <message>
+        <source>{n} found so far</source>
+        <translation>これまでに {n} 件発見</translation>
+    </message>
+    <message>
+        <source>{n} removed</source>
+        <translation>{n} 件削除</translation>
+    </message>
+    <message>
+        <source>{n} shapes edited</source>
+        <translation>{n} 件の形状を編集</translation>
+    </message>
+    <message>
+        <source>{n} tiles could not be loaded from the layer server; results may be incomplete.</source>
+        <translation>レイヤサーバーから {n} 件のタイルを読み込めませんでした。結果が不完全な場合があります。</translation>
+    </message>
+    <message>
+        <source>{n} tiles had no imagery and were not analyzed (not charged). Check the imagery layer loads over this area, then run Detect again.</source>
+        <translation>{n} 件のタイルに画像がなく、解析されませんでした(課金なし)。この範囲で画像レイヤが読み込まれることを確認してから、再度検出を実行してください。</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved to layer "{name}"</source>
+        <translation>{n} 件の{object}をレイヤ「{name}」に保存しました</translation>
+    </message>
+    <message>
+        <source>{used} credits used</source>
+        <translation>{used} クレジット使用</translation>
     </message>
 </context>
 </TS>

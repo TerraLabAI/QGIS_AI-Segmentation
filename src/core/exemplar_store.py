@@ -51,6 +51,10 @@ class Exemplar:
     # bigger, coarser structures). 0.0 = legacy source-finest render; a
     # mismatch with the run's mupp at Detect forces a rebuild.
     stamp_gsd: float = 0.0
+    # Longest side (px) the cached stamp was actually rendered at. Crops share
+    # one paste row whose per-crop size cap can shrink as more examples are
+    # added, so a stamp cached wider than the current cap is rebuilt at Detect.
+    stamp_side: int = 0
 
 
 class ExemplarStore:

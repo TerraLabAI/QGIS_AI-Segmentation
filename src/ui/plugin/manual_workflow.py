@@ -33,6 +33,7 @@ from ..canvas_palette import KEPT_FILL, KEPT_STROKE
 from ..error_report_dialog import show_error_report
 from ..shortcut_filter import ShortcutFilter
 from .shared import (
+    SETTINGS_KEY_LAST_MANUAL_SESSION_TS,
     SETTINGS_KEY_TUTORIAL_SHOWN,
     _FIELD_TYPE_DOUBLE,
     _FIELD_TYPE_STRING,
@@ -177,7 +178,7 @@ class ManualWorkflowMixin:
         # waits out the model load again.
         try:
             QSettings().setValue(
-                "AISegmentation/last_manual_session_ts",
+                SETTINGS_KEY_LAST_MANUAL_SESSION_TS,
                 int(self._segmentation_start_ts))
         except Exception:  # noqa: BLE001 - heuristic only
             pass  # nosec B110
@@ -329,12 +330,6 @@ class ManualWorkflowMixin:
 
         self._ensure_polygon_rubberband_sync()
 
-        from ...core.polygon_exporter import (
-            apply_mask_refinement,
-            apply_right_angles,
-            mask_to_polygons,
-        )
-
         # Collect all geometry parts: frozen polygons + active mask.
         # An unfrozen session polygon (no numpy mask yet) counts as active.
         all_geoms = [s.polygon for s in self._frozen_sessions]
@@ -342,41 +337,11 @@ class ManualWorkflowMixin:
             all_geoms.append(self._unfrozen_display_polygon)
 
         if has_active:
-            # Apply all mask-level refinements for display
-            mask_for_display = self.current_mask
-            if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
-                mask_for_display = apply_mask_refinement(
-                    self.current_mask,
-                    expand_value=self._refine_expand,
-                    fill_holes=self._refine_fill_holes,
-                    min_area=self._refine_min_area
-                )
-
-            geometries = mask_to_polygons(mask_for_display, self.current_transform_info)
-            if geometries:
-                active_combined = QgsGeometry.unaryUnion(geometries)
-                if active_combined and not active_combined.isEmpty():
-                    # Apply simplification if enabled
-                    tolerance = self._compute_simplification_tolerance(
-                        self.current_transform_info, self._refine_simplify
-                    )
-                    if tolerance > 0:
-                        active_combined = active_combined.simplify(tolerance)
-                    # Right angles: orthogonalize man-made shapes. Needs a
-                    # de-staircased outline, so when the user's own simplify
-                    # is weaker than the default 3, the helper tops it up.
-                    if self._refine_ortho:
-                        active_combined = apply_right_angles(
-                            active_combined,
-                            destair_tol=max(
-                                0.0,
-                                self._compute_simplification_tolerance(
-                                    self.current_transform_info, 3) - tolerance))
-                    # Apply corner rounding (QGIS native C++ Chaikin)
-                    if self._refine_smooth > 0:
-                        active_combined = active_combined.smooth(
-                            self._refine_smooth, 0.25)
-                    all_geoms.append(active_combined)
+            # Shared refine tail (fill holes, expand, min region, simplify,
+            # right angles, rounding, size window): saves exactly the preview.
+            active_combined = self._refined_active_mask_geometry()
+            if active_combined is not None and not active_combined.isEmpty():
+                all_geoms.append(active_combined)
 
         if all_geoms:
             combined = QgsGeometry.unaryUnion(all_geoms)
@@ -387,8 +352,16 @@ class ManualWorkflowMixin:
             # Refine handoff: if this save overlaps an existing detection, fold
             # them into ONE polygon (complete-don't-stack). No-op in base Manual.
             combined = self._absorb_overlapping_saved(combined)
+            # Per-instance identity: an object re-opened for editing keeps its
+            # original det_id (its Random colour survives the edit); a brand-new
+            # hand save gets a synthetic one. Score follows the same rule.
+            origin = self._active_refine_origin_entry or {}
+            origin_id = origin.get("det_id")
             # Store WKT (with effects), transform info, raw mask, points, and refine settings
             self.saved_polygons.append({
+                "det_id": int(origin_id) if origin_id is not None
+                else self._next_handoff_det_id(),
+                "score": origin.get("score"),
                 "manual_touched": self._refine_handoff_active,
                 "geometry_wkt": combined.asWkt(),
                 # Cache the parsed geometry (absorb/click/collect reuse it without
@@ -404,16 +377,22 @@ class ManualWorkflowMixin:
                 "refine_fill_holes": self._refine_fill_holes,
                 "refine_ortho": self._refine_ortho,
                 "refine_min_area": self._refine_min_area,
-                # A Save validates the object: it moves to the green kept layer in
-                # a handoff. Ignored in base Manual (real band).
-                "validated": True,
+                "refine_min_size_m2": self._refine_min_size_m2,
+                "refine_max_size_m2": self._refine_max_size_m2,
+                # No keep concept in a handoff: every detection on the page is
+                # already part of the result, so a saved edit returns to the
+                # same pending style as its neighbours. Base Manual keeps True
+                # (its real bands are green by construction).
+                "validated": not self._refine_handoff_active,
             })
 
             if self._refine_handoff_active:
-                # Handoff: no per-object band; the green kept layer draws it.
-                # None keeps saved_rubber_bands index-locked with saved_polygons.
+                # Handoff: no per-object band; the seed layer draws it. One
+                # incremental add (the absorb above already dropped anything it
+                # merged), not a full rebuild of both seed layers per Save.
                 self.saved_rubber_bands.append(None)
-                self._rebuild_handoff_layers()
+                if not self._handoff_add_entry_feature(self.saved_polygons[-1]):
+                    self._rebuild_handoff_layers()
             else:
                 saved_rb = QgsRubberBand(self.iface.mapCanvas(), PolygonGeometry)
                 saved_rb.setColor(KEPT_STROKE)
@@ -454,10 +433,15 @@ class ManualWorkflowMixin:
             # apply the same expand/simplify to multiple masks
 
         # The saved object is committed (green): no longer the active editable
-        # one, and a stale delete-undo backup no longer applies.
+        # one. Delete-undo history is kept (the stack restores prior removals).
         self._is_refining_saved_object = False
         self._active_refine_origin_entry = None
-        self._deleted_object_backup = None
+        self._refine_geom_history = []
+        if self.dock_widget:
+            try:
+                self.dock_widget.set_handoff_editing(False)
+            except (RuntimeError, AttributeError):
+                pass
         # Clear current state for next polygon (including frozen sessions)
         self.prompts.clear()
         self._mask_state_history = []
@@ -477,6 +461,12 @@ class ManualWorkflowMixin:
 
     def _on_export_layer(self):
         """Export all saved polygons + current unsaved mask to a new layer."""
+        # Refine handoff: committing goes through the review's Finish, never a
+        # direct export (it would dump the imported detections to a layer the
+        # review would then commit AGAIN). Enter/Export = Back to review.
+        if self._refine_handoff_active:
+            self._on_back_to_review_clicked()
+            return
         if self._exporting_in_progress:
             return
         self._exporting_in_progress = True
@@ -500,8 +490,6 @@ class ManualWorkflowMixin:
 
     def _on_export_layer_impl(self):
         """Internal export implementation."""
-        from ...core.polygon_exporter import apply_mask_refinement, mask_to_polygons
-
         self._ensure_polygon_rubberband_sync()
 
         has_active = (self.current_mask is not None
@@ -520,35 +508,10 @@ class ManualWorkflowMixin:
             current_geoms.append(self._unfrozen_display_polygon)
 
         if has_active:
-            mask_to_export = self.current_mask
-            if self._refine_fill_holes or self._refine_min_area > 0 or self._refine_expand != 0:
-                mask_to_export = apply_mask_refinement(
-                    self.current_mask,
-                    expand_value=self._refine_expand,
-                    fill_holes=self._refine_fill_holes,
-                    min_area=self._refine_min_area
-                )
-            geometries = mask_to_polygons(mask_to_export, self.current_transform_info)
-            if geometries:
-                active_combined = QgsGeometry.unaryUnion(geometries)
-                if active_combined and not active_combined.isEmpty():
-                    tolerance = self._compute_simplification_tolerance(
-                        self.current_transform_info, self._refine_simplify
-                    )
-                    if tolerance > 0:
-                        active_combined = active_combined.simplify(tolerance)
-                    if self._refine_ortho:
-                        from ...core.polygon_exporter import apply_right_angles
-                        active_combined = apply_right_angles(
-                            active_combined,
-                            destair_tol=max(
-                                0.0,
-                                self._compute_simplification_tolerance(
-                                    self.current_transform_info, 3) - tolerance))
-                    if self._refine_smooth > 0:
-                        active_combined = active_combined.smooth(
-                            self._refine_smooth, 0.25)
-                    current_geoms.append(active_combined)
+            # Shared refine tail: exports exactly what the preview shows.
+            active_combined = self._refined_active_mask_geometry()
+            if active_combined is not None and not active_combined.isEmpty():
+                current_geoms.append(active_combined)
 
         if current_geoms:
             combined = QgsGeometry.unaryUnion(current_geoms)
@@ -866,6 +829,16 @@ class ManualWorkflowMixin:
 
     def _on_stop_segmentation(self):
         """Exit segmentation mode without saving."""
+        # Refine handoff: Esc/stop must NEVER offer to discard the whole
+        # imported review. An open edit closes back to pending; otherwise the
+        # gesture means "leave the refine", which is Back to review (harvests
+        # the edits, non-destructive; Finish stays on the review page).
+        if self._refine_handoff_active:
+            if self._refine_edit_session_active():
+                self._close_active_edit_to_pending()
+            else:
+                self._on_back_to_review_clicked()
+            return
         polygon_count = len(self.saved_polygons)
         # Frozen/unfrozen polygons are unsaved work too: without counting
         # them, stopping discards them with no confirmation at all.
@@ -949,6 +922,13 @@ class ManualWorkflowMixin:
         except (RuntimeError, AttributeError):
             pass
 
+    def _on_size_filter_changed(self, min_m2: float, max_m2: float) -> None:
+        """Store the Min/Max size window (ground m2, 0 = off). Store-only: the
+        dock emits this right before refine_settings_changed on the same
+        debounce tick, and THAT handler repaints once with everything fresh."""
+        self._refine_min_size_m2 = max(0.0, float(min_m2 or 0.0))
+        self._refine_max_size_m2 = max(0.0, float(max_m2 or 0.0))
+
     def _on_refine_settings_changed(self, simplify: int, smooth: int, expand: int,
                                     fill_holes: bool, right_angles: bool = False):
         """Handle refinement control changes.
@@ -969,6 +949,13 @@ class ManualWorkflowMixin:
         self._refine_expand = expand
         self._refine_fill_holes = fill_holes
         self._refine_ortho = right_angles
+
+        # Refine handoff: the panel is per-polygon Shape settings, applied in
+        # geometry space to the open edit or the selected detections (the
+        # entries have no source mask). Consumed there; base Manual continues.
+        if self._apply_handoff_refine_settings():
+            self._safe_restore_canvas_focus()
+            return
 
         # In both modes: update current mask preview only
         # Saved masks (green) keep their own refine settings from when they were saved

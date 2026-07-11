@@ -495,40 +495,6 @@ def all_presets() -> list[dict]:
     return [p for cat in _CATEGORIES for p in cat["presets"]]
 
 
-# Built-in synonym map for the zero-result assist: a failed
-# prompt maps to a few alternate English cloud-model tokens the user can retry with one
-# click. Ships in the plugin (the server presets payload carries no synonym
-# field yet); keys are lowercase, high-signal, kept small.
-_SYNONYMS: dict[str, tuple[str, ...]] = {
-    "house": ("building", "rooftop"),
-    "field": ("farmland", "crop field"),
-    "forest": ("tree", "woodland"),
-    "car": ("vehicle",),
-    "lake": ("water",),
-    "path": ("road", "track"),
-    "panel": ("solar panel",),
-    "parking": ("parking lot",),
-    "boat": ("vessel",),
-    "grass": ("vegetation",),
-}
-
-
-def synonyms_for(prompt: str) -> list[str]:
-    """Up to 3 alternate English tokens for a failed prompt, or [] if none.
-
-    Case-insensitive; matches the whole prompt first, then its first word, then
-    a naive singular of that word (so 'houses' / 'a house' still map)."""
-    if not prompt:
-        return []
-    key = prompt.strip().lower()
-    alts = _SYNONYMS.get(key)
-    if not alts:
-        words = key.split()
-        first = words[0] if words else ""
-        alts = _SYNONYMS.get(first) or _SYNONYMS.get(first.rstrip("s"))
-    return list(alts[:3]) if alts else []
-
-
 def known_tokens() -> list[str]:
     """Flat, de-duplicated English prompt tokens (for the validator's
     'did you mean' suggestions)."""

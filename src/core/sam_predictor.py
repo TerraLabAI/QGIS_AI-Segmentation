@@ -11,7 +11,7 @@ import time
 import numpy as np
 from qgis.core import Qgis, QgsMessageLog
 
-from .pip_diagnostics import is_antivirus_error
+from .pip_diagnostics import get_app_control_help, is_antivirus_error, is_app_control_error
 from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs  # nosec B404
 
 
@@ -120,6 +120,9 @@ class SamPredictor:
             exit_code = self.process.poll() if self.process else None
             stderr_output = self._read_stderr()
             if stderr_output and is_antivirus_error(stderr_output):
+                if is_app_control_error(stderr_output):
+                    from .venv_manager import CACHE_DIR
+                    raise RuntimeError(get_app_control_help(CACHE_DIR))
                 raise RuntimeError(
                     "A security policy is blocking the AI engine.\n\n"
                     "Ask your IT administrator to whitelist "
@@ -222,6 +225,9 @@ class SamPredictor:
                     exit_code = self.process.poll()
                     stderr_output = self._read_stderr()
                     if stderr_output and is_antivirus_error(stderr_output):
+                        if is_app_control_error(stderr_output):
+                            from .venv_manager import CACHE_DIR
+                            raise RuntimeError(get_app_control_help(CACHE_DIR))
                         raise RuntimeError(
                             "A security policy is blocking the AI engine.\n\n"
                             "Ask your IT administrator to whitelist "

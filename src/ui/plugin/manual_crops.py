@@ -133,6 +133,12 @@ class ManualCropsMixin:
             "transform_info": self.current_transform_info,
             "low_res_mask": (self.current_low_res_mask.copy()
                              if self.current_low_res_mask is not None else None),
+            # Display-only polygon (an open handoff edit before its first
+            # click, or an unfrozen session): the first prediction consumes
+            # it, so undoing that click must bring it back.
+            "display_polygon": (QgsGeometry(self._unfrozen_display_polygon)
+                                if self._unfrozen_display_polygon is not None
+                                else None),
         }
 
     def _restore_mask_state(self, state: dict) -> None:
@@ -141,6 +147,7 @@ class ManualCropsMixin:
         self.current_score = state["score"]
         self.current_transform_info = state["transform_info"]
         self.current_low_res_mask = state.get("low_res_mask")
+        self._unfrozen_display_polygon = state.get("display_polygon")
 
     def _invalidate_history_logits(self) -> None:
         """Drop low-res logits from undo history after the crop changed.
@@ -388,6 +395,10 @@ class ManualCropsMixin:
             self._manual_encode_worker = None
             self._pending_encode = None
             self._pending_manual_click = None
+        if not hasattr(self, "_online_fetch"):
+            # The in-flight online crop fetch (async interactive path), a dict
+            # {fetcher, gen, on_encoded, cursor}, or None when idle.
+            self._online_fetch = None
 
     def _extract_and_encode_crop(self, center_point, mupp_override=None, *, on_encoded=None):
         """Extract a crop centered on the point and encode it with SAM.
@@ -400,14 +411,21 @@ class ManualCropsMixin:
           headless caller shares the same continuation as the interactive path.
           This preserves the blocking MCP contract.
 
-        - INTERACTIVE: ASYNCHRONOUS. Extracts the crop on the GUI thread, then
-          runs the SAM encode round-trip on a background worker and returns
-          immediately. A True return means "encode STARTED" (the worker is
-          running), NOT "crop ready": the caller MUST NOT run a prediction
-          synchronously after this. On a successful encode ``on_encoded()`` runs
-          on the GUI thread from the completion callback (_on_manual_encode_done).
-          A False return means crop extraction failed synchronously (nothing was
-          started), or an encode is already in flight (never start a second one).
+        - INTERACTIVE: ASYNCHRONOUS. Returns immediately; the SAM encode
+          round-trip runs on a background worker. A True return means the crop
+          is being PREPARED (either the encode STARTED, or for an online layer
+          the crop FETCH started and the encode follows on completion), NOT
+          "crop ready": the caller MUST NOT run a prediction synchronously after
+          this. On a successful encode ``on_encoded()`` runs on the GUI thread
+          from the completion callback (_on_manual_encode_done). A False return
+          means crop extraction failed synchronously (nothing was started), or
+          an encode/fetch is already in flight (never start a second one).
+
+          File-based layers extract on the GUI thread first (a fast local
+          windowed read), then encode on the worker. Online layers extract on
+          the tile network, which can block ~18s of retries, so their fetch is
+          driven off the event loop (_begin_online_crop_fetch) and only feeds
+          the encode once the tiles stabilize.
 
         Args:
             center_point: QgsPointXY center in raster CRS
@@ -418,9 +436,9 @@ class ManualCropsMixin:
                 callback. Headless: runs inline on success.
         """
         if self._encoding_in_progress:
-            # A worker already owns the predictor pipe; never start a second
-            # encode. Interactive click callers route here only via the
-            # pending-click mechanism, which already handles the busy case.
+            # A worker (or an online fetch) already owns the predictor pipe;
+            # never start a second one. Interactive click callers route here
+            # only via the pending-click mechanism, which handles the busy case.
             return False
 
         if self._headless:
@@ -429,25 +447,47 @@ class ManualCropsMixin:
                 on_encoded()
             return ok
 
-        # Interactive: extract on the GUI thread, encode on a worker thread.
-        # For an online layer the extraction blocks on the tile network (fetch
-        # + retry), which had no visual feedback: show the busy cursor around
-        # it so the stall is not a silent freeze. _start_manual_encode pushes
-        # its own cursor for the encode, so the try/finally here keeps the
-        # override-cursor stack balanced on every path (success or failure).
-        show_busy = self._is_online_layer
-        if show_busy:
-            QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
-            QApplication.processEvents()
-        try:
-            image_np, crop_info = self._extract_crop_only(center_point, mupp_override)
-        finally:
-            if show_busy:
-                QApplication.restoreOverrideCursor()
+        if self._is_online_layer:
+            # Online tile extraction blocks on the network (fetch + progressive
+            # retry, up to ~18s). Drive it asynchronously so the GUI never
+            # freezes; True means the crop FETCH started (the encode follows on
+            # completion), not that the crop is ready.
+            return self._begin_online_crop_fetch(
+                center_point, mupp_override, on_encoded)
+
+        # File-based: a fast local windowed read, kept synchronous. The encode
+        # itself still runs on the worker (_start_manual_encode) with its own
+        # busy cursor, restored on the completion callback.
+        image_np, crop_info = self._extract_crop_only(center_point, mupp_override)
         if image_np is None:
             return False  # extraction failed and already surfaced the error
         self._start_manual_encode(image_np, crop_info, on_encoded)
         return True  # encode STARTED (not done); on_encoded runs on completion
+
+    def _online_crop_mupp(self, mupp_override):
+        """Canvas -> raster map-units-per-pixel for an online crop, stashing the
+        per-crop mupp state. Shared by the sync (_extract_crop_only) and async
+        (_begin_online_crop_fetch) online paths so both compute it identically.
+        """
+        canvas = self.iface.mapCanvas()
+        canvas_mupp = canvas.mapUnitsPerPixel()
+        # When canvas CRS != raster CRS, the MUPP is in canvas units (e.g.
+        # degrees) but crop is in raster units (e.g. meters). Convert by
+        # measuring a small canvas-pixel offset in raster CRS.
+        if self._canvas_to_raster_xform is not None:
+            canvas_center = canvas.center()
+            cx, cy = canvas_center.x(), canvas_center.y()
+            p1 = self._canvas_to_raster_xform.transform(QgsPointXY(cx, cy))
+            p2 = self._canvas_to_raster_xform.transform(
+                QgsPointXY(cx + canvas_mupp, cy))
+            raster_mupp = math.sqrt(
+                (p2.x() - p1.x()) ** 2 + (p2.y() - p1.y()) ** 2)
+        else:
+            raster_mupp = canvas_mupp
+        self._current_crop_canvas_mupp = canvas_mupp
+        actual_mupp = mupp_override or raster_mupp
+        self._current_crop_actual_mupp = actual_mupp
+        return actual_mupp
 
     def _extract_crop_only(self, center_point, mupp_override, quiet=False):
         """Extract one crop on the GUI thread (no predictor access).
@@ -466,25 +506,7 @@ class ManualCropsMixin:
         raster_pt_y = center_point.y()
 
         if self._is_online_layer:
-            canvas = self.iface.mapCanvas()
-            canvas_mupp = canvas.mapUnitsPerPixel()
-            # When canvas CRS != raster CRS, the MUPP is in canvas units
-            # (e.g. degrees) but crop is in raster units (e.g. meters).
-            # Convert by measuring a small canvas-pixel offset in raster CRS.
-            if self._canvas_to_raster_xform is not None:
-                canvas_center = canvas.center()
-                cx, cy = canvas_center.x(), canvas_center.y()
-                p1 = self._canvas_to_raster_xform.transform(
-                    QgsPointXY(cx, cy))
-                p2 = self._canvas_to_raster_xform.transform(
-                    QgsPointXY(cx + canvas_mupp, cy))
-                raster_mupp = math.sqrt(
-                    (p2.x() - p1.x()) ** 2 + (p2.y() - p1.y()) ** 2)
-            else:
-                raster_mupp = canvas_mupp
-            self._current_crop_canvas_mupp = canvas_mupp
-            actual_mupp = mupp_override or raster_mupp
-            self._current_crop_actual_mupp = actual_mupp
+            actual_mupp = self._online_crop_mupp(mupp_override)
             image_np, crop_info, error, error_code_from_crop = extract_crop_from_online_layer(
                 self._current_layer, raster_pt_x, raster_pt_y,
                 actual_mupp, crop_size=1024
@@ -532,6 +554,27 @@ class ManualCropsMixin:
                 "AI Segmentation", level=Qgis.MessageLevel.Critical
             )
             if quiet:
+                return None, None
+            if error_code_from_crop == "crop_error_rasterio_unavailable":
+                # The panel said ready but the in-process rasterio import
+                # failed: the package is present-but-broken in the venv
+                # (antivirus quarantine, interrupted install). An error report
+                # dead-ends the user, so purge the broken artifacts (pip would
+                # otherwise consider rasterio satisfied and skip it) and route
+                # to the same one-click repair as a broken runtime. (#64)
+                try:
+                    from ...core.telemetry import track_plugin_error
+                    track_plugin_error(
+                        stage="segment",
+                        error_code="crop_error_rasterio_unavailable",
+                        message=error,
+                        module="manual_crops",
+                    )
+                except Exception:
+                    pass  # nosec B110
+                from ...core.venv_manager import purge_package_from_venv
+                purge_package_from_venv("rasterio")
+                self._recover_broken_venv(error)
                 return None, None
             if self._headless:
                 self._headless_error = error
@@ -632,7 +675,8 @@ class ManualCropsMixin:
 
     # ---- Async encode worker lifecycle --------------------------------------
 
-    def _start_manual_encode(self, image_np, crop_info, on_encoded) -> None:
+    def _start_manual_encode(self, image_np, crop_info, on_encoded,
+                             show_busy: bool = True) -> None:
         """Start the off-thread SAM encode for an already-extracted crop.
 
         Takes the transport lock (`_encoding_in_progress`), shows the busy
@@ -640,6 +684,12 @@ class ManualCropsMixin:
         its QThread C++ object can never be GC-dropped mid-run if the plugin
         instance goes away (unload cannot reach it: the controller is not a
         QObject and unload is frozen); park releases it on `finished`.
+
+        ``show_busy=False`` runs the encode with NO cursor change: the
+        speculative selection prewarm must be invisible (a busy cursor on
+        every selection click would read as the selection freezing). The
+        completion restores the cursor only when one was set (the flag rides
+        in _pending_encode so set/restore always pair up).
         """
         self._ensure_manual_encode_state()
         from ..background_workers import SetImageWorker
@@ -654,12 +704,18 @@ class ManualCropsMixin:
             # means the completion belongs to a torn-down session.
             "predictor": self.predictor,
             "gen": gen,
+            "cursor": bool(show_busy),
         }
+        # Mirror of the cursor flag that survives _invalidate_manual_encode
+        # (which nulls _pending_encode): the completion must never restore a
+        # cursor this encode did not set, even after an invalidation.
+        self._encode_cursor_set = bool(show_busy)
         self._encoding_in_progress = True
         # The busy cursor is the required affordance for the 3-8s wait (no
         # Manual status line is exposed on the dock without touching it). It is
         # restored in the completion callback for every outcome.
-        QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
+        if show_busy:
+            QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
 
         worker = SetImageWorker(self.predictor, image_np, gen)
         self._manual_encode_worker = worker
@@ -686,14 +742,20 @@ class ManualCropsMixin:
                 and self.predictor is not pending.get("predictor"))  # noqa: W503
         )
 
-        # Release the pipe lock, cursor and worker ref for every outcome.
+        # Release the pipe lock, cursor and worker ref for every outcome. Only
+        # restore the cursor when this encode SET one (the speculative prewarm
+        # runs cursor-less; an unpaired restore would pop someone else's).
         self._manual_encode_worker = None
         self._pending_encode = None
         self._encoding_in_progress = False
-        try:
-            QApplication.restoreOverrideCursor()
-        except Exception:  # nosec B110 -- cursor restore is best-effort
-            pass
+        cursor_was_set = (pending.get("cursor", True) if pending is not None
+                          else getattr(self, "_encode_cursor_set", True))
+        self._encode_cursor_set = True
+        if cursor_was_set:
+            try:
+                QApplication.restoreOverrideCursor()
+            except Exception:  # nosec B110 -- cursor restore is best-effort
+                pass
 
         if torn_down:
             return
@@ -769,6 +831,169 @@ class ManualCropsMixin:
         else:
             self._on_negative_click(point)
 
+    # ---- Async online crop fetch (interactive) ------------------------------
+    # An online-layer crop reads tiles off the network and retries with
+    # progressive back-off (up to ~18s). Doing that on the GUI thread froze
+    # QGIS, so the interactive path drives the OnlineCropFetcher's discrete
+    # attempt steps with QTimer.singleShot: the retry waits happen off the
+    # event loop, the busy cursor + transport lock are held across the whole
+    # fetch, and a click that arrives meanwhile defers (via
+    # _encoding_in_progress) and replays once the crop is ready. On success the
+    # crop hands off to the same async SAM encode as the file-based path.
+
+    def _begin_online_crop_fetch(self, center_point, mupp_override,
+                                 on_encoded) -> bool:
+        """Start the asynchronous online-tile crop fetch. Returns True when the
+        fetch STARTED (the encode follows on completion), False when it could
+        not start (provider unavailable / setup error, already surfaced)."""
+        from ...core.feature_encoder import OnlineCropFetcher
+
+        actual_mupp = self._online_crop_mupp(mupp_override)
+        fetcher = OnlineCropFetcher(
+            self._current_layer, center_point.x(), center_point.y(),
+            actual_mupp, crop_size=1024)
+        if fetcher.error is not None:
+            self._surface_online_crop_error(fetcher.error, fetcher.error_code)
+            return False
+        try:
+            fetcher.begin()
+        except Exception as e:  # noqa: BLE001 - never leave the provider mutated
+            fetcher.restore()
+            self._surface_online_crop_error(str(e), "crop_error_online_exception")
+            return False
+
+        self._ensure_manual_encode_state()
+        self._manual_encode_gen += 1
+        gen = self._manual_encode_gen
+        self._online_fetch = {
+            "fetcher": fetcher,
+            "gen": gen,
+            "on_encoded": on_encoded,
+            "cursor": True,
+        }
+        # The fetch owns the transport lock + busy cursor for its whole life. A
+        # click meanwhile defers via _encoding_in_progress and replays after the
+        # crop is ready. _encode_cursor_set mirrors the cursor so handoff
+        # gestures treat the fetch like a foreground encode.
+        self._encoding_in_progress = True
+        self._encode_cursor_set = True
+        QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
+        QApplication.processEvents()
+        self._step_online_crop_fetch()
+        return True
+
+    def _step_online_crop_fetch(self) -> None:
+        """Run one online-fetch attempt on the GUI thread, then finish (on
+        success/exhaustion) or schedule the next attempt after its back-off via
+        QTimer.singleShot. A stale step (session torn down / superseded) is
+        dropped: its lock and cursor were already released by the teardown."""
+        from qgis.PyQt.QtCore import QTimer
+
+        self._ensure_manual_encode_state()
+        if self.dock_widget is None:
+            # Unloaded while a fetch was scheduled: revert the provider state
+            # and pop the cursor (unload does not run the encode invalidation).
+            self._release_online_fetch()
+            return
+        fetch = self._online_fetch
+        if fetch is None or fetch.get("gen") != self._manual_encode_gen:
+            return  # superseded; teardown already released the lock/cursor
+        try:
+            action, delay = fetch["fetcher"].step()
+        except Exception as e:  # noqa: BLE001
+            self._fail_online_fetch(str(e), "crop_error_online_exception")
+            return
+        if action in ("stabilized", "exhausted"):
+            self._complete_online_crop_fetch()
+            return
+        # ("refetch", 0.5) or ("retry", delay): wait off the event loop, then
+        # take the next attempt.
+        QTimer.singleShot(max(0, int(delay * 1000)), self._step_online_crop_fetch)
+
+    def _complete_online_crop_fetch(self) -> None:
+        """Fetch stabilized: read the bands, revert the provider state, then
+        either surface the fetch error or hand the crop off to the async SAM
+        encode (which reuses the busy cursor and the transport lock)."""
+        fetch = self._online_fetch
+        if fetch is None:
+            return
+        fetcher = fetch["fetcher"]
+        on_encoded = fetch.get("on_encoded")
+        try:
+            image_np, crop_info, error, error_code = fetcher.finish()
+        except Exception as e:  # noqa: BLE001
+            self._fail_online_fetch(str(e), "crop_error_online_exception")
+            return
+        finally:
+            # The provider fetch is done; revert the user's live resampling
+            # state before anything else reads the layer.
+            try:
+                fetcher.restore()
+            except Exception:  # nosec B110
+                pass
+        if error:
+            # Provider state already reverted above.
+            self._fail_online_fetch(error, error_code, restore_provider=False)
+            return
+        # Success: drop the fetch bookkeeping and pop the fetch's busy cursor,
+        # then start the async encode (it re-asserts the lock + pushes its own
+        # cursor, restored on the encode completion). The lock stays held across
+        # the handoff so a click cannot race in between.
+        self._online_fetch = None
+        if fetch.get("cursor"):
+            try:
+                QApplication.restoreOverrideCursor()
+            except Exception:  # nosec B110
+                pass
+        self._start_manual_encode(image_np, crop_info, on_encoded)
+
+    def _fail_online_fetch(self, error, error_code,
+                           restore_provider: bool = True) -> None:
+        """Online crop fetch failed: release the lock + cursor (+ provider state
+        unless already reverted), surface the same error the sync path would,
+        and drop the deferred click (it cannot be honored)."""
+        self._release_online_fetch(restore_provider=restore_provider)
+        self._surface_online_crop_error(error, error_code)
+        self._discard_pending_manual_click()
+
+    def _release_online_fetch(self, restore_provider: bool = True) -> None:
+        """Tear down the in-flight online crop fetch: revert the provider's live
+        resampling state, drop the transport lock, pop the busy cursor.
+        Idempotent; safe when no fetch is active. A live encode WORKER never
+        owns _online_fetch (it starts only after a fetch clears it), so clearing
+        the lock here can never clobber a worker's pipe ownership."""
+        self._ensure_manual_encode_state()
+        fetch = self._online_fetch
+        self._online_fetch = None
+        if fetch is None:
+            return
+        if restore_provider:
+            try:
+                fetch["fetcher"].restore()
+            except Exception:  # nosec B110
+                pass
+        self._encoding_in_progress = False
+        if fetch.get("cursor"):
+            try:
+                QApplication.restoreOverrideCursor()
+            except Exception:  # nosec B110
+                pass
+
+    def _surface_online_crop_error(self, error, error_code) -> None:
+        """Log + report an online crop-fetch failure on the GUI thread (mirrors
+        the interactive branch of _extract_crop_only; online never returns the
+        rasterio-unavailable code, so no venv recovery is wired here)."""
+        QgsMessageLog.logMessage(
+            f"Crop extraction failed: {error}",
+            "AI Segmentation", level=Qgis.MessageLevel.Critical
+        )
+        show_error_report(
+            self.iface.mainWindow(),
+            tr("Crop Error"),
+            error,
+            error_code=error_code or "crop_error_unknown",
+        )
+
     def _prewarm_manual_encode(self) -> None:
         """Pre-encode the visible view at session start (first-click latency).
 
@@ -814,14 +1039,35 @@ class ManualCropsMixin:
         Bumps the generation (mirrors the _auto_finalize_gen pattern) and drops
         the pending crop + remembered click.
 
-        `_encoding_in_progress` is deliberately NOT cleared here: a worker may
-        still own the predictor pipe, and the lock must stay until its own
-        completion fires (transport safety), which also restores the busy
-        cursor. A new encode therefore cannot race the draining one."""
+        `_encoding_in_progress` is deliberately NOT cleared here when a WORKER
+        owns the predictor pipe: the lock must stay until its own completion
+        fires (transport safety), which also restores the busy cursor. An
+        in-flight online crop FETCH is different: no worker will fire to release
+        it, so _release_online_fetch clears its lock + cursor + provider state
+        (fetch and worker are mutually exclusive). A new encode therefore cannot
+        race the draining one."""
         self._ensure_manual_encode_state()
         self._manual_encode_gen += 1
         self._pending_encode = None
         self._discard_pending_manual_click()
+        self._release_online_fetch()
+        # The handoff crop-spec memo describes an encode of the session being
+        # torn down; a new session must never skip its own encode over it.
+        self._handoff_crop_spec = None
+
+    def _current_crop_covers_bbox(self, bb) -> bool:
+        """True when the CURRENT encoded crop fully frames the given raster-CRS
+        bounding box. Used by the handoff open to skip a re-encode when the
+        speculative selection prewarm already encoded this object's crop."""
+        info = self._current_crop_info
+        if info is None:
+            return False
+        try:
+            minx, miny, maxx, maxy = info["bounds"]
+            return (bb.xMinimum() >= minx and bb.xMaximum() <= maxx
+                    and bb.yMinimum() >= miny and bb.yMaximum() <= maxy)  # noqa: W503
+        except (KeyError, TypeError, AttributeError):
+            return False
 
     def _freeze_active_crop(self, crop_info_override=None):
         """Freeze the current active crop's mask as a geographic polygon.
@@ -835,58 +1081,34 @@ class ManualCropsMixin:
                 overwritten _current_crop_info with a new crop).
         """
         if self.current_mask is None or self.current_transform_info is None:
+            # A handoff edit before its first editing click has no mask, only
+            # the imported display geometry. Freeze THAT, so a click outside
+            # the crop cannot drop the open object: the new crop's prediction
+            # composites and unions with it exactly like any frozen session.
+            base = self._unfrozen_display_polygon
+            if base is not None and not base.isEmpty():
+                self._frozen_sessions.append(
+                    FrozenCropSession(polygon=QgsGeometry(base)))
+                self._unfrozen_display_polygon = None
             return
         try:
-            from ...core.polygon_exporter import (
-                apply_mask_refinement,
-                apply_right_angles,
-                mask_to_polygons,
-            )
-
-            # Freeze exactly what the preview shows: same refinement,
-            # simplification and smoothing as _update_mask_visualization.
-            # Freezing the raw mask made the polygon visibly "jump" the
-            # moment the user clicked elsewhere.
-            mask_to_freeze = self.current_mask
-            if (self._refine_fill_holes or self._refine_expand != 0
-                    or self._refine_min_area > 0):  # noqa: W503
-                mask_to_freeze = apply_mask_refinement(
-                    self.current_mask,
-                    expand_value=self._refine_expand,
-                    fill_holes=self._refine_fill_holes,
-                    min_area=self._refine_min_area,
+            # Freeze exactly what the preview shows: the shared refine tail
+            # (refinement, simplification, smoothing, size window). Freezing
+            # the raw mask made the polygon visibly "jump" the moment the
+            # user clicked elsewhere.
+            combined = self._refined_active_mask_geometry()
+            if combined is not None and not combined.isEmpty():
+                session = FrozenCropSession(
+                    polygon=combined,
+                    points_positive=list(self._active_crop_points_positive),
+                    points_negative=list(self._active_crop_points_negative),
+                    crop_info=crop_info_override if crop_info_override is not None else self._current_crop_info,
                 )
-
-            geometries = mask_to_polygons(
-                mask_to_freeze, self.current_transform_info)
-            if geometries:
-                combined = QgsGeometry.unaryUnion(geometries)
-                if combined and not combined.isEmpty():
-                    tolerance = self._compute_simplification_tolerance(
-                        self.current_transform_info, self._refine_simplify
-                    )
-                    if tolerance > 0:
-                        combined = combined.simplify(tolerance)
-                    if self._refine_ortho:
-                        combined = apply_right_angles(
-                            combined,
-                            destair_tol=max(
-                                0.0,
-                                self._compute_simplification_tolerance(
-                                    self.current_transform_info, 3) - tolerance))
-                    if self._refine_smooth > 0:
-                        combined = combined.smooth(self._refine_smooth, 0.25)
-                    session = FrozenCropSession(
-                        polygon=combined,
-                        points_positive=list(self._active_crop_points_positive),
-                        points_negative=list(self._active_crop_points_negative),
-                        crop_info=crop_info_override if crop_info_override is not None else self._current_crop_info,
-                    )
-                    self._frozen_sessions.append(session)
-                    QgsMessageLog.logMessage(
-                        f"Froze crop session #{len(self._frozen_sessions)} "
-                        f"with {len(session.points_positive) + len(session.points_negative)} points",
-                        "AI Segmentation", level=Qgis.MessageLevel.Info)
+                self._frozen_sessions.append(session)
+                QgsMessageLog.logMessage(
+                    f"Froze crop session #{len(self._frozen_sessions)} "
+                    f"with {len(session.points_positive) + len(session.points_negative)} points",
+                    "AI Segmentation", level=Qgis.MessageLevel.Info)
         except Exception as e:
             QgsMessageLog.logMessage(
                 f"Failed to freeze active crop: {str(e)}",

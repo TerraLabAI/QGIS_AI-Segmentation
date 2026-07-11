@@ -502,8 +502,10 @@ def track_tutorial_opened(source: str) -> None:
     track(ev.TUTORIAL_OPENED, {"source": source})
 
 
-def track_exemplar_added(count_after: int) -> None:
-    track(ev.EXEMPLAR_ADDED, {"count_after": count_after})
+def track_exemplar_added(count_after: int, label: str = "") -> None:
+    """label is "include" or "exclude" (additive property; count_after stays
+    the registry's only listed one)."""
+    track(ev.EXEMPLAR_ADDED, {"count_after": count_after, "label": label})
 
 
 def track_exemplar_removed(count_after: int) -> None:
@@ -518,7 +520,12 @@ def track_detail_changed(detail: int, tiles: int, source: str) -> None:
 def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
                               object_class: str, detail: int, exemplar_count: int,
                               est_credits: int, credits_before: int | None,
-                              is_free_tier: bool) -> None:
+                              is_free_tier: bool,
+                              merge_mode: str = "separate",
+                              merge_mode_source: str = "prompt") -> None:
+    """merge_mode is the count-vs-map policy the run picked ("separate"/"map");
+    merge_mode_source says how it was decided: "prompt" (token), "choice" (the
+    exemplar-only chips) or "policy" (server default / fallback)."""
     track(ev.AUTO_DETECT_STARTED, {
         "run_id": run_id,
         "tiles": tiles,
@@ -529,6 +536,8 @@ def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
         "est_credits": est_credits,
         "credits_before": credits_before,
         "is_free_tier": bool(is_free_tier),
+        "merge_mode": merge_mode,
+        "merge_mode_source": merge_mode_source,
     })
 
 
@@ -538,10 +547,15 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
                                 p50_tile_ms: int | None = None,
                                 p95_tile_ms: int | None = None,
                                 stop_reason: str = "completed",
-                                warming_ms: int = 0) -> None:
+                                warming_ms: int = 0,
+                                merge_mode_final: str = "separate",
+                                merge_override_used: bool = False) -> None:
     """warming_ms is the wall time the run spent in the server waiting room
     (cold start / queue) as perceived by the user; 0 = the run never waited.
-    Per-tile latency lives server-side keyed by run_id, so no client percentiles."""
+    Per-tile latency lives server-side keyed by run_id, so no client percentiles.
+    merge_mode_final is the count-vs-map grouping the run finished on
+    ("separate"/"map"); merge_override_used is True when the user re-grouped it
+    in the review (exemplar-only runs only)."""
     track(ev.AUTO_DETECT_COMPLETED, {
         "run_id": run_id,
         "duration_ms": duration_ms,
@@ -554,6 +568,8 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
         "p95_tile_ms": p95_tile_ms,
         "stop_reason": stop_reason,
         "warming_ms": warming_ms,
+        "merge_mode_final": merge_mode_final,
+        "merge_override_used": bool(merge_override_used),
     })
 
 

@@ -13,9 +13,12 @@
 
 ## Data & privacy
 
-AI Segmentation runs locally: your imagery and clicks never leave your computer.
-If you sign in, the plugin contacts our server only to verify your license, plus
-optional anonymous usage stats (no personal data) you can switch off in *Account
-Settings*. See our [Privacy Policy](https://terra-lab.ai/privacy-policy).
+AI Segmentation has two modes with different privacy profiles. **Manual mode runs
+locally**: your imagery and clicks never leave your computer. **Automatic mode is
+cloud-powered**: the imagery tiles inside the zone you draw are sent to our
+detection service for processing during the run. If you sign in, the plugin
+also contacts our server to verify your license, plus optional anonymous usage
+stats (no personal data) you can switch off in *Account Settings*. See our
+[Privacy Policy](https://terra-lab.ai/privacy-policy).
 
 ---

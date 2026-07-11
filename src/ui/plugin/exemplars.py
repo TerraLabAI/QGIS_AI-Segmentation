@@ -18,6 +18,7 @@ from qgis.core import (
 from qgis.gui import QgsRubberBand
 from qgis.PyQt.QtCore import Qt
 
+from ...core.exemplar_size import exemplar_at_max_detail, exemplar_too_small
 from ...core.i18n import tr
 from ...core.qt_compat import PolygonGeometry
 from ..canvas_palette import (
@@ -134,7 +135,11 @@ class ExemplarsMixin:
             pass
         canvas.setMapTool(tool)
         # Light up the chosen button + show the "now outline on the map"
-        # instruction so the click clearly started a draw action.
+        # instruction so the click clearly started a draw action. Tracked on
+        # the plugin too (not just the dock label): the live size-warning
+        # refresh (_refresh_exemplar_size_warning) must no-op while armed, or
+        # it would fight the armed instruction for the shared hint label.
+        self._auto_exemplar_arming = True
         try:
             self.dock_widget.set_auto_exemplar_armed(int(label))
         except (RuntimeError, AttributeError):
@@ -146,10 +151,16 @@ class ExemplarsMixin:
 
         An example drawn ENTIRELY outside the zone is refused with a notification:
         there is no imagery to learn from there and it cannot match anything
-        inside. A draw straddling the border is clipped to its in-zone part.
+        inside. A draw straddling the border keeps its WHOLE shape when its
+        centroid is inside the zone.
         """
         label = int(getattr(self, "_pending_exemplar_label", 1))
-        # Keep the example inside the zone (that is where the imagery is).
+        # The zone only scopes the SEARCH area; the reference must show the
+        # WHOLE drawn object (the stamp renders from the LAYER, so imagery
+        # exists past the zone edge). A straddling draw whose centroid is
+        # inside the zone is kept UNCLIPPED; a mostly-outside straddler is
+        # still clipped to its in-zone part; only a draw entirely outside the
+        # zone is refused (nothing there can match inside).
         zone_poly = self._auto_zone_polygon
         if (zone_poly is not None and geom is not None and not geom.isEmpty()):
             try:
@@ -165,7 +176,8 @@ class ExemplarsMixin:
                         tr("Draw your example inside the selected zone."))
                     self._restore_maptool_after_exemplar()
                     return
-                geom = clipped
+                if not self._geom_centroid_in(geom, zone_poly):
+                    geom = clipped
         if geom is None or geom.isEmpty():
             self._restore_maptool_after_exemplar()
             return
@@ -183,10 +195,111 @@ class ExemplarsMixin:
             self._prebuild_exemplar_stamp(eid)
             try:
                 from ...core import telemetry
-                telemetry.track_exemplar_added(count_after=self._auto_exemplar_store.count())
+                telemetry.track_exemplar_added(
+                    count_after=self._auto_exemplar_store.count(),
+                    label="include" if label == 1 else "exclude")
             except Exception:
                 pass  # nosec B110
         self._restore_maptool_after_exemplar()
+        # After the tool restore (which clears the armed instruction line and
+        # flag): advise, never block, when ANY stored example is too small at
+        # the current detail level to carry usable texture. Re-checks the
+        # WHOLE store (not just this one draw) and the caller re-runs this on
+        # every detail change too, so the warning stays live instead of
+        # sticking once the object is later drawn big enough.
+        self._refresh_exemplar_size_warning()
+
+    @staticmethod
+    def _geom_centroid_in(geom, zone_poly) -> bool:
+        """True when geom's centroid falls inside zone_poly. Any failure counts
+        as inside (lenient: the caller already proved the draw overlaps the
+        zone, so the whole shape is kept on doubt)."""
+        try:
+            c = geom.centroid()
+            if c is None or c.isEmpty():
+                return True
+            return bool(zone_poly.contains(c))
+        except (RuntimeError, AttributeError):
+            return True
+
+    def _refresh_exemplar_size_warning(self) -> None:
+        """Re-check EVERY stored example against the CURRENT detail level and
+        show/clear the shared too-small warning accordingly (below the
+        stamp's hard floor the crop carries no usable texture).
+
+        This replaces a former one-shot check computed only at draw time: it
+        never re-evaluated, so raising the Detail slider (making the object
+        bigger in pixels) left a stale warning on screen even once the object
+        was plenty big. This method is the single re-check chokepoint, called
+        after every detail change (auto_zone._update_credit_estimate) and
+        after every exemplar add/remove, so the warning tracks the CURRENT
+        state instead of the state at draw time.
+
+        No-op while a draw is armed (the shared hint label is busy with the
+        armed instruction; the plugin-side ``_auto_exemplar_arming`` flag
+        avoids fighting it). Advisory only: the run is never blocked. Fully
+        guarded: a hiccup here (layer removed, reproject failure, unknown
+        resolution) must never raise into a caller that has its own job to
+        finish (the credit estimate, an add, a remove).
+        """
+        if not self.dock_widget or getattr(self, "_auto_exemplar_arming", False):
+            return
+        try:
+            store = self._auto_exemplar_store
+        except AttributeError:
+            return
+        if store.count() == 0:
+            try:
+                self.dock_widget.clear_auto_exemplar_size_warning()
+            except (RuntimeError, AttributeError):
+                pass
+            return
+        layer = self._get_active_raster_layer()
+        if layer is None:
+            return
+        try:
+            run_mupp = self._exemplar_run_mupp(layer)
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            return
+        if run_mupp <= 0:
+            return
+        any_valid = False
+        too_small = False
+        for ex in store.list():
+            try:
+                rect = self._reproject_zone_to_layer_crs(ex.map_rect, layer)
+            except (RuntimeError, AttributeError):
+                continue
+            any_valid = True
+            if exemplar_too_small(
+                    rect.width(), rect.height(), run_mupp, self._STAMP_ABS_MIN_SIDE):
+                too_small = True
+                break  # one small example is enough to warn
+        try:
+            if any_valid and too_small:
+                # The message must not tell the user to "zoom finer" when the
+                # Detail slider is already at its useful maximum for this
+                # layer/zone: set_auto_detail_max already clamped the slider's
+                # maximum() to that cap (auto_zone._update_credit_estimate),
+                # so reading it here is free (no grid recompute).
+                at_max_detail = self._auto_detail_slider_at_max()
+                self.dock_widget.show_auto_exemplar_size_warning(at_max_detail=at_max_detail)
+            else:
+                self.dock_widget.clear_auto_exemplar_size_warning()
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _auto_detail_slider_at_max(self) -> bool:
+        """True when the Detail slider is already at its useful maximum, read
+        straight off the slider's current maximum() (kept in sync with
+        `_max_useful_detail` by `set_auto_detail_max`) rather than recomputing
+        the grid. Fails open to False (the conservative "can zoom finer"
+        wording) on any widget hiccup."""
+        try:
+            slider = self.dock_widget.auto_detail_slider
+            return exemplar_at_max_detail(int(slider.value()), int(slider.maximum()))
+        except (RuntimeError, AttributeError):
+            return False
 
     def _make_exemplar_band_poly(self, geom, label: int):
         """Persistent rubber band tracing one exemplar POLYGON (green/red)."""
@@ -254,6 +367,9 @@ class ExemplarsMixin:
         band = self._exemplar_bands.pop(exemplar_id, None)
         self._remove_rubber_band(band)
         self._refresh_exemplar_chips()
+        # The removed example may have been the one carrying the too-small
+        # warning; re-check the remaining set (clears it once none are small).
+        self._refresh_exemplar_size_warning()
         try:
             from ...core import telemetry
             telemetry.track_exemplar_removed(count_after=self._auto_exemplar_store.count())
@@ -270,9 +386,25 @@ class ExemplarsMixin:
         self._restore_maptool_after_exemplar()
         self._refresh_exemplar_chips()
 
+    def _set_exemplar_bands_visible(self, visible: bool) -> None:
+        """Show/hide every exemplar rubber band WITHOUT dropping the exemplars.
+        The Refine-in-Manual handoff hides them (the green example outline reads
+        as one more editable polygon there); Back to review restores them."""
+        for band in self._exemplar_bands.values():
+            if band is None:
+                continue
+            try:
+                band.setVisible(visible)
+            except (RuntimeError, AttributeError):
+                pass
+
     def _restore_maptool_after_exemplar(self) -> None:
         """Restore the map tool active before a one-shot example draw."""
         tool = self._exemplar_maptool
+        # Disarm before the dock clears the instruction line, so a
+        # size-warning refresh triggered right after (draw-completion path)
+        # is no longer blocked by the armed no-op guard.
+        self._auto_exemplar_arming = False
         # Re-enable the dock Escape/Enter shortcuts the draw had suspended, and
         # clear the armed button + instruction line (covers finish AND cancel).
         if self.dock_widget:
@@ -359,18 +491,13 @@ class ExemplarsMixin:
             return max(lo, min(hi, v))
 
         for ex in self._auto_exemplar_store.list():
-            try:
-                rect_layer = self._reproject_zone_to_layer_crs(ex.map_rect, layer)
-            except (RuntimeError, AttributeError):
+            raw = self._exemplar_full_pixel_box(
+                ex, layer, geo_bbox, pixel_w, pixel_h)
+            if raw is None:
                 continue
-            x0 = (rect_layer.xMinimum() - ext_minx) / ext_w * pixel_w
-            x1 = (rect_layer.xMaximum() - ext_minx) / ext_w * pixel_w
-            # y flip: map y grows up, pixel y grows down.
-            y0 = (ext_maxy - rect_layer.yMaximum()) / ext_h * pixel_h
-            y1 = (ext_maxy - rect_layer.yMinimum()) / ext_h * pixel_h
             box = [
-                _clamp(x0, 0, pixel_w), _clamp(y0, 0, pixel_h),
-                _clamp(x1, 0, pixel_w), _clamp(y1, 0, pixel_h),
+                _clamp(raw[0], 0, pixel_w), _clamp(raw[1], 0, pixel_h),
+                _clamp(raw[2], 0, pixel_w), _clamp(raw[3], 0, pixel_h),
             ]
             if box[2] - box[0] >= 1 and box[3] - box[1] >= 1:
                 entry = {"box": [round(v, 1) for v in box], "label": int(ex.label)}
@@ -380,6 +507,31 @@ class ExemplarsMixin:
                     entry["polygon_px"] = ring
                 payload.append(entry)
         return payload
+
+    def _exemplar_full_pixel_box(
+        self, ex, layer, geo_bbox: tuple, pixel_w: int, pixel_h: int
+    ) -> list[float] | None:
+        """One exemplar's drawn rect as an UNCLAMPED xyxy pixel box on the
+        rendered zone grid (geo_bbox = actual rendered extent, layer CRS).
+        Unclamped on purpose: a consumer testing whether a tile fully contains
+        the box must see the true extent, so a draw overflowing the zone image
+        can never pass as contained. None when the grid is degenerate or the
+        reprojection fails."""
+        ext_minx, ext_miny, ext_maxx, ext_maxy = geo_bbox
+        ext_w = ext_maxx - ext_minx
+        ext_h = ext_maxy - ext_miny
+        if ext_w <= 0 or ext_h <= 0 or pixel_w <= 0 or pixel_h <= 0:
+            return None
+        try:
+            rect_layer = self._reproject_zone_to_layer_crs(ex.map_rect, layer)
+        except (RuntimeError, AttributeError):
+            return None
+        x0 = (rect_layer.xMinimum() - ext_minx) / ext_w * pixel_w
+        x1 = (rect_layer.xMaximum() - ext_minx) / ext_w * pixel_w
+        # y flip: map y grows up, pixel y grows down.
+        y0 = (ext_maxy - rect_layer.yMaximum()) / ext_h * pixel_h
+        y1 = (ext_maxy - rect_layer.yMinimum()) / ext_h * pixel_h
+        return [x0, y0, x1, y1]
 
     def _exemplar_polygon_px(self, ex, layer, geo_bbox, pixel_w, pixel_h):
         """Exterior ring of an exemplar's polygon in FULL-image pixel coords, so
@@ -676,10 +828,15 @@ class ExemplarsMixin:
             return False
         return abs(cached - current) / max(cached, current) <= 0.05
 
-    def _render_exemplar_stamp(self, ex, layer, run_mupp: float = 0.0):
+    def _render_exemplar_stamp(self, ex, layer, run_mupp: float = 0.0, max_side: int = 0):
         """Render ONE exemplar's natural crop + object box from the LAYER at
         the RUN's tile resolution (floored at the source's true finest, see
         _exemplar_stamp_longest_side). Returns ``(img, obj_box)`` or None.
+
+        ``max_side`` (> 0) clamps the render's longest side to the final per-tile
+        paste size, so the crop is filtered ONCE here (the tiles get one
+        filtering pass; rendering larger then Qt-downscaling in the worker would
+        be a second pass on the same pixels).
 
         ``obj_box`` is ``[x0,y0,x1,y1]`` in crop pixels framing the drawn object,
         so the worker sends the cloud model a box tight to the object. The crop keeps the
@@ -715,12 +872,20 @@ class ExemplarsMixin:
         # object at the SAME apparent pixel size the tiles will, or the model
         # matches coarser context structures instead of the object.
         target = self._exemplar_stamp_longest_side(layer, padded, run_mupp)
+        # Clamp to the final per-tile paste size so the crop is filtered once at
+        # render time; the object box below still derives from the actual render
+        # dimensions, so it stays exact under the clamp.
+        if max_side > 0:
+            target = min(target, int(max_side))
         if fw >= fh:
             pw, ph = target, max(16, int(round(target * fh / fw)))
         else:
             ph, pw = target, max(16, int(round(target * fw / fh)))
         try:
-            img, act = render_zone_to_image(layer, padded, pw, ph)
+            # resample_local: a fine local raster shrunk to the run resolution
+            # must be averaged (as the tiles are), not decimated nearest, or the
+            # stamp's texture statistics differ from the tiles it must match.
+            img, act = render_zone_to_image(layer, padded, pw, ph, resample_local=True)
         except Exception:  # noqa: BLE001
             img, act = None, None
         if img is None or img.isNull() or act is None:
@@ -761,13 +926,18 @@ class ExemplarsMixin:
         # Render at the run scale the CURRENT zone + detail imply; if the user
         # then moves the detail slider before Detect, the gsd-aware cache check
         # in _build_exemplar_stamps rebuilds the stamp at the final scale.
+        from ...core.cloud_detection import stamp_size_cap
         run_mupp = self._exemplar_run_mupp(layer)
-        built = self._render_exemplar_stamp(ex, layer, run_mupp)
+        # Render straight at the final per-tile paste size for this example
+        # count; a later count change re-caps and rebuilds in _build_exemplar_stamps.
+        cap = stamp_size_cap(self._auto_exemplar_store.count())
+        built = self._render_exemplar_stamp(ex, layer, run_mupp, max_side=cap)
         if built is None:
             return
         ex.stamp_img, ex.stamp_obj_box = built
         ex.stamp_layer_id = layer.id()
         ex.stamp_gsd = run_mupp
+        ex.stamp_side = max(ex.stamp_img.width(), ex.stamp_img.height())
         # The card/preview must show the EXACT reference the model receives, so
         # swap the provisional canvas grab for the rendered stamp. The canvas
         # grab embeds live overlays (zone grid lines, draw bands) and gets
@@ -777,29 +947,47 @@ class ExemplarsMixin:
             ex.thumbnail = ex.stamp_img
             self._refresh_exemplar_chips()
 
-    def _build_exemplar_stamps(self, layer):
-        """Return ``[(QImage, label, obj_box)]`` ready to stamp into every tile,
-        one per stored exemplar. Reuses the stamp prebuilt when the exemplar was
-        drawn when it is present AND still matches this layer;
+    def _build_exemplar_stamps(self, layer, geo_bbox=None, pixel_w=0, pixel_h=0):
+        """Return ``[(QImage, label, obj_box, full_box)]`` ready to stamp into
+        every tile, one per stored exemplar. Reuses the stamp prebuilt when the
+        exemplar was drawn when it is present AND still matches this layer;
         otherwise renders it now. So only missing/stale entries pay the render on
         the Detect critical path (usually none). See _render_exemplar_stamp for
-        the crop/mask/box rationale."""
+        the crop/mask/box rationale.
+
+        ``full_box`` is the exemplar's drawn box in FULL-image pixel coords
+        (unclamped; None when the zone grid is not supplied or the box cannot
+        be mapped): the worker uses it to send the box at the REAL in-situ
+        object on the one tile that fully contains it, instead of pasting the
+        crop there."""
+        from ...core.cloud_detection import stamp_size_cap
         stamps = []
         layer_id = layer.id() if layer is not None else None
         # The run scale at Detect (the zone + committed detail level): a cached
         # stamp built at a different scale (detail moved since the draw) is
         # stale and re-rendered here so the reference always matches the tiles.
         run_mupp = self._exemplar_run_mupp(layer)
+        # Final per-tile paste size for this example count. Render directly at it
+        # so the worker's downscale is a no-op; a cached stamp rendered wider
+        # than the current cap (the count grew since it was built) is rebuilt.
+        cap = stamp_size_cap(self._auto_exemplar_store.count())
         for ex in self._auto_exemplar_store.list():
+            full_box = (
+                self._exemplar_full_pixel_box(ex, layer, geo_bbox, pixel_w, pixel_h)
+                if geo_bbox is not None else None)
             if (ex.stamp_img is not None and ex.stamp_layer_id == layer_id
-                    and self._stamp_gsd_matches(ex.stamp_gsd, run_mupp)):  # noqa: W503
-                stamps.append((ex.stamp_img, int(ex.label), ex.stamp_obj_box))
+                    and self._stamp_gsd_matches(ex.stamp_gsd, run_mupp)  # noqa: W503
+                    and getattr(ex, "stamp_side", 0) <= cap):  # noqa: W503
+                stamps.append(
+                    (ex.stamp_img, int(ex.label), ex.stamp_obj_box, full_box))
                 continue
-            built = self._render_exemplar_stamp(ex, layer, run_mupp)
+            built = self._render_exemplar_stamp(ex, layer, run_mupp, max_side=cap)
             if built is None:
                 continue
             ex.stamp_img, ex.stamp_obj_box = built
             ex.stamp_layer_id = layer_id
             ex.stamp_gsd = run_mupp
-            stamps.append((ex.stamp_img, int(ex.label), ex.stamp_obj_box))
+            ex.stamp_side = max(ex.stamp_img.width(), ex.stamp_img.height())
+            stamps.append(
+                (ex.stamp_img, int(ex.label), ex.stamp_obj_box, full_box))
         return stamps

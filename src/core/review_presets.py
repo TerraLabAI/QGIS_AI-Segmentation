@@ -151,6 +151,31 @@ def review_preset_for(
     }
 
 
+def review_start_confidence_default(
+    prompt: str, is_exemplar_only: bool, policy: dict | None = None
+) -> float:
+    """The starting confidence cutoff for a run, used for BOTH the live preview
+    and the post-run review so they open at the same value.
+
+    An EXEMPLAR-only run (a drawn example, no text prompt) has no
+    open-vocabulary text prior and surfaces more weak look-alikes, so it opens
+    at the exemplar-only default (``prompt`` is ignored). A text run uses its
+    shape-class value when the server policy carries one, else the generic text
+    default. This is the single decision point so the live seed and the review
+    seed can never drift apart.
+    """
+    if is_exemplar_only:
+        from .detection_policy import confidence_default_exemplar_only
+
+        return confidence_default_exemplar_only(policy)
+    cls_conf = class_confidence_for(prompt, policy)
+    if cls_conf is not None:
+        return cls_conf
+    from .detection_policy import confidence_default
+
+    return confidence_default(policy)
+
+
 def class_confidence_for(prompt: str, policy: dict | None = None) -> float | None:
     """The review's STARTING confidence for this prompt's shape class, or None
     when the policy carries none (the caller then uses the generic default).

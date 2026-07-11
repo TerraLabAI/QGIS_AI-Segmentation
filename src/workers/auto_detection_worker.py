@@ -46,10 +46,10 @@ logger = logging.getLogger(__name__)
 _TRANSIENT_CODES = {
     "NO_INTERNET", "TIMEOUT", "DNS_ERROR", "PROXY_ERROR",
     "SSL_ERROR", "SERVER_ERROR", "CONNECTION_REFUSED",
-    # A submit whose deadline passed with no HTTP answer at all: the GPU is
-    # cold-starting or busy. Retried on the queue TIME budget (not an attempt
-    # count) and shown as the "your spot is held" waiting room, never blamed
-    # on the user's connection. See terralab_client._classify_qt_error.
+    # A submit whose deadline passed with no HTTP answer at all: the backend
+    # instance is cold-starting or busy. Retried on the queue TIME budget (not
+    # an attempt count) and shown as the "your spot is held" waiting room,
+    # never blamed on the user's connection. See terralab_client._classify_qt_error.
     "SERVICE_WARMING",
 }
 
@@ -72,9 +72,9 @@ _QUEUE_RETRY_BUDGET_S = 300.0
 # "retry in 5s" must not all come back at t+5.000 in one synchronized wave.
 _BUSY_JITTER = (0.85, 1.30)
 # How many upcoming tiles the streaming path asks the main thread to render
-# AHEAD of need (async jobs, overlapped with the in-flight inference). 2 keeps
-# the pipeline fed at the measured render/inference ratios without stacking
-# main-thread render jobs or holding more than a few tile images alive.
+# AHEAD of need (async jobs, overlapped with the in-flight inference). Kept
+# small so the pipeline stays fed without stacking main-thread render jobs or
+# holding more than a few tile images alive.
 _PREFETCH_DEPTH = 2
 # On a USER cancel we stop firing new tiles at once, then wait this long for
 # the handful ALREADY in flight to land so their billed masks are kept, not
@@ -84,22 +84,20 @@ _PREFETCH_DEPTH = 2
 # cancel drains in well under this ceiling; kept short so Cancel feels prompt
 # (a tile still computing past it is aborted rather than making the user wait).
 _STOP_DRAIN_BUDGET_S = 2.5
-# The inference default caps instances per tile low, which silently truncates
-# dense scenes. The cloud model detects at most 200 objects per inference (its
-# num_queries=200 is a hard architectural ceiling, not a tunable), so request
-# the full 200 cap and let tile sizing (not this number) keep the expected count
-# well under it. The current endpoint accepts 200; do not lower this assuming an
-# older 32-mask cap (that limit no longer applies).
+# The service caps the number of instances it returns per inference, which
+# silently truncates dense scenes at its default. Request the full cap and let
+# tile sizing (not this number) keep the expected object count well under it.
 _MAX_MASKS_PER_TILE = 200
 # Saturation trigger: a truncated tile rarely lands EXACTLY on the ceiling,
 # because the model fills all its slots and then its own score filtering
 # drops a few, so the trigger sits below the cap with margin. Anything at
 # or above it is treated as truncated for both the re-split ladder and the
-# review dense hint.
-_MASK_CAP_TRIGGER = int(0.80 * _MAX_MASKS_PER_TILE)
+# review dense hint. Client fallback; the run value is server-overridable
+# (seed.saturation.cap_trigger_frac), resolved per run in __init__.
+_MASK_CAP_TRIGGER_FRAC = 0.80
+_MASK_CAP_TRIGGER = int(_MASK_CAP_TRIGGER_FRAC * _MAX_MASKS_PER_TILE)
 # Saturated-tile re-split recursion ceiling. Depth 1 quarters the object count
-# per inference; depth 2 covers extreme scenes (a dense orchard tile can hold
-# ~2000 objects, still ~125 per quadrant at depth 2). Past that the quadrants
+# per inference; depth 2 covers extreme dense scenes. Past that the quadrants
 # are too small/interpolated to add signal.
 _SUBDIV_MAX_DEPTH = 2
 # Fraction of a tile above which a single mask is treated as a whole-tile "everything"
@@ -164,8 +162,8 @@ _RENDER_RETRY_MAX = 3
 _RENDER_RETRY_DELAY_S = 1.5
 # After ANY blank/failed render, hold the render prefetch for a beat: a blank
 # means the imagery provider is struggling, and stacking more concurrent
-# fetches into that window makes the burst worse (measured as consecutive
-# skipped-tile runs). The tile in hand still renders synchronously.
+# fetches into that window makes the burst worse. The tile in hand still
+# renders synchronously.
 _PREFETCH_HOLDOFF_S = 4.0
 
 # Mid-run offline abort threshold. After the first successful tile the
@@ -259,11 +257,11 @@ class TileRenderBridge(QObject):
         The slot returns immediately; the job's completion stores the QImage
         and wakes the worker. Because the slot never blocks, several queued
         requests start OVERLAPPING render jobs - that concurrency is the whole
-        point of the worker-side prefetch (the serialized per-tile render was
-        the measured wall-clock bottleneck of large runs, not the network or
-        the GPU). (out_w, out_h) is the OUTPUT pixel size; when it differs
-        from (tw, th) the same ground extent renders at a finer scale (the
-        saturated-tile re-split path). 0 means "same as the rect"."""
+        point of the worker-side prefetch (the serialized per-tile render is
+        the bottleneck of large runs, not the network or the detection host).
+        (out_w, out_h) is the OUTPUT pixel size; when it differs from (tw, th)
+        the same ground extent renders at a finer scale (the saturated-tile
+        re-split path). 0 means "same as the rect"."""
         from ..core.cloud_detection import start_tile_render_job
 
         started = False
@@ -428,6 +426,7 @@ class AutoDetectionWorker(QThread):
         seam_min_dim: float = 0.0,
         merge_scalars: dict | None = None,
         subdivide_budget: int = 0,
+        collect_raw: bool = False,
         tile_renderer=None,
         parent=None,
     ):
@@ -514,9 +513,19 @@ class AutoDetectionWorker(QThread):
         # from the plugin: crisp, well-sized, and stamped into every tile so one
         # drawn example works on all tiles. None/empty for text-only runs.
         self._exemplar_stamps_in = exemplar_stamps or []
-        self._stamps: list = []                 # [(crop QImage, label)]
+        self._stamps: list = []                 # [(crop QImage, label, obj_box)]
+        # Parallel to _stamps: each exemplar's drawn box in FULL-image pixel
+        # coords (unclamped xyxy, or None). The one tile whose rect fully
+        # contains a box sends it in-situ instead of pasting that crop.
+        self._stamp_full_boxes: list = []
         self._tile_exemplars: dict = {}         # tile_idx -> [{box, label}] (tile coords)
-        self._tile_stamp_norm: dict = {}        # tile_idx -> [0,0,nx,ny] normalized
+        self._tile_stamp_norm: dict = {}        # tile_idx -> [nx0,ny0,nx1,ny1] normalized
+        # Top-row band edge (first-row coverage blind-spot fix). Resolved in
+        # _prepare_stamps: the top grid row bands its BOTTOM edge (instead of the
+        # top, which has no row above to re-see it) when the row below overlaps
+        # enough that the two bands stay clear of each other.
+        self._top_stamp_ty: int | None = None
+        self._stamp_bottom_top_row = False
         self._progress_offset = max(0, progress_offset)
         self._progress_total = progress_total
         # Zone clip polygon as WKB (run CRS) + the run's ground sample distance.
@@ -527,6 +536,12 @@ class AutoDetectionWorker(QThread):
         self._clip_polygon_wkb = clip_polygon_wkb
         self._gsd = gsd
         self._merge_separate = merge_separate
+        # Raw-collect mode (exemplar-only runs): keep the per-tile hypothesis NMS
+        # (it dedups the model's overlapping hypothesis stacks, not instances),
+        # but leave the coverage/compactness gates and the MAP per-tile premerge
+        # OFF, so the GUI receives the run's own fragments unaltered. The client
+        # then decides count-vs-map from these fragments after the run.
+        self._collect_raw = bool(collect_raw)
         # Inter-tile overlap span (ground units), the run merger's size-aware
         # anti-over-merge gate. Used by the MAP-mode per-tile pre-merge below
         # so its local merger applies the exact same policy as the GUI's.
@@ -544,6 +559,18 @@ class AutoDetectionWorker(QThread):
         # size), recursively up to _SUBDIV_MAX_DEPTH. The budget is extra tiles
         # (= extra credits) this run may spend on re-splits; 0 disables.
         self._subdivide_budget = max(0, int(subdivide_budget))
+        # Saturation tuning, server-overridable (seed.saturation in the
+        # detection policy) with the module constants as the client fallbacks.
+        # Resolved ONCE here on the construction (main) thread: the policy read
+        # is a memory-cache lookup, and the values must stay constant for the
+        # whole run.
+        from ..core import detection_policy as _dp
+        self._mask_cap_trigger = int(
+            _dp.mask_cap_trigger_frac(_MASK_CAP_TRIGGER_FRAC)
+            * _MAX_MASKS_PER_TILE)
+        self._subdiv_max_depth = _dp.subdiv_max_depth(_SUBDIV_MAX_DEPTH)
+        self._max_tile_coverage = _dp.max_tile_coverage(_MAX_TILE_COVERAGE)
+        self._hard_tile_coverage = _dp.hard_tile_coverage(_HARD_TILE_COVERAGE)
         self._tile_depth: dict[int, int] = {}      # tile_idx -> re-split depth
         self._tile_outsize: dict[int, tuple[int, int]] = {}  # idx -> render px
         self._pending_subtiles: list = []          # [(spec, depth, parent)] queued
@@ -997,6 +1024,12 @@ class AutoDetectionWorker(QThread):
             # before halting. Mirrors the old behaviour: in-flight tiles are not
             # drained after a terminal stop; the plugin finalizes partial results.
             if batch_stop is not None:
+                # Flush withheld re-split parents BEFORE the terminal signal:
+                # the main thread finalizes (nulls the merger) on that signal,
+                # so a parent's late tile_completed would race the finalize and
+                # its billed detections could be dropped. _flush_withheld clears
+                # _withheld, so the later call in _emit_terminal is a no-op.
+                self._flush_withheld()
                 if batch_stop[0] == "exhausted":
                     self.credits_exhausted.emit(batch_stop[1])
                     self._stop_reason = "exhausted"
@@ -1292,8 +1325,8 @@ class AutoDetectionWorker(QThread):
                 )
                 reply = self._client.post_detection_async(nam, submission, self._auth)
                 in_flight[reply] = (tile_idx, tile_spec, tile_transform, png_bytes)
-                # This tile's inference just started: use its multi-second GPU
-                # wait to render the NEXT tiles concurrently on the main thread.
+                # This tile's inference just started: use the wait for its
+                # result to render the NEXT tiles concurrently on the main thread.
                 self._request_render_prefetch(pending)
                 return True
             return False
@@ -1414,6 +1447,12 @@ class AutoDetectionWorker(QThread):
                 stop_payload = ("fatal", _OFFLINE_STOP_CODE)
 
             if stop_payload is not None:
+                # Flush withheld re-split parents BEFORE the terminal signal:
+                # the main thread finalizes (nulls the merger) on that signal,
+                # so a parent's late tile_completed would race the finalize and
+                # its billed detections could be dropped. _flush_withheld clears
+                # _withheld, so the later call in _emit_terminal is a no-op.
+                self._flush_withheld()
                 if stop_payload[0] == "exhausted":
                     self.credits_exhausted.emit(stop_payload[1])
                     self._stop_reason = "exhausted"
@@ -1516,8 +1555,12 @@ class AutoDetectionWorker(QThread):
         crop still provides the surrounding context the model uses. The crop is
         the NATURAL imagery (real surrounding pixels, no grey mask, no blur): the
         tight box, not a painted background, is what keeps neighbour leak down.
-        No-op (empty stamps) for text-only runs."""
+        Each item may carry a 4th element, the exemplar's FULL-image pixel box
+        (kept in _stamp_full_boxes, parallel to _stamps): the home-tile split
+        in _split_stamps_for_tile reads it. No-op (empty stamps) for text-only
+        runs."""
         self._stamps = []
+        self._stamp_full_boxes = []
         from qgis.PyQt.QtCore import Qt as _Qt
 
         from ..core.cloud_detection import stamp_size_cap
@@ -1534,21 +1577,25 @@ class AutoDetectionWorker(QThread):
         # while the whole band fits the overlap.
         valid: list = []
         for item in self._exemplar_stamps_in:
-            if len(item) == 3:
-                crop, label, obj_box = item
+            if len(item) >= 3:
+                crop, label, obj_box = item[0], item[1], item[2]
             else:
-                crop, label = item
+                crop, label = item[0], item[1]
                 obj_box = None
+            full_box = item[3] if len(item) > 3 else None
             if crop is None or crop.isNull():
                 continue
-            valid.append((crop, int(label), obj_box))
+            valid.append((crop, int(label), obj_box, full_box))
         if not valid:
             return
 
-        # Size cap for THIS run's exemplar count. Small crops keep their native
+        # Size cap for the RUN-TOTAL exemplar count, even though a tile may
+        # paste only a subset (home-tile exemplars are sent in-situ instead):
+        # any subset then always fits the band, and a crop keeps ONE apparent
+        # scale on every tile it is pasted on. Small crops keep their native
         # crispness; only larger ones are downsized here (smooth filter).
         cap = stamp_size_cap(len(valid))
-        for crop, label, obj_box in valid:
+        for crop, label, obj_box, full_box in valid:
             if max(crop.width(), crop.height()) > cap:
                 prev_w = crop.width()
                 crop = crop.scaled(
@@ -1560,6 +1607,83 @@ class AutoDetectionWorker(QThread):
                     s = crop.width() / prev_w
                     obj_box = [float(v) * s for v in obj_box]
             self._stamps.append((crop, int(label), obj_box))
+            self._stamp_full_boxes.append(full_box)
+        self._resolve_top_row_band_edge()
+
+    def _split_stamps_for_tile(self, tx: int, ty: int, tw: int, th: int,
+                               bottom: bool) -> tuple[list, list]:
+        """Partition the run's stamps for ONE tile: (paste_stamps, in_situ_boxes).
+
+        An exemplar whose full-image box is FULLY inside this tile's rect is its
+        own best reference there: its example box is sent pointing at the REAL
+        object (in_situ_boxes, tile-local px, same dict shape as the pasted
+        boxes) and its crop is NOT pasted, so fewer real pixels are occluded.
+        Every other exemplar keeps the pasted-stamp path on this tile. Two
+        fallbacks keep it safe: a box straddling a tile edge stays on the stamp
+        path everywhere (a partial view is not a faithful reference; see
+        in_situ_exemplar_box), and an in-situ candidate lying under the tile's
+        paste band reverts to its stamp whenever anything else pastes there
+        (the band would overwrite its pixels)."""
+        from ..core.cloud_detection import in_situ_exemplar_box
+        from ..core.tile_manager import OVERLAP_FRACTION, TILE_SIZE
+
+        paste: list = []
+        in_situ: list = []  # [(stamp, tile-local box)]
+        for i, stamp in enumerate(self._stamps):
+            full_box = (self._stamp_full_boxes[i]
+                        if i < len(self._stamp_full_boxes) else None)
+            local = in_situ_exemplar_box(full_box, tx, ty, tw, th)
+            if local is None:
+                paste.append(stamp)
+            else:
+                in_situ.append((stamp, local))
+        if paste and in_situ:
+            # Stamps are sized for the RUN-total count (_prepare_stamps), so the
+            # band still fits when a candidate moves back into the paste row.
+            band_h = min(th, int(TILE_SIZE * OVERLAP_FRACTION))
+            kept = []
+            for stamp, local in in_situ:
+                under_band = (
+                    local[3] > th - band_h if bottom else local[1] < band_h)
+                if under_band:
+                    paste.append(stamp)
+                else:
+                    kept.append((stamp, local))
+            in_situ = kept
+        boxes = [
+            {"box": [float(v) for v in local], "label": int(stamp[1])}
+            for stamp, local in in_situ
+        ]
+        return paste, boxes
+
+    def _resolve_top_row_band_edge(self) -> None:
+        """Decide whether the TOP grid row bands its BOTTOM edge (fix the
+        first-row coverage blind spot).
+
+        A tile's band hides ground only the NEIGHBOURING row re-sees clean, so
+        the top row (no row above) loses its top-band ground. When a row below
+        overlaps enough that the top row's bottom band clears that row's own top
+        band, stamp the top row along the bottom so its hidden ground falls in
+        the overlap and is re-seen clean below. Too little overlap (the two bands
+        would hide the same strip) keeps the top band, so the top-edge residual
+        is never traded for an interior hole. Single-row grids keep the top band
+        (residual, no row below). No-op for text-only runs (no stamps)."""
+        self._top_stamp_ty = None
+        self._stamp_bottom_top_row = False
+        if not self._stamps or not self._tiles:
+            return
+        from ..core.cloud_detection import top_row_bottom_stamp_ok
+
+        tys = sorted({int(t[1]) for t in self._tiles})
+        if len(tys) < 2:
+            return
+        top_ty = tys[0]
+        self._top_stamp_ty = top_ty
+        top_th = max(int(t[3]) for t in self._tiles if int(t[1]) == top_ty)
+        next_ty = tys[1]
+        band_content_h = max(int(crop.height()) for crop, _l, _b in self._stamps)
+        self._stamp_bottom_top_row = top_row_bottom_stamp_ok(
+            top_ty, top_th, next_ty, band_content_h)
 
     def _pump_render_deferred(self, pending: deque) -> None:
         """Move render-retry tiles whose delay has matured back into the submit
@@ -1579,14 +1703,14 @@ class AutoDetectionWorker(QThread):
         """Ask the main thread to render the next pending tiles NOW, while the
         current window's inference is in flight.
 
-        The measured wall-clock bottleneck of large runs is the per-tile render
-        serialized between submits (effective concurrency 2.8-3.5 of a cap of
-        6, with the server queue at zero); prefetching hides the render behind
-        the multi-second GPU wait. Depth-bounded so at most a couple of jobs
-        run ahead; no-op when the renderer has no async API (tests, mocks) or
-        the run is stopping. Only fresh pending tiles are prefetched: resubmits
-        are already encoded, and deferred blank-retries only re-enter pending
-        once their retry delay matured (so the ladder's delay is preserved)."""
+        The per-tile render is the serialized bottleneck of large runs, so it
+        is pipelined ahead of the submits: prefetching hides the render behind
+        the wait for the current tile's result. Depth-bounded so at most a
+        couple of jobs run ahead; no-op when the renderer has no async API
+        (tests, mocks) or the run is stopping. Only fresh pending tiles are
+        prefetched: resubmits are already encoded, and deferred blank-retries
+        only re-enter pending once their retry delay matured (so the ladder's
+        delay is preserved)."""
         if self._render_request is None or self._stop_requested:
             return
         if time.monotonic() < getattr(self, "_prefetch_holdoff_until", 0.0):
@@ -1722,13 +1846,29 @@ class AutoDetectionWorker(QThread):
                 return ("ok", ((tx, ty, tw, th), data))
 
             if self._stamps:
+                # The top grid row bands its bottom edge when that is the clean
+                # placement (see _resolve_top_row_band_edge); every other row and
+                # every single-row grid keeps the top edge.
+                bottom = bool(
+                    self._stamp_bottom_top_row and ty == self._top_stamp_ty)
+                # Home-tile split: an exemplar fully contained in THIS tile is
+                # sent as an in-situ box pointing at the real object (no paste);
+                # every other exemplar pastes as usual.
+                paste, insitu_boxes = self._split_stamps_for_tile(
+                    tx, ty, tw, th, bottom)
                 out = composite_tile_with_stamps(
-                    tile_img, src_x, src_y, tw, th, self._stamps)
+                    tile_img, src_x, src_y, tw, th, paste, bottom=bottom)
                 if out is None:
                     return ("skip", None)
                 (_sx, _sy, cw, ch), data, ex_boxes, stamp_norm = out
-                self._tile_exemplars[tile_idx] = ex_boxes
-                self._tile_stamp_norm[tile_idx] = stamp_norm
+                boxes = ex_boxes + insitu_boxes
+                if boxes:
+                    self._tile_exemplars[tile_idx] = boxes
+                # stamp_norm only ever covers PASTED pixels: a tile that pasted
+                # nothing must record NO stamp region at all, so the drop
+                # filter can never discard a detection of the in-situ object.
+                if stamp_norm:
+                    self._tile_stamp_norm[tile_idx] = stamp_norm
                 return ("ok", ((tx, ty, cw, ch), data))
             encoded = encode_tile_png(tile_img, src_x, src_y, tw, th)
             if encoded is None:
@@ -1828,10 +1968,10 @@ class AutoDetectionWorker(QThread):
                 return ("retry", delay if delay > 0 else 5.0, True, "RATE_LIMITED")
             if code in _TRANSIENT_CODES:
                 if code == "SERVICE_WARMING":
-                    # Submit deadline passed with no answer: the GPU is cold-
-                    # starting or busy. Surface the waiting room and retry on
-                    # the queue TIME budget (a boot can take ~a minute), so the
-                    # tile is never skipped mid-boot by an attempt cap. is_busy
+                    # Submit deadline passed with no answer: the backend
+                    # instance is cold-starting or busy. Surface the waiting
+                    # room and retry on the queue TIME budget, so the tile is
+                    # never skipped mid-boot by an attempt cap. is_busy
                     # (4th slot True) also resets the offline fast-fail: the
                     # link is fine, the service is just warming.
                     self._note_busy(-1, -1, 0)
@@ -1939,7 +2079,7 @@ class AutoDetectionWorker(QThread):
         if self._stop_requested or self._stamps:
             return False
         depth = self._tile_depth.get(tile_idx, 0)
-        if depth >= _SUBDIV_MAX_DEPTH or self._subdivide_budget < 4:
+        if depth >= self._subdiv_max_depth or self._subdivide_budget < 4:
             return False
         try:
             tx, ty, tw, th = self._tiles[tile_idx]
@@ -2027,6 +2167,13 @@ class AutoDetectionWorker(QThread):
         so skipping only forfeits its geometry; the caller still counts it and
         advances progress.
         """
+        # Re-split quadrants render at 2x their grid rect (see _drain_subtiles),
+        # so their real SENT image size lives in _tile_outsize, not the grid-rect
+        # size the caller carries in tile_spec. Use it as the RLE decode fallback;
+        # a base tile has no _tile_outsize entry, so the rect size is kept. Server
+        # responses carry width/height, so the fallback only matters if one omits
+        # them (mapping a mask at the wrong size shifts it toward its tile origin).
+        tile_w, tile_h = self._tile_outsize.get(tile_idx, (tile_w, tile_h))
         try:
             detections = self._handle_completed(
                 response, tile_idx, tile_w, tile_h, tile_transform
@@ -2068,7 +2215,7 @@ class AutoDetectionWorker(QThread):
         # had more objects than one inference can emit; flag it so the run end
         # can hint "raise Detail".
         resplit = False
-        if len(decoded) >= _MASK_CAP_TRIGGER:
+        if len(decoded) >= self._mask_cap_trigger:
             self._hit_mask_cap = True
             self.tiles_mask_capped += 1
             # Re-split ladder: with budget + depth headroom, queue this tile's
@@ -2085,8 +2232,9 @@ class AutoDetectionWorker(QThread):
         # and the all_tiles_finished payload is unused by every consumer (the
         # main slot and the MCP loop both ignore it, so it stays an empty list).
         # Composite-per-tile: drop any detection whose centroid lands on the
-        # stamped example region (the example itself, not a real object). The
-        # stamp sits in the top-left corner (stamp_norm = [0,0,nx,ny] normalized).
+        # stamped example region (the example itself, not a real object).
+        # stamp_norm is the REAL pasted rectangle ([nx0,ny0,nx1,ny1] normalized),
+        # along the top edge or, for the first grid row, the bottom edge.
         # Prefer the server box ([cx,cy,w,h] normalized); fall back to the mask
         # centroid so the example is still dropped even if the server omits a box.
         stamp = self._tile_stamp_norm.get(tile_idx)
@@ -2208,8 +2356,10 @@ class AutoDetectionWorker(QThread):
             # MAP mode so a real whole-tile lake/field always survives.
             coverage = ys.size / float(full_h * full_w)
             blob_check = False
-            if self._merge_separate and coverage > _MAX_TILE_COVERAGE:
-                if coverage > _HARD_TILE_COVERAGE:
+            # Raw-collect mode keeps every fragment (gates OFF): the client
+            # applies them later if it re-merges as SEPARATE.
+            if self._merge_separate and not self._collect_raw and coverage > self._max_tile_coverage:
+                if coverage > self._hard_tile_coverage:
                     continue
                 blob_check = True
             row0, col0 = int(ys.min()), int(xs.min())
@@ -2280,7 +2430,11 @@ class AutoDetectionWorker(QThread):
         # max constituent score, so a low-score complex-wide mask (shadow
         # fringe included) surfaces at its best roof's confidence. MAP mode is
         # left untouched: coverage there is the union of hypotheses by design.
-        if self._merge_separate:
+        if self._merge_separate or self._collect_raw:
+            # NMS also runs in raw-collect mode: it resolves the model's
+            # overlapping same-region hypothesis stacks (not distinct instances),
+            # so the fragments the client keeps are already free of that
+            # redundancy while still un-gated and un-premerged.
             ms = self._merge_scalars
             sup_kwargs = {k: ms[k] for k in (
                 "ios_threshold", "dup_ios_floor", "dup_centroid_frac") if k in ms}
@@ -2290,11 +2444,11 @@ class AutoDetectionWorker(QThread):
             # the union of hypotheses by design), so a dense continuous prompt
             # (roads, forest) ships hundreds of raw overlapping fragments per
             # tile. Folding those one-by-one into the GUI merger's ever-growing
-            # keepers is quadratic and froze QGIS at end-of-run (measured
-            # ~106 s for 10650 fragments on a 20-tile roads run). Pre-stitch
-            # THIS tile's fragments here on the worker thread instead: union is
-            # commutative, so the GUI merger still produces the same final
-            # objects from a handful of per-tile keepers.
+            # keepers is quadratic and freezes QGIS at end-of-run on dense
+            # continuous runs. Pre-stitch THIS tile's fragments here on the
+            # worker thread instead: union is commutative, so the GUI merger
+            # still produces the same final objects from a handful of
+            # per-tile keepers.
             out = self._premerge_map_fragments(out)
         return [(bytes(geom.asWkb()), score) for geom, score in out]
 
@@ -2344,14 +2498,15 @@ class AutoDetectionWorker(QThread):
 
     @staticmethod
     def _centroid_in_stamp(box, mask, stamp) -> bool:
-        """True if a detection's normalized centroid lies in the stamp region
-        ``[0, 0, nx, ny]`` (top-left corner). Prefers the server box
-        ([cx, cy, w, h] normalized) when present and non-degenerate, else falls
-        back to the mask's pixel centroid so the stamped example is dropped even
-        when the server omits a box."""
-        nx, ny = stamp[2], stamp[3]
+        """True if a detection's normalized centroid lies in the stamp rectangle
+        ``[nx0, ny0, nx1, ny1]`` (the real pasted region, top OR bottom edge).
+        Prefers the server box ([cx, cy, w, h] normalized) when present and
+        non-degenerate, else falls back to the mask's pixel centroid so the
+        stamped example is dropped even when the server omits a box."""
+        nx0, ny0, nx1, ny1 = stamp[0], stamp[1], stamp[2], stamp[3]
         if box and len(box) == 4 and (box[2] > 0 or box[3] > 0):
-            return box[0] <= nx and box[1] <= ny
+            cx, cy = box[0], box[1]
+            return nx0 <= cx <= nx1 and ny0 <= cy <= ny1
         try:
             import numpy as np
             ys, xs = np.nonzero(mask)
@@ -2359,6 +2514,8 @@ class AutoDetectionWorker(QThread):
                 return False
             h = max(1, mask.shape[0])
             w = max(1, mask.shape[1])
-            return (float(xs.mean()) / w) <= nx and (float(ys.mean()) / h) <= ny
+            cx = float(xs.mean()) / w
+            cy = float(ys.mean()) / h
+            return nx0 <= cx <= nx1 and ny0 <= cy <= ny1
         except Exception:  # noqa: BLE001 -- best-effort filter, never fatal
             return False

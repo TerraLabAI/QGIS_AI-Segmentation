@@ -20,10 +20,20 @@ from qgis.PyQt.QtWidgets import (
 
 from ...core.i18n import tr
 from ...core.qt_compat import PolygonGeometry
+from ...core.review_defaults import (
+    REFINE_EXPAND_DEFAULT,
+    REFINE_FILL_HOLES_DEFAULT,
+    REFINE_MAX_SIZE_M2_DEFAULT,
+    REFINE_MIN_SIZE_M2_DEFAULT,
+    REFINE_ORTHO_DEFAULT,
+    REFINE_SIMPLIFY_DEFAULT,
+    REFINE_SMOOTH_DEFAULT,
+)
 from ..canvas_palette import (
     PENDING_FILL,
     PENDING_STROKE,
 )
+from ..error_report_dialog import show_error_report
 
 
 class ManualPredictMixin:
@@ -34,14 +44,6 @@ class ManualPredictMixin:
         if self.predictor is None:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
-            return
-
-        # Transport lock: while an off-thread encode owns the predictor pipe,
-        # NOTHING on the GUI thread may touch it. Remember this click (last one
-        # wins) and replay it through the normal path when the encode finishes;
-        # never start a second encode (PERF-01).
-        if self._encoding_in_progress:
-            self._remember_pending_manual_click("positive", point)
             return
 
         # Transform click from canvas CRS to raster CRS for all downstream use
@@ -62,15 +64,65 @@ class ManualPredictMixin:
             )
             return
 
-        # Refine-in-Manual: a fresh left-click (no active selection) that lands
-        # inside an imported detection re-opens THAT object as the active mask so
-        # +/- clicks reshape it, instead of starting an unrelated new selection.
+        # Refine-in-Manual, resting state: EDIT-ONLY review of the run's
+        # detections. A single click is always a SELECTION gesture (Ctrl+click
+        # toggles multi-selection), empty ground only deselects, and NOTHING
+        # here starts a new object or a 3-8s encode: opening an object for SAM
+        # editing is the deliberate double-click / E gesture. Adding brand-new
+        # objects is base Manual mode's job (an accidental empty-ground click
+        # used to spawn overlapping new selections mid-review). Handled BEFORE
+        # the transport lock: selection is pure canvas work (hit test + bands,
+        # never the predictor pipe), so it stays instant even while a
+        # background encode (speculative selection prewarm, a just-closed
+        # edit's crop) is still in flight.
         if (self._refine_handoff_active
+                and not self._is_refining_saved_object  # noqa: W503
                 and self.current_mask is None  # noqa: W503
                 and not self._active_crop_points_positive):  # noqa: W503
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
             idx = self._hit_test_saved_polygon(raster_pt)
             if idx is not None:
-                self._activate_saved_polygon_for_refine(idx, raster_pt)
+                self._select_saved_polygon(
+                    idx, additive=self._click_was_additive())
+            else:
+                self._deselect_saved_polygons()
+            return
+
+        # Transport lock: while an off-thread encode owns the predictor pipe,
+        # NOTHING on the GUI thread may touch it. Remember this click (last one
+        # wins) and replay it through the normal path when the encode finishes;
+        # never start a second encode (PERF-01).
+        if self._encoding_in_progress:
+            self._remember_pending_manual_click("positive", point)
+            return
+
+        # Refine-in-Manual, while editing: a left-click INSIDE another saved
+        # detection switches to it (auto-save the current object, then select
+        # the target). Clicks on empty ground or inside the active shape stay
+        # editing clicks, so growing an object is untouched.
+        if (self._refine_handoff_active
+                and (self._is_refining_saved_object  # noqa: W503
+                     or self.current_mask is not None  # noqa: W503
+                     or self._active_crop_points_positive)):  # noqa: W503
+            idx = self._hit_test_saved_polygon(raster_pt)
+            if idx is not None:
+                if self.map_tool:
+                    self.map_tool.remove_last_marker()
+                target = self.saved_polygons[idx]
+                try:
+                    self._on_save_polygon()
+                except Exception as e:  # noqa: BLE001
+                    QgsMessageLog.logMessage(
+                        f"Refine switch: save fold error: {e}",
+                        "AI Segmentation", level=Qgis.MessageLevel.Warning)
+                # The save may have re-shuffled saved_polygons (append/absorb):
+                # re-resolve the target by identity. Absorbed into the save =>
+                # nothing left to select.
+                for i, pg in enumerate(self.saved_polygons):
+                    if pg is target:
+                        self._select_saved_polygon(i)
+                        break
                 return
 
         # Check crop status BEFORE adding to active points, so the zoom
@@ -88,6 +140,11 @@ class ManualPredictMixin:
                 # the click cannot be honored, so drop it (marker already gone).
                 self._discard_pending_manual_click()
             return
+
+        # Refine edit session: no special click path. The open object seeds
+        # the prediction as mask_input (see _run_prediction), so this click
+        # falls through to the normal Manual predict and refines the whole
+        # shape with the object as prior, exactly like base Manual.
 
         # --- Fast path: the crop is already encoded, so predict synchronously
         # (predict is a fast decoder round-trip). This is also the path the
@@ -142,29 +199,43 @@ class ManualPredictMixin:
                 self.map_tool.remove_last_marker()
             return
 
-        # Transport lock: defer to the encode completion while a worker owns the
-        # predictor pipe (PERF-01). Before the refine hit-test, so a right-click
-        # during an encode is remembered, never routed into a second encode.
-        if self._encoding_in_progress:
-            self._remember_pending_manual_click("negative", point)
-            return
-
-        # Refine-in-Manual: a right-click (no active selection) inside an existing
-        # detection carves THAT object directly - no prior left-click needed. The
-        # detection is re-opened as the active mask with the click as a negative
-        # point, so the user can immediately remove an over-segmented part.
+        # Refine-in-Manual, resting state: a right-click SELECTS like a left
+        # click (never an encode, never an edit). Carving happens INSIDE an
+        # edit session (open with double-click / E, then right-click removes
+        # area), so the resting state stays purely non-destructive. Handled
+        # BEFORE the transport lock (pure canvas work): selection stays
+        # instant while a background encode is in flight.
         if (self._refine_handoff_active
+                and not self._is_refining_saved_object  # noqa: W503
                 and self.current_mask is None  # noqa: W503
                 and not self._active_crop_points_positive):  # noqa: W503
             raster_pt0 = self._transform_to_raster_crs(point)
             if self._is_point_in_raster_extent(raster_pt0):
+                if self.map_tool:
+                    self.map_tool.remove_last_marker()
                 idx = self._hit_test_saved_polygon(raster_pt0)
                 if idx is not None:
-                    self._activate_saved_polygon_for_refine(idx, raster_pt0, label=0)
-                    return
+                    self._select_saved_polygon(
+                        idx, additive=self._click_was_additive())
+                else:
+                    self._deselect_saved_polygons()
+                return
+
+        # Transport lock: defer to the encode completion while a worker owns the
+        # predictor pipe (PERF-01), so a right-click during an encode is
+        # remembered, never routed into a second encode.
+        if self._encoding_in_progress:
+            self._remember_pending_manual_click("negative", point)
+            return
+
+        # Refine edit session: right-click removes area from the open object
+        # through the normal Manual predict. It needs no prior positive point:
+        # the object itself is the positive context (seeded as mask_input by
+        # _run_prediction).
+        refine_edit = self._refine_edit_session_active()
 
         # Block negative points until at least one positive point exists
-        if len(self.prompts.positive_points) == 0:
+        if not refine_edit and len(self.prompts.positive_points) == 0:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
             QgsMessageLog.logMessage(
@@ -195,8 +266,10 @@ class ManualPredictMixin:
         crop_status = self._check_crop_status(raster_pt)
 
         # Negative points outside the current crop don't make sense - they're
-        # meant to refine the current selection, not start a new one.
-        if crop_status == "outside_bounds":
+        # meant to refine the current selection, not start a new one. In an
+        # edit session the rule does not apply (a grown object can extend past
+        # the crop encoded at open time): fall through to the re-encode below.
+        if crop_status == "outside_bounds" and not refine_edit:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
             self.iface.messageBar().pushMessage(
@@ -330,6 +403,14 @@ class ManualPredictMixin:
         mask_input = None
         if self.current_low_res_mask is not None:
             mask_input = self.current_low_res_mask
+        elif (self._is_refining_saved_object
+              and self._unfrozen_display_polygon is not None):
+            # First editing click on an open handoff detection: seed SAM with
+            # the object's polygon rasterized onto the current crop (the same
+            # context transfer a zoom re-encode uses), so the click REFINES
+            # the whole shape exactly like a base-Manual click instead of
+            # segmenting an unrelated element under the cursor.
+            mask_input = self._refine_polygon_mask_input()
 
         # Use multimask only on the very first point of a new polygon/crop
         # (more accurate initial selection). For subsequent points or
@@ -356,29 +437,33 @@ class ManualPredictMixin:
             self._track_manual_run_failed()
             # Classified error alongside the boolean failure: a DLL crash, a
             # dead SAM subprocess and a transport error need different fixes.
+            is_dll_error = "DLL" in error_str or "Visual C++" in error_str
             try:
                 from ...core import telemetry
-                if "DLL" in error_str or "Visual C++" in error_str:
-                    code = "dll_init_failed"
+                if is_dll_error:
+                    code = "predict_dll_error"
                 elif "subprocess" in error_str.lower() or "rpc" in error_str.lower():
                     code = "predict_worker_died"
                 else:
                     code = "predict_runtime_error"
-                telemetry.track_plugin_error(
-                    stage="segment", error_code=code, message=error_str)
+                # A non-headless DLL error reports through show_error_report
+                # below, which fires its own telemetry with the same code;
+                # skip here so the same occurrence is not counted twice.
+                if not (is_dll_error and not self._headless):
+                    telemetry.track_plugin_error(
+                        stage="segment", error_code=code, message=error_str)
             except Exception:
                 pass  # nosec B110
             if self._headless:
                 self._headless_error = error_str
                 return False
-            if "DLL" in error_str or "Visual C++" in error_str:
-                msg_box = QMessageBox(self.iface.mainWindow())
-                msg_box.setIcon(QMessageBox.Icon.Critical)
-                msg_box.setWindowTitle(tr("Prediction Error"))
-                msg_box.setText(tr("Segmentation failed"))
-                msg_box.setInformativeText(error_str)
-                msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-                msg_box.exec()
+            if is_dll_error:
+                show_error_report(
+                    self.iface.mainWindow(),
+                    tr("Segmentation failed"),
+                    error_str,
+                    error_code="predict_dll_error",
+                )
             else:
                 # Any other RuntimeError (SAM subprocess died, JSON-RPC transport
                 # error) used to fail silently: the click did nothing with no
@@ -499,8 +584,11 @@ class ManualPredictMixin:
 
         if self.current_mask is not None:
             mask_pixels = int(self.current_mask.sum())
+            # A mask restored by undo can carry no score (e.g. seeded from a
+            # saved polygon before any prediction): log 0, never crash.
+            score = self.current_score if self.current_score is not None else 0.0
             QgsMessageLog.logMessage(
-                f"Segmentation result: score={self.current_score:.3f}, mask_pixels={mask_pixels}",
+                f"Segmentation result: score={score:.3f}, mask_pixels={mask_pixels}",
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Info
             )
@@ -527,6 +615,96 @@ class ManualPredictMixin:
         # without introducing a non-blue colour.
         editing = self._refine_handoff_active or self._is_refining_saved_object
         self.mask_rubber_band.setWidth(3 if editing else 2)
+
+    def _refined_active_mask_geometry(self):
+        """The active SAM mask as ONE refined geometry: mask refinement (fill
+        holes, expand, min region), polygonize, simplify, right angles, corner
+        rounding, then the user Min/Max size window. The shared tail of the
+        preview, save, export and freeze paths, so the polygon a user gets is
+        always exactly the one previewed. None when no active mask or nothing
+        survives refinement."""
+        if self.current_mask is None or self.current_transform_info is None:
+            return None
+        from ...core.polygon_exporter import (
+            apply_mask_refinement,
+            apply_right_angles,
+            mask_to_polygons,
+        )
+        mask = self.current_mask
+        if (self._refine_fill_holes or self._refine_expand != 0
+                or self._refine_min_area > 0):  # noqa: W503
+            mask = apply_mask_refinement(
+                self.current_mask,
+                expand_value=self._refine_expand,
+                fill_holes=self._refine_fill_holes,
+                min_area=self._refine_min_area,
+            )
+        geometries = mask_to_polygons(mask, self.current_transform_info)
+        if not geometries:
+            return None
+        combined = QgsGeometry.unaryUnion(geometries)
+        if combined is None or combined.isEmpty():
+            return None
+        tolerance = self._compute_simplification_tolerance(
+            self.current_transform_info, self._refine_simplify)
+        if tolerance > 0:
+            combined = combined.simplify(tolerance)
+        if self._refine_ortho:
+            combined = apply_right_angles(
+                combined,
+                destair_tol=max(
+                    0.0,
+                    self._compute_simplification_tolerance(
+                        self.current_transform_info, 3) - tolerance))
+        if self._refine_smooth > 0:
+            combined = combined.smooth(self._refine_smooth, 0.25)
+        if combined is None or combined.isEmpty():
+            return None
+        combined = self._filter_geometry_parts_by_size(combined)
+        if combined is None or combined.isEmpty():
+            return None
+        return combined
+
+    def _filter_geometry_parts_by_size(self, geom):
+        """Drop polygon parts outside the user's Min/Max size window (true
+        ground m2 so degree CRSs measure correctly; 0 = off). Returns the input
+        unchanged when no filter applies, an empty geometry when nothing
+        survives (the preview then shows exactly what a save would keep)."""
+        min_a = float(getattr(self, "_refine_min_size_m2", 0.0) or 0.0)
+        max_a = float(getattr(self, "_refine_max_size_m2", 0.0) or 0.0)
+        if (min_a <= 0 and max_a <= 0) or geom is None or geom.isEmpty():
+            return geom
+        measurer = None
+        try:
+            from ...core.layer_conventions import make_area_measurer
+            if self._current_layer is not None and self._current_layer.crs().isValid():
+                measurer = make_area_measurer(self._current_layer.crs())
+        except (RuntimeError, AttributeError):
+            measurer = None
+        parts = (geom.asGeometryCollection() if geom.isMultipart()
+                 else [geom])
+        kept = []
+        dropped = False
+        for part in parts:
+            if part is None or part.isEmpty():
+                dropped = True
+                continue
+            try:
+                area = (float(measurer.measureArea(part)) if measurer is not None
+                        else float(part.area()))
+            except (RuntimeError, AttributeError):
+                area = float(part.area())
+            if (min_a > 0 and area < min_a) or (max_a > 0 and area > max_a):
+                dropped = True
+                continue
+            kept.append(part)
+        if not dropped:
+            return geom
+        if not kept:
+            return QgsGeometry()
+        if len(kept) == 1:
+            return QgsGeometry(kept[0])
+        return QgsGeometry.unaryUnion(kept)
 
     def _update_mask_visualization(self):
         if self.mask_rubber_band is None:
@@ -614,7 +792,12 @@ class ManualPredictMixin:
                     if self._refine_smooth > 0:
                         active_combined = active_combined.smooth(
                             self._refine_smooth, 0.25)
-                    all_geoms.append(active_combined)
+                    # User Min/Max size window (ground m2): the preview drops
+                    # exactly the parts a save would drop.
+                    active_combined = self._filter_geometry_parts_by_size(
+                        active_combined)
+                    if active_combined and not active_combined.isEmpty():
+                        all_geoms.append(active_combined)
 
             if all_geoms:
                 combined = QgsGeometry.unaryUnion(all_geoms)
@@ -653,11 +836,28 @@ class ManualPredictMixin:
     def _on_undo(self):
         """Undo last point added, or restore last saved mask in batch mode."""
         self._manual_undos_session = getattr(self, "_manual_undos_session", 0) + 1
-        # One-shot restore of a Delete-key object removal takes precedence.
-        if self._deleted_object_backup and self._restore_deleted_object():
+        # Refine edit session, geometry sub-state (open object, no editing
+        # click yet): step back one Shape-settings reshape. This branch ABSORBS
+        # undo entirely (even with nothing to undo yet): falling through would
+        # restore unrelated deleted objects or pop the base-Manual re-edit
+        # dialog mid-edit. Once editing clicks exist (current_mask set), undo
+        # unwinds them through the normal point-history path below.
+        if self._refine_edit_session_active() and self.current_mask is None:
+            history = getattr(self, "_refine_geom_history", None)
+            if history:
+                self._unfrozen_display_polygon = history.pop()
+                if self.map_tool:
+                    self.map_tool.remove_last_marker()
+                self._update_mask_visualization()
             return
         # Check if we have points in current mask
         current_point_count = self.prompts.point_count[0] + self.prompts.point_count[1]
+        # With no point history to unwind, Ctrl+Z restores the most recent
+        # Delete-key removal (stacked: repeated presses walk back deletions).
+        if (current_point_count == 0
+                and getattr(self, "_deleted_objects_stack", None)  # noqa: W503
+                and self._restore_deleted_object()):  # noqa: W503
+            return
 
         if current_point_count > 0:
             # Normal undo: remove last point from current mask
@@ -688,6 +888,13 @@ class ManualPredictMixin:
             if self.prompts.point_count[0] + self.prompts.point_count[1] > 0:
                 # Update visualization with restored mask (no re-prediction)
                 self._update_ui_after_prediction()
+            elif self._unfrozen_display_polygon is not None:
+                # The snapshot restored a display-only polygon (undoing the
+                # FIRST editing click of an open handoff detection, or the
+                # click after an unfreeze): keep showing it, the object is
+                # still open exactly as before that click.
+                self._update_mask_visualization()
+                self.dock_widget.set_point_count(0, 0)
             else:
                 # Active crop is empty - check if we can unfreeze a previous crop
                 if self._frozen_sessions:
@@ -695,15 +902,18 @@ class ManualPredictMixin:
                 else:
                     self.current_mask = None
                     self.current_score = 0.0
-                    self._unfrozen_display_polygon = None
                     self._clear_mask_visualization()
                     self.dock_widget.set_point_count(0, 0)
         elif self._frozen_sessions:
             # No active points but have frozen sessions - unfreeze last one
             self._unfreeze_last_session()
-        elif len(self.saved_polygons) > 0:
-            # No points in current mask, but have saved masks
-            # Ask user if they want to restore the last saved mask
+        elif len(self.saved_polygons) > 0 and not self._refine_handoff_active:
+            # Base Manual only: with no points, offer to re-open the LAST saved
+            # mask. NEVER in a refine handoff - there saved_polygons holds the
+            # whole imported review, so this dialog would grab an arbitrary
+            # detection (the last one), which the next Delete then destroyed
+            # ("deleting removes another polygon" on Mac, where the delete key
+            # is Backspace and used to land here via undo).
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Edit saved polygon"),
@@ -802,12 +1012,13 @@ class ManualPredictMixin:
         last_polygon = self.saved_polygons.pop()
 
         # Remove the corresponding rubber band (green). In a handoff it is a None
-        # placeholder; refresh the seed layers so the restored object leaves the
-        # pending/kept layer (it becomes the active mask). No-op in base Manual.
+        # placeholder; drop only the restored object's feature from its seed
+        # layer (it becomes the active mask). No-op in base Manual.
         if self.saved_rubber_bands:
             last_rb = self.saved_rubber_bands.pop()
             self._safe_remove_rubber_band(last_rb)
-        self._rebuild_handoff_layers()
+        if not self._handoff_remove_entry_feature(last_polygon):
+            self._rebuild_handoff_layers()
 
         # Clear current state first
         self.prompts.clear()
@@ -841,13 +1052,16 @@ class ManualPredictMixin:
         self.current_score = last_polygon.get("score", 0.0)
         self.current_transform_info = last_polygon.get("transform_info")
 
-        # Restore refine settings
-        self._refine_simplify = last_polygon.get("refine_simplify", 3)
-        self._refine_smooth = last_polygon.get("refine_smooth", 0)
-        self._refine_expand = last_polygon.get("refine_expand", 0)
-        self._refine_fill_holes = last_polygon.get("refine_fill_holes", True)
-        self._refine_ortho = last_polygon.get("refine_ortho", False)
+        # Restore refine settings (fallbacks shared with __init__/_reset_session
+        # and the dock via core/review_defaults.py)
+        self._refine_simplify = last_polygon.get("refine_simplify", REFINE_SIMPLIFY_DEFAULT)
+        self._refine_smooth = last_polygon.get("refine_smooth", REFINE_SMOOTH_DEFAULT)
+        self._refine_expand = last_polygon.get("refine_expand", REFINE_EXPAND_DEFAULT)
+        self._refine_fill_holes = last_polygon.get("refine_fill_holes", REFINE_FILL_HOLES_DEFAULT)
+        self._refine_ortho = last_polygon.get("refine_ortho", REFINE_ORTHO_DEFAULT)
         self._refine_min_area = last_polygon.get("refine_min_area", 200)
+        self._refine_min_size_m2 = float(last_polygon.get("refine_min_size_m2") or REFINE_MIN_SIZE_M2_DEFAULT)
+        self._refine_max_size_m2 = float(last_polygon.get("refine_max_size_m2") or REFINE_MAX_SIZE_M2_DEFAULT)
 
         # Update UI sliders without emitting signals
         self.dock_widget.set_refine_values(
@@ -858,6 +1072,8 @@ class ManualPredictMixin:
             self._refine_min_area,
             right_angles=self._refine_ortho,
         )
+        self.dock_widget.set_size_filter_values(
+            self._refine_min_size_m2, self._refine_max_size_m2)
 
         # Update visualization
         self._update_mask_visualization()
@@ -906,7 +1122,25 @@ class ManualPredictMixin:
         # Active-object edit state does not survive a session reset.
         self._is_refining_saved_object = False
         self._active_refine_origin_entry = None
-        self._deleted_object_backup = None
+        self._refine_geom_history = []
+        self._deleted_objects_stack = []
+        # Selection-first review state dies with the session (bands removed).
+        self._handoff_selected_entries = []
+        self._handoff_hover_entry = None
+        self._handoff_hit_index = None
+        self._handoff_tok2entry = {}
+        self._handoff_det_id_seq = None
+        for attr in ("_handoff_selection_band", "_handoff_hover_band"):
+            band = getattr(self, attr, None)
+            if band is not None:
+                self._safe_remove_rubber_band(band)
+                setattr(self, attr, None)
+        if self.dock_widget:
+            try:
+                self.dock_widget.set_handoff_selected(0)
+                self.dock_widget.set_handoff_editing(False)
+            except (RuntimeError, AttributeError):
+                pass
         # Clear the telemetry start timestamp so the next successful run does
         # not attribute duration to an abandoned previous run.
         self._segmentation_start_ts = None
@@ -951,12 +1185,14 @@ class ManualPredictMixin:
         self._is_online_layer = False
 
         # Reset refinement settings to defaults (#12, #23)
-        self._refine_simplify = 3
-        self._refine_smooth = 0
-        self._refine_expand = 0
-        self._refine_fill_holes = True
-        self._refine_ortho = False
+        self._refine_simplify = REFINE_SIMPLIFY_DEFAULT
+        self._refine_smooth = REFINE_SMOOTH_DEFAULT
+        self._refine_expand = REFINE_EXPAND_DEFAULT
+        self._refine_fill_holes = REFINE_FILL_HOLES_DEFAULT
+        self._refine_ortho = REFINE_ORTHO_DEFAULT
         self._refine_min_area = 200  # overridden by _compute_auto_min_area() × 2
+        self._refine_min_size_m2 = REFINE_MIN_SIZE_M2_DEFAULT
+        self._refine_max_size_m2 = REFINE_MAX_SIZE_M2_DEFAULT
 
         if self.dock_widget:
             self.dock_widget.set_point_count(0, 0)

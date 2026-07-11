@@ -6,6 +6,7 @@ plain mixin members: state lives on the plugin instance (self).
 """
 from __future__ import annotations
 
+import math
 
 from qgis.core import (
     Qgis,
@@ -20,7 +21,7 @@ from qgis.core import (
 
 from ...core.i18n import tr
 from ...core.qt_compat import symbol_fill_color_property
-from ..canvas_palette import KEPT_FILL, KEPT_STROKE, OUTLINE_MODE_STROKE_STR
+from ..canvas_palette import KEPT_STROKE, OUTLINE_MODE_STROKE_STR
 from ...core.review_defaults import (
     AUTO_REVIEW_CLEAN_DEFAULT as _AUTO_REVIEW_CLEAN_DEFAULT,
     AUTO_REVIEW_EXPAND_DEFAULT as _AUTO_REVIEW_EXPAND_DEFAULT,
@@ -36,9 +37,16 @@ from .shared import (
     _FIELD_TYPE_DOUBLE,
     _FIELD_TYPE_INT,
     _FIELD_TYPE_STRING,
-    _add_features_fast,
+    _add_features_with_ids,
     _apply_fast_render,
 )
+
+
+# Upper bound on retained exemplar-only raw fragments (for the count-vs-map
+# re-merge + the review override). Past it the list is freed and the override is
+# marked unavailable; the map-likeness counters keep counting either way, so the
+# automatic decision still runs. A run this dense is continuous cover in practice.
+_RAW_FRAGMENT_RETAIN_CAP = 40000
 
 
 def _diff_live_fid_map(old_map: dict, current: list):
@@ -125,11 +133,17 @@ class AutoResultsMixin:
             # Private working layer: renders on canvas (the tree node below is
             # what the canvas bridge draws) but stays out of the Layers panel.
             # Must be flagged BEFORE the add so the panel never flashes it.
-            from ...core.output_store import mark_temp_layer
+            from ...core.output_store import drop_from_snapping, mark_temp_layer
             mark_temp_layer(layer)
             QgsProject.instance().addMapLayer(layer, False)
+            # Post-add: keep the scratch layer out of the snapping config (a
+            # dangling entry there crashes the next project save; see helper).
+            drop_from_snapping(layer)
             root = QgsProject.instance().layerTreeRoot()
             root.insertLayer(0, layer)
+            # Fresh empty layer: the incremental review push starts from a
+            # clean provider mapping (stale fids would corrupt the diff).
+            self._review_fid_map = {}
             return layer
         except (RuntimeError, AttributeError):
             return None
@@ -150,25 +164,16 @@ class AutoResultsMixin:
                 tr("Refine seeds"), "memory")
             if not layer.isValid():
                 return None
-            if kind == "pending":
-                from ...core.layer_conventions import make_review_renderer
-                layer.setRenderer(make_review_renderer())
-            else:
-                # Validated-this-session: green fill, echoing the saved-polygon
-                # colour, from the canvas palette (KEPT state). Renderer strings
-                # want "r,g,b,a", built from the palette QColors.
-                from qgis.core import QgsFillSymbol, QgsSingleSymbolRenderer
-                _fill = KEPT_FILL
-                _stroke = KEPT_STROKE
-                sym = QgsFillSymbol.createSimple({
-                    "color": "{},{},{},{}".format(
-                        _fill.red(), _fill.green(), _fill.blue(), _fill.alpha()),
-                    "outline_color": "{},{},{},{}".format(
-                        _stroke.red(), _stroke.green(),
-                        _stroke.blue(), _stroke.alpha()),
-                    "outline_width": "0.4",
-                })
-                layer.setRenderer(QgsSingleSymbolRenderer(sym))
+            # Same identity fields as the review selection layer: det_id drives
+            # the per-instance Random hue (one colour per object, stable across
+            # the whole handoff), score rides along for the return trip.
+            pr = layer.dataProvider()
+            pr.addAttributes([
+                QgsField("score", _FIELD_TYPE_DOUBLE),
+                QgsField("det_id", _FIELD_TYPE_INT),
+            ])
+            layer.updateFields()
+            self._apply_handoff_random_renderer(layer, kept=(kind == "kept"))
             _apply_fast_render(layer)
             # Private working layer, same rationale as the live selection
             # layer: flag before add, keep the tree node for canvas render.
@@ -189,10 +194,38 @@ class AutoResultsMixin:
             self._handoff_kept_layer = self._create_handoff_layer(
                 crs_authid, "kept")
 
-    def _push_geoms_to_layer(self, layer, geoms: list) -> None:
-        """Replace a handoff seed layer's features with `geoms` (raster CRS):
-        truncate + bulk FastInsert + one repaint. Mirrors _push_review_geoms but
-        with no score field. Best-effort; never raises into the caller."""
+    def _apply_handoff_random_renderer(self, layer, kept: bool) -> None:
+        """Per-instance Random hue for a handoff seed layer (same expression as
+        the review's Random mode, so an object KEEPS its colour through the
+        handoff). Pending = dark hairline outline; kept = bold green outline
+        (the validated ring) over the same instance hue. Best-effort."""
+        try:
+            from qgis.core import (QgsFillSymbol, QgsSingleSymbolRenderer,
+                                   QgsProperty)
+            stroke = KEPT_STROKE if kept else None
+            symbol = QgsFillSymbol.createSimple({
+                "color": "120,120,120,120",
+                "outline_color": ("{},{},{},255".format(
+                    stroke.red(), stroke.green(), stroke.blue())
+                    if stroke is not None else "20,20,20,200"),
+                "outline_width": "0.6" if kept else "0.2",
+            })
+            sl = symbol.symbolLayer(0)
+            expr = "color_hsla((coalesce(\"det_id\", $id) * 67) % 360, 78, 55, 205)"
+            prop_key = symbol_fill_color_property()
+            sl.setDataDefinedProperty(prop_key, QgsProperty.fromExpression(expr))
+            symbol.setOpacity(0.75)
+            layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+            layer.triggerRepaint()
+        except (RuntimeError, AttributeError, ImportError):
+            pass
+
+    def _push_geoms_to_layer(self, layer, rows: list) -> None:
+        """Replace a handoff seed layer's features with `rows` of
+        (entry, geom, score, det_id) in raster CRS: truncate + bulk add + one
+        repaint. Records each entry's assigned provider fid (_hfid/_hkept) so
+        later single-object edits can update the layer incrementally instead of
+        rebuilding it. Best-effort; never raises."""
         if layer is None:
             return
         try:
@@ -200,7 +233,11 @@ class AutoResultsMixin:
             pr = layer.dataProvider()
             pr.truncate()
             feats = []
-            for g in geoms:
+            kept_flag = layer is self._handoff_kept_layer
+            for pg, g, score, det_id in rows:
+                # Fresh rebuild: any prior bookkeeping is stale by definition.
+                pg.pop("_hfid", None)
+                pg.pop("_hkept", None)
                 if g is None or g.isEmpty():
                     continue
                 mg = to_multipolygon(g) or g
@@ -208,28 +245,210 @@ class AutoResultsMixin:
                     continue
                 feat = QgsFeature(layer.fields())
                 feat.setGeometry(mg)
-                feats.append(feat)
+                feat.setAttributes([
+                    float(score) if score is not None else 1.0,
+                    int(det_id) if det_id is not None else None,
+                ])
+                feats.append((pg, feat))
             if feats:
-                _add_features_fast(pr, feats)
-            layer.updateExtents()
+                # The assigned provider fids (needed for the incremental
+                # single-object updates) come back on the RETURNED copies;
+                # addFeatures never mutates its inputs.
+                ok, added = _add_features_with_ids(pr, [f for _pg, f in feats])
+                if ok and len(added) == len(feats):
+                    for (pg, _f), out in zip(feats, added):
+                        pfid = out.id()
+                        if pfid is not None and pfid >= 0:
+                            pg["_hfid"] = pfid
+                            pg["_hkept"] = kept_flag
+            # No updateExtents(): rendering fetches by viewport via the provider
+            # spatial index, and the handoff never zooms to these layers, so the
+            # O(N) extent rescan per rebuild bought nothing.
             layer.triggerRepaint()
         except (RuntimeError, AttributeError):
             pass
 
     def _rebuild_handoff_layers(self) -> None:
         """Refresh both seed layers from saved_polygons: not-yet-validated
-        entries go blue (pending), validated ones go green (kept). Called after
-        any structural change to saved_polygons during the handoff (import,
-        activate, save, delete, undo, absorb). The ACTIVE object is already
-        popped out of saved_polygons, so it is naturally excluded (it shows as
-        the active pending-blue mask band). No-op outside the handoff."""
+        entries go pending, validated ones go kept (green ring). Also rebuilds
+        the hover/click spatial index and prunes the selection outline, so every
+        structural change keeps canvas, hit-testing and selection in lockstep.
+        The ACTIVE object is already popped out of saved_polygons, so it is
+        naturally excluded (it shows as the active mask band). No-op outside the
+        handoff.
+
+        This is the BULK path (import, teardown) and the fallback when an
+        incremental single-object update reports failure; routine per-object
+        changes (open, close, save, delete, undo, absorb) go through
+        _handoff_add_entry_feature / _handoff_remove_entry_feature instead,
+        which was the fix for the double-click-to-edit lag on big handoffs."""
         if not self._refine_handoff_active:
             return
         pending, kept = [], []
         for pg in self.saved_polygons:
-            (kept if pg.get("validated") else pending).append(self._entry_geom(pg))
+            row = (pg, self._entry_geom(pg), pg.get("score"), pg.get("det_id"))
+            (kept if pg.get("validated") else pending).append(row)
         self._push_geoms_to_layer(self._handoff_pending_layer, pending)
         self._push_geoms_to_layer(self._handoff_kept_layer, kept)
+        self._rebuild_handoff_hit_index()
+        try:
+            self._refresh_handoff_selection_band()
+            self._set_handoff_hover(None)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _rebuild_handoff_hit_index(self) -> None:
+        """Bbox spatial index over saved_polygons so the hover highlight and
+        click hit-test stay cheap over thousands of seeds. Keyed by a STABLE
+        per-entry token (_htok, not the shifting list index) so single-object
+        changes maintain it incrementally between full rebuilds; the token's
+        bbox is kept on the entry because the QGIS < 3.36 deleteFeature API
+        needs the exact inserted fid + bounds back."""
+        try:
+            from qgis.core import QgsFeature, QgsSpatialIndex
+            index = QgsSpatialIndex()
+            tok2entry = {}
+            for pg in self.saved_polygons:
+                g = self._entry_geom(pg)
+                if g is None or g.isEmpty():
+                    continue
+                tok = pg.get("_htok")
+                if tok is None:
+                    tok = self._next_handoff_hit_token()
+                    pg["_htok"] = tok
+                bbox = g.boundingBox()
+                pg["_hbbox"] = bbox
+                feat = QgsFeature(tok)
+                feat.setGeometry(QgsGeometry.fromRect(bbox))
+                index.addFeature(feat)
+                tok2entry[tok] = pg
+            self._handoff_hit_index = index
+            self._handoff_tok2entry = tok2entry
+        except (RuntimeError, AttributeError):
+            self._handoff_hit_index = None
+            self._handoff_tok2entry = {}
+
+    def _next_handoff_hit_token(self) -> int:
+        """Monotonic stable token for the hit index (never reused in-session)."""
+        tok = getattr(self, "_handoff_hit_tok_seq", 0) + 1
+        self._handoff_hit_tok_seq = tok
+        return tok
+
+    def _handoff_hit_insert(self, pg) -> None:
+        """Add one entry to the hover/click spatial index (no-op without one)."""
+        index = getattr(self, "_handoff_hit_index", None)
+        if index is None:
+            return
+        try:
+            from qgis.core import QgsFeature
+            g = self._entry_geom(pg)
+            if g is None or g.isEmpty():
+                return
+            tok = pg.get("_htok")
+            if tok is None:
+                tok = self._next_handoff_hit_token()
+                pg["_htok"] = tok
+            bbox = g.boundingBox()
+            pg["_hbbox"] = bbox
+            feat = QgsFeature(tok)
+            feat.setGeometry(QgsGeometry.fromRect(bbox))
+            index.addFeature(feat)
+            self._handoff_tok2entry[tok] = pg
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _handoff_hit_remove(self, pg) -> None:
+        """Drop one entry from the hover/click spatial index (no-op without
+        one, or when the entry was never indexed). The token/bbox keys are
+        POPPED off the entry so any dict(pg) snapshot taken afterwards (undo
+        backup, close-to-pending copy) mints a fresh token on re-insert; a
+        reused token could otherwise end up indexed for two entries at once."""
+        index = getattr(self, "_handoff_hit_index", None)
+        tok = pg.pop("_htok", None)
+        bbox = pg.pop("_hbbox", None)
+        if index is None or tok is None or bbox is None:
+            return
+        try:
+            from qgis.core import QgsFeature
+            feat = QgsFeature(tok)
+            feat.setGeometry(QgsGeometry.fromRect(bbox))
+            index.deleteFeature(feat)
+            self._handoff_tok2entry.pop(tok, None)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _handoff_add_entry_feature(self, pg) -> bool:
+        """Incremental twin of _rebuild_handoff_layers for ONE appended entry:
+        add its feature to the right seed layer (+ hit index) and record its
+        provider fid. Returns False when the incremental path is unavailable,
+        so the caller falls back to the full rebuild. True no-op outside the
+        handoff (base Manual draws rubber bands instead)."""
+        if not self._refine_handoff_active:
+            return True
+        # A restored/copied entry can carry provider bookkeeping from a
+        # previous life: strip it so a later remove never targets a dead fid.
+        pg.pop("_hfid", None)
+        pg.pop("_hkept", None)
+        kept = bool(pg.get("validated"))
+        layer = self._handoff_kept_layer if kept else self._handoff_pending_layer
+        if layer is None:
+            return False
+        try:
+            if not layer.isValid():
+                return False
+            from ...core.layer_conventions import to_multipolygon
+            g = self._entry_geom(pg)
+            if g is None or g.isEmpty():
+                return True  # nothing to draw for this entry
+            mg = to_multipolygon(g) or g
+            if mg is None or mg.isEmpty():
+                return True
+            feat = QgsFeature(layer.fields())
+            feat.setGeometry(mg)
+            score = pg.get("score")
+            det_id = pg.get("det_id")
+            feat.setAttributes([
+                float(score) if score is not None else 1.0,
+                int(det_id) if det_id is not None else None,
+            ])
+            ok, added = _add_features_with_ids(layer.dataProvider(), [feat])
+            pfid = added[0].id() if ok and added else None
+            if pfid is None or pfid < 0:
+                return False
+            pg["_hfid"] = pfid
+            pg["_hkept"] = kept
+            self._handoff_hit_insert(pg)
+            layer.triggerRepaint()
+            return True
+        except (RuntimeError, AttributeError):
+            return False
+
+    def _handoff_remove_entry_feature(self, pg) -> bool:
+        """Incremental twin of _rebuild_handoff_layers for ONE removed entry:
+        delete its feature from its seed layer (+ hit index). Returns False
+        when the entry has no recorded fid (caller falls back to the full
+        rebuild). True no-op outside the handoff."""
+        if not self._refine_handoff_active:
+            return True
+        self._handoff_hit_remove(pg)
+        pfid = pg.pop("_hfid", None)
+        kept = pg.pop("_hkept", None)
+        g = self._entry_geom(pg)
+        if g is None or g.isEmpty():
+            return True  # was never drawn on a seed layer
+        if pfid is None or kept is None:
+            return False
+        layer = self._handoff_kept_layer if kept else self._handoff_pending_layer
+        if layer is None:
+            return False
+        try:
+            if not layer.isValid():
+                return False
+            layer.dataProvider().deleteFeatures([pfid])
+            layer.triggerRepaint()
+            return True
+        except (RuntimeError, AttributeError):
+            return False
 
     def _remove_handoff_layers(self) -> None:
         """Remove both handoff seed layers from the project (teardown)."""
@@ -280,7 +499,10 @@ class AutoResultsMixin:
         """Colour each detection a distinct pseudo-random colour (stable per
         feature id) so touching or merged objects are easy to tell apart: a visual
         debug aid. One translucent fill with a data-defined hue from the feature
-        id. Best-effort: a render failure must never break the review."""
+        id. ONE identical style from the first live tile through the review and
+        up to export: any style switch at review-open reads as the results
+        "changing" once the run ends. Best-effort: a render failure must never
+        break the review."""
         try:
             from qgis.core import (QgsFillSymbol, QgsSingleSymbolRenderer,
                                    QgsProperty)
@@ -330,7 +552,9 @@ class AutoResultsMixin:
         """Apply the current review DISPLAY colour mode to the selection layer:
         'normal' (blue review fill), 'outline' (red outline only, see-through),
         'confidence' (green->red heatmap on the per-object score) or 'random' (one
-        colour per object). Visual only: never touches geometry, filters or export."""
+        colour per object). The SAME renderer serves the live run and the review
+        (one visual identity end to end). Visual only: never touches geometry,
+        filters or export."""
         if layer is None:
             return
         mode = getattr(self, "_auto_display_mode", "normal")
@@ -349,14 +573,11 @@ class AutoResultsMixin:
                 pass
 
     def _display_legend_text(self, mode: str) -> str:
-        """Muted legend line for a display mode: what the colours MEAN."""
-        _legends = {
-            "normal": tr("Blue = detected object"),
-            "outline": tr("Outlines only - check boundaries against the imagery"),
-            "confidence": tr("Yellow = confident · Purple = uncertain"),
-            "random": tr("One color per object - check neighbors are separated"),
-        }
-        return _legends.get(mode, _legends["normal"])
+        """Legend line for a display mode: swatch dots in the real renderer
+        colours + what they mean (single source: the dock-side helper, so the
+        build-time seed and every mode switch render the same line)."""
+        from ..dock.auto_review_build import display_legend_html
+        return display_legend_html(mode)
 
     def _seed_review_display_mode(self) -> None:
         """Default the display colour to Random (one distinct colour per object)
@@ -400,6 +621,7 @@ class AutoResultsMixin:
         """Remove the live selection layer from the project (if present)."""
         layer = self._auto_selection_layer
         self._auto_selection_layer = None
+        self._review_fid_map = {}
         if layer is None:
             return
         try:
@@ -576,15 +798,18 @@ class AutoResultsMixin:
                     feat.setGeometry(geom_by_fid[f])
                     feat.setAttributes(["", by_fid[f][2], f])
                     add_feats.append((f, feat))
-                # Plain addFeatures (NOT the FastInsert helper): FastInsert skips
-                # writing the assigned provider fids back onto the features, and
-                # we need them to target this object with a later change/delete.
-                pr.addFeatures([feat for _, feat in add_feats])
-                for f, feat in add_feats:
-                    pfid = feat.id()
-                    if pfid is not None and pfid >= 0:
-                        s, full, sc = by_fid[f]
-                        new_map[f] = (pfid, s, full, sc)
+                # The assigned provider fids come back on the RETURNED feature
+                # copies only (addFeatures never mutates its inputs); without
+                # them every later repaint re-adds the same objects and the
+                # stacked translucent fills read as opaque.
+                ok, added = _add_features_with_ids(
+                    pr, [feat for _, feat in add_feats])
+                if ok and len(added) == len(add_feats):
+                    for (f, _feat), out in zip(add_feats, added):
+                        pfid = out.id()
+                        if pfid is not None and pfid >= 0:
+                            s, full, sc = by_fid[f]
+                            new_map[f] = (pfid, s, full, sc)
                 changed = True
             if geom_changes:
                 pr.changeGeometryValues(
@@ -703,6 +928,18 @@ class AutoResultsMixin:
         progressed = False
         queue = self._auto_tile_queue
 
+        # Exemplar-only runs additionally retain each raw fragment + accumulate
+        # the area-weighted mean tile coverage (failure blobs above the hard cap
+        # excluded), so finalize can decide count-vs-map from the run's own masks
+        # (and the review can re-group with no re-detection).
+        retain = getattr(self, "_auto_is_exemplar_only", False)
+        tile_area = getattr(self, "_auto_tile_ground_area", 0.0) if retain else 0.0
+        hard_cov = 0.0
+        if retain:
+            from ...core.detection_policy import hard_tile_coverage
+            from ...workers.auto_detection_worker import _HARD_TILE_COVERAGE as _HTC
+            hard_cov = hard_tile_coverage(_HTC)
+
         while queue and self._auto_merger is not None:
             detections = queue[0]
             while detections:
@@ -717,6 +954,23 @@ class AutoResultsMixin:
                 # keeps the MAX score. The live preview / review filter by whole-
                 # object score afterward.
                 self._auto_raw_count += 1
+                if retain:
+                    self._auto_raw_n_total += 1
+                    if tile_area > 0:
+                        cov = geom.area() / tile_area
+                        # Failure blobs (near-whole-tile texture fills) are
+                        # excluded so a handful cannot fake continuous cover.
+                        if 0.0 < cov <= hard_cov:
+                            self._auto_raw_cov_sum += cov
+                            self._auto_raw_cov_sq_sum += cov * cov
+                    frags = self._auto_raw_fragments
+                    if frags is not None:
+                        if len(frags) >= _RAW_FRAGMENT_RETAIN_CAP:
+                            # Overflow: free the list, mark the override
+                            # unavailable; the counters above still decide.
+                            self._auto_raw_fragments = None
+                        else:
+                            frags.append((wkb, float(score)))
                 self._auto_merger.add(geom, float(score))
                 progressed = True
                 if deadline is not None and _t.monotonic() >= deadline:
@@ -746,11 +1000,40 @@ class AutoResultsMixin:
                 interval = min(2500, interval + (n // 800) * 400)
             self._auto_repaint_timer.start(interval)
 
+    def _pause_preview_jobs(self) -> None:
+        """Suspend the canvas's preview jobs for the duration of a run (they
+        render the just-outside-the-view margin after each repaint, which on
+        an online basemap also re-fetches tiles; wasted work during live tile
+        streaming). The user's setting is remembered and restored; idempotent
+        and version-defensive (older builds without the getter no-op)."""
+        if getattr(self, "_preview_jobs_paused", None) is not None:
+            return  # already paused (nested run paths)
+        try:
+            canvas = self.iface.mapCanvas()
+            prev = bool(canvas.previewJobsEnabled())
+            if prev:
+                canvas.setPreviewJobsEnabled(False)
+            self._preview_jobs_paused = prev
+        except (RuntimeError, AttributeError):
+            self._preview_jobs_paused = None
+
+    def _resume_preview_jobs(self) -> None:
+        """Restore the canvas preview-jobs setting saved by the pause (no-op
+        when nothing was paused or the user had them off anyway)."""
+        prev = getattr(self, "_preview_jobs_paused", None)
+        self._preview_jobs_paused = None
+        if prev:
+            try:
+                self.iface.mapCanvas().setPreviewJobsEnabled(True)
+            except (RuntimeError, AttributeError):
+                pass
+
     def _stop_auto_live_pump(self) -> None:
         """Stop the live tile pump machinery: queue, pump flag, per-run refine
         cache, coalesced repaint timer. Does NOT touch the finalize/preview
         generations, so the finalize state machine can call it from its own
         drain step without invalidating itself."""
+        self._resume_preview_jobs()
         self._auto_tile_queue.clear()
         self._auto_pump_scheduled = False
         # Fresh run / teardown: drop the live preset-refine cache (per-fid
@@ -920,10 +1203,10 @@ class AutoResultsMixin:
         if self._auto_headless_run:
             self._drain_auto_tiles_now()
             self._reset_auto_live_pipeline()
-            merged_ided = (
-                self._auto_merger.result_scored_ided()
-                if self._auto_merger is not None else []
-            )
+            # Same exemplar-only count-vs-map decision as the interactive path
+            # (a MAP decision keeps the live merger, a SEPARATE one re-merges the
+            # retained fragments), so the MCP contract reflects the same grouping.
+            merged_ided = self._resolve_exemplar_finalize_ided()
             self._auto_merger = None
             if not merged_ided:
                 self._record_auto_zero_result(tiles_succeeded)
@@ -938,6 +1221,7 @@ class AutoResultsMixin:
                 self._record_auto_zero_result(tiles_succeeded)
                 return
             self._auto_objects = self._build_auto_objects(merged_ided)
+            self._reset_review_refine_cache()
             visible, vis_scores = self._compute_visible_objects(
                 self._fresh_review_params(), self._auto_refine_pixel_size(),
                 with_scores=True)
@@ -978,11 +1262,10 @@ class AutoResultsMixin:
         # cut fragments (the fix for "confidence cuts buildings in half").
         # (stable_id, geom, score) triples: the id carries each object's live
         # colour into the review so the hue is continuous across the run->review
-        # boundary, not just stable during the run.
-        merged_ided = (
-            self._auto_merger.result_scored_ided()
-            if self._auto_merger is not None else []
-        )
+        # boundary, not just stable during the run. For an exemplar-only run the
+        # count-vs-map policy is decided HERE from the run's own masks, which may
+        # replace the merged set with a fresh SEPARATE re-merge of the fragments.
+        merged_ided = self._resolve_exemplar_finalize_ided()
         self._auto_merger = None
         # The end-of-run redundancy sweep (drop leftover partial readings mostly
         # painted over by larger objects: patches/strips double-painting a big
@@ -1005,6 +1288,154 @@ class AutoResultsMixin:
         })
         from qgis.PyQt.QtCore import QTimer
         QTimer.singleShot(0, self._step_auto_finalize_refine)
+
+    # ---- Exemplar-only count-vs-map auto decision + override ----------------
+
+    def _resolve_exemplar_finalize_ided(self) -> list:
+        """The (fid, geom, score) merged set finalize should build objects from.
+
+        For a prompted run (or any run that is not exemplar-only) this is simply
+        the live merger's result. For an exemplar-only run it applies the
+        automatic count-vs-map decision from the run's own masks: the live merger
+        already streamed MAP, so a MAP decision keeps it, while a SEPARATE
+        decision re-merges the retained raw fragments client-side (gates + a
+        fresh SEPARATE merger). The chosen mode is stored BEFORE the review
+        opens, since downstream seam logic reads it."""
+        live = (
+            self._auto_merger.result_scored_ided()
+            if self._auto_merger is not None else []
+        )
+        if not getattr(self, "_auto_is_exemplar_only", False):
+            return live
+        want_separate = self._decide_exemplar_merge_separate()
+        self._auto_merge_mode_source = "signal"
+        frags = getattr(self, "_auto_raw_fragments", None)
+        if want_separate and frags:
+            self._auto_merge_separate = True
+            return self._remerge_raw_fragments(True)
+        # MAP (or SEPARATE wanted but fragments overflowed / empty): the live
+        # merger is already MAP, so keep it and record MAP as the mode.
+        self._auto_merge_separate = False
+        return live
+
+    def _decide_exemplar_merge_separate(self) -> bool:
+        """True = keep SEPARATE (count), False = MAP (continuous cover), decided
+        from the run's own masks.
+
+        The signal is the area-weighted mean tile coverage of the fragments
+        (sum(cov^2)/sum(cov), cov = fragment ground area / tile ground area,
+        failure blobs above the hard cap excluded): the tile fraction a typical
+        unit of detected ground belongs to. Continuous cover (many medium
+        fragments tiling the zone) scores high; small countable objects (each a
+        tiny fraction of a tile) score near zero, and excluding the failure blobs
+        keeps a handful from faking cover. Compared against the server-tunable
+        map_likeness_min_share; when no fragment was measured the counting-safe
+        policy default stands."""
+        from ...core import detection_policy
+        cov_sum = float(getattr(self, "_auto_raw_cov_sum", 0.0) or 0.0)
+        if cov_sum <= 0.0:
+            return detection_policy.exemplar_only_merge_separate()
+        cov_sq_sum = float(getattr(self, "_auto_raw_cov_sq_sum", 0.0) or 0.0)
+        map_likeness = cov_sq_sum / cov_sum
+        threshold = detection_policy.map_likeness_min_share()
+        is_map = map_likeness >= threshold
+        QgsMessageLog.logMessage(
+            "Auto detection: exemplar-only map-likeness {:.3f} vs threshold "
+            "{:.3f} -> {}".format(
+                map_likeness, threshold,
+                "continuous cover" if is_map else "distinct objects"),
+            "AI Segmentation", level=Qgis.MessageLevel.Info,
+        )
+        return not is_map
+
+    def _remerge_raw_fragments(self, merge_separate: bool) -> list:
+        """Re-merge the retained exemplar raw fragments the given way and return
+        the (fid, geom, score) merged set. SEPARATE first applies the worker's
+        coverage gates client-side (hard cap drop + a compactness check above the
+        soft cap), then folds survivors into a fresh IncrementalMerger built with
+        the exact kwargs the run merger uses. Bounded synchronous work (the
+        SEPARATE branch only runs on runs the signal judged NOT map-like, so the
+        fragment count is modest); logged for observability. The cover sweep runs
+        downstream (finalize) or in the caller (override)."""
+        import time as _t
+        from qgis.core import QgsGeometry
+        from ...core.polygon_exporter import IncrementalMerger
+        from ...workers.auto_detection_worker import (
+            AutoDetectionWorker, _HARD_TILE_COVERAGE, _MAX_TILE_COVERAGE,
+        )
+
+        frags = getattr(self, "_auto_raw_fragments", None) or []
+        # _auto_seam_min_dim reads _auto_merge_separate, so set it first.
+        self._auto_merge_separate = merge_separate
+        ms = self._auto_merge_scalars or {}
+        merger = IncrementalMerger(
+            seam_min_dim=self._auto_seam_min_dim(),
+            select_duplicates=merge_separate,
+            gsd=self._auto_gsd,
+            merge_ios=ms.get("merge_ios", 0.15),
+            dedup_ios=ms.get("dedup_ios", 0.5),
+            dup_ios_floor=ms.get("dup_ios_floor", 0.3),
+            dup_centroid_frac=ms.get("dup_centroid_frac", 0.35),
+            seam_span_ios=ms.get("seam_span_ios", 0.03),
+        )
+        tile_area = float(getattr(self, "_auto_tile_ground_area", 0.0) or 0.0)
+        # Same server-overridable coverage gates the run worker resolved.
+        from ...core.detection_policy import hard_tile_coverage, max_tile_coverage
+        hard_cov = hard_tile_coverage(_HARD_TILE_COVERAGE)
+        max_cov = max_tile_coverage(_MAX_TILE_COVERAGE)
+        t0 = _t.monotonic()
+        gated = 0
+        for wkb, score in frags:
+            geom = QgsGeometry()
+            geom.fromWkb(wkb)
+            if geom.isEmpty():
+                continue
+            if merge_separate and tile_area > 0:
+                cov = geom.area() / tile_area
+                if cov > hard_cov:
+                    gated += 1
+                    continue
+                if cov > max_cov and not AutoDetectionWorker._is_compact_shape(geom):
+                    gated += 1
+                    continue
+            merger.add(geom, float(score))
+        out = merger.result_scored_ided()
+        QgsMessageLog.logMessage(
+            "Auto detection: re-merged {} raw fragment(s) as {} ({} gated) in "
+            "{} ms".format(
+                len(frags), "distinct objects" if merge_separate else "continuous cover",
+                gated, int((_t.monotonic() - t0) * 1000)),
+            "AI Segmentation", level=Qgis.MessageLevel.Info,
+        )
+        return out
+
+    def _rebuild_auto_objects_for_mode(self, merge_separate: bool) -> bool:
+        """Re-merge the retained exemplar fragments the given way, run the cover
+        sweep, and rebuild _auto_objects (+ its stable fids). Used by the review
+        override; returns False when there is nothing to re-merge."""
+        frags = getattr(self, "_auto_raw_fragments", None)
+        if not frags:
+            return False
+        from ...core.polygon_exporter import drop_covered_objects
+        merged_ided = self._remerge_raw_fragments(merge_separate)
+        merged_ided = drop_covered_objects(merged_ided)
+        self._auto_objects = self._build_auto_objects(merged_ided)
+        self._reset_review_refine_cache()
+        # A re-grouping rebuilds the object set, so index-based per-object
+        # removals from the prior grouping no longer map; drop them (geometry-
+        # based protected edits still apply through the reslice overlap check).
+        self._auto_manual_removed = set()
+        return True
+
+    def _clear_auto_raw_fragments(self) -> None:
+        """Drop the exemplar raw-fragment retention + counters (a review end, a
+        new run, a teardown). Cheap and idempotent."""
+        self._auto_is_exemplar_only = False
+        self._auto_raw_fragments = None
+        self._auto_raw_n_total = 0
+        self._auto_raw_cov_sum = 0.0
+        self._auto_raw_cov_sq_sum = 0.0
+        self._auto_tile_ground_area = 0.0
 
     # ---- Canonical whole-object helpers (merge-then-filter) -----------------
 
@@ -1103,16 +1534,30 @@ class AutoResultsMixin:
             except (RuntimeError, AttributeError):
                 return 0.0
 
+    def _review_noise_floor(self) -> float:
+        """Confidence fraction below which a detection is dropped from the review
+        entirely (never counted, never rendered). Server-delivered value, fails
+        open to one generic client default. The run still FETCHES everything (the
+        worker recall floor is untouched); this is a review-side cut so the
+        totals never include sub-noise masks and the review has fewer shapes to
+        convert and render."""
+        from ...core.detection_policy import review_noise_floor
+        return review_noise_floor()
+
     def _build_auto_objects(self, merged_ided) -> list:
         """Synchronous (geom, score, area) build from the merger's ided result.
         Also records the parallel stable fid per object (_auto_object_fids) so the
         Random hue matches the live run. Used by the headless path; the
-        interactive path builds it cooperatively."""
+        interactive path builds it cooperatively. Detections below the review
+        noise floor are dropped here so they never reach the review at all."""
         measurer = self._make_auto_area_measurer()
+        floor = self._review_noise_floor()
         out = []
         fids = []
         for fid, geom, score in merged_ided:
             if geom is None or geom.isEmpty():
+                continue
+            if float(score) < floor:
                 continue
             out.append((geom, float(score), self._object_area_m2(geom, measurer)))
             fids.append(fid)
@@ -1178,24 +1623,25 @@ class AutoResultsMixin:
 
     def _effective_confidence_default(self) -> float:
         """The review's starting confidence default: the run plan's value when
-        it matches this run's prompt, else the prompt's shape-class value from
-        the server policy, else the generic default. Object classes score
-        differently on the same true object, so the start adapts to the prompt
-        instead of one flat cutoff. The auto_lowered comparisons all read this
-        so they compare against the SAME default the review seeds from."""
+        it matches this run's prompt, else the exemplar-only default for an
+        exemplar-only run, else the prompt's shape-class value from the server
+        policy, else the generic default. Object classes (and an exemplar-only
+        run's lack of a text prior) score differently on the same true object,
+        so the start adapts instead of one flat cutoff. The live seed uses the
+        SAME resolver (review_start_confidence_default) so the live preview and
+        the review open at the same cutoff. The auto_lowered comparisons all
+        read this so they compare against the SAME default the review seeds
+        from."""
         prompt = str((self._auto_run_ctx or {}).get("prompt") or "")
         plan = self._active_run_plan(prompt)
         if plan is not None:
             c = plan.get("confidence_default")
             if isinstance(c, (int, float)) and not isinstance(c, bool):
                 return float(c)
-        from ...core.review_presets import class_confidence_for
+        from ...core.review_presets import review_start_confidence_default
 
-        class_conf = class_confidence_for(prompt)
-        if class_conf is not None:
-            return class_conf
-        from ...core.detection_policy import confidence_default
-        return confidence_default()
+        return review_start_confidence_default(
+            prompt, bool(getattr(self, "_auto_is_exemplar_only", False)))
 
     def _fresh_review_params(self) -> dict:
         """Review filter/refine params for a fresh result: the pre-run
@@ -1273,6 +1719,58 @@ class AutoResultsMixin:
             ortho_tol=2.5 * px,
         )
 
+    @staticmethod
+    def _review_shape_key(params: dict, pixel_size: float) -> tuple:
+        """Hashable identity of the SHAPE portion of the review params (+ the
+        px scale they are applied at). Confidence and Min/Max size are filters,
+        not shape ops, so they stay OUT: two reslices that differ only by a
+        filter share every refined geometry through _auto_reslice_cache."""
+        return (
+            round(float(params.get("simplify_px", 0) or 0.0), 4),
+            bool(params.get("smooth", False)),
+            round(float(params.get("expand_px", 0) or 0.0), 4),
+            bool(params.get("fill_holes", False)),
+            round(float(params.get("open_px", 0) or 0.0), 4),
+            bool(params.get("ortho", False)),
+            round(float(pixel_size or 0.0), 6),
+        )
+
+    def _reset_review_refine_cache(self) -> None:
+        """Drop the reslice refine cache. Must run whenever _auto_objects is
+        rebuilt or cleared (finalize build, exemplar re-group, export, discard,
+        run start): the cache is keyed by object INDEX, so a stale entry after
+        a rebuild would render the wrong object. The review provider map goes
+        with it (det_ids from a rebuilt object set can collide with the old
+        ones), which forces the next push to a full rebuild of the layer."""
+        self._auto_reslice_cache = {"key": None, "geoms": {}}
+        self._review_fid_map = {}
+
+    def _review_refined_geom(self, det_idx: int, base, params: dict,
+                             pixel_size: float):
+        """Refined + normalized (repaired, MultiPolygon-coerced) geometry for
+        one canonical object, memoized in _auto_reslice_cache. A cache hit is a
+        dict lookup, so filter-only reslices (Confidence / Min / Max size) never
+        re-run the GEOS refine on objects whose shape params did not change.
+        Returns None when the refine emptied the geometry. Callers must not
+        mutate the returned geometry (copy first)."""
+        cache = self._auto_reslice_cache
+        key = self._review_shape_key(params, pixel_size)
+        if cache.get("key") != key:
+            cache["key"] = key
+            cache["geoms"] = {}
+        geoms = cache["geoms"]
+        if det_idx in geoms:
+            return geoms[det_idx]
+        g = self._refine_geom_for_review(base, params, pixel_size)
+        if g is not None and not g.isEmpty():
+            # Normalize ONCE at cache-fill time (repair + MultiPolygon coerce),
+            # so every later push of this geometry skips both.
+            from ...core.layer_conventions import repair_polygon, to_multipolygon
+            g = to_multipolygon(repair_polygon(g) or g)
+        result = g if (g is not None and not g.isEmpty()) else None
+        geoms[det_idx] = result
+        return result
+
     def _compute_visible_objects(
         self, params: dict, pixel_size: float, with_scores: bool = False,
     ) -> list | tuple[list, list]:
@@ -1290,8 +1788,8 @@ class AutoResultsMixin:
                 continue
             if not self._passes_review_filters(score, area, params):
                 continue
-            g = self._refine_geom_for_review(base, params, pixel_size)
-            if g is not None and not g.isEmpty():
+            g = self._review_refined_geom(det_idx, base, params, pixel_size)
+            if g is not None:
                 out.append(g)
                 out_scores.append(float(score))
         if with_scores:
@@ -1336,11 +1834,14 @@ class AutoResultsMixin:
                     zero_at_default=True,
                     stop_reason="completed",
                     warming_ms=self._auto_warming_wait_ms(),
+                    merge_mode_final="separate" if self._auto_merge_separate else "map",
+                    merge_override_used=bool(getattr(self, "_auto_merge_override_used", False)),
                 )
         except Exception:
             pass  # nosec B110
         self._on_auto_zero_detections(tiles_succeeded)
         self._remove_auto_selection_layer()
+        self._clear_auto_raw_fragments()
 
     def _step_auto_finalize_refine(self) -> None:
         """One cooperative slice of the finalize/reslice pipeline, yielding to the
@@ -1419,9 +1920,12 @@ class AutoResultsMixin:
             objects = state["objects"]
             object_fids = state["object_fids"]
             measurer = state["measurer"]
+            # Below-floor detections are pure noise: drop them here so they never
+            # count in the review total nor render (also fewer shapes to build).
+            floor = self._review_noise_floor()
             while build_pending:
                 fid, geom, score = build_pending.pop()
-                if geom is not None and not geom.isEmpty():
+                if geom is not None and not geom.isEmpty() and float(score) >= floor:
                     objects.append(
                         (geom, float(score), self._object_area_m2(geom, measurer)))
                     # Parallel to objects (same append guard = same order), so the
@@ -1437,6 +1941,7 @@ class AutoResultsMixin:
             # preview cache, then move to the shared filter phase.
             self._auto_objects = objects
             self._auto_object_fids = object_fids
+            self._reset_review_refine_cache()
             # Adaptive starting confidence: if 0.30 would hide EVERY found object,
             # drop to the highest 5% step that shows at least one, so the review
             # never opens reading "0 found". Set it BEFORE the filter phase below
@@ -1470,11 +1975,30 @@ class AutoResultsMixin:
                     spin.blockSignals(True)
                     spin.setValue(start_conf)
                     spin.blockSignals(False)
+                    # The review page already seeded its slider/spin from the
+                    # pre-run dial when it opened (before this async step), so
+                    # push the REAL starting cutoff into them too: without
+                    # this, a tuned/adaptive start filtered at one value while
+                    # the visible handle rested at another.
+                    self.dock_widget.seed_review_confidence(
+                        int(round(start_conf * 100)))
                     self.dock_widget.set_review_conf_lowered_note(
                         auto_lowered or tuned_note, int(round(start_conf * 100)),
                         adaptive=adaptive_note, tuned=tuned_note)
+                    # Clamp the confidence controls so neither the slider nor the
+                    # spinbox can dial below the noise floor (sub-floor detections
+                    # were already dropped, so a cutoff under it is meaningless).
+                    floor_pct = int(math.ceil(self._review_noise_floor() * 100))
+                    self.dock_widget.set_review_conf_floor(floor_pct)
                     hist = getattr(self.dock_widget, "auto_conf_histogram", None)
                     if hist is not None:
+                        # The histogram must span EXACTLY the slider's range
+                        # (its clamped minimum, not the raw floor), so the
+                        # grey/blue boundary sits above the handle at every
+                        # cutoff instead of drifting on a different scale.
+                        from ..dock.styles import _REVIEW_CONF_MIN
+                        hist.set_range(
+                            max(floor_pct, _REVIEW_CONF_MIN) / 100.0, 0.95)
                         hist.set_scores([s for (_g, s, _a) in objects])
                         hist.set_cutoff(start_conf)
                 except (RuntimeError, AttributeError):
@@ -1505,14 +2029,30 @@ class AutoResultsMixin:
             det_idx, (base, score, area) = filter_pending.pop()
             base_ok = base is not None and not base.isEmpty()
             if det_idx not in removed and base_ok and self._passes_review_filters(score, area, params):
-                g = self._refine_geom_for_review(base, params, pixel_size)
-                if g is not None and not g.isEmpty():
+                # Cached per object + shape key: a filter-only reslice
+                # (Confidence / Min / Max size) is pure dict lookups here.
+                g = self._review_refined_geom(det_idx, base, params, pixel_size)
+                if g is not None:
                     visible.append(g)
                     visible_scores.append(score)
                     visible_ids.append(self._object_fid_for(det_idx))
             if _t.monotonic() >= deadline:
                 break
         if filter_pending:
+            # Progressive apply (reslice only): every ~250 ms, write the geoms
+            # refined SO FAR onto the layer (diff-only, objects not yet
+            # processed keep their old shape). A shape-settings change then
+            # visibly sweeps the map instead of freezing on the old state
+            # until the whole cooperative pass ends.
+            if state.get("mode") == "reslice" and visible:
+                now = _t.monotonic()
+                if now - state.get("last_partial", 0.0) >= 0.25:
+                    state["last_partial"] = now
+                    self._push_review_geoms(
+                        visible, repair=False, scores=visible_scores,
+                        ids=visible_ids,
+                        stamp=("acc", (self._auto_reslice_cache or {}).get("key")),
+                        partial=True)
             QTimer.singleShot(0, self._step_auto_finalize_refine)
             return
         vis_scores = state.get("visible_scores", [])
@@ -1538,16 +2078,24 @@ class AutoResultsMixin:
         if not self._auto_review:
             return
         if self._auto_protected_geoms:
-            protected = self._auto_protected_geoms
-            kept = [g for g in geoms if not self._geom_overlaps_any(g, protected)]
-            geoms = self._dissolve_overlapping(kept + list(protected))
+            # Filter + re-merge scoped to the protected neighbourhood so this
+            # cooperative-reslice tail does not re-freeze the GUI on a big
+            # detection set (the whole point of the time-sliced reslice).
+            geoms = self._merge_kept_with_protected(
+                geoms, list(self._auto_protected_geoms))
             # Geoms were rewritten (dissolve), so the parallel scores/ids no
             # longer align: fall back to neutral coloring rather than mislabel.
             self._auto_review["scores"] = None
             self._auto_review["ids"] = None
+            self._auto_review["stamp"] = None
         else:
             self._auto_review["scores"] = scores
             self._auto_review["ids"] = ids
+            # Reslice output geoms are the cache-normalized refined objects:
+            # stamp them with the shape key so the incremental push writes only
+            # the delta (identical det_id + stamp = geometry unchanged).
+            self._auto_review["stamp"] = (
+                "acc", (self._auto_reslice_cache or {}).get("key"))
         self._auto_review["geoms"] = geoms
         self._update_review_header(len(geoms))
         self._refresh_auto_review_preview()
@@ -1591,11 +2139,17 @@ class AutoResultsMixin:
         # visibly "sharpened" on slider release and small objects could collapse
         # during the drag. Matching tolerances makes drag == release.
         tol = _AUTO_REVIEW_SIMPLIFY_DEFAULT * pixel_size if pixel_size > 0 else 0.0
+        from ...core.layer_conventions import to_multipolygon
         while pending:
             det_idx, geom, score = pending.pop()
             if geom is not None and not geom.isEmpty():
                 s = geom.simplify(tol) if tol > 0 else geom
-                out.append((s if s is not None and not s.isEmpty() else geom,
+                if s is None or s.isEmpty():
+                    s = geom
+                # Coerce to MultiPolygon ONCE here so a confidence-drag tick's
+                # incremental adds never pay the per-geom deep copy again.
+                mp = to_multipolygon(s)
+                out.append((mp if mp is not None and not mp.isEmpty() else s,
                             score, det_idx))
             if _t.monotonic() >= deadline:
                 break
@@ -1728,6 +2282,9 @@ class AutoResultsMixin:
             "source_layer_name": source_layer_name,
             "prompt": prompt_text,
             "pixel_size": pixel_size,
+            # Provenance stamp for the incremental review push: the visible set
+            # is the cache-normalized refine output under this shape key.
+            "stamp": ("acc", (self._auto_reslice_cache or {}).get("key")),
         }
         # Record result so MCP get_status stays consistent.
         self._last_auto_result = {
@@ -1758,6 +2315,15 @@ class AutoResultsMixin:
                 # Drop the blue zone fill so the detections are not washed out by
                 # the overlay during review (the outline stays for context).
                 self._set_zone_band_fill_visible(False)
+                # Exemplar-only count-vs-map override: one muted line naming the
+                # auto grouping + a link to re-group the other way. Shown only
+                # when the run was exemplar-only and its fragments were retained.
+                if (getattr(self, "_auto_is_exemplar_only", False)
+                        and self._auto_raw_fragments is not None):
+                    self.dock_widget.set_merge_override(
+                        "separate" if self._auto_merge_separate else "map")
+                else:
+                    self.dock_widget.set_merge_override(None)
                 # Exemplar nudge: bottom-heavy, no-example runs.
                 self._maybe_show_exemplar_nudge(prompt_text, scores or [])
             except (RuntimeError, AttributeError):
@@ -1790,6 +2356,8 @@ class AutoResultsMixin:
                     zero_at_default=visible_n == 0,
                     stop_reason="completed",
                     warming_ms=self._auto_warming_wait_ms(),
+                    merge_mode_final="separate" if self._auto_merge_separate else "map",
+                    merge_override_used=bool(getattr(self, "_auto_merge_override_used", False)),
                 )
             telemetry.track_review_opened(
                 run_id=self._auto_run_id or "",
@@ -1812,6 +2380,9 @@ class AutoResultsMixin:
         adjust and run again or leave. No heavy guidance box. The terminal
         handlers already called set_auto_run_active(False), so the step-2
         controls are back; this just posts the message. Headless: just log."""
+        # Back on the prompt step: restore the zone fill the run start dropped
+        # (live/review visual parity).
+        self._set_zone_band_fill_visible(True)
         # Distinguish a genuinely empty zone from a run where every tile failed
         # to reach the service (offline / server down / timeouts). Telling an
         # offline user their zone is empty is misleading, so surface the real
