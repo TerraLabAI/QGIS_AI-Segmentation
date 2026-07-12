@@ -358,10 +358,7 @@ class DockAboutMixin:
         lay.setSpacing(10)
         lay.setContentsMargins(16, 16, 16, 16)
 
-        msg = QLabel(
-            tr("Bug, question, feature request?") + "\n"
-            + tr("We read every message.")  # noqa: W503
-        )
+        msg = QLabel(tr("Bug, question, feature request?") + "\n" + tr("We read every message."))
         msg.setWordWrap(True)
         msg.setStyleSheet("font-size: 12px; color: palette(text);")
         lay.addWidget(msg)

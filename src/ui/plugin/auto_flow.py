@@ -97,12 +97,10 @@ class AutoFlowMixin:
         in that case. Exported layers are always untouched."""
         # getattr defaults: the frozen/unfrozen fields only exist once a manual
         # session has started, and a mode switch can fire before that.
-        has_unsaved = (
-            getattr(self, "current_mask", None) is not None
-            or getattr(self, "_frozen_sessions", None)  # noqa: W503
-            or getattr(self, "_unfrozen_display_polygon", None) is not None  # noqa: W503
-            or getattr(self, "saved_polygons", None)  # noqa: W503
-        )
+        has_unsaved = getattr(self, "current_mask", None) is not None
+        has_unsaved = has_unsaved or getattr(self, "_frozen_sessions", None)
+        has_unsaved = has_unsaved or getattr(self, "_unfrozen_display_polygon", None) is not None
+        has_unsaved = has_unsaved or getattr(self, "saved_polygons", None)
         if has_unsaved:
             return
         try:
@@ -208,8 +206,7 @@ class AutoFlowMixin:
         # now that the plan is known, so a subscriber's slider uncaps (and a
         # free user's caps) without waiting for the next slider move. Idle
         # zone-set state only; a live run or review owns the cost label.
-        if (self._auto_zone is not None and self._auto_worker is None
-                and self._auto_review is None):
+        if (self._auto_zone is not None and self._auto_worker is None and self._auto_review is None):
             self._update_credit_estimate()
 
     def _auto_credit_snapshot(self) -> tuple[int | None, bool]:
@@ -1189,16 +1186,14 @@ class AutoFlowMixin:
         prompt = (prompt or "").strip()
         if not prompt or prompt.lower() != self._resolved_auto_object_class().strip().lower():
             return
-        if (self._auto_detail_user_locked
-                and getattr(self, "_auto_detail_lock_prompt", "") == prompt.lower()):  # noqa: W503
+        if self._auto_detail_user_locked and getattr(self, "_auto_detail_lock_prompt", "") == prompt.lower():
             return
         target_mupp = plan.get("target_mupp")
-        if (not isinstance(target_mupp, (int, float)) or isinstance(target_mupp, bool)
-                or target_mupp <= 0):  # noqa: W503
+        if not isinstance(target_mupp, (int, float)) or isinstance(target_mupp, bool) or target_mupp <= 0:
             return
         obj_m = plan.get("object_size_m")
-        obj_m = (float(obj_m) if isinstance(obj_m, (int, float))
-                 and not isinstance(obj_m, bool) and obj_m > 0 else 10.0)  # noqa: W503
+        is_valid_obj_m = isinstance(obj_m, (int, float)) and not isinstance(obj_m, bool) and obj_m > 0
+        obj_m = float(obj_m) if is_valid_obj_m else 10.0
         layer = self._get_active_raster_layer()
         if layer is None:
             return
@@ -1286,11 +1281,10 @@ class AutoFlowMixin:
         plan = self._active_run_plan(object_class) if object_class else None
         if plan:
             target_mupp = plan.get("target_mupp")
-            if (isinstance(target_mupp, (int, float))
-                    and not isinstance(target_mupp, bool) and target_mupp > 0):  # noqa: W503
+            if isinstance(target_mupp, (int, float)) and not isinstance(target_mupp, bool) and target_mupp > 0:
                 obj_m = plan.get("object_size_m")
-                obj_m = (float(obj_m) if isinstance(obj_m, (int, float))
-                         and not isinstance(obj_m, bool) and obj_m > 0 else 10.0)  # noqa: W503
+                is_valid_obj_m = isinstance(obj_m, (int, float)) and not isinstance(obj_m, bool) and obj_m > 0
+                obj_m = float(obj_m) if is_valid_obj_m else 10.0
                 return self._auto_detail_for_target(
                     layer, zone_in_layer, obj_m, float(target_mupp))
         if object_class:

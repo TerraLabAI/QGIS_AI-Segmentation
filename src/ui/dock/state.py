@@ -382,9 +382,7 @@ class DockStateMixin:
             # "Shape settings" belong to the OPEN edit only (the geometry-delta
             # edit has no SAM points, so _has_mask alone would keep the panel
             # hidden forever). A mere selection shows just Edit shape / Remove.
-            self.refine_group.setVisible(
-                self._has_mask
-                or getattr(self, "_handoff_editing", False))  # noqa: W503
+            self.refine_group.setVisible(self._has_mask or getattr(self, "_handoff_editing", False))
             return
 
         self.refine_group.setVisible(self._has_mask)
@@ -1016,8 +1014,8 @@ class DockStateMixin:
         # Consent gates DETECT (the moment credits are spent), not Start: the
         # checkbox sits right above this button (see auto_build).
         tos_ok = has_tos_locked() or has_tos_accepted()
-        run_allowed = (has_layer and can_run and not_too_large and credits_ok
-                       and credits_enough and premium_ok and tos_ok)
+        run_allowed = has_layer and can_run and not_too_large and credits_ok
+        run_allowed = run_allowed and credits_enough and premium_ok and tos_ok
         self.auto_detect_btn.setEnabled(run_allowed and not self._auto_run_active)
         # A disabled button with no reason reads as broken; consent is the one
         # gate the user can fix right here, so say so.

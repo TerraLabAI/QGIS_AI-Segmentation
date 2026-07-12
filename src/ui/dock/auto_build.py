@@ -96,10 +96,9 @@ class DockAutoBuildMixin:
         self.auto_upsell_card.setObjectName("autoUpsellCard")
         self.auto_upsell_card.setAttribute(
             Qt.WidgetAttribute.WA_StyledBackground, True)
+        _card_btn_qss = "QPushButton { border: none; }"  # ui-ok: child-button border reset inside the card
         self.auto_upsell_card.setStyleSheet(
-            _msg_card_qss("autoUpsellCard", "info")
-            + "QPushButton { border: none; }"  # ui-ok: child-button border reset inside the card, not a button style
-        )
+            _msg_card_qss("autoUpsellCard", "info") + _card_btn_qss)
         upsell_layout = QVBoxLayout(self.auto_upsell_card)
         upsell_layout.setContentsMargins(10, 10, 10, 10)
         upsell_layout.setSpacing(8)
@@ -706,8 +705,7 @@ class DockAutoBuildMixin:
         self.auto_settings_box.setAttribute(
             Qt.WidgetAttribute.WA_StyledBackground, True)
         self.auto_settings_box.setStyleSheet(
-            _CARD_QSS.format(name="autoSettingsBox")
-            + "QLabel { background: transparent; border: none; }"
+            _CARD_QSS.format(name="autoSettingsBox") + "QLabel { background: transparent; border: none; }"
         )
         _settings_layout = QVBoxLayout(self.auto_settings_box)
         _settings_layout.setContentsMargins(*_CARD_MARGINS)

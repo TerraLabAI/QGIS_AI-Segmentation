@@ -75,10 +75,11 @@ class ManualPredictMixin:
         # never the predictor pipe), so it stays instant even while a
         # background encode (speculative selection prewarm, a just-closed
         # edit's crop) is still in flight.
-        if (self._refine_handoff_active
-                and not self._is_refining_saved_object  # noqa: W503
-                and self.current_mask is None  # noqa: W503
-                and not self._active_crop_points_positive):  # noqa: W503
+        is_resting_click = self._refine_handoff_active
+        is_resting_click = is_resting_click and not self._is_refining_saved_object
+        is_resting_click = is_resting_click and self.current_mask is None
+        is_resting_click = is_resting_click and not self._active_crop_points_positive
+        if is_resting_click:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
             idx = self._hit_test_saved_polygon(raster_pt)
@@ -101,10 +102,12 @@ class ManualPredictMixin:
         # detection switches to it (auto-save the current object, then select
         # the target). Clicks on empty ground or inside the active shape stay
         # editing clicks, so growing an object is untouched.
-        if (self._refine_handoff_active
-                and (self._is_refining_saved_object  # noqa: W503
-                     or self.current_mask is not None  # noqa: W503
-                     or self._active_crop_points_positive)):  # noqa: W503
+        is_editing_click = False
+        if self._refine_handoff_active:
+            is_editing_click = self._is_refining_saved_object
+            is_editing_click = is_editing_click or self.current_mask is not None
+            is_editing_click = is_editing_click or self._active_crop_points_positive
+        if is_editing_click:
             idx = self._hit_test_saved_polygon(raster_pt)
             if idx is not None:
                 if self.map_tool:
@@ -169,9 +172,7 @@ class ManualPredictMixin:
             return
 
         # Auto-revert if prediction produced an empty mask (no element detected)
-        if (self.current_mask is not None
-                and self.current_mask.sum() == 0  # noqa: W503
-                and self._mask_state_history):  # noqa: W503
+        if self.current_mask is not None and self.current_mask.sum() == 0 and self._mask_state_history:
             self.prompts.undo()
             if self._active_crop_points_positive:
                 self._active_crop_points_positive.pop()
@@ -205,10 +206,11 @@ class ManualPredictMixin:
         # area), so the resting state stays purely non-destructive. Handled
         # BEFORE the transport lock (pure canvas work): selection stays
         # instant while a background encode is in flight.
-        if (self._refine_handoff_active
-                and not self._is_refining_saved_object  # noqa: W503
-                and self.current_mask is None  # noqa: W503
-                and not self._active_crop_points_positive):  # noqa: W503
+        is_resting_click = self._refine_handoff_active
+        is_resting_click = is_resting_click and not self._is_refining_saved_object
+        is_resting_click = is_resting_click and self.current_mask is None
+        is_resting_click = is_resting_click and not self._active_crop_points_positive
+        if is_resting_click:
             raster_pt0 = self._transform_to_raster_crs(point)
             if self._is_point_in_raster_extent(raster_pt0):
                 if self.map_tool:
@@ -311,9 +313,7 @@ class ManualPredictMixin:
             return
 
         # Auto-revert if prediction produced an empty mask (no element detected)
-        if (self.current_mask is not None
-                and self.current_mask.sum() == 0  # noqa: W503
-                and self._mask_state_history):  # noqa: W503
+        if self.current_mask is not None and self.current_mask.sum() == 0 and self._mask_state_history:
             self.prompts.undo()
             if self._active_crop_points_negative:
                 self._active_crop_points_negative.pop()
@@ -403,8 +403,7 @@ class ManualPredictMixin:
         mask_input = None
         if self.current_low_res_mask is not None:
             mask_input = self.current_low_res_mask
-        elif (self._is_refining_saved_object
-              and self._unfrozen_display_polygon is not None):
+        elif (self._is_refining_saved_object and self._unfrozen_display_polygon is not None):
             # First editing click on an open handoff detection: seed SAM with
             # the object's polygon rasterized onto the current crop (the same
             # context transfer a zoom re-encode uses), so the click REFINES
@@ -631,8 +630,7 @@ class ManualPredictMixin:
             mask_to_polygons,
         )
         mask = self.current_mask
-        if (self._refine_fill_holes or self._refine_expand != 0
-                or self._refine_min_area > 0):  # noqa: W503
+        if self._refine_fill_holes or self._refine_expand != 0 or self._refine_min_area > 0:
             mask = apply_mask_refinement(
                 self.current_mask,
                 expand_value=self._refine_expand,
@@ -743,8 +741,7 @@ class ManualPredictMixin:
             # Apply refinement to preview in both modes (refine affects current mask only)
             mask_to_display = self.current_mask
             # Apply mask-level refinements (fill holes, expand/contract, min region)
-            if (self._refine_fill_holes or self._refine_expand != 0
-                    or self._refine_min_area > 0):  # noqa: W503
+            if self._refine_fill_holes or self._refine_expand != 0 or self._refine_min_area > 0:
                 mask_to_display = apply_mask_refinement(
                     self.current_mask,
                     expand_value=self._refine_expand,
@@ -835,6 +832,14 @@ class ManualPredictMixin:
 
     def _on_undo(self):
         """Undo last point added, or restore last saved mask in batch mode."""
+        # Transport lock: while an off-thread encode owns the predictor pipe,
+        # the session state is mid-transition (a deferred click may be waiting
+        # to replay against the incoming crop). Rewinding points, mask history
+        # or the delete stack here would corrupt that replay's context, so the
+        # gesture is ignored exactly like save (the synchronous-encode era
+        # never allowed it either: the GUI was blocked for the whole encode).
+        if self._encoding_in_progress:
+            return
         self._manual_undos_session = getattr(self, "_manual_undos_session", 0) + 1
         # Refine edit session, geometry sub-state (open object, no editing
         # click yet): step back one Shape-settings reshape. This branch ABSORBS
@@ -854,9 +859,10 @@ class ManualPredictMixin:
         current_point_count = self.prompts.point_count[0] + self.prompts.point_count[1]
         # With no point history to unwind, Ctrl+Z restores the most recent
         # Delete-key removal (stacked: repeated presses walk back deletions).
-        if (current_point_count == 0
-                and getattr(self, "_deleted_objects_stack", None)  # noqa: W503
-                and self._restore_deleted_object()):  # noqa: W503
+        should_restore_deleted = current_point_count == 0
+        should_restore_deleted = should_restore_deleted and getattr(self, "_deleted_objects_stack", None)
+        should_restore_deleted = should_restore_deleted and self._restore_deleted_object()
+        if should_restore_deleted:
             return
 
         if current_point_count > 0:

@@ -145,8 +145,7 @@ class ZoneBadgeClickFilter(QObject):
 
     def eventFilter(self, _obj, event):  # noqa: N802 (Qt API)
         et = event.type()
-        if (et == QEvent.Type.MouseButtonPress
-                and event.button() == Qt.MouseButton.LeftButton):  # noqa: W503
+        if et == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
             if self._badge.hit_test(event_pos(event)):
                 self._armed = True
                 return True  # swallow even when disabled: never pan under the badge
@@ -178,7 +177,6 @@ class ZoneEscapeFilter(QObject):
         self._on_escape = on_escape
 
     def eventFilter(self, _obj, event):  # noqa: N802 (Qt API)
-        if (event.type() == QEvent.Type.KeyPress
-                and event.key() == Qt.Key.Key_Escape):  # noqa: W503
+        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
             return bool(self._on_escape())
         return False

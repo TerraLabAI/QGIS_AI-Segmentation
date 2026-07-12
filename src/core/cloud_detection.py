@@ -436,15 +436,14 @@ def _configure_downsample_resampling(layer, qgis_module) -> bool:
         stage = getattr(
             getattr(qgis_module, "RasterResamplingStage", None), "Provider", None
         )
-        if (
-            provider is not None
-            and rm is not None
-            and stage is not None
-            and hasattr(provider, "enableProviderResampling")
-            and hasattr(provider, "setZoomedOutResamplingMethod")
-            and hasattr(provider, "setZoomedInResamplingMethod")
-            and hasattr(layer, "setResamplingStage")
-        ):
+        can_resample = provider is not None
+        can_resample = can_resample and rm is not None
+        can_resample = can_resample and stage is not None
+        can_resample = can_resample and hasattr(provider, "enableProviderResampling")
+        can_resample = can_resample and hasattr(provider, "setZoomedOutResamplingMethod")
+        can_resample = can_resample and hasattr(provider, "setZoomedInResamplingMethod")
+        can_resample = can_resample and hasattr(layer, "setResamplingStage")
+        if can_resample:
             # Averaged box filter for downsampling (fine -> coarse), the true
             # antialiasing choice; cubic keeps any zoomed-in read smooth. Fall
             # back to bilinear only if a build lacks these enum members.

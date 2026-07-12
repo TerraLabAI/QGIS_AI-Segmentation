@@ -71,8 +71,7 @@ class DockHandoffMixin:
         self.handoff_state_card.setAttribute(
             Qt.WidgetAttribute.WA_StyledBackground, True)
         self.handoff_state_card.setStyleSheet(
-            _CARD_QSS.format(name="handoffStateCard")
-            + "QLabel { background: transparent; border: none; }"
+            _CARD_QSS.format(name="handoffStateCard") + "QLabel { background: transparent; border: none; }"
         )
         col = QVBoxLayout(self.handoff_state_card)
         col.setContentsMargins(*_CARD_MARGINS)
@@ -314,9 +313,7 @@ class DockHandoffMixin:
             return
         edited = getattr(self, "_handoff_edited_count", 0)
         removed = getattr(self, "_handoff_removed_count", 0)
-        if (not self._refine_handoff
-                or getattr(self, "_handoff_editing", False)  # noqa: W503
-                or (edited <= 0 and removed <= 0)):  # noqa: W503
+        if not self._refine_handoff or getattr(self, "_handoff_editing", False) or (edited <= 0 and removed <= 0):
             # One info per state: while a shape is open the card carries the
             # editing actions, so the tally waits until the edit closes.
             recap.setVisible(False)

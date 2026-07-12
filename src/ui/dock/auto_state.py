@@ -301,9 +301,10 @@ class DockAutoStateMixin:
         # generic/subjective cases (where no single word fits) point the user at
         # clearing the box to run from the example alone. Clearing it makes the
         # prompt empty, which passes the guard, so the run is one keystroke away.
-        if (self._EXEMPLARS_ENABLED
-                and getattr(self, "_auto_positive_exemplars", 0) > 0  # noqa: W503
-                and reason in ("abstract", "subjective")):  # noqa: W503
+        exemplar_guard = self._EXEMPLARS_ENABLED
+        exemplar_guard = exemplar_guard and getattr(self, "_auto_positive_exemplars", 0) > 0
+        exemplar_guard = exemplar_guard and reason in ("abstract", "subjective")
+        if exemplar_guard:
             guidance = tr(
                 "Too generic to name. Clear the box to search from your "
                 "example alone, or type a concrete object.")
@@ -506,8 +507,7 @@ class DockAutoStateMixin:
         """True when the Automatic flow should own Enter: in Automatic mode,
         the flow is started, and no run is in flight (Enter has no job during
         a run; Escape has its own gate so it can soft-cancel one)."""
-        return (self._mode == Mode.AUTOMATIC and self._auto_started
-                and not self._auto_run_active)  # noqa: W503
+        return self._mode == Mode.AUTOMATIC and self._auto_started and not self._auto_run_active
 
     def _on_auto_escape_shortcut(self) -> None:
         """Escape: delegate to the plugin's single dispatcher (_route_escape).
@@ -757,13 +757,13 @@ class DockAutoStateMixin:
             # Premium taxonomy: a dedicated blue-family line with the star
             # prefix and an underlined upgrade link (never inline in guidance).
             self.auto_detail_hint.setStyleSheet(_msg_label_qss("premium"))
-            self.auto_detail_hint.setText(
-                _PREMIUM_STAR + " "
-                + tr("This detail level is a Pro feature. Lower the detail, or")
-                + f' <a href="upgrade" style="color: {BRAND_BLUE};'
-                + ' text-decoration: underline;">'
-                + tr("upgrade to unlock it")
-                + "</a>.")
+            _hint = _PREMIUM_STAR + " "
+            _hint += tr("This detail level is a Pro feature. Lower the detail, or")
+            _hint += f' <a href="upgrade" style="color: {BRAND_BLUE};'
+            _hint += ' text-decoration: underline;">'
+            _hint += tr("upgrade to unlock it")
+            _hint += "</a>."
+            self.auto_detail_hint.setText(_hint)
             return
         if feedback and not (capped and feedback[0] in ("coarse", "below")):
             # "Raise the detail" advice is a dead end at a capped maximum;
@@ -991,12 +991,10 @@ class DockAutoStateMixin:
         """
         remaining = self._auto_credits
         total = self._auto_credits_total
-        show = (
-            self._mode == Mode.AUTOMATIC and self._plugin_activated
-            and not self._auto_is_subscriber  # noqa: W503
-            and remaining is not None and total and total > 0  # noqa: W503
-            and 0 < remaining <= total * 0.20  # noqa: W503
-        )
+        show = self._mode == Mode.AUTOMATIC and self._plugin_activated
+        show = show and not self._auto_is_subscriber
+        show = show and remaining is not None and total and total > 0
+        show = show and 0 < remaining <= total * 0.20
         line = getattr(self, "_auto_low_credit_line", None)
         if not show:
             if line is not None:
@@ -1272,9 +1270,8 @@ class DockAutoStateMixin:
         user closed with its x stays closed (DismissibleHint persistence)."""
         from .guidance import HINT_EXEMPLAR_TIP, is_hint_dismissed
         try:
-            show = (not armed
-                    and not getattr(self, "_auto_exemplar_count", 0)  # noqa: W503
-                    and not is_hint_dismissed(HINT_EXEMPLAR_TIP))  # noqa: W503
+            show = not armed and not getattr(self, "_auto_exemplar_count", 0)
+            show = show and not is_hint_dismissed(HINT_EXEMPLAR_TIP)
             self.auto_exemplar_explainer.setVisible(show)
         except (RuntimeError, AttributeError):
             pass
@@ -1811,8 +1808,7 @@ class DockAutoStateMixin:
             # (an underfunded run can never launch regardless of plan).
             cap = self._auto_free_run_cap
             self._set_auto_premium_gated(
-                not insufficient and not self._auto_is_subscriber
-                and cap is not None and credits > cap)
+                not insufficient and not self._auto_is_subscriber and cap is not None and credits > cap)
             if insufficient:
                 # A subscriber is already paying, so point them at the levers they
                 # can pull now (detail/zone); only free users get the subscribe CTA.

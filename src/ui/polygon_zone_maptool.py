@@ -206,8 +206,9 @@ class PolygonZoneMapTool(QgsMapTool):
     def _add_point(self, map_pt: QgsPointXY, screen_pt) -> None:
         if self._points:
             last_screen = self.toCanvasCoordinates(self._points[-1])
-            if (abs(screen_pt.x() - last_screen.x()) < self.MIN_STEP_PX
-                    and abs(screen_pt.y() - last_screen.y()) < self.MIN_STEP_PX):  # noqa: W503
+            dx_small = abs(screen_pt.x() - last_screen.x()) < self.MIN_STEP_PX
+            dy_small = abs(screen_pt.y() - last_screen.y()) < self.MIN_STEP_PX
+            if dx_small and dy_small:
                 return  # duplicate / double-click second hit
         self._points.append(map_pt)
         self._add_marker(map_pt, first=len(self._points) == 1)
@@ -299,8 +300,9 @@ class PolygonZoneMapTool(QgsMapTool):
         if len(self._points) < self.MIN_VERTICES:
             return False
         first_screen = self.toCanvasCoordinates(self._points[0])
-        return (abs(screen_pt.x() - first_screen.x()) <= self.CLOSE_PX
-                and abs(screen_pt.y() - first_screen.y()) <= self.CLOSE_PX)  # noqa: W503
+        dx_close = abs(screen_pt.x() - first_screen.x()) <= self.CLOSE_PX
+        dy_close = abs(screen_pt.y() - first_screen.y()) <= self.CLOSE_PX
+        return dx_close and dy_close
 
     def _do_pan(self, pos) -> None:
         if self._pan_last is None:

@@ -1357,8 +1357,7 @@ class IncrementalMerger:
             # incidental corner touch between distinct neighbours stays far
             # below this scale.
             if both_large and seam_span_armed:
-                if (ios >= self._seam_span_ios
-                        and span >= 0.85 * self._seam_min_dim):  # noqa: W503
+                if ios >= self._seam_span_ios and span >= 0.85 * self._seam_min_dim:
                     matches.append(fid)
                     continue
             # Robust same-object dedup (non-seam only): decent overlap + nearly

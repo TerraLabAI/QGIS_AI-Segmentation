@@ -367,27 +367,6 @@ _BTN_GHOST = (
     f" border: 1px solid rgba(128, 128, 128, 0.15); color: {DISABLED_TEXT}; }}"
 )
 
-# Flagship "AI magic" button: a STATIC full-rainbow gradient fill (bright
-# spectrum, red through violet), the one sanctioned multi-hue element in
-# the palette. Reserved for THE flagship AI action of a screen (today only
-# the review's Refine in Manual mode); never two magic elements on one
-# screen, and never as a message tint. Static by design: no animation, no
-# timers, plain QSS. Bold white text over the bright stops.
-_BTN_MAGIC = (
-    "QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
-    " stop:0 #fa5252, stop:0.17 #fd7e14, stop:0.34 #fab005,"
-    " stop:0.5 #40c057, stop:0.66 #15aabf, stop:0.83 #4c6ef5,"
-    " stop:1 #ae3ec9);"
-    " color: #ffffff; font-weight: 700;"
-    " padding: 8px 16px; border: none; border-radius: 4px; }"
-    "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
-    " stop:0 #e03131, stop:0.17 #e8590c, stop:0.34 #f08c00,"
-    " stop:0.5 #2f9e44, stop:0.66 #0c8599, stop:0.83 #3b5bdb,"
-    " stop:1 #9c36b5); color: #ffffff; }"
-    f"QPushButton:disabled {{ background: {BRAND_DISABLED};"
-    f" color: {DISABLED_TEXT}; }}"
-)
-
 # Outline-blue secondary button: blue is the plugin's "temporary / still
 # editing" colour, so an outlined blue action reads as "keep working on this
 # result" next to a green "done" primary (e.g. the library picker next to
@@ -488,13 +467,12 @@ def _btn_toggle_qss(rgb: tuple[int, int, int], text: str, armed_text: str,
             f" padding: 9px 16px; font-size: 12px; font-weight: {weight}; }}"
             f"QPushButton:hover {{ background: rgba({r}, {g}, {b}, 0.22); }}"
         )
-    return (
-        rest
-        + f'QPushButton[armed="true"] {{ background: {solid}; color: {armed_text};'  # noqa: W503
-        + f" border: 1px solid {solid}; }}"  # noqa: W503
-        + "QPushButton:disabled { background: transparent;"  # noqa: W503
-        + " color: rgba(128, 128, 128, 0.5); border-color: rgba(128, 128, 128, 0.3); }"  # noqa: W503
-    )
+    combined = rest
+    combined += f'QPushButton[armed="true"] {{ background: {solid}; color: {armed_text};'
+    combined += f" border: 1px solid {solid}; }}"
+    combined += "QPushButton:disabled { background: transparent;"
+    combined += " color: rgba(128, 128, 128, 0.5); border-color: rgba(128, 128, 128, 0.3); }"
+    return combined
 
 
 _BTN_GRAY = (

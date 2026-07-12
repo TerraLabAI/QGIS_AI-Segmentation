@@ -709,9 +709,10 @@ class ManualHandoffMixin:
         self-heals through _check_crop_status either way."""
         if not self._refine_handoff_active or self._encoding_in_progress:
             return
-        if (self.predictor is None or self._headless or self._is_online_layer
-                or self._is_refining_saved_object  # noqa: W503
-                or self.current_mask is not None):  # noqa: W503
+        skip = self.predictor is None or self._headless or self._is_online_layer
+        skip = skip or self._is_refining_saved_object
+        skip = skip or self.current_mask is not None
+        if skip:
             return
         sel = getattr(self, "_handoff_selected_entries", None) or []
         if len(sel) != 1:
@@ -726,8 +727,7 @@ class ManualHandoffMixin:
         cx, cy, scale = self._handoff_crop_spec_for(
             g, QgsPointXY(pt.x(), pt.y()))
         spec = (round(cx, 6), round(cy, 6), round(float(scale or 0.0), 6))
-        if (spec == getattr(self, "_handoff_crop_spec", None)
-                and self._current_crop_info is not None):  # noqa: W503
+        if spec == getattr(self, "_handoff_crop_spec", None) and self._current_crop_info is not None:
             return  # this object's crop is already encoded
         image_np, crop_info = self._extract_crop_only(
             QgsPointXY(cx, cy), scale, quiet=True)
@@ -856,8 +856,7 @@ class ManualHandoffMixin:
             return False
         from qgis.PyQt.QtCore import Qt
         mods = getattr(tool, "last_click_modifiers", Qt.KeyboardModifier.NoModifier)
-        return bool(mods & (Qt.KeyboardModifier.ControlModifier
-                            | Qt.KeyboardModifier.ShiftModifier))  # noqa: W503
+        return bool(mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier))
 
     def _on_canvas_double_click(self, point) -> None:
         """Double-click on a detection = open it for editing (the first press of
@@ -865,8 +864,7 @@ class ManualHandoffMixin:
         first press was already routed (point or switch), so this no-ops."""
         if not self._refine_handoff_active or self._encode_blocks_ui():
             return
-        if (self.current_mask is not None or self._active_crop_points_positive
-                or self._is_refining_saved_object):  # noqa: W503
+        if self.current_mask is not None or self._active_crop_points_positive or self._is_refining_saved_object:
             return
         try:
             raster_pt = self._transform_to_raster_crs(point)
@@ -993,9 +991,7 @@ class ManualHandoffMixin:
             g = self._entry_geom(pg)
             absorb = False
             # Cheap bbox pre-filter before the costly intersection().
-            if (g is not None and not g.isEmpty()
-                    and merged_bb.intersects(g.boundingBox())  # noqa: W503
-                    and merged.intersects(g)):  # noqa: W503
+            if g is not None and not g.isEmpty() and merged_bb.intersects(g.boundingBox()) and merged.intersects(g):
                 inter = merged.intersection(g)
                 if inter is not None and not inter.isEmpty():
                     smaller = min(merged.area(), g.area())
@@ -1241,9 +1237,7 @@ class ManualHandoffMixin:
             rb = self.saved_rubber_bands[i] if i < len(self.saved_rubber_bands) else None
             g = self._entry_geom(pg)
             absorb = False
-            if (g is not None and not g.isEmpty()
-                    and active_bb.intersects(g.boundingBox())  # noqa: W503
-                    and active.intersects(g)):  # noqa: W503
+            if g is not None and not g.isEmpty() and active_bb.intersects(g.boundingBox()) and active.intersects(g):
                 inter = active.intersection(g)
                 if inter is not None and not inter.isEmpty():
                     smaller = min(active.area(), g.area())
@@ -1316,8 +1310,9 @@ class ManualHandoffMixin:
             return
         # Selection-first: with no active edit, Suppr rejects the selected
         # detections instantly (no SAM round trip, no open-first detour).
-        if (self.current_mask is None and self._active_refine_origin_entry is None
-                and not self._active_crop_points_positive):  # noqa: W503
+        should_delete_selected = self.current_mask is None and self._active_refine_origin_entry is None
+        should_delete_selected = should_delete_selected and not self._active_crop_points_positive
+        if should_delete_selected:
             self._delete_selected_saved_polygons()
             return
         # Snapshot for undo: prefer the exact entry re-opened for edit, updated
@@ -1501,8 +1496,7 @@ class ManualHandoffMixin:
         cx, cy, scale = self._handoff_crop_spec_for(geom, raster_pt)
         spec = (round(cx, 6), round(cy, 6), round(float(scale or 0.0), 6))
         if spec == getattr(self, "_handoff_crop_spec", None) and (
-                self._encoding_in_progress
-                or self._current_crop_covers_bbox(geom.boundingBox())):  # noqa: W503
+                self._encoding_in_progress or self._current_crop_covers_bbox(geom.boundingBox())):
             return
         # Record the spec only AFTER the encode actually started: a False
         # return (pipe busy with another crop, extraction error) must not

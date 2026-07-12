@@ -118,9 +118,7 @@ class AutoLifecycleMixin:
         else:
             t0 = getattr(self, "_auto_warming_t0", None)
             if t0 is not None:
-                self._auto_warming_ms = (
-                    getattr(self, "_auto_warming_ms", 0)
-                    + int((_time.monotonic() - t0) * 1000))  # noqa: W503
+                self._auto_warming_ms = getattr(self, "_auto_warming_ms", 0) + int((_time.monotonic() - t0) * 1000)
                 self._auto_warming_t0 = None
         if self.dock_widget:
             try:

@@ -543,10 +543,8 @@ class AutoZoneMixin:
         self._update_credit_estimate()
         still_drawing = False
         try:
-            still_drawing = (
-                self._zone_selection_tool is not None
-                and self.iface.mapCanvas().mapTool() == self._zone_selection_tool  # noqa: W503
-            )
+            still_drawing = self._zone_selection_tool is not None
+            still_drawing = still_drawing and self.iface.mapCanvas().mapTool() == self._zone_selection_tool
         except (RuntimeError, AttributeError):
             pass
         if self.dock_widget:
@@ -1001,11 +999,7 @@ class AutoZoneMixin:
         # neither did), and the maptool mirrors this same two-stage decision.
         tool = self._zone_selection_tool
         try:
-            mid_draw = (
-                tool is not None
-                and self.iface.mapCanvas().mapTool() is tool  # noqa: W503
-                and tool.has_points()  # noqa: W503
-            )
+            mid_draw = tool is not None and self.iface.mapCanvas().mapTool() is tool and tool.has_points()
         except (RuntimeError, AttributeError):
             mid_draw = False
         if mid_draw:

@@ -151,8 +151,7 @@ def _polygon_parts(geom: QgsGeometry) -> list[QgsGeometry]:
     return [
         part
         for part in members
-        if not part.isEmpty()
-        and part.type() == PolygonGeometry  # noqa: W503
+        if not part.isEmpty() and part.type() == PolygonGeometry
     ]
 
 

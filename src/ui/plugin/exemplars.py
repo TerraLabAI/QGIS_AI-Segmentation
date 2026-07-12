@@ -549,8 +549,7 @@ class ExemplarsMixin:
         try:
             canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
             layer_crs = layer.crs()
-            if (canvas_crs.isValid() and layer_crs.isValid()
-                    and canvas_crs != layer_crs):  # noqa: W503
+            if canvas_crs.isValid() and layer_crs.isValid() and canvas_crs != layer_crs:
                 g.transform(QgsCoordinateTransform(
                     canvas_crs, layer_crs, QgsProject.instance()))
         except Exception:  # noqa: BLE001
@@ -588,8 +587,7 @@ class ExemplarsMixin:
             g = QgsGeometry(poly)  # canvas CRS copy
             canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
             layer_crs = layer.crs()
-            if (canvas_crs.isValid() and layer_crs.isValid()
-                    and canvas_crs != layer_crs):  # noqa: W503
+            if canvas_crs.isValid() and layer_crs.isValid() and canvas_crs != layer_crs:
                 g.transform(QgsCoordinateTransform(
                     canvas_crs, layer_crs, QgsProject.instance()))
             rings = g.asPolygon()
@@ -975,9 +973,10 @@ class ExemplarsMixin:
             full_box = (
                 self._exemplar_full_pixel_box(ex, layer, geo_bbox, pixel_w, pixel_h)
                 if geo_bbox is not None else None)
-            if (ex.stamp_img is not None and ex.stamp_layer_id == layer_id
-                    and self._stamp_gsd_matches(ex.stamp_gsd, run_mupp)  # noqa: W503
-                    and getattr(ex, "stamp_side", 0) <= cap):  # noqa: W503
+            stamp_valid = ex.stamp_img is not None and ex.stamp_layer_id == layer_id
+            stamp_valid = stamp_valid and self._stamp_gsd_matches(ex.stamp_gsd, run_mupp)
+            stamp_valid = stamp_valid and getattr(ex, "stamp_side", 0) <= cap
+            if stamp_valid:
                 stamps.append(
                     (ex.stamp_img, int(ex.label), ex.stamp_obj_box, full_box))
                 continue

@@ -276,9 +276,9 @@ class ManualWorkflowMixin:
 
         # Different layer selected while segmenting
         if self.iface.mapCanvas().mapTool() == self.map_tool:
-            has_unsaved_mask = (self.current_mask is not None
-                                or bool(self._frozen_sessions)  # noqa: W503
-                                or self._unfrozen_display_polygon is not None)  # noqa: W503
+            has_unsaved_mask = self.current_mask is not None
+            has_unsaved_mask = has_unsaved_mask or bool(self._frozen_sessions)
+            has_unsaved_mask = has_unsaved_mask or self._unfrozen_display_polygon is not None
             has_saved_polygons = len(self.saved_polygons) > 0
 
             if has_unsaved_mask or has_saved_polygons:
@@ -322,10 +322,8 @@ class ManualWorkflowMixin:
         if self._encoding_in_progress:
             return
         # Allow save if we have frozen sessions even without active mask
-        has_active = (self.current_mask is not None
-                      and self.current_transform_info is not None)  # noqa: W503
-        if (not has_active and not self._frozen_sessions
-                and self._unfrozen_display_polygon is None):  # noqa: W503
+        has_active = self.current_mask is not None and self.current_transform_info is not None
+        if not has_active and not self._frozen_sessions and self._unfrozen_display_polygon is None:
             return
 
         self._ensure_polygon_rubberband_sync()
@@ -492,11 +490,11 @@ class ManualWorkflowMixin:
         """Internal export implementation."""
         self._ensure_polygon_rubberband_sync()
 
-        has_active = (self.current_mask is not None
-                      and self.current_transform_info is not None)  # noqa: W503
-        if (not self.saved_polygons and not has_active
-                and not self._frozen_sessions  # noqa: W503
-                and self._unfrozen_display_polygon is None):  # noqa: W503
+        has_active = self.current_mask is not None and self.current_transform_info is not None
+        should_skip_export = not self.saved_polygons and not has_active
+        should_skip_export = should_skip_export and not self._frozen_sessions
+        should_skip_export = should_skip_export and self._unfrozen_display_polygon is None
+        if should_skip_export:
             return  # Nothing to export
 
         polygons_to_export = list(self.saved_polygons)
@@ -842,8 +840,7 @@ class ManualWorkflowMixin:
         polygon_count = len(self.saved_polygons)
         # Frozen/unfrozen polygons are unsaved work too: without counting
         # them, stopping discards them with no confirmation at all.
-        if (self.current_mask is not None or self._frozen_sessions
-                or self._unfrozen_display_polygon is not None):  # noqa: W503
+        if self.current_mask is not None or self._frozen_sessions or self._unfrozen_display_polygon is not None:
             polygon_count += 1
 
         if polygon_count > 0:
@@ -877,10 +874,12 @@ class ManualWorkflowMixin:
         hand-made work is never lost, invariant I2); the export path performs
         the same session reset itself, and the teardown below is idempotent.
         """
-        if keep_saves and (
-                self.saved_polygons or self.current_mask is not None
-                or self._frozen_sessions  # noqa: W503
-                or self._unfrozen_display_polygon is not None):  # noqa: W503
+        has_unsaved_work = False
+        if keep_saves:
+            has_unsaved_work = self.saved_polygons or self.current_mask is not None
+            has_unsaved_work = has_unsaved_work or self._frozen_sessions
+            has_unsaved_work = has_unsaved_work or self._unfrozen_display_polygon is not None
+        if has_unsaved_work:
             # _on_export_layer never raises (it reports its own failures) and
             # resets the session on success; a failed export leaves the work
             # in place and the teardown below still ends the session cleanly.

@@ -39,10 +39,10 @@ from .guidance import (
     DismissibleHint,
 )
 from .styles import (
+    _BTN_BLUE_OUTLINE,
     _BTN_GREEN,
     _BTN_LINK,
     _BTN_LINK_MUTED,
-    _BTN_MAGIC,
     _CARD_QSS,
     _CHIP_QSS,
     _COMBO_THEME_QSS,
@@ -154,11 +154,11 @@ class DockAutoReviewBuildMixin:
         _card = QWidget()
         _card.setObjectName("autoReviewCard")
         _card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        _card.setStyleSheet(
-            _CARD_QSS.format(name="autoReviewCard")
-            + "QLabel { background: transparent; border: none; }"
-            + _SLIDER_QSS
-            + checkbox_indicator_qss(self))
+        _card_qss = _CARD_QSS.format(name="autoReviewCard")
+        _card_qss += "QLabel { background: transparent; border: none; }"
+        _card_qss += _SLIDER_QSS
+        _card_qss += checkbox_indicator_qss(self)
+        _card.setStyleSheet(_card_qss)
         _card_layout = QVBoxLayout(_card)
         _card_layout.setContentsMargins(10, 10, 10, 10)
         _card_layout.setSpacing(6)
@@ -361,13 +361,12 @@ class DockAutoReviewBuildMixin:
         _refine_hdr.setStyleSheet("font-size: 11px; font-weight: bold;")
         _card_layout.addWidget(_refine_hdr)
 
-        # The flagship treatment (_BTN_MAGIC, the one static gradient in the
-        # palette): per-object AI refine is the feature to discover, so the
-        # button must intrigue on sight while the green Export below the card
-        # keeps its own commit role.
+        # Outline blue: blue is the "still editing" colour, so this reads as
+        # "keep working on this result" while the green Export below the card
+        # keeps the screen's single filled-CTA commit role.
         self.auto_refine_in_manual_btn = QPushButton(
             "✎  " + tr("Refine in Manual mode"))
-        self.auto_refine_in_manual_btn.setStyleSheet(_BTN_MAGIC)
+        self.auto_refine_in_manual_btn.setStyleSheet(_BTN_BLUE_OUTLINE)
         self.auto_refine_in_manual_btn.setMinimumHeight(36)
         self.auto_refine_in_manual_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_refine_in_manual_btn.setToolTip(tr(

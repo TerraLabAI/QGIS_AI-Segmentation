@@ -102,8 +102,7 @@ class EnvSetupMixin:
                 # A pending Refine handoff / background install is waiting on the
                 # model: download it now so the deferred import can complete,
                 # instead of stranding the user behind a manual Download button.
-                if (self._pending_refine_import
-                        or getattr(self, "_refine_install_pending", False)):  # noqa: W503
+                if self._pending_refine_import or getattr(self, "_refine_install_pending", False):
                     self._auto_download_checkpoint()
                     return
                 # Show the Download-Model button ONLY in Manual mode: without the
@@ -136,8 +135,7 @@ class EnvSetupMixin:
         self.dock_widget.check_for_updates()
 
         # If notification is still hidden and we have retries left, schedule next
-        if (not self.dock_widget.update_notification_widget.isVisible()
-                and hasattr(self, "_update_check_delays")):  # noqa: W503
+        if not self.dock_widget.update_notification_widget.isVisible() and hasattr(self, "_update_check_delays"):
             self._update_check_index += 1
             if self._update_check_index < len(self._update_check_delays):
                 from qgis.PyQt.QtCore import QTimer
@@ -187,16 +185,16 @@ class EnvSetupMixin:
         # and cheap on this thread (Popen + one init line; the load happens
         # inside the subprocess). Best-effort: the Start-time warm_up retries.
         try:
-            if not self._headless and (
-                getattr(self, "_warm_predictor_on_ready", False)
-                or self._manual_used_recently()  # noqa: W503
-            ):
-                self._warm_predictor_on_ready = False
-                predictor.warm_up()
-                QgsMessageLog.logMessage(
-                    "Pre-warming the SAM worker (Manual use predicted)",
-                    "AI Segmentation", level=Qgis.MessageLevel.Info
-                )
+            if not self._headless:
+                should_warm = getattr(self, "_warm_predictor_on_ready", False)
+                should_warm = should_warm or self._manual_used_recently()
+                if should_warm:
+                    self._warm_predictor_on_ready = False
+                    predictor.warm_up()
+                    QgsMessageLog.logMessage(
+                        "Pre-warming the SAM worker (Manual use predicted)",
+                        "AI Segmentation", level=Qgis.MessageLevel.Info
+                    )
         except Exception:  # noqa: BLE001 - prediction of intent must never break load
             pass  # nosec B110
         # D1: a background install kicked off from the Automatic review (the user

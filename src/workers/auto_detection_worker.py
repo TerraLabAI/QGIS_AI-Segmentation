@@ -566,8 +566,7 @@ class AutoDetectionWorker(QThread):
         # whole run.
         from ..core import detection_policy as _dp
         self._mask_cap_trigger = int(
-            _dp.mask_cap_trigger_frac(_MASK_CAP_TRIGGER_FRAC)
-            * _MAX_MASKS_PER_TILE)
+            _dp.mask_cap_trigger_frac(_MASK_CAP_TRIGGER_FRAC) * _MAX_MASKS_PER_TILE)
         self._subdiv_max_depth = _dp.subdiv_max_depth(_SUBDIV_MAX_DEPTH)
         self._max_tile_coverage = _dp.max_tile_coverage(_MAX_TILE_COVERAGE)
         self._hard_tile_coverage = _dp.hard_tile_coverage(_HARD_TILE_COVERAGE)
@@ -1472,8 +1471,7 @@ class AutoDetectionWorker(QThread):
             # during this cycle's reply-processing would otherwise fire fresh work
             # (a blocking main-thread render + a POST) that then has to be drained
             # or aborted, delaying the wind-down. A tile not fired is not billed.
-            while (not self._stop_requested
-                   and len(in_flight) < self._aimd.cap and fire_next()):  # noqa: W503
+            while not self._stop_requested and len(in_flight) < self._aimd.cap and fire_next():
                 pass
             # Keep the render pipeline fed even on cycles where no slot freed
             # (e.g. only deferred retries matured): the prefetch is what hides

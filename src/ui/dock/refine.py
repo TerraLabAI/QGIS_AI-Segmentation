@@ -79,10 +79,10 @@ class DockRefineMixin:
         from .widgets import checkbox_indicator_qss
         _cb_qss = checkbox_indicator_qss(self)
 
-        self.refine_content_widget.setStyleSheet(
-            _CARD_QSS.format(name="refineContentWidget")
-            + "QLabel { background: transparent; border: none; }"
-            + _cb_qss)
+        _refine_qss = _CARD_QSS.format(name="refineContentWidget")
+        _refine_qss += "QLabel { background: transparent; border: none; }"
+        _refine_qss += _cb_qss
+        self.refine_content_widget.setStyleSheet(_refine_qss)
         refine_content_layout = QVBoxLayout(self.refine_content_widget)
         refine_content_layout.setContentsMargins(10, 10, 10, 10)
         refine_content_layout.setSpacing(6)

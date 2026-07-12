@@ -348,8 +348,7 @@ class AutoReviewMixin:
             if not layer.isValid():
                 return
             count = -1
-            if (stamp is not None and ids is not None
-                    and len(ids) == len(geoms)):  # noqa: W503
+            if stamp is not None and ids is not None and len(ids) == len(geoms):
                 count = self._diff_push_review_geoms(
                     layer, geoms, scores, ids, stamp, keep_missing=partial)
             if count < 0:
@@ -470,8 +469,7 @@ class AutoReviewMixin:
         pr = layer.dataProvider()
         pr.truncate()
         self._review_fid_map = {}
-        with_identity = (stamp is not None and ids is not None
-                         and len(ids) == len(geoms))  # noqa: W503
+        with_identity = stamp is not None and ids is not None and len(ids) == len(geoms)
         features_to_add = []
         for i, geom in enumerate(geoms):
             if geom is None or geom.isEmpty():
@@ -484,9 +482,7 @@ class AutoReviewMixin:
                 continue
             feat = QgsFeature(layer.fields())
             feat.setGeometry(geom)
-            score = (float(scores[i])
-                     if scores is not None and i < len(scores)
-                     and scores[i] is not None else 1.0)  # noqa: W503
+            score = float(scores[i]) if scores is not None and i < len(scores) and scores[i] is not None else 1.0
             det_id = ids[i] if ids is not None and i < len(ids) else None
             feat.setAttributes(
                 ["", score, int(det_id) if det_id is not None else None])
@@ -503,8 +499,7 @@ class AutoReviewMixin:
                 if complete:
                     for (det_id, score, _f), out in zip(features_to_add, added):
                         pfid = out.id()
-                        if (det_id is None or pfid is None or pfid < 0
-                                or det_id in fid_map):
+                        if (det_id is None or pfid is None or pfid < 0 or det_id in fid_map):
                             complete = False
                             break
                         fid_map[det_id] = (pfid, stamp, True, score)
@@ -539,8 +534,7 @@ class AutoReviewMixin:
             # When nothing is visible, tell the user which filter is actually
             # hiding the objects so they reach for the right lever: the Min size
             # filter can hide everything even when Confidence would show them.
-            size_bound = (visible == 0 and total > 0
-                          and self._review_zero_is_size_bound())
+            size_bound = (visible == 0 and total > 0 and self._review_zero_is_size_bound())
             self.dock_widget.update_auto_review_count(
                 visible, total, pct, size_bound=size_bound)
         except (RuntimeError, AttributeError):

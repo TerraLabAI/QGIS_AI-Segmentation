@@ -91,8 +91,7 @@ class ManualCropsMixin:
         # destroys the current mask via lossy 64x64 logit transfer.
         # The existing crop is still valid (point is in bounds), so SAM
         # can predict just fine on the current encoding.
-        has_active_points = (self._active_crop_points_positive
-                             or self._active_crop_points_negative)  # noqa: W503
+        has_active_points = self._active_crop_points_positive or self._active_crop_points_negative
         if not has_active_points:
             # No active points - always use tight thresholds so any
             # meaningful zoom change triggers re-encode at the correct
@@ -320,11 +319,8 @@ class ManualCropsMixin:
         scale = self._current_crop_scale_factor
         if scale is None or scale <= 0:
             # Online layers or unknown: use the MUPP ratio as proxy
-            if (self._current_crop_actual_mupp
-                    and self._current_crop_canvas_mupp  # noqa: W503
-                    and self._current_crop_canvas_mupp > 0):  # noqa: W503
-                scale = max(1.0, self._current_crop_actual_mupp
-                            / self._current_crop_canvas_mupp * 2.0)  # noqa: W503
+            if self._current_crop_actual_mupp and self._current_crop_canvas_mupp and self._current_crop_canvas_mupp > 0:
+                scale = max(1.0, self._current_crop_actual_mupp / self._current_crop_canvas_mupp * 2.0)
             else:
                 scale = 1.0
         # Power curve centered on 200 (bumped ×2 per #12 for cleaner defaults).
@@ -735,12 +731,8 @@ class ManualCropsMixin:
         # Teardown detection that does NOT rely on a generation bump: unload
         # (dock gone) and env-reset/reload (predictor cleared or swapped) cannot
         # bump the counter, so detect them by state and only clean up.
-        torn_down = (
-            self.dock_widget is None
-            or self.predictor is None  # noqa: W503
-            or (pending is not None  # noqa: W503
-                and self.predictor is not pending.get("predictor"))  # noqa: W503
-        )
+        torn_down = self.dock_widget is None or self.predictor is None
+        torn_down = torn_down or (pending is not None and self.predictor is not pending.get("predictor"))
 
         # Release the pipe lock, cursor and worker ref for every outcome. Only
         # restore the cursor when this encode SET one (the speculative prewarm
@@ -1064,8 +1056,7 @@ class ManualCropsMixin:
             return False
         try:
             minx, miny, maxx, maxy = info["bounds"]
-            return (bb.xMinimum() >= minx and bb.xMaximum() <= maxx
-                    and bb.yMinimum() >= miny and bb.yMaximum() <= maxy)  # noqa: W503
+            return bb.xMinimum() >= minx and bb.xMaximum() <= maxx and bb.yMinimum() >= miny and bb.yMaximum() <= maxy
         except (KeyError, TypeError, AttributeError):
             return False
 

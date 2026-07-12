@@ -34,8 +34,7 @@ class ShortcutFilter(QObject):
         # its own pan-tool shortcut when Space is pressed.
         if event_type in (QEvent.Type.ShortcutOverride,
                           QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
-            if (event.key() == Qt.Key.Key_Space
-                    and not event.isAutoRepeat()):  # noqa: W503
+            if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
                 pan_tool = plugin._active_space_pan_tool()
                 if pan_tool is not None:
                     if event_type == QEvent.Type.ShortcutOverride:
@@ -87,24 +86,24 @@ class ShortcutFilter(QObject):
         # stays undo-the-last-click, mirroring the zone-draw tool. Kept AFTER
         # the modifier branch above so Ctrl/Cmd+Backspace keeps meaning delete.
         if key == Qt.Key.Key_Backspace and not modifiers:
-            if (getattr(plugin, "_handoff_selected_entries", None)
-                    and plugin.current_mask is None  # noqa: W503
-                    and not plugin._active_crop_points_positive  # noqa: W503
-                    and getattr(plugin, "_on_delete_active_object", None)):  # noqa: W503
+            can_delete_active = getattr(plugin, "_handoff_selected_entries", None)
+            can_delete_active = can_delete_active and plugin.current_mask is None
+            can_delete_active = can_delete_active and not plugin._active_crop_points_positive
+            can_delete_active = can_delete_active and getattr(plugin, "_on_delete_active_object", None)
+            if can_delete_active:
                 plugin._on_delete_active_object()
                 return True
             plugin._on_undo()
             return True
-        if (key == Qt.Key.Key_S
-                and not (modifiers & (Qt.KeyboardModifier.ControlModifier  # noqa: W503
-                                      | Qt.KeyboardModifier.AltModifier  # noqa: W503
-                                      | Qt.KeyboardModifier.ShiftModifier))):  # noqa: W503
+        blocking_mods = Qt.KeyboardModifier.ControlModifier
+        blocking_mods |= Qt.KeyboardModifier.AltModifier
+        blocking_mods |= Qt.KeyboardModifier.ShiftModifier
+        if key == Qt.Key.Key_S and not (modifiers & blocking_mods):
             plugin._on_save_polygon()
             return True
         # E opens the single selected detection for SAM editing (the keyboard
         # twin of the second click / double-click).
-        if (key == Qt.Key.Key_E and not modifiers
-                and getattr(plugin, "_edit_selected_saved_polygon", None)):  # noqa: W503
+        if key == Qt.Key.Key_E and not modifiers and getattr(plugin, "_edit_selected_saved_polygon", None):
             if plugin._edit_selected_saved_polygon():
                 return True
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -113,8 +112,7 @@ class ShortcutFilter(QObject):
         if key == Qt.Key.Key_Escape:
             # Selection-first: Esc clears the selection before it ever means
             # "stop the session".
-            if (getattr(plugin, "_handoff_selected_entries", None)
-                    and getattr(plugin, "_deselect_saved_polygons", None)):  # noqa: W503
+            if getattr(plugin, "_handoff_selected_entries", None) and getattr(plugin, "_deselect_saved_polygons", None):
                 plugin._deselect_saved_polygons()
                 return True
             plugin._on_stop_segmentation()

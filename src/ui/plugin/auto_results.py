@@ -2318,8 +2318,7 @@ class AutoResultsMixin:
                 # Exemplar-only count-vs-map override: one muted line naming the
                 # auto grouping + a link to re-group the other way. Shown only
                 # when the run was exemplar-only and its fragments were retained.
-                if (getattr(self, "_auto_is_exemplar_only", False)
-                        and self._auto_raw_fragments is not None):
+                if (getattr(self, "_auto_is_exemplar_only", False) and self._auto_raw_fragments is not None):
                     self.dock_widget.set_merge_override(
                         "separate" if self._auto_merge_separate else "map")
                 else:

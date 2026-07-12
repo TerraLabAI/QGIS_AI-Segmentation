@@ -31,11 +31,7 @@ def _is_rosetta() -> bool:
 
 IS_ROSETTA = _is_rosetta()
 
-_IS_MACOS_X86 = (
-    sys.platform == "darwin"
-    and platform.machine() == "x86_64"  # noqa: W503
-    and not IS_ROSETTA  # noqa: W503
-)
+_IS_MACOS_X86 = sys.platform == "darwin" and platform.machine() == "x86_64" and not IS_ROSETTA
 
 # Under Rosetta, standalone Python will be ARM64 3.10+ -> SAM2
 USE_SAM2 = (sys.version_info >= (3, 10) or IS_ROSETTA) and not _IS_MACOS_X86

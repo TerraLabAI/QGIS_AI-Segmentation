@@ -562,8 +562,7 @@ class AccountSettingsDialog(QDialog):
             card_layout.addWidget(benefit)
 
         contact = QLabel(
-            tr("Team or organization?") + " "
-            + tr("Write to us:") + " <b>yvann.barbot@terra-lab.ai</b>"
+            tr("Team or organization?") + " " + tr("Write to us:") + " <b>yvann.barbot@terra-lab.ai</b>"
         )
         contact.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         contact.setWordWrap(True)
