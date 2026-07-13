@@ -878,10 +878,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>{n} deteksi gratis tersisa</translation>
     </message>
     <message>
-        <source>{n} free detection(s) remaining (lifetime)</source>
-        <translation>{n} deteksi gratis tersisa (seumur hidup)</translation>
-    </message>
-    <message>
         <source>{remaining} / {total} credits</source>
         <translation>{remaining} / {total} kredit</translation>
     </message>

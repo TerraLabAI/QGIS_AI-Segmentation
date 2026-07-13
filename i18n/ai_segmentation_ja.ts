@@ -878,10 +878,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>無料検出の残り {n} 件</translation>
     </message>
     <message>
-        <source>{n} free detection(s) remaining (lifetime)</source>
-        <translation>無料検出の残り {n} 件(生涯累計)</translation>
-    </message>
-    <message>
         <source>{remaining} / {total} credits</source>
         <translation>{remaining} / {total} クレジット</translation>
     </message>

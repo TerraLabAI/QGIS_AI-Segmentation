@@ -42,10 +42,10 @@ def credit_snapshot(usage: dict) -> tuple[int | None, bool]:
 def free_run_tile_cap(total: int | None, fraction: float) -> int:
     """The per-run tile (credit) cap for a free-tier user.
 
-    A single free run may only cost ``fraction`` of the lifetime free allowance
-    so one Detect can never drain the whole trial. ``total`` is the lifetime
+    A single free run may only cost ``fraction`` of the monthly free allowance
+    so one Detect can never drain the whole month. ``total`` is the monthly
     allowance (older servers omit it, so a falsy/``None`` ``total`` falls back to
-    300, the known lifetime cap). The cap is at least 1 (a free user can always
+    300, the known monthly cap). The cap is at least 1 (a free user can always
     launch some run). The subscriber "no cap" decision is NOT here: it is a tier
     read the caller makes before calling this (see ``credit_snapshot``).
     """

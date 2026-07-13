@@ -878,10 +878,6 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
         <translation>{n} darmowych detekcji pozostało</translation>
     </message>
     <message>
-        <source>{n} free detection(s) remaining (lifetime)</source>
-        <translation>{n} darmowych detekcji pozostało (na całe życie)</translation>
-    </message>
-    <message>
         <source>{remaining} / {total} credits</source>
         <translation>{remaining} / {total} kredytów</translation>
     </message>

@@ -897,11 +897,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/account_settings_dialog.py" line="0"/>
-        <source>{n} free detection(s) remaining (lifetime)</source>
-        <translation>剩餘 {n} 次免費偵測（終身額度）</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/account_settings_dialog.py" line="0"/>
         <source>{remaining} / {total} credits</source>
         <translation>{remaining} / {total} 點數</translation>
     </message>

@@ -925,11 +925,6 @@ Dopo l'installazione, riavvia QGIS e riprova.</translation>
     </message>
     <message>
         <location filename="../src/ui/account_settings_dialog.py" line="0"/>
-        <source>{n} free detection(s) remaining (lifetime)</source>
-        <translation>{n} rilevamento(i) gratuito(i) rimanente(i) (a vita)</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/account_settings_dialog.py" line="0"/>
         <source>{remaining} / {total} credits</source>
         <translation>{remaining} / {total} crediti</translation>
     </message>

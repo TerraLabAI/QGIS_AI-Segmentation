@@ -433,7 +433,7 @@ class AccountSettingsDialog(QDialog):
         QDesktopServices.openUrl(QUrl(get_dashboard_url()))
 
     def _build_subscription_card(self, sub: dict, usage: dict | None = None) -> QFrame:
-        """Plan status, credits (Pro) or lifetime free allowance (Free), with a
+        """Plan status, credits (Pro) or monthly free allowance (Free), with a
         single primary Upgrade CTA. Manage account lives in the card header as
         a quiet link so it never competes with Upgrade for attention."""
         if usage is None:
@@ -510,10 +510,10 @@ class AccountSettingsDialog(QDialog):
             card_layout.addWidget(credits_lbl)
             bar = self._credits_bar(remaining, total, fill)
         elif not is_subscriber and free_left is not None:
-            # Free-taste line (one-time lifetime allowance)
+            # Free-taste line (monthly free allowance)
             fill = BRAND_GREEN if free_left > 0 else BRAND_RED
             text_color = BRAND_GREEN_TEXT if free_left > 0 else BRAND_RED
-            # The lifetime total is a newer usage field; only draw the gauge
+            # The monthly free total is a newer usage field; only draw the gauge
             # and the "of N" phrasing when the server reports it (older
             # responses omit it).
             free_total = usage.get("free_detections_total")
@@ -522,7 +522,7 @@ class AccountSettingsDialog(QDialog):
                     n=free_left, total=int(free_total))
                 bar = self._credits_bar(free_left, int(free_total), fill)
             else:
-                free_text = tr("{n} free detection(s) remaining (lifetime)").format(
+                free_text = tr("{n} free detection(s) remaining").format(
                     n=free_left)
             free_lbl = QLabel(free_text)
             free_lbl.setStyleSheet(f"font-size: 12px; color: {text_color};")

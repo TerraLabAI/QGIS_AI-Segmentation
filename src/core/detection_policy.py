@@ -204,7 +204,7 @@ def seed_tile_cap(policy: dict | None = None) -> int:
 
 
 def free_run_fraction(policy: dict | None = None) -> float:
-    """Max share of the lifetime free allowance one run may cost (0-1].
+    """Max share of the monthly free allowance one run may cost (0-1].
 
     Free-tier runs are capped so a single Detect can never drain the whole
     trial; subscribers are never capped. Fallback 0.25 (one quarter of the
@@ -244,7 +244,7 @@ def detail_over_ratio(policy: dict | None = None) -> float:
 
 def detail_over_ratio_free(policy: dict | None = None) -> float:
     """Free-tier variant of detail_over_ratio: warns earlier on the Fine
-    end, because a free run spends scarce lifetime trial credits."""
+    end, because a free run spends scarce monthly free credits."""
     return _seed_float("detail_over_ratio_free", 0.5, policy)
 
 

@@ -878,10 +878,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>{n} gratis detectie(s) over</translation>
     </message>
     <message>
-        <source>{n} free detection(s) remaining (lifetime)</source>
-        <translation>{n} gratis detectie(s) over (levenslang)</translation>
-    </message>
-    <message>
         <source>{remaining} / {total} credits</source>
         <translation>{remaining} / {total} credits</translation>
     </message>
