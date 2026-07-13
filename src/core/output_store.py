@@ -32,7 +32,6 @@ from qgis.core import (
     QgsMessageLog,
     QgsProject,
     QgsProviderRegistry,
-    QgsVectorDataProvider,
     QgsVectorFileWriter,
     QgsVectorLayer,
 )
@@ -40,16 +39,12 @@ from qgis.PyQt.QtCore import QDate, QLocale
 from qgis.PyQt.QtGui import QColor
 
 from .i18n import tr
-from .qt_compat import PolygonGeometry
+from .qt_compat import CapabilityAddFeatures, PolygonGeometry
 
-# Provider capability flag, resolved defensively: the enum is scoped
-# (QgsVectorDataProvider.Capability.AddFeatures) on newer QGIS/Qt6 and
-# unscoped on QGIS 3.x. Used to keep the append destination list to layers
-# that actually accept new features.
-try:
-    _CAP_ADD_FEATURES = QgsVectorDataProvider.Capability.AddFeatures
-except AttributeError:  # pragma: no cover - QGIS 3.x unscoped enum
-    _CAP_ADD_FEATURES = QgsVectorDataProvider.AddFeatures
+# Provider capability flag, resolved by qt_compat (scoped on newer QGIS/Qt6,
+# flat on QGIS 3.x). Used to keep the append destination list to layers that
+# actually accept new features.
+_CAP_ADD_FEATURES = CapabilityAddFeatures
 
 # Custom property stamped on every committed layer with its creation epoch, so
 # the append destination list can order our own outputs most-recent-first

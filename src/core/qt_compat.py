@@ -9,7 +9,7 @@ loader, and library dialog run unchanged on PyQt5 (QGIS 3) and PyQt6 (QGIS 4).
 """
 from __future__ import annotations
 
-from qgis.core import QgsBlockingNetworkRequest
+from qgis.core import QgsBlockingNetworkRequest, QgsVectorDataProvider
 from qgis.PyQt.QtCore import QIODevice, QObject, Qt, QTimer
 from qgis.PyQt.QtGui import QImage, QPalette, QTextCursor, QTextOption
 from qgis.PyQt.QtNetwork import QNetworkReply, QNetworkRequest
@@ -142,6 +142,9 @@ FrameSunken = _resolve(QFrame, "Shadow", "Sunken")
 # QgsBlockingNetworkRequest.ErrorCode
 BlockingNoError = _resolve(QgsBlockingNetworkRequest, "ErrorCode", "NoError")
 
+# QgsVectorDataProvider.Capability.AddFeatures - scoped on QGIS 4, flat on 3.x.
+CapabilityAddFeatures = _resolve(QgsVectorDataProvider, "Capability", "AddFeatures")
+
 # Qgis.GeometryType (QGIS 4) vs QgsWkbTypes (QGIS 3)
 try:
     from qgis.core import Qgis
@@ -153,10 +156,10 @@ except Exception:
     LineGeometry = None
 if PolygonGeometry is None:
     from qgis.core import QgsWkbTypes
-    PolygonGeometry = QgsWkbTypes.PolygonGeometry
+    PolygonGeometry = _resolve(QgsWkbTypes, "GeometryType", "PolygonGeometry")
 if LineGeometry is None:
     from qgis.core import QgsWkbTypes
-    LineGeometry = QgsWkbTypes.LineGeometry
+    LineGeometry = _resolve(QgsWkbTypes, "GeometryType", "LineGeometry")
 
 # Flat WKB type (Qgis.WkbType on QGIS 4, QgsWkbTypes.Type on QGIS 3) for the
 # post-flatType comparisons in layer_conventions. QgsWkbTypes.flatType() returns
@@ -171,10 +174,10 @@ except Exception:
     WkbMultiPolygon = None
 if WkbPolygon is None:
     from qgis.core import QgsWkbTypes
-    WkbPolygon = QgsWkbTypes.Polygon
+    WkbPolygon = _resolve(QgsWkbTypes, "Type", "Polygon")
 if WkbMultiPolygon is None:
     from qgis.core import QgsWkbTypes
-    WkbMultiPolygon = QgsWkbTypes.MultiPolygon
+    WkbMultiPolygon = _resolve(QgsWkbTypes, "Type", "MultiPolygon")
 
 # Distance unit: Qgis.DistanceUnit.Meters (QGIS 4) vs QgsUnitTypes.DistanceMeters
 # (QGIS 3).
@@ -186,7 +189,7 @@ except Exception:
     DistanceMeters = None
 if DistanceMeters is None:
     from qgis.core import QgsUnitTypes
-    DistanceMeters = QgsUnitTypes.DistanceMeters
+    DistanceMeters = _resolve(QgsUnitTypes, "DistanceUnit", "DistanceMeters")
 
 # QgsVertexMarker.IconType.ICON_CIRCLE - scoped on QGIS 4, flat also on QGIS 3.
 try:
