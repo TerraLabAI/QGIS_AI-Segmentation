@@ -246,10 +246,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>相依套件已就緒，模型下載失敗</translation>
     </message>
     <message>
-        <source>Download Model</source>
-        <translation>下載模型</translation>
-    </message>
-    <message>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
@@ -308,10 +304,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>AI Segmentation by TerraLab</source>
         <translation>AI Segmentation by TerraLab</translation>
-    </message>
-    <message>
-        <source>Select a Raster Layer to Segment:</source>
-        <translation>選擇要分割的點陣圖圖層：</translation>
     </message>
     <message>
         <source>Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)</source>
@@ -542,14 +534,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>隱私權</translation>
     </message>
     <message>
-        <source>Something not working?</source>
-        <translation>遇到問題了嗎？</translation>
-    </message>
-    <message>
-        <source>Copy your logs and send them to us, we'll look into it :)</source>
-        <translation>複製您的日誌並寄給我們，我們會盡快處理 :)</translation>
-    </message>
-    <message>
         <source>Segment elements on raster images using AI</source>
         <translation>使用 AI 分割點陣影像中的地物</translation>
     </message>
@@ -608,10 +592,6 @@ Please convert your raster to GeoTIFF (.tif) manually.</source>
 請手動將您的點陣圖轉換為 GeoTIFF（.tif）格式。</translation>
     </message>
     <message>
-        <source>PyTorch Error</source>
-        <translation>PyTorch 錯誤</translation>
-    </message>
-    <message>
         <source>PyTorch cannot load on Windows</source>
         <translation>PyTorch 在 Windows 上無法載入</translation>
     </message>
@@ -628,10 +608,6 @@ After installation, restart QGIS and try again.</source>
 https://aka.ms/vs/17/release/vc_redist.x64.exe
 
 安裝完成後，請重新啟動 QGIS 並再試一次。</translation>
-    </message>
-    <message>
-        <source>Prediction Error</source>
-        <translation>預測錯誤</translation>
     </message>
     <message>
         <source>Segmentation failed</source>
@@ -656,10 +632,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Encoding Error</source>
         <translation>編碼錯誤</translation>
-    </message>
-    <message>
-        <source>Report a Bug</source>
-        <translation>回報錯誤</translation>
     </message>
     <message>
         <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
@@ -736,10 +708,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Loading account info...</source>
         <translation>正在載入帳戶資訊...</translation>
-    </message>
-    <message>
-        <source>Canceled</source>
-        <translation>已取消</translation>
     </message>
     <message>
         <source>Model File Corrupted</source>
@@ -830,10 +798,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>生效中</translation>
     </message>
     <message>
-        <source>Free Trial</source>
-        <translation>免費試用</translation>
-    </message>
-    <message>
         <source>Make this map presentation-ready</source>
         <translation>讓這份地圖立即可用於簡報</translation>
     </message>
@@ -908,28 +872,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Sending to the AI…</source>
-        <translation>正在傳送至 AI…</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>You're next · starting now…</source>
-        <translation>輪到您了·即將開始…</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Spot reserved · starting in ~{eta}</source>
         <translation>已保留名額·約 {eta} 後開始</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Spot reserved · starting soon…</source>
-        <translation>已保留名額·即將開始…</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Spot reserved · starting in a few seconds…</source>
-        <translation>已保留名額·數秒後開始…</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -1353,11 +1297,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>10,000 detections every month (~1,700 km2)</source>
-        <translation>每月 10,000 次偵測（約 1,700 平方公里）</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
         <source>Every building, tree, or road as clean polygons</source>
         <translation>每一棟建築物、每一棵樹或每一條道路都會以乾淨的多邊形呈現</translation>
     </message>
@@ -1465,11 +1404,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>The Library has ready-to-use objects.</source>
         <translation>範例庫中有現成的物件可供使用。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>1 credit ~ 0.17 km2 at default detail.</source>
-        <translation>在預設細節下，1 點數約等於 0.17 平方公里。</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
@@ -2048,24 +1982,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>提示：降低信心度可顯示更多偵測結果，提高信心度則只保留最佳結果。</translation>
     </message>
     <message>
-        <source>This zone is {area} km2 - free trial zones go up to {max} km2.</source>
-        <translation>此範圍為 {area} 平方公里－免費試用範圍上限為 {max} 平方公里。</translation>
-    </message>
-    <message>
         <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
         <translation>請繪製較小的範圍，或&lt;a href=&quot;{url}&quot;&gt;訂閱&lt;/a&gt;以分割任意大小的區域。</translation>
     </message>
     <message>
         <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
         <translation>額度即將用盡：剩餘 {n} 次免費偵測。&lt;a href=&quot;{url}&quot;&gt;訂閱&lt;/a&gt;以繼續使用。</translation>
-    </message>
-    <message>
-        <source>Last run: {count} {object} exported · {area} km2 · {used} credits used, {left} left</source>
-        <translation>上次執行：已 Export {count} 個 {object}·{area} 平方公里·已使用 {used} 點數，剩餘 {left}</translation>
-    </message>
-    <message>
-        <source>Last run: {count} {object} exported · {area} km2 · {used} credits used</source>
-        <translation>上次執行：已 Export {count} 個 {object}·{area} 平方公里·已使用 {used} 點數</translation>
     </message>
     <message>
         <source>Then segment any imagery: point and click, or fully automatic.</source>
@@ -2268,10 +2190,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Kept as distinct objects.</source>
         <translation>已保留為獨立物件。</translation>
-    </message>
-    <message>
-        <source>Last session: {count} polygon(s) exported · {area} km2</source>
-        <translation>上次工作階段：已 Export {count} 個多邊形 · {area} 平方公里</translation>
     </message>
     <message>
         <source>Left-click adds what you click to the shape</source>
@@ -2502,14 +2420,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>根據此次執行的評分，起始信心度為 {pct}%－提高數值可收緊結果。</translation>
     </message>
     <message>
-        <source>Stopping - keeping the tiles already found…</source>
-        <translation>正在停止－已發現的圖磚將予以保留…</translation>
-    </message>
-    <message>
-        <source>Stopping…</source>
-        <translation>正在停止…</translation>
-    </message>
-    <message>
         <source>Support code: {code}</source>
         <translation>支援代碼：{code}</translation>
     </message>
@@ -2520,10 +2430,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>The AI finds every object similar to your example.</source>
         <translation>AI 會找出所有與您範例相似的物件。</translation>
-    </message>
-    <message>
-        <source>The AI is starting up, almost there… {n}s</source>
-        <translation>AI 正在啟動，即將就緒… {n} 秒</translation>
     </message>
     <message>
         <source>The AI service is waking up. Holding your spot…</source>
@@ -2630,20 +2536,12 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>偵測結果顯示方式：</translation>
     </message>
     <message>
-        <source>Waking up the AI… {n}s</source>
-        <translation>正在喚醒 AI… {n} 秒</translation>
-    </message>
-    <message>
         <source>We read every message.</source>
         <translation>我們會仔細閱讀每一則訊息。</translation>
     </message>
     <message>
         <source>Write to us:</source>
         <translation>聯絡我們：</translation>
-    </message>
-    <message>
-        <source>Your 300 free detections are used up</source>
-        <translation>您的 300 次免費偵測已用完</translation>
     </message>
     <message>
         <source>Your reference</source>
@@ -2672,10 +2570,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>your object</source>
         <translation>您的物件</translation>
-    </message>
-    <message>
-        <source>{area} km2</source>
-        <translation>{area} 平方公里</translation>
     </message>
     <message>
         <source>{n} detections selected</source>
@@ -2708,6 +2602,155 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>{used} credits used</source>
         <translation>已使用 {used} 點數</translation>
+    </message>
+    <!-- v2.1.7 sync: append-to-layer export, singular forms, small-example guidance (2026-07-13) -->
+    <message>
+        <source>1 credit ~ 0.17 km² at default detail.</source>
+        <translation>在預設細節下，1 點數約等於 0.17 平方公里。</translation>
+    </message>
+    <message>
+        <source>10,000 detections every month (~1,700 km²)</source>
+        <translation>每月 10,000 次偵測（約 1,700 平方公里）</translation>
+    </message>
+    <message>
+        <source>Last run: {count} {object} exported · {area} km² · {used} credits used</source>
+        <translation>上次執行：已 Export {count} 個 {object}·{area} 平方公里·已使用 {used} 點數</translation>
+    </message>
+    <message>
+        <source>Last run: {count} {object} exported · {area} km² · {used} credits used, {left} left</source>
+        <translation>上次執行：已 Export {count} 個 {object}·{area} 平方公里·已使用 {used} 點數，剩餘 {left}</translation>
+    </message>
+    <message>
+        <source>Last session: {count} polygon(s) exported · {area} km²</source>
+        <translation>上次工作階段：已 Export {count} 個多邊形 · {area} 平方公里</translation>
+    </message>
+    <message>
+        <source>This zone is {area} km² - free trial zones go up to {max} km².</source>
+        <translation>此範圍為 {area} 平方公里－免費試用範圍上限為 {max} 平方公里。</translation>
+    </message>
+    <message>
+        <source>{area} km²</source>
+        <translation>{area} 平方公里</translation>
+    </message>
+    <message>
+        <source>Sending to the AI...</source>
+        <translation>正在傳送至 AI...</translation>
+    </message>
+    <message>
+        <source>Spot reserved · starting in a few seconds...</source>
+        <translation>已保留名額·數秒後開始...</translation>
+    </message>
+    <message>
+        <source>Spot reserved · starting soon...</source>
+        <translation>已保留名額·即將開始...</translation>
+    </message>
+    <message>
+        <source>Stopping - keeping the tiles already found...</source>
+        <translation>正在停止－已發現的圖磚將予以保留...</translation>
+    </message>
+    <message>
+        <source>Stopping...</source>
+        <translation>正在停止...</translation>
+    </message>
+    <message>
+        <source>The AI is starting up, almost there... {n}s</source>
+        <translation>AI 正在啟動，即將就緒... {n} 秒</translation>
+    </message>
+    <message>
+        <source>Waking up the AI... {n}s</source>
+        <translation>正在喚醒 AI... {n} 秒</translation>
+    </message>
+    <message>
+        <source>You're next · starting now...</source>
+        <translation>輪到您了·即將開始...</translation>
+    </message>
+    <message>
+        <source>Cancelled</source>
+        <translation>已取消</translation>
+    </message>
+    <message>
+        <source>Free trial</source>
+        <translation>免費試用</translation>
+    </message>
+    <message>
+        <source>Select a raster layer to segment:</source>
+        <translation>選擇要分割的點陣圖圖層：</translation>
+    </message>
+    <message>
+        <source>Your {n} free detections are used up</source>
+        <translation>您的 {n} 次免費偵測已用完</translation>
+    </message>
+    <message>
+        <source>1 object found</source>
+        <translation>找到 1 個物件</translation>
+    </message>
+    <message>
+        <source>Add a second example - two references detect far better than one.</source>
+        <translation>再新增一個範例 - 兩個參考的偵測效果遠勝一個。</translation>
+    </message>
+    <message>
+        <source>Add a second example, or type what to find.</source>
+        <translation>再新增一個範例，或輸入要尋找的內容。</translation>
+    </message>
+    <message>
+        <source>Add polygon to the layer</source>
+        <translation>將多邊形加入圖層</translation>
+    </message>
+    <message>
+        <source>Add to</source>
+        <translation>加入至</translation>
+    </message>
+    <message>
+        <source>Add {count} polygons to the layer</source>
+        <translation>將 {count} 個多邊形加入圖層</translation>
+    </message>
+    <message>
+        <source>Added {count} polygon(s) to {name}.</source>
+        <translation>已將 {count} 個多邊形加入 {name}。</translation>
+    </message>
+    <message>
+        <source>Adds your {n} kept polygons to the selected layer.</source>
+        <translation>將您保留的 {n} 個多邊形加入所選圖層。</translation>
+    </message>
+    <message>
+        <source>Could not add to that layer. Created a new layer instead.</source>
+        <translation>無法加入該圖層。已改為建立新圖層。</translation>
+    </message>
+    <message>
+        <source>Create a new layer, or add these polygons to an existing layer.</source>
+        <translation>建立新圖層，或將這些多邊形加入現有圖層。</translation>
+    </message>
+    <message>
+        <source>Download AI model</source>
+        <translation>下載 AI 模型</translation>
+    </message>
+    <message>
+        <source>Export 1 polygon</source>
+        <translation>Export 1 個多邊形</translation>
+    </message>
+    <message>
+        <source>New layer</source>
+        <translation>新圖層</translation>
+    </message>
+    <message>
+        <source>Resolving object name</source>
+        <translation>正在解析物件名稱</translation>
+    </message>
+    <message>
+        <source>That layer is no longer available. Created a new layer instead.</source>
+        <translation>該圖層已無法使用。已改為建立新圖層。</translation>
+    </message>
+    <message>
+        <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
+        <translation>此範例在目前細節等級下非常小。請將細節滑杆調得更精細，或繪製更大的物件。</translation>
+    </message>
+    <message>
+        <source>This example is very small even at the finest detail. Draw a larger object, or it may be too small to detect.</source>
+        <translation>即使在最精細的細節等級下，此範例仍非常小。請繪製更大的物件，否則可能太小而無法偵測。</translation>
+    </message>
+    <message>
+        <source>Your free detections are used up</source>
+        <translation>您的免費偵測已用完</translation>
     </message>
 </context>
 </TS>

@@ -108,12 +108,8 @@ def _classify_qt_error(qt_error, error_string: str, http_status: int | None) -> 
     """Map a Qt NetworkError to a (code, user-message) pair. Shared by the
     blocking path (_classify_network_error) and the concurrent path
     (_parse_reply) so both classify identically."""
-    # PyQt6's NetworkError is a real Python enum: int() raises TypeError on it
-    # (Qt6 QGIS builds), which turned every network hiccup into a raw
-    # "TypeError: int() argument..." instead of the friendly message + retry.
-    qt_error_num = getattr(qt_error, "value", qt_error)
     _log_warning(
-        f"Network error: qt_error={qt_error_num}, http_status={http_status}, "
+        f"Network error: qt_error={int(qt_error)}, http_status={http_status}, "
         f"detail={error_string[:500]}"
     )
 
@@ -776,8 +772,15 @@ class TerraLabClient:
             return results
 
         # Safety net: setTransferTimeout already bounds each reply, but a wedged
-        # NAM could still stall the loop, so cap the whole batch defensively.
-        QTimer.singleShot(max_timeout + 5_000, loop.quit)
+        # NAM could still stall the loop, so cap the whole batch defensively. A
+        # stoppable timer (not singleShot) so it is cancelled right after exec()
+        # instead of keeping the QEventLoop alive past this call and firing quit()
+        # into a later batch's loop on this same thread.
+        safety_timer = QTimer()
+        safety_timer.setSingleShot(True)
+        safety_timer.setInterval(max_timeout + 5_000)
+        safety_timer.timeout.connect(loop.quit)
+        safety_timer.start()
         # Cancellation net: poll the stop predicate on this loop's own thread so a
         # request_stop() during a long submit quits the loop within ~0.25s (the
         # shutdown-crash guard; see the docstring). Kept in a local so it stays
@@ -804,6 +807,7 @@ class TerraLabClient:
             loop.exec()
         if abort_timer is not None:
             abort_timer.stop()
+        safety_timer.stop()
 
         results = []
         for reply in replies:

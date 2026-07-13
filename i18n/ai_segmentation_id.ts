@@ -246,10 +246,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jalur/anda</translation>
         <translation>Dependensi siap, unduhan model gagal</translation>
     </message>
     <message>
-        <source>Download Model</source>
-        <translation>Unduh Model</translation>
-    </message>
-    <message>
         <source>Cancel</source>
         <translation>Batal</translation>
     </message>
@@ -308,10 +304,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jalur/anda</translation>
     <message>
         <source>AI Segmentation by TerraLab</source>
         <translation>AI Segmentation by TerraLab</translation>
-    </message>
-    <message>
-        <source>Select a Raster Layer to Segment:</source>
-        <translation>Pilih Lapisan Raster untuk Disegmentasi:</translation>
     </message>
     <message>
         <source>Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)</source>
@@ -542,14 +534,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jalur/anda</translation>
         <translation>Privasi</translation>
     </message>
     <message>
-        <source>Something not working?</source>
-        <translation>Ada yang tidak berfungsi?</translation>
-    </message>
-    <message>
-        <source>Copy your logs and send them to us, we'll look into it :)</source>
-        <translation>Salin log Anda dan kirimkan kepada kami, kami akan memeriksanya :)</translation>
-    </message>
-    <message>
         <source>Segment elements on raster images using AI</source>
         <translation>Segmentasi elemen pada gambar raster menggunakan AI</translation>
     </message>
@@ -608,10 +592,6 @@ Please convert your raster to GeoTIFF (.tif) manually.</source>
 Silakan konversi raster Anda ke GeoTIFF (.tif) secara manual.</translation>
     </message>
     <message>
-        <source>PyTorch Error</source>
-        <translation>Kesalahan PyTorch</translation>
-    </message>
-    <message>
         <source>PyTorch cannot load on Windows</source>
         <translation>PyTorch tidak dapat dimuat di Windows</translation>
     </message>
@@ -628,10 +608,6 @@ Silakan unduh dan pasang:
 https://aka.ms/vs/17/release/vc_redist.x64.exe
 
 Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
-    </message>
-    <message>
-        <source>Prediction Error</source>
-        <translation>Kesalahan Prediksi</translation>
     </message>
     <message>
         <source>Segmentation failed</source>
@@ -656,10 +632,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
     <message>
         <source>Encoding Error</source>
         <translation>Kesalahan Enkode</translation>
-    </message>
-    <message>
-        <source>Report a Bug</source>
-        <translation>Laporkan Bug</translation>
     </message>
     <message>
         <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
@@ -736,10 +708,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
     <message>
         <source>Loading account info...</source>
         <translation>Memuat informasi akun...</translation>
-    </message>
-    <message>
-        <source>Canceled</source>
-        <translation>Dibatalkan</translation>
     </message>
     <message>
         <source>Model File Corrupted</source>
@@ -830,10 +798,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Aktif</translation>
     </message>
     <message>
-        <source>Free Trial</source>
-        <translation>Uji Coba Gratis</translation>
-    </message>
-    <message>
         <source>Make this map presentation-ready</source>
         <translation>Jadikan peta ini siap untuk presentasi</translation>
     </message>
@@ -894,24 +858,8 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Tile {current}/{total}</translation>
     </message>
     <message>
-        <source>Sending to the AI…</source>
-        <translation>Mengirim ke AI…</translation>
-    </message>
-    <message>
-        <source>You're next · starting now…</source>
-        <translation>Giliran Anda · dimulai sekarang…</translation>
-    </message>
-    <message>
         <source>Spot reserved · starting in ~{eta}</source>
         <translation>Slot dicadangkan · dimulai dalam ~{eta}</translation>
-    </message>
-    <message>
-        <source>Spot reserved · starting soon…</source>
-        <translation>Slot dicadangkan · segera dimulai…</translation>
-    </message>
-    <message>
-        <source>Spot reserved · starting in a few seconds…</source>
-        <translation>Slot dicadangkan · dimulai dalam beberapa detik…</translation>
     </message>
     <message>
         <source>{s} seconds</source>
@@ -1250,10 +1198,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Berapa banyak objek berada pada setiap tingkat keyakinan.</translation>
     </message>
     <message>
-        <source>10,000 detections every month (~1,700 km2)</source>
-        <translation>10.000 deteksi setiap bulan (~1.700 km2)</translation>
-    </message>
-    <message>
         <source>Every building, tree, or road as clean polygons</source>
         <translation>Setiap bangunan, pohon, atau jalan sebagai poligon yang bersih</translation>
     </message>
@@ -1340,10 +1284,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
     <message>
         <source>The Library has ready-to-use objects.</source>
         <translation>Pustaka memiliki objek siap pakai.</translation>
-    </message>
-    <message>
-        <source>1 credit ~ 0.17 km2 at default detail.</source>
-        <translation>1 kredit ~ 0,17 km2 pada detail default.</translation>
     </message>
     <message>
         <source>object</source>
@@ -1818,24 +1758,12 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Tip: turunkan Keyakinan untuk menampilkan lebih banyak deteksi, naikkan untuk hanya menyisakan yang terbaik.</translation>
     </message>
     <message>
-        <source>This zone is {area} km2 - free trial zones go up to {max} km2.</source>
-        <translation>Zona ini seluas {area} km2 - zona uji coba gratis maksimal {max} km2.</translation>
-    </message>
-    <message>
         <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
         <translation>Gambar zona yang lebih kecil, atau &lt;a href=&quot;{url}&quot;&gt;berlangganan&lt;/a&gt; untuk menyegmentasi area dengan ukuran berapa pun.</translation>
     </message>
     <message>
         <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
         <translation>Hampir habis: {n} deteksi gratis tersisa. &lt;a href=&quot;{url}&quot;&gt;Berlangganan&lt;/a&gt; untuk terus melanjutkan.</translation>
-    </message>
-    <message>
-        <source>Last run: {count} {object} exported · {area} km2 · {used} credits used, {left} left</source>
-        <translation>Proses terakhir: {count} {object} diekspor · {area} km2 · {used} kredit digunakan, {left} tersisa</translation>
-    </message>
-    <message>
-        <source>Last run: {count} {object} exported · {area} km2 · {used} credits used</source>
-        <translation>Proses terakhir: {count} {object} diekspor · {area} km2 · {used} kredit digunakan</translation>
     </message>
     <message>
         <source>Then segment any imagery: point and click, or fully automatic.</source>
@@ -2038,10 +1966,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     <message>
         <source>Kept as distinct objects.</source>
         <translation>Dipertahankan sebagai objek terpisah.</translation>
-    </message>
-    <message>
-        <source>Last session: {count} polygon(s) exported · {area} km2</source>
-        <translation>Sesi terakhir: {count} poligon diekspor · {area} km2</translation>
     </message>
     <message>
         <source>Left-click adds what you click to the shape</source>
@@ -2272,14 +2196,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Dimulai pada {pct}% agar sesuai dengan skor proses ini - naikkan untuk memperketat.</translation>
     </message>
     <message>
-        <source>Stopping - keeping the tiles already found…</source>
-        <translation>Menghentikan - tile yang sudah ditemukan tetap disimpan…</translation>
-    </message>
-    <message>
-        <source>Stopping…</source>
-        <translation>Menghentikan…</translation>
-    </message>
-    <message>
         <source>Support code: {code}</source>
         <translation>Kode dukungan: {code}</translation>
     </message>
@@ -2290,10 +2206,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     <message>
         <source>The AI finds every object similar to your example.</source>
         <translation>AI menemukan setiap objek yang mirip dengan contoh Anda.</translation>
-    </message>
-    <message>
-        <source>The AI is starting up, almost there… {n}s</source>
-        <translation>AI sedang dimulai, hampir selesai… {n}s</translation>
     </message>
     <message>
         <source>The AI service is waking up. Holding your spot…</source>
@@ -2400,20 +2312,12 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Lihat deteksi sebagai:</translation>
     </message>
     <message>
-        <source>Waking up the AI… {n}s</source>
-        <translation>Membangunkan AI… {n}s</translation>
-    </message>
-    <message>
         <source>We read every message.</source>
         <translation>Kami membaca setiap pesan.</translation>
     </message>
     <message>
         <source>Write to us:</source>
         <translation>Tulis kepada kami:</translation>
-    </message>
-    <message>
-        <source>Your 300 free detections are used up</source>
-        <translation>300 deteksi gratis Anda telah habis</translation>
     </message>
     <message>
         <source>Your reference</source>
@@ -2442,10 +2346,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     <message>
         <source>your object</source>
         <translation>objek Anda</translation>
-    </message>
-    <message>
-        <source>{area} km2</source>
-        <translation>{area} km2</translation>
     </message>
     <message>
         <source>{n} detections selected</source>
@@ -2478,6 +2378,155 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     <message>
         <source>{used} credits used</source>
         <translation>{used} kredit digunakan</translation>
+    </message>
+    <!-- v2.1.7 sync: append-to-layer export, singular forms, small-example guidance (2026-07-13) -->
+    <message>
+        <source>1 credit ~ 0.17 km² at default detail.</source>
+        <translation>1 kredit ~ 0,17 km² pada detail default.</translation>
+    </message>
+    <message>
+        <source>10,000 detections every month (~1,700 km²)</source>
+        <translation>10.000 deteksi setiap bulan (~1.700 km²)</translation>
+    </message>
+    <message>
+        <source>Last run: {count} {object} exported · {area} km² · {used} credits used</source>
+        <translation>Proses terakhir: {count} {object} diekspor · {area} km² · {used} kredit digunakan</translation>
+    </message>
+    <message>
+        <source>Last run: {count} {object} exported · {area} km² · {used} credits used, {left} left</source>
+        <translation>Proses terakhir: {count} {object} diekspor · {area} km² · {used} kredit digunakan, {left} tersisa</translation>
+    </message>
+    <message>
+        <source>Last session: {count} polygon(s) exported · {area} km²</source>
+        <translation>Sesi terakhir: {count} poligon diekspor · {area} km²</translation>
+    </message>
+    <message>
+        <source>This zone is {area} km² - free trial zones go up to {max} km².</source>
+        <translation>Zona ini seluas {area} km² - zona uji coba gratis maksimal {max} km².</translation>
+    </message>
+    <message>
+        <source>{area} km²</source>
+        <translation>{area} km²</translation>
+    </message>
+    <message>
+        <source>Sending to the AI...</source>
+        <translation>Mengirim ke AI...</translation>
+    </message>
+    <message>
+        <source>Spot reserved · starting in a few seconds...</source>
+        <translation>Slot dicadangkan · dimulai dalam beberapa detik...</translation>
+    </message>
+    <message>
+        <source>Spot reserved · starting soon...</source>
+        <translation>Slot dicadangkan · segera dimulai...</translation>
+    </message>
+    <message>
+        <source>Stopping - keeping the tiles already found...</source>
+        <translation>Menghentikan - tile yang sudah ditemukan tetap disimpan...</translation>
+    </message>
+    <message>
+        <source>Stopping...</source>
+        <translation>Menghentikan...</translation>
+    </message>
+    <message>
+        <source>The AI is starting up, almost there... {n}s</source>
+        <translation>AI sedang dimulai, hampir selesai... {n}s</translation>
+    </message>
+    <message>
+        <source>Waking up the AI... {n}s</source>
+        <translation>Membangunkan AI... {n}s</translation>
+    </message>
+    <message>
+        <source>You're next · starting now...</source>
+        <translation>Giliran Anda · dimulai sekarang...</translation>
+    </message>
+    <message>
+        <source>Cancelled</source>
+        <translation>Dibatalkan</translation>
+    </message>
+    <message>
+        <source>Free trial</source>
+        <translation>Uji Coba Gratis</translation>
+    </message>
+    <message>
+        <source>Select a raster layer to segment:</source>
+        <translation>Pilih Lapisan Raster untuk Disegmentasi:</translation>
+    </message>
+    <message>
+        <source>Your {n} free detections are used up</source>
+        <translation>{n} deteksi gratis Anda telah habis</translation>
+    </message>
+    <message>
+        <source>1 object found</source>
+        <translation>1 objek ditemukan</translation>
+    </message>
+    <message>
+        <source>Add a second example - two references detect far better than one.</source>
+        <translation>Tambahkan contoh kedua - dua referensi mendeteksi jauh lebih baik daripada satu.</translation>
+    </message>
+    <message>
+        <source>Add a second example, or type what to find.</source>
+        <translation>Tambahkan contoh kedua, atau ketik apa yang dicari.</translation>
+    </message>
+    <message>
+        <source>Add polygon to the layer</source>
+        <translation>Tambahkan poligon ke lapisan</translation>
+    </message>
+    <message>
+        <source>Add to</source>
+        <translation>Tambahkan ke</translation>
+    </message>
+    <message>
+        <source>Add {count} polygons to the layer</source>
+        <translation>Tambahkan {count} poligon ke lapisan</translation>
+    </message>
+    <message>
+        <source>Added {count} polygon(s) to {name}.</source>
+        <translation>{count} poligon ditambahkan ke {name}.</translation>
+    </message>
+    <message>
+        <source>Adds your {n} kept polygons to the selected layer.</source>
+        <translation>Menambahkan {n} poligon yang disimpan ke lapisan terpilih.</translation>
+    </message>
+    <message>
+        <source>Could not add to that layer. Created a new layer instead.</source>
+        <translation>Tidak dapat menambahkan ke lapisan itu. Lapisan baru dibuat sebagai gantinya.</translation>
+    </message>
+    <message>
+        <source>Create a new layer, or add these polygons to an existing layer.</source>
+        <translation>Buat lapisan baru, atau tambahkan poligon ini ke lapisan yang ada.</translation>
+    </message>
+    <message>
+        <source>Download AI model</source>
+        <translation>Unduh Model AI</translation>
+    </message>
+    <message>
+        <source>Export 1 polygon</source>
+        <translation>Ekspor 1 poligon</translation>
+    </message>
+    <message>
+        <source>New layer</source>
+        <translation>Lapisan baru</translation>
+    </message>
+    <message>
+        <source>Resolving object name</source>
+        <translation>Menentukan nama objek</translation>
+    </message>
+    <message>
+        <source>That layer is no longer available. Created a new layer instead.</source>
+        <translation>Lapisan itu tidak lagi tersedia. Lapisan baru dibuat sebagai gantinya.</translation>
+    </message>
+    <message>
+        <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
+        <translation>Contoh ini sangat kecil pada tingkat detail saat ini. Geser slider detail lebih halus atau gambar objek yang lebih besar.</translation>
+    </message>
+    <message>
+        <source>This example is very small even at the finest detail. Draw a larger object, or it may be too small to detect.</source>
+        <translation>Contoh ini sangat kecil bahkan pada detail terhalus. Gambar objek yang lebih besar, atau mungkin terlalu kecil untuk dideteksi.</translation>
+    </message>
+    <message>
+        <source>Your free detections are used up</source>
+        <translation>Deteksi gratis Anda telah habis</translation>
     </message>
 </context>
 </TS>

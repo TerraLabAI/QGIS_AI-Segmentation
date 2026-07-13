@@ -56,7 +56,17 @@ def mask_to_polygons_rasterio(
             geom = _geojson_to_geometry(geojson_geom)
             if geom is not None and not geom.isEmpty() and geom.isGeosValid():
                 if simplify_tolerance > 0:
-                    geom = geom.simplify(simplify_tolerance)
+                    # simplify() can return a self-intersecting result that the
+                    # isGeosValid() gate above already passed; re-validate so an
+                    # invalid geometry never reaches the live merger. Repair when
+                    # possible, otherwise keep the unsimplified (valid) geometry.
+                    simplified = geom.simplify(simplify_tolerance)
+                    if simplified is not None and not simplified.isEmpty() and simplified.isGeosValid():
+                        geom = simplified
+                    elif simplified is not None:
+                        fixed = simplified.makeValid()
+                        if fixed is not None and not fixed.isEmpty() and fixed.isGeosValid():
+                            geom = fixed
                 geometries.append(geom)
 
         return geometries
@@ -171,10 +181,12 @@ def mask_to_polygons(
 
             return mask_to_polygons_rasterio(mask, transform, crs, simplify_tolerance)
 
-        return mask_to_polygons_fallback(mask, transform_info, simplify_tolerance)
+        return mask_to_polygons_fallback(
+            mask, transform_info, simplify_tolerance, pixel_offset, full_shape)
 
     except ImportError:
-        return mask_to_polygons_fallback(mask, transform_info, simplify_tolerance)
+        return mask_to_polygons_fallback(
+            mask, transform_info, simplify_tolerance, pixel_offset, full_shape)
     except Exception as e:
         import traceback
         QgsMessageLog.logMessage(
@@ -182,15 +194,39 @@ def mask_to_polygons(
             "AI Segmentation",
             level=Qgis.MessageLevel.Warning
         )
-        return mask_to_polygons_fallback(mask, transform_info, simplify_tolerance)
+        return mask_to_polygons_fallback(
+            mask, transform_info, simplify_tolerance, pixel_offset, full_shape)
 
 
 def mask_to_polygons_fallback(
     mask: np.ndarray,
     transform_info: dict,
-    simplify_tolerance: float = 0.0
+    simplify_tolerance: float = 0.0,
+    pixel_offset: tuple[int, int] | None = None,
+    full_shape: tuple[int, int] | None = None,
 ) -> list[QgsGeometry]:
     try:
+        # Honor pixel_offset/full_shape exactly like the primary path: when the
+        # mask is a CROP of a full grid, place it by its offset within
+        # full_shape and map with the sub-mask's own shape. Mapping a crop with
+        # the full tile dimensions would pull every mask toward the tile origin
+        # (the historic tile-origin offset bug).
+        bbox = transform_info.get("bbox")
+        if bbox and pixel_offset is not None and full_shape is not None:
+            minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
+            full_h, full_w = int(full_shape[0]), int(full_shape[1])
+            col0, row0 = int(pixel_offset[0]), int(pixel_offset[1])
+            px_w = (maxx - minx) / max(full_w, 1)
+            px_h = (maxy - miny) / max(full_h, 1)
+            sub_h, sub_w = int(mask.shape[0]), int(mask.shape[1])
+            sub_minx = minx + col0 * px_w
+            sub_maxy = maxy - row0 * px_h
+            sub_maxx = sub_minx + sub_w * px_w
+            sub_miny = sub_maxy - sub_h * px_h
+            transform_info = dict(transform_info)
+            transform_info["bbox"] = (sub_minx, sub_maxx, sub_miny, sub_maxy)
+            transform_info["img_shape"] = (sub_h, sub_w)
+
         contours = find_contours(mask)
 
         if not contours:

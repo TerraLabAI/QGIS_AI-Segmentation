@@ -112,7 +112,7 @@ class EnvSetupMixin:
                 if self.dock_widget._mode == Mode.INTERACTIVE:
                     self.dock_widget.install_button.setVisible(True)
                     self.dock_widget.install_button.setEnabled(True)
-                    self.dock_widget.install_button.setText(tr("Download Model"))
+                    self.dock_widget.install_button.setText(tr("Download AI model"))
                     self.dock_widget.setup_group.setVisible(True)
                     # Model download is pending: keep the setup section across a
                     # mode round trip (see dock _setup_section_wanted).
@@ -233,6 +233,11 @@ class EnvSetupMixin:
                     except (RuntimeError, AttributeError):
                         pass
                 self._on_start_segmentation(layer)
+                # Inherit the review's CURRENT refine settings, exactly like the
+                # direct (predictor-already-loaded) handoff path does, so a run
+                # whose model was still loading is not stranded on the generic
+                # Manual defaults.
+                self._seed_refine_from_review()
                 self._import_review_geoms_as_saved(review)
 
     def _manual_used_recently(self, days: int = 14) -> bool:

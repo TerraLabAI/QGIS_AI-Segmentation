@@ -145,12 +145,22 @@ class TileManager:
         """Compute tile grid for an image.
 
         Returns:
-            List of (x, y, w, h) tuples, or None if exceeds max_tiles.
+            List of (x, y, w, h) tuples, empty when the image has no area, or
+            None if it exceeds max_tiles.
         """
+        # A zero/negative dimension has no area to tile: return an empty grid
+        # (0 credits, no run) rather than a degenerate (0, 0, 0, 0) tile.
+        if image_width <= 0 or image_height <= 0:
+            return []
+
         if image_width <= self.tile_size and image_height <= self.tile_size:
             return [(0, 0, image_width, image_height)]
 
         stride = int(self.tile_size * (1 - self.overlap_fraction))
+        # Guard a non-positive stride (overlap_fraction >= 1) the same way
+        # _snap_axis does, so the stepping loops below can never fail to advance.
+        if stride <= 0:
+            return [(0, 0, image_width, image_height)]
         tiles = []
 
         # Edge alignment: when a plain stride step would leave a thin partial

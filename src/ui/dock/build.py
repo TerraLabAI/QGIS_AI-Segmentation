@@ -12,6 +12,7 @@ from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QKeySequence, QShortcut
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFrame,
     QGroupBox,
     QHBoxLayout,
@@ -36,6 +37,7 @@ from ...core.model_config import _IS_MACOS_X86, USE_SAM2
 from ...core.venv_manager import CACHE_DIR
 from .styles import (
     BRAND_BLUE,
+    BTN_GREEN,
     _BTN_BLUE,
     _BTN_EXPORT_DISABLED,
     _BTN_GRAY,
@@ -46,6 +48,7 @@ from .styles import (
     _BTN_RED,
     _CARD_MARGINS,
     _CARD_QSS,
+    _COMBO_THEME_QSS,
     _INSTRUCTIONS_CARD_QSS,
     _PROGRESS_THIN_QSS,
     _RECAP_CARD_QSS,
@@ -394,7 +397,7 @@ class DockBuildMixin:
             row.setSpacing(7)
             check = QLabel("✓")
             check.setStyleSheet(
-                "font-size: 11px; font-weight: 600; color: #43a047;"
+                f"font-size: 11px; font-weight: 600; color: {BTN_GREEN};"
                 " border: none; background: transparent;")
             row.addWidget(check, 0, Qt.AlignmentFlag.AlignTop)
             label = QLabel(text)
@@ -517,7 +520,7 @@ class DockBuildMixin:
         layout.setContentsMargins(0, 8, 0, 0)
         layout.setSpacing(8)
 
-        layer_label = QLabel(tr("Select a Raster Layer to Segment:"))
+        layer_label = QLabel(tr("Select a raster layer to segment:"))
         layer_label.setStyleSheet("font-weight: bold; color: palette(text);")
         layout.addWidget(layer_label)
         self.layer_label = layer_label
@@ -721,6 +724,29 @@ class DockBuildMixin:
                "polygons to a layer.")
         )
         layout.addWidget(self.save_mask_button)
+
+        # Export destination: a "New layer" default (today's behavior) or one of
+        # the project's existing polygon layers. Hidden entirely when there is
+        # no candidate layer, so the Manual export then looks exactly as before.
+        # The just-committed Automatic detections layer surfaces first here, so
+        # adding hand-drawn shapes onto it is one obvious click.
+        self.export_dest_widget = QWidget()
+        dest_row = QHBoxLayout(self.export_dest_widget)
+        dest_row.setContentsMargins(0, 0, 0, 0)
+        dest_row.setSpacing(6)
+        dest_label = QLabel(tr("Add to"))
+        dest_label.setStyleSheet(
+            "font-size: 11px; color: rgba(128,128,128,0.95);")
+        dest_row.addWidget(dest_label)
+        self.export_dest_combo = QComboBox()
+        self.export_dest_combo.setStyleSheet(_COMBO_THEME_QSS)
+        self.export_dest_combo.setToolTip(
+            tr("Create a new layer, or add these polygons to an existing layer."))
+        self.export_dest_combo.currentIndexChanged.connect(
+            self._on_export_dest_changed)
+        dest_row.addWidget(self.export_dest_combo, 1)
+        self.export_dest_widget.setVisible(False)
+        layout.addWidget(self.export_dest_widget)
 
         self.export_button = QPushButton(tr("Export polygon to a layer"))
         self.export_button.clicked.connect(self._on_export_clicked)

@@ -246,10 +246,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
         <translation>Afhankelijkheden gereed, downloaden van model mislukt</translation>
     </message>
     <message>
-        <source>Download Model</source>
-        <translation>Model downloaden</translation>
-    </message>
-    <message>
         <source>Cancel</source>
         <translation>Annuleren</translation>
     </message>
@@ -308,10 +304,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
     <message>
         <source>AI Segmentation by TerraLab</source>
         <translation>AI Segmentation by TerraLab</translation>
-    </message>
-    <message>
-        <source>Select a Raster Layer to Segment:</source>
-        <translation>Selecteer een rasterlaag om te segmenteren:</translation>
     </message>
     <message>
         <source>Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)</source>
@@ -542,14 +534,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
         <translation>Privacy</translation>
     </message>
     <message>
-        <source>Something not working?</source>
-        <translation>Werkt iets niet?</translation>
-    </message>
-    <message>
-        <source>Copy your logs and send them to us, we'll look into it :)</source>
-        <translation>Kopieer uw logs en stuur ze naar ons, we gaan ermee aan de slag :)</translation>
-    </message>
-    <message>
         <source>Segment elements on raster images using AI</source>
         <translation>Segmenteer elementen op rasterafbeeldingen met AI</translation>
     </message>
@@ -608,10 +592,6 @@ Please convert your raster to GeoTIFF (.tif) manually.</source>
 Zet uw raster handmatig om naar GeoTIFF (.tif).</translation>
     </message>
     <message>
-        <source>PyTorch Error</source>
-        <translation>PyTorch-fout</translation>
-    </message>
-    <message>
         <source>PyTorch cannot load on Windows</source>
         <translation>PyTorch kan niet worden geladen op Windows</translation>
     </message>
@@ -628,10 +608,6 @@ Download en installeer:
 https://aka.ms/vs/17/release/vc_redist.x64.exe
 
 Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
-    </message>
-    <message>
-        <source>Prediction Error</source>
-        <translation>Voorspellingsfout</translation>
     </message>
     <message>
         <source>Segmentation failed</source>
@@ -656,10 +632,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>Encoding Error</source>
         <translation>Coderingsfout</translation>
-    </message>
-    <message>
-        <source>Report a Bug</source>
-        <translation>Een bug melden</translation>
     </message>
     <message>
         <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
@@ -736,10 +708,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>Loading account info...</source>
         <translation>Accountgegevens laden...</translation>
-    </message>
-    <message>
-        <source>Canceled</source>
-        <translation>Geannuleerd</translation>
     </message>
     <message>
         <source>Model File Corrupted</source>
@@ -830,10 +798,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Actief</translation>
     </message>
     <message>
-        <source>Free Trial</source>
-        <translation>Gratis proefperiode</translation>
-    </message>
-    <message>
         <source>Make this map presentation-ready</source>
         <translation>Maak deze kaart presentatieklaar</translation>
     </message>
@@ -894,24 +858,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Tegel {current}/{total}</translation>
     </message>
     <message>
-        <source>Sending to the AI…</source>
-        <translation>Verzenden naar de AI…</translation>
-    </message>
-    <message>
-        <source>You're next · starting now…</source>
-        <translation>U bent aan de beurt · start nu…</translation>
-    </message>
-    <message>
         <source>Spot reserved · starting in ~{eta}</source>
         <translation>Plek gereserveerd · start over ~{eta}</translation>
-    </message>
-    <message>
-        <source>Spot reserved · starting soon…</source>
-        <translation>Plek gereserveerd · start binnenkort…</translation>
-    </message>
-    <message>
-        <source>Spot reserved · starting in a few seconds…</source>
-        <translation>Plek gereserveerd · start over enkele seconden…</translation>
     </message>
     <message>
         <source>{s} seconds</source>
@@ -1250,10 +1198,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Hoeveel objecten zich op elk betrouwbaarheidsniveau bevinden.</translation>
     </message>
     <message>
-        <source>10,000 detections every month (~1,700 km2)</source>
-        <translation>10.000 detecties per maand (~1.700 km2)</translation>
-    </message>
-    <message>
         <source>Every building, tree, or road as clean polygons</source>
         <translation>Elk gebouw, boom of weg als schone polygonen</translation>
     </message>
@@ -1340,10 +1284,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>The Library has ready-to-use objects.</source>
         <translation>De Bibliotheek heeft direct te gebruiken objecten.</translation>
-    </message>
-    <message>
-        <source>1 credit ~ 0.17 km2 at default detail.</source>
-        <translation>1 credit ~ 0,17 km2 bij standaard detailniveau.</translation>
     </message>
     <message>
         <source>object</source>
@@ -1818,24 +1758,12 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Tip: verlaag Betrouwbaarheid om meer detecties te tonen, verhoog het om alleen de beste te bewaren.</translation>
     </message>
     <message>
-        <source>This zone is {area} km2 - free trial zones go up to {max} km2.</source>
-        <translation>Deze zone is {area} km2 - gratis proefzones gaan tot {max} km2.</translation>
-    </message>
-    <message>
         <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
         <translation>Teken een kleinere zone, of &lt;a href=&quot;{url}&quot;&gt;abonneer je&lt;/a&gt; om gebieden van elke omvang te segmenteren.</translation>
     </message>
     <message>
         <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
         <translation>Bijna op: nog {n} gratis detecties over. &lt;a href=&quot;{url}&quot;&gt;Abonneer je&lt;/a&gt; om door te gaan.</translation>
-    </message>
-    <message>
-        <source>Last run: {count} {object} exported · {area} km2 · {used} credits used, {left} left</source>
-        <translation>Laatste run: {count} {object} geëxporteerd · {area} km2 · {used} credits gebruikt, {left} over</translation>
-    </message>
-    <message>
-        <source>Last run: {count} {object} exported · {area} km2 · {used} credits used</source>
-        <translation>Laatste run: {count} {object} geëxporteerd · {area} km2 · {used} credits gebruikt</translation>
     </message>
     <message>
         <source>Then segment any imagery: point and click, or fully automatic.</source>
@@ -2038,10 +1966,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Kept as distinct objects.</source>
         <translation>Behouden als afzonderlijke objecten.</translation>
-    </message>
-    <message>
-        <source>Last session: {count} polygon(s) exported · {area} km2</source>
-        <translation>Laatste sessie: {count} polygoon(en) geëxporteerd · {area} km2</translation>
     </message>
     <message>
         <source>Left-click adds what you click to the shape</source>
@@ -2272,14 +2196,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Gestart op {pct}% passend bij de scores van deze run - verhoog om strenger te filteren.</translation>
     </message>
     <message>
-        <source>Stopping - keeping the tiles already found…</source>
-        <translation>Stoppen - de al gevonden tegels worden bewaard…</translation>
-    </message>
-    <message>
-        <source>Stopping…</source>
-        <translation>Stoppen…</translation>
-    </message>
-    <message>
         <source>Support code: {code}</source>
         <translation>Supportcode: {code}</translation>
     </message>
@@ -2290,10 +2206,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>The AI finds every object similar to your example.</source>
         <translation>De AI vindt elk object dat op je voorbeeld lijkt.</translation>
-    </message>
-    <message>
-        <source>The AI is starting up, almost there… {n}s</source>
-        <translation>De AI start op, bijna klaar… {n}s</translation>
     </message>
     <message>
         <source>The AI service is waking up. Holding your spot…</source>
@@ -2400,20 +2312,12 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Detecties weergeven als:</translation>
     </message>
     <message>
-        <source>Waking up the AI… {n}s</source>
-        <translation>De AI wordt wakker gemaakt… {n}s</translation>
-    </message>
-    <message>
         <source>We read every message.</source>
         <translation>We lezen elk bericht.</translation>
     </message>
     <message>
         <source>Write to us:</source>
         <translation>Schrijf ons:</translation>
-    </message>
-    <message>
-        <source>Your 300 free detections are used up</source>
-        <translation>Je 300 gratis detecties zijn opgebruikt</translation>
     </message>
     <message>
         <source>Your reference</source>
@@ -2442,10 +2346,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>your object</source>
         <translation>je object</translation>
-    </message>
-    <message>
-        <source>{area} km2</source>
-        <translation>{area} km2</translation>
     </message>
     <message>
         <source>{n} detections selected</source>
@@ -2478,6 +2378,155 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>{used} credits used</source>
         <translation>{used} credits gebruikt</translation>
+    </message>
+    <!-- v2.1.7 sync: append-to-layer export, singular forms, small-example guidance (2026-07-13) -->
+    <message>
+        <source>1 credit ~ 0.17 km² at default detail.</source>
+        <translation>1 credit ~ 0,17 km² bij standaard detailniveau.</translation>
+    </message>
+    <message>
+        <source>10,000 detections every month (~1,700 km²)</source>
+        <translation>10.000 detecties per maand (~1.700 km²)</translation>
+    </message>
+    <message>
+        <source>Last run: {count} {object} exported · {area} km² · {used} credits used</source>
+        <translation>Laatste run: {count} {object} geëxporteerd · {area} km² · {used} credits gebruikt</translation>
+    </message>
+    <message>
+        <source>Last run: {count} {object} exported · {area} km² · {used} credits used, {left} left</source>
+        <translation>Laatste run: {count} {object} geëxporteerd · {area} km² · {used} credits gebruikt, {left} over</translation>
+    </message>
+    <message>
+        <source>Last session: {count} polygon(s) exported · {area} km²</source>
+        <translation>Laatste sessie: {count} polygoon(en) geëxporteerd · {area} km²</translation>
+    </message>
+    <message>
+        <source>This zone is {area} km² - free trial zones go up to {max} km².</source>
+        <translation>Deze zone is {area} km² - gratis proefzones gaan tot {max} km².</translation>
+    </message>
+    <message>
+        <source>{area} km²</source>
+        <translation>{area} km²</translation>
+    </message>
+    <message>
+        <source>Sending to the AI...</source>
+        <translation>Verzenden naar de AI...</translation>
+    </message>
+    <message>
+        <source>Spot reserved · starting in a few seconds...</source>
+        <translation>Plek gereserveerd · start over enkele seconden...</translation>
+    </message>
+    <message>
+        <source>Spot reserved · starting soon...</source>
+        <translation>Plek gereserveerd · start binnenkort...</translation>
+    </message>
+    <message>
+        <source>Stopping - keeping the tiles already found...</source>
+        <translation>Stoppen - de al gevonden tegels worden bewaard...</translation>
+    </message>
+    <message>
+        <source>Stopping...</source>
+        <translation>Stoppen...</translation>
+    </message>
+    <message>
+        <source>The AI is starting up, almost there... {n}s</source>
+        <translation>De AI start op, bijna klaar... {n}s</translation>
+    </message>
+    <message>
+        <source>Waking up the AI... {n}s</source>
+        <translation>De AI wordt wakker gemaakt... {n}s</translation>
+    </message>
+    <message>
+        <source>You're next · starting now...</source>
+        <translation>U bent aan de beurt · start nu...</translation>
+    </message>
+    <message>
+        <source>Cancelled</source>
+        <translation>Geannuleerd</translation>
+    </message>
+    <message>
+        <source>Free trial</source>
+        <translation>Gratis proefperiode</translation>
+    </message>
+    <message>
+        <source>Select a raster layer to segment:</source>
+        <translation>Selecteer een rasterlaag om te segmenteren:</translation>
+    </message>
+    <message>
+        <source>Your {n} free detections are used up</source>
+        <translation>Je {n} gratis detecties zijn opgebruikt</translation>
+    </message>
+    <message>
+        <source>1 object found</source>
+        <translation>1 object gevonden</translation>
+    </message>
+    <message>
+        <source>Add a second example - two references detect far better than one.</source>
+        <translation>Voeg een tweede voorbeeld toe - twee referenties detecteren veel beter dan één.</translation>
+    </message>
+    <message>
+        <source>Add a second example, or type what to find.</source>
+        <translation>Voeg een tweede voorbeeld toe, of typ wat er gevonden moet worden.</translation>
+    </message>
+    <message>
+        <source>Add polygon to the layer</source>
+        <translation>Polygoon aan de laag toevoegen</translation>
+    </message>
+    <message>
+        <source>Add to</source>
+        <translation>Toevoegen aan</translation>
+    </message>
+    <message>
+        <source>Add {count} polygons to the layer</source>
+        <translation>{count} polygonen aan de laag toevoegen</translation>
+    </message>
+    <message>
+        <source>Added {count} polygon(s) to {name}.</source>
+        <translation>{count} polygoon(en) toegevoegd aan {name}.</translation>
+    </message>
+    <message>
+        <source>Adds your {n} kept polygons to the selected layer.</source>
+        <translation>Voegt je {n} bewaarde polygonen toe aan de geselecteerde laag.</translation>
+    </message>
+    <message>
+        <source>Could not add to that layer. Created a new layer instead.</source>
+        <translation>Kon niet aan die laag toevoegen. In plaats daarvan is een nieuwe laag gemaakt.</translation>
+    </message>
+    <message>
+        <source>Create a new layer, or add these polygons to an existing layer.</source>
+        <translation>Maak een nieuwe laag, of voeg deze polygonen toe aan een bestaande laag.</translation>
+    </message>
+    <message>
+        <source>Download AI model</source>
+        <translation>AI-model downloaden</translation>
+    </message>
+    <message>
+        <source>Export 1 polygon</source>
+        <translation>Export 1 polygoon</translation>
+    </message>
+    <message>
+        <source>New layer</source>
+        <translation>Nieuwe laag</translation>
+    </message>
+    <message>
+        <source>Resolving object name</source>
+        <translation>Objectnaam wordt bepaald</translation>
+    </message>
+    <message>
+        <source>That layer is no longer available. Created a new layer instead.</source>
+        <translation>Die laag is niet meer beschikbaar. In plaats daarvan is een nieuwe laag gemaakt.</translation>
+    </message>
+    <message>
+        <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
+        <translation>Dit voorbeeld is erg klein op het huidige detailniveau. Zet de detailschuif fijner of teken een groter object.</translation>
+    </message>
+    <message>
+        <source>This example is very small even at the finest detail. Draw a larger object, or it may be too small to detect.</source>
+        <translation>Dit voorbeeld is zelfs op het fijnste detail erg klein. Teken een groter object, anders is het mogelijk te klein om te detecteren.</translation>
+    </message>
+    <message>
+        <source>Your free detections are used up</source>
+        <translation>Je gratis detecties zijn opgebruikt</translation>
     </message>
 </context>
 </TS>

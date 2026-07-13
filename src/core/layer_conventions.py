@@ -103,7 +103,14 @@ def make_area_measurer(crs) -> QgsDistanceArea:
     project = QgsProject.instance()
     if crs is not None and crs.isValid():
         measurer.setSourceCrs(crs, project.transformContext())
-    measurer.setEllipsoid(project.ellipsoid() or "EPSG:7030")
+    # project.ellipsoid() returns the truthy string "NONE" (not "") when
+    # ellipsoidal measurement is disabled; both "NONE" and "" mean "measure
+    # planar", which on a geographic CRS yields degrees^2 written as area_m2.
+    # Fall back to a real ellipsoid so the geodesic areas stay truly metric.
+    ellipsoid = project.ellipsoid()
+    if not ellipsoid or ellipsoid.upper() == "NONE":
+        ellipsoid = "EPSG:7030"
+    measurer.setEllipsoid(ellipsoid)
     return measurer
 
 

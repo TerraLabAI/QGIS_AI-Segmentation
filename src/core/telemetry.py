@@ -42,6 +42,7 @@ from qgis.PyQt.QtCore import QByteArray, QSettings, QThread, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from . import telemetry_events as ev
+from .qt_compat import HttpStatusCodeAttribute
 from .telemetry_events import FLUSH_NOW, NO_CONSENT_EVENTS, REGISTRY_VERSION
 
 _TIMEOUT_MS = 5_000
@@ -61,6 +62,12 @@ _session_id = uuid.uuid4().hex
 # billed run under). Kept so the error report can quote it for support; None
 # until the first run this process. Not telemetry state, just a breadcrumb.
 _last_run_id: str | None = None
+
+# The plugin version and relay base URL come from static bundled files that
+# never change during a session; memoize them so track()/flush() do not re-read
+# metadata.txt (and .env.local) from disk on every event.
+_plugin_version_cache: str | None = None
+_base_url_cache: str | None = None
 
 
 # --- Opt-out --------------------------------------------------------------
@@ -133,7 +140,11 @@ def _base_properties() -> dict:
 
 
 def _read_plugin_version() -> str:
+    global _plugin_version_cache
+    if _plugin_version_cache is not None:
+        return _plugin_version_cache
     import os
+    version = "unknown"
     try:
         plugin_dir = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -142,26 +153,37 @@ def _read_plugin_version() -> str:
         with open(metadata_path, encoding="utf-8") as f:
             for line in f:
                 if line.startswith("version="):
-                    return line.strip().split("=", 1)[1]
+                    version = line.strip().split("=", 1)[1]
+                    break
     except Exception:
         pass  # nosec B110
-    return "unknown"
+    # Cache only a real read: a transient failure ("unknown") is retried next
+    # call rather than pinned for the whole session.
+    if version != "unknown":
+        _plugin_version_cache = version
+    return version
 
 
 def _build_base_url() -> str:
+    global _base_url_cache
+    if _base_url_cache is not None:
+        return _base_url_cache
     import os
     plugin_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     env_path = os.path.join(plugin_dir, ".env.local")
+    base = "https://terra-lab.ai"
     if os.path.isfile(env_path):
         try:
             with open(env_path, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if line.startswith("TERRALAB_BASE_URL="):
-                        return line.split("=", 1)[1].strip().strip('"').strip("'")
+                        base = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
         except Exception:
             pass  # nosec B110
-    return "https://terra-lab.ai"
+    _base_url_cache = base
+    return base
 
 
 def _get_auth_header() -> dict | None:
@@ -248,9 +270,36 @@ class _TelemetryFlushTask(QgsTask):
             err = blocker.post(req, QByteArray(payload))
             # ErrorCode 0 = NoError. Ignoring the result made run()'s single
             # retry dead code: a failed batch returned True and was dropped.
-            return int(err) == 0
+            if int(err) != 0:
+                return False
+            # A transport-level NoError still covers a 4xx/5xx response (the POST
+            # reached the relay but it rejected the batch): treat those as a
+            # failure too so run()'s single retry fires. An unreadable status
+            # (None) stays a success, since the transport itself succeeded.
+            status = self._http_status(blocker)
+            return status is None or status < 400
         except Exception:
             return False  # nosec B110 - telemetry must never break the plugin
+
+    @staticmethod
+    def _http_status(blocker) -> int | None:
+        """HTTP status of the reply, or None. Never raises (Qt can hand back a
+        non-numeric attribute that int() would choke on)."""
+        if HttpStatusCodeAttribute is None:
+            return None
+        try:
+            reply = blocker.reply()
+            if reply is None:
+                return None
+            attr = reply.attribute(HttpStatusCodeAttribute)
+        except (RuntimeError, AttributeError):
+            return None
+        if attr is None:
+            return None
+        try:
+            return int(attr)
+        except (TypeError, ValueError):
+            return None
 
     def finished(self, result: bool) -> None:
         return
@@ -753,10 +802,15 @@ def track_segmentation_run(success: bool, duration_ms: int | None = None) -> Non
     })
 
 
-def track_manual_export_done(polygon_count: int, refine_used: bool) -> None:
+def track_manual_export_done(
+    polygon_count: int, refine_used: bool, destination: str = "new"
+) -> None:
+    # destination: "new" (a fresh layer) | "append" (added to an existing
+    # layer). Additive optional property; older servers ignore it.
     track(ev.MANUAL_EXPORT_DONE, {
         "polygon_count": polygon_count,
         "refine_used": bool(refine_used),
+        "destination": destination,
     })
 
 

@@ -340,9 +340,8 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
         ).format(ext=ext), "crop_error_gdal_unavailable"
 
     ds = None
-    # rasterio bundles its own proj.db in site-packages, and we force
-    # PROJ_DATA/GDAL_DATA to point there so rasterio works in the venv.
-    # GDAL (from osgeo) has its own bundled data and will hit a
+    # rasterio bundles its own proj.db in site-packages. If anything in the
+    # process points PROJ_DATA/GDAL_DATA at it, GDAL (from osgeo) hits a
     # "DATABASE.LAYOUT.VERSION.MINOR = N whereas a number >= M is expected"
     # error when forced to read rasterio's older proj.db. Shadow the vars
     # via GDAL's own config-option table (scoped to this GDAL instance,

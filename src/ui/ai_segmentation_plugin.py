@@ -876,6 +876,8 @@ class AISegmentationPlugin(
             if self.map_tool:
                 self.map_tool.positive_click.disconnect(self._on_positive_click)
                 self.map_tool.negative_click.disconnect(self._on_negative_click)
+                self.map_tool.double_click.disconnect(self._on_canvas_double_click)
+                self.map_tool.cursor_moved.disconnect(self._on_handoff_cursor_moved)
                 self.map_tool.tool_deactivated.disconnect(self._on_tool_deactivated)
                 self.map_tool.undo_requested.disconnect(self._on_undo)
                 self.map_tool.save_polygon_requested.disconnect(self._on_save_polygon)
@@ -1066,11 +1068,9 @@ class AISegmentationPlugin(
             if still_running:
                 # The thread is blocked in a long network call (up to 110 s
                 # direct-submit timeout). Never delete a running QThread:
-                # park the last reference until finished fires.
+                # park the last reference until finished fires (the park
+                # helper also handles a thread that finished in the gap).
                 park_orphaned_worker(auto_worker)
-                if not auto_worker.isRunning():
-                    # Finished in the gap before connect: release synchronously.
-                    auto_worker.deleteLater()
             self._auto_worker = None
         self._drop_auto_tile_bridge()
         self._teardown_auto_mode()

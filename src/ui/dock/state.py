@@ -250,6 +250,11 @@ class DockStateMixin:
         self._refresh_mode_switch_visibility()
         if active:
             self._update_instructions()
+            # Recompute the append destinations once per session start (a fresh
+            # session may follow an Automatic run that just created a layer).
+            self._refresh_export_destinations()
+        else:
+            self._has_export_candidates = False
 
     def _update_button_visibility(self):
         if self._segmentation_active:
@@ -281,6 +286,12 @@ class DockStateMixin:
             # handoff, where committing goes through Back to review -> Finish (a
             # direct manual export would orphan the held Automatic review).
             self.export_button.setVisible(not self._refine_handoff)
+            # The destination row shows only when there is somewhere to append
+            # to and we are not in a refine handoff (whose commit path differs).
+            dest_widget = getattr(self, "export_dest_widget", None)
+            if dest_widget is not None:
+                dest_widget.setVisible(
+                    not self._refine_handoff and self._has_export_candidates)
             self._update_export_button_style()
 
             secondary_visible = False if self._refine_handoff else True
@@ -309,6 +320,9 @@ class DockStateMixin:
             self.refine_group.setVisible(False)
             self.save_mask_button.setVisible(False)
             self.export_button.setVisible(False)
+            dest_widget = getattr(self, "export_dest_widget", None)
+            if dest_widget is not None:
+                dest_widget.setVisible(False)
             self.undo_button.setVisible(False)
             self.stop_button.setVisible(False)
             self.secondary_buttons_widget.setVisible(False)
@@ -389,7 +403,14 @@ class DockStateMixin:
 
     def _update_export_button_style(self):
         count = self._saved_polygon_count
-        if count > 1:
+        appending = self.selected_export_destination() is not None
+        if appending:
+            if count > 1:
+                self.export_button.setText(
+                    tr("Add {count} polygons to the layer").format(count=count))
+            else:
+                self.export_button.setText(tr("Add polygon to the layer"))
+        elif count > 1:
             self.export_button.setText(
                 tr("Export {count} polygons to a layer").format(count=count)
             )
@@ -399,13 +420,75 @@ class DockStateMixin:
         if count > 0:
             self.export_button.setEnabled(True)
             self.export_button.setStyleSheet(_BTN_EXPORT_READY)
-            self.export_button.setToolTip(
-                tr("Writes a GeoPackage layer with your {n} kept polygons.").format(
-                    n=count))
+            if appending:
+                self.export_button.setToolTip(
+                    tr("Adds your {n} kept polygons to the selected layer.").format(
+                        n=count))
+            else:
+                self.export_button.setToolTip(
+                    tr("Writes a GeoPackage layer with your {n} kept polygons.").format(
+                        n=count))
         else:
             self.export_button.setEnabled(False)
             self.export_button.setStyleSheet(_BTN_EXPORT_DISABLED)
             self.export_button.setToolTip("")
+
+    def _refresh_export_destinations(self):
+        """Repopulate the export destination combo from the current project.
+
+        Ours (committed AI Segmentation outputs, most-recent first) lead the
+        list, then the user's own polygon layers. Hidden entirely when there is
+        no candidate, so the Manual export stays a single button as before.
+        Best-effort: any failure leaves the row hidden (new-layer path). Main
+        thread only (QgsProject access)."""
+        combo = getattr(self, "export_dest_combo", None)
+        widget = getattr(self, "export_dest_widget", None)
+        if combo is None or widget is None:
+            return
+        try:
+            from ...core import output_store
+            candidates = output_store.list_appendable_polygon_layers()
+        except Exception:  # degrade to new-layer only, never block a session
+            candidates = []
+
+        combo.blockSignals(True)
+        try:
+            combo.clear()
+            combo.addItem(tr("New layer"), None)
+            ai = [c for c in candidates if c.is_ai_output]
+            others = [c for c in candidates if not c.is_ai_output]
+            if ai:
+                combo.insertSeparator(combo.count())
+                for cand in ai:
+                    combo.addItem(cand.display_name, cand.layer_id)
+            if others:
+                combo.insertSeparator(combo.count())
+                for cand in others:
+                    combo.addItem(cand.display_name, cand.layer_id)
+            combo.setCurrentIndex(0)  # default: New layer (unchanged behavior)
+        finally:
+            combo.blockSignals(False)
+
+        self._has_export_candidates = bool(candidates)
+        show = self._has_export_candidates and self._segmentation_active
+        widget.setVisible(show and not self._refine_handoff)
+        self._update_export_button_style()
+
+    def _on_export_dest_changed(self, _index: int = 0):
+        """Destination combo changed: refresh the primary button's wording so
+        it states exactly what a click will do (export vs add to the layer)."""
+        self._update_export_button_style()
+
+    def selected_export_destination(self):
+        """The chosen append target's layer id, or None for a new layer.
+
+        Returns None whenever the row is hidden (no candidates) or "New layer"
+        is selected, so callers default to today's new-layer behavior."""
+        combo = getattr(self, "export_dest_combo", None)
+        if combo is None or not getattr(self, "_has_export_candidates", False):
+            return None
+        data = combo.currentData()
+        return data if data else None
 
     def set_point_count(self, positive: int, negative: int):
         self._positive_count = positive
@@ -555,7 +638,7 @@ class DockStateMixin:
                 return
             area = self._format_recap_area(area_km2)
             recap.setText(tr(
-                "Last session: {count} polygon(s) exported · {area} km2"
+                "Last session: {count} polygon(s) exported · {area} km²"
             ).format(count=count, area=area))
             recap.setVisible(True)
         except Exception:  # nosec B110 -- recap is best-effort, never break export
@@ -1074,6 +1157,22 @@ class DockStateMixin:
         # Free-tier low-credit nudge on the Start page (driven by the same
         # remaining/total the ring uses).
         self._update_auto_low_credit_note()
+        # Keep the exhausted-upsell card title's count in sync with that total.
+        self._refresh_auto_upsell_title()
+
+    def _refresh_auto_upsell_title(self):
+        """Set the exhausted-upsell card title from the fetched free-detection
+        total (the same source the credit ring uses), falling back to a
+        number-free line until the total is known."""
+        title = getattr(self, "_auto_upsell_title", None)
+        if title is None:
+            return
+        total = self._auto_credits_total
+        if total and total > 0:
+            title.setText(
+                tr("Your {n} free detections are used up").format(n=int(total)))
+        else:
+            title.setText(tr("Your free detections are used up"))
 
     def cleanup_signals(self):
         """Disconnect project signals and clean up shortcuts/timers on plugin reload."""

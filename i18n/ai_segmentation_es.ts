@@ -256,10 +256,6 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Dependencias listas, fallo en la descarga del modelo</translation>
     </message>
     <message>
-        <source>Download Model</source>
-        <translation>Descargar modelo</translation>
-    </message>
-    <message>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
@@ -325,10 +321,6 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
     </message>
 
     <!-- Segmentation Section -->
-    <message>
-        <source>Select a Raster Layer to Segment:</source>
-        <translation>Seleccione una capa ráster para segmentar:</translation>
-    </message>
     <message>
         <source>Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)</source>
         <translation>Seleccione una capa raster (GeoTIFF, WMS, tiles XYZ, etc.)</translation>
@@ -565,14 +557,6 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <source>Privacy</source>
         <translation>Privacidad</translation>
     </message>
-    <message>
-        <source>Something not working?</source>
-        <translation>¿Algo no funciona?</translation>
-    </message>
-    <message>
-        <source>Copy your logs and send them to us, we'll look into it :)</source>
-        <translation>Copia tus logs y envíanoslos, lo revisaremos :)</translation>
-    </message>
 
     <!-- Tooltip -->
     <message>
@@ -645,10 +629,6 @@ Por favor, convierta su ráster a GeoTIFF (.tif) manualmente.</translation>
 
     <!-- PyTorch DLL Error Messages -->
     <message>
-        <source>PyTorch Error</source>
-        <translation>Error de PyTorch</translation>
-    </message>
-    <message>
         <source>PyTorch cannot load on Windows</source>
         <translation>PyTorch no puede cargarse en Windows</translation>
     </message>
@@ -665,10 +645,6 @@ Por favor, descargue e instale:
 https://aka.ms/vs/17/release/vc_redist.x64.exe
 
 Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
-    </message>
-    <message>
-        <source>Prediction Error</source>
-        <translation>Error de predicción</translation>
     </message>
     <message>
         <source>Segmentation failed</source>
@@ -693,10 +669,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     <message>
         <source>Encoding Error</source>
         <translation>Error de codificacion</translation>
-    </message>
-    <message>
-        <source>Report a Bug</source>
-        <translation>Reportar un Bug</translation>
     </message>
     <message>
         <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
@@ -781,10 +753,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     <message>
         <source>Loading account info...</source>
         <translation>Cargando informacion de la cuenta...</translation>
-    </message>
-    <message>
-        <source>Canceled</source>
-        <translation>Cancelado</translation>
     </message>
 
     <!-- Corrupt checkpoint recovery (#65) -->
@@ -881,10 +849,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Activo</translation>
     </message>
     <message>
-        <source>Free Trial</source>
-        <translation>Prueba gratis</translation>
-    </message>
-    <message>
         <source>Make this map presentation-ready</source>
         <translation>Convierte este mapa en un visual de presentación</translation>
     </message>
@@ -961,28 +925,8 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Sending to the AI…</source>
-        <translation>Enviando a la IA…</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>You're next · starting now…</source>
-        <translation>Eres el siguiente · empezando ya…</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Spot reserved · starting in ~{eta}</source>
         <translation>Plaza reservada · empieza en ~{eta}</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Spot reserved · starting soon…</source>
-        <translation>Plaza reservada · empieza pronto…</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Spot reserved · starting in a few seconds…</source>
-        <translation>Plaza reservada · empieza en unos segundos…</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -1406,11 +1350,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>10,000 detections every month (~1,700 km2)</source>
-        <translation>10,000 detecciones al mes (~1,700 km2)</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
         <source>Every building, tree, or road as clean polygons</source>
         <translation>Cada edificio, árbol o carretera como polígonos limpios</translation>
     </message>
@@ -1518,11 +1457,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>The Library has ready-to-use objects.</source>
         <translation>La Biblioteca tiene objetos listos para usar.</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>1 credit ~ 0.17 km2 at default detail.</source>
-        <translation>1 crédito ~ 0.17 km2 con el detalle predeterminado.</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
@@ -2102,24 +2036,12 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Consejo: baja la Confianza para revelar más detecciones, súbela para conservar solo las mejores.</translation>
     </message>
     <message>
-        <source>This zone is {area} km2 - free trial zones go up to {max} km2.</source>
-        <translation>Esta zona tiene {area} km2 - las zonas de la prueba gratuita llegan hasta {max} km2.</translation>
-    </message>
-    <message>
         <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
         <translation>Dibuja una zona más pequeña, o &lt;a href=&quot;{url}&quot;&gt;suscríbete&lt;/a&gt; para segmentar áreas de cualquier tamaño.</translation>
     </message>
     <message>
         <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
         <translation>Se está agotando: quedan {n} detecciones gratuitas. &lt;a href=&quot;{url}&quot;&gt;Suscríbete&lt;/a&gt; para continuar.</translation>
-    </message>
-    <message>
-        <source>Last run: {count} {object} exported · {area} km2 · {used} credits used, {left} left</source>
-        <translation>Última ejecución: {count} {object} exportado(s) · {area} km2 · {used} créditos usados, {left} restantes</translation>
-    </message>
-    <message>
-        <source>Last run: {count} {object} exported · {area} km2 · {used} credits used</source>
-        <translation>Última ejecución: {count} {object} exportado(s) · {area} km2 · {used} créditos usados</translation>
     </message>
     <message>
         <source>Then segment any imagery: point and click, or fully automatic.</source>
@@ -2322,10 +2244,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>Kept as distinct objects.</source>
         <translation>Mantenido como objetos distintos.</translation>
-    </message>
-    <message>
-        <source>Last session: {count} polygon(s) exported · {area} km2</source>
-        <translation>Última sesión: {count} polígono(s) exportado(s) · {area} km2</translation>
     </message>
     <message>
         <source>Left-click adds what you click to the shape</source>
@@ -2556,14 +2474,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Iniciado en {pct}% para ajustarse a las puntuaciones de esta ejecución - sube para acotar.</translation>
     </message>
     <message>
-        <source>Stopping - keeping the tiles already found…</source>
-        <translation>Deteniendo - conservando los tiles ya encontrados…</translation>
-    </message>
-    <message>
-        <source>Stopping…</source>
-        <translation>Deteniendo…</translation>
-    </message>
-    <message>
         <source>Support code: {code}</source>
         <translation>Código de soporte: {code}</translation>
     </message>
@@ -2574,10 +2484,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>The AI finds every object similar to your example.</source>
         <translation>La IA encuentra todos los objetos similares a tu ejemplo.</translation>
-    </message>
-    <message>
-        <source>The AI is starting up, almost there… {n}s</source>
-        <translation>La IA se está iniciando, casi listo… {n}s</translation>
     </message>
     <message>
         <source>The AI service is waking up. Holding your spot…</source>
@@ -2684,20 +2590,12 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Ver detecciones como:</translation>
     </message>
     <message>
-        <source>Waking up the AI… {n}s</source>
-        <translation>Despertando la IA… {n}s</translation>
-    </message>
-    <message>
         <source>We read every message.</source>
         <translation>Leemos todos los mensajes.</translation>
     </message>
     <message>
         <source>Write to us:</source>
         <translation>Escríbenos:</translation>
-    </message>
-    <message>
-        <source>Your 300 free detections are used up</source>
-        <translation>Tus 300 detecciones gratuitas se han agotado</translation>
     </message>
     <message>
         <source>Your reference</source>
@@ -2726,10 +2624,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>your object</source>
         <translation>tu objeto</translation>
-    </message>
-    <message>
-        <source>{area} km2</source>
-        <translation>{area} km2</translation>
     </message>
     <message>
         <source>{n} detections selected</source>
@@ -2762,6 +2656,155 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>{used} credits used</source>
         <translation>{used} créditos usados</translation>
+    </message>
+    <!-- v2.1.7 sync: append-to-layer export, singular forms, small-example guidance (2026-07-13) -->
+    <message>
+        <source>1 credit ~ 0.17 km² at default detail.</source>
+        <translation>1 crédito ~ 0.17 km² con el detalle predeterminado.</translation>
+    </message>
+    <message>
+        <source>10,000 detections every month (~1,700 km²)</source>
+        <translation>10,000 detecciones al mes (~1,700 km²)</translation>
+    </message>
+    <message>
+        <source>Last run: {count} {object} exported · {area} km² · {used} credits used</source>
+        <translation>Última ejecución: {count} {object} exportado(s) · {area} km² · {used} créditos usados</translation>
+    </message>
+    <message>
+        <source>Last run: {count} {object} exported · {area} km² · {used} credits used, {left} left</source>
+        <translation>Última ejecución: {count} {object} exportado(s) · {area} km² · {used} créditos usados, {left} restantes</translation>
+    </message>
+    <message>
+        <source>Last session: {count} polygon(s) exported · {area} km²</source>
+        <translation>Última sesión: {count} polígono(s) exportado(s) · {area} km²</translation>
+    </message>
+    <message>
+        <source>This zone is {area} km² - free trial zones go up to {max} km².</source>
+        <translation>Esta zona tiene {area} km² - las zonas de la prueba gratuita llegan hasta {max} km².</translation>
+    </message>
+    <message>
+        <source>{area} km²</source>
+        <translation>{area} km²</translation>
+    </message>
+    <message>
+        <source>Sending to the AI...</source>
+        <translation>Enviando a la IA...</translation>
+    </message>
+    <message>
+        <source>Spot reserved · starting in a few seconds...</source>
+        <translation>Plaza reservada · empieza en unos segundos...</translation>
+    </message>
+    <message>
+        <source>Spot reserved · starting soon...</source>
+        <translation>Plaza reservada · empieza pronto...</translation>
+    </message>
+    <message>
+        <source>Stopping - keeping the tiles already found...</source>
+        <translation>Deteniendo - conservando los tiles ya encontrados...</translation>
+    </message>
+    <message>
+        <source>Stopping...</source>
+        <translation>Deteniendo...</translation>
+    </message>
+    <message>
+        <source>The AI is starting up, almost there... {n}s</source>
+        <translation>La IA se está iniciando, casi listo... {n}s</translation>
+    </message>
+    <message>
+        <source>Waking up the AI... {n}s</source>
+        <translation>Despertando la IA... {n}s</translation>
+    </message>
+    <message>
+        <source>You're next · starting now...</source>
+        <translation>Eres el siguiente · empezando ya...</translation>
+    </message>
+    <message>
+        <source>Cancelled</source>
+        <translation>Cancelado</translation>
+    </message>
+    <message>
+        <source>Free trial</source>
+        <translation>Prueba gratis</translation>
+    </message>
+    <message>
+        <source>Select a raster layer to segment:</source>
+        <translation>Seleccione una capa ráster para segmentar:</translation>
+    </message>
+    <message>
+        <source>Your {n} free detections are used up</source>
+        <translation>Tus {n} detecciones gratuitas se han agotado</translation>
+    </message>
+    <message>
+        <source>1 object found</source>
+        <translation>1 objeto encontrado</translation>
+    </message>
+    <message>
+        <source>Add a second example - two references detect far better than one.</source>
+        <translation>Añade un segundo ejemplo: dos referencias detectan mucho mejor que una.</translation>
+    </message>
+    <message>
+        <source>Add a second example, or type what to find.</source>
+        <translation>Añade un segundo ejemplo o escribe qué buscar.</translation>
+    </message>
+    <message>
+        <source>Add polygon to the layer</source>
+        <translation>Añadir polígono a la capa</translation>
+    </message>
+    <message>
+        <source>Add to</source>
+        <translation>Añadir a</translation>
+    </message>
+    <message>
+        <source>Add {count} polygons to the layer</source>
+        <translation>Añadir {count} polígonos a la capa</translation>
+    </message>
+    <message>
+        <source>Added {count} polygon(s) to {name}.</source>
+        <translation>{count} polígono(s) añadido(s) a {name}.</translation>
+    </message>
+    <message>
+        <source>Adds your {n} kept polygons to the selected layer.</source>
+        <translation>Añade tus {n} polígonos conservados a la capa seleccionada.</translation>
+    </message>
+    <message>
+        <source>Could not add to that layer. Created a new layer instead.</source>
+        <translation>No se pudo añadir a esa capa. Se creó una capa nueva en su lugar.</translation>
+    </message>
+    <message>
+        <source>Create a new layer, or add these polygons to an existing layer.</source>
+        <translation>Crea una capa nueva o añade estos polígonos a una capa existente.</translation>
+    </message>
+    <message>
+        <source>Download AI model</source>
+        <translation>Descargar modelo de IA</translation>
+    </message>
+    <message>
+        <source>Export 1 polygon</source>
+        <translation>Exportar 1 polígono</translation>
+    </message>
+    <message>
+        <source>New layer</source>
+        <translation>Capa nueva</translation>
+    </message>
+    <message>
+        <source>Resolving object name</source>
+        <translation>Resolviendo el nombre del objeto</translation>
+    </message>
+    <message>
+        <source>That layer is no longer available. Created a new layer instead.</source>
+        <translation>Esa capa ya no está disponible. Se creó una capa nueva en su lugar.</translation>
+    </message>
+    <message>
+        <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
+        <translation>Este ejemplo es muy pequeño al nivel de detalle actual. Afina el control de detalle o dibuja un objeto más grande.</translation>
+    </message>
+    <message>
+        <source>This example is very small even at the finest detail. Draw a larger object, or it may be too small to detect.</source>
+        <translation>Este ejemplo es muy pequeño incluso con el detalle más fino. Dibuja un objeto más grande, o puede que sea demasiado pequeño para detectarlo.</translation>
+    </message>
+    <message>
+        <source>Your free detections are used up</source>
+        <translation>Tus detecciones gratuitas se han agotado</translation>
     </message>
 </context>
 </TS>

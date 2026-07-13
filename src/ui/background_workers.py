@@ -5,6 +5,7 @@ QThread already owns a built-in `finished` signal that fires when the OS thread
 actually returns. Shadowing it would hide that lifecycle signal, which unload()
 relies on to safely park a still-running worker (see park_orphaned_worker).
 """
+from __future__ import annotations
 
 from qgis.PyQt.QtCore import QThread, pyqtSignal
 

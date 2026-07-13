@@ -384,7 +384,8 @@ def download_checkpoint(
             if download_state.get("timeout_reason"):
                 reply.abort()
                 reply.deleteLater()
-                download_state["file"].close()
+                if download_state["file"] is not None:
+                    download_state["file"].close()
                 download_state["file"] = None
                 last_error = f"Download timed out ({download_state['timeout_reason']})"
                 if attempt < max_retries:
@@ -392,15 +393,34 @@ def download_checkpoint(
                 continue
 
             # Check if server returned 416 (range not satisfiable)
-            # This means the partial file is invalid, restart from scratch
             status_code = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
             if status_code == 416:
+                if download_state["file"] is not None:
+                    download_state["file"].close()
+                download_state["file"] = None
+                reply.deleteLater()
+                # A range at/after the file end means the temp file is already
+                # complete. If it verifies, only the final rename is left (a
+                # prior _replace_with_retry lost to a file lock); retry that
+                # instead of discarding and re-downloading a good, verified file.
+                if os.path.exists(temp_path) and verify_checkpoint_hash(temp_path):
+                    try:
+                        _replace_with_retry(temp_path, checkpoint_path)
+                    except OSError as replace_err:
+                        last_error = f"Could not finalize checkpoint: {replace_err}"
+                        if attempt < max_retries:
+                            time.sleep(min(5 * (2 ** (attempt - 1)), 120))
+                        continue
+                    if progress_callback:
+                        progress_callback(100, "Checkpoint downloaded successfully!")
+                    QgsMessageLog.logMessage(
+                        f"Checkpoint downloaded to: {checkpoint_path}",
+                        "AI Segmentation", level=Qgis.MessageLevel.Success)
+                    return True, "Checkpoint downloaded and verified"
+                # The partial file is invalid: restart from scratch.
                 QgsMessageLog.logMessage(
                     "Server rejected range request, restarting download",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
-                download_state["file"].close()
-                download_state["file"] = None
-                reply.deleteLater()
                 try:
                     os.remove(temp_path)
                 except OSError:
@@ -416,7 +436,8 @@ def download_checkpoint(
                     f"Checkpoint download attempt {attempt}/{max_retries} failed: {last_error}",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
                 reply.deleteLater()
-                download_state["file"].close()
+                if download_state["file"] is not None:
+                    download_state["file"].close()
                 download_state["file"] = None
                 if attempt < max_retries:
                     wait = min(5 * (2 ** (attempt - 1)), 120)
@@ -428,9 +449,10 @@ def download_checkpoint(
 
             # Flush remaining data
             remaining = reply.readAll()
-            if remaining:
+            if remaining and download_state["file"] is not None:
                 download_state["file"].write(remaining.data())
-            download_state["file"].close()
+            if download_state["file"] is not None:
+                download_state["file"].close()
             download_state["file"] = None
             reply.deleteLater()
 

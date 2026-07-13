@@ -24,11 +24,15 @@ from typing import NamedTuple
 
 from qgis.core import (
     Qgis,
+    QgsCoordinateTransform,
+    QgsFeature,
+    QgsGeometry,
     QgsLayerTree,
     QgsMapLayer,
     QgsMessageLog,
     QgsProject,
     QgsProviderRegistry,
+    QgsVectorDataProvider,
     QgsVectorFileWriter,
     QgsVectorLayer,
 )
@@ -36,6 +40,22 @@ from qgis.PyQt.QtCore import QDate, QLocale
 from qgis.PyQt.QtGui import QColor
 
 from .i18n import tr
+from .qt_compat import PolygonGeometry
+
+# Provider capability flag, resolved defensively: the enum is scoped
+# (QgsVectorDataProvider.Capability.AddFeatures) on newer QGIS/Qt6 and
+# unscoped on QGIS 3.x. Used to keep the append destination list to layers
+# that actually accept new features.
+try:
+    _CAP_ADD_FEATURES = QgsVectorDataProvider.Capability.AddFeatures
+except AttributeError:  # pragma: no cover - QGIS 3.x unscoped enum
+    _CAP_ADD_FEATURES = QgsVectorDataProvider.AddFeatures
+
+# Custom property stamped on every committed layer with its creation epoch, so
+# the append destination list can order our own outputs most-recent-first
+# (the just-finished Automatic run is the obvious append target). Survives a
+# project save/reload since custom properties serialize into the .qgz.
+_COMMITTED_AT_PROP = "ai_segmentation/committed_at"
 
 GPKG_FILENAME = "ai_segmentation.gpkg"
 # Brand term, deliberately not translated (product names stay English).
@@ -347,7 +367,14 @@ def _raster_subgroup(parent_group, source_name: str | None):
     name = (source_name or "").strip()
     if not name:
         return parent_group
-    sub = parent_group.findGroup(name)
+    # Scan only direct children (findGroup recurses the whole subtree and would
+    # adopt an unrelated same-named group nested anywhere), mirroring
+    # _find_output_group's non-recursive lookup.
+    sub = None
+    for child in parent_group.children():
+        if QgsLayerTree.isGroup(child) and child.name() == name:
+            sub = child
+            break
     if sub is None:
         # Insert after any existing sub-groups so new rasters append at the
         # bottom while their own runs still stack newest-first inside.
@@ -364,6 +391,10 @@ def add_committed_layer(layer, source_name: str | None = None) -> None:
     directly in the top group (legacy behavior).
     """
     QgsProject.instance().addMapLayer(layer, False)
+    try:
+        layer.setCustomProperty(_COMMITTED_AT_PROP, time.time())
+    except Exception:  # nosec B110 - recency stamp is a convenience, never block
+        pass
     top = ensure_output_group()
     group = _raster_subgroup(top, source_name)
     node = group.insertLayer(0, layer)
@@ -432,3 +463,158 @@ def sweep_stale_temp_layers() -> None:
             project.removeMapLayers(stale)
     except Exception:  # nosec B110
         pass
+
+
+# ---------------------------------------------------------------------------
+# Append to an existing layer (incremental digitization). The killer path is a
+# user who ran an Automatic detection (which committed a polygon layer) and now
+# wants to add a few hand-drawn shapes to that SAME layer instead of a new one.
+# ---------------------------------------------------------------------------
+
+class AppendCandidate(NamedTuple):
+    """One layer the current run could be appended to."""
+
+    layer_id: str
+    display_name: str
+    is_ai_output: bool
+
+
+class AppendResult(NamedTuple):
+    """Outcome of append_run_to_layer: how many features landed, and why not."""
+
+    added: int
+    error_message: str
+
+
+def is_appendable_polygon_layer(layer) -> bool:
+    """True when ``layer`` is a valid, writable, polygon vector layer a run can
+    be appended to. Excludes our own on-screen scratch layers (flagged temp)
+    and read-only / non-feature-adding providers. Main-thread only."""
+    if not isinstance(layer, QgsVectorLayer) or not layer.isValid():
+        return False
+    try:
+        if layer.geometryType() != PolygonGeometry:
+            return False
+        if layer.customProperty("ai_segmentation/temp"):
+            return False
+        if layer.readOnly():
+            return False
+        provider = layer.dataProvider()
+        if provider is None:
+            return False
+        return bool(provider.capabilities() & _CAP_ADD_FEATURES)
+    except Exception:  # nosec B110 - a probing failure just excludes the layer
+        return False
+
+
+def list_appendable_polygon_layers() -> list[AppendCandidate]:
+    """Editable polygon layers of the project, ours first (most-recent first),
+    then the user's own polygon layers by name. Best-effort, main-thread only:
+    any failure yields an empty list so the caller degrades to a new layer.
+    """
+    try:
+        project = QgsProject.instance()
+        group = _find_output_group(project.layerTreeRoot())
+        ours: set[str] = set()
+        if group is not None:
+            for node in group.findLayers():
+                layer = node.layer()
+                if layer is not None:
+                    ours.add(layer.id())
+        ai_cands: list[tuple[float, AppendCandidate]] = []
+        other_cands: list[AppendCandidate] = []
+        for layer_id, layer in project.mapLayers().items():
+            if not is_appendable_polygon_layer(layer):
+                continue
+            name = layer.name()
+            if layer_id in ours:
+                try:
+                    stamp = float(layer.customProperty(_COMMITTED_AT_PROP) or 0.0)
+                except (TypeError, ValueError):
+                    stamp = 0.0
+                ai_cands.append((stamp, AppendCandidate(layer_id, name, True)))
+            else:
+                other_cands.append(AppendCandidate(layer_id, name, False))
+        ai_cands.sort(key=lambda item: item[0], reverse=True)
+        other_cands.sort(key=lambda cand: cand.display_name.lower())
+        return [cand for _, cand in ai_cands] + other_cands
+    except Exception:  # nosec B110
+        return []
+
+
+def _coerce_to_layer_type(geom: QgsGeometry, target_layer) -> list[QgsGeometry]:
+    """Coerce a repaired polygon geometry to the target layer's WKB type,
+    returning one or more non-empty geometries. Uses ``coerceToType`` so a
+    single-part Polygon target and a MultiPolygon target both accept the
+    result; falls back to a MultiPolygon coercion when unavailable."""
+    from .layer_conventions import to_multipolygon
+
+    try:
+        parts = geom.coerceToType(target_layer.wkbType())
+    except Exception:  # nosec B110 - fall back to the MultiPolygon guard below
+        parts = None
+    if parts:
+        return [g for g in parts if g is not None and not g.isEmpty()]
+    coerced = to_multipolygon(geom)
+    return [coerced] if coerced is not None and not coerced.isEmpty() else []
+
+
+def append_run_to_layer(target_layer, memory_layer, *, source_name: str) -> AppendResult:
+    """Append every feature of ``memory_layer`` into ``target_layer``.
+
+    Reprojects to the target CRS when it differs, matches the target's schema
+    BY FIELD NAME (label / area_m2, plus class / score / perimeter_m when the
+    target has them; a hand-drawn shape has no score, so it stays NULL), repairs
+    each geometry, and writes through the provider (or the open edit buffer when
+    the layer is already being edited). Best-effort and fail-open: any error
+    returns ``added=0`` with a message so the caller can create a new layer
+    instead of losing the work, and the target's style / metadata are never
+    touched. Main-thread only."""
+    from .layer_conventions import attribute_values_for_fields, repair_polygon
+
+    try:
+        target_fields = target_layer.fields()
+        target_crs = target_layer.crs()
+        src_crs = memory_layer.crs()
+        transform = None
+        if src_crs.isValid() and target_crs.isValid() and src_crs != target_crs:
+            transform = QgsCoordinateTransform(src_crs, target_crs, QgsProject.instance())
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+        features: list[QgsFeature] = []
+        for feat in memory_layer.getFeatures():
+            geom = feat.geometry()
+            if geom is None or geom.isEmpty():
+                continue
+            g = QgsGeometry(geom)
+            if transform is not None:
+                # transform() raises QgsCsException on an unrecoverable CRS
+                # failure; caught below so a broken transform never crashes.
+                g.transform(transform)
+            g = repair_polygon(g) or g
+            for coerced in _coerce_to_layer_type(g, target_layer):
+                nf = QgsFeature(target_fields)
+                nf.setGeometry(coerced)
+                nf.setAttributes(attribute_values_for_fields(
+                    target_fields, coerced, target_crs, source_name, timestamp))
+                features.append(nf)
+
+        if not features:
+            return AppendResult(0, "no valid geometries to append")
+
+        # Provider-level write when the layer is idle (persists straight to the
+        # file, like the MCP path); the edit buffer when the user has it open,
+        # so our features integrate with their session instead of writing behind
+        # an unsaved edit buffer.
+        if target_layer.isEditable():
+            ok = target_layer.addFeatures(features)
+        else:
+            ok, _ = target_layer.dataProvider().addFeatures(features)
+        if not ok:
+            return AppendResult(0, "the layer provider rejected the features")
+
+        target_layer.updateExtents()
+        target_layer.triggerRepaint()
+        return AppendResult(len(features), "")
+    except Exception as exc:  # nosec B110 - fail open, caller falls back
+        return AppendResult(0, str(exc))

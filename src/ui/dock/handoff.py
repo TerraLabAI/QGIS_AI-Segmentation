@@ -91,7 +91,7 @@ class DockHandoffMixin:
         self._handoff_instruction.setWordWrap(True)
         col.addWidget(self._handoff_instruction)
 
-        # Editing header (quiet uppercase label) leads the actions while a
+        # Editing header (quiet normal-case label) leads the actions while a
         # shape is open; the plain title below carries the selected state.
         self._handoff_micro_header = _micro_header(tr("Editing this shape"))
         col.addWidget(self._handoff_micro_header)
@@ -365,7 +365,7 @@ class DockHandoffMixin:
                            tr("Preparing Manual mode, loading the local model..."))
             editing = False
         elif editing:
-            # The micro-header ("EDITING THIS SHAPE") leads the click legend
+            # The micro-header ("Editing this shape") leads the click legend
             # and the actions; nothing else competes.
             show_legend = True
             show_save = show_undo = show_delete = True

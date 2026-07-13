@@ -260,6 +260,10 @@ class AISegmentationDockWidget(
         self._segmentation_active = False
         self._has_mask = False
         self._saved_polygon_count = 0
+        # True once a Manual session has candidate layers to append to, so the
+        # export destination row is shown; when False the Manual export flow
+        # looks exactly like before (single "Export to a layer" button).
+        self._has_export_candidates = False
         self._positive_count = 0
         self._negative_count = 0
         self._plugin_activated = is_plugin_activated()

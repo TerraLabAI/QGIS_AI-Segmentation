@@ -219,6 +219,15 @@ class ManualHandoffMixin:
                     self.dock_widget.set_refine_handoff_preparing(True)
                 except (RuntimeError, AttributeError):
                     pass
+            # The model load is one-shot: once _ensure_interactive_setup has run,
+            # a load that FAILED (or was never kicked off) is never retried, so
+            # the deferred import would wait on "Preparing Manual mode" forever.
+            # On the NEXT event tick (after the first-time setup, itself a
+            # singleShot, has had its turn to start its own worker) restart the
+            # load only if nothing is in flight, so this never races or double-
+            # starts it (see _retry_predictor_load_for_handoff).
+            from qgis.PyQt.QtCore import QTimer
+            QTimer.singleShot(0, self._retry_predictor_load_for_handoff)
             return
         self._pending_refine_import = False
         # Sync the (locked, grayed) manual combo to the handoff raster so the
@@ -232,23 +241,29 @@ class ManualHandoffMixin:
             pass
         # Full manual setup (this calls _reset_session, clearing saved_polygons).
         self._on_start_segmentation(layer)
-        # Inherit the review's CURRENT refine settings for the Manual panel:
-        # the handoff refines the SAME objects the Automatic review just
-        # tuned (buildings keep holes filled + right angles, vegetation keeps
-        # round corners), so the panel must not snap back to the generic
-        # Manual defaults - including any switch the user flipped in the
-        # review, not just the run's preset. Simplify/expand keep theirs
-        # (Manual px is the 1024 SAM mask grid, a different scale). Set
-        # BEFORE the import below so every imported entry records these
-        # values as its refine baseline.
+        # Inherit the review's CURRENT refine settings BEFORE the import so every
+        # imported entry records them as its refine baseline (see
+        # _seed_refine_from_review).
+        self._seed_refine_from_review()
+        self._import_review_geoms_as_saved(review)
+
+    def _seed_refine_from_review(self) -> None:
+        """Seed the Manual refine panel from the Automatic review's CURRENT
+        widget values, so a Refine-in-Manual handoff refines the SAME objects
+        with the SAME settings the review just tuned (buildings keep holes
+        filled + right angles, vegetation keeps round corners) instead of
+        snapping back to the generic Manual defaults, including any switch the
+        user flipped in the review, not just the run's preset. Simplify/expand
+        keep their Manual values (Manual px is the 1024 SAM mask grid, a
+        different scale); Min/Max size carry over 1:1 (both sides are true
+        ground m2). Must run AFTER _on_start_segmentation (which resets the
+        session) and BEFORE the import. Shared by the direct handoff and the
+        deferred (predictor-still-loading) completion in _on_predictor_loaded."""
         try:
             params = self._widget_review_params()
             self._refine_smooth = 5 if params.get("smooth") else 0
             self._refine_fill_holes = bool(params.get("fill_holes"))
             self._refine_ortho = bool(params.get("ortho"))
-            # Min/Max size carry over 1:1 (both sides are true ground m2), so
-            # the Shape settings arrive calibrated exactly like the review the
-            # user just tuned.
             self._refine_min_size_m2 = max(0.0, float(params.get("min_a") or 0.0))
             self._refine_max_size_m2 = max(0.0, float(params.get("max_a") or 0.0))
             self.dock_widget.set_refine_values(
@@ -259,7 +274,31 @@ class ManualHandoffMixin:
                 self._refine_min_size_m2, self._refine_max_size_m2)
         except (RuntimeError, AttributeError):
             pass
-        self._import_review_geoms_as_saved(review)
+
+    def _retry_predictor_load_for_handoff(self) -> None:
+        """Restart a stalled model load for a deferred Refine handoff.
+
+        Runs one tick after the handoff defers on a None predictor. The load is
+        one-shot (a failed attempt is never retried by _ensure_interactive_setup),
+        so without this a prior load failure strands the handoff on "Preparing
+        Manual mode" forever. No-op unless the handoff is still pending, the
+        predictor is still down, and NO install/download/verify/load/startup-check
+        worker is running: each of those already ends in a load that completes
+        the import from _on_predictor_loaded, so skipping while one runs also
+        guards against double-starting the first-time setup's own load."""
+        if not (self._pending_refine_import and self._refine_handoff_active):
+            return
+        if self.predictor is not None:
+            return
+        for w in (self.deps_install_worker, self._verify_worker,
+                  self.download_worker, self._predictor_worker,
+                  self._startup_check_worker):
+            try:
+                if w is not None and w.isRunning():
+                    return
+            except RuntimeError:
+                continue
+        self._load_predictor()
 
     def _import_review_geoms_as_saved(self, review) -> None:
         """Load review geometries (raster CRS) into saved_polygons as 'pending'
@@ -524,13 +563,17 @@ class ManualHandoffMixin:
         The held _auto_review is left for its own teardown path to handle."""
         if not self._refine_handoff_active:
             return
-        self._refine_handoff_active = False
         self._auto_protected_geoms = []
         self._auto_manual_removed = set()
         self._handoff_source_layer = None
         self._set_exemplar_bands_visible(True)
         self._set_auto_zone_overlays_visible(True)
+        # Tear the manual session down BEFORE clearing the handoff flag: the
+        # teardown's _reset_session suppresses the manual_session_summary event
+        # only while the flag is still set, so clearing it first fires a spurious
+        # summary for this discarded (never-committed) handoff.
         self._teardown_manual_session()
+        self._refine_handoff_active = False
         if self.dock_widget:
             try:
                 self.dock_widget._refine_handoff = False

@@ -24,6 +24,7 @@ from .shared import (
     _FIELD_TYPE_STRING,
     _add_features_fast,
     _apply_fast_render,
+    park_orphaned_worker,
 )
 
 
@@ -82,6 +83,12 @@ class AutoLifecycleMixin:
         """
         self._autosave_pending_auto_review()
         self._auto_review = None
+        # Supersede any in-flight cooperative finalize/reslice (same gen-bump +
+        # state-null as _reset_auto_live_pipeline): every caller here is leaving
+        # the run (Exit, zone drop, mode switch, new run, unload), so a late
+        # _complete_auto_finalize must not resurrect a review over the reset flow.
+        self._auto_finalize_gen += 1
+        self._auto_finalize_state = None
         self._remove_auto_selection_layer()
         self._auto_protected_geoms = []
         self._auto_manual_removed = set()
@@ -167,31 +174,33 @@ class AutoLifecycleMixin:
         # (mirrors the credits-exhausted tail) instead of being dropped.
         error_class = self._classify_auto_error(msg)
         is_auth = error_class == "AUTH"
+        # Build the user-facing banner once so it can be reused for a persistent
+        # message-bar warning when partial results open the review (opening the
+        # review swaps the dock status line to idle, wiping this banner).
+        # Be honest about whose fault it is: only a real connectivity failure
+        # blames the user's connection. A server or timeout is ours, so we say so
+        # and point at the right next step.
+        if is_auth:
+            banner = tr("Session expired. Sign in again to continue.")
+        elif error_class == "SERVER":
+            banner = tr("The detection service had a problem. Your credits "
+                        "for the failed tiles were refunded. Please try again.")
+        elif error_class == "TIMEOUT":
+            banner = tr("The detection service is busy right now. "
+                        "Please try again in a moment.")
+        elif error_class == "NETWORK":
+            banner = tr("Detection failed. Check your connection and try again.")
+        else:
+            banner = tr("Detection failed. Please try again.")
+        # Our-fault failures (server/timeout/unknown) get a short support code the
+        # user can quote: it is the head of the run id the server archives this
+        # run under, so support can match the report to the exact run.
+        code = (self._auto_run_id or "")[:8]
+        if code and error_class in ("SERVER", "TIMEOUT", "UNKNOWN"):
+            banner = banner + "\n" + tr("Support code: {code}").format(code=code)
         if self.dock_widget:
             try:
                 self.dock_widget.set_auto_run_active(False)
-                # Be honest about whose fault it is: only a real connectivity
-                # failure blames the user's connection. A server or timeout is
-                # ours, so we say so and point at the right next step.
-                if is_auth:
-                    banner = tr("Session expired. Sign in again to continue.")
-                elif error_class == "SERVER":
-                    banner = tr("The detection service had a problem. Your credits "
-                                "for the failed tiles were refunded. Please try again.")
-                elif error_class == "TIMEOUT":
-                    banner = tr("The detection service is busy right now. "
-                                "Please try again in a moment.")
-                elif error_class == "NETWORK":
-                    banner = tr("Detection failed. Check your connection and try again.")
-                else:
-                    banner = tr("Detection failed. Please try again.")
-                # Our-fault failures (server/timeout/unknown) get a short support
-                # code the user can quote: it is the head of the run id the server
-                # archives this run under, so support can match the report to the
-                # exact run without a manual hunt.
-                code = (self._auto_run_id or "")[:8]
-                if code and error_class in ("SERVER", "TIMEOUT", "UNKNOWN"):
-                    banner = banner + "\n" + tr("Support code: {code}").format(code=code)
                 self.dock_widget.set_auto_status("error", banner)
             except (RuntimeError, AttributeError):
                 pass
@@ -220,6 +229,11 @@ class AutoLifecycleMixin:
         except Exception:
             pass  # nosec B110
         worker = self._auto_worker
+        # A terminal signal fires from inside the worker's run loop, which may
+        # not have returned yet: dropping the last ref to a still-running QThread
+        # aborts QGIS, so park a strong ref (released on finished) first.
+        if worker is not None and worker.isRunning():
+            park_orphaned_worker(worker)
         self._auto_worker = None
         self._drop_auto_tile_bridge()
         self._capture_auto_mask_gsd(worker)
@@ -231,8 +245,25 @@ class AutoLifecycleMixin:
             # user-cancel and auth paths. Only the account panel below stays
             # auth-specific.
             self._finalize_auto_results(tiles_succeeded)
+            # Opening the review swaps the dock status banner to idle, wiping the
+            # error line. Re-post it to the message bar (AUTH pushes its own
+            # below) so a salvaged-into-review failure still explains what
+            # happened and keeps the quotable support code on screen.
+            if not is_auth:
+                try:
+                    self.iface.messageBar().pushWarning("AI Segmentation", banner)
+                except (RuntimeError, AttributeError):
+                    pass
         else:
             self._remove_auto_selection_layer()
+            # Zero-success failure lands back on the prompt step with the zone
+            # kept: the run cleared the tile-grid preview but the cost label still
+            # shows the old estimate. Redraw the grid + cost (interactive only).
+            if self.dock_widget and not self._auto_headless_run:
+                try:
+                    self._update_credit_estimate()
+                except (RuntimeError, AttributeError):
+                    pass
         if is_auth and not self._auto_headless_run:
             # Persist the message (the review wind-down clears the status
             # banner) and open the account panel so signing in is one click.
@@ -255,6 +286,11 @@ class AutoLifecycleMixin:
         # partial results must not vanish: route them straight into the review
         # so the user can refine and Finish them (the resume flow was removed).
         worker = self._auto_worker
+        # The exhausted terminal fires from the worker's run loop, which may not
+        # have returned yet: park a strong ref before dropping ours so a live
+        # QThread is never garbage-collected (which aborts QGIS).
+        if worker is not None and worker.isRunning():
+            park_orphaned_worker(worker)
         self._auto_worker = None
         self._drop_auto_tile_bridge()
         self._capture_auto_mask_gsd(worker)
@@ -309,6 +345,11 @@ class AutoLifecycleMixin:
             self._auto_worker = None
             self._drop_auto_tile_bridge()
             return
+        # The cancelled signal fires from the worker's run loop, which may still
+        # be winding down: park a strong ref before dropping ours so a live
+        # QThread is never garbage-collected (which aborts QGIS).
+        if worker is not None and worker.isRunning():
+            park_orphaned_worker(worker)
         self._auto_worker = None
         self._drop_auto_tile_bridge()
         self._capture_auto_mask_gsd(worker)
@@ -558,7 +599,7 @@ class AutoLifecycleMixin:
             prompt=prompt_label,
             detail=(self._auto_run_ctx or {}).get("detail"),
             confidence=self._auto_confidence,
-            created_iso=datetime.now().isoformat(timespec="seconds"),
+            created_iso=datetime.now().astimezone().isoformat(timespec="seconds"),
             plugin_version=plugin_version,
         )
         result_layer.triggerRepaint()

@@ -172,7 +172,7 @@ def is_sandboxed_linux() -> bool:
 def is_unsupported_windows() -> tuple[bool, str]:
     """Detect Windows versions below the standalone Python's official support.
 
-    astral-sh/python-build-standalone targets Windows 8+ — Windows 7 binaries
+    astral-sh/python-build-standalone targets Windows 8+. Windows 7 binaries
     boot but commonly miss runtime APIs (e.g. ssl module loading fails because
     schannel-related symbols are absent in older kernel32), producing the
     "Can't connect to HTTPS URL because the SSL module is not available"
@@ -190,6 +190,24 @@ def is_unsupported_windows() -> tuple[bool, str]:
             "Please upgrade to Windows 10 or 11."
         )
     return False, ""
+
+
+def is_unsupported_python_version() -> tuple[bool, str]:
+    """Detect a QGIS Python major.minor with no matching standalone build.
+
+    We only ship interpreters for the versions in PYTHON_VERSIONS. Installing a
+    mismatched standalone would pull ABI-incompatible wheels that are then
+    imported in-process (numpy/rasterio/scipy on the polygon path), which can
+    crash all of QGIS. Surface a clean "not supported" message here instead,
+    mirroring is_unsupported_windows so the install path fails fast.
+    """
+    major, minor = get_qgis_python_version()
+    if (major, minor) in PYTHON_VERSIONS:
+        return False, ""
+    return True, (
+        f"Python {major}.{minor} is not supported by AI Segmentation. "
+        "Please use a QGIS build with a supported Python version."
+    )
 
 
 def _get_windows_antivirus_help(plugin_path: str) -> str:
@@ -276,7 +294,8 @@ def standalone_python_is_current() -> bool:
 
         result = subprocess.run(  # nosec B603
             [python_path, "-c", "import sys; print(sys.version_info.major, sys.version_info.minor)"],
-            capture_output=True, text=True, timeout=15, env=env, **get_subprocess_kwargs(),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=15, env=env, **get_subprocess_kwargs(),
         )
         if result.returncode == 0:
             parts = result.stdout.strip().split()
@@ -382,6 +401,11 @@ def download_python_standalone(
         _log(why, Qgis.MessageLevel.Critical)
         return False, why
 
+    unsupported, why = is_unsupported_python_version()
+    if unsupported:
+        _log(why, Qgis.MessageLevel.Critical)
+        return False, why
+
     if standalone_python_exists():
         _log("Python standalone already exists", Qgis.MessageLevel.Info)
         return True, "Python standalone already installed"
@@ -477,15 +501,20 @@ def download_python_standalone(
 
             content_size = len(content)
             if content_size == 0:
-                return False, "Download failed: received empty file (0 bytes)"
+                # A bad payload from one variant should not abort the run: record
+                # it and try the next variant, returning False only after the last.
+                last_error = "Download failed: received empty file (0 bytes)"
+                _log(last_error, Qgis.MessageLevel.Warning)
+                continue
             min_expected = 10 * 1024 * 1024  # 10 MB
             if content_size < min_expected:
                 _log(
                     f"Download suspiciously small: {content_size} bytes (expected >10 MB)", Qgis.MessageLevel.Warning)
-                return False, (
+                last_error = (
                     f"Download failed: file too small ({content_size / (1024 * 1024):.1f} MB). "
                     "A firewall or proxy may be blocking the download."
                 )
+                continue
 
             if progress_callback:
                 total_mb = content_size / (1024 * 1024)
@@ -506,18 +535,21 @@ def download_python_standalone(
                         "utf-8", errors="replace")[:150]
                 except Exception:
                     preview_text = "(binary data)"
-                return False, (
+                last_error = (
                     "Download failed: file is not a valid archive. "
                     "A firewall or proxy may have returned an error page. "
                     f"Preview: {preview_text}"
                 )
+                _log(last_error, Qgis.MessageLevel.Warning)
+                continue
 
             # Cryptographically verify the payload BEFORE extracting/executing it.
             asset_name = url.rsplit("/", 1)[-1]
             ok, verify_msg = _verify_python_payload(temp_path, asset_name)
             if not ok:
                 _log(verify_msg, Qgis.MessageLevel.Warning)
-                return False, verify_msg
+                last_error = verify_msg
+                continue
 
             _log(f"Download complete ({content_size} bytes), extracting...", Qgis.MessageLevel.Info)
 
@@ -624,6 +656,8 @@ def verify_standalone_python() -> tuple[bool, str]:
             [python_path, "-c", "import subprocess, sys; print(sys.version)"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
             env=env,
             **get_subprocess_kwargs(),

@@ -15,9 +15,13 @@ from qgis.PyQt.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 from ....core import qt_compat as QtC
 from ....core.i18n import tr
 from ....core.presets.segmentation_presets_client import absolute_demo_url
-from ...dock.styles import BRAND_BLUE, BTN_GREEN, BTN_GREEN_HOVER
+from ...dock.styles import BRAND_BLUE, BRAND_BLUE_HOVER, BTN_GREEN, BTN_GREEN_HOVER
 
 _BRAND_GREEN = BTN_GREEN       # AI Segmentation primary (Detect / Use)
+
+# Favorite-star gold: a library-local accent for the checked/hover star. Kept
+# here rather than in styles.py since nothing outside this dialog uses it.
+_FAVORITE_STAR_GOLD = "#f6b100"
 
 # ---------------------------------------------------------------------------
 # QSS (mirrors AI Edit prompt_templates/common.py + generation_detail/styles.py)
@@ -72,8 +76,7 @@ _BLUE_BTN_QSS = (
     f"QPushButton {{ background-color: {BRAND_BLUE}; color: #ffffff; border: none;"
     " border-radius: 6px; padding: 9px 18px; font-weight: bold;"
     " font-size: 13px; }"
-    # #1565c0 has no styles.py equivalent (BRAND_BLUE_HOVER is #1976d2).
-    "QPushButton:hover { background-color: #1565c0; }"
+    f"QPushButton:hover {{ background-color: {BRAND_BLUE_HOVER}; }}"
     "QPushButton:disabled { background-color: rgba(128,128,128,0.25);"
     " color: rgba(128,128,128,0.8); }"
 )
@@ -86,8 +89,8 @@ _GHOST_BTN_QSS = (
 _STAR_BTN_QSS = (
     "QToolButton { border: none; background: transparent; font-size: 16px;"
     " color: rgba(128,128,128,0.8); padding: 0 2px; }"
-    "QToolButton:checked { color: #f6b100; }"
-    "QToolButton:hover { color: #f6b100; }"
+    f"QToolButton:checked {{ color: {_FAVORITE_STAR_GOLD}; }}"
+    f"QToolButton:hover {{ color: {_FAVORITE_STAR_GOLD}; }}"
 )
 
 # ---- detail popup styles (AI Edit generation_detail/styles.py) ------------
@@ -157,7 +160,7 @@ _DETAIL_STAR_BTN = (
     " rgba(128,128,128,0.35); border-radius: 4px; font-size: 17px;"
     " color: rgba(128,128,128,0.8); }"
     "QToolButton:hover { background: rgba(128,128,128,0.15); }"
-    "QToolButton:checked { color: #f6b100; }"
+    f"QToolButton:checked {{ color: {_FAVORITE_STAR_GOLD}; }}"
 )
 
 # ---------------------------------------------------------------------------

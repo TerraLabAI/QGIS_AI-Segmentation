@@ -654,10 +654,6 @@ class ManualWorkflowMixin:
         _add_features_fast(pr, features_to_add)
         temp_layer.updateExtents()
 
-        # Write into the shared per-project GeoPackage (one table per run).
-        # The store handles directory priority (project, raster dir, home)
-        # and falls back to a standalone per-run file if the shared file is
-        # locked or unwritable.
         try:
             source_layer = self._current_layer if self._is_layer_valid() else None
         except RuntimeError:
@@ -668,6 +664,20 @@ class ManualWorkflowMixin:
             source_name = source_layer.name() if source_layer is not None else ""
         except RuntimeError:
             source_name = ""
+
+        # Destination chosen by the user: append to an existing layer (the
+        # incremental-digitization path, e.g. adding shapes to an Automatic
+        # detections layer) or, by default, create a new layer below. A stale
+        # or failed append falls through to the new-layer path so work is never
+        # lost.
+        if self._append_manual_run_if_requested(
+                temp_layer, source_name, features_to_add):
+            return
+
+        # Write into the shared per-project GeoPackage (one table per run).
+        # The store handles directory priority (project, raster dir, home)
+        # and falls back to a standalone per-run file if the shared file is
+        # locked or unwritable.
         result = output_store.write_run_table(
             temp_layer,
             prompt="",
@@ -756,14 +766,16 @@ class ManualWorkflowMixin:
 
         try:
             from ...core import telemetry
-            refine_shape_changed = (
-                self._refine_simplify != 3 or self._refine_smooth or self._refine_expand)
+            from ...core.review_defaults import REFINE_SIMPLIFY_DEFAULT
+            refine_shape_changed = self._refine_simplify != REFINE_SIMPLIFY_DEFAULT
+            refine_shape_changed = refine_shape_changed or self._refine_smooth or self._refine_expand
             refine_fill_or_ortho_changed = (
                 not self._refine_fill_holes or self._refine_ortho)
             refine_used = bool(refine_shape_changed or refine_fill_or_ortho_changed)
             telemetry.track_manual_export_done(
                 polygon_count=len(features_to_add),
                 refine_used=refine_used,
+                destination="new",
             )
             telemetry.track_first_generation_milestone(mode="manual")
         except Exception:
@@ -786,6 +798,87 @@ class ManualWorkflowMixin:
 
         self._reset_session()
         self.dock_widget.reset_session()
+
+    def _append_manual_run_if_requested(self, temp_layer, source_name, features_to_add):
+        """Append the built features to an existing layer if the user picked one.
+
+        Returns True when the append is handled (success or the whole flow is
+        done); False when the caller should create a new layer instead (no
+        destination chosen, target gone, or the append failed). Never raises:
+        every failure degrades to the new-layer path with a clear message so a
+        paid/hand-made polygon is never lost."""
+        try:
+            dest_id = self.dock_widget.selected_export_destination()
+        except (RuntimeError, AttributeError):
+            dest_id = None
+        if not dest_id:
+            return False
+
+        from ...core import output_store
+
+        target = QgsProject.instance().mapLayer(dest_id)
+        if target is None or not output_store.is_appendable_polygon_layer(target):
+            # Target deleted or made unwritable mid-flow: keep the work by
+            # falling back to a new layer, and say so.
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("That layer is no longer available. Created a new layer instead."),
+                level=Qgis.MessageLevel.Warning, duration=8)
+            return False
+
+        target_name = target.name()
+        res = output_store.append_run_to_layer(
+            target, temp_layer, source_name=source_name)
+        if res.added <= 0:
+            QgsMessageLog.logMessage(
+                "Append to '{}' failed ({}); creating a new layer".format(
+                    target_name, res.error_message or "unknown"),
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("Could not add to that layer. Created a new layer instead."),
+                level=Qgis.MessageLevel.Warning, duration=8)
+            return False
+
+        self.iface.mapCanvas().refresh()
+        self.iface.messageBar().pushMessage(
+            "AI Segmentation",
+            tr("Added {count} polygon(s) to {name}.").format(
+                count=res.added, name=target_name),
+            level=Qgis.MessageLevel.Success, duration=6)
+
+        try:
+            from ...core import telemetry
+            from ...core.review_defaults import REFINE_SIMPLIFY_DEFAULT
+            refine_shape_changed = self._refine_simplify != REFINE_SIMPLIFY_DEFAULT
+            refine_shape_changed = refine_shape_changed or self._refine_smooth or self._refine_expand
+            refine_fill_or_ortho_changed = (
+                not self._refine_fill_holes or self._refine_ortho)
+            refine_used = bool(refine_shape_changed or refine_fill_or_ortho_changed)
+            telemetry.track_manual_export_done(
+                polygon_count=res.added,
+                refine_used=refine_used,
+                destination="append",
+            )
+            telemetry.track_first_generation_milestone(mode="manual")
+        except Exception:
+            pass  # nosec B110
+
+        # Value recap, mirroring the new-layer path (best-effort, never raise).
+        try:
+            if self.dock_widget is not None:
+                total_m2 = sum(
+                    float(f.attributes()[1] or 0.0) for f in features_to_add)
+                self.dock_widget.set_manual_last_run_recap(
+                    count=res.added,
+                    area_km2=total_m2 / 1e6,
+                )
+        except Exception:  # nosec B110 -- recap must never break the append
+            pass
+
+        self._reset_session()
+        self.dock_widget.reset_session()
+        return True
 
     def _on_tool_deactivated(self):
         # Remove keyboard shortcut filter from all targets

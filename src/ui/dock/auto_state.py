@@ -29,6 +29,7 @@ from ...core.review_defaults import (
     AUTO_REVIEW_SMOOTH_DEFAULT as _AUTO_REVIEW_SMOOTH_DEFAULT,
 )
 from ...core.tile_manager import MAX_DETAIL_LEVEL
+from .auto_review_build import _export_btn_label
 from .prompt_guard import is_known_object, validate_prompt
 from .styles import (
     BRAND_BLUE,
@@ -398,26 +399,17 @@ class DockAutoStateMixin:
             # the glyph is blue) marks it clearly as a helpful tip, not an error.
             self.auto_prompt_info.setTextFormat(Qt.TextFormat.RichText)
             self.auto_prompt_info.setText(
-                '<span style="color:#1e88e5; font-weight:bold;">&#9432;</span>'
-                '&nbsp;&nbsp;{}'.format(text))
-            self.auto_prompt_info.setStyleSheet(
-                "QLabel { background-color: rgba(30,136,229,0.12);"
-                " border: 1px solid rgba(30,136,229,0.45); border-radius: 4px;"
-                " padding: 6px 8px; font-size: 11px; color: palette(text); }")
+                '<span style="color:{c}; font-weight:bold;">&#9432;</span>'
+                '&nbsp;&nbsp;{t}'.format(c=BRAND_BLUE, t=text))
+            self.auto_prompt_info.setStyleSheet(_msg_label_qss("info"))
             self.auto_prompt_info.setVisible(True)
             return
         self.auto_prompt_info.setTextFormat(Qt.TextFormat.PlainText)
         self.auto_prompt_info.setText(text)
         if info:
-            self.auto_prompt_info.setStyleSheet(
-                "QLabel { background-color: rgba(128,128,128,0.08);"
-                " border: 1px solid rgba(128,128,128,0.25); border-radius: 4px;"
-                " padding: 6px 8px; font-size: 11px; color: palette(text); }")
+            self.auto_prompt_info.setStyleSheet(_msg_label_qss("neutral"))
         else:
-            self.auto_prompt_info.setStyleSheet(
-                "QLabel { background-color: rgba(245,166,35,0.12);"
-                " border: 1px solid rgba(245,166,35,0.45); border-radius: 4px;"
-                " padding: 6px 8px; font-size: 11px; color: palette(text); }")
+            self.auto_prompt_info.setStyleSheet(_msg_label_qss("warning"))
         self.auto_prompt_info.setVisible(True)
 
     def _apply_prompt_hint_on_edit(self) -> None:
@@ -898,7 +890,7 @@ class DockAutoStateMixin:
         self._auto_cancelling = True
         try:
             self.auto_cancel_btn.setEnabled(False)
-            self.auto_cancel_btn.setText(tr("Stopping…"))
+            self.auto_cancel_btn.setText(tr("Stopping..."))
         except (RuntimeError, AttributeError):
             pass
         # Keep the progress card up and say the paid-for tiles are being kept.
@@ -907,7 +899,7 @@ class DockAutoStateMixin:
         try:
             if self.auto_progress_card.isVisible():
                 self.auto_progress_label.setText(
-                    tr("Stopping - keeping the tiles already found…"))
+                    tr("Stopping - keeping the tiles already found..."))
                 self.auto_progress_label.setVisible(True)
         except (RuntimeError, AttributeError):
             pass
@@ -958,7 +950,7 @@ class DockAutoStateMixin:
             self._auto_zone_cap_label = label
         from ..plugin.shared import FREE_TRIAL_MAX_ZONE_KM2
         line1 = tr(
-            "This zone is {area} km2 - free trial zones go up to {max} km2."
+            "This zone is {area} km² - free trial zones go up to {max} km²."
         ).format(area="{:.1f}".format(area_km2),
                  max="{:g}".format(FREE_TRIAL_MAX_ZONE_KM2))
         line2 = tr(
@@ -1352,7 +1344,8 @@ class DockAutoStateMixin:
             # Empty runs use the guidance box instead of this label; safe fallback.
             return '<b>{title}</b>'.format(title=tr("No objects found"))
         if visible >= total:
-            bold = tr("{n} objects found").format(n=total)
+            bold = (tr("1 object found") if total == 1
+                    else tr("{n} objects found").format(n=total))
             tail = tr("all shown")
         elif visible > 0:
             bold = tr("{visible} of {n} shown").format(visible=visible, n=total)
@@ -1362,7 +1355,8 @@ class DockAutoStateMixin:
             # No green check at 0 visible: nothing is shown, but the count is
             # honest and the tail tells the user how to reveal them - naming the
             # binding filter (Min size vs Confidence) so they pull the right one.
-            bold = tr("{n} objects found").format(n=total)
+            bold = (tr("1 object found") if total == 1
+                    else tr("{n} objects found").format(n=total))
             if size_bound:
                 tail = tr("0 shown - lower the Min size filter to reveal them")
             else:
@@ -1533,7 +1527,7 @@ class DockAutoStateMixin:
         try:
             self._auto_review_count_label.setText(
                 self._format_auto_review_count(visible, total, pct, size_bound))
-            self.auto_export_btn.setText(tr("Export {n} polygons").format(n=visible))
+            self.auto_export_btn.setText(_export_btn_label(visible))
             self.auto_export_btn.setEnabled(visible > 0)
             if visible == 0:
                 tip = (tr("Lower the Min size filter to show objects first.")
@@ -1689,13 +1683,13 @@ class DockAutoStateMixin:
             area = self._format_recap_area(area_km2)
             if credits_left is not None:
                 text = tr(
-                    "Last run: {count} {object} exported · {area} km2 "
+                    "Last run: {count} {object} exported · {area} km² "
                     "· {used} credits used, {left} left"
                 ).format(count=count, object=obj, area=area,
                          used=credits_used, left=credits_left)
             else:
                 text = tr(
-                    "Last run: {count} {object} exported · {area} km2 "
+                    "Last run: {count} {object} exported · {area} km² "
                     "· {used} credits used"
                 ).format(count=count, object=obj, area=area, used=credits_used)
             recap.setText(text)
@@ -1737,7 +1731,7 @@ class DockAutoStateMixin:
             text = tr('{n} {object} saved to layer "{name}"').format(
                 n=count, object=obj, name=layer_name or "")
             if area_km2 is not None:
-                text += " · " + tr("{area} km2").format(
+                text += " · " + tr("{area} km²").format(
                     area=self._format_recap_area(area_km2))
             if credits_used is not None:
                 text += " · " + tr("{used} credits used").format(
@@ -1843,7 +1837,7 @@ class DockAutoStateMixin:
                 "Automatic mode scans your zone tile by tile. 1 tile = 1 credit, "
                 "so this run costs about {n} credits. More detail splits the zone "
                 "into more tiles, which costs more credits.").format(n=credits)
-            _extra_tip = tr("1 credit ~ 0.17 km2 at default detail.")
+            _extra_tip = tr("1 credit ~ 0.17 km² at default detail.")
             self.auto_credit_cost_label.setToolTip(_base_tip + " " + _extra_tip)
             self._auto_zone_too_large = False
         self.auto_credit_cost_label.setVisible(True)
@@ -1970,19 +1964,19 @@ class DockAutoStateMixin:
             self.auto_progress_label.setVisible(False)
             return
         if self._auto_cancelling:
-            text = tr("Stopping - keeping the tiles already found…")
+            text = tr("Stopping - keeping the tiles already found...")
         else:
             pos = getattr(self, "_auto_queue_position", 0)
             eta_s = getattr(self, "_auto_queue_eta", 0)
             if pos == 1:
-                text = tr("You're next · starting now…")
+                text = tr("You're next · starting now...")
             elif pos > 1:
                 if 0 < eta_s < 10:
-                    text = tr("Spot reserved · starting in a few seconds…")
+                    text = tr("Spot reserved · starting in a few seconds...")
                 else:
                     eta = self._friendly_eta(eta_s)
                     text = (tr("Spot reserved · starting in ~{eta}").format(eta=eta)
-                            if eta else tr("Spot reserved · starting soon…"))
+                            if eta else tr("Spot reserved · starting soon..."))
             else:
                 text = self._warming_message()
         self.auto_progress_label.setText(text)
@@ -1994,10 +1988,10 @@ class DockAutoStateMixin:
         since = self._auto_warming_since
         elapsed = int(time.monotonic() - since) if since is not None else 0
         if elapsed < 6:
-            return tr("Sending to the AI…")
+            return tr("Sending to the AI...")
         if elapsed < 22:
-            return tr("Waking up the AI… {n}s").format(n=elapsed)
-        return tr("The AI is starting up, almost there… {n}s").format(n=elapsed)
+            return tr("Waking up the AI... {n}s").format(n=elapsed)
+        return tr("The AI is starting up, almost there... {n}s").format(n=elapsed)
 
     @staticmethod
     def _friendly_eta(eta_s: int) -> str:

@@ -122,7 +122,9 @@ class _DetailDialogBase(QDialog):
 
         badge_row = QHBoxLayout()
         badge_row.setContentsMargins(0, 0, 0, 0)
-        badge = QLabel(badge_text.upper())
+        # Double any "&" so Qt does not eat it as a mnemonic marker (a category
+        # like "Buildings & structures" would otherwise render with a gap).
+        badge = QLabel(badge_text.upper().replace("&", "&&"))
         badge.setStyleSheet(_BADGE_STYLE)
         badge_row.addWidget(badge)
         badge_row.addStretch(1)

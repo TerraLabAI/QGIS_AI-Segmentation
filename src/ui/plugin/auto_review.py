@@ -180,7 +180,7 @@ class AutoReviewMixin:
         if self.dock_widget is not None:
             try:
                 self.dock_widget.set_auto_status(
-                    "progress", tr("Regrouping detections..."))
+                    "info", tr("Regrouping detections..."))
             except (RuntimeError, AttributeError):
                 pass
         if not self._rebuild_auto_objects_for_mode(target_separate):

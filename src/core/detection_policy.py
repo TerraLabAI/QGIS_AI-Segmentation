@@ -290,8 +290,8 @@ def resplit_charge_every(policy: dict | None = None) -> int:
     only the client's credit clamp on the re-split budget. Defaults to 1 so
     the clamp stays fully conservative against servers that bill everything."""
     val = seed_policy(policy).get("resplit_charge_every")
-    if isinstance(val, int) and not isinstance(val, bool) and val >= 0:
-        return val
+    if isinstance(val, (int, float)) and not isinstance(val, bool) and val >= 0:
+        return int(val)
     return 1
 
 

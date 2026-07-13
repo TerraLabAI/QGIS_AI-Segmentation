@@ -45,8 +45,10 @@ PRODUCT_NAME = "AI Segmentation"
 
 _STATUS_DISPLAY = {
     "active": (tr("Active"), BRAND_GREEN_TEXT),
-    "trialing": (tr("Free Trial"), "#f57c00"),
-    "canceled": (tr("Canceled"), BRAND_RED),
+    # Design-system warning amber (taxonomy _MSG_TINTS['warning'] hue). No named
+    # hex constant exists in styles.py for it, so the literal is used here.
+    "trialing": (tr("Free trial"), "#f5a623"),
+    "canceled": (tr("Cancelled"), BRAND_RED),
 }
 
 _LINK_BTN = (

@@ -39,6 +39,7 @@ from .shared import (
     _FIELD_TYPE_STRING,
     _add_features_with_ids,
     _apply_fast_render,
+    park_orphaned_worker,
 )
 
 
@@ -1097,8 +1098,14 @@ class AutoResultsMixin:
         # Billable tile count (zero-mask tiles included; failed tiles are
         # refunded server side). `results` holds one entry per DETECTION,
         # so len(results) is wrong whenever a tile yields 0 or 2+ masks.
-        tiles_succeeded = getattr(self._auto_worker, "tiles_succeeded", 0)
-        self._capture_auto_mask_gsd(self._auto_worker)
+        worker = self._auto_worker
+        tiles_succeeded = getattr(worker, "tiles_succeeded", 0)
+        self._capture_auto_mask_gsd(worker)
+        # The all-finished signal fires from inside the worker's run loop, which
+        # may not have returned yet: park a strong ref before dropping ours so a
+        # still-running QThread is never garbage-collected (which aborts QGIS).
+        if worker is not None and worker.isRunning():
+            park_orphaned_worker(worker)
         self._auto_worker = None
         self._drop_auto_tile_bridge()
         self._auto_tel_stop_reason = "completed"
@@ -2420,6 +2427,11 @@ class AutoResultsMixin:
                         self.dock_widget.show_auto_zero_assist(
                             self.dock_widget.auto_prompt_input.text().strip())
                 self._set_zone_badge_enabled(True)
+                # Back on the prompt step: the run cleared the tile-grid preview
+                # but the cost label still reads the last estimate. Redraw the
+                # grid + cost for the kept zone (the Retry path restores it the
+                # same way) so the screen is consistent before another Detect.
+                self._update_credit_estimate()
             except (RuntimeError, AttributeError):
                 pass
         QgsMessageLog.logMessage(

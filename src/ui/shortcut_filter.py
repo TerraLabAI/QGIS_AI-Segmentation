@@ -104,6 +104,11 @@ class ShortcutFilter(QObject):
         # E opens the single selected detection for SAM editing (the keyboard
         # twin of the second click / double-click).
         if key == Qt.Key.Key_E and not modifiers and getattr(plugin, "_edit_selected_saved_polygon", None):
+            # Mirror the double-click open: while a foreground (busy-cursor)
+            # encode owns the pipe, E defers to it and no-ops, so a stray press
+            # during a busy encode can never race the open (see _encode_blocks_ui).
+            if getattr(plugin, "_encode_blocks_ui", None) and plugin._encode_blocks_ui():
+                return True
             if plugin._edit_selected_saved_polygon():
                 return True
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):

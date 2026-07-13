@@ -39,6 +39,7 @@ from ...core.review_defaults import (
 )
 from ...core.tile_manager import MAX_DETAIL_LEVEL
 from .styles import (
+    BRAND_BLUE,
     _BTN_BLUE,
     _BTN_BLUE_PRIMARY,
     _BTN_CHIP,
@@ -103,10 +104,12 @@ class DockAutoBuildMixin:
         upsell_layout.setContentsMargins(10, 10, 10, 10)
         upsell_layout.setSpacing(8)
 
-        _upsell_title = QLabel(tr("Your 300 free detections are used up"))
-        _upsell_title.setStyleSheet("font-weight: bold; font-size: 12px; color: palette(text);")
-        _upsell_title.setWordWrap(True)
-        upsell_layout.addWidget(_upsell_title)
+        # The count is filled in from the fetched free-detection total by
+        # _refresh_auto_upsell_title (a number-free fallback until it is known).
+        self._auto_upsell_title = QLabel(tr("Your free detections are used up"))
+        self._auto_upsell_title.setStyleSheet("font-weight: bold; font-size: 12px; color: palette(text);")
+        self._auto_upsell_title.setWordWrap(True)
+        upsell_layout.addWidget(self._auto_upsell_title)
 
         _upsell_sub = QLabel(tr("Subscribe to keep detecting without limits:"))
         _upsell_sub.setStyleSheet("font-size: 11px; color: palette(text);")
@@ -114,7 +117,7 @@ class DockAutoBuildMixin:
         upsell_layout.addWidget(_upsell_sub)
 
         for bullet in [
-            tr("10,000 detections every month (~1,700 km2)"),
+            tr("10,000 detections every month (~1,700 km²)"),
             tr("Every building, tree, or road as clean polygons"),
             tr("Cancel anytime; your exported layers stay yours"),
         ]:
@@ -169,7 +172,7 @@ class DockAutoBuildMixin:
         # stack so it stays visible (greyed + locked) once the user starts,
         # exactly like the Interactive panel. On step 0 it is editable under
         # its label; from step 1 on it is locked (see _refresh_auto_layer_lock).
-        self.auto_layer_label = QLabel(tr("Select a Raster Layer to Segment:"))
+        self.auto_layer_label = QLabel(tr("Select a raster layer to segment:"))
         self.auto_layer_label.setStyleSheet(
             "font-weight: bold; color: palette(text);")
         controls_layout.addWidget(self.auto_layer_label)
@@ -395,7 +398,7 @@ class DockAutoBuildMixin:
             "QLineEdit { border: 1px solid rgba(128,128,128,0.35);"
             " border-radius: 6px; padding: 7px 10px; background: palette(base);"
             " color: palette(text); }"
-            "QLineEdit:focus { border: 1px solid #1e88e5; }")
+            f"QLineEdit:focus {{ border: 1px solid {BRAND_BLUE}; }}")
         self.auto_prompt_input.textChanged.connect(self._on_auto_search_text_changed)
         self.auto_prompt_input.returnPressed.connect(self._on_auto_search_return_pressed)
         _prompt_row.addWidget(self.auto_prompt_input, 1)

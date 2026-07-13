@@ -237,18 +237,50 @@ _ORPHANED_WORKERS: list = []
 
 
 def park_orphaned_worker(worker) -> None:
-    """Keep `worker` alive until its finished signal fires, then release it."""
+    """Keep `worker` alive until its finished signal fires, then release it.
+
+    Two callers rely on this: a still-running orphan at teardown, and a
+    NOT-YET-STARTED worker parked as a lifetime anchor right before its
+    start() call (e.g. the manual encode worker). Both must be safe here.
+    """
     # Capture the list object itself (not the module-global name) so a
     # reload of this module can never rebind `_ORPHANED_WORKERS` out from
     # under an already-parked worker and drop its last strong reference.
     bucket = _ORPHANED_WORKERS
     bucket.append(worker)
+    released = {"done": False}
 
     def _release() -> None:
+        if released["done"]:
+            return  # idempotent: the re-check below and the signal can both fire
+        released["done"] = True
         try:
             bucket.remove(worker)
         except ValueError:
             pass
-        worker.deleteLater()
+        # Join the native thread before destruction: finished() is emitted a
+        # hair before the thread has fully stopped, and destroying a QThread
+        # inside that window hard-aborts all of QGIS. wait() returns
+        # immediately for a thread that never started or already stopped.
+        try:
+            worker.wait(10000)
+        except (RuntimeError, AttributeError):
+            pass
+        try:
+            worker.deleteLater()
+        except RuntimeError:
+            pass  # C++ object already gone
 
     worker.finished.connect(_release)
+    # A thread can finish between the caller's isRunning() check and the
+    # connect above: its finished signal never reaches the slot and the
+    # worker would leak in the bucket forever. Release now ONLY when the
+    # thread actually ran to completion: a parked-before-start worker
+    # (isRunning False, isFinished False) must stay anchored, or the pending
+    # delete would destroy the thread the moment start() runs and abort QGIS.
+    try:
+        finished_in_gap = worker.isFinished() and not worker.isRunning()
+    except (RuntimeError, AttributeError):
+        finished_in_gap = True  # dead C++ object: just drop the anchor
+    if finished_in_gap:
+        _release()

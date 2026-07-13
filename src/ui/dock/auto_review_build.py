@@ -97,6 +97,14 @@ def display_legend_html(mode: str) -> str:
         t=tr("Detected object"))
 
 
+def _export_btn_label(n: int) -> str:
+    """Export-button label with a singular branch, so a single detection reads
+    'Export 1 polygon' and never the ungrammatical 'Export 1 polygons'."""
+    if n == 1:
+        return tr("Export 1 polygon")
+    return tr("Export {n} polygons").format(n=n)
+
+
 class DockAutoReviewBuildMixin:
     """Automatic post-run review panel construction."""
 
@@ -622,7 +630,7 @@ class DockAutoReviewBuildMixin:
         # panel. Names the outcome (a saved layer) instead of the vague
         # "Finish"; taller than every other control so the finish line is
         # unmistakable, with no group label needed above it.
-        self.auto_export_btn = QPushButton(tr("Export {n} polygons").format(n=0))
+        self.auto_export_btn = QPushButton(_export_btn_label(0))
         self.auto_export_btn.setStyleSheet(_BTN_GREEN)
         self.auto_export_btn.setMinimumHeight(44)
         self.auto_export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
