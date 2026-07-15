@@ -30,7 +30,7 @@ from ...core.review_defaults import (
 )
 from ...core.tile_manager import MAX_DETAIL_LEVEL
 from .auto_review_build import _export_btn_label
-from .prompt_guard import is_known_object, validate_prompt
+from .prompt_guard import english_token_for, is_known_object, validate_prompt
 from .styles import (
     BRAND_BLUE,
     BRAND_GREEN,
@@ -180,6 +180,11 @@ class DockAutoStateMixin:
         self.auto_prompt_input.blockSignals(True)
         self.auto_prompt_input.clear()
         self.auto_prompt_input.blockSignals(False)
+        # The blocked clear() fired no textChanged, so the commit dedupe would
+        # still hold the LAST run's prompt: typing the same object again next
+        # run would silently skip its commit (no re-seed, no run plan). Reset
+        # it with the box.
+        self._last_committed_prompt = None
         self._auto_prompt_valid = False
         self._set_prompt_info()
         # The object is gone with the prompt: drop its slider verdict too.
@@ -295,6 +300,27 @@ class DockAutoStateMixin:
                 self._set_prompt_info(
                     self._prompt_steer_message(suggestion), tip=True)
                 self._track_prompt_steered(text, suggestion)
+            elif reason == "multi_first" and suggestion:
+                # Several objects in one box ("buildings and roads"): the
+                # model grounds ONE concept per run, so run the FIRST object
+                # now instead of refusing, with a quiet hint to run the rest
+                # separately. setText first - its textChanged clears the info
+                # line, which we then set (same order as the translated case).
+                typed = text.strip()
+                if suggestion != typed:
+                    self.auto_prompt_input.setText(suggestion)
+                self._set_prompt_info(
+                    tr('One object per run - detecting "{first}" now. '
+                       'Run the other objects as separate detections.').format(
+                        first=suggestion), tip=True)
+                try:
+                    from ...core import telemetry
+                    # prompt = the 1-2 word object that actually runs;
+                    # "multi_first" marks the guided-multi case for analytics.
+                    telemetry.track_auto_prompt_steered(
+                        prompt=suggestion, suggestion="multi_first")
+                except Exception:
+                    pass  # nosec B110
             else:
                 self._set_prompt_info()
             return True
@@ -344,11 +370,44 @@ class DockAutoStateMixin:
         ok, reason, _suggestion = validate_prompt(token)
         return token if ok and reason is None else None
 
-    def _emit_auto_prompt_committed(self) -> None:
+    def _prompt_plausibly_complete(self, text: str) -> bool:
+        """While the user is still typing in the box, only a prompt the
+        vocabulary recognizes (English object word, catalogue token, or a
+        known word in another language) commits on the debounce. Unknown
+        fragments ('buil') wait for Enter / focus-out / Detect, where intent
+        is explicit, so partial words never hit analytics or the server."""
+        try:
+            if not self.auto_prompt_input.hasFocus():
+                return True
+            return is_known_object(text) or english_token_for(text) is not None
+        except (RuntimeError, AttributeError):
+            return True
+
+    def _on_auto_prompt_editing_finished(self) -> None:
+        """Enter or focus-out: the prompt is explicitly settled. Flush any
+        pending debounce and commit now, fragments included (blur is intent)."""
+        try:
+            self._auto_prompt_debounce_timer.stop()
+        except (RuntimeError, AttributeError):
+            pass
+        self._emit_auto_prompt_committed(force=True)
+
+    def _emit_auto_prompt_committed(self, force: bool = False) -> None:
         """Fire after the prompt settles so the plugin re-seeds the detail
         default for the current object (no-op when the box is empty; the plugin
-        also respects a manual slider override and requires a drawn zone)."""
+        also respects a manual slider override and requires a drawn zone).
+
+        Commit side-effects are one-shot per settled prompt: a mid-word
+        fragment does not commit on the debounce (see
+        _prompt_plausibly_complete), and the same text never commits twice in
+        a row, so the downstream telemetry + server run-plan fetch fire about
+        once per real prompt instead of once per typing pause."""
         text = self.auto_prompt_input.text().strip()
+        if text and not force and not self._prompt_plausibly_complete(text):
+            return
+        if text == getattr(self, "_last_committed_prompt", None):
+            return
+        self._last_committed_prompt = text
         if text:
             # Light steer nudge the moment the prompt settles, BEFORE Detect is
             # clicked, so a weak-from-above word is redirected before any credit
@@ -360,6 +419,13 @@ class DockAutoStateMixin:
                     self._set_prompt_info(
                         self._prompt_steer_message(suggestion), tip=True)
                     self._track_prompt_steered(text, suggestion)
+                elif ok and reason == "multi_first" and suggestion:
+                    # Early heads-up for a several-objects prompt: the box is
+                    # left as typed (the swap happens at Detect), the hint
+                    # just says what will run so no credit surprises.
+                    self._set_prompt_info(
+                        tr('One object per run - Detect will run "{first}" '
+                           'first.').format(first=suggestion), tip=True)
             except Exception:  # noqa: BLE001
                 pass  # nosec B110
             try:
@@ -948,11 +1014,11 @@ class DockAutoStateMixin:
             except (RuntimeError, AttributeError):
                 return
             self._auto_zone_cap_label = label
-        from ..plugin.shared import FREE_TRIAL_MAX_ZONE_KM2
+        from ..plugin.shared import free_zone_cap_km2
         line1 = tr(
             "This zone is {area} km² - free trial zones go up to {max} km²."
         ).format(area="{:.1f}".format(area_km2),
-                 max="{:g}".format(FREE_TRIAL_MAX_ZONE_KM2))
+                 max="{:g}".format(free_zone_cap_km2()))
         line2 = tr(
             'Draw a smaller zone, or <a href="{url}">subscribe</a> to '
             "segment areas of any size."
@@ -1604,19 +1670,24 @@ class DockAutoStateMixin:
         except (RuntimeError, AttributeError):
             pass
 
-    def show_auto_zero_assist(self, object_word: str) -> None:
-        """Show the zero-result rescue chips under the status banner.
+    def show_auto_zero_assist(self, object_word: str,
+                              has_examples: bool = False) -> None:
+        """Show the zero-result rescue under the status banner, exemplar first.
 
         Called by the plugin right after the zero-detection status is posted
         (never on the network-failure variant, where the levers do not apply).
-        The example chip always shows; the synonym chip only when the server
-        steer table knows a stronger word for this prompt, so the suggestion
-        stays server-tunable with no plugin release. Chip labels must stay
-        short: QPushButton text does not wrap."""
+        The example call is the hero (the proven rescue for a zero-result);
+        the synonym chip only shows when the server steer table knows a
+        stronger word for this prompt, so the suggestion stays server-tunable
+        with no plugin release. Labels must stay short: QPushButton text does
+        not wrap. ``has_examples`` switches the label to "another" when the
+        run already carried drawn examples."""
         obj = (object_word or "").strip()
-        self.auto_zero_example_chip.setText(
-            "✎  " + tr("Draw an example of one {object}").format(
-                object=obj or tr("object")))
+        if has_examples:
+            label = tr("Add another example - more references detect more")
+        else:
+            label = tr("Draw one example - the AI finds the rest")
+        self.auto_zero_example_chip.setText("✎  " + label)
         self.auto_zero_example_chip.setToolTip(tr(
             "Outline ONE example of the object on the map, then run again. "
             "Runs with a drawn example return far fewer empty results."))
@@ -1634,6 +1705,22 @@ class DockAutoStateMixin:
                 "→  " + tr('Try "{word}" instead').format(word=suggestion))
         self.auto_zero_synonym_chip.setVisible(bool(suggestion))
         self.auto_zero_assist_row.setVisible(True)
+        # The rescue sits under the Detect row, which is below the fold on a
+        # small dock: bring it into view once the layout has settled, or the
+        # whole state reads as "nothing happened".
+        try:
+            from qgis.PyQt.QtCore import QTimer
+            QTimer.singleShot(0, self._scroll_auto_zero_assist_into_view)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _scroll_auto_zero_assist_into_view(self) -> None:
+        try:
+            if self.auto_zero_assist_row.isVisible():
+                self._dock_scroll_area.ensureWidgetVisible(
+                    self.auto_zero_assist_row, 0, 24)
+        except (RuntimeError, AttributeError):
+            pass
 
     def hide_auto_zero_assist(self) -> None:
         try:

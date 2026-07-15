@@ -884,11 +884,34 @@ class EnvSetupMixin:
             error_title = tr("Installation Failed")
             error_code = "installation_failed"
             msg_lower = message.lower() if message else ""
+            # The classifiers below live in pip_diagnostics; most were already
+            # written and battle-tested but only a handful were wired in here.
+            # Routing the failure through ALL of them turns the opaque
+            # "installation_failed" bucket into a specific error_class (better
+            # telemetry) AND gives the user the correct fix instead of a generic
+            # one. Order matters: most specific first, and disk/app-control are
+            # checked before the antivirus/permission branches (a full disk and
+            # a managed policy both surface as access errors on Windows).
             from ...core.pip_diagnostics import (
                 get_app_control_help,
+                get_crash_help,
+                get_file_locked_help,
+                get_glibc_too_old_help,
+                get_macos_intel_help,
+                get_pip_antivirus_help,
+                get_vcpp_help,
+                is_antivirus_error,
                 is_app_control_error,
                 is_disk_full,
+                is_dll_init_error,
+                is_file_locked_error,
+                is_glibc_too_old,
+                is_macos_intel_no_wheel,
+                is_proxy_auth_error,
+                is_rename_or_record_error,
+                is_unable_to_create_process,
             )
+            from ...core.venv_manager import CACHE_DIR
             if "not enough free disk space" in msg_lower or is_disk_full(msg_lower):
                 # Preflight or mid-install disk exhaustion: the message already
                 # carries the free-up / AI_SEGMENTATION_CACHE_DIR guidance.
@@ -902,11 +925,10 @@ class EnvSetupMixin:
             ]):
                 error_title = tr("SSL Certificate Error")
                 error_code = "ssl_certificate_error"
-            elif "file in use by qgis" in msg_lower:
+            elif "file in use by qgis" in msg_lower or is_file_locked_error(msg_lower):
                 # Native module (.pyd/.dll) locked by the running QGIS process
                 # during a torch upgrade - no dialog-splash of AV advice here,
                 # the actionable fix is just "restart QGIS".
-                from ...core.pip_diagnostics import get_file_locked_help
                 error_title = tr("Restart QGIS Required")
                 error_msg = get_file_locked_help()
                 error_code = "restart_qgis_required"
@@ -914,10 +936,16 @@ class EnvSetupMixin:
                 # AppLocker/WDAC style managed policy: checked BEFORE the
                 # generic "blocked" branch below, whose change-path advice is
                 # a dead end (the policy blocks any user-writable location).
-                from ...core.venv_manager import CACHE_DIR
                 error_title = tr("Blocked by IT Security Policy")
                 error_msg = get_app_control_help(CACHE_DIR)
                 error_code = "app_control_policy"
+            elif is_dll_init_error(msg_lower):
+                # A DLL init failure (missing VC++ runtime). is_dll_init_error
+                # self-excludes policy/AV blocks, so this is genuinely a missing
+                # redistributable, not a quarantine.
+                error_title = tr("Missing System Component")
+                error_msg = get_vcpp_help()
+                error_code = "dll_init_error"
             elif any(p in msg_lower for p in [
                 "access is denied", "winerror 5", "winerror 225",
                 "permission denied", "blocked",
@@ -927,6 +955,26 @@ class EnvSetupMixin:
                 error_title = tr("Installation Blocked")
                 error_msg = f"{error_msg}\n\n{_get_change_path_instructions()}"
                 error_code = "installation_blocked"
+            elif is_antivirus_error(msg_lower):
+                # Localized "access denied" and antivirus-quarantine wordings the
+                # English "blocked" branch above misses (uv surfaces the raw OS
+                # message in the system language). Antivirus/exclusion guidance.
+                error_title = tr("Blocked by Antivirus or Security Software")
+                error_msg = get_pip_antivirus_help(CACHE_DIR)
+                error_code = "antivirus_blocked"
+            elif is_proxy_auth_error(msg_lower):
+                # HTTP 407 behind a corporate proxy: distinct from a generic
+                # network failure - the fix is credentials in QGIS proxy settings.
+                error_title = tr("Proxy Authentication Required")
+                error_msg = "{}\n\n{}".format(
+                    error_msg,
+                    tr(
+                        "Your network proxy requires a username and password. "
+                        "Enter them in QGIS > Settings > Options > Network, "
+                        "then restart QGIS and try again."
+                    ),
+                )
+                error_code = "proxy_auth_required"
             elif any(p in msg_lower for p in [
                 "network error", "connection aborted", "connection reset",
                 "timed out", "timeout", "network connection failed",
@@ -945,6 +993,34 @@ class EnvSetupMixin:
                     ),
                 )
                 error_code = "network_connection_problem"
+            elif is_unable_to_create_process(msg_lower):
+                # Broken Python launcher shim (Windows): rebuilding the venv fixes it.
+                error_title = tr("Installation Failed")
+                error_msg = "{}\n\n{}".format(
+                    error_msg,
+                    tr(
+                        "The installer could not start a helper process (a "
+                        "damaged Python launcher). Click Reinstall Dependencies "
+                        "to rebuild the environment from scratch."
+                    ),
+                )
+                error_code = "broken_pip_shim"
+            elif is_rename_or_record_error(msg_lower):
+                # dist-info rename/RECORD error mid torch upgrade (Windows): a
+                # stale, partially-written package. A clean rebuild resolves it.
+                error_title = tr("Restart QGIS Required")
+                error_msg = get_crash_help(CACHE_DIR)
+                error_code = "dist_info_rename"
+            elif is_glibc_too_old(msg_lower):
+                # Linux distro older than the current PyTorch wheels support.
+                error_title = tr("Linux System Too Old")
+                error_msg = get_glibc_too_old_help()
+                error_code = "glibc_too_old"
+            elif is_macos_intel_no_wheel(msg_lower):
+                # Intel Mac + a Python newer than the last Intel torch wheel.
+                error_title = tr("Unsupported Mac and Python Combination")
+                error_msg = get_macos_intel_help()
+                error_code = "macos_intel_no_wheel"
 
             show_error_report(
                 self.iface.mainWindow(),

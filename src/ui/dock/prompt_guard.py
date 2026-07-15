@@ -418,8 +418,13 @@ def validate_prompt(text: str) -> tuple[bool, str | None, str | None]:
     Special case: ``(True, "steer", term)`` means the prompt is valid English
     but a weak choice from a top-down view ('wall'); the run still proceeds,
     the dock just shows a light non-blocking nudge toward ``term`` (or, when
-    ``term`` is ``""``, toward the Library). Otherwise ``ok`` is True only for
-    a clean 1-2 word English object the model can ground.
+    ``term`` is ``""``, toward the Library).
+
+    Special case: ``(True, "multi_first", token)`` means the prompt names
+    several objects ("buildings and roads") whose first object is itself a
+    clean prompt: the run proceeds on ``token`` and the dock nudges the user
+    to run the others separately. Otherwise ``ok`` is True only for a clean
+    1-2 word English object the model can ground.
     """
     tables = _prompt_tables()
     strip = tables["strip"]
@@ -458,10 +463,24 @@ def validate_prompt(text: str) -> tuple[bool, str | None, str | None]:
     if norm not in set(_prompt_known_tokens()) and any(
             len(w) >= 2 and not any(c in "aeiouy" for c in w) for w in words):
         return (False, "weird", _prompt_suggestion(norm, words))
-    # Several objects at once ("building, tree" / "cars and trucks").
+    # Several objects at once ("building, tree" / "cars and trucks"): the
+    # cloud model grounds ONE concept per run. Refusing outright loses the
+    # user, so when the FIRST named object stands on its own the run proceeds
+    # on it - (True, "multi_first", token) - and the dock shows a light
+    # non-blocking nudge to run the rest separately. The hard block remains
+    # only when no usable leading object can be extracted.
     if _MULTI_OBJECT_RE.search(" " + norm + " "):
-        first = re.split(r"[,;/+&]| and | or ", norm)[0].strip()
+        # Split the SAME padded string the search matched: a mid-typing
+        # trailing connector ("cars and") only matches with the padding, so
+        # splitting the bare norm would return the whole prompt unchanged and
+        # the recursion below would never terminate.
+        first = re.split(r"[,;/+&]| and | or ", " " + norm + " ")[0].strip()
         first_words = [w for w in first.split(" ") if w]
+        if first and first != norm:
+            f_ok, f_reason, f_sugg = validate_prompt(first)
+            if f_ok:
+                token = f_sugg if (f_reason == "translated" and f_sugg) else first
+                return (True, "multi_first", token)
         return (False, "multi", _prompt_suggestion(first, first_words))
     if "?" in raw or any(w in tables["command"] for w in words):
         return (False, "sentence", _prompt_suggestion(norm, words))

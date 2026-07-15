@@ -2961,6 +2961,21 @@ def create_venv_and_install(
         except OSError:
             # Let the writability check inside the install flow report the real error
             free_gb = None
+        # A reading of ~0 GB is almost never a genuine "disk full": a machine
+        # with zero bytes free could not run QGIS at all. On Windows it means
+        # the probe hit a quota'd, redirected or virtualized path (OneDrive
+        # home, roaming profile, mapped drive) that misreports free space, and
+        # blocking on it stopped installs for users who actually had room. Treat
+        # it as unmeasurable and let the install proceed; pip surfaces a real
+        # disk error later if space is genuinely the problem.
+        if free_gb is not None and free_gb < 0.001:
+            _log(
+                "Disk-space probe read ~0 GB free at {}; treating it as "
+                "unmeasurable (likely a quota'd or redirected path) and "
+                "continuing.".format(CACHE_DIR),
+                Qgis.MessageLevel.Warning,
+            )
+            free_gb = None
         if free_gb is not None and free_gb < min_free_gb:
             hint = (
                 f"Not enough free disk space to install dependencies: "

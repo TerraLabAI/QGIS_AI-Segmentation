@@ -213,6 +213,25 @@ def free_run_fraction(policy: dict | None = None) -> float:
     return val if 0.0 < val <= 1.0 else 0.25
 
 
+def free_zone_max_km2(fallback: float, policy: dict | None = None) -> float:
+    """Max geodesic area (km2) a free-tier Detect zone may cover before the
+    draw is refused with an upsell. A monetization dial the server can loosen
+    or tighten without a plugin release. The fallback is the client's own
+    generic constant (kept in the UI layer and passed in here so this core
+    module stays free of any UI import). Must stay positive."""
+    val = _seed_float("free_zone_max_km2", fallback, policy)
+    return val if val > 0 else fallback
+
+
+def max_tiles_per_run(fallback: int, policy: dict | None = None) -> int:
+    """Hard ceiling on how many tiles (credits) one Detect may span. A cost /
+    abuse dial the server can raise (enterprise) or lower (cost control) without
+    a plugin release. The fallback is the client's own constant, passed in so
+    this core module stays UI-free. Must stay positive."""
+    val = int(_seed_float("max_tiles_per_run", float(fallback), policy))
+    return val if val > 0 else fallback
+
+
 def object_min_px(policy: dict | None = None) -> int:
     """Minimum pixels across for an object to count as resolvable."""
     return int(_seed_float("object_min_px", AUTO_OBJECT_MIN_PX, policy))

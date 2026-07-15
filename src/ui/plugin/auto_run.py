@@ -187,7 +187,7 @@ class AutoRunMixin:
 
         from ...core.activation_manager import get_auth_header, is_plugin_activated
         from ...core.cloud_detection import visible_extent_for
-        from ...core.tile_manager import MAX_TILES
+        from .shared import max_tiles_per_run_cap
 
         if not self.dock_widget:
             return
@@ -208,7 +208,7 @@ class AutoRunMixin:
             return
 
         # Discard any pending post-run review before starting a fresh run.
-        self._discard_auto_review()
+        self._discard_auto_review(exit_path="new_run")
         # Disarm an armed example-box draw so it cannot fire mid-run. The draw
         # tool stays the active map tool until a box is drawn, so a Detect click
         # while it is armed would otherwise leave the user able to draw an
@@ -370,7 +370,8 @@ class AutoRunMixin:
                 )
         if tiles is None:
             QgsMessageLog.logMessage(
-                "Auto detection: zone too large (exceeds {} tiles)".format(MAX_TILES),
+                "Auto detection: zone too large (exceeds {} tiles)".format(
+                    max_tiles_per_run_cap()),
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
             return
@@ -1275,11 +1276,11 @@ class AutoRunMixin:
                     telemetry.track_auto_zone_too_large(area_km2=cap_area)
                 except Exception:
                     pass  # nosec B110
-                from .shared import FREE_TRIAL_MAX_ZONE_KM2
+                from .shared import free_zone_cap_km2
                 return {"_error": (
                     "Zone is {:.1f} km2; free trial zones go up to {:g} km2. "
                     "Use a smaller zone, or subscribe to segment areas of "
-                    "any size.".format(cap_area, FREE_TRIAL_MAX_ZONE_KM2)
+                    "any size.".format(cap_area, free_zone_cap_km2())
                 )}
             if active_layer is not None:
                 try:

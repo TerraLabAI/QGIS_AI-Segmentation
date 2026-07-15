@@ -26,7 +26,7 @@ from ...core.i18n import tr
 from ...core.qt_compat import PolygonGeometry
 from ..canvas_palette import GRID_LINE, ZONE_FILL, ZONE_STROKE
 from ..shortcut_filter import ShortcutFilter
-from .shared import FREE_TRIAL_MAX_ZONE_KM2
+from .shared import free_zone_cap_km2, max_tiles_per_run_cap
 
 
 class AutoZoneMixin:
@@ -65,14 +65,14 @@ class AutoZoneMixin:
         if self._zone_selection_tool is not None:
             return
 
-        from ...core.tile_manager import MAX_TILES, OVERLAP_FRACTION, TILE_SIZE, TileManager
+        from ...core.tile_manager import OVERLAP_FRACTION, TILE_SIZE, TileManager
         from ..polygon_zone_maptool import PolygonZoneMapTool
 
         canvas = self.iface.mapCanvas()
         self._tile_manager = TileManager(
             tile_size=TILE_SIZE,
             overlap_fraction=OVERLAP_FRACTION,
-            max_tiles=MAX_TILES,
+            max_tiles=max_tiles_per_run_cap(),
         )
         # Point-by-point polygon tool so the user outlines the exact area to
         # scan; tiles outside the polygon are never rendered/billed.
@@ -129,7 +129,7 @@ class AutoZoneMixin:
         # Save a still-pending review before tearing down (unload / mode reset):
         # a billed detection must not be lost just because the user quit QGIS or
         # switched away without clicking Finish.
-        self._autosave_pending_auto_review()
+        self._autosave_pending_auto_review(exit_path="unload")
         self._auto_review = None  # discard review without UI update (widget may be gone)
         self._remove_auto_selection_layer()
 
@@ -259,7 +259,7 @@ class AutoZoneMixin:
         # Clean slate: drop any zone/canvas left from a mid-flow library open so
         # both actions start from the same predictable base (idempotent; a fresh
         # mode switch has already reset the flow).
-        self._reset_auto_flow_to_start()
+        self._reset_auto_flow_to_start(exit_path="new_run")
         try:
             dock._on_auto_start_clicked()  # locks the selected raster, opens step 1
         except (RuntimeError, AttributeError):
@@ -499,7 +499,7 @@ class AutoZoneMixin:
         if not usage_known or not is_free:
             return None
         area = self._zone_geodesic_area_km2(geom, crs)
-        if area > FREE_TRIAL_MAX_ZONE_KM2:
+        if area > free_zone_cap_km2():
             return area
         return None
 

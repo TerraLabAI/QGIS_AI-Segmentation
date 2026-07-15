@@ -612,11 +612,11 @@ class SegmentationMCPAPI:
                 telemetry.track_auto_zone_too_large(area_km2=cap_area)
             except Exception:
                 pass  # nosec B110
-            from .ui.plugin.shared import FREE_TRIAL_MAX_ZONE_KM2
+            from .ui.plugin.shared import free_zone_cap_km2
             return {"_error": (
                 "Zone is {:.1f} km2; free trial zones go up to {:g} km2. "
                 "Use a smaller zone, or subscribe to segment areas of "
-                "any size.".format(cap_area, FREE_TRIAL_MAX_ZONE_KM2)
+                "any size.".format(cap_area, free_zone_cap_km2())
             )}
 
         if active_layer is not None:

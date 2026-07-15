@@ -1261,6 +1261,16 @@ class DockStateMixin:
         this session.
         """
         super().showEvent(event)
+        # Re-sync the raster combos with the layer tree whenever the dock
+        # becomes visible: a project opened or layers changed while the dock
+        # was hidden can leave the list stale, and a stale EMPTY list shows
+        # the "Load your own imagery" hero over a project that has imagery
+        # (observed live; the debounced refresh then repaints the state).
+        for combo_name in ("layer_combo", "auto_layer_combo"):
+            try:
+                getattr(self, combo_name)._schedule_refresh()
+            except (RuntimeError, AttributeError):
+                pass
         if getattr(self, "_plugin_opened_emitted", False):
             return
         try:

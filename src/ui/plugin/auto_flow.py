@@ -52,7 +52,7 @@ class AutoFlowMixin:
         # leaks across the switch. The Automatic reset is always safe (its
         # results are transient or already exported); the Manual reset is skipped
         # when there is unsaved manual work, to never silently discard it.
-        self._reset_auto_flow_to_start()
+        self._reset_auto_flow_to_start(exit_path="mode_switch")
         self._reset_manual_flow_to_start()
         if mode == Mode.AUTOMATIC and self.dock_widget:
             self._refresh_auto_credits()
@@ -68,12 +68,13 @@ class AutoFlowMixin:
         except Exception:
             pass  # nosec B110
 
-    def _reset_auto_flow_to_start(self) -> None:
+    def _reset_auto_flow_to_start(self, exit_path: str = "other") -> None:
         """Return the Automatic flow to its pre-Start base: stop any run, drop
         the zone / review / exemplars / canvas visuals, and land on the Start
-        step. Idempotent, so it is safe to call when nothing is active."""
+        step. Idempotent, so it is safe to call when nothing is active.
+        ``exit_path`` names the leave path for the abandonment telemetry."""
         self._stop_auto_detection()  # hard teardown of a live worker; no-op if idle
-        self._discard_auto_review()
+        self._discard_auto_review(exit_path=exit_path)
         self._restore_maptool_after_zone()
         # Drop any pending/stored run plan so it cannot leak across the switch.
         self._auto_run_plan = None

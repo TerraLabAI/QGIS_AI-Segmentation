@@ -31,6 +31,35 @@ SETTINGS_KEY_LAST_MANUAL_SESSION_TS = "AISegmentation/last_manual_session_ts"
 # commit time (interactive draw AND the MCP/headless paths).
 FREE_TRIAL_MAX_ZONE_KM2 = 5.0
 
+
+def free_zone_cap_km2() -> float:
+    """The free-trial zone cap (km2), resolved from the server detection policy
+    when present, else the built-in FREE_TRIAL_MAX_ZONE_KM2. Lets the cap be
+    tuned server-side (a growth dial) without a plugin release. Reads the cached
+    config only (no network), so it is safe on the GUI thread at zone-commit
+    time; fails to the constant so Manual/offline and older servers are
+    unaffected."""
+    try:
+        from ...core.detection_policy import free_zone_max_km2
+        return free_zone_max_km2(FREE_TRIAL_MAX_ZONE_KM2)
+    except Exception:  # noqa: BLE001 -- policy is best-effort; fall to the constant
+        return FREE_TRIAL_MAX_ZONE_KM2
+
+
+def max_tiles_per_run_cap() -> int:
+    """Hard per-run tile (credit) ceiling, resolved from the server detection
+    policy when present, else the built-in MAX_TILES. Lets the cost ceiling be
+    tuned server-side without a plugin release. Cached config only (no network),
+    so it is safe on the GUI thread and in the live credit estimate; fails to
+    the constant offline and on older servers."""
+    from ...core.tile_manager import MAX_TILES
+    try:
+        from ...core.detection_policy import max_tiles_per_run
+        return max_tiles_per_run(MAX_TILES)
+    except Exception:  # noqa: BLE001 -- policy is best-effort; fall to the constant
+        return MAX_TILES
+
+
 # The low recall floor sent to the server so every plausible mask comes back and
 # the review confidence slider can re-filter client-side with no re-detection
 # (free, instant). The UI default cutoff (_AUTO_DEFAULT_CONFIDENCE) is imported

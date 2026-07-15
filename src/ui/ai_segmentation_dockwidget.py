@@ -237,6 +237,9 @@ class AISegmentationDockWidget(
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
         self.setWidget(scroll_area)
+        # Kept so state code can bring a below-the-fold element into view
+        # (e.g. the zero-result rescue, which sits under the Detect row).
+        self._dock_scroll_area = scroll_area
 
         # Stop the mouse wheel from changing combo/spin values while the user is
         # just scrolling the panel (the "what to detect" text used to flip). One

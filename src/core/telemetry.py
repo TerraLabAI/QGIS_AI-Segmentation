@@ -742,7 +742,9 @@ def track_refine_in_manual_back(run_id: str, validated_count: int,
 
 def track_auto_export_done(run_id: str, exported_count: int, visible_pct_of_found: int,
                            final_confidence: int, display_mode: str,
-                           refined_in_manual: bool) -> None:
+                           refined_in_manual: bool, autosave: bool = False) -> None:
+    """autosave marks the passive leave-safety export (mode switch, new run,
+    unload), as opposed to an explicit Finish / Save && exit."""
     track(ev.AUTO_EXPORT_DONE, {
         "run_id": run_id,
         "exported_count": exported_count,
@@ -750,6 +752,21 @@ def track_auto_export_done(run_id: str, exported_count: int, visible_pct_of_foun
         "final_confidence": final_confidence,
         "display_mode": display_mode,
         "refined_in_manual": bool(refined_in_manual),
+        "autosave": bool(autosave),
+    })
+
+
+def track_review_abandoned(run_id: str, instances_at_exit: int, refined: bool,
+                           confidence_changed: bool, exit_path: str) -> None:
+    """The user left the Automatic review without clicking Finish. exit_path is
+    one of exit_button | new_run | mode_switch | zone_redraw | raster_removed |
+    unload | other. No PII by construction."""
+    track(ev.REVIEW_ABANDONED, {
+        "run_id": run_id,
+        "instances_at_exit": int(instances_at_exit),
+        "refined": bool(refined),
+        "confidence_changed": bool(confidence_changed),
+        "exit_path": exit_path,
     })
 
 

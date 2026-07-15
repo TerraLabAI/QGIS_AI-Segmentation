@@ -136,6 +136,14 @@ class AutoReviewMixin:
             pass
         return True
 
+    def _on_auto_review_refine_debounced(self) -> None:
+        """The review's shape/size debounce settled: mark the review as
+        actively refined (feeds the abandonment telemetry's refined-vs-left
+        split), then run the normal cooperative reslice."""
+        if self._auto_review is not None:
+            self._review_tel_refined = True
+        self._start_auto_reslice()
+
     def _start_auto_reslice(self) -> None:
         """Cooperatively re-derive the review's VISIBLE geometry set from the
         canonical WHOLE objects at the current confidence + min/max size +
@@ -278,6 +286,7 @@ class AutoReviewMixin:
         self._start_auto_reslice()
         # Telemetry: count the move and emit one review_confidence_final after
         # the slider settles (2s of no further change).
+        self._review_tel_conf_changed = True
         self._review_conf_moves = getattr(self, "_review_conf_moves", 0) + 1
         _debounce_timer(self, "_review_conf_timer", self.dock_widget, 2000,
                         self._emit_review_confidence_final)
@@ -597,7 +606,8 @@ class AutoReviewMixin:
             scores = None  # dissolve rewrote geoms; parallel scores no longer align
         return geoms, scores
 
-    def _export_auto_review(self, include_hidden: bool = False
+    def _export_auto_review(self, include_hidden: bool = False,
+                            autosave: bool = False
                             ) -> tuple[str | None, int] | None:
         """Apply the refine settings to the pending review geometries, export
         them to a GeoPackage layer, clear the review state, and return
@@ -612,6 +622,10 @@ class AutoReviewMixin:
         (confidence gate dropped, the user's size + shape refine kept). The
         normal Finish button leaves it False and exports exactly the visible set
         the user sees.
+
+        ``autosave`` marks the passive leave-safety export (mode switch, new
+        run, unload) in telemetry, so the funnel can tell an explicit Finish
+        from a rescue save.
         """
         review = self._auto_review
         if not review:
@@ -671,6 +685,7 @@ class AutoReviewMixin:
                 final_confidence=int(round((self._auto_confidence or 0.0) * 100)),
                 display_mode=self._auto_display_mode,
                 refined_in_manual=getattr(self, "_auto_refined_in_manual", False),
+                autosave=autosave,
             )
             if refined:
                 telemetry.track_first_generation_milestone(mode="auto")
@@ -769,12 +784,36 @@ class AutoReviewMixin:
             except (RuntimeError, AttributeError):
                 pass
 
-    def _discard_review_without_autosave(self) -> None:
+    def _track_review_abandoned(self, exit_path: str) -> None:
+        """One review_abandoned per review: fired by every leave-without-Finish
+        path (the autosaving ones AND the discarding ones), with how the user
+        left and whether they had engaged with the review controls first. The
+        per-review flags are reset where review_opened fires. Best-effort."""
+        if self._auto_review is None or not self._auto_objects:
+            return
+        if getattr(self, "_review_abandon_tracked", False):
+            return
+        self._review_abandon_tracked = True
+        try:
+            from ...core import telemetry
+            telemetry.track_review_abandoned(
+                run_id=self._auto_run_id or "",
+                instances_at_exit=len((self._auto_review or {}).get("geoms", [])),
+                refined=bool(getattr(self, "_review_tel_refined", False)),
+                confidence_changed=bool(
+                    getattr(self, "_review_tel_conf_changed", False)),
+                exit_path=exit_path,
+            )
+        except Exception:
+            pass  # nosec B110
+
+    def _discard_review_without_autosave(self, exit_path: str = "other") -> None:
         """Drop the pending review OUTPUT without the autosave that
         _discard_auto_review performs. Shared by Adjust & run again and Exit so
         the discard cleanup lives in exactly one place. Clears the review, the
         canonical objects, the selection layer, the protected/handoff markers,
         and supersedes any in-flight cooperative finalize/reslice."""
+        self._track_review_abandoned(exit_path)
         self._auto_review = None
         self._auto_objects = []
         self._reset_review_refine_cache()
@@ -840,7 +879,8 @@ class AutoReviewMixin:
                 return
             if clicked is not drop_btn:
                 return                              # Cancel: review intact
-        self._discard_review_without_autosave()     # Discard: no autosave
+        self._discard_review_without_autosave(
+            exit_path="exit_button")                # Discard: no autosave
         self._reset_auto_for_new_run()              # back to step 0, unlocked
 
     def _on_auto_retry_clicked(self) -> bool:
@@ -889,7 +929,7 @@ class AutoReviewMixin:
         if not confirmed:
             return False
         # Clear the review OUTPUT without the autosave _discard_auto_review does.
-        self._discard_review_without_autosave()
+        self._discard_review_without_autosave(exit_path="new_run")
         if not self.dock_widget:
             return True
         try:

@@ -2374,6 +2374,12 @@ class AutoResultsMixin:
             )
         except Exception:
             pass  # nosec B110
+        # Fresh per-review engagement flags for the abandonment telemetry
+        # (one review_abandoned max per review, refined/confidence split; the
+        # conf-move counter is reset above with the other fresh-review state).
+        self._review_tel_refined = False
+        self._review_tel_conf_changed = False
+        self._review_abandon_tracked = False
         QgsMessageLog.logMessage(
             "Auto detection: {} object(s) ready for review".format(len(visible)),
             "AI Segmentation", level=Qgis.MessageLevel.Info,
@@ -2396,36 +2402,41 @@ class AutoResultsMixin:
         network_failed = (
             tiles_billed == 0 and (getattr(self, "_auto_skipped_tiles", 0) or getattr(self, "_auto_timeout_tiles", 0))
         )
+        _can_add_example = False
+        _has_examples = False
+        if not network_failed:
+            try:
+                _can_add_example = not self._auto_exemplar_store.is_full_for(1)
+                _has_examples = self._auto_exemplar_store.count() > 0
+            except (RuntimeError, AttributeError):
+                _can_add_example = False
         if network_failed:
             msg = tr("Could not reach the service. Check your connection and try again.")
             log_msg = "Auto detection: run ended with no successful tiles (network/timeout)"
+        elif _can_add_example:
+            # One info per state: the banner states the fact, the rescue
+            # button right below it carries the action (draw an example -
+            # the proven lever against empty results).
+            msg = tr("No matches in this zone.")
+            log_msg = "Auto detection: run completed with zero detections"
         else:
-            # Actionable, not just declarative: a paid run that found nothing
-            # is the worst moment of the flow, and the two levers that rescue
-            # it (a more concrete object word, a drawn example) are both one
-            # step away on this very screen.
+            # Example store full (examples were already the strategy): the
+            # remaining levers are the word and the detail level.
             msg = tr(
-                "No detection in this zone. Try a more specific object word, "
-                "or draw an example of one (best for unusual objects).")
+                "No detection in this zone. Try a more specific object "
+                "word, or a finer detail level.")
             log_msg = "Auto detection: run completed with zero detections"
         if self.dock_widget and not self._auto_headless_run:
             try:
                 self.dock_widget.set_auto_status(
                     "error" if network_failed else "info", msg)
-                if not network_failed:
-                    # The two rescue levers named in the status, as one-click
-                    # chips (draw an example / prefill a stronger word). A
-                    # full example store would make the draw chip a silent
-                    # no-op on click, so it is not offered then (the synonym
-                    # chip alone is not worth the row: a full store means
-                    # examples were already the strategy).
-                    try:
-                        _can_add_example = not self._auto_exemplar_store.is_full_for(1)
-                    except (RuntimeError, AttributeError):
-                        _can_add_example = False
-                    if _can_add_example:
-                        self.dock_widget.show_auto_zero_assist(
-                            self.dock_widget.auto_prompt_input.text().strip())
+                if _can_add_example:
+                    # The rescue row: draw-an-example leads (a full store
+                    # would make it a silent no-op, so it is not offered
+                    # then), plus the server-tuned stronger-word prefill.
+                    self.dock_widget.show_auto_zero_assist(
+                        self.dock_widget.auto_prompt_input.text().strip(),
+                        has_examples=_has_examples)
                 self._set_zone_badge_enabled(True)
                 # Back on the prompt step: the run cleared the tile-grid preview
                 # but the cost label still reads the last estimate. Redraw the

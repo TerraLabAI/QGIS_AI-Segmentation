@@ -41,6 +41,7 @@ from ...core.tile_manager import MAX_DETAIL_LEVEL
 from .styles import (
     BRAND_BLUE,
     _BTN_BLUE,
+    _BTN_BLUE_OUTLINE,
     _BTN_BLUE_PRIMARY,
     _BTN_CHIP,
     _BTN_GHOST,
@@ -401,6 +402,12 @@ class DockAutoBuildMixin:
             f"QLineEdit:focus {{ border: 1px solid {BRAND_BLUE}; }}")
         self.auto_prompt_input.textChanged.connect(self._on_auto_search_text_changed)
         self.auto_prompt_input.returnPressed.connect(self._on_auto_search_return_pressed)
+        # Enter / focus-out = the prompt is settled: flush the debounce and
+        # commit immediately, so unknown words (which skip the mid-typing
+        # debounce commit, see _prompt_plausibly_complete) still seed the
+        # detail default and fire their one commit before Detect.
+        self.auto_prompt_input.editingFinished.connect(
+            self._on_auto_prompt_editing_finished)
         _prompt_row.addWidget(self.auto_prompt_input, 1)
         # The AI Edit prompt-row look: a quiet neutral chip named "Library"
         # (the place, not the content - "Browse objects" read as jargon), so
@@ -878,19 +885,21 @@ class DockAutoBuildMixin:
         self.auto_status_banner.setVisible(False)
         _s3_layout.addWidget(self.auto_status_banner)
 
-        # 11a. Zero-result rescue chips, right under the status banner. A paid
-        # run that found nothing tells the user the two levers in the status
-        # text; these chips make each lever ONE CLICK instead of a hunt: draw
-        # an example of the object (arms the draw), and, when the server steer
-        # table knows a stronger word for this prompt, a one-click prefill.
-        # Hidden by default; driven by show/hide_auto_zero_assist. The row
-        # never outlives its status: set_auto_status hides it on every call.
+        # 11a. Zero-result rescue, right under the status banner. A paid run
+        # that found nothing is the worst moment of the flow, and the drawn
+        # example is the proven lever that rescues it, so it leads: a
+        # full-width blue-outline call (the strong-secondary family, same as
+        # "Refine in Manual mode") with the outcome in its label. The synonym
+        # prefill stays a quiet chip below it, only when the server steer
+        # table knows a stronger word. Hidden by default; driven by
+        # show/hide_auto_zero_assist. The row never outlives its status:
+        # set_auto_status hides it on every call.
         self.auto_zero_assist_row = QWidget()
         _za_col = QVBoxLayout(self.auto_zero_assist_row)
         _za_col.setContentsMargins(0, 0, 0, 0)
         _za_col.setSpacing(4)
         self.auto_zero_example_chip = QPushButton("")
-        self.auto_zero_example_chip.setStyleSheet(_CHIP_QSS)
+        self.auto_zero_example_chip.setStyleSheet(_BTN_BLUE_OUTLINE)
         self.auto_zero_example_chip.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_zero_example_chip.clicked.connect(
             lambda: self.auto_zero_assist_clicked.emit("draw_example", ""))

@@ -857,7 +857,8 @@ class AISegmentationPlugin(
                 (self.dock_widget.auto_review_confidence_changed, self._on_auto_review_confidence_changed),
                 (self.dock_widget.auto_review_confidence_preview, self._on_auto_review_confidence_preview),
                 (self.dock_widget.auto_show_tiles_changed, self._on_auto_show_tiles_toggled),
-                (self.dock_widget._auto_review_debounce_timer.timeout, self._start_auto_reslice),
+                (self.dock_widget._auto_review_debounce_timer.timeout,
+                 self._on_auto_review_refine_debounced),
             ]
             for sig, slot in _dock_signals:
                 try:
@@ -1151,7 +1152,8 @@ class AISegmentationPlugin(
         self.dock_widget.auto_review_confidence_preview.connect(
             self._on_auto_review_confidence_preview)
         self.dock_widget.auto_show_tiles_changed.connect(self._on_auto_show_tiles_toggled)
-        self.dock_widget._auto_review_debounce_timer.timeout.connect(self._start_auto_reslice)
+        self.dock_widget._auto_review_debounce_timer.timeout.connect(
+            self._on_auto_review_refine_debounced)
 
         # Environment checks (venv scan, checkpoint, key revalidation) run
         # only once the dock is actually seen: toolbar click, the

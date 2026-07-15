@@ -9,7 +9,7 @@ REGISTRY_VERSION together.
 """
 from __future__ import annotations
 
-REGISTRY_VERSION = 9
+REGISTRY_VERSION = 10
 
 # --- Lifecycle ------------------------------------------------------------
 PLUGIN_FIRST_OPEN = "plugin_first_open"
@@ -49,6 +49,9 @@ AUTO_ZERO_RESULT = "auto_zero_result"
 # --- Review / refine ------------------------------------------------------
 REVIEW_OPENED = "review_opened"
 REVIEW_CONFIDENCE_FINAL = "review_confidence_final"
+# Left the review without clicking Finish (exit_path says how); passive
+# leaves still autosave (auto_export_done carries autosave=true).
+REVIEW_ABANDONED = "review_abandoned"
 REVIEW_DISPLAY_MODE = "review_display_mode"
 REVIEW_SHAPE_ADJUSTED = "review_shape_adjusted"
 REFINE_IN_MANUAL_ENTERED = "refine_in_manual_entered"
@@ -102,6 +105,9 @@ FLUSH_NOW = frozenset({
     # The session often ends right after these (quit after cancelling, browser
     # handoff after pairing): the batch would die with it.
     INSTALL_CANCELLED, PAIRING_FAILED, PAIRING_CANCELLED, FIRST_GENERATION_MILESTONE,
+    # Leaving the review (Discard && exit, unload) is often the last act of the
+    # session; without an immediate flush the abandonment signal dies with it.
+    REVIEW_ABANDONED,
 })
 
 # Lifecycle events with no user-generated content; they ship as long as the
@@ -147,6 +153,7 @@ ALL_EVENTS = frozenset({
     AUTO_ZERO_RESULT,
     REVIEW_OPENED,
     REVIEW_CONFIDENCE_FINAL,
+    REVIEW_ABANDONED,
     REVIEW_DISPLAY_MODE,
     REVIEW_SHAPE_ADJUSTED,
     REFINE_IN_MANUAL_ENTERED,
@@ -217,6 +224,7 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     AUTO_ZERO_RESULT: ("run_id", "object_class"),
     REVIEW_OPENED: ("run_id", "instances_found"),
     REVIEW_CONFIDENCE_FINAL: ("run_id", "final_pct"),
+    REVIEW_ABANDONED: ("run_id",),
     REVIEW_DISPLAY_MODE: ("mode",),
     REVIEW_SHAPE_ADJUSTED: ("control",),
     REFINE_IN_MANUAL_ENTERED: ("run_id",),

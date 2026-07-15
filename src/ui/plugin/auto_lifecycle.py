@@ -31,7 +31,7 @@ from .shared import (
 class AutoLifecycleMixin:
     """Run wind-down: autosave/discard, worker signal handlers, detection export."""
 
-    def _autosave_pending_auto_review(self) -> None:
+    def _autosave_pending_auto_review(self, exit_path: str = "other") -> None:
         """Persist a still-pending review to a layer so a paid detection is never
         lost when the user leaves the flow WITHOUT clicking Finish (Exit, mode
         switch, new run, dropping the zone, or quitting QGIS). A detection costs
@@ -54,7 +54,10 @@ class AutoLifecycleMixin:
             # found set (include_hidden) below.
             if not (review and self._auto_objects):
                 return
-            exported = self._export_auto_review(include_hidden=True)
+            # The user is leaving without Finish: record the abandonment (with
+            # how) BEFORE the rescue export clears the review state.
+            self._track_review_abandoned(exit_path)
+            exported = self._export_auto_review(include_hidden=True, autosave=True)
             if exported and exported[1] > 0 and self.dock_widget:
                 name, count = exported
                 try:
@@ -72,16 +75,17 @@ class AutoLifecycleMixin:
             except Exception:  # nosec B110
                 pass
 
-    def _discard_auto_review(self) -> None:
+    def _discard_auto_review(self, exit_path: str = "other") -> None:
         """Auto-save then clear the post-run review state.
 
         Called when a new run starts, the zone is dropped, the mode changes,
         Exit is clicked, or the plugin is unloaded. The detection is billed, so
         we never silently throw it away: any still-pending review is committed
         to a layer first (see _autosave_pending_auto_review), then the in-memory
-        review state is cleared.
+        review state is cleared. ``exit_path`` names the leave path for the
+        abandonment telemetry.
         """
-        self._autosave_pending_auto_review()
+        self._autosave_pending_auto_review(exit_path)
         self._auto_review = None
         # Supersede any in-flight cooperative finalize/reslice (same gen-bump +
         # state-null as _reset_auto_live_pipeline): every caller here is leaving
@@ -430,7 +434,7 @@ class AutoLifecycleMixin:
             except (RuntimeError, AttributeError):
                 locked_id = None
             if locked_id and locked_id in ids:
-                self._reset_auto_flow_to_start()
+                self._reset_auto_flow_to_start(exit_path="raster_removed")
                 try:
                     dock.set_auto_status(
                         "info", tr("The selected raster was removed."))
