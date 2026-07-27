@@ -13,10 +13,6 @@
         <translation>Confianza</translation>
     </message>
     <message>
-        <source>Random</source>
-        <translation>Aleatorio</translation>
-    </message>
-    <message>
         <source>Outline</source>
         <translation>Contorno</translation>
     </message>
@@ -24,10 +20,6 @@
     <message>
         <source>Retry</source>
         <translation>Reintentar</translation>
-    </message>
-    <message>
-        <source>Go back to your zone, references and settings to adjust and detect again. Nothing is saved.</source>
-        <translation>Vuelve a tu zona, referencias y ajustes para ajustar y detectar de nuevo. No se guarda nada.</translation>
     </message>
     <!-- Reference example enlarge (2026-07-01) -->
     <message>
@@ -46,14 +38,6 @@
     <message>
         <source>Exclude a look-alike</source>
         <translation>Excluir un parecido</translation>
-    </message>
-    <message>
-        <source>Now outline a look-alike to exclude, then click the first point to close.</source>
-        <translation>Ahora contornea un parecido para excluirlo, luego haz clic en el primer punto para cerrar.</translation>
-    </message>
-    <message>
-        <source>Your examples drive the search.</source>
-        <translation>Tus ejemplos guían la búsqueda.</translation>
     </message>
     <message>
         <source>Too generic to name. Clear the box to search from your example alone, or type a concrete object.</source>
@@ -75,22 +59,10 @@
         <source>Finer detail finds smaller objects.</source>
         <translation>Más detalle encuentra objetos más pequeños.</translation>
     </message>
-    <message>
-        <source>Refine in Manual mode</source>
-        <translation>Refinar en modo Manual</translation>
-    </message>
     <!-- Refine in Manual handoff -->
     <message>
         <source>Finish or exit the review to switch modes.</source>
         <translation>Finaliza o sal de la revisión para cambiar de modo.</translation>
-    </message>
-    <message>
-        <source>Preparing Manual mode, loading the local model...</source>
-        <translation>Preparando el modo Manual, cargando el modelo local...</translation>
-    </message>
-    <message>
-        <source>Locked - refined in Manual mode</source>
-        <translation>Bloqueado - refinado en modo Manual</translation>
     </message>
     <message>
         <source>Detection</source>
@@ -342,24 +314,12 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Segmentación</translation>
     </message>
     <message>
-        <source>Navigation</source>
-        <translation>Navegación</translation>
-    </message>
-    <message>
         <source>Space</source>
         <translation>Espacio</translation>
     </message>
     <message>
         <source>Hold and move to pan the map</source>
         <translation>Mantener y mover para desplazar el mapa</translation>
-    </message>
-    <message>
-        <source>Middle mouse button</source>
-        <translation>Botón central del ratón</translation>
-    </message>
-    <message>
-        <source>Click and drag to pan the map</source>
-        <translation>Clic y arrastrar para desplazar el mapa</translation>
     </message>
     <message>
         <source>The AI model works best on one element at a time.</source>
@@ -384,26 +344,6 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Refinar selección</translation>
     </message>
     <message>
-        <source>Expand/Contract:</source>
-        <translation>Expandir/Contraer:</translation>
-    </message>
-    <message>
-        <source>Positive = expand outward, Negative = shrink inward</source>
-        <translation>Positivo = expandir hacia afuera, Negativo = contraer hacia adentro</translation>
-    </message>
-    <message>
-        <source>Simplify outline:</source>
-        <translation>Simplificar contorno:</translation>
-    </message>
-    <message>
-        <source>Reduce small variations in the outline (0 = no change)</source>
-        <translation>Reducir pequeñas variaciones en el contorno (0 = sin cambios)</translation>
-    </message>
-    <message>
-        <source>Fill holes:</source>
-        <translation>Rellenar huecos:</translation>
-    </message>
-    <message>
         <source>Fill interior holes in the selection</source>
         <translation>Rellenar huecos interiores en la selección</translation>
     </message>
@@ -416,20 +356,8 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Tamaño</translation>
     </message>
     <message>
-        <source>Round corners:</source>
-        <translation>Redondear esquinas:</translation>
-    </message>
-    <message>
-        <source>Round corners for natural shapes like trees and bushes. Increase 'Simplify outline' for smoother results.</source>
-        <translation>Redondear esquinas para formas naturales como árboles y arbustos. Aumenta 'Simplificar contorno' para resultados más suaves.</translation>
-    </message>
-    <message>
         <source>Outline</source>
         <translation>Contorno</translation>
-    </message>
-    <message>
-        <source>Selection</source>
-        <translation>Selección</translation>
     </message>
 
     <!-- Instructions -->
@@ -1020,16 +948,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Min size:</source>
-        <translation>Tamaño mín.:</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Max size:</source>
-        <translation>Tamaño máx.:</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Off</source>
         <translation>Desactivado</translation>
     </message>
@@ -1225,11 +1143,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
-        <source>No matching objects.</source>
-        <translation>No hay objetos coincidentes.</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
         <source>Use</source>
         <translation>Usar</translation>
     </message>
@@ -1247,16 +1160,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
         <source>Draw your example inside the selected zone.</source>
         <translation>Dibuja tu ejemplo dentro de la zona seleccionada.</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Clean edges:</source>
-        <translation>Limpiar bordes:</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Remove thin ragged fringe attached to the outline (0 = no change)</source>
-        <translation>Elimina el borde fino e irregular pegado al contorno (0 = sin cambios)</translation>
     </message>
     <message>
         <location filename="../src/ui/account_settings_dialog.py" line="0"/>
@@ -1394,11 +1297,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>cancelar</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
-        <source>Now outline one object, then click the first point to close.</source>
-        <translation>Ahora delimita un objeto y haz clic en el primer punto para cerrar.</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/auto_build.py" line="0"/>
         <source>Exit</source>
         <translation>Salir</translation>
@@ -1429,11 +1327,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Mostrar tiles (depuración)</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>Open these detections in Manual mode to fix specific objects point-by-point, then come back and export.</source>
-        <translation>Abre estas detecciones en modo Manual para corregir objetos concretos punto por punto, y luego vuelve para exportar.</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>"{word}" will run as "{token}".</source>
         <translation>«{word}» se ejecutará como «{token}».</translation>
@@ -1457,11 +1350,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>object</source>
         <translation>objeto</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/cards.py" line="0"/>
-        <source>{tiles} tiles · {objects} objects · {credits} credits</source>
-        <translation>{tiles} tiles · {objects} objetos · {credits} créditos</translation>
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/cards.py" line="0"/>
@@ -1570,11 +1458,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
-        <source>Drop this object back into the prompt box for a new detection.</source>
-        <translation>Vuelve a poner este objeto en el campo de prompt para una nueva detección.</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
         <source>Remove from favorites</source>
         <translation>Quitar de favoritos</translation>
     </message>
@@ -1630,11 +1513,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
-        <source>Star a detection to keep it here.</source>
-        <translation>Marca una detección como favorita para conservarla aquí.</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
         <source>Could not load this run's stored detections. Try again later.</source>
         <translation>No se pudieron cargar las detecciones almacenadas de esta ejecución. Inténtalo de nuevo más tarde.</translation>
     </message>
@@ -1674,26 +1552,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Automático</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
-        <source>Automatic - detect and review</source>
-        <translation>Automático - detección y revisión</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
-        <source>Automatic - draw your zone</source>
-        <translation>Automático - dibuja tu zona</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
-        <source>Cancel the drawing</source>
-        <translation>Cancelar el dibujo</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
-        <source>Cancel the running detection, or exit the review</source>
-        <translation>Cancelar la detección en curso o salir de la revisión</translation>
-    </message>
-    <message>
         <location filename="../src/core/feature_encoder.py" line="0"/>
         <source>Click</source>
         <translation>Clic</translation>
@@ -1712,11 +1570,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <location filename="../src/ui/dock/about.py" line="0"/>
         <source>Delete the active object</source>
         <translation>Eliminar el objeto activo</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
-        <source>Detect objects, or export the reviewed polygons</source>
-        <translation>Detectar objetos o exportar los polígonos revisados</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -1774,16 +1627,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Manual</translation>
     </message>
     <message>
-        <location filename="../src/ui/plugin/manual_handoff.py" line="0"/>
-        <source>Manual mode needs a one-time setup</source>
-        <translation>El modo Manual necesita una configuración única</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Manual session</source>
-        <translation>Sesión manual</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>Max detail for this zone - draw a larger zone for finer detail.</source>
         <translation>Detalle máximo para esta zona - dibuja una zona más grande para más detalle.</translation>
@@ -1797,11 +1640,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
         <source>One color per object - check neighbors are separated</source>
         <translation>Un color por objeto - comprueba que los vecinos están separados</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>Optional shape and size controls: simplify outlines, clean edges, round corners, expand or shrink, fill holes, size filters.</source>
-        <translation>Controles opcionales de forma y tamaño: simplificar contornos, limpiar bordes, redondear esquinas, expandir o contraer, rellenar huecos, filtros de tamaño.</translation>
     </message>
     <message>
         <location filename="../src/ui/plugin/auto_lifecycle.py" line="0"/>
@@ -1934,11 +1772,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>≈ 1 tile = 1 crédito</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>Adjust and run again</source>
-        <translation>Ajustar y volver a lanzar</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>all shown</source>
         <translation>todos visibles</translation>
@@ -1949,37 +1782,14 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>{visible} de {n} visibles</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>{hidden} below {pct}%</source>
-        <translation>{hidden} por debajo de {pct} %</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>Adjust and run again</source>
-        <translation>Ajustar y volver a ejecutar</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
         <source>all shown</source>
         <translation>todo mostrado</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>{hidden} below {pct}%</source>
-        <translation>{hidden} por debajo del {pct}%</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
         <source>{visible} of {n} shown</source>
         <translation>{visible} de {n} mostradas</translation>
-    </message>
-    <message>
-        <source>Right angles:</source>
-        <translation>Ángulos rectos:</translation>
-    </message>
-    <message>
-        <source>Snap edges to 90 degrees for man-made shapes like buildings, pools and solar panels.</source>
-        <translation>Ajusta los bordes a 90 grados para formas construidas como edificios, piscinas y paneles solares.</translation>
     </message>
     <message>
         <source>Click an object on the map and the AI outlines it. You go one object at a time, checking and saving each polygon yourself.</source>
@@ -2027,10 +1837,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Encuentra todos los objetos de un mismo tipo en tu zona - dibuja una zona, nombra el objeto y obtén todos los polígonos de una vez.</translation>
     </message>
     <message>
-        <source>Tip: lower Confidence to reveal more detections, raise it to keep only the best.</source>
-        <translation>Consejo: baja la Confianza para revelar más detecciones, súbela para conservar solo las mejores.</translation>
-    </message>
-    <message>
         <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
         <translation>Dibuja una zona más pequeña, o &lt;a href=&quot;{url}&quot;&gt;suscríbete&lt;/a&gt; para segmentar áreas de cualquier tamaño.</translation>
     </message>
@@ -2063,24 +1869,8 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Finaliza o cancela la detección actual antes de volver a ejecutar una anterior.</translation>
     </message>
     <message>
-        <source>Couldn&apos;t open your browser. Check your connection and click Sign in / Sign up to start again.</source>
-        <translation>No se pudo abrir tu navegador. Comprueba tu conexión y haz clic en Iniciar sesión / Registrarse para empezar de nuevo.</translation>
-    </message>
-    <message>
         <source>0 shown - lower the Min size filter to reveal them</source>
         <translation>0 mostrado - baja el filtro Tamaño mín. para revelarlos</translation>
-    </message>
-    <message>
-        <source>1 detection selected</source>
-        <translation>1 detección seleccionada</translation>
-    </message>
-    <message>
-        <source>1 removed</source>
-        <translation>1 quitado</translation>
-    </message>
-    <message>
-        <source>1 shape edited</source>
-        <translation>1 forma editada</translation>
     </message>
     <message>
         <source>10,000 credits every month. Cancel anytime.</source>
@@ -2103,10 +1893,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Acepta primero los Términos y la Política de Privacidad.</translation>
     </message>
     <message>
-        <source>Add an example</source>
-        <translation>Añadir un ejemplo</translation>
-    </message>
-    <message>
         <source>An install or detection is still running. Wait for it to finish, then try again.</source>
         <translation>Una instalación o detección sigue en curso. Espera a que termine y vuelve a intentarlo.</translation>
     </message>
@@ -2119,10 +1905,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
         <translation>Con este detalle, {obj} es demasiado pequeño para detectarse - aumenta el detalle.</translation>
     </message>
     <message>
-        <source>Automatic detection needs a georeferenced raster. Use Manual mode for this image.</source>
-        <translation>La detección automática necesita un raster georreferenciado. Usa el modo Manual para esta imagen.</translation>
-    </message>
-    <message>
         <source>Available once the current install or detection finishes.</source>
         <translation>Disponible cuando termine la instalación o detección actual.</translation>
     </message>
@@ -2133,14 +1915,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     <message>
         <source>Browse the library (view only while detecting).</source>
         <translation>Explora la biblioteca (solo lectura durante la detección).</translation>
-    </message>
-    <message>
-        <source>Click a detection on the map</source>
-        <translation>Haz clic en una detección en el mapa</translation>
-    </message>
-    <message>
-        <source>Click an empty spot to deselect.</source>
-        <translation>Haz clic en un espacio vacío para deseleccionar.</translation>
     </message>
     <message>
         <source>Could not reach the service. Check your connection and try again.</source>
@@ -2169,56 +1943,20 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>La detección falló. Vuelve a intentarlo.</translation>
     </message>
     <message>
-        <source>Done, back to Automatic review</source>
-        <translation>Listo, volver a la revisión Automática</translation>
-    </message>
-    <message>
         <source>Downloaded AI data removed. You have been signed out.</source>
         <translation>Datos de IA descargados eliminados. Se ha cerrado tu sesión.</translation>
-    </message>
-    <message>
-        <source>Draw an example of one {object}</source>
-        <translation>Dibuja un ejemplo de un {object}</translation>
-    </message>
-    <message>
-        <source>Draw an example of one {object} to find more</source>
-        <translation>Dibuja un ejemplo de un {object} para encontrar más</translation>
     </message>
     <message>
         <source>Draw on the map</source>
         <translation>Dibujar en el mapa</translation>
     </message>
     <message>
-        <source>Edit shape</source>
-        <translation>Editar forma</translation>
-    </message>
-    <message>
-        <source>Edit your detections</source>
-        <translation>Edita tus detecciones</translation>
-    </message>
-    <message>
-        <source>Editing this shape</source>
-        <translation>Editando esta forma</translation>
-    </message>
-    <message>
         <source>Extra detail keeps helping {obj} in this zone.</source>
         <translation>Más detalle sigue ayudando a {obj} en esta zona.</translation>
     </message>
     <message>
-        <source>Filter and refine, then export.</source>
-        <translation>Filtra y refina, luego exporta.</translation>
-    </message>
-    <message>
         <source>Free plan</source>
         <translation>Plan gratuito</translation>
-    </message>
-    <message>
-        <source>Go back to the Automatic review to switch modes.</source>
-        <translation>Vuelve a la revisión Automática para cambiar de modo.</translation>
-    </message>
-    <message>
-        <source>Grouped as continuous cover.</source>
-        <translation>Agrupado como cobertura continua.</translation>
     </message>
     <message>
         <source>Hide parts larger than this ground area. 0 = no limit.</source>
@@ -2227,22 +1965,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>Hide parts smaller than this ground area. Use it to drop tiny noise blobs. 0 = keep all.</source>
         <translation>Oculta las partes más pequeñas que esta superficie sobre el terreno. Úsalo para eliminar pequeños artefactos. 0 = mantener todo.</translation>
-    </message>
-    <message>
-        <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a random colour per object to tell them apart.</source>
-        <translation>Cómo se colorean las detecciones en el mapa (solo visual): Relleno normal, Contorno, Mapa de calor de confianza, o un color aleatorio por objeto para diferenciarlos.</translation>
-    </message>
-    <message>
-        <source>Invalid CRS</source>
-        <translation>CRS no válido</translation>
-    </message>
-    <message>
-        <source>Kept as distinct objects.</source>
-        <translation>Mantenido como objetos distintos.</translation>
-    </message>
-    <message>
-        <source>Left-click adds what you click to the shape</source>
-        <translation>El clic izquierdo añade a la forma lo que pulses</translation>
     </message>
     <message>
         <source>Load example imagery</source>
@@ -2285,10 +2007,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>¿Nuevo por aquí? Nuestro tutorial de 5 minutos te guía paso a paso por una detección completa.</translation>
     </message>
     <message>
-        <source>No detection in this zone. Try a more specific object word, or draw an example of one (best for unusual objects).</source>
-        <translation>Sin detecciones en esta zona. Prueba con una palabra de objeto más específica, o dibuja un ejemplo (ideal para objetos inusuales).</translation>
-    </message>
-    <message>
         <source>Not Enough Disk Space</source>
         <translation>Espacio en disco insuficiente</translation>
     </message>
@@ -2317,20 +2035,12 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Abre terra-lab.ai en tu navegador.</translation>
     </message>
     <message>
-        <source>Opens the shape so clicks can extend or trim it. Key: E, or double-click it on the map</source>
-        <translation>Abre la forma para que los clics puedan extenderla o recortarla. Tecla: E, o haz doble clic sobre ella en el mapa</translation>
-    </message>
-    <message>
         <source>Opens your terra-lab.ai account in the browser.</source>
         <translation>Abre tu cuenta de terra-lab.ai en el navegador.</translation>
     </message>
     <message>
         <source>Opens your terra-lab.ai dashboard in the browser.</source>
         <translation>Abre tu panel de terra-lab.ai en el navegador.</translation>
-    </message>
-    <message>
-        <source>Optional</source>
-        <translation>Opcional</translation>
     </message>
     <message>
         <source>Outline ONE example of the object on the map, then run again. Runs with a drawn example return far fewer empty results.</source>
@@ -2341,24 +2051,8 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Planificando la ejecución de AI Segmentation</translation>
     </message>
     <message>
-        <source>Preparing Manual mode...</source>
-        <translation>Preparando el modo Manual...</translation>
-    </message>
-    <message>
         <source>Pro plan</source>
         <translation>Plan Pro</translation>
-    </message>
-    <message>
-        <source>Refine</source>
-        <translation>Refinar</translation>
-    </message>
-    <message>
-        <source>Refining uses the free local AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and refining will open automatically when it is ready.</source>
-        <translation>El refinado usa la IA local gratuita, que aún no está instalada. ¿Instalarla ahora (unos minutos, en segundo plano)? Puedes seguir revisando, y el refinado se abrirá automáticamente cuando esté listo.</translation>
-    </message>
-    <message>
-        <source>Regrouping detections...</source>
-        <translation>Reagrupando detecciones...</translation>
     </message>
     <message>
         <source>Remove downloaded AI data</source>
@@ -2369,40 +2063,16 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>¿Eliminar los datos de IA descargados de este equipo?</translation>
     </message>
     <message>
-        <source>Removes it from the results. Key: Delete (Ctrl+Z restores it)</source>
-        <translation>Lo quita de los resultados. Tecla: Supr (Ctrl+Z lo restaura)</translation>
-    </message>
-    <message>
         <source>Removing...</source>
         <translation>Eliminando...</translation>
-    </message>
-    <message>
-        <source>Returns to the Automatic review with your edits. The export happens there.</source>
-        <translation>Vuelve a la revisión Automática con tus cambios. La exportación se hace ahí.</translation>
-    </message>
-    <message>
-        <source>Review detections</source>
-        <translation>Revisión de detecciones</translation>
     </message>
     <message>
         <source>Right level for {obj} in this zone.</source>
         <translation>Nivel adecuado para {obj} en esta zona.</translation>
     </message>
     <message>
-        <source>Right-click removes it from the shape</source>
-        <translation>El clic derecho lo quita de la forma</translation>
-    </message>
-    <message>
         <source>Rotated raster</source>
         <translation>Raster rotado</translation>
-    </message>
-    <message>
-        <source>Runs with a drawn example return far fewer empty results. This re-runs the zone with the example draw armed (new credits).</source>
-        <translation>Las ejecuciones con un ejemplo dibujado devuelven muchos menos resultados vacíos. Esto vuelve a ejecutar la zona con el dibujo de ejemplo activado (nuevos créditos).</translation>
-    </message>
-    <message>
-        <source>Save shape</source>
-        <translation>Guardar forma</translation>
     </message>
     <message>
         <source>Save {save} detections ({hidden} currently hidden by Confidence) to a layer before leaving?</source>
@@ -2413,32 +2083,12 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>¿Guardar {save} detecciones en una capa antes de salir?</translation>
     </message>
     <message>
-        <source>Saves this shape and closes the edit. Key: S</source>
-        <translation>Guarda esta forma y cierra la edición. Tecla: S</translation>
-    </message>
-    <message>
         <source>Segment library (view only)</source>
         <translation>Biblioteca de segmentación (solo lectura)</translation>
     </message>
     <message>
         <source>Segmentation failed. Please try again.</source>
         <translation>La segmentación falló. Vuelve a intentarlo.</translation>
-    </message>
-    <message>
-        <source>Setting up Manual mode in the background. You can keep reviewing; refining opens automatically when it is ready.</source>
-        <translation>Configurando el modo Manual en segundo plano. Puedes seguir revisando; el refinado se abrirá automáticamente cuando esté listo.</translation>
-    </message>
-    <message>
-        <source>Setting up Manual mode in the background...</source>
-        <translation>Configurando el modo Manual en segundo plano...</translation>
-    </message>
-    <message>
-        <source>Shape and size settings</source>
-        <translation>Ajustes de forma y tamaño</translation>
-    </message>
-    <message>
-        <source>Shape settings</source>
-        <translation>Ajustes de forma</translation>
     </message>
     <message>
         <source>Sharper than {obj} usually needs - catches the smallest ones.</source>
@@ -2477,16 +2127,8 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>¿Equipo u organización?</translation>
     </message>
     <message>
-        <source>The AI finds every object similar to your example.</source>
-        <translation>La IA encuentra todos los objetos similares a tu ejemplo.</translation>
-    </message>
-    <message>
         <source>The AI service is waking up. Holding your spot…</source>
         <translation>El servicio de IA se está despertando. Manteniendo tu lugar…</translation>
-    </message>
-    <message>
-        <source>The detection service had a problem. Your credits for the failed tiles were refunded. Please try again.</source>
-        <translation>El servicio de detección tuvo un problema. Tus créditos por los tiles fallidos fueron reembolsados. Vuelve a intentarlo.</translation>
     </message>
     <message>
         <source>The detection service is busy right now. Please try again in a moment.</source>
@@ -2509,24 +2151,8 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Esto elimina los archivos del modelo de IA local, cierra tu sesión y restablece el plugin. Tu cuenta y tus créditos no se ven afectados. El modo Manual volverá a descargar los archivos la próxima vez que lo uses.</translation>
     </message>
     <message>
-        <source>This detail level is a Pro feature. Lower the detail, or</source>
-        <translation>Este nivel de detalle es una función Pro. Baja el detalle, o</translation>
-    </message>
-    <message>
         <source>This layer has no valid coordinate reference system. Set one in Layer Properties before detecting.</source>
         <translation>Esta capa no tiene un sistema de referencia de coordenadas válido. Define uno en Propiedades de la capa antes de detectar.</translation>
-    </message>
-    <message>
-        <source>This layer has no valid coordinate reference system. Set one in Layer Properties before segmenting.</source>
-        <translation>Esta capa no tiene un sistema de referencia de coordenadas válido. Define uno en Propiedades de la capa antes de segmentar.</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF before segmenting.</source>
-        <translation>Este raster está rotado. Conviértelo en un GeoTIFF alineado con los ejes antes de segmentar.</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF, or use Manual mode.</source>
-        <translation>Este raster está rotado. Conviértelo en un GeoTIFF alineado con los ejes, o usa el modo Manual.</translation>
     </message>
     <message>
         <source>This raster uses a geographic CRS (degrees), which distorts the imagery sent to the AI. For best results, reproject it to a projected CRS (e.g. UTM).</source>
@@ -2539,22 +2165,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>Try "{word}" instead</source>
         <translation>Prueba «{word}» en su lugar</translation>
-    </message>
-    <message>
-        <source>Try '{term}' - it's a better prompt.</source>
-        <translation>Prueba '{term}' - es un mejor prompt.</translation>
-    </message>
-    <message>
-        <source>Try an object from the Library - it's a better prompt.</source>
-        <translation>Prueba un objeto de la Biblioteca - es un mejor prompt.</translation>
-    </message>
-    <message>
-        <source>Undo click</source>
-        <translation>Deshacer clic</translation>
-    </message>
-    <message>
-        <source>Undoes the last change to this shape. Key: Ctrl+Z</source>
-        <translation>Deshace el último cambio de esta forma. Tecla: Ctrl+Z</translation>
     </message>
     <message>
         <source>Update now</source>
@@ -2571,14 +2181,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>Very fine for {obj} - large ones may come back split in parts.</source>
         <translation>Muy fino para {obj} - los grandes pueden volver divididos en partes.</translation>
-    </message>
-    <message>
-        <source>View as continuous cover</source>
-        <translation>Ver como cobertura continua</translation>
-    </message>
-    <message>
-        <source>View as distinct objects</source>
-        <translation>Ver como objetos distintos</translation>
     </message>
     <message>
         <source>View detections as:</source>
@@ -2605,10 +2207,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>polígonos</translation>
     </message>
     <message>
-        <source>some files could not be deleted</source>
-        <translation>algunos archivos no se pudieron eliminar</translation>
-    </message>
-    <message>
         <source>uncertain</source>
         <translation>inseguro</translation>
     </message>
@@ -2621,20 +2219,8 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>tu objeto</translation>
     </message>
     <message>
-        <source>{n} detections selected</source>
-        <translation>{n} detecciones seleccionadas</translation>
-    </message>
-    <message>
         <source>{n} found so far</source>
         <translation>{n} encontrados hasta ahora</translation>
-    </message>
-    <message>
-        <source>{n} removed</source>
-        <translation>{n} quitados</translation>
-    </message>
-    <message>
-        <source>{n} shapes edited</source>
-        <translation>{n} formas editadas</translation>
     </message>
     <message>
         <source>{n} tiles could not be loaded from the layer server; results may be incomplete.</source>
@@ -2734,42 +2320,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>1 objeto encontrado</translation>
     </message>
     <message>
-        <source>Add a second example - two references detect far better than one.</source>
-        <translation>Añade un segundo ejemplo: dos referencias detectan mucho mejor que una.</translation>
-    </message>
-    <message>
-        <source>Add a second example, or type what to find.</source>
-        <translation>Añade un segundo ejemplo o escribe qué buscar.</translation>
-    </message>
-    <message>
-        <source>Add polygon to the layer</source>
-        <translation>Añadir polígono a la capa</translation>
-    </message>
-    <message>
-        <source>Add to</source>
-        <translation>Añadir a</translation>
-    </message>
-    <message>
-        <source>Add {count} polygons to the layer</source>
-        <translation>Añadir {count} polígonos a la capa</translation>
-    </message>
-    <message>
-        <source>Added {count} polygon(s) to {name}.</source>
-        <translation>{count} polígono(s) añadido(s) a {name}.</translation>
-    </message>
-    <message>
-        <source>Adds your {n} kept polygons to the selected layer.</source>
-        <translation>Añade tus {n} polígonos conservados a la capa seleccionada.</translation>
-    </message>
-    <message>
-        <source>Could not add to that layer. Created a new layer instead.</source>
-        <translation>No se pudo añadir a esa capa. Se creó una capa nueva en su lugar.</translation>
-    </message>
-    <message>
-        <source>Create a new layer, or add these polygons to an existing layer.</source>
-        <translation>Crea una capa nueva o añade estos polígonos a una capa existente.</translation>
-    </message>
-    <message>
         <source>Download AI model</source>
         <translation>Descargar modelo de IA</translation>
     </message>
@@ -2778,16 +2328,8 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Exportar 1 polígono</translation>
     </message>
     <message>
-        <source>New layer</source>
-        <translation>Capa nueva</translation>
-    </message>
-    <message>
         <source>Resolving object name</source>
         <translation>Resolviendo el nombre del objeto</translation>
-    </message>
-    <message>
-        <source>That layer is no longer available. Created a new layer instead.</source>
-        <translation>Esa capa ya no está disponible. Se creó una capa nueva en su lugar.</translation>
     </message>
     <message>
         <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
@@ -2827,10 +2369,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Hay una versión más reciente de AI Segmentation con las últimas correcciones.</translation>
     </message>
     <message>
-        <source>A shape was removed. Click Done to confirm.</source>
-        <translation>Se eliminó una forma. Haga clic en Listo para confirmar.</translation>
-    </message>
-    <message>
         <source>AI</source>
         <translation>IA</translation>
     </message>
@@ -2841,10 +2379,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>AI and Manual are two ways to fix the same polygon.</source>
         <translation>IA y Manual son dos formas de corregir el mismo polígono.</translation>
-    </message>
-    <message>
-        <source>Add a missed object</source>
-        <translation>Añadir un objeto omitido</translation>
     </message>
     <message>
         <source>Add an object the AI missed. In AI, point at it and the on-device model outlines it, free; in Manual, draw its corners.</source>
@@ -2859,10 +2393,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Añada un ejemplo más para el mejor resultado.</translation>
     </message>
     <message>
-        <source>Add the ones you can see</source>
-        <translation>Añada los que vea</translation>
-    </message>
-    <message>
         <source>Add them to the project</source>
         <translation>Añadirlos al proyecto</translation>
     </message>
@@ -2873,10 +2403,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>Adding needs a one-time setup</source>
         <translation>Añadir requiere una instalación única</translation>
-    </message>
-    <message>
-        <source>All holes</source>
-        <translation>Todos los huecos</translation>
     </message>
     <message>
         <source>Almost there: in step 1, name the object your examples show - words plus examples detect best.</source>
@@ -2893,10 +2419,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>Another QGIS window is installing the AI engine. Wait for it to finish, then try again.</source>
         <translation>Otra ventana de QGIS está instalando el motor de IA. Espere a que termine y vuelva a intentarlo.</translation>
-    </message>
-    <message>
-        <source>Are the outlines clean?</source>
-        <translation>¿Están limpios los contornos?</translation>
     </message>
     <message>
         <source>Automatic detection failed</source>
@@ -2963,18 +2485,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Borrar la selección, o detener la segmentación</translation>
     </message>
     <message>
-        <source>Click a line right across the shape, then Finish.</source>
-        <translation>Trace una línea que cruce la forma, luego Finalizar.</translation>
-    </message>
-    <message>
-        <source>Click a polygon to edit it</source>
-        <translation>Haga clic en un polígono para editarlo</translation>
-    </message>
-    <message>
-        <source>Click each corner on the map, then Finish.</source>
-        <translation>Haga clic en cada esquina del mapa, luego Finalizar.</translation>
-    </message>
-    <message>
         <source>Click each piece of the object you want to join.</source>
         <translation>Haga clic en cada pieza del objeto que quiere unir.</translation>
     </message>
@@ -2989,10 +2499,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>Closes the hairline gaps between neighbouring shapes, for land cover maps.</source>
         <translation>Cierra las rendijas entre formas vecinas, para mapas de cobertura del suelo.</translation>
-    </message>
-    <message>
-        <source>Commit the QGIS edits and return to Correct.</source>
-        <translation>Confirmar las ediciones de QGIS y volver a Corregir.</translation>
     </message>
     <message>
         <source>Confirm the merge</source>
@@ -3011,28 +2517,12 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>No se pudo cargar la detección guardada. El archivo pudo haberse movido o eliminado.</translation>
     </message>
     <message>
-        <source>Coverage</source>
-        <translation>Cobertura</translation>
-    </message>
-    <message>
         <source>Crop fetch was cancelled.</source>
         <translation>La obtención de la imagen fue cancelada.</translation>
     </message>
     <message>
-        <source>Cut one object in two.</source>
-        <translation>Cortar un objeto en dos.</translation>
-    </message>
-    <message>
-        <source>Delete corner</source>
-        <translation>Eliminar la esquina</translation>
-    </message>
-    <message>
         <source>Delete this polygon</source>
         <translation>Eliminar este polígono</translation>
-    </message>
-    <message>
-        <source>Delete this polygon (the Delete key works too). Undo brings it back.</source>
-        <translation>Eliminar este polígono (la tecla Supr también sirve). Deshacer lo devuelve.</translation>
     </message>
     <message>
         <source>Deleting the downloaded data...</source>
@@ -3063,14 +2553,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Distinto</translation>
     </message>
     <message>
-        <source>Done adding</source>
-        <translation>Fin de añadir</translation>
-    </message>
-    <message>
-        <source>Done editing</source>
-        <translation>Fin de la edición</translation>
-    </message>
-    <message>
         <source>Drag a box around one look-alike to exclude.</source>
         <translation>Trace un cuadro alrededor de un parecido para excluirlo.</translation>
     </message>
@@ -3095,20 +2577,12 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Trace una línea a través del objeto para cortarlo en dos.</translation>
     </message>
     <message>
-        <source>Draw a polygon the AI missed.</source>
-        <translation>Dibuje un polígono que la IA omitió.</translation>
-    </message>
-    <message>
         <source>Draw an example of the object first (step 2).</source>
         <translation>Dibuje primero un ejemplo del objeto (paso 2).</translation>
     </message>
     <message>
         <source>Draw an example, or type what to find.</source>
         <translation>Dibuje un ejemplo, o escriba qué buscar.</translation>
-    </message>
-    <message>
-        <source>Draw each object you can see, corner by corner.</source>
-        <translation>Dibuje cada objeto que vea, esquina por esquina.</translation>
     </message>
     <message>
         <source>Draw its corners</source>
@@ -3127,24 +2601,8 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Elimina los puntos más cercanos que esta distancia a un borde recto (0 = desactivado). Una distancia, no un número: muy alta puede aplanar muros curvos. Puntos suele ser el mejor control; este queda para comparar.</translation>
     </message>
     <message>
-        <source>Drop the line and start over. Esc does the same.</source>
-        <translation>Descartar la línea y empezar de nuevo. Esc hace lo mismo.</translation>
-    </message>
-    <message>
         <source>Drop this polygon's points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
         <translation>Elimina los puntos de este polígono más cercanos que esta distancia a un borde recto (0 = desactivado). Una distancia, no un número; Puntos suele ser el mejor control.</translation>
-    </message>
-    <message>
-        <source>Editing polygons by hand</source>
-        <translation>Editando polígonos a mano</translation>
-    </message>
-    <message>
-        <source>Editing this shape by hand</source>
-        <translation>Editando esta forma a mano</translation>
-    </message>
-    <message>
-        <source>Editing {name}s by hand</source>
-        <translation>Editando los {name}s a mano</translation>
     </message>
     <message>
         <source>Export the polygons to a layer</source>
@@ -3159,28 +2617,8 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Rellenar huecos</translation>
     </message>
     <message>
-        <source>Fill only holes smaller than this ground area. Bigger holes (a road median, a courtyard) stay holes. 0 = fill every hole.</source>
-        <translation>Solo rellena huecos menores que esta superficie en el suelo. Los mayores (una mediana, un patio) siguen siendo huecos. 0 = rellenar todos.</translation>
-    </message>
-    <message>
         <source>Fill only holes smaller than this ground area. Bigger holes (a road median, a courtyard) stay open. No limit = fill every hole.</source>
         <translation>Solo rellena huecos menores que esta superficie en el suelo. Los mayores (una mediana, un patio) quedan abiertos. Sin límite = rellenar todos.</translation>
-    </message>
-    <message>
-        <source>Fill under:</source>
-        <translation>Rellenar bajo:</translation>
-    </message>
-    <message>
-        <source>Finish</source>
-        <translation>Finalizar</translation>
-    </message>
-    <message>
-        <source>Finish the line. A right-click on the map does the same.</source>
-        <translation>Finalizar la línea. Un clic derecho en el mapa hace lo mismo.</translation>
-    </message>
-    <message>
-        <source>Fix a corner or two.</source>
-        <translation>Corrija una esquina o dos.</translation>
     </message>
     <message>
         <source>Fix method</source>
@@ -3197,10 +2635,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>Grow / shrink</source>
         <translation>Dilatar / contraer</translation>
-    </message>
-    <message>
-        <source>Hovering highlights the polygon under the cursor.</source>
-        <translation>Al pasar el cursor se resalta el polígono debajo.</translation>
     </message>
     <message>
         <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a distinct colour per object to tell them apart.</source>
@@ -3227,32 +2661,12 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Instalación en curso en otra ventana</translation>
     </message>
     <message>
-        <source>Is everything you're looking for shown?</source>
-        <translation>¿Se muestra todo lo que busca?</translation>
-    </message>
-    <message>
-        <source>Joins touching detections into one cover, for land-cover maps. Free, no re-run.</source>
-        <translation>Une las detecciones que se tocan en una sola cobertura, para mapas de cobertura del suelo. Gratis, sin volver a ejecutar.</translation>
-    </message>
-    <message>
-        <source>Last change saved.</source>
-        <translation>Último cambio guardado.</translation>
-    </message>
-    <message>
-        <source>Last change: {what}</source>
-        <translation>Último cambio: {what}</translation>
-    </message>
-    <message>
         <source>Left-click adds a keep point, right-click a trim point. The outline follows.</source>
         <translation>El clic izquierdo añade un punto a conservar, el derecho uno a quitar. El contorno sigue.</translation>
     </message>
     <message>
         <source>Linux System Too Old</source>
         <translation>Sistema Linux demasiado antiguo</translation>
-    </message>
-    <message>
-        <source>Mapping tree cover? Turn this on to join touching crowns into one canopy - free, no re-run.</source>
-        <translation>¿Cartografía la cubierta arbórea? Active esto para unir las copas que se tocan en un solo dosel, gratis y sin volver a ejecutar.</translation>
     </message>
     <message>
         <source>Maximum</source>
@@ -3291,18 +2705,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Navegación (con una herramienta activa)</translation>
     </message>
     <message>
-        <source>New shape added. Click Done to keep it.</source>
-        <translation>Nueva forma añadida. Haga clic en Listo para conservarla.</translation>
-    </message>
-    <message>
-        <source>Next: clean the outlines</source>
-        <translation>Siguiente: limpiar los contornos</translation>
-    </message>
-    <message>
-        <source>Next: fix what's missing</source>
-        <translation>Siguiente: corregir lo que falta</translation>
-    </message>
-    <message>
         <source>No detection in this zone. Try a more specific object word, or a finer detail level.</source>
         <translation>Ninguna detección en esta zona. Pruebe una palabra más precisa, o un nivel de detalle más fino.</translation>
     </message>
@@ -3329,10 +2731,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>Now click the other pieces of this object.</source>
         <translation>Ahora haga clic en las otras piezas de este objeto.</translation>
-    </message>
-    <message>
-        <source>One joined surface:</source>
-        <translation>Una sola superficie:</translation>
     </message>
     <message>
         <source>One object came back split into several polygons. Click the others on the map, then confirm to merge them into one.</source>
@@ -3371,16 +2769,8 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Elegir o quitar un objeto</translation>
     </message>
     <message>
-        <source>Point at an object and the AI outlines it, free.</source>
-        <translation>Señale un objeto y la IA traza su contorno, gratis.</translation>
-    </message>
-    <message>
         <source>Point at it on the map</source>
         <translation>Señálelo en el mapa</translation>
-    </message>
-    <message>
-        <source>Point at the missed object. The AI outlines it; click to keep.</source>
-        <translation>Señale el objeto omitido. La IA traza su contorno; haga clic para conservarlo.</translation>
     </message>
     <message>
         <source>Points</source>
@@ -3423,16 +2813,8 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Redibujar el borde</translation>
     </message>
     <message>
-        <source>Remove the picked corner. The Delete key does the same.</source>
-        <translation>Eliminar la esquina elegida. La tecla Supr hace lo mismo.</translation>
-    </message>
-    <message>
         <source>Remove the selected detection</source>
         <translation>Eliminar la detección seleccionada</translation>
-    </message>
-    <message>
-        <source>Remove thin attached fringe on the outline. Raise it to strip spikes and tendrils. 0 = off.</source>
-        <translation>Quita los flecos finos pegados al contorno. Súbalo para eliminar picos y filamentos. 0 = desactivado.</translation>
     </message>
     <message>
         <source>Removing the downloaded AI data. This window closes when it is done.</source>
@@ -3445,10 +2827,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>Replace one side by drawing a new line across the outline.</source>
         <translation>Sustituya un lado trazando una nueva línea a través del contorno.</translation>
-    </message>
-    <message>
-        <source>Replace one side of the outline.</source>
-        <translation>Sustituir un lado del contorno.</translation>
     </message>
     <message>
         <source>Report this problem</source>
@@ -3515,10 +2893,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>¿Se detectan sombras en vez de árboles? Trace un cuadro 'Excluir un parecido' sobre una sombra, la IA descarta los falsos positivos similares.</translation>
     </message>
     <message>
-        <source>Shape updated. Keep editing, or click Done.</source>
-        <translation>Forma actualizada. Siga editando, o haga clic en Listo.</translation>
-    </message>
-    <message>
         <source>Shapes</source>
         <translation>Formas</translation>
     </message>
@@ -3557,14 +2931,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>Square this polygon's edges, or leave them as traced while the rest of the layer stays squared.</source>
         <translation>Escuadrar los bordes de este polígono, o dejarlos como se trazaron mientras el resto de la capa sigue escuadrado.</translation>
-    </message>
-    <message>
-        <source>Start outside the shape, click the new edge, end outside, then Finish.</source>
-        <translation>Empiece fuera de la forma, haga clic en el nuevo borde, termine fuera, luego Finalizar.</translation>
-    </message>
-    <message>
-        <source>Stop adding. What you kept stays in the review.</source>
-        <translation>Dejar de añadir. Lo que conservó se queda en la revisión.</translation>
     </message>
     <message>
         <source>Stopping the local AI...</source>
@@ -3655,24 +3021,8 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>Deshacer el último</translation>
     </message>
     <message>
-        <source>Undo last click</source>
-        <translation>Deshacer el último clic</translation>
-    </message>
-    <message>
-        <source>Undo the last click on the line. Backspace does the same.</source>
-        <translation>Deshacer el último clic en la línea. Retroceso hace lo mismo.</translation>
-    </message>
-    <message>
         <source>Undo the last correction</source>
         <translation>Deshacer la última corrección</translation>
-    </message>
-    <message>
-        <source>Undo the last edit you made here.</source>
-        <translation>Deshacer la última edición hecha aquí.</translation>
-    </message>
-    <message>
-        <source>Unite touching detections into one cover (water, land use, tree canopy). Off counts each object on its own. Free, no re-detection.</source>
-        <translation>Une las detecciones que se tocan en una sola cobertura (agua, uso del suelo, dosel arbóreo). Desactivado, cada objeto se cuenta por separado. Gratis, sin volver a detectar.</translation>
     </message>
     <message>
         <source>Unsupported Mac and Python Combination</source>
@@ -3699,10 +3049,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>el estilo de cada contorno</translation>
     </message>
     <message>
-        <source>keep detections in a range</source>
-        <translation>mantener las detecciones en un rango</translation>
-    </message>
-    <message>
         <source>{count} vertices</source>
         <translation>{count} vértices</translation>
     </message>
@@ -3715,14 +3061,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
         <translation>{n} conservados</translation>
     </message>
     <message>
-        <source>{n} point placed. Right-click to finish.</source>
-        <translation>{n} punto colocado. Clic derecho para finalizar.</translation>
-    </message>
-    <message>
-        <source>{n} points placed. Right-click to finish.</source>
-        <translation>{n} puntos colocados. Clic derecho para finalizar.</translation>
-    </message>
-    <message>
         <source>{n} shape(s) edited this session</source>
         <translation>{n} forma(s) editada(s) en esta sesión</translation>
     </message>
@@ -3733,6 +3071,408 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>{n} shapes picked. Press Enter to join.</source>
         <translation>{n} formas elegidas. Pulse Intro para unirlas.</translation>
+    </message>
+    <message>
+        <source>1 object</source>
+        <translation>1 objeto</translation>
+    </message>
+    <message>
+        <source>1 polygon added so far.</source>
+        <translation>1 polígono añadido hasta ahora.</translation>
+    </message>
+    <message>
+        <source>1 result</source>
+        <translation>1 resultado</translation>
+    </message>
+    <message>
+        <source>A free run covers up to {cap} credits. Lower the detail or draw a smaller zone, or</source>
+        <translation>Una ejecución gratuita cubre hasta {cap} créditos. Baje el detalle o dibuje una zona más pequeña, o</translation>
+    </message>
+    <message>
+        <source>A shape was removed. Click Save to confirm.</source>
+        <translation>Se eliminó una forma. Haga clic en Guardar para confirmar.</translation>
+    </message>
+    <message>
+        <source>Add a missing polygon</source>
+        <translation>Añadir un polígono omitido</translation>
+    </message>
+    <message>
+        <source>Almost done - building the shapes...</source>
+        <translation>Casi listo - construyendo las formas...</translation>
+    </message>
+    <message>
+        <source>Change recorded.</source>
+        <translation>Cambio registrado.</translation>
+    </message>
+    <message>
+        <source>Clean up the outlines</source>
+        <translation>Limpiar los contornos</translation>
+    </message>
+    <message>
+        <source>Click a polygon, then click the spot the AI missed.</source>
+        <translation>Haga clic en un polígono y luego en el punto que la IA omitió.</translation>
+    </message>
+    <message>
+        <source>Click a polygon, then drag any corner.</source>
+        <translation>Haga clic en un polígono y luego arrastre cualquier esquina.</translation>
+    </message>
+    <message>
+        <source>Click an object on the map and the AI outlines it.</source>
+        <translation>Haga clic en un objeto del mapa y la IA lo delinea.</translation>
+    </message>
+    <message>
+        <source>Click each corner of the object, then Finish.</source>
+        <translation>Haga clic en cada esquina del objeto, luego Finalizar.</translation>
+    </message>
+    <message>
+        <source>Click each corner on the map, then Finish the line.</source>
+        <translation>Haga clic en cada esquina del mapa, luego Finalizar la línea.</translation>
+    </message>
+    <message>
+        <source>Close the gaps inside this polygon, without filling the courtyards the rest of the layer is meant to keep.</source>
+        <translation>Cierre los huecos dentro de este polígono, sin rellenar los patios que el resto de la capa debe conservar.</translation>
+    </message>
+    <message>
+        <source>Close the line you are drawing. A right-click on the map does the same.</source>
+        <translation>Cierre la línea que está dibujando. Un clic derecho en el mapa hace lo mismo.</translation>
+    </message>
+    <message>
+        <source>Correct the polygons</source>
+        <translation>Corregir los polígonos</translation>
+    </message>
+    <message>
+        <source>Could not check the AI components. See the log for details.</source>
+        <translation>No se pudieron comprobar los componentes de IA. Consulte el registro para más detalles.</translation>
+    </message>
+    <message>
+        <source>Credits come back on {date}</source>
+        <translation>Los créditos vuelven el {date}</translation>
+    </message>
+    <message>
+        <source>Cut thin spurs off this polygon (0 = off). Raise it on a single ragged outline instead of eroding the whole layer.</source>
+        <translation>Recorte los picos finos de este polígono (0 = desactivado). Súbalo para un único contorno irregular en vez de erosionar toda la capa.</translation>
+    </message>
+    <message>
+        <source>Delete this corner</source>
+        <translation>Eliminar esta esquina</translation>
+    </message>
+    <message>
+        <source>Delete this polygon (the Delete key works too, and a right-click on the map deletes the shape under the cursor). Undo brings it back.</source>
+        <translation>Eliminar este polígono (la tecla Supr también sirve, y un clic derecho en el mapa elimina la forma bajo el cursor). Deshacer lo devuelve.</translation>
+    </message>
+    <message>
+        <source>Dense area {current}/{total}</source>
+        <translation>Área densa {current}/{total}</translation>
+    </message>
+    <message>
+        <source>Detection stopped early after {done} tile(s). The objects already found are kept below.</source>
+        <translation>La detección se detuvo antes de tiempo tras {done} tile(s). Los objetos ya encontrados se conservan abajo.</translation>
+    </message>
+    <message>
+        <source>Draw a line right across the shape, then Finish.</source>
+        <translation>Trace una línea que cruce la forma, luego Finalizar.</translation>
+    </message>
+    <message>
+        <source>Draw the new edge: start outside the shape, cross it, end outside, then Finish.</source>
+        <translation>Dibuje el nuevo borde: empiece fuera de la forma, crúcela, termine fuera, luego Finalizar.</translation>
+    </message>
+    <message>
+        <source>Drawn examples</source>
+        <translation>Ejemplos dibujados</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial for thinning an outline.</source>
+        <translation>Elimine los puntos más cercanos que esta distancia a un borde recto (0 = desactivado). Una distancia, no un número: muy alta puede aplanar muros curvos. Puntos suele ser el mejor control para adelgazar un contorno.</translation>
+    </message>
+    <message>
+        <source>Edit an existing polygon</source>
+        <translation>Editar un polígono existente</translation>
+    </message>
+    <message>
+        <source>Finish the line</source>
+        <translation>Finalizar la línea</translation>
+    </message>
+    <message>
+        <source>Give this one polygon its own shape settings, without moving the dials that drive the whole layer.</source>
+        <translation>Dele a este polígono sus propios ajustes de forma, sin mover los controles que rigen toda la capa.</translation>
+    </message>
+    <message>
+        <source>Go back to picking polygons. Everything you kept stays, and so does the outline on screen.</source>
+        <translation>Vuelva a elegir polígonos. Todo lo que conservó se queda, y también el contorno en pantalla.</translation>
+    </message>
+    <message>
+        <source>How many of the outline&apos;s points to keep, as a share. 100% keeps the standard density; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
+        <translation>Qué proporción de los puntos del contorno conservar. 100 % mantiene la densidad estándar; menos adelgaza más, quitando primero el detalle más pequeño y conservando las esquinas y la superficie. Con Ángulos rectos activado se aplica antes, así que bajarlo da muros rectos para escuadrar.</translation>
+    </message>
+    <message>
+        <source>How sure the AI is about each object. Lower shows more, higher keeps only the sure ones.</source>
+        <translation>Cuánta confianza tiene la IA en cada objeto. Más bajo muestra más, más alto conserva solo los más seguros.</translation>
+    </message>
+    <message>
+        <source>Identify new shape</source>
+        <translation>Identificar nueva forma</translation>
+    </message>
+    <message>
+        <source>Keep</source>
+        <translation>Conservar</translation>
+    </message>
+    <message>
+        <source>Keep these edits and go back to picking polygons.</source>
+        <translation>Conserve estos cambios y vuelva a elegir polígonos.</translation>
+    </message>
+    <message>
+        <source>Keep this detection in Favorites</source>
+        <translation>Conservar esta detección en Favoritos</translation>
+    </message>
+    <message>
+        <source>Keep this object in Favorites</source>
+        <translation>Conservar este objeto en Favoritos</translation>
+    </message>
+    <message>
+        <source>Keep this one</source>
+        <translation>Conservar este</translation>
+    </message>
+    <message>
+        <source>Keep this one, or click again to correct the outline.</source>
+        <translation>Consérvelo, o vuelva a hacer clic para corregir el contorno.</translation>
+    </message>
+    <message>
+        <source>Keep this one, or keep placing corners.</source>
+        <translation>Consérvelo, o siga colocando esquinas.</translation>
+    </message>
+    <message>
+        <source>Keep this outline and point at the next object. Shortcut: S</source>
+        <translation>Conserve este contorno y señale el siguiente objeto. Tecla: S</translation>
+    </message>
+    <message>
+        <source>Loading stored detections ({done} of {total})</source>
+        <translation>Cargando las detecciones almacenadas ({done} de {total})</translation>
+    </message>
+    <message>
+        <source>New polygon</source>
+        <translation>Polígono nuevo</translation>
+    </message>
+    <message>
+        <source>New shape added. Click Save to keep it.</source>
+        <translation>Nueva forma añadida. Haga clic en Guardar para conservarla.</translation>
+    </message>
+    <message>
+        <source>No connection to the sign-in service. Check your internet connection, then click Connect to try again.</source>
+        <translation>Sin conexión con el servicio de inicio de sesión. Compruebe su conexión a internet y haga clic en Conectar para volver a intentarlo.</translation>
+    </message>
+    <message>
+        <source>No object matches that search.</source>
+        <translation>Ningún objeto coincide con esa búsqueda.</translation>
+    </message>
+    <message>
+        <source>Nothing was added. A polygon needs at least three corners.</source>
+        <translation>No se añadió nada. Un polígono necesita al menos tres esquinas.</translation>
+    </message>
+    <message>
+        <source>Only this polygon. Every other one follows the Shapes step.</source>
+        <translation>Solo este polígono. Todos los demás siguen el paso Formas.</translation>
+    </message>
+    <message>
+        <source>Points the map back at this run with the same object and the same number of tiles, ready to detect. Nothing is spent until you do.</source>
+        <translation>Apunta el mapa de nuevo a esta ejecución con el mismo objeto y el mismo número de tiles, listo para detectar. No se gasta nada hasta que lo haga.</translation>
+    </message>
+    <message>
+        <source>Push this polygon&apos;s edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
+        <translation>Empuje el borde de este polígono hacia afuera (positivo) o hacia adentro (negativo), para la única huella con la que el modelo se quedó corto o se pasó.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here:
+{}</source>
+        <translation>QGIS no pudo abrir un navegador. Abra esta dirección para terminar de iniciar sesión y luego vuelva aquí:
+{}</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here.</source>
+        <translation>QGIS no pudo abrir un navegador. La dirección de inicio de sesión se copió en su portapapeles: péguela en un navegador para terminar y luego vuelva aquí.</translation>
+    </message>
+    <message>
+        <source>Reading the imagery around your click...</source>
+        <translation>Leyendo la imagen alrededor de su clic...</translation>
+    </message>
+    <message>
+        <source>Reading this run...</source>
+        <translation>Leyendo esta ejecución...</translation>
+    </message>
+    <message>
+        <source>Rebuilding shapes ({done} of {total})</source>
+        <translation>Reconstruyendo las formas ({done} de {total})</translation>
+    </message>
+    <message>
+        <source>Remove the corner you picked. The Delete key does the same.</source>
+        <translation>Eliminar la esquina elegida. La tecla Supr hace lo mismo.</translation>
+    </message>
+    <message>
+        <source>Round this polygon&apos;s corners, for a tree or a pond among squared neighbours.</source>
+        <translation>Redondee las esquinas de este polígono, para un árbol o un estanque entre vecinos escuadrados.</translation>
+    </message>
+    <message>
+        <source>Run this zone again</source>
+        <translation>Volver a ejecutar esta zona</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
+        <translation>Se está agotando: quedan {n} detecciones gratuitas, que vuelven el {date}. &lt;a href=&quot;{url}&quot;&gt;Suscríbete&lt;/a&gt; para continuar.</translation>
+    </message>
+    <message>
+        <source>Shape updated. Keep editing, or click Save.</source>
+        <translation>Forma actualizada. Siga editando, o haga clic en Guardar.</translation>
+    </message>
+    <message>
+        <source>Star a detection or an object to keep it here.</source>
+        <translation>Marque una detección o un objeto como favorito para conservarlo aquí.</translation>
+    </message>
+    <message>
+        <source>Still waiting for the sign-in page. If no browser opened, or the page shows an error, click Cancel and try again.</source>
+        <translation>Seguimos esperando la página de inicio de sesión. Si no se abrió ningún navegador, o la página muestra un error, haga clic en Cancelar y vuelva a intentarlo.</translation>
+    </message>
+    <message>
+        <source>Stop adding</source>
+        <translation>Dejar de añadir</translation>
+    </message>
+    <message>
+        <source>Switch to AI to shape this polygon on its own.</source>
+        <translation>Cambie a IA para dar forma a este polígono por sí solo.</translation>
+    </message>
+    <message>
+        <source>That area does not touch the object you are editing, so nothing was added. Refining works on one object at a time.</source>
+        <translation>Esa área no toca el objeto que está editando, así que no se añadió nada. El refinado funciona con un objeto a la vez.</translation>
+    </message>
+    <message>
+        <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
+        <translation>Ese terreno pertenece a otro objeto, así que no se añadió nada. Edite ese objeto en su lugar, o únalos con Fusionar con las vecinas.</translation>
+    </message>
+    <message>
+        <source>That is another object. The one you were editing is saved, and this one is now selected.</source>
+        <translation>Ese es otro objeto. El que estaba editando se guardó, y este ahora está seleccionado.</translation>
+    </message>
+    <message>
+        <source>The AI outlines it, free, on your computer.</source>
+        <translation>La IA lo delinea, gratis, en su equipo.</translation>
+    </message>
+    <message>
+        <source>The detection service had a problem and the run stopped. Please try again.</source>
+        <translation>El servicio de detección tuvo un problema y la ejecución se detuvo. Vuelva a intentarlo.</translation>
+    </message>
+    <message>
+        <source>The reply did not come from the service. If this network shows a sign-in page, open it in your browser first, then try again.</source>
+        <translation>La respuesta no vino del servicio. Si esta red muestra una página de inicio de sesión, ábrala primero en su navegador y vuelva a intentarlo.</translation>
+    </message>
+    <message>
+        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Manual mode on it as is.</source>
+        <translation>Esta imagen no tiene posición en el mapa, así que Automático no puede colocar lo que encuentra. Dele una con el Georreferenciador de QGIS, o use el modo Manual en ella tal cual.</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it before segmenting.</source>
+        <translation>Este raster está rotado. Ejecute Warp (Reproyectar) en él para enderezarlo antes de segmentar.</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Manual mode cannot read it either.</source>
+        <translation>Este raster está rotado. Ejecute Warp (Reproyectar) en él para enderezarlo primero. El modo Manual tampoco puede leerlo.</translation>
+    </message>
+    <message>
+        <source>This run costs more credits than a free run covers. Lower the detail or draw a smaller zone, or</source>
+        <translation>Esta ejecución cuesta más créditos de los que cubre una ejecución gratuita. Baje el detalle o dibuje una zona más pequeña, o</translation>
+    </message>
+    <message>
+        <source>This run did not keep where it looked, so it cannot be pointed at the same place. Draw the zone again.</source>
+        <translation>Esta ejecución no conservó dónde miraba, así que no se puede volver a apuntar al mismo lugar. Vuelva a dibujar la zona.</translation>
+    </message>
+    <message>
+        <source>Undo the last thing you did here: the point you just placed, or the last edit.</source>
+        <translation>Deshacer lo último que hizo aquí: el punto que acaba de colocar, o la última edición.</translation>
+    </message>
+    <message>
+        <source>Writing the file...</source>
+        <translation>Escribiendo el archivo...</translation>
+    </message>
+    <message>
+        <source>You place the corners, the same as on any QGIS layer.</source>
+        <translation>Coloca las esquinas, igual que en cualquier capa de QGIS.</translation>
+    </message>
+    <message>
+        <source>Your free detections come back on {date}.</source>
+        <translation>Sus detecciones gratuitas vuelven el {date}.</translation>
+    </message>
+    <message>
+        <source>a month ago</source>
+        <translation>hace un mes</translation>
+    </message>
+    <message>
+        <source>a week ago</source>
+        <translation>hace una semana</translation>
+    </message>
+    <message>
+        <source>a year ago</source>
+        <translation>hace un año</translation>
+    </message>
+    <message>
+        <source>applies to every polygon</source>
+        <translation>se aplica a todos los polígonos</translation>
+    </message>
+    <message>
+        <source>hide anything outside this range</source>
+        <translation>oculta lo que quede fuera de este rango</translation>
+    </message>
+    <message>
+        <source>how the outline is styled</source>
+        <translation>el estilo del contorno</translation>
+    </message>
+    <message>
+        <source>{count} polygons added so far.</source>
+        <translation>{count} polígonos añadidos hasta ahora.</translation>
+    </message>
+    <message>
+        <source>{credits} credits</source>
+        <translation>{credits} créditos</translation>
+    </message>
+    <message>
+        <source>{hidden} hidden by the filters</source>
+        <translation>{hidden} ocultos por los filtros</translation>
+    </message>
+    <message>
+        <source>{n} &quot;{object}&quot; found so far</source>
+        <translation>{n} &quot;{object}&quot; encontrados hasta ahora</translation>
+    </message>
+    <message>
+        <source>{n} months ago</source>
+        <translation>hace {n} meses</translation>
+    </message>
+    <message>
+        <source>{n} objects</source>
+        <translation>{n} objetos</translation>
+    </message>
+    <message>
+        <source>{n} point placed.</source>
+        <translation>{n} punto colocado.</translation>
+    </message>
+    <message>
+        <source>{n} points placed.</source>
+        <translation>{n} puntos colocados.</translation>
+    </message>
+    <message>
+        <source>{n} results</source>
+        <translation>{n} resultados</translation>
+    </message>
+    <message>
+        <source>{n} tile(s) took too long to load and are missing from this result.</source>
+        <translation>{n} tile(s) tardaron demasiado en cargarse y faltan en este resultado.</translation>
+    </message>
+    <message>
+        <source>{n} weeks ago</source>
+        <translation>hace {n} semanas</translation>
+    </message>
+    <message>
+        <source>{n} years ago</source>
+        <translation>hace {n} años</translation>
+    </message>
+    <message>
+        <source>{tiles} tiles</source>
+        <translation>{tiles} tiles</translation>
     </message>
 </context>
 </TS>

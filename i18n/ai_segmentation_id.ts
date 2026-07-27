@@ -12,20 +12,12 @@
         <translation>Keyakinan</translation>
     </message>
     <message>
-        <source>Random</source>
-        <translation>Acak</translation>
-    </message>
-    <message>
         <source>Outline</source>
         <translation>Garis luar</translation>
     </message>
     <message>
         <source>Retry</source>
         <translation>Coba lagi</translation>
-    </message>
-    <message>
-        <source>Go back to your zone, references and settings to adjust and detect again. Nothing is saved.</source>
-        <translation>Kembali ke zona, referensi, dan pengaturan Anda untuk menyesuaikan dan mendeteksi lagi. Tidak ada yang disimpan.</translation>
     </message>
     <message>
         <source>Click to enlarge</source>
@@ -42,14 +34,6 @@
     <message>
         <source>Exclude a look-alike</source>
         <translation>Kecualikan objek serupa</translation>
-    </message>
-    <message>
-        <source>Now outline a look-alike to exclude, then click the first point to close.</source>
-        <translation>Sekarang gambar garis di sekeliling objek serupa yang ingin dikecualikan, lalu klik titik pertama untuk menutup.</translation>
-    </message>
-    <message>
-        <source>Your examples drive the search.</source>
-        <translation>Contoh Anda menentukan arah pencarian.</translation>
     </message>
     <message>
         <source>Too generic to name. Clear the box to search from your example alone, or type a concrete object.</source>
@@ -72,20 +56,8 @@
         <translation>Detail yang lebih halus menemukan objek yang lebih kecil.</translation>
     </message>
     <message>
-        <source>Refine in Manual mode</source>
-        <translation>Sempurnakan di mode Manual</translation>
-    </message>
-    <message>
         <source>Finish or exit the review to switch modes.</source>
         <translation>Selesaikan atau keluar dari tinjauan untuk beralih mode.</translation>
-    </message>
-    <message>
-        <source>Preparing Manual mode, loading the local model...</source>
-        <translation>Menyiapkan mode Manual, memuat model lokal...</translation>
-    </message>
-    <message>
-        <source>Locked - refined in Manual mode</source>
-        <translation>Terkunci - disempurnakan di mode Manual</translation>
     </message>
     <message>
         <source>Detection</source>
@@ -326,24 +298,12 @@ export AI_SEGMENTATION_CACHE_DIR=/jalur/anda</translation>
         <translation>Segmentasi</translation>
     </message>
     <message>
-        <source>Navigation</source>
-        <translation>Navigasi</translation>
-    </message>
-    <message>
         <source>Space</source>
         <translation>Spasi</translation>
     </message>
     <message>
         <source>Hold and move to pan the map</source>
         <translation>Tahan dan gerakkan untuk menggeser peta</translation>
-    </message>
-    <message>
-        <source>Middle mouse button</source>
-        <translation>Tombol tengah mouse</translation>
-    </message>
-    <message>
-        <source>Click and drag to pan the map</source>
-        <translation>Klik dan seret untuk menggeser peta</translation>
     </message>
     <message>
         <source>The AI model works best on one element at a time.</source>
@@ -366,26 +326,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jalur/anda</translation>
         <translation>Sempurnakan seleksi</translation>
     </message>
     <message>
-        <source>Expand/Contract:</source>
-        <translation>Perluas/Persempit:</translation>
-    </message>
-    <message>
-        <source>Positive = expand outward, Negative = shrink inward</source>
-        <translation>Positif = memperluas ke luar, Negatif = menyusut ke dalam</translation>
-    </message>
-    <message>
-        <source>Simplify outline:</source>
-        <translation>Sederhanakan garis luar:</translation>
-    </message>
-    <message>
-        <source>Reduce small variations in the outline (0 = no change)</source>
-        <translation>Kurangi variasi kecil pada garis luar (0 = tidak ada perubahan)</translation>
-    </message>
-    <message>
-        <source>Fill holes:</source>
-        <translation>Isi lubang:</translation>
-    </message>
-    <message>
         <source>Fill interior holes in the selection</source>
         <translation>Isi lubang di dalam seleksi</translation>
     </message>
@@ -398,20 +338,8 @@ export AI_SEGMENTATION_CACHE_DIR=/jalur/anda</translation>
         <translation>Ukuran</translation>
     </message>
     <message>
-        <source>Round corners:</source>
-        <translation>Bulatkan sudut:</translation>
-    </message>
-    <message>
-        <source>Round corners for natural shapes like trees and bushes. Increase 'Simplify outline' for smoother results.</source>
-        <translation>Bulatkan sudut untuk bentuk alami seperti pohon dan semak. Tingkatkan 'Sederhanakan garis luar' untuk hasil yang lebih halus.</translation>
-    </message>
-    <message>
         <source>Outline</source>
         <translation>Garis luar</translation>
-    </message>
-    <message>
-        <source>Selection</source>
-        <translation>Seleksi</translation>
     </message>
     <message>
         <source>Click on the element you want to segment:</source>
@@ -934,14 +862,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Tersedia setelah deteksi selesai</translation>
     </message>
     <message>
-        <source>Min size:</source>
-        <translation>Ukuran min:</translation>
-    </message>
-    <message>
-        <source>Max size:</source>
-        <translation>Ukuran maks:</translation>
-    </message>
-    <message>
         <source>Off</source>
         <translation>Nonaktif</translation>
     </message>
@@ -1098,10 +1018,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Gunakan prompt ini</translation>
     </message>
     <message>
-        <source>No matching objects.</source>
-        <translation>Tidak ada objek yang cocok.</translation>
-    </message>
-    <message>
         <source>Use</source>
         <translation>Gunakan</translation>
     </message>
@@ -1116,14 +1032,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
     <message>
         <source>Draw your example inside the selected zone.</source>
         <translation>Gambar contoh Anda di dalam zona yang dipilih.</translation>
-    </message>
-    <message>
-        <source>Clean edges:</source>
-        <translation>Bersihkan tepi:</translation>
-    </message>
-    <message>
-        <source>Remove thin ragged fringe attached to the outline (0 = no change)</source>
-        <translation>Hapus pinggiran tipis dan tidak rata yang menempel pada garis luar (0 = tidak ada perubahan)</translation>
     </message>
     <message>
         <source>Share anonymous usage statistics</source>
@@ -1234,10 +1142,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>batal</translation>
     </message>
     <message>
-        <source>Now outline one object, then click the first point to close.</source>
-        <translation>Sekarang gambar garis di sekeliling satu objek, lalu klik titik pertama untuk menutup.</translation>
-    </message>
-    <message>
         <source>Exit</source>
         <translation>Keluar</translation>
     </message>
@@ -1262,10 +1166,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Tampilkan tile (debug)</translation>
     </message>
     <message>
-        <source>Open these detections in Manual mode to fix specific objects point-by-point, then come back and export.</source>
-        <translation>Buka deteksi ini di mode Manual untuk memperbaiki objek tertentu titik demi titik, lalu kembali dan ekspor.</translation>
-    </message>
-    <message>
         <source>"{word}" will run as "{token}".</source>
         <translation>"{word}" akan dijalankan sebagai "{token}".</translation>
     </message>
@@ -1284,10 +1184,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
     <message>
         <source>object</source>
         <translation>objek</translation>
-    </message>
-    <message>
-        <source>{tiles} tiles · {objects} objects · {credits} credits</source>
-        <translation>{tiles} tile · {objects} objek · {credits} kredit</translation>
     </message>
     <message>
         <source>Older detection</source>
@@ -1374,10 +1270,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Ekspor...</translation>
     </message>
     <message>
-        <source>Drop this object back into the prompt box for a new detection.</source>
-        <translation>Masukkan kembali objek ini ke kotak prompt untuk deteksi baru.</translation>
-    </message>
-    <message>
         <source>Remove from favorites</source>
         <translation>Hapus dari favorit</translation>
     </message>
@@ -1422,10 +1314,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Belum ada apa pun di sini. Deteksi otomatis Anda akan muncul di sini, siap untuk digunakan kembali, dipulihkan, atau diekspor.</translation>
     </message>
     <message>
-        <source>Star a detection to keep it here.</source>
-        <translation>Beri bintang pada deteksi untuk menyimpannya di sini.</translation>
-    </message>
-    <message>
         <source>Could not load this run's stored detections. Try again later.</source>
         <translation>Tidak dapat memuat deteksi tersimpan dari proses ini. Coba lagi nanti.</translation>
     </message>
@@ -1458,22 +1346,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Otomatis</translation>
     </message>
     <message>
-        <source>Automatic - detect and review</source>
-        <translation>Otomatis - deteksi dan tinjau</translation>
-    </message>
-    <message>
-        <source>Automatic - draw your zone</source>
-        <translation>Otomatis - gambar zona Anda</translation>
-    </message>
-    <message>
-        <source>Cancel the drawing</source>
-        <translation>Batalkan penggambaran</translation>
-    </message>
-    <message>
-        <source>Cancel the running detection, or exit the review</source>
-        <translation>Batalkan deteksi yang berjalan, atau keluar dari tinjauan</translation>
-    </message>
-    <message>
         <source>Click</source>
         <translation>Klik</translation>
     </message>
@@ -1488,10 +1360,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
     <message>
         <source>Delete the active object</source>
         <translation>Hapus objek yang aktif</translation>
-    </message>
-    <message>
-        <source>Detect objects, or export the reviewed polygons</source>
-        <translation>Deteksi objek, atau ekspor poligon yang telah ditinjau</translation>
     </message>
     <message>
         <source>Detection continues in the background. Reopen AI Segmentation to follow it.</source>
@@ -1538,14 +1406,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Manual</translation>
     </message>
     <message>
-        <source>Manual mode needs a one-time setup</source>
-        <translation>Mode Manual membutuhkan pengaturan satu kali</translation>
-    </message>
-    <message>
-        <source>Manual session</source>
-        <translation>Sesi Manual</translation>
-    </message>
-    <message>
         <source>Max detail for this zone - draw a larger zone for finer detail.</source>
         <translation>Detail maksimum untuk zona ini - gambar zona yang lebih besar untuk detail yang lebih halus.</translation>
     </message>
@@ -1556,10 +1416,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
     <message>
         <source>One color per object - check neighbors are separated</source>
         <translation>Satu warna per objek - periksa apakah objek yang bersebelahan terpisah</translation>
-    </message>
-    <message>
-        <source>Optional shape and size controls: simplify outlines, clean edges, round corners, expand or shrink, fill holes, size filters.</source>
-        <translation>Kontrol bentuk dan ukuran opsional: sederhanakan garis luar, bersihkan tepi, bulatkan sudut, perluas atau susutkan, isi lubang, filter ukuran.</translation>
     </message>
     <message>
         <source>Out of credits after {done}/{total} tiles. Your detections are kept below.</source>
@@ -1666,10 +1522,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>≈ 1 tile = 1 kredit</translation>
     </message>
     <message>
-        <source>Adjust and run again</source>
-        <translation>Sesuaikan dan jalankan lagi</translation>
-    </message>
-    <message>
         <source>all shown</source>
         <translation>semua ditampilkan</translation>
     </message>
@@ -1678,32 +1530,12 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>{visible} dari {n} ditampilkan</translation>
     </message>
     <message>
-        <source>{hidden} below {pct}%</source>
-        <translation>{hidden} di bawah {pct}%</translation>
-    </message>
-    <message>
-        <source>Adjust and run again</source>
-        <translation>Sesuaikan dan jalankan lagi</translation>
-    </message>
-    <message>
         <source>all shown</source>
         <translation>semua ditampilkan</translation>
     </message>
     <message>
-        <source>{hidden} below {pct}%</source>
-        <translation>{hidden} di bawah {pct}%</translation>
-    </message>
-    <message>
         <source>{visible} of {n} shown</source>
         <translation>{visible} dari {n} ditampilkan</translation>
-    </message>
-    <message>
-        <source>Right angles:</source>
-        <translation>Sudut siku-siku:</translation>
-    </message>
-    <message>
-        <source>Snap edges to 90 degrees for man-made shapes like buildings, pools and solar panels.</source>
-        <translation>Ratakan tepi ke 90 derajat untuk bentuk buatan manusia seperti bangunan, kolam, dan panel surya.</translation>
     </message>
     <message>
         <source>Click an object on the map and the AI outlines it. You go one object at a time, checking and saving each polygon yourself.</source>
@@ -1750,10 +1582,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Menemukan setiap objek dari satu jenis di zona Anda - gambar zona, sebutkan nama objek, dapatkan semua poligon sekaligus.</translation>
     </message>
     <message>
-        <source>Tip: lower Confidence to reveal more detections, raise it to keep only the best.</source>
-        <translation>Tip: turunkan Keyakinan untuk menampilkan lebih banyak deteksi, naikkan untuk hanya menyisakan yang terbaik.</translation>
-    </message>
-    <message>
         <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
         <translation>Gambar zona yang lebih kecil, atau &lt;a href=&quot;{url}&quot;&gt;berlangganan&lt;/a&gt; untuk menyegmentasi area dengan ukuran berapa pun.</translation>
     </message>
@@ -1786,24 +1614,8 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Selesaikan atau batalkan deteksi saat ini sebelum menjalankan ulang proses sebelumnya.</translation>
     </message>
     <message>
-        <source>Couldn&apos;t open your browser. Check your connection and click Sign in / Sign up to start again.</source>
-        <translation>Tidak dapat membuka peramban Anda. Periksa koneksi Anda dan klik Masuk / Daftar untuk memulai lagi.</translation>
-    </message>
-    <message>
         <source>0 shown - lower the Min size filter to reveal them</source>
         <translation>0 ditampilkan - turunkan filter Ukuran min untuk menampilkannya</translation>
-    </message>
-    <message>
-        <source>1 detection selected</source>
-        <translation>1 deteksi dipilih</translation>
-    </message>
-    <message>
-        <source>1 removed</source>
-        <translation>1 dihapus</translation>
-    </message>
-    <message>
-        <source>1 shape edited</source>
-        <translation>1 bentuk diedit</translation>
     </message>
     <message>
         <source>10,000 credits every month. Cancel anytime.</source>
@@ -1826,10 +1638,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Setujui Ketentuan dan Kebijakan Privasi terlebih dahulu.</translation>
     </message>
     <message>
-        <source>Add an example</source>
-        <translation>Tambahkan contoh</translation>
-    </message>
-    <message>
         <source>An install or detection is still running. Wait for it to finish, then try again.</source>
         <translation>Instalasi atau deteksi masih berjalan. Tunggu hingga selesai, lalu coba lagi.</translation>
     </message>
@@ -1842,10 +1650,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Pada detail ini {obj} terlalu kecil untuk dikenali - naikkan detail.</translation>
     </message>
     <message>
-        <source>Automatic detection needs a georeferenced raster. Use Manual mode for this image.</source>
-        <translation>Deteksi Otomatis membutuhkan raster yang bergeoreferensi. Gunakan mode Manual untuk gambar ini.</translation>
-    </message>
-    <message>
         <source>Available once the current install or detection finishes.</source>
         <translation>Tersedia setelah instalasi atau deteksi saat ini selesai.</translation>
     </message>
@@ -1856,14 +1660,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
     <message>
         <source>Browse the library (view only while detecting).</source>
         <translation>Jelajahi pustaka (hanya lihat selama deteksi).</translation>
-    </message>
-    <message>
-        <source>Click a detection on the map</source>
-        <translation>Klik deteksi di peta</translation>
-    </message>
-    <message>
-        <source>Click an empty spot to deselect.</source>
-        <translation>Klik tempat kosong untuk membatalkan pilihan.</translation>
     </message>
     <message>
         <source>Could not reach the service. Check your connection and try again.</source>
@@ -1892,56 +1688,20 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Deteksi gagal. Silakan coba lagi.</translation>
     </message>
     <message>
-        <source>Done, back to Automatic review</source>
-        <translation>Selesai, kembali ke tinjauan Otomatis</translation>
-    </message>
-    <message>
         <source>Downloaded AI data removed. You have been signed out.</source>
         <translation>Data AI yang diunduh telah dihapus. Anda telah keluar.</translation>
-    </message>
-    <message>
-        <source>Draw an example of one {object}</source>
-        <translation>Gambar contoh satu {object}</translation>
-    </message>
-    <message>
-        <source>Draw an example of one {object} to find more</source>
-        <translation>Gambar contoh satu {object} untuk menemukan lebih banyak</translation>
     </message>
     <message>
         <source>Draw on the map</source>
         <translation>Gambar di peta</translation>
     </message>
     <message>
-        <source>Edit shape</source>
-        <translation>Edit bentuk</translation>
-    </message>
-    <message>
-        <source>Edit your detections</source>
-        <translation>Edit deteksi Anda</translation>
-    </message>
-    <message>
-        <source>Editing this shape</source>
-        <translation>Sedang mengedit bentuk ini</translation>
-    </message>
-    <message>
         <source>Extra detail keeps helping {obj} in this zone.</source>
         <translation>Detail tambahan tetap membantu {obj} di zona ini.</translation>
     </message>
     <message>
-        <source>Filter and refine, then export.</source>
-        <translation>Saring dan sempurnakan, lalu ekspor.</translation>
-    </message>
-    <message>
         <source>Free plan</source>
         <translation>Paket gratis</translation>
-    </message>
-    <message>
-        <source>Go back to the Automatic review to switch modes.</source>
-        <translation>Kembali ke tinjauan Otomatis untuk beralih mode.</translation>
-    </message>
-    <message>
-        <source>Grouped as continuous cover.</source>
-        <translation>Dikelompokkan sebagai tutupan kontinu.</translation>
     </message>
     <message>
         <source>Hide parts larger than this ground area. 0 = no limit.</source>
@@ -1950,22 +1710,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     <message>
         <source>Hide parts smaller than this ground area. Use it to drop tiny noise blobs. 0 = keep all.</source>
         <translation>Sembunyikan bagian yang lebih kecil dari area tanah ini. Gunakan untuk membuang gumpalan noise kecil. 0 = pertahankan semua.</translation>
-    </message>
-    <message>
-        <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a random colour per object to tell them apart.</source>
-        <translation>Bagaimana deteksi diwarnai di peta (hanya visual): isian Normal, Garis luar, heatmap Keyakinan, atau warna acak per objek untuk membedakannya.</translation>
-    </message>
-    <message>
-        <source>Invalid CRS</source>
-        <translation>CRS tidak valid</translation>
-    </message>
-    <message>
-        <source>Kept as distinct objects.</source>
-        <translation>Dipertahankan sebagai objek terpisah.</translation>
-    </message>
-    <message>
-        <source>Left-click adds what you click to the shape</source>
-        <translation>Klik kiri menambahkan apa yang Anda klik ke bentuk</translation>
     </message>
     <message>
         <source>Load example imagery</source>
@@ -2008,10 +1752,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Baru di sini? Tutorial 5 menit kami memandu Anda melalui deteksi lengkap, langkah demi langkah.</translation>
     </message>
     <message>
-        <source>No detection in this zone. Try a more specific object word, or draw an example of one (best for unusual objects).</source>
-        <translation>Tidak ada deteksi di zona ini. Coba kata objek yang lebih spesifik, atau gambar contoh satu objek (paling baik untuk objek yang tidak umum).</translation>
-    </message>
-    <message>
         <source>Not Enough Disk Space</source>
         <translation>Ruang Disk Tidak Cukup</translation>
     </message>
@@ -2040,20 +1780,12 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Membuka terra-lab.ai di peramban Anda.</translation>
     </message>
     <message>
-        <source>Opens the shape so clicks can extend or trim it. Key: E, or double-click it on the map</source>
-        <translation>Membuka bentuk sehingga klik dapat memperluas atau memangkasnya. Tombol: E, atau klik dua kali di peta</translation>
-    </message>
-    <message>
         <source>Opens your terra-lab.ai account in the browser.</source>
         <translation>Membuka akun terra-lab.ai Anda di peramban.</translation>
     </message>
     <message>
         <source>Opens your terra-lab.ai dashboard in the browser.</source>
         <translation>Membuka dasbor terra-lab.ai Anda di peramban.</translation>
-    </message>
-    <message>
-        <source>Optional</source>
-        <translation>Opsional</translation>
     </message>
     <message>
         <source>Outline ONE example of the object on the map, then run again. Runs with a drawn example return far fewer empty results.</source>
@@ -2064,24 +1796,8 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Merencanakan proses AI Segmentation</translation>
     </message>
     <message>
-        <source>Preparing Manual mode...</source>
-        <translation>Menyiapkan mode Manual...</translation>
-    </message>
-    <message>
         <source>Pro plan</source>
         <translation>Paket Pro</translation>
-    </message>
-    <message>
-        <source>Refine</source>
-        <translation>Sempurnakan</translation>
-    </message>
-    <message>
-        <source>Refining uses the free local AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and refining will open automatically when it is ready.</source>
-        <translation>Penyempurnaan menggunakan AI lokal gratis, yang belum terpasang. Pasang sekarang (beberapa menit, di latar belakang)? Anda dapat terus meninjau, dan penyempurnaan akan terbuka otomatis saat siap.</translation>
-    </message>
-    <message>
-        <source>Regrouping detections...</source>
-        <translation>Mengelompokkan ulang deteksi...</translation>
     </message>
     <message>
         <source>Remove downloaded AI data</source>
@@ -2092,40 +1808,16 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Hapus data AI yang diunduh dari komputer ini?</translation>
     </message>
     <message>
-        <source>Removes it from the results. Key: Delete (Ctrl+Z restores it)</source>
-        <translation>Menghapusnya dari hasil. Tombol: Delete (Ctrl+Z mengembalikannya)</translation>
-    </message>
-    <message>
         <source>Removing...</source>
         <translation>Menghapus...</translation>
-    </message>
-    <message>
-        <source>Returns to the Automatic review with your edits. The export happens there.</source>
-        <translation>Kembali ke tinjauan Otomatis dengan hasil edit Anda. Ekspor dilakukan di sana.</translation>
-    </message>
-    <message>
-        <source>Review detections</source>
-        <translation>Tinjau deteksi</translation>
     </message>
     <message>
         <source>Right level for {obj} in this zone.</source>
         <translation>Tingkat yang tepat untuk {obj} di zona ini.</translation>
     </message>
     <message>
-        <source>Right-click removes it from the shape</source>
-        <translation>Klik kanan menghapusnya dari bentuk</translation>
-    </message>
-    <message>
         <source>Rotated raster</source>
         <translation>Raster terputar</translation>
-    </message>
-    <message>
-        <source>Runs with a drawn example return far fewer empty results. This re-runs the zone with the example draw armed (new credits).</source>
-        <translation>Proses dengan contoh yang digambar menghasilkan jauh lebih sedikit hasil kosong. Ini menjalankan ulang zona dengan penggambaran contoh aktif (kredit baru).</translation>
-    </message>
-    <message>
-        <source>Save shape</source>
-        <translation>Simpan bentuk</translation>
     </message>
     <message>
         <source>Save {save} detections ({hidden} currently hidden by Confidence) to a layer before leaving?</source>
@@ -2136,32 +1828,12 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Simpan {save} deteksi ke lapisan sebelum keluar?</translation>
     </message>
     <message>
-        <source>Saves this shape and closes the edit. Key: S</source>
-        <translation>Menyimpan bentuk ini dan menutup pengeditan. Tombol: S</translation>
-    </message>
-    <message>
         <source>Segment library (view only)</source>
         <translation>Pustaka segmen (hanya lihat)</translation>
     </message>
     <message>
         <source>Segmentation failed. Please try again.</source>
         <translation>Segmentasi gagal. Silakan coba lagi.</translation>
-    </message>
-    <message>
-        <source>Setting up Manual mode in the background. You can keep reviewing; refining opens automatically when it is ready.</source>
-        <translation>Menyiapkan mode Manual di latar belakang. Anda dapat terus meninjau; penyempurnaan terbuka otomatis saat siap.</translation>
-    </message>
-    <message>
-        <source>Setting up Manual mode in the background...</source>
-        <translation>Menyiapkan mode Manual di latar belakang...</translation>
-    </message>
-    <message>
-        <source>Shape and size settings</source>
-        <translation>Pengaturan bentuk dan ukuran</translation>
-    </message>
-    <message>
-        <source>Shape settings</source>
-        <translation>Pengaturan bentuk</translation>
     </message>
     <message>
         <source>Sharper than {obj} usually needs - catches the smallest ones.</source>
@@ -2200,16 +1872,8 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Tim atau organisasi?</translation>
     </message>
     <message>
-        <source>The AI finds every object similar to your example.</source>
-        <translation>AI menemukan setiap objek yang mirip dengan contoh Anda.</translation>
-    </message>
-    <message>
         <source>The AI service is waking up. Holding your spot…</source>
         <translation>Layanan AI sedang aktif kembali. Tempat Anda tetap dipertahankan…</translation>
-    </message>
-    <message>
-        <source>The detection service had a problem. Your credits for the failed tiles were refunded. Please try again.</source>
-        <translation>Layanan deteksi mengalami masalah. Kredit Anda untuk tile yang gagal telah dikembalikan. Silakan coba lagi.</translation>
     </message>
     <message>
         <source>The detection service is busy right now. Please try again in a moment.</source>
@@ -2232,24 +1896,8 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Ini menghapus berkas model AI lokal, mengeluarkan Anda, dan mengatur ulang plugin. Akun dan kredit Anda tidak terpengaruh. Mode Manual akan mengunduh berkas lagi saat Anda menggunakannya lain kali.</translation>
     </message>
     <message>
-        <source>This detail level is a Pro feature. Lower the detail, or</source>
-        <translation>Tingkat detail ini adalah fitur Pro. Turunkan detail, atau</translation>
-    </message>
-    <message>
         <source>This layer has no valid coordinate reference system. Set one in Layer Properties before detecting.</source>
         <translation>Lapisan ini tidak memiliki sistem referensi koordinat yang valid. Atur satu di Properti Lapisan sebelum mendeteksi.</translation>
-    </message>
-    <message>
-        <source>This layer has no valid coordinate reference system. Set one in Layer Properties before segmenting.</source>
-        <translation>Lapisan ini tidak memiliki sistem referensi koordinat yang valid. Atur satu di Properti Lapisan sebelum menyegmentasi.</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF before segmenting.</source>
-        <translation>Raster ini terputar. Konversikan ke GeoTIFF yang sejajar sumbu sebelum menyegmentasi.</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF, or use Manual mode.</source>
-        <translation>Raster ini terputar. Konversikan ke GeoTIFF yang sejajar sumbu, atau gunakan mode Manual.</translation>
     </message>
     <message>
         <source>This raster uses a geographic CRS (degrees), which distorts the imagery sent to the AI. For best results, reproject it to a projected CRS (e.g. UTM).</source>
@@ -2262,22 +1910,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     <message>
         <source>Try "{word}" instead</source>
         <translation>Coba "{word}" sebagai gantinya</translation>
-    </message>
-    <message>
-        <source>Try '{term}' - it's a better prompt.</source>
-        <translation>Coba '{term}' - itu prompt yang lebih baik.</translation>
-    </message>
-    <message>
-        <source>Try an object from the Library - it's a better prompt.</source>
-        <translation>Coba objek dari Pustaka - itu prompt yang lebih baik.</translation>
-    </message>
-    <message>
-        <source>Undo click</source>
-        <translation>Batalkan klik</translation>
-    </message>
-    <message>
-        <source>Undoes the last change to this shape. Key: Ctrl+Z</source>
-        <translation>Membatalkan perubahan terakhir pada bentuk ini. Tombol: Ctrl+Z</translation>
     </message>
     <message>
         <source>Update now</source>
@@ -2294,14 +1926,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     <message>
         <source>Very fine for {obj} - large ones may come back split in parts.</source>
         <translation>Sangat halus untuk {obj} - yang besar mungkin kembali terpecah menjadi beberapa bagian.</translation>
-    </message>
-    <message>
-        <source>View as continuous cover</source>
-        <translation>Lihat sebagai tutupan kontinu</translation>
-    </message>
-    <message>
-        <source>View as distinct objects</source>
-        <translation>Lihat sebagai objek terpisah</translation>
     </message>
     <message>
         <source>View detections as:</source>
@@ -2328,10 +1952,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>poligon</translation>
     </message>
     <message>
-        <source>some files could not be deleted</source>
-        <translation>beberapa berkas tidak dapat dihapus</translation>
-    </message>
-    <message>
         <source>uncertain</source>
         <translation>tidak yakin</translation>
     </message>
@@ -2344,20 +1964,8 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>objek Anda</translation>
     </message>
     <message>
-        <source>{n} detections selected</source>
-        <translation>{n} deteksi dipilih</translation>
-    </message>
-    <message>
         <source>{n} found so far</source>
         <translation>{n} ditemukan sejauh ini</translation>
-    </message>
-    <message>
-        <source>{n} removed</source>
-        <translation>{n} dihapus</translation>
-    </message>
-    <message>
-        <source>{n} shapes edited</source>
-        <translation>{n} bentuk diedit</translation>
     </message>
     <message>
         <source>{n} tiles could not be loaded from the layer server; results may be incomplete.</source>
@@ -2457,42 +2065,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>1 objek ditemukan</translation>
     </message>
     <message>
-        <source>Add a second example - two references detect far better than one.</source>
-        <translation>Tambahkan contoh kedua - dua referensi mendeteksi jauh lebih baik daripada satu.</translation>
-    </message>
-    <message>
-        <source>Add a second example, or type what to find.</source>
-        <translation>Tambahkan contoh kedua, atau ketik apa yang dicari.</translation>
-    </message>
-    <message>
-        <source>Add polygon to the layer</source>
-        <translation>Tambahkan poligon ke lapisan</translation>
-    </message>
-    <message>
-        <source>Add to</source>
-        <translation>Tambahkan ke</translation>
-    </message>
-    <message>
-        <source>Add {count} polygons to the layer</source>
-        <translation>Tambahkan {count} poligon ke lapisan</translation>
-    </message>
-    <message>
-        <source>Added {count} polygon(s) to {name}.</source>
-        <translation>{count} poligon ditambahkan ke {name}.</translation>
-    </message>
-    <message>
-        <source>Adds your {n} kept polygons to the selected layer.</source>
-        <translation>Menambahkan {n} poligon yang disimpan ke lapisan terpilih.</translation>
-    </message>
-    <message>
-        <source>Could not add to that layer. Created a new layer instead.</source>
-        <translation>Tidak dapat menambahkan ke lapisan itu. Lapisan baru dibuat sebagai gantinya.</translation>
-    </message>
-    <message>
-        <source>Create a new layer, or add these polygons to an existing layer.</source>
-        <translation>Buat lapisan baru, atau tambahkan poligon ini ke lapisan yang ada.</translation>
-    </message>
-    <message>
         <source>Download AI model</source>
         <translation>Unduh Model AI</translation>
     </message>
@@ -2501,16 +2073,8 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Ekspor 1 poligon</translation>
     </message>
     <message>
-        <source>New layer</source>
-        <translation>Lapisan baru</translation>
-    </message>
-    <message>
         <source>Resolving object name</source>
         <translation>Menentukan nama objek</translation>
-    </message>
-    <message>
-        <source>That layer is no longer available. Created a new layer instead.</source>
-        <translation>Lapisan itu tidak lagi tersedia. Lapisan baru dibuat sebagai gantinya.</translation>
     </message>
     <message>
         <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
@@ -2523,6 +2087,1136 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     <message>
         <source>Your free detections are used up</source>
         <translation>Deteksi gratis Anda telah habis</translation>
+    </message>
+    <message>
+        <source>&quot;{obj}&quot; is not an object the AI knows well. Drawing one example on the map shows it what to find.</source>
+        <translation>&quot;{obj}&quot; bukan objek yang dikenal baik oleh AI. Menggambar satu contoh di peta menunjukkan apa yang harus dicari.</translation>
+    </message>
+    <message>
+        <source>&quot;{obj}&quot; is often missed from text alone. Draw one example on the map to find far more.</source>
+        <translation>&quot;{obj}&quot; sering terlewat jika hanya dari teks. Gambar satu contoh di peta untuk menemukan jauh lebih banyak.</translation>
+    </message>
+    <message>
+        <source>1 correction this round</source>
+        <translation>1 koreksi putaran ini</translation>
+    </message>
+    <message>
+        <source>1 detection removed</source>
+        <translation>1 deteksi dihapus</translation>
+    </message>
+    <message>
+        <source>1 object</source>
+        <translation>1 objek</translation>
+    </message>
+    <message>
+        <source>1 polygon added so far.</source>
+        <translation>1 poligon ditambahkan sejauh ini.</translation>
+    </message>
+    <message>
+        <source>1 result</source>
+        <translation>1 hasil</translation>
+    </message>
+    <message>
+        <source>A detection run was interrupted before its results were exported. {n} detection(s) were saved.</source>
+        <translation>Proses deteksi terhenti sebelum hasilnya diekspor. {n} deteksi disimpan.</translation>
+    </message>
+    <message>
+        <source>A free run covers up to {cap} credits. Lower the detail or draw a smaller zone, or</source>
+        <translation>Proses gratis mencakup hingga {cap} kredit. Turunkan detail atau gambar zona yang lebih kecil, atau</translation>
+    </message>
+    <message>
+        <source>A newer version of AI Segmentation is available with the latest fixes.</source>
+        <translation>Versi terbaru AI Segmentation tersedia dengan perbaikan terkini.</translation>
+    </message>
+    <message>
+        <source>A shape was removed. Click Save to confirm.</source>
+        <translation>Satu bentuk dihapus. Klik Simpan untuk mengonfirmasi.</translation>
+    </message>
+    <message>
+        <source>AI</source>
+        <translation>AI</translation>
+    </message>
+    <message>
+        <source>AI Environment Damaged</source>
+        <translation>Lingkungan AI Rusak</translation>
+    </message>
+    <message>
+        <source>AI and Manual are two ways to fix the same polygon.</source>
+        <translation>AI dan Manual adalah dua cara untuk memperbaiki poligon yang sama.</translation>
+    </message>
+    <message>
+        <source>Add a missing polygon</source>
+        <translation>Tambahkan poligon yang hilang</translation>
+    </message>
+    <message>
+        <source>Add an object the AI missed. In AI, point at it and the on-device model outlines it, free; in Manual, draw its corners.</source>
+        <translation>Tambahkan objek yang terlewat oleh AI. Di AI, arahkan ke objek tersebut dan model di perangkat akan menggambar garis di sekelilingnya, gratis; di Manual, gambar sudut-sudutnya.</translation>
+    </message>
+    <message>
+        <source>Add another example - more references detect more</source>
+        <translation>Tambahkan contoh lain - lebih banyak referensi mendeteksi lebih banyak</translation>
+    </message>
+    <message>
+        <source>Add one more example for the best results.</source>
+        <translation>Tambahkan satu contoh lagi untuk hasil terbaik.</translation>
+    </message>
+    <message>
+        <source>Add them to the project</source>
+        <translation>Tambahkan ke proyek</translation>
+    </message>
+    <message>
+        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and Add will arm automatically when it is ready.</source>
+        <translation>Menambahkan objek menggunakan AI di perangkat gratis, yang belum terpasang. Pasang sekarang (beberapa menit, di latar belakang)? Anda dapat terus meninjau, dan Tambah akan aktif otomatis saat siap.</translation>
+    </message>
+    <message>
+        <source>Adding needs a one-time setup</source>
+        <translation>Menambahkan membutuhkan pengaturan satu kali</translation>
+    </message>
+    <message>
+        <source>Almost done - building the shapes...</source>
+        <translation>Hampir selesai - membangun bentuk...</translation>
+    </message>
+    <message>
+        <source>Almost there: in step 1, name the object your examples show - words plus examples detect best.</source>
+        <translation>Hampir sampai: pada langkah 1, sebutkan nama objek yang ditunjukkan oleh contoh Anda - kata plus contoh mendeteksi paling baik.</translation>
+    </message>
+    <message>
+        <source>Almost there: in step 2, outline one &quot;{word}&quot; on the map so the AI sees what yours look like.</source>
+        <translation>Hampir sampai: pada langkah 2, gambar garis di sekeliling satu &quot;{word}&quot; di peta agar AI melihat seperti apa milik Anda.</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI components. Wait for it to finish, then try again.</source>
+        <translation>Jendela QGIS lain sedang memasang komponen AI. Tunggu hingga selesai, lalu coba lagi.</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI engine. Wait for it to finish, then try again.</source>
+        <translation>Jendela QGIS lain sedang memasang mesin AI. Tunggu hingga selesai, lalu coba lagi.</translation>
+    </message>
+    <message>
+        <source>Automatic detection failed</source>
+        <translation>Deteksi Otomatis gagal</translation>
+    </message>
+    <message>
+        <source>Automatic: detect</source>
+        <translation>Otomatis: deteksi</translation>
+    </message>
+    <message>
+        <source>Automatic: draw the zone</source>
+        <translation>Otomatis: gambar zona</translation>
+    </message>
+    <message>
+        <source>Automatic: merge with neighbours</source>
+        <translation>Otomatis: gabungkan dengan tetangga</translation>
+    </message>
+    <message>
+        <source>Automatic: review and Correct</source>
+        <translation>Otomatis: tinjau dan Koreksi</translation>
+    </message>
+    <message>
+        <source>Best quality. Two references locked in.</source>
+        <translation>Kualitas terbaik. Dua referensi terkunci.</translation>
+    </message>
+    <message>
+        <source>Blocked by Antivirus or Security Software</source>
+        <translation>Diblokir oleh Antivirus atau Perangkat Lunak Keamanan</translation>
+    </message>
+    <message>
+        <source>Calculating...</source>
+        <translation>Menghitung...</translation>
+    </message>
+    <message>
+        <source>Cancel the example box, the detection, or exit Automatic</source>
+        <translation>Batalkan kotak contoh, deteksi, atau keluar dari Otomatis</translation>
+    </message>
+    <message>
+        <source>Cancel the merge</source>
+        <translation>Batalkan penggabungan</translation>
+    </message>
+    <message>
+        <source>Change recorded.</source>
+        <translation>Perubahan dicatat.</translation>
+    </message>
+    <message>
+        <source>Checking the object name</source>
+        <translation>Memeriksa nama objek</translation>
+    </message>
+    <message>
+        <source>Checking the object name...</source>
+        <translation>Memeriksa nama objek...</translation>
+    </message>
+    <message>
+        <source>Choose how to fix the polygon: AI points or QGIS vertices</source>
+        <translation>Pilih cara memperbaiki poligon: titik AI atau verteks QGIS</translation>
+    </message>
+    <message>
+        <source>Clean up the outlines</source>
+        <translation>Bersihkan garis luar</translation>
+    </message>
+    <message>
+        <source>Clear all</source>
+        <translation>Hapus semua</translation>
+    </message>
+    <message>
+        <source>Clear the points, then exit Automatic</source>
+        <translation>Hapus titik, lalu keluar dari Otomatis</translation>
+    </message>
+    <message>
+        <source>Clear the selection, or stop the segmentation</source>
+        <translation>Hapus seleksi, atau hentikan segmentasi</translation>
+    </message>
+    <message>
+        <source>Click a polygon, then click the spot the AI missed.</source>
+        <translation>Klik poligon, lalu klik titik yang terlewat oleh AI.</translation>
+    </message>
+    <message>
+        <source>Click a polygon, then drag any corner.</source>
+        <translation>Klik poligon, lalu seret sudut mana pun.</translation>
+    </message>
+    <message>
+        <source>Click an object on the map and the AI outlines it.</source>
+        <translation>Klik objek di peta dan AI akan menggambar garis di sekelilingnya.</translation>
+    </message>
+    <message>
+        <source>Click each corner of the object, then Finish.</source>
+        <translation>Klik setiap sudut objek, lalu Selesaikan.</translation>
+    </message>
+    <message>
+        <source>Click each corner on the map, then Finish the line.</source>
+        <translation>Klik setiap sudut di peta, lalu Selesaikan garis.</translation>
+    </message>
+    <message>
+        <source>Click each piece of the object you want to join.</source>
+        <translation>Klik setiap bagian objek yang ingin Anda gabungkan.</translation>
+    </message>
+    <message>
+        <source>Click to open this step</source>
+        <translation>Klik untuk membuka langkah ini</translation>
+    </message>
+    <message>
+        <source>Close the fix, clear the selection, or exit the review</source>
+        <translation>Tutup perbaikan, hapus seleksi, atau keluar dari tinjauan</translation>
+    </message>
+    <message>
+        <source>Close the gaps inside this polygon, without filling the courtyards the rest of the layer is meant to keep.</source>
+        <translation>Tutup celah di dalam poligon ini, tanpa mengisi halaman dalam yang memang harus dipertahankan oleh lapisan lainnya.</translation>
+    </message>
+    <message>
+        <source>Close the line you are drawing. A right-click on the map does the same.</source>
+        <translation>Tutup garis yang sedang Anda gambar. Klik kanan di peta melakukan hal yang sama.</translation>
+    </message>
+    <message>
+        <source>Closes the hairline gaps between neighbouring shapes, for land cover maps.</source>
+        <translation>Menutup celah tipis antar bentuk yang bersebelahan, untuk peta tutupan lahan.</translation>
+    </message>
+    <message>
+        <source>Confirm the merge</source>
+        <translation>Konfirmasi penggabungan</translation>
+    </message>
+    <message>
+        <source>Correct</source>
+        <translation>Koreksi</translation>
+    </message>
+    <message>
+        <source>Correct the polygons</source>
+        <translation>Koreksi poligon</translation>
+    </message>
+    <message>
+        <source>Could not apply the new settings. Try a different value.</source>
+        <translation>Tidak dapat menerapkan pengaturan baru. Coba nilai yang berbeda.</translation>
+    </message>
+    <message>
+        <source>Could not check the AI components. See the log for details.</source>
+        <translation>Tidak dapat memeriksa komponen AI. Lihat log untuk detailnya.</translation>
+    </message>
+    <message>
+        <source>Could not load the saved run. The file may have been moved or deleted.</source>
+        <translation>Tidak dapat memuat proses tersimpan. Berkas mungkin telah dipindahkan atau dihapus.</translation>
+    </message>
+    <message>
+        <source>Credits come back on {date}</source>
+        <translation>Kredit kembali pada {date}</translation>
+    </message>
+    <message>
+        <source>Crop fetch was cancelled.</source>
+        <translation>Pengambilan potongan gambar dibatalkan.</translation>
+    </message>
+    <message>
+        <source>Cut thin spurs off this polygon (0 = off). Raise it on a single ragged outline instead of eroding the whole layer.</source>
+        <translation>Potong duri tipis dari poligon ini (0 = nonaktif). Naikkan nilainya pada satu garis luar yang tidak rata, alih-alih mengikis seluruh lapisan.</translation>
+    </message>
+    <message>
+        <source>Delete this corner</source>
+        <translation>Hapus sudut ini</translation>
+    </message>
+    <message>
+        <source>Delete this polygon</source>
+        <translation>Hapus poligon ini</translation>
+    </message>
+    <message>
+        <source>Delete this polygon (the Delete key works too, and a right-click on the map deletes the shape under the cursor). Undo brings it back.</source>
+        <translation>Hapus poligon ini (tombol Delete juga berfungsi, dan klik kanan di peta menghapus bentuk di bawah kursor). Batalkan akan mengembalikannya.</translation>
+    </message>
+    <message>
+        <source>Deleting the downloaded data...</source>
+        <translation>Menghapus data yang diunduh...</translation>
+    </message>
+    <message>
+        <source>Dense area {current}/{total}</source>
+        <translation>Area padat {current}/{total}</translation>
+    </message>
+    <message>
+        <source>Dense forest? &quot;Forest&quot; takes it as one block; &quot;Tree&quot; picks individual trees.</source>
+        <translation>Hutan lebat? &quot;Forest&quot; memperlakukannya sebagai satu blok; &quot;Tree&quot; memilih pohon satu per satu.</translation>
+    </message>
+    <message>
+        <source>Detect with example only</source>
+        <translation>Deteksi hanya dengan contoh</translation>
+    </message>
+    <message>
+        <source>Detect with examples only</source>
+        <translation>Deteksi hanya dengan contoh</translation>
+    </message>
+    <message>
+        <source>Detect with text only</source>
+        <translation>Deteksi hanya dengan teks</translation>
+    </message>
+    <message>
+        <source>Detection stopped early after {done} tile(s). The objects already found are kept below.</source>
+        <translation>Deteksi berhenti lebih awal setelah {done} tile. Objek yang sudah ditemukan tetap disimpan di bawah.</translation>
+    </message>
+    <message>
+        <source>Discard reviewed results and run again? Confirm</source>
+        <translation>Buang hasil yang telah ditinjau dan jalankan lagi? Konfirmasi</translation>
+    </message>
+    <message>
+        <source>Distinct</source>
+        <translation>Berbeda</translation>
+    </message>
+    <message>
+        <source>Drag a box around one look-alike to exclude.</source>
+        <translation>Seret kotak di sekeliling satu objek serupa untuk mengecualikannya.</translation>
+    </message>
+    <message>
+        <source>Drag a box around one object.</source>
+        <translation>Seret kotak di sekeliling satu objek.</translation>
+    </message>
+    <message>
+        <source>Drag a corner to move it. Click an edge to add one, right-click removes.</source>
+        <translation>Seret sudut untuk memindahkannya. Klik tepi untuk menambahkan satu, klik kanan menghapusnya.</translation>
+    </message>
+    <message>
+        <source>Drag a corner to move it. Double-click an edge to add one.</source>
+        <translation>Seret sudut untuk memindahkannya. Klik dua kali tepi untuk menambahkan satu.</translation>
+    </message>
+    <message>
+        <source>Drag, add or delete the object&apos;s corners by hand.</source>
+        <translation>Seret, tambahkan, atau hapus sudut objek secara manual.</translation>
+    </message>
+    <message>
+        <source>Draw a line across the object to cut it into two.</source>
+        <translation>Gambar garis melintasi objek untuk memotongnya menjadi dua.</translation>
+    </message>
+    <message>
+        <source>Draw a line right across the shape, then Finish.</source>
+        <translation>Gambar garis langsung melintasi bentuk, lalu Selesaikan.</translation>
+    </message>
+    <message>
+        <source>Draw an example of the object first (step 2).</source>
+        <translation>Gambar contoh objek terlebih dahulu (langkah 2).</translation>
+    </message>
+    <message>
+        <source>Draw an example, or type what to find.</source>
+        <translation>Gambar contoh, atau ketik apa yang dicari.</translation>
+    </message>
+    <message>
+        <source>Draw its corners</source>
+        <translation>Gambar sudut-sudutnya</translation>
+    </message>
+    <message>
+        <source>Draw one &apos;{object}&apos; - the AI finds the rest</source>
+        <translation>Gambar satu &apos;{object}&apos; - AI menemukan sisanya</translation>
+    </message>
+    <message>
+        <source>Draw one example - the AI finds the rest</source>
+        <translation>Gambar satu contoh - AI menemukan sisanya</translation>
+    </message>
+    <message>
+        <source>Draw the new edge: start outside the shape, cross it, end outside, then Finish.</source>
+        <translation>Gambar tepi baru: mulai dari luar bentuk, potong bentuknya, akhiri di luar, lalu Selesaikan.</translation>
+    </message>
+    <message>
+        <source>Drawn examples</source>
+        <translation>Contoh yang digambar</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial for thinning an outline.</source>
+        <translation>Hapus titik yang lebih dekat dari jarak ini ke tepi lurus (0 = nonaktif). Ini jarak, bukan jumlah: jika dinaikkan tinggi dapat meratakan dinding melengkung. Titik biasanya menjadi pengaturan yang lebih baik untuk menipiskan garis luar.</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial; this stays for comparison.</source>
+        <translation>Hapus titik yang lebih dekat dari jarak ini ke tepi lurus (0 = nonaktif). Ini jarak, bukan jumlah: jika dinaikkan tinggi dapat meratakan dinding melengkung. Titik biasanya menjadi pengaturan yang lebih baik; opsi ini tetap ada untuk perbandingan.</translation>
+    </message>
+    <message>
+        <source>Drop this polygon&apos;s points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
+        <translation>Hapus titik poligon ini yang lebih dekat dari jarak ini ke tepi lurus (0 = nonaktif). Ini jarak, bukan jumlah; Titik biasanya menjadi pengaturan yang lebih baik.</translation>
+    </message>
+    <message>
+        <source>Edit an existing polygon</source>
+        <translation>Edit poligon yang sudah ada</translation>
+    </message>
+    <message>
+        <source>Export the polygons to a layer</source>
+        <translation>Ekspor poligon ke lapisan</translation>
+    </message>
+    <message>
+        <source>Fewer points</source>
+        <translation>Lebih sedikit titik</translation>
+    </message>
+    <message>
+        <source>Fill holes</source>
+        <translation>Isi lubang</translation>
+    </message>
+    <message>
+        <source>Fill only holes smaller than this ground area. Bigger holes (a road median, a courtyard) stay open. No limit = fill every hole.</source>
+        <translation>Isi hanya lubang yang lebih kecil dari area tanah ini. Lubang yang lebih besar (median jalan, halaman dalam) tetap terbuka. Tanpa batas = isi semua lubang.</translation>
+    </message>
+    <message>
+        <source>Finish the line</source>
+        <translation>Selesaikan garis</translation>
+    </message>
+    <message>
+        <source>Fix method</source>
+        <translation>Metode perbaikan</translation>
+    </message>
+    <message>
+        <source>Give neighbouring shapes one exact border instead of a hairline gap or overlap. For land cover, where the map is one surface.</source>
+        <translation>Berikan bentuk yang bersebelahan satu batas yang tepat, bukan celah tipis atau tumpang tindih. Untuk tutupan lahan, tempat peta berupa satu permukaan.</translation>
+    </message>
+    <message>
+        <source>Give this one polygon its own shape settings, without moving the dials that drive the whole layer.</source>
+        <translation>Berikan poligon ini pengaturan bentuknya sendiri, tanpa mengubah pengaturan yang mengatur seluruh lapisan.</translation>
+    </message>
+    <message>
+        <source>Go back to picking polygons. Everything you kept stays, and so does the outline on screen.</source>
+        <translation>Kembali memilih poligon. Semua yang Anda pertahankan tetap ada, begitu juga garis luar di layar.</translation>
+    </message>
+    <message>
+        <source>Go back to your zone, references and settings, then detect the whole zone again. Nothing is saved.</source>
+        <translation>Kembali ke zona, referensi, dan pengaturan Anda, lalu deteksi seluruh zona lagi. Tidak ada yang disimpan.</translation>
+    </message>
+    <message>
+        <source>Grow / shrink</source>
+        <translation>Perbesar / perkecil</translation>
+    </message>
+    <message>
+        <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a distinct colour per object to tell them apart.</source>
+        <translation>Bagaimana deteksi diwarnai di peta (hanya visual): isian Normal, Garis luar, heatmap Keyakinan, atau warna berbeda per objek untuk membedakannya.</translation>
+    </message>
+    <message>
+        <source>How many of each outline&apos;s points to keep, as a share. 100% keeps the class default; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
+        <translation>Seberapa banyak titik pada tiap garis luar yang dipertahankan, sebagai persentase. 100% mempertahankan default kelas; nilai lebih rendah menipiskan lebih jauh, membuang detail terkecil lebih dulu dan mempertahankan sudut serta permukaan. Dengan Sudut siku-siku aktif, proses ini berjalan lebih dulu, sehingga menurunkannya menyediakan dinding lurus yang lebih baik untuk proses penyikuan.</translation>
+    </message>
+    <message>
+        <source>How many of the outline&apos;s points to keep, as a share. 100% keeps the standard density; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
+        <translation>Seberapa banyak titik pada garis luar yang dipertahankan, sebagai persentase. 100% mempertahankan kepadatan standar; nilai lebih rendah menipiskan lebih jauh, membuang detail terkecil lebih dulu dan mempertahankan sudut serta permukaan. Dengan Sudut siku-siku aktif, proses ini berjalan lebih dulu, sehingga menurunkannya menyediakan dinding lurus yang lebih baik untuk proses penyikuan.</translation>
+    </message>
+    <message>
+        <source>How many of this polygon&apos;s points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
+        <translation>Seberapa banyak titik poligon ini yang dipertahankan. Jumlah pada baris judul mengikuti nilai ini. Ini berjalan sebelum Sudut siku-siku, sehingga menurunkannya menghasilkan dinding lurus, bukan bentuk bertangga.</translation>
+    </message>
+    <message>
+        <source>How sure the AI is about each object. Lower shows more, higher keeps only the sure ones.</source>
+        <translation>Seberapa yakin AI terhadap setiap objek. Nilai lebih rendah menampilkan lebih banyak, nilai lebih tinggi hanya menyisakan yang paling yakin.</translation>
+    </message>
+    <message>
+        <source>Identify new shape</source>
+        <translation>Identifikasi bentuk baru</translation>
+    </message>
+    <message>
+        <source>Installation Already Running</source>
+        <translation>Instalasi Sudah Berjalan</translation>
+    </message>
+    <message>
+        <source>Installation Path Problem</source>
+        <translation>Masalah Jalur Instalasi</translation>
+    </message>
+    <message>
+        <source>Installation running in another window</source>
+        <translation>Instalasi sedang berjalan di jendela lain</translation>
+    </message>
+    <message>
+        <source>Keep</source>
+        <translation>Pertahankan</translation>
+    </message>
+    <message>
+        <source>Keep these edits and go back to picking polygons.</source>
+        <translation>Pertahankan perubahan ini dan kembali memilih poligon.</translation>
+    </message>
+    <message>
+        <source>Keep this detection in Favorites</source>
+        <translation>Pertahankan deteksi ini di Favorit</translation>
+    </message>
+    <message>
+        <source>Keep this object in Favorites</source>
+        <translation>Pertahankan objek ini di Favorit</translation>
+    </message>
+    <message>
+        <source>Keep this one</source>
+        <translation>Pertahankan ini</translation>
+    </message>
+    <message>
+        <source>Keep this one, or click again to correct the outline.</source>
+        <translation>Pertahankan ini, atau klik lagi untuk mengoreksi garis luar.</translation>
+    </message>
+    <message>
+        <source>Keep this one, or keep placing corners.</source>
+        <translation>Pertahankan ini, atau lanjutkan menempatkan sudut.</translation>
+    </message>
+    <message>
+        <source>Keep this outline and point at the next object. Shortcut: S</source>
+        <translation>Pertahankan garis luar ini dan arahkan ke objek berikutnya. Pintasan: S</translation>
+    </message>
+    <message>
+        <source>Left-click adds a keep point, right-click a trim point. The outline follows.</source>
+        <translation>Klik kiri menambahkan titik pertahankan, klik kanan titik pangkas. Garis luar mengikuti.</translation>
+    </message>
+    <message>
+        <source>Linux System Too Old</source>
+        <translation>Sistem Linux Terlalu Lama</translation>
+    </message>
+    <message>
+        <source>Loading stored detections ({done} of {total})</source>
+        <translation>Memuat deteksi tersimpan ({done} dari {total})</translation>
+    </message>
+    <message>
+        <source>Maximum</source>
+        <translation>Maksimum</translation>
+    </message>
+    <message>
+        <source>Measuring AI data size...</source>
+        <translation>Mengukur ukuran data AI...</translation>
+    </message>
+    <message>
+        <source>Measuring the downloaded data...</source>
+        <translation>Mengukur data yang diunduh...</translation>
+    </message>
+    <message>
+        <source>Merge with neighbours</source>
+        <translation>Gabungkan dengan tetangga</translation>
+    </message>
+    <message>
+        <source>Merge {n} shapes · Free</source>
+        <translation>Gabungkan {n} bentuk · Gratis</translation>
+    </message>
+    <message>
+        <source>Minimum</source>
+        <translation>Minimum</translation>
+    </message>
+    <message>
+        <source>Missing System Component</source>
+        <translation>Komponen Sistem Hilang</translation>
+    </message>
+    <message>
+        <source>Move points</source>
+        <translation>Pindahkan titik</translation>
+    </message>
+    <message>
+        <source>Navigation (while a tool is armed)</source>
+        <translation>Navigasi (saat alat sedang aktif)</translation>
+    </message>
+    <message>
+        <source>New polygon</source>
+        <translation>Poligon baru</translation>
+    </message>
+    <message>
+        <source>New shape added. Click Save to keep it.</source>
+        <translation>Bentuk baru ditambahkan. Klik Simpan untuk mempertahankannya.</translation>
+    </message>
+    <message>
+        <source>No connection to the sign-in service. Check your internet connection, then click Connect to try again.</source>
+        <translation>Tidak ada koneksi ke layanan masuk. Periksa koneksi internet Anda, lalu klik Hubungkan untuk mencoba lagi.</translation>
+    </message>
+    <message>
+        <source>No detection in this zone. Try a more specific object word, or a finer detail level.</source>
+        <translation>Tidak ada deteksi di zona ini. Coba kata objek yang lebih spesifik, atau tingkat detail yang lebih halus.</translation>
+    </message>
+    <message>
+        <source>No detection under that click.</source>
+        <translation>Tidak ada deteksi pada titik klik itu.</translation>
+    </message>
+    <message>
+        <source>No matches in this zone.</source>
+        <translation>Tidak ada kecocokan di zona ini.</translation>
+    </message>
+    <message>
+        <source>No object matches that search.</source>
+        <translation>Tidak ada objek yang cocok dengan pencarian itu.</translation>
+    </message>
+    <message>
+        <source>Nothing changed. The line has to cross the outline twice, starting and ending outside the shape.</source>
+        <translation>Tidak ada yang berubah. Garis harus memotong garis luar dua kali, dimulai dan diakhiri di luar bentuk.</translation>
+    </message>
+    <message>
+        <source>Nothing cleared the confidence bar in this zone.</source>
+        <translation>Tidak ada yang melewati ambang keyakinan di zona ini.</translation>
+    </message>
+    <message>
+        <source>Nothing was added. A polygon needs at least three corners.</source>
+        <translation>Tidak ada yang ditambahkan. Poligon membutuhkan setidaknya tiga sudut.</translation>
+    </message>
+    <message>
+        <source>Nothing was split. The line has to cross the shape completely, starting and ending outside it.</source>
+        <translation>Tidak ada yang dipisahkan. Garis harus memotong bentuk sepenuhnya, dimulai dan diakhiri di luar bentuk.</translation>
+    </message>
+    <message>
+        <source>Now click the other pieces of this object.</source>
+        <translation>Sekarang klik bagian lain dari objek ini.</translation>
+    </message>
+    <message>
+        <source>One object came back split into several polygons. Click the others on the map, then confirm to merge them into one.</source>
+        <translation>Satu objek kembali terpisah menjadi beberapa poligon. Klik yang lainnya di peta, lalu konfirmasi untuk menggabungkannya menjadi satu.</translation>
+    </message>
+    <message>
+        <source>One object per run - Detect will run &quot;{first}&quot; first.</source>
+        <translation>Satu objek per proses - Deteksi akan menjalankan &quot;{first}&quot; terlebih dahulu.</translation>
+    </message>
+    <message>
+        <source>One object per run - detecting &quot;{first}&quot; now. Run the other objects as separate detections.</source>
+        <translation>Satu objek per proses - sedang mendeteksi &quot;{first}&quot; sekarang. Jalankan objek lain sebagai deteksi terpisah.</translation>
+    </message>
+    <message>
+        <source>Only this polygon. Every other one follows the Shapes step.</source>
+        <translation>Hanya poligon ini. Semua yang lain mengikuti langkah Bentuk.</translation>
+    </message>
+    <message>
+        <source>Open the selected saved polygon for AI editing</source>
+        <translation>Buka poligon tersimpan yang dipilih untuk diedit dengan AI</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>Lainnya</translation>
+    </message>
+    <message>
+        <source>Package Versions Conflict</source>
+        <translation>Konflik Versi Paket</translation>
+    </message>
+    <message>
+        <source>Pick a tool above, then edit the highlighted object.</source>
+        <translation>Pilih alat di atas, lalu edit objek yang disorot.</translation>
+    </message>
+    <message>
+        <source>Pick at least two shapes to merge them.</source>
+        <translation>Pilih setidaknya dua bentuk untuk menggabungkannya.</translation>
+    </message>
+    <message>
+        <source>Pick or un-pick an object</source>
+        <translation>Pilih atau batalkan pilihan objek</translation>
+    </message>
+    <message>
+        <source>Point at it on the map</source>
+        <translation>Arahkan ke sana di peta</translation>
+    </message>
+    <message>
+        <source>Points</source>
+        <translation>Titik</translation>
+    </message>
+    <message>
+        <source>Points the map back at this run with the same object and the same number of tiles, ready to detect. Nothing is spent until you do.</source>
+        <translation>Mengarahkan peta kembali ke proses ini dengan objek dan jumlah tile yang sama, siap untuk dideteksi. Tidak ada kredit yang digunakan sampai Anda menjalankannya.</translation>
+    </message>
+    <message>
+        <source>Points: {n}</source>
+        <translation>Titik: {n}</translation>
+    </message>
+    <message>
+        <source>Positive = grow outward, negative = shrink inward</source>
+        <translation>Positif = membesar ke luar, negatif = menyusut ke dalam</translation>
+    </message>
+    <message>
+        <source>Proxy Authentication Required</source>
+        <translation>Autentikasi Proxy Diperlukan</translation>
+    </message>
+    <message>
+        <source>Push this polygon&apos;s edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
+        <translation>Dorong tepi poligon ini keluar (positif) atau ke dalam (negatif), untuk satu jejak yang dipotong terlalu pendek atau berlebih oleh model.</translation>
+    </message>
+    <message>
+        <source>QGIS could not activate the temporary review layer. Close any other editing session, then try Edit manually again.</source>
+        <translation>QGIS tidak dapat mengaktifkan lapisan tinjauan sementara. Tutup sesi pengeditan lainnya, lalu coba edit secara manual lagi.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here:
+{}</source>
+        <translation>QGIS tidak dapat membuka peramban. Buka alamat ini untuk menyelesaikan proses masuk, lalu kembali ke sini:
+{}</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here.</source>
+        <translation>QGIS tidak dapat membuka peramban. Alamat masuk telah disalin ke clipboard Anda: tempelkan ke peramban untuk menyelesaikannya, lalu kembali ke sini.</translation>
+    </message>
+    <message>
+        <source>QGIS could not save these edits. Fix the geometry and click Done again.</source>
+        <translation>QGIS tidak dapat menyimpan perubahan ini. Perbaiki geometri lalu klik Selesai lagi.</translation>
+    </message>
+    <message>
+        <source>Re-run the whole zone</source>
+        <translation>Jalankan ulang seluruh zona</translation>
+    </message>
+    <message>
+        <source>Reading the imagery around this polygon...</source>
+        <translation>Membaca imagery di sekitar poligon ini...</translation>
+    </message>
+    <message>
+        <source>Reading the imagery around your click...</source>
+        <translation>Membaca imagery di sekitar klik Anda...</translation>
+    </message>
+    <message>
+        <source>Reading this run...</source>
+        <translation>Membaca proses ini...</translation>
+    </message>
+    <message>
+        <source>Rebuilding shapes ({done} of {total})</source>
+        <translation>Membangun ulang bentuk ({done} dari {total})</translation>
+    </message>
+    <message>
+        <source>Recovered {n} detection(s) to the layer {name}.</source>
+        <translation>{n} deteksi dipulihkan ke lapisan {name}.</translation>
+    </message>
+    <message>
+        <source>Redraw edge</source>
+        <translation>Gambar ulang tepi</translation>
+    </message>
+    <message>
+        <source>Remove the corner you picked. The Delete key does the same.</source>
+        <translation>Hapus sudut yang Anda pilih. Tombol Delete melakukan hal yang sama.</translation>
+    </message>
+    <message>
+        <source>Remove the selected detection</source>
+        <translation>Hapus deteksi yang dipilih</translation>
+    </message>
+    <message>
+        <source>Removing the downloaded AI data. This window closes when it is done.</source>
+        <translation>Menghapus data AI yang diunduh. Jendela ini akan tertutup saat selesai.</translation>
+    </message>
+    <message>
+        <source>Removing the downloaded AI data...</source>
+        <translation>Menghapus data AI yang diunduh...</translation>
+    </message>
+    <message>
+        <source>Replace one side by drawing a new line across the outline.</source>
+        <translation>Ganti satu sisi dengan menggambar garis baru melintasi garis luar.</translation>
+    </message>
+    <message>
+        <source>Report this problem</source>
+        <translation>Laporkan masalah ini</translation>
+    </message>
+    <message>
+        <source>Reset to shared</source>
+        <translation>Atur ulang ke pengaturan bersama</translation>
+    </message>
+    <message>
+        <source>Reshape needs a one-time setup</source>
+        <translation>Bentuk ulang membutuhkan pengaturan satu kali</translation>
+    </message>
+    <message>
+        <source>Reshaping uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and reshaping will open automatically when it is ready.</source>
+        <translation>Bentuk ulang menggunakan AI di perangkat gratis, yang belum terpasang. Pasang sekarang (beberapa menit, di latar belakang)? Anda dapat terus meninjau, dan bentuk ulang akan terbuka otomatis saat siap.</translation>
+    </message>
+    <message>
+        <source>Right angles</source>
+        <translation>Sudut siku-siku</translation>
+    </message>
+    <message>
+        <source>Round corners</source>
+        <translation>Bulatkan sudut</translation>
+    </message>
+    <message>
+        <source>Round corners for natural shapes like trees and bushes. Lower Points for smoother results.</source>
+        <translation>Bulatkan sudut untuk bentuk alami seperti pohon dan semak. Turunkan Titik untuk hasil yang lebih halus.</translation>
+    </message>
+    <message>
+        <source>Round this polygon&apos;s corners, for a tree or a pond among squared neighbours.</source>
+        <translation>Bulatkan sudut poligon ini, untuk pohon atau kolam di antara objek tetangga yang bersudut siku.</translation>
+    </message>
+    <message>
+        <source>Run the detection</source>
+        <translation>Jalankan deteksi</translation>
+    </message>
+    <message>
+        <source>Run this zone again</source>
+        <translation>Jalankan zona ini lagi</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
+        <translation>Hampir habis: {n} deteksi gratis tersisa, kembali pada {date}. &lt;a href=&quot;{url}&quot;&gt;Berlangganan&lt;/a&gt; untuk terus melanjutkan.</translation>
+    </message>
+    <message>
+        <source>Same setup as your last run - the result will match. Add an example or change the detail for a different result.</source>
+        <translation>Pengaturan sama seperti proses terakhir Anda - hasilnya akan sama. Tambahkan contoh atau ubah detail untuk hasil yang berbeda.</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Simpan</translation>
+    </message>
+    <message>
+        <source>Save the fix and go back to the review</source>
+        <translation>Simpan perbaikan dan kembali ke tinjauan</translation>
+    </message>
+    <message>
+        <source>Save this polygon and go back to picking.</source>
+        <translation>Simpan poligon ini dan kembali memilih.</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI in the background. You can keep reviewing; reshaping opens automatically when it is ready.</source>
+        <translation>Menyiapkan AI di perangkat di latar belakang. Anda dapat terus meninjau; Bentuk ulang terbuka otomatis saat siap.</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI in the background...</source>
+        <translation>Menyiapkan AI di perangkat di latar belakang...</translation>
+    </message>
+    <message>
+        <source>Settings for this polygon</source>
+        <translation>Pengaturan untuk poligon ini</translation>
+    </message>
+    <message>
+        <source>Shadows getting detected instead of trees? Draw an &apos;Exclude a look-alike&apos; box on one shadow - the AI drops similar false positives.</source>
+        <translation>Bayangan terdeteksi alih-alih pohon? Gambar kotak &apos;Kecualikan objek serupa&apos; pada satu bayangan - AI akan menyingkirkan deteksi salah yang serupa.</translation>
+    </message>
+    <message>
+        <source>Shape updated. Keep editing, or click Save.</source>
+        <translation>Bentuk diperbarui. Lanjutkan mengedit, atau klik Simpan.</translation>
+    </message>
+    <message>
+        <source>Shapes</source>
+        <translation>Bentuk</translation>
+    </message>
+    <message>
+        <source>Shared borders:</source>
+        <translation>Batas bersama:</translation>
+    </message>
+    <message>
+        <source>Shave thin spikes and ragged bits off each shape&apos;s outline. It leaves the main body alone; higher values trim more. 0 = off.</source>
+        <translation>Kikis duri tipis dan bagian tidak rata dari garis luar tiap bentuk. Bagian utama tidak disentuh; nilai lebih tinggi memangkas lebih banyak. 0 = nonaktif.</translation>
+    </message>
+    <message>
+        <source>Show what it looks like</source>
+        <translation>Lihat seperti apa bentuknya</translation>
+    </message>
+    <message>
+        <source>Simplify</source>
+        <translation>Sederhanakan</translation>
+    </message>
+    <message>
+        <source>Snap walls to right angles, 45 degree walls included. Made for buildings, pools and solar panels. A shape it would distort is left as it is.</source>
+        <translation>Ratakan dinding ke sudut siku-siku, termasuk dinding 45 derajat. Dibuat untuk bangunan, kolam, dan panel surya. Bentuk yang akan terdistorsi dibiarkan apa adanya.</translation>
+    </message>
+    <message>
+        <source>Something went wrong preparing the results. Please run Detect again.</source>
+        <translation>Terjadi kesalahan saat menyiapkan hasil. Silakan jalankan Deteksi lagi.</translation>
+    </message>
+    <message>
+        <source>Something went wrong preparing the results. Your detections were saved to the layer {name}.</source>
+        <translation>Terjadi kesalahan saat menyiapkan hasil. Deteksi Anda disimpan ke lapisan {name}.</translation>
+    </message>
+    <message>
+        <source>Split</source>
+        <translation>Pisahkan</translation>
+    </message>
+    <message>
+        <source>Square this polygon&apos;s edges, or leave them as traced while the rest of the layer stays squared.</source>
+        <translation>Sikukan tepi poligon ini, atau biarkan sesuai bentuk aslinya sementara lapisan lainnya tetap disikukan.</translation>
+    </message>
+    <message>
+        <source>Star a detection or an object to keep it here.</source>
+        <translation>Beri bintang pada deteksi atau objek untuk menyimpannya di sini.</translation>
+    </message>
+    <message>
+        <source>Still waiting for the sign-in page. If no browser opened, or the page shows an error, click Cancel and try again.</source>
+        <translation>Masih menunggu halaman masuk. Jika tidak ada peramban yang terbuka, atau halaman menampilkan kesalahan, klik Batal dan coba lagi.</translation>
+    </message>
+    <message>
+        <source>Stop adding</source>
+        <translation>Hentikan penambahan</translation>
+    </message>
+    <message>
+        <source>Stopping the local AI...</source>
+        <translation>Menghentikan AI lokal...</translation>
+    </message>
+    <message>
+        <source>Switch to AI to shape this polygon on its own.</source>
+        <translation>Beralih ke AI untuk membentuk poligon ini secara otomatis.</translation>
+    </message>
+    <message>
+        <source>That area does not touch the object you are editing, so nothing was added. Refining works on one object at a time.</source>
+        <translation>Area ini tidak menyentuh objek yang sedang Anda edit, sehingga tidak ada yang ditambahkan. Penyempurnaan bekerja pada satu objek dalam satu waktu.</translation>
+    </message>
+    <message>
+        <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
+        <translation>Tanah itu milik objek lain, sehingga tidak ada yang ditambahkan. Edit objek itu sebagai gantinya, atau gabungkan keduanya dengan Gabungkan dengan tetangga.</translation>
+    </message>
+    <message>
+        <source>That is another object. The one you were editing is saved, and this one is now selected.</source>
+        <translation>Itu objek lain. Objek yang sedang Anda edit telah disimpan, dan objek ini sekarang dipilih.</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples - you can draw up to 3.</source>
+        <translation>AI menemukan setiap objek yang mirip dengan contoh Anda - Anda dapat menggambar hingga 3.</translation>
+    </message>
+    <message>
+        <source>The AI outlines it, free, on your computer.</source>
+        <translation>AI menggambar garis di sekelilingnya, gratis, di komputer Anda.</translation>
+    </message>
+    <message>
+        <source>The connection to the server was interrupted. Please try again.</source>
+        <translation>Koneksi ke server terputus. Silakan coba lagi.</translation>
+    </message>
+    <message>
+        <source>The detection service had a problem and the run stopped. Please try again.</source>
+        <translation>Layanan deteksi mengalami masalah dan proses terhenti. Silakan coba lagi.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the {n} tiles already found.</source>
+        <translation>Deteksi berhenti merespons. {n} tile yang sudah ditemukan tetap disimpan.</translation>
+    </message>
+    <message>
+        <source>The imagery reader could not be loaded, and repairing the installation did not fix it. Please report this so we can look into it.
+
+{details}</source>
+        <translation>Pembaca imagery tidak dapat dimuat, dan memperbaiki instalasi tidak menyelesaikannya. Silakan laporkan ini agar kami dapat menyelidikinya.
+
+{details}</translation>
+    </message>
+    <message>
+        <source>The installer could not start a helper process (a damaged Python launcher). Click Reinstall Dependencies to rebuild the environment from scratch.</source>
+        <translation>Installer tidak dapat memulai proses bantuan (peluncur Python yang rusak). Klik Pasang Ulang Dependensi untuk membangun ulang lingkungan dari awal.</translation>
+    </message>
+    <message>
+        <source>The pieces do not touch, so the result is one object in several parts.</source>
+        <translation>Bagian-bagian ini tidak saling bersentuhan, sehingga hasilnya adalah satu objek dalam beberapa bagian.</translation>
+    </message>
+    <message>
+        <source>The removal could not start. You are signed out, but the downloaded AI data is still on this computer. Try again.</source>
+        <translation>Proses penghapusan tidak dapat dimulai. Anda telah keluar, tetapi data AI yang diunduh masih ada di komputer ini. Coba lagi.</translation>
+    </message>
+    <message>
+        <source>The removal did not finish. Close this window, then check the AI data folder before trying again.</source>
+        <translation>Proses penghapusan tidak selesai. Tutup jendela ini, lalu periksa folder data AI sebelum mencoba lagi.</translation>
+    </message>
+    <message>
+        <source>The removal is already running.</source>
+        <translation>Proses penghapusan sudah berjalan.</translation>
+    </message>
+    <message>
+        <source>The reply did not come from the service. If this network shows a sign-in page, open it in your browser first, then try again.</source>
+        <translation>Balasan tidak berasal dari layanan. Jika jaringan ini menampilkan halaman masuk, buka dulu di peramban Anda, lalu coba lagi.</translation>
+    </message>
+    <message>
+        <source>The server returned an unexpected response. Please try again.</source>
+        <translation>Server mengembalikan respons yang tidak terduga. Silakan coba lagi.</translation>
+    </message>
+    <message>
+        <source>Thin this polygon&apos;s points before you edit them by hand. 100% keeps the outline as it is.</source>
+        <translation>Tipiskan titik poligon ini sebelum Anda mengeditnya secara manual. 100% mempertahankan garis luar apa adanya.</translation>
+    </message>
+    <message>
+        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Manual mode on it as is.</source>
+        <translation>Gambar ini tidak memiliki posisi di peta, sehingga Otomatis tidak dapat menempatkan apa yang ditemukannya. Berikan posisi dengan QGIS Georeferencer, atau gunakan mode Manual apa adanya.</translation>
+    </message>
+    <message>
+        <source>This polygon</source>
+        <translation>Poligon ini</translation>
+    </message>
+    <message>
+        <source>This raster has no coordinate reference system, so polygons will use pixel coordinates. Set a CRS in Layer Properties for georeferenced output.</source>
+        <translation>Raster ini tidak memiliki sistem referensi koordinat, sehingga poligon akan menggunakan koordinat piksel. Atur CRS di Properti Lapisan untuk hasil yang bergeoreferensi.</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it before segmenting.</source>
+        <translation>Raster ini terputar. Jalankan Warp (Reproject) padanya untuk meluruskannya sebelum menyegmentasi.</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Manual mode cannot read it either.</source>
+        <translation>Raster ini terputar. Jalankan Warp (Reproject) padanya untuk meluruskannya terlebih dahulu. Mode Manual juga tidak dapat membacanya.</translation>
+    </message>
+    <message>
+        <source>This run costs more credits than a free run covers. Lower the detail or draw a smaller zone, or</source>
+        <translation>Proses ini menggunakan lebih banyak kredit daripada yang dicakup oleh proses gratis. Turunkan detail atau gambar zona yang lebih kecil, atau</translation>
+    </message>
+    <message>
+        <source>This run did not keep where it looked, so it cannot be pointed at the same place. Draw the zone again.</source>
+        <translation>Proses ini tidak menyimpan lokasi yang dipindainya, sehingga tidak dapat diarahkan ke tempat yang sama. Gambar ulang zona.</translation>
+    </message>
+    <message>
+        <source>Those shapes could not be joined. Nothing was changed.</source>
+        <translation>Bentuk-bentuk itu tidak dapat digabungkan. Tidak ada yang berubah.</translation>
+    </message>
+    <message>
+        <source>Trim spikes</source>
+        <translation>Pangkas duri</translation>
+    </message>
+    <message>
+        <source>Two references give the strongest detection. Draw a second to reach best quality.</source>
+        <translation>Dua referensi memberikan deteksi terkuat. Gambar yang kedua untuk mencapai kualitas terbaik.</translation>
+    </message>
+    <message>
+        <source>Type a word for the object first (step 1).</source>
+        <translation>Ketik kata untuk objek terlebih dahulu (langkah 1).</translation>
+    </message>
+    <message>
+        <source>Unavailable while Right angles is on. Turn it off to adjust this setting.</source>
+        <translation>Tidak tersedia saat Sudut siku-siku aktif. Nonaktifkan untuk menyesuaikan pengaturan ini.</translation>
+    </message>
+    <message>
+        <source>Undo</source>
+        <translation>Batalkan</translation>
+    </message>
+    <message>
+        <source>Undo last</source>
+        <translation>Batalkan terakhir</translation>
+    </message>
+    <message>
+        <source>Undo the last correction</source>
+        <translation>Batalkan koreksi terakhir</translation>
+    </message>
+    <message>
+        <source>Undo the last thing you did here: the point you just placed, or the last edit.</source>
+        <translation>Batalkan hal terakhir yang Anda lakukan di sini: titik yang baru saja Anda tempatkan, atau perubahan terakhir.</translation>
+    </message>
+    <message>
+        <source>Unsupported Mac and Python Combination</source>
+        <translation>Kombinasi Mac dan Python Tidak Didukung</translation>
+    </message>
+    <message>
+        <source>Up to</source>
+        <translation>Hingga</translation>
+    </message>
+    <message>
+        <source>Writing the file...</source>
+        <translation>Menulis berkas...</translation>
+    </message>
+    <message>
+        <source>You place the corners, the same as on any QGIS layer.</source>
+        <translation>Anda menempatkan sudut, sama seperti pada lapisan QGIS mana pun.</translation>
+    </message>
+    <message>
+        <source>Your examples drive the search - naming the object makes it even more accurate.</source>
+        <translation>Contoh Anda menentukan arah pencarian - memberi nama objek membuatnya lebih akurat lagi.</translation>
+    </message>
+    <message>
+        <source>Your free detections come back on {date}.</source>
+        <translation>Deteksi gratis Anda kembali pada {date}.</translation>
+    </message>
+    <message>
+        <source>Your network proxy requires a username and password. Enter them in QGIS &gt; Settings &gt; Options &gt; Network, then restart QGIS and try again.</source>
+        <translation>Proksi jaringan Anda memerlukan nama pengguna dan sandi. Masukkan di QGIS &gt; Settings &gt; Options &gt; Network, lalu mulai ulang QGIS dan coba lagi.</translation>
+    </message>
+    <message>
+        <source>a month ago</source>
+        <translation>sebulan yang lalu</translation>
+    </message>
+    <message>
+        <source>a week ago</source>
+        <translation>seminggu yang lalu</translation>
+    </message>
+    <message>
+        <source>a year ago</source>
+        <translation>setahun yang lalu</translation>
+    </message>
+    <message>
+        <source>applies to every polygon</source>
+        <translation>berlaku untuk setiap poligon</translation>
+    </message>
+    <message>
+        <source>fine-tune the edges</source>
+        <translation>menyempurnakan tepi</translation>
+    </message>
+    <message>
+        <source>hide anything outside this range</source>
+        <translation>sembunyikan apa pun di luar rentang ini</translation>
+    </message>
+    <message>
+        <source>how each outline is styled</source>
+        <translation>bagaimana gaya tiap garis luar</translation>
+    </message>
+    <message>
+        <source>how the outline is styled</source>
+        <translation>bagaimana gaya garis luar</translation>
+    </message>
+    <message>
+        <source>{count} polygons added so far.</source>
+        <translation>{count} poligon ditambahkan sejauh ini.</translation>
+    </message>
+    <message>
+        <source>{count} vertices</source>
+        <translation>{count} verteks</translation>
+    </message>
+    <message>
+        <source>{credits} credits</source>
+        <translation>{credits} kredit</translation>
+    </message>
+    <message>
+        <source>{hidden} hidden by the filters</source>
+        <translation>{hidden} disembunyikan oleh filter</translation>
+    </message>
+    <message>
+        <source>{n} &quot;{object}&quot; found so far</source>
+        <translation>{n} &quot;{object}&quot; ditemukan sejauh ini</translation>
+    </message>
+    <message>
+        <source>{n} corrections this round</source>
+        <translation>{n} koreksi putaran ini</translation>
+    </message>
+    <message>
+        <source>{n} kept</source>
+        <translation>{n} dipertahankan</translation>
+    </message>
+    <message>
+        <source>{n} months ago</source>
+        <translation>{n} bulan yang lalu</translation>
+    </message>
+    <message>
+        <source>{n} objects</source>
+        <translation>{n} objek</translation>
+    </message>
+    <message>
+        <source>{n} point placed.</source>
+        <translation>{n} titik ditempatkan.</translation>
+    </message>
+    <message>
+        <source>{n} points placed.</source>
+        <translation>{n} titik ditempatkan.</translation>
+    </message>
+    <message>
+        <source>{n} results</source>
+        <translation>{n} hasil</translation>
+    </message>
+    <message>
+        <source>{n} shape(s) edited this session</source>
+        <translation>{n} bentuk diedit sesi ini</translation>
+    </message>
+    <message>
+        <source>{n} shapes merged into one · Free</source>
+        <translation>{n} bentuk digabungkan menjadi satu · Gratis</translation>
+    </message>
+    <message>
+        <source>{n} shapes picked. Press Enter to join.</source>
+        <translation>{n} bentuk dipilih. Tekan Enter untuk menggabungkan.</translation>
+    </message>
+    <message>
+        <source>{n} tile(s) took too long to load and are missing from this result.</source>
+        <translation>{n} tile terlalu lama dimuat dan hilang dari hasil ini.</translation>
+    </message>
+    <message>
+        <source>{n} weeks ago</source>
+        <translation>{n} minggu yang lalu</translation>
+    </message>
+    <message>
+        <source>{n} years ago</source>
+        <translation>{n} tahun yang lalu</translation>
+    </message>
+    <message>
+        <source>{tiles} tiles</source>
+        <translation>{tiles} tile</translation>
     </message>
 </context>
 </TS>

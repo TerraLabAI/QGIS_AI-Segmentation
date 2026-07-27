@@ -12,20 +12,12 @@
         <translation>信頼度</translation>
     </message>
     <message>
-        <source>Random</source>
-        <translation>ランダム</translation>
-    </message>
-    <message>
         <source>Outline</source>
         <translation>輪郭</translation>
     </message>
     <message>
         <source>Retry</source>
         <translation>再試行</translation>
-    </message>
-    <message>
-        <source>Go back to your zone, references and settings to adjust and detect again. Nothing is saved.</source>
-        <translation>ゾーン、参照画像、設定に戻って調整し、再度検出できます。何も保存されません。</translation>
     </message>
     <message>
         <source>Click to enlarge</source>
@@ -42,14 +34,6 @@
     <message>
         <source>Exclude a look-alike</source>
         <translation>似ているものを除外</translation>
-    </message>
-    <message>
-        <source>Now outline a look-alike to exclude, then click the first point to close.</source>
-        <translation>除外したい似たオブジェクトを描き、最初の点をクリックして閉じてください。</translation>
-    </message>
-    <message>
-        <source>Your examples drive the search.</source>
-        <translation>あなたが描いた例が検索の基準になります。</translation>
     </message>
     <message>
         <source>Too generic to name. Clear the box to search from your example alone, or type a concrete object.</source>
@@ -72,20 +56,8 @@
         <translation>詳細度を上げるほど小さなオブジェクトを検出できます。</translation>
     </message>
     <message>
-        <source>Refine in Manual mode</source>
-        <translation>手動モードで調整</translation>
-    </message>
-    <message>
         <source>Finish or exit the review to switch modes.</source>
         <translation>モードを切り替えるには、完了するかレビューを終了してください。</translation>
-    </message>
-    <message>
-        <source>Preparing Manual mode, loading the local model...</source>
-        <translation>手動モードを準備中、ローカルモデルを読み込んでいます...</translation>
-    </message>
-    <message>
-        <source>Locked - refined in Manual mode</source>
-        <translation>ロック中 - 手動モードで調整済み</translation>
     </message>
     <message>
         <source>Detection</source>
@@ -326,24 +298,12 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>セグメンテーション</translation>
     </message>
     <message>
-        <source>Navigation</source>
-        <translation>ナビゲーション</translation>
-    </message>
-    <message>
         <source>Space</source>
         <translation>スペース</translation>
     </message>
     <message>
         <source>Hold and move to pan the map</source>
         <translation>押しながら動かして地図をパン</translation>
-    </message>
-    <message>
-        <source>Middle mouse button</source>
-        <translation>マウス中央ボタン</translation>
-    </message>
-    <message>
-        <source>Click and drag to pan the map</source>
-        <translation>クリックしてドラッグすると地図がパンします</translation>
     </message>
     <message>
         <source>The AI model works best on one element at a time.</source>
@@ -366,26 +326,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>選択範囲を調整</translation>
     </message>
     <message>
-        <source>Expand/Contract:</source>
-        <translation>拡張/縮小:</translation>
-    </message>
-    <message>
-        <source>Positive = expand outward, Negative = shrink inward</source>
-        <translation>正の値 = 外側に拡張、負の値 = 内側に縮小</translation>
-    </message>
-    <message>
-        <source>Simplify outline:</source>
-        <translation>輪郭を単純化:</translation>
-    </message>
-    <message>
-        <source>Reduce small variations in the outline (0 = no change)</source>
-        <translation>輪郭の細かい凹凸を減らします(0 = 変更なし)</translation>
-    </message>
-    <message>
-        <source>Fill holes:</source>
-        <translation>穴を埋める:</translation>
-    </message>
-    <message>
         <source>Fill interior holes in the selection</source>
         <translation>選択範囲内の穴を埋めます</translation>
     </message>
@@ -398,20 +338,8 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>サイズ</translation>
     </message>
     <message>
-        <source>Round corners:</source>
-        <translation>角を丸める:</translation>
-    </message>
-    <message>
-        <source>Round corners for natural shapes like trees and bushes. Increase 'Simplify outline' for smoother results.</source>
-        <translation>木や低木などの自然な形状では角を丸めます。より滑らかにするには「輪郭を単純化」を上げてください。</translation>
-    </message>
-    <message>
         <source>Outline</source>
         <translation>輪郭</translation>
-    </message>
-    <message>
-        <source>Selection</source>
-        <translation>選択範囲</translation>
     </message>
     <message>
         <source>Click on the element you want to segment:</source>
@@ -934,14 +862,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>検出完了後に利用可能</translation>
     </message>
     <message>
-        <source>Min size:</source>
-        <translation>最小サイズ:</translation>
-    </message>
-    <message>
-        <source>Max size:</source>
-        <translation>最大サイズ:</translation>
-    </message>
-    <message>
         <source>Off</source>
         <translation>オフ</translation>
     </message>
@@ -1098,10 +1018,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>このプロンプトを使用</translation>
     </message>
     <message>
-        <source>No matching objects.</source>
-        <translation>一致するオブジェクトがありません。</translation>
-    </message>
-    <message>
         <source>Use</source>
         <translation>使用</translation>
     </message>
@@ -1116,14 +1032,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Draw your example inside the selected zone.</source>
         <translation>選択したゾーンの内側に例を描いてください。</translation>
-    </message>
-    <message>
-        <source>Clean edges:</source>
-        <translation>縁をクリーンに:</translation>
-    </message>
-    <message>
-        <source>Remove thin ragged fringe attached to the outline (0 = no change)</source>
-        <translation>輪郭に付いた細かいギザギザを除去します(0 = 変更なし)</translation>
     </message>
     <message>
         <source>Share anonymous usage statistics</source>
@@ -1234,10 +1142,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>キャンセル</translation>
     </message>
     <message>
-        <source>Now outline one object, then click the first point to close.</source>
-        <translation>1つのオブジェクトを描き、最初の点をクリックして閉じてください。</translation>
-    </message>
-    <message>
         <source>Exit</source>
         <translation>終了</translation>
     </message>
@@ -1262,10 +1166,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>タイルを表示(デバッグ)</translation>
     </message>
     <message>
-        <source>Open these detections in Manual mode to fix specific objects point-by-point, then come back and export.</source>
-        <translation>これらの検出結果を手動モードで開き、個々のオブジェクトを1点ずつ修正してから戻ってExportしてください。</translation>
-    </message>
-    <message>
         <source>"{word}" will run as "{token}".</source>
         <translation>「{word}」は「{token}」として実行されます。</translation>
     </message>
@@ -1284,10 +1184,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>object</source>
         <translation>オブジェクト</translation>
-    </message>
-    <message>
-        <source>{tiles} tiles · {objects} objects · {credits} credits</source>
-        <translation>{tiles} タイル · {objects} オブジェクト · {credits} クレジット</translation>
     </message>
     <message>
         <source>Older detection</source>
@@ -1374,10 +1270,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>Export...</translation>
     </message>
     <message>
-        <source>Drop this object back into the prompt box for a new detection.</source>
-        <translation>このオブジェクトをプロンプト欄に戻して新しく検出できます。</translation>
-    </message>
-    <message>
         <source>Remove from favorites</source>
         <translation>お気に入りから削除</translation>
     </message>
@@ -1422,10 +1314,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>まだ何もありません。自動検出の結果はここに表示され、再利用、復元、Export がすぐに行えます。</translation>
     </message>
     <message>
-        <source>Star a detection to keep it here.</source>
-        <translation>検出結果にスターを付けるとここに保持されます。</translation>
-    </message>
-    <message>
         <source>Could not load this run's stored detections. Try again later.</source>
         <translation>この実行の保存済み検出結果を読み込めませんでした。後でもう一度お試しください。</translation>
     </message>
@@ -1458,22 +1346,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>自動</translation>
     </message>
     <message>
-        <source>Automatic - detect and review</source>
-        <translation>自動 - 検出とレビュー</translation>
-    </message>
-    <message>
-        <source>Automatic - draw your zone</source>
-        <translation>自動 - ゾーンを描く</translation>
-    </message>
-    <message>
-        <source>Cancel the drawing</source>
-        <translation>描画をキャンセル</translation>
-    </message>
-    <message>
-        <source>Cancel the running detection, or exit the review</source>
-        <translation>実行中の検出をキャンセルするか、レビューを終了する</translation>
-    </message>
-    <message>
         <source>Click</source>
         <translation>クリック</translation>
     </message>
@@ -1488,10 +1360,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Delete the active object</source>
         <translation>アクティブなオブジェクトを削除</translation>
-    </message>
-    <message>
-        <source>Detect objects, or export the reviewed polygons</source>
-        <translation>オブジェクトを検出、またはレビュー済みポリゴンをExport</translation>
     </message>
     <message>
         <source>Detection continues in the background. Reopen AI Segmentation to follow it.</source>
@@ -1538,14 +1406,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>手動</translation>
     </message>
     <message>
-        <source>Manual mode needs a one-time setup</source>
-        <translation>手動モードには初回のみセットアップが必要です</translation>
-    </message>
-    <message>
-        <source>Manual session</source>
-        <translation>手動セッション</translation>
-    </message>
-    <message>
         <source>Max detail for this zone - draw a larger zone for finer detail.</source>
         <translation>このゾーンでの詳細度は上限です - より細かい詳細度を得るには、より大きなゾーンを描いてください。</translation>
     </message>
@@ -1556,10 +1416,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>One color per object - check neighbors are separated</source>
         <translation>オブジェクトごとに色分け - 隣接するオブジェクトが分離されているか確認できます</translation>
-    </message>
-    <message>
-        <source>Optional shape and size controls: simplify outlines, clean edges, round corners, expand or shrink, fill holes, size filters.</source>
-        <translation>任意の形状・サイズ調整: 輪郭の単純化、縁のクリーン化、角の丸め、拡張/縮小、穴埋め、サイズフィルタです。</translation>
     </message>
     <message>
         <source>Out of credits after {done}/{total} tiles. Your detections are kept below.</source>
@@ -1666,10 +1522,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>≈ 1タイル = 1クレジット</translation>
     </message>
     <message>
-        <source>Adjust and run again</source>
-        <translation>調整して再実行</translation>
-    </message>
-    <message>
         <source>all shown</source>
         <translation>すべて表示中</translation>
     </message>
@@ -1678,32 +1530,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>{n} 件中 {visible} 件を表示中</translation>
     </message>
     <message>
-        <source>{hidden} below {pct}%</source>
-        <translation>{pct}% 未満が {hidden} 件</translation>
-    </message>
-    <message>
-        <source>Adjust and run again</source>
-        <translation>調整して再実行</translation>
-    </message>
-    <message>
         <source>all shown</source>
         <translation>すべて表示中</translation>
     </message>
     <message>
-        <source>{hidden} below {pct}%</source>
-        <translation>{pct}% 未満が {hidden} 件</translation>
-    </message>
-    <message>
         <source>{visible} of {n} shown</source>
         <translation>{n} 件中 {visible} 件を表示中</translation>
-    </message>
-    <message>
-        <source>Right angles:</source>
-        <translation>直角化:</translation>
-    </message>
-    <message>
-        <source>Snap edges to 90 degrees for man-made shapes like buildings, pools and solar panels.</source>
-        <translation>建物、プール、太陽光パネルのような人工物の形状では、辺を90度にスナップします。</translation>
     </message>
     <message>
         <source>Click an object on the map and the AI outlines it. You go one object at a time, checking and saving each polygon yourself.</source>
@@ -1750,10 +1582,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>ゾーン内の同じ種類のオブジェクトをすべて検出します - ゾーンを描き、オブジェクト名を入力すると、すべてのポリゴンを一度に取得できます。</translation>
     </message>
     <message>
-        <source>Tip: lower Confidence to reveal more detections, raise it to keep only the best.</source>
-        <translation>ヒント: 信頼度を下げるとより多くの検出結果が表示され、上げると最良のものだけが残ります。</translation>
-    </message>
-    <message>
         <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
         <translation>より小さいゾーンを描くか、&lt;a href="{url}"&gt;サブスクライブ&lt;/a&gt;してどんな大きさの範囲もセグメント化してください。</translation>
     </message>
@@ -1786,24 +1614,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>以前の実行を再実行する前に、現在の検出を完了またはキャンセルしてください。</translation>
     </message>
     <message>
-        <source>Couldn&apos;t open your browser. Check your connection and click Sign in / Sign up to start again.</source>
-        <translation>ブラウザを開けませんでした。接続を確認し、「サインイン / サインアップ」をクリックして再度開始してください。</translation>
-    </message>
-    <message>
         <source>0 shown - lower the Min size filter to reveal them</source>
         <translation>0件 - 表示するには最小サイズフィルタを下げてください</translation>
-    </message>
-    <message>
-        <source>1 detection selected</source>
-        <translation>検出 1件を選択中</translation>
-    </message>
-    <message>
-        <source>1 removed</source>
-        <translation>1件削除</translation>
-    </message>
-    <message>
-        <source>1 shape edited</source>
-        <translation>1件の形状を編集</translation>
     </message>
     <message>
         <source>10,000 credits every month. Cancel anytime.</source>
@@ -1826,10 +1638,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>まず利用規約とプライバシーポリシーに同意してください。</translation>
     </message>
     <message>
-        <source>Add an example</source>
-        <translation>例を追加</translation>
-    </message>
-    <message>
         <source>An install or detection is still running. Wait for it to finish, then try again.</source>
         <translation>インストールまたは検出が実行中です。完了するまで待ってから再試行してください。</translation>
     </message>
@@ -1842,10 +1650,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>この詳細度では{obj}が小さすぎて見つけられません - 詳細度を上げてください。</translation>
     </message>
     <message>
-        <source>Automatic detection needs a georeferenced raster. Use Manual mode for this image.</source>
-        <translation>自動検出には位置情報付きのラスタが必要です。この画像には手動モードを使用してください。</translation>
-    </message>
-    <message>
         <source>Available once the current install or detection finishes.</source>
         <translation>現在のインストールまたは検出が完了すると利用できます。</translation>
     </message>
@@ -1856,14 +1660,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Browse the library (view only while detecting).</source>
         <translation>ライブラリを閲覧(検出中は閲覧のみ)</translation>
-    </message>
-    <message>
-        <source>Click a detection on the map</source>
-        <translation>地図上の検出結果をクリック</translation>
-    </message>
-    <message>
-        <source>Click an empty spot to deselect.</source>
-        <translation>何もない場所をクリックすると選択解除されます。</translation>
     </message>
     <message>
         <source>Could not reach the service. Check your connection and try again.</source>
@@ -1892,56 +1688,20 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>検出に失敗しました。再試行してください。</translation>
     </message>
     <message>
-        <source>Done, back to Automatic review</source>
-        <translation>完了、自動レビューに戻る</translation>
-    </message>
-    <message>
         <source>Downloaded AI data removed. You have been signed out.</source>
         <translation>ダウンロード済みのAIデータを削除しました。サインアウトされました。</translation>
-    </message>
-    <message>
-        <source>Draw an example of one {object}</source>
-        <translation>{object}の例を1つ描く</translation>
-    </message>
-    <message>
-        <source>Draw an example of one {object} to find more</source>
-        <translation>{object}の例を1つ描いて、他を検索</translation>
     </message>
     <message>
         <source>Draw on the map</source>
         <translation>地図上に描く</translation>
     </message>
     <message>
-        <source>Edit shape</source>
-        <translation>形状を編集</translation>
-    </message>
-    <message>
-        <source>Edit your detections</source>
-        <translation>検出結果を編集</translation>
-    </message>
-    <message>
-        <source>Editing this shape</source>
-        <translation>この形状を編集中</translation>
-    </message>
-    <message>
         <source>Extra detail keeps helping {obj} in this zone.</source>
         <translation>このゾーンでは{obj}に対して詳細度を上げるとさらに効果があります。</translation>
     </message>
     <message>
-        <source>Filter and refine, then export.</source>
-        <translation>絞り込みと調整をしてからExportしてください。</translation>
-    </message>
-    <message>
         <source>Free plan</source>
         <translation>無料プラン</translation>
-    </message>
-    <message>
-        <source>Go back to the Automatic review to switch modes.</source>
-        <translation>モードを切り替えるには自動レビューに戻ってください。</translation>
-    </message>
-    <message>
-        <source>Grouped as continuous cover.</source>
-        <translation>連続した被覆としてグループ化されています。</translation>
     </message>
     <message>
         <source>Hide parts larger than this ground area. 0 = no limit.</source>
@@ -1950,22 +1710,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Hide parts smaller than this ground area. Use it to drop tiny noise blobs. 0 = keep all.</source>
         <translation>この地上面積より小さい部分を隠します。小さなノイズを除外するのに使えます。0 = すべて表示。</translation>
-    </message>
-    <message>
-        <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a random colour per object to tell them apart.</source>
-        <translation>地図上での検出結果の色分け方法(表示のみ):通常の塗りつぶし、輪郭、信頼度ヒートマップ、またはオブジェクトごとのランダムな色で見分ける、から選べます。</translation>
-    </message>
-    <message>
-        <source>Invalid CRS</source>
-        <translation>無効な座標参照系</translation>
-    </message>
-    <message>
-        <source>Kept as distinct objects.</source>
-        <translation>個別のオブジェクトとして保持されています。</translation>
-    </message>
-    <message>
-        <source>Left-click adds what you click to the shape</source>
-        <translation>左クリックでクリックした部分を形状に追加</translation>
     </message>
     <message>
         <source>Load example imagery</source>
@@ -2008,10 +1752,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>初めてですか?5分のチュートリアルで、検出の一連の流れをステップごとにご案内します。</translation>
     </message>
     <message>
-        <source>No detection in this zone. Try a more specific object word, or draw an example of one (best for unusual objects).</source>
-        <translation>このゾーンに検出結果がありません。より具体的なオブジェクト名を試すか、例を1つ描いてください(珍しいオブジェクトに最適です)。</translation>
-    </message>
-    <message>
         <source>Not Enough Disk Space</source>
         <translation>ディスク容量が不足しています</translation>
     </message>
@@ -2040,20 +1780,12 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>ブラウザでterra-lab.aiを開きます。</translation>
     </message>
     <message>
-        <source>Opens the shape so clicks can extend or trim it. Key: E, or double-click it on the map</source>
-        <translation>形状を編集モードにし、クリックで拡張・削減できるようにします。キー: E、または地図上でダブルクリック</translation>
-    </message>
-    <message>
         <source>Opens your terra-lab.ai account in the browser.</source>
         <translation>ブラウザでterra-lab.aiアカウントを開きます。</translation>
     </message>
     <message>
         <source>Opens your terra-lab.ai dashboard in the browser.</source>
         <translation>ブラウザでterra-lab.aiダッシュボードを開きます。</translation>
-    </message>
-    <message>
-        <source>Optional</source>
-        <translation>任意</translation>
     </message>
     <message>
         <source>Outline ONE example of the object on the map, then run again. Runs with a drawn example return far fewer empty results.</source>
@@ -2064,24 +1796,8 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>AI Segmentationの実行を計画中</translation>
     </message>
     <message>
-        <source>Preparing Manual mode...</source>
-        <translation>手動モードを準備中...</translation>
-    </message>
-    <message>
         <source>Pro plan</source>
         <translation>Proプラン</translation>
-    </message>
-    <message>
-        <source>Refine</source>
-        <translation>調整</translation>
-    </message>
-    <message>
-        <source>Refining uses the free local AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and refining will open automatically when it is ready.</source>
-        <translation>調整には無料のローカルAIを使用しますが、まだインストールされていません。今すぐインストールしますか?(数分、バックグラウンドで実行されます)。インストール中もレビューを続けることができ、準備が整うと調整パネルが自動的に開きます。</translation>
-    </message>
-    <message>
-        <source>Regrouping detections...</source>
-        <translation>検出結果を再グループ化中...</translation>
     </message>
     <message>
         <source>Remove downloaded AI data</source>
@@ -2092,40 +1808,16 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>このコンピュータからダウンロード済みのAIデータを削除しますか?</translation>
     </message>
     <message>
-        <source>Removes it from the results. Key: Delete (Ctrl+Z restores it)</source>
-        <translation>結果から削除します。キー: Delete(Ctrl+Zで元に戻せます)</translation>
-    </message>
-    <message>
         <source>Removing...</source>
         <translation>削除中...</translation>
-    </message>
-    <message>
-        <source>Returns to the Automatic review with your edits. The export happens there.</source>
-        <translation>編集内容を反映して自動レビューに戻ります。Exportはそこで行います。</translation>
-    </message>
-    <message>
-        <source>Review detections</source>
-        <translation>検出結果をレビュー</translation>
     </message>
     <message>
         <source>Right level for {obj} in this zone.</source>
         <translation>このゾーンの{obj}に適した詳細度です。</translation>
     </message>
     <message>
-        <source>Right-click removes it from the shape</source>
-        <translation>右クリックで形状から削除</translation>
-    </message>
-    <message>
         <source>Rotated raster</source>
         <translation>回転したラスタ</translation>
-    </message>
-    <message>
-        <source>Runs with a drawn example return far fewer empty results. This re-runs the zone with the example draw armed (new credits).</source>
-        <translation>例を描いて実行すると、空の結果が大幅に減ります。これはゾーンを例描画有効の状態で再実行します(新たなクレジットを消費します)。</translation>
-    </message>
-    <message>
-        <source>Save shape</source>
-        <translation>形状を保存</translation>
     </message>
     <message>
         <source>Save {save} detections ({hidden} currently hidden by Confidence) to a layer before leaving?</source>
@@ -2136,32 +1828,12 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>終了する前に、{save} 件の検出結果をレイヤに保存しますか?</translation>
     </message>
     <message>
-        <source>Saves this shape and closes the edit. Key: S</source>
-        <translation>この形状を保存して編集を終了します。キー: S</translation>
-    </message>
-    <message>
         <source>Segment library (view only)</source>
         <translation>セグメントライブラリ(閲覧のみ)</translation>
     </message>
     <message>
         <source>Segmentation failed. Please try again.</source>
         <translation>セグメンテーションに失敗しました。再試行してください。</translation>
-    </message>
-    <message>
-        <source>Setting up Manual mode in the background. You can keep reviewing; refining opens automatically when it is ready.</source>
-        <translation>バックグラウンドで手動モードをセットアップしています。レビューは続けることができ、準備が整うと調整パネルが自動的に開きます。</translation>
-    </message>
-    <message>
-        <source>Setting up Manual mode in the background...</source>
-        <translation>バックグラウンドで手動モードをセットアップ中...</translation>
-    </message>
-    <message>
-        <source>Shape and size settings</source>
-        <translation>形状とサイズの設定</translation>
-    </message>
-    <message>
-        <source>Shape settings</source>
-        <translation>形状の設定</translation>
     </message>
     <message>
         <source>Sharper than {obj} usually needs - catches the smallest ones.</source>
@@ -2200,16 +1872,8 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>チームや組織でのご利用ですか?</translation>
     </message>
     <message>
-        <source>The AI finds every object similar to your example.</source>
-        <translation>AIがあなたの例に似たすべてのオブジェクトを見つけます。</translation>
-    </message>
-    <message>
         <source>The AI service is waking up. Holding your spot…</source>
         <translation>AIサービスを起動しています。順番を確保しています…</translation>
-    </message>
-    <message>
-        <source>The detection service had a problem. Your credits for the failed tiles were refunded. Please try again.</source>
-        <translation>検出サービスで問題が発生しました。失敗したタイルのクレジットは返金されました。再試行してください。</translation>
     </message>
     <message>
         <source>The detection service is busy right now. Please try again in a moment.</source>
@@ -2232,24 +1896,8 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>これによりローカルのAIモデルファイルが削除され、サインアウトしてプラグインがリセットされます。アカウントとクレジットには影響しません。次回手動モードを使用する際に、ファイルは再度ダウンロードされます。</translation>
     </message>
     <message>
-        <source>This detail level is a Pro feature. Lower the detail, or</source>
-        <translation>この詳細度はPro機能です。詳細度を下げるか、</translation>
-    </message>
-    <message>
         <source>This layer has no valid coordinate reference system. Set one in Layer Properties before detecting.</source>
         <translation>このレイヤには有効な座標参照系がありません。検出する前にレイヤプロパティで設定してください。</translation>
-    </message>
-    <message>
-        <source>This layer has no valid coordinate reference system. Set one in Layer Properties before segmenting.</source>
-        <translation>このレイヤには有効な座標参照系がありません。セグメント化する前にレイヤプロパティで設定してください。</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF before segmenting.</source>
-        <translation>このラスタは回転しています。セグメント化する前に、軸に整列したGeoTIFFに変換してください。</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF, or use Manual mode.</source>
-        <translation>このラスタは回転しています。軸に整列したGeoTIFFに変換するか、手動モードを使用してください。</translation>
     </message>
     <message>
         <source>This raster uses a geographic CRS (degrees), which distorts the imagery sent to the AI. For best results, reproject it to a projected CRS (e.g. UTM).</source>
@@ -2262,22 +1910,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Try "{word}" instead</source>
         <translation>代わりに「{word}」を試してください</translation>
-    </message>
-    <message>
-        <source>Try '{term}' - it's a better prompt.</source>
-        <translation>「{term}」を試してください - より良いプロンプトです。</translation>
-    </message>
-    <message>
-        <source>Try an object from the Library - it's a better prompt.</source>
-        <translation>ライブラリからオブジェクトを試してください - より良いプロンプトです。</translation>
-    </message>
-    <message>
-        <source>Undo click</source>
-        <translation>クリックを元に戻す</translation>
-    </message>
-    <message>
-        <source>Undoes the last change to this shape. Key: Ctrl+Z</source>
-        <translation>この形状への直前の変更を元に戻します。キー: Ctrl+Z</translation>
     </message>
     <message>
         <source>Update now</source>
@@ -2294,14 +1926,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Very fine for {obj} - large ones may come back split in parts.</source>
         <translation>{obj}には非常に細かい設定です - 大きなものは分割されて返される場合があります。</translation>
-    </message>
-    <message>
-        <source>View as continuous cover</source>
-        <translation>連続した被覆として表示</translation>
-    </message>
-    <message>
-        <source>View as distinct objects</source>
-        <translation>個別のオブジェクトとして表示</translation>
     </message>
     <message>
         <source>View detections as:</source>
@@ -2328,10 +1952,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>ポリゴン</translation>
     </message>
     <message>
-        <source>some files could not be deleted</source>
-        <translation>一部のファイルを削除できませんでした</translation>
-    </message>
-    <message>
         <source>uncertain</source>
         <translation>信頼度が低い</translation>
     </message>
@@ -2344,20 +1964,8 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>あなたのオブジェクト</translation>
     </message>
     <message>
-        <source>{n} detections selected</source>
-        <translation>{n} 件の検出を選択中</translation>
-    </message>
-    <message>
         <source>{n} found so far</source>
         <translation>これまでに {n} 件発見</translation>
-    </message>
-    <message>
-        <source>{n} removed</source>
-        <translation>{n} 件削除</translation>
-    </message>
-    <message>
-        <source>{n} shapes edited</source>
-        <translation>{n} 件の形状を編集</translation>
     </message>
     <message>
         <source>{n} tiles could not be loaded from the layer server; results may be incomplete.</source>
@@ -2457,42 +2065,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>1 件のオブジェクトが見つかりました</translation>
     </message>
     <message>
-        <source>Add a second example - two references detect far better than one.</source>
-        <translation>2 つ目の例を追加してください。参照が 2 つあると検出精度が大きく向上します。</translation>
-    </message>
-    <message>
-        <source>Add a second example, or type what to find.</source>
-        <translation>2 つ目の例を追加するか、見つけたいものを入力してください。</translation>
-    </message>
-    <message>
-        <source>Add polygon to the layer</source>
-        <translation>ポリゴンをレイヤに追加</translation>
-    </message>
-    <message>
-        <source>Add to</source>
-        <translation>追加先</translation>
-    </message>
-    <message>
-        <source>Add {count} polygons to the layer</source>
-        <translation>{count} 個のポリゴンをレイヤに追加</translation>
-    </message>
-    <message>
-        <source>Added {count} polygon(s) to {name}.</source>
-        <translation>{count} 個のポリゴンを {name} に追加しました。</translation>
-    </message>
-    <message>
-        <source>Adds your {n} kept polygons to the selected layer.</source>
-        <translation>保持している {n} 個のポリゴンを選択したレイヤに追加します。</translation>
-    </message>
-    <message>
-        <source>Could not add to that layer. Created a new layer instead.</source>
-        <translation>そのレイヤに追加できませんでした。代わりに新しいレイヤを作成しました。</translation>
-    </message>
-    <message>
-        <source>Create a new layer, or add these polygons to an existing layer.</source>
-        <translation>新しいレイヤを作成するか、これらのポリゴンを既存のレイヤに追加します。</translation>
-    </message>
-    <message>
         <source>Download AI model</source>
         <translation>AIモデルをダウンロード</translation>
     </message>
@@ -2501,16 +2073,8 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>1 個のポリゴンをExport</translation>
     </message>
     <message>
-        <source>New layer</source>
-        <translation>新しいレイヤ</translation>
-    </message>
-    <message>
         <source>Resolving object name</source>
         <translation>オブジェクト名を解決しています</translation>
-    </message>
-    <message>
-        <source>That layer is no longer available. Created a new layer instead.</source>
-        <translation>そのレイヤは利用できなくなりました。代わりに新しいレイヤを作成しました。</translation>
     </message>
     <message>
         <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
@@ -2523,6 +2087,1136 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Your free detections are used up</source>
         <translation>無料検出をすべて使い切りました</translation>
+    </message>
+    <message>
+        <source>&quot;{obj}&quot; is not an object the AI knows well. Drawing one example on the map shows it what to find.</source>
+        <translation>「{obj}」はAIがあまり知らないオブジェクトです。地図上に例を1つ描くと、探すものをAIに示せます。</translation>
+    </message>
+    <message>
+        <source>&quot;{obj}&quot; is often missed from text alone. Draw one example on the map to find far more.</source>
+        <translation>「{obj}」はテキストだけでは見逃されがちです。地図上に例を1つ描くと、検出数が大きく増えます。</translation>
+    </message>
+    <message>
+        <source>1 correction this round</source>
+        <translation>今回の修正1件</translation>
+    </message>
+    <message>
+        <source>1 detection removed</source>
+        <translation>検出 1件を削除</translation>
+    </message>
+    <message>
+        <source>1 object</source>
+        <translation>オブジェクト1件</translation>
+    </message>
+    <message>
+        <source>1 polygon added so far.</source>
+        <translation>これまでに1個のポリゴンを追加しました。</translation>
+    </message>
+    <message>
+        <source>1 result</source>
+        <translation>結果1件</translation>
+    </message>
+    <message>
+        <source>A detection run was interrupted before its results were exported. {n} detection(s) were saved.</source>
+        <translation>結果をExportする前に、検出の実行が中断されました。{n} 件の検出結果が保存されました。</translation>
+    </message>
+    <message>
+        <source>A free run covers up to {cap} credits. Lower the detail or draw a smaller zone, or</source>
+        <translation>無料の実行は最大{cap}クレジットまでです。詳細度を下げるか、より小さいゾーンを描くか、または</translation>
+    </message>
+    <message>
+        <source>A newer version of AI Segmentation is available with the latest fixes.</source>
+        <translation>AI Segmentationの新しいバージョンが利用可能です。最新の修正が含まれています。</translation>
+    </message>
+    <message>
+        <source>A shape was removed. Click Save to confirm.</source>
+        <translation>形状が削除されました。保存をクリックして確定してください。</translation>
+    </message>
+    <message>
+        <source>AI</source>
+        <translation>AI</translation>
+    </message>
+    <message>
+        <source>AI Environment Damaged</source>
+        <translation>AI環境が破損しています</translation>
+    </message>
+    <message>
+        <source>AI and Manual are two ways to fix the same polygon.</source>
+        <translation>AIと手動は、同じポリゴンを修正する2つの方法です。</translation>
+    </message>
+    <message>
+        <source>Add a missing polygon</source>
+        <translation>見逃したポリゴンを追加</translation>
+    </message>
+    <message>
+        <source>Add an object the AI missed. In AI, point at it and the on-device model outlines it, free; in Manual, draw its corners.</source>
+        <translation>AIが見逃したオブジェクトを追加します。AIモードでは対象を指すとローカルモデルが無料で輪郭を描き、手動モードでは角を自分で描きます。</translation>
+    </message>
+    <message>
+        <source>Add another example - more references detect more</source>
+        <translation>例をもう1つ追加 - 参照が増えるほど検出も増えます</translation>
+    </message>
+    <message>
+        <source>Add one more example for the best results.</source>
+        <translation>最良の結果を得るには、例をもう1つ追加してください。</translation>
+    </message>
+    <message>
+        <source>Add them to the project</source>
+        <translation>プロジェクトに追加</translation>
+    </message>
+    <message>
+        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and Add will arm automatically when it is ready.</source>
+        <translation>オブジェクトの追加には無料のローカルAIを使用しますが、まだインストールされていません。今すぐインストールしますか?(数分、バックグラウンドで実行されます)レビューはそのまま続けられます。準備が整うと、追加が自動的に有効になります。</translation>
+    </message>
+    <message>
+        <source>Adding needs a one-time setup</source>
+        <translation>追加には初回のみセットアップが必要です</translation>
+    </message>
+    <message>
+        <source>Almost done - building the shapes...</source>
+        <translation>もうすぐ完了 - 形状を生成中...</translation>
+    </message>
+    <message>
+        <source>Almost there: in step 1, name the object your examples show - words plus examples detect best.</source>
+        <translation>もう少しです: ステップ1で、例が示すオブジェクトに名前を付けてください - 単語と例を組み合わせると検出精度が最も高くなります</translation>
+    </message>
+    <message>
+        <source>Almost there: in step 2, outline one &quot;{word}&quot; on the map so the AI sees what yours look like.</source>
+        <translation>もう少しです: ステップ2で、地図上に「{word}」を1つ描いてください。そうすることで、見た目をAIに伝えられます。</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI components. Wait for it to finish, then try again.</source>
+        <translation>別のQGISウィンドウでAIコンポーネントをインストール中です。完了するまで待ってから、再試行してください。</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI engine. Wait for it to finish, then try again.</source>
+        <translation>別のQGISウィンドウでAIエンジンをインストール中です。完了するまで待ってから、再試行してください。</translation>
+    </message>
+    <message>
+        <source>Automatic detection failed</source>
+        <translation>自動検出に失敗しました</translation>
+    </message>
+    <message>
+        <source>Automatic: detect</source>
+        <translation>自動: 検出</translation>
+    </message>
+    <message>
+        <source>Automatic: draw the zone</source>
+        <translation>自動: ゾーンを描く</translation>
+    </message>
+    <message>
+        <source>Automatic: merge with neighbours</source>
+        <translation>自動: 隣接する図形と結合</translation>
+    </message>
+    <message>
+        <source>Automatic: review and Correct</source>
+        <translation>自動: レビューと修正</translation>
+    </message>
+    <message>
+        <source>Best quality. Two references locked in.</source>
+        <translation>最高品質。参照2つを確定しました。</translation>
+    </message>
+    <message>
+        <source>Blocked by Antivirus or Security Software</source>
+        <translation>アンチウイルスまたはセキュリティソフトウェアによりブロックされました</translation>
+    </message>
+    <message>
+        <source>Calculating...</source>
+        <translation>計算中...</translation>
+    </message>
+    <message>
+        <source>Cancel the example box, the detection, or exit Automatic</source>
+        <translation>例のボックスや検出をキャンセル、または自動モードを終了</translation>
+    </message>
+    <message>
+        <source>Cancel the merge</source>
+        <translation>結合をキャンセル</translation>
+    </message>
+    <message>
+        <source>Change recorded.</source>
+        <translation>変更を記録しました。</translation>
+    </message>
+    <message>
+        <source>Checking the object name</source>
+        <translation>オブジェクト名を確認中</translation>
+    </message>
+    <message>
+        <source>Checking the object name...</source>
+        <translation>オブジェクト名を確認中...</translation>
+    </message>
+    <message>
+        <source>Choose how to fix the polygon: AI points or QGIS vertices</source>
+        <translation>ポリゴンの修正方法を選択: AIの点操作かQGISの頂点操作</translation>
+    </message>
+    <message>
+        <source>Clean up the outlines</source>
+        <translation>輪郭をクリーンに</translation>
+    </message>
+    <message>
+        <source>Clear all</source>
+        <translation>すべてクリア</translation>
+    </message>
+    <message>
+        <source>Clear the points, then exit Automatic</source>
+        <translation>点をクリアしてから、自動モードを終了</translation>
+    </message>
+    <message>
+        <source>Clear the selection, or stop the segmentation</source>
+        <translation>選択を解除、またはセグメンテーションを停止</translation>
+    </message>
+    <message>
+        <source>Click a polygon, then click the spot the AI missed.</source>
+        <translation>ポリゴンをクリックしてから、AIが見逃した場所をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>Click a polygon, then drag any corner.</source>
+        <translation>ポリゴンをクリックしてから、任意の角をドラッグしてください。</translation>
+    </message>
+    <message>
+        <source>Click an object on the map and the AI outlines it.</source>
+        <translation>地図上のオブジェクトをクリックすると、AIがその輪郭を描きます。</translation>
+    </message>
+    <message>
+        <source>Click each corner of the object, then Finish.</source>
+        <translation>オブジェクトの角を順にクリックし、完了してください。</translation>
+    </message>
+    <message>
+        <source>Click each corner on the map, then Finish the line.</source>
+        <translation>地図上で角を1つずつクリックしてから、線の描画を完了してください。</translation>
+    </message>
+    <message>
+        <source>Click each piece of the object you want to join.</source>
+        <translation>結合したいオブジェクトの部分を順にクリックしてください。</translation>
+    </message>
+    <message>
+        <source>Click to open this step</source>
+        <translation>クリックしてこのステップを開く</translation>
+    </message>
+    <message>
+        <source>Close the fix, clear the selection, or exit the review</source>
+        <translation>修正を閉じる、選択を解除、またはレビューを終了</translation>
+    </message>
+    <message>
+        <source>Close the gaps inside this polygon, without filling the courtyards the rest of the layer is meant to keep.</source>
+        <translation>このポリゴン内の隙間を閉じますが、レイヤの他の部分で保持すべき中庭までは埋めません。</translation>
+    </message>
+    <message>
+        <source>Close the line you are drawing. A right-click on the map does the same.</source>
+        <translation>描いている線を閉じます。地図上での右クリックでも同じ操作になります。</translation>
+    </message>
+    <message>
+        <source>Closes the hairline gaps between neighbouring shapes, for land cover maps.</source>
+        <translation>隣接する図形の間にあるわずかな隙間を閉じます。土地被覆図向けです。</translation>
+    </message>
+    <message>
+        <source>Confirm the merge</source>
+        <translation>結合を確定</translation>
+    </message>
+    <message>
+        <source>Correct</source>
+        <translation>修正</translation>
+    </message>
+    <message>
+        <source>Correct the polygons</source>
+        <translation>ポリゴンを修正</translation>
+    </message>
+    <message>
+        <source>Could not apply the new settings. Try a different value.</source>
+        <translation>新しい設定を適用できませんでした。別の値を試してください。</translation>
+    </message>
+    <message>
+        <source>Could not check the AI components. See the log for details.</source>
+        <translation>AIコンポーネントを確認できませんでした。詳細はログを確認してください。</translation>
+    </message>
+    <message>
+        <source>Could not load the saved run. The file may have been moved or deleted.</source>
+        <translation>保存された実行を読み込めませんでした。ファイルが移動または削除された可能性があります。</translation>
+    </message>
+    <message>
+        <source>Credits come back on {date}</source>
+        <translation>クレジットは{date}に復活します</translation>
+    </message>
+    <message>
+        <source>Crop fetch was cancelled.</source>
+        <translation>切り出し画像の取得がキャンセルされました。</translation>
+    </message>
+    <message>
+        <source>Cut thin spurs off this polygon (0 = off). Raise it on a single ragged outline instead of eroding the whole layer.</source>
+        <translation>このポリゴンの細いギザギザを除去します(0 = オフ)。レイヤ全体を侵食するのではなく、輪郭が特に荒れたこの1枚だけで値を上げてください。</translation>
+    </message>
+    <message>
+        <source>Delete this corner</source>
+        <translation>この角を削除</translation>
+    </message>
+    <message>
+        <source>Delete this polygon</source>
+        <translation>このポリゴンを削除</translation>
+    </message>
+    <message>
+        <source>Delete this polygon (the Delete key works too, and a right-click on the map deletes the shape under the cursor). Undo brings it back.</source>
+        <translation>このポリゴンを削除します(Deleteキーでも削除でき、地図上で右クリックするとカーソル下の形状を削除できます)。元に戻すと復元できます。</translation>
+    </message>
+    <message>
+        <source>Deleting the downloaded data...</source>
+        <translation>ダウンロード済みのデータを削除中...</translation>
+    </message>
+    <message>
+        <source>Dense area {current}/{total}</source>
+        <translation>密集エリア {current}/{total}</translation>
+    </message>
+    <message>
+        <source>Dense forest? &quot;Forest&quot; takes it as one block; &quot;Tree&quot; picks individual trees.</source>
+        <translation>密集した森林ですか?「Forest」は全体を1つの塊として扱い、「Tree」は個々の木を検出します。</translation>
+    </message>
+    <message>
+        <source>Detect with example only</source>
+        <translation>例のみで検出</translation>
+    </message>
+    <message>
+        <source>Detect with examples only</source>
+        <translation>例のみで検出</translation>
+    </message>
+    <message>
+        <source>Detect with text only</source>
+        <translation>テキストのみで検出</translation>
+    </message>
+    <message>
+        <source>Detection stopped early after {done} tile(s). The objects already found are kept below.</source>
+        <translation>{done} 件のタイル処理後に検出が早期停止しました。既に見つかったオブジェクトは以下に保持されています。</translation>
+    </message>
+    <message>
+        <source>Discard reviewed results and run again? Confirm</source>
+        <translation>レビュー済みの結果を破棄して再実行しますか? 確定</translation>
+    </message>
+    <message>
+        <source>Distinct</source>
+        <translation>個別色</translation>
+    </message>
+    <message>
+        <source>Drag a box around one look-alike to exclude.</source>
+        <translation>除外したい似ているものの周りにボックスをドラッグしてください。</translation>
+    </message>
+    <message>
+        <source>Drag a box around one object.</source>
+        <translation>オブジェクトの周りにボックスをドラッグしてください。</translation>
+    </message>
+    <message>
+        <source>Drag a corner to move it. Click an edge to add one, right-click removes.</source>
+        <translation>角をドラッグすると移動できます。辺をクリックすると追加、右クリックで削除します。</translation>
+    </message>
+    <message>
+        <source>Drag a corner to move it. Double-click an edge to add one.</source>
+        <translation>角をドラッグすると移動できます。辺をダブルクリックすると追加します。</translation>
+    </message>
+    <message>
+        <source>Drag, add or delete the object&apos;s corners by hand.</source>
+        <translation>オブジェクトの角を手作業でドラッグ、追加、削除できます。</translation>
+    </message>
+    <message>
+        <source>Draw a line across the object to cut it into two.</source>
+        <translation>オブジェクトを2つに分割するため、それを横切る線を描いてください。</translation>
+    </message>
+    <message>
+        <source>Draw a line right across the shape, then Finish.</source>
+        <translation>形状を横切るように線を描き、完了してください。</translation>
+    </message>
+    <message>
+        <source>Draw an example of the object first (step 2).</source>
+        <translation>まずオブジェクトの例を描いてください(ステップ2)。</translation>
+    </message>
+    <message>
+        <source>Draw an example, or type what to find.</source>
+        <translation>例を描くか、検出したいものを入力してください。</translation>
+    </message>
+    <message>
+        <source>Draw its corners</source>
+        <translation>角を描く</translation>
+    </message>
+    <message>
+        <source>Draw one &apos;{object}&apos; - the AI finds the rest</source>
+        <translation>「{object}」を1つ描く - あとはAIが見つけます</translation>
+    </message>
+    <message>
+        <source>Draw one example - the AI finds the rest</source>
+        <translation>例を1つ描く - あとはAIが見つけます</translation>
+    </message>
+    <message>
+        <source>Draw the new edge: start outside the shape, cross it, end outside, then Finish.</source>
+        <translation>新しい辺を描きます: 形状の外側から始めて横切り、外側で終えたら完了してください。</translation>
+    </message>
+    <message>
+        <source>Drawn examples</source>
+        <translation>描画した例</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial for thinning an outline.</source>
+        <translation>直線の辺からこの距離より近い点を削除します(0 = オフ)。これは距離であり、点の数ではありません。上げすぎると曲線の壁が平らになることがあります。輪郭を間引くには、通常「点の数」の方が適しています。</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial; this stays for comparison.</source>
+        <translation>直線の辺からこの距離より近い点を削除します(0 = オフ)。これは距離であり、点の数ではありません。上げすぎると曲線の壁が平らになることがあります。通常は「点の数」の方が適していますが、比較のためにこの設定も残しています。</translation>
+    </message>
+    <message>
+        <source>Drop this polygon&apos;s points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
+        <translation>このポリゴンで、直線の辺からこの距離より近い点を削除します(0 = オフ)。これは距離であり点の数ではありません。通常は「点の数」の方が適しています。</translation>
+    </message>
+    <message>
+        <source>Edit an existing polygon</source>
+        <translation>既存のポリゴンを編集</translation>
+    </message>
+    <message>
+        <source>Export the polygons to a layer</source>
+        <translation>ポリゴンをレイヤへExport</translation>
+    </message>
+    <message>
+        <source>Fewer points</source>
+        <translation>点を減らす</translation>
+    </message>
+    <message>
+        <source>Fill holes</source>
+        <translation>穴を埋める</translation>
+    </message>
+    <message>
+        <source>Fill only holes smaller than this ground area. Bigger holes (a road median, a courtyard) stay open. No limit = fill every hole.</source>
+        <translation>この地上面積より小さい穴のみを埋めます。それより大きな穴(道路の中央分離帯や中庭など)はそのまま残ります。上限なし = すべての穴を埋めます。</translation>
+    </message>
+    <message>
+        <source>Finish the line</source>
+        <translation>線を完了</translation>
+    </message>
+    <message>
+        <source>Fix method</source>
+        <translation>修正方法</translation>
+    </message>
+    <message>
+        <source>Give neighbouring shapes one exact border instead of a hairline gap or overlap. For land cover, where the map is one surface.</source>
+        <translation>隣接する図形の間にわずかな隙間や重なりを残さず、正確に一致した境界線にします。地図全体が1つの面である土地被覆図向けです。</translation>
+    </message>
+    <message>
+        <source>Give this one polygon its own shape settings, without moving the dials that drive the whole layer.</source>
+        <translation>レイヤ全体に影響する設定はそのままに、このポリゴンだけに専用の形状設定を与えます。</translation>
+    </message>
+    <message>
+        <source>Go back to picking polygons. Everything you kept stays, and so does the outline on screen.</source>
+        <translation>ポリゴンの選択に戻ります。保持したものはすべてそのまま残り、画面上の輪郭も維持されます。</translation>
+    </message>
+    <message>
+        <source>Go back to your zone, references and settings, then detect the whole zone again. Nothing is saved.</source>
+        <translation>ゾーン、参照画像、設定に戻り、ゾーン全体を再度検出します。何も保存されません。</translation>
+    </message>
+    <message>
+        <source>Grow / shrink</source>
+        <translation>拡張 / 縮小</translation>
+    </message>
+    <message>
+        <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a distinct colour per object to tell them apart.</source>
+        <translation>地図上での検出結果の色分け方法(表示のみ): 通常の塗りつぶし、輪郭、信頼度ヒートマップ、またはオブジェクトごとに色を変えて見分ける、から選べます。</translation>
+    </message>
+    <message>
+        <source>How many of each outline&apos;s points to keep, as a share. 100% keeps the class default; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
+        <translation>各輪郭で保持する点の割合です。100%ではそのクラスの既定値を維持し、下げるとさらに間引かれ、最も細かいディテールから先に削除されますが角と面の形は保たれます。「直角化」がオンのときはこちらが先に実行されるため、値を下げると直角化の元になるまっすぐな壁が得られます。</translation>
+    </message>
+    <message>
+        <source>How many of the outline&apos;s points to keep, as a share. 100% keeps the standard density; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
+        <translation>輪郭で保持する点の割合です。100%では標準の密度を維持し、下げるとさらに間引かれ、最も細かいディテールから先に削除されますが角と面の形は保たれます。「直角化」がオンのときはこちらが先に実行されるため、値を下げると直角化の元になるまっすぐな壁が得られます。</translation>
+    </message>
+    <message>
+        <source>How many of this polygon&apos;s points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
+        <translation>このポリゴンで保持する点の数です。タイトル行の点数はこれに連動します。「直角化」より先に実行されるため、値を下げると階段状にならず、直角化の元になるまっすぐな壁が得られます。</translation>
+    </message>
+    <message>
+        <source>How sure the AI is about each object. Lower shows more, higher keeps only the sure ones.</source>
+        <translation>AIが各オブジェクトをどれだけ確信しているかです。下げるとより多く表示され、上げると確信度の高いものだけが残ります。</translation>
+    </message>
+    <message>
+        <source>Identify new shape</source>
+        <translation>新しい形状を識別</translation>
+    </message>
+    <message>
+        <source>Installation Already Running</source>
+        <translation>インストールは既に実行中です</translation>
+    </message>
+    <message>
+        <source>Installation Path Problem</source>
+        <translation>インストール先に問題があります</translation>
+    </message>
+    <message>
+        <source>Installation running in another window</source>
+        <translation>別のウィンドウでインストールが実行中です</translation>
+    </message>
+    <message>
+        <source>Keep</source>
+        <translation>保持</translation>
+    </message>
+    <message>
+        <source>Keep these edits and go back to picking polygons.</source>
+        <translation>この編集を保持し、ポリゴンの選択に戻ります。</translation>
+    </message>
+    <message>
+        <source>Keep this detection in Favorites</source>
+        <translation>この検出結果をお気に入りに保持</translation>
+    </message>
+    <message>
+        <source>Keep this object in Favorites</source>
+        <translation>このオブジェクトをお気に入りに保持</translation>
+    </message>
+    <message>
+        <source>Keep this one</source>
+        <translation>これを保持</translation>
+    </message>
+    <message>
+        <source>Keep this one, or click again to correct the outline.</source>
+        <translation>これを保持するか、もう一度クリックして輪郭を修正してください。</translation>
+    </message>
+    <message>
+        <source>Keep this one, or keep placing corners.</source>
+        <translation>これを保持するか、角の配置を続けてください。</translation>
+    </message>
+    <message>
+        <source>Keep this outline and point at the next object. Shortcut: S</source>
+        <translation>この輪郭を保持し、次のオブジェクトを指定します。キー: S</translation>
+    </message>
+    <message>
+        <source>Left-click adds a keep point, right-click a trim point. The outline follows.</source>
+        <translation>左クリックで保持点、右クリックで除外点を追加します。輪郭がそれに応じて変化します。</translation>
+    </message>
+    <message>
+        <source>Linux System Too Old</source>
+        <translation>Linuxシステムが古すぎます</translation>
+    </message>
+    <message>
+        <source>Loading stored detections ({done} of {total})</source>
+        <translation>保存済み検出結果を読み込み中 ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Maximum</source>
+        <translation>最大</translation>
+    </message>
+    <message>
+        <source>Measuring AI data size...</source>
+        <translation>AIデータのサイズを測定中...</translation>
+    </message>
+    <message>
+        <source>Measuring the downloaded data...</source>
+        <translation>ダウンロード済みデータを測定中...</translation>
+    </message>
+    <message>
+        <source>Merge with neighbours</source>
+        <translation>隣接する図形と結合</translation>
+    </message>
+    <message>
+        <source>Merge {n} shapes · Free</source>
+        <translation>{n} 件の形状を結合 · 無料</translation>
+    </message>
+    <message>
+        <source>Minimum</source>
+        <translation>最小</translation>
+    </message>
+    <message>
+        <source>Missing System Component</source>
+        <translation>システムコンポーネントが見つかりません</translation>
+    </message>
+    <message>
+        <source>Move points</source>
+        <translation>点を移動</translation>
+    </message>
+    <message>
+        <source>Navigation (while a tool is armed)</source>
+        <translation>ナビゲーション(ツールが有効なとき)</translation>
+    </message>
+    <message>
+        <source>New polygon</source>
+        <translation>新しいポリゴン</translation>
+    </message>
+    <message>
+        <source>New shape added. Click Save to keep it.</source>
+        <translation>新しい形状が追加されました。保存をクリックして確定してください。</translation>
+    </message>
+    <message>
+        <source>No connection to the sign-in service. Check your internet connection, then click Connect to try again.</source>
+        <translation>サインインサービスに接続できません。インターネット接続を確認してから、「接続」をクリックして再試行してください。</translation>
+    </message>
+    <message>
+        <source>No detection in this zone. Try a more specific object word, or a finer detail level.</source>
+        <translation>このゾーンに検出結果がありません。より具体的なオブジェクト名を試すか、詳細度を上げてください。</translation>
+    </message>
+    <message>
+        <source>No detection under that click.</source>
+        <translation>そのクリック位置に検出結果はありません。</translation>
+    </message>
+    <message>
+        <source>No matches in this zone.</source>
+        <translation>このゾーンに一致する結果はありません。</translation>
+    </message>
+    <message>
+        <source>No object matches that search.</source>
+        <translation>その検索に一致するオブジェクトがありません。</translation>
+    </message>
+    <message>
+        <source>Nothing changed. The line has to cross the outline twice, starting and ending outside the shape.</source>
+        <translation>何も変更されませんでした。線は輪郭を2回横切り、形状の外側で始まって外側で終わる必要があります。</translation>
+    </message>
+    <message>
+        <source>Nothing cleared the confidence bar in this zone.</source>
+        <translation>このゾーンでは信頼度バーを超えるものがありませんでした。</translation>
+    </message>
+    <message>
+        <source>Nothing was added. A polygon needs at least three corners.</source>
+        <translation>何も追加されませんでした。ポリゴンには少なくとも3つの角が必要です。</translation>
+    </message>
+    <message>
+        <source>Nothing was split. The line has to cross the shape completely, starting and ending outside it.</source>
+        <translation>何も分割されませんでした。線は形状を完全に横切り、外側で始まって外側で終わる必要があります。</translation>
+    </message>
+    <message>
+        <source>Now click the other pieces of this object.</source>
+        <translation>このオブジェクトの他の部分をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>One object came back split into several polygons. Click the others on the map, then confirm to merge them into one.</source>
+        <translation>1つのオブジェクトが複数のポリゴンに分かれて返されました。地図上で他のポリゴンをクリックし、確定して1つに結合してください。</translation>
+    </message>
+    <message>
+        <source>One object per run - Detect will run &quot;{first}&quot; first.</source>
+        <translation>1回の実行で扱えるオブジェクトは1つです - 検出はまず「{first}」を実行します。</translation>
+    </message>
+    <message>
+        <source>One object per run - detecting &quot;{first}&quot; now. Run the other objects as separate detections.</source>
+        <translation>1回の実行で扱えるオブジェクトは1つです - 現在「{first}」を検出中です。他のオブジェクトは別の検出として実行してください。</translation>
+    </message>
+    <message>
+        <source>Only this polygon. Every other one follows the Shapes step.</source>
+        <translation>このポリゴンのみです。他はすべて「形状」ステップの設定に従います。</translation>
+    </message>
+    <message>
+        <source>Open the selected saved polygon for AI editing</source>
+        <translation>選択した保存済みポリゴンをAI編集で開く</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>その他</translation>
+    </message>
+    <message>
+        <source>Package Versions Conflict</source>
+        <translation>パッケージのバージョンが競合しています</translation>
+    </message>
+    <message>
+        <source>Pick a tool above, then edit the highlighted object.</source>
+        <translation>上のツールを選んでから、ハイライトされたオブジェクトを編集してください。</translation>
+    </message>
+    <message>
+        <source>Pick at least two shapes to merge them.</source>
+        <translation>結合するには、少なくとも2つの形状を選んでください。</translation>
+    </message>
+    <message>
+        <source>Pick or un-pick an object</source>
+        <translation>オブジェクトを選択・選択解除</translation>
+    </message>
+    <message>
+        <source>Point at it on the map</source>
+        <translation>地図上で指す</translation>
+    </message>
+    <message>
+        <source>Points</source>
+        <translation>点の数</translation>
+    </message>
+    <message>
+        <source>Points the map back at this run with the same object and the same number of tiles, ready to detect. Nothing is spent until you do.</source>
+        <translation>同じオブジェクトと同じタイル数で、この実行の場所に地図を戻し、いつでも検出できる状態にします。実行するまでは何も消費されません。</translation>
+    </message>
+    <message>
+        <source>Points: {n}</source>
+        <translation>点の数: {n}</translation>
+    </message>
+    <message>
+        <source>Positive = grow outward, negative = shrink inward</source>
+        <translation>正の値 = 外側に拡張、負の値 = 内側に縮小</translation>
+    </message>
+    <message>
+        <source>Proxy Authentication Required</source>
+        <translation>プロキシ認証が必要です</translation>
+    </message>
+    <message>
+        <source>Push this polygon&apos;s edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
+        <translation>このポリゴンの縁を外側(正の値)または内側(負の値)に押し出します。モデルが縮めすぎた、または広げすぎた輪郭に使います。</translation>
+    </message>
+    <message>
+        <source>QGIS could not activate the temporary review layer. Close any other editing session, then try Edit manually again.</source>
+        <translation>QGISが一時的なレビューレイヤを有効化できませんでした。他の編集セッションを閉じてから、手動編集を再試行してください。</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here:
+{}</source>
+        <translation>QGISがブラウザを開けませんでした。次のアドレスを開いてサインインを完了し、その後ここに戻ってきてください:
+{}</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here.</source>
+        <translation>QGISがブラウザを開けませんでした。サインイン用のアドレスはクリップボードにコピーされています。ブラウザに貼り付けて完了し、その後ここに戻ってきてください。</translation>
+    </message>
+    <message>
+        <source>QGIS could not save these edits. Fix the geometry and click Done again.</source>
+        <translation>QGISがこれらの編集を保存できませんでした。ジオメトリを修正し、もう一度「完了」をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>Re-run the whole zone</source>
+        <translation>ゾーン全体を再実行</translation>
+    </message>
+    <message>
+        <source>Reading the imagery around this polygon...</source>
+        <translation>このポリゴン周辺の画像を読み込み中...</translation>
+    </message>
+    <message>
+        <source>Reading the imagery around your click...</source>
+        <translation>クリック周辺の画像を読み込み中...</translation>
+    </message>
+    <message>
+        <source>Reading this run...</source>
+        <translation>この実行を読み込み中...</translation>
+    </message>
+    <message>
+        <source>Rebuilding shapes ({done} of {total})</source>
+        <translation>形状を再構築中 ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Recovered {n} detection(s) to the layer {name}.</source>
+        <translation>{n} 件の検出結果をレイヤ「{name}」に復元しました。</translation>
+    </message>
+    <message>
+        <source>Redraw edge</source>
+        <translation>辺を再描画</translation>
+    </message>
+    <message>
+        <source>Remove the corner you picked. The Delete key does the same.</source>
+        <translation>選択した角を削除します。Deleteキーでも同じ操作ができます。</translation>
+    </message>
+    <message>
+        <source>Remove the selected detection</source>
+        <translation>選択した検出結果を削除</translation>
+    </message>
+    <message>
+        <source>Removing the downloaded AI data. This window closes when it is done.</source>
+        <translation>ダウンロード済みのAIデータを削除しています。完了するとこのウィンドウは閉じます。</translation>
+    </message>
+    <message>
+        <source>Removing the downloaded AI data...</source>
+        <translation>ダウンロード済みのAIデータを削除中...</translation>
+    </message>
+    <message>
+        <source>Replace one side by drawing a new line across the outline.</source>
+        <translation>輪郭を横切る新しい線を描いて、片側を置き換えます。</translation>
+    </message>
+    <message>
+        <source>Report this problem</source>
+        <translation>この問題を報告</translation>
+    </message>
+    <message>
+        <source>Reset to shared</source>
+        <translation>共有設定に戻す</translation>
+    </message>
+    <message>
+        <source>Reshape needs a one-time setup</source>
+        <translation>形状変更には初回のみセットアップが必要です</translation>
+    </message>
+    <message>
+        <source>Reshaping uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and reshaping will open automatically when it is ready.</source>
+        <translation>形状変更には無料のローカルAIを使用しますが、まだインストールされていません。今すぐインストールしますか?(数分、バックグラウンドで実行されます)レビューはそのまま続けられます。準備が整うと、形状変更が自動的に開きます。</translation>
+    </message>
+    <message>
+        <source>Right angles</source>
+        <translation>直角化</translation>
+    </message>
+    <message>
+        <source>Round corners</source>
+        <translation>角を丸める</translation>
+    </message>
+    <message>
+        <source>Round corners for natural shapes like trees and bushes. Lower Points for smoother results.</source>
+        <translation>木や低木などの自然な形状では角を丸めます。より滑らかにするには「点の数」を下げてください。</translation>
+    </message>
+    <message>
+        <source>Round this polygon&apos;s corners, for a tree or a pond among squared neighbours.</source>
+        <translation>このポリゴンの角を丸めます。直角化された周囲の中にある木や池などに使います。</translation>
+    </message>
+    <message>
+        <source>Run the detection</source>
+        <translation>検出を実行</translation>
+    </message>
+    <message>
+        <source>Run this zone again</source>
+        <translation>このゾーンを再実行</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
+        <translation>残りわずか: 無料検出 {n} 件、{date}に復活します。続けるには&lt;a href=&quot;{url}&quot;&gt;サブスクライブ&lt;/a&gt;してください。</translation>
+    </message>
+    <message>
+        <source>Same setup as your last run - the result will match. Add an example or change the detail for a different result.</source>
+        <translation>前回の実行と同じ設定です - 結果も同じになります。異なる結果を得るには、例を追加するか詳細度を変更してください。</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>保存</translation>
+    </message>
+    <message>
+        <source>Save the fix and go back to the review</source>
+        <translation>修正を保存し、レビューに戻ります。</translation>
+    </message>
+    <message>
+        <source>Save this polygon and go back to picking.</source>
+        <translation>このポリゴンを保存し、選択に戻ります。</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI in the background. You can keep reviewing; reshaping opens automatically when it is ready.</source>
+        <translation>バックグラウンドでローカルAIをセットアップしています。レビューはそのまま続けられます。準備が整うと、形状変更が自動的に開きます。</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI in the background...</source>
+        <translation>バックグラウンドでローカルAIをセットアップ中...</translation>
+    </message>
+    <message>
+        <source>Settings for this polygon</source>
+        <translation>このポリゴンの設定</translation>
+    </message>
+    <message>
+        <source>Shadows getting detected instead of trees? Draw an &apos;Exclude a look-alike&apos; box on one shadow - the AI drops similar false positives.</source>
+        <translation>木の代わりに影が検出されていますか?影の1つに「似ているものを除外」のボックスを描くと、AIが似たような誤検出を除外します。</translation>
+    </message>
+    <message>
+        <source>Shape updated. Keep editing, or click Save.</source>
+        <translation>形状が更新されました。編集を続けるか、保存をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>Shapes</source>
+        <translation>形状</translation>
+    </message>
+    <message>
+        <source>Shared borders:</source>
+        <translation>境界線を共有:</translation>
+    </message>
+    <message>
+        <source>Shave thin spikes and ragged bits off each shape&apos;s outline. It leaves the main body alone; higher values trim more. 0 = off.</source>
+        <translation>各形状の輪郭から細いギザギザを取り除きます。本体部分はそのまま残り、値を上げるほど多く削られます。0 = オフ。</translation>
+    </message>
+    <message>
+        <source>Show what it looks like</source>
+        <translation>見た目を表示</translation>
+    </message>
+    <message>
+        <source>Simplify</source>
+        <translation>単純化</translation>
+    </message>
+    <message>
+        <source>Snap walls to right angles, 45 degree walls included. Made for buildings, pools and solar panels. A shape it would distort is left as it is.</source>
+        <translation>壁を直角にスナップします(45度の壁も含みます)。建物、プール、太陽光パネル向けです。形状が歪んでしまう場合はそのまま残します。</translation>
+    </message>
+    <message>
+        <source>Something went wrong preparing the results. Please run Detect again.</source>
+        <translation>結果の準備中に問題が発生しました。もう一度検出を実行してください。</translation>
+    </message>
+    <message>
+        <source>Something went wrong preparing the results. Your detections were saved to the layer {name}.</source>
+        <translation>結果の準備中に問題が発生しました。検出結果はレイヤ「{name}」に保存されました。</translation>
+    </message>
+    <message>
+        <source>Split</source>
+        <translation>分割</translation>
+    </message>
+    <message>
+        <source>Square this polygon&apos;s edges, or leave them as traced while the rest of the layer stays squared.</source>
+        <translation>このポリゴンの辺を直角にします。レイヤの他の部分が直角化されたままでも、このポリゴンだけはなぞった形のままにできます。</translation>
+    </message>
+    <message>
+        <source>Star a detection or an object to keep it here.</source>
+        <translation>検出結果やオブジェクトにスターを付けると、ここに保持されます。</translation>
+    </message>
+    <message>
+        <source>Still waiting for the sign-in page. If no browser opened, or the page shows an error, click Cancel and try again.</source>
+        <translation>サインインページを待っています。ブラウザが開かない場合やエラーが表示される場合は、「キャンセル」をクリックして再試行してください。</translation>
+    </message>
+    <message>
+        <source>Stop adding</source>
+        <translation>追加を停止</translation>
+    </message>
+    <message>
+        <source>Stopping the local AI...</source>
+        <translation>ローカルAIを停止中...</translation>
+    </message>
+    <message>
+        <source>Switch to AI to shape this polygon on its own.</source>
+        <translation>AIに切り替えると、このポリゴンの形状を自動で整えます。</translation>
+    </message>
+    <message>
+        <source>That area does not touch the object you are editing, so nothing was added. Refining works on one object at a time.</source>
+        <translation>その範囲は編集中のオブジェクトに接していないため、何も追加されませんでした。調整は一度に1つのオブジェクトに対してのみ行えます。</translation>
+    </message>
+    <message>
+        <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
+        <translation>その範囲は別のオブジェクトに属しているため、何も追加されませんでした。代わりにそのオブジェクトを編集するか、「隣接する図形と結合」で2つを結合してください。</translation>
+    </message>
+    <message>
+        <source>That is another object. The one you were editing is saved, and this one is now selected.</source>
+        <translation>これは別のオブジェクトです。編集していたものは保存され、こちらが選択されました。</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples - you can draw up to 3.</source>
+        <translation>AIがあなたの例に似たすべてのオブジェクトを見つけます - 最大3つまで描けます。</translation>
+    </message>
+    <message>
+        <source>The AI outlines it, free, on your computer.</source>
+        <translation>AIが無料で、お使いのコンピュータ上でその輪郭を描きます。</translation>
+    </message>
+    <message>
+        <source>The connection to the server was interrupted. Please try again.</source>
+        <translation>サーバーへの接続が中断されました。再試行してください。</translation>
+    </message>
+    <message>
+        <source>The detection service had a problem and the run stopped. Please try again.</source>
+        <translation>検出サービスで問題が発生し、実行が停止しました。再試行してください。</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the {n} tiles already found.</source>
+        <translation>検出が応答しなくなりました。既に見つかった {n} 件のタイルは保持します。</translation>
+    </message>
+    <message>
+        <source>The imagery reader could not be loaded, and repairing the installation did not fix it. Please report this so we can look into it.
+
+{details}</source>
+        <translation>画像リーダーを読み込めず、インストールの修復でも解決しませんでした。調査できるよう、この問題を報告してください。
+
+{details}</translation>
+    </message>
+    <message>
+        <source>The installer could not start a helper process (a damaged Python launcher). Click Reinstall Dependencies to rebuild the environment from scratch.</source>
+        <translation>インストーラがヘルパープロセスを起動できませんでした(Pythonランチャーが破損しています)。「依存関係を再インストール」をクリックして、環境を最初から再構築してください。</translation>
+    </message>
+    <message>
+        <source>The pieces do not touch, so the result is one object in several parts.</source>
+        <translation>これらの部分は互いに接していないため、結果は複数の部分からなる1つのオブジェクトになります。</translation>
+    </message>
+    <message>
+        <source>The removal could not start. You are signed out, but the downloaded AI data is still on this computer. Try again.</source>
+        <translation>削除を開始できませんでした。サインアウトされましたが、ダウンロード済みのAIデータはこのコンピュータに残っています。再試行してください。</translation>
+    </message>
+    <message>
+        <source>The removal did not finish. Close this window, then check the AI data folder before trying again.</source>
+        <translation>削除が完了しませんでした。このウィンドウを閉じ、再試行する前にAIデータフォルダを確認してください。</translation>
+    </message>
+    <message>
+        <source>The removal is already running.</source>
+        <translation>削除は既に実行中です。</translation>
+    </message>
+    <message>
+        <source>The reply did not come from the service. If this network shows a sign-in page, open it in your browser first, then try again.</source>
+        <translation>応答がサービスから返ってきませんでした。このネットワークにサインインページが表示される場合は、先にブラウザで開いてから再試行してください。</translation>
+    </message>
+    <message>
+        <source>The server returned an unexpected response. Please try again.</source>
+        <translation>サーバーから予期しない応答がありました。再試行してください。</translation>
+    </message>
+    <message>
+        <source>Thin this polygon&apos;s points before you edit them by hand. 100% keeps the outline as it is.</source>
+        <translation>手作業で編集する前に、このポリゴンの点を間引きます。100%では輪郭はそのまま維持されます。</translation>
+    </message>
+    <message>
+        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Manual mode on it as is.</source>
+        <translation>この画像には地図上の位置情報がないため、自動モードは検出結果を配置できません。QGISの地理参照ツールで位置情報を付与するか、そのまま手動モードを使用してください。</translation>
+    </message>
+    <message>
+        <source>This polygon</source>
+        <translation>このポリゴン</translation>
+    </message>
+    <message>
+        <source>This raster has no coordinate reference system, so polygons will use pixel coordinates. Set a CRS in Layer Properties for georeferenced output.</source>
+        <translation>このラスタには座標参照系がないため、ポリゴンはピクセル座標を使用します。位置情報付きの出力を得るには、レイヤプロパティで座標参照系を設定してください。</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it before segmenting.</source>
+        <translation>このラスタは回転しています。セグメント化する前に、ワープ(再投影)を実行して補正してください。</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Manual mode cannot read it either.</source>
+        <translation>このラスタは回転しています。まずワープ(再投影)を実行して補正してください。手動モードでもこれを読み込めません。</translation>
+    </message>
+    <message>
+        <source>This run costs more credits than a free run covers. Lower the detail or draw a smaller zone, or</source>
+        <translation>この実行に必要なクレジットは、無料の実行でカバーできる範囲を超えています。詳細度を下げるか、より小さいゾーンを描くか、または</translation>
+    </message>
+    <message>
+        <source>This run did not keep where it looked, so it cannot be pointed at the same place. Draw the zone again.</source>
+        <translation>この実行はどこを見たかを記録していなかったため、同じ場所を指定できません。ゾーンを描き直してください。</translation>
+    </message>
+    <message>
+        <source>Those shapes could not be joined. Nothing was changed.</source>
+        <translation>それらの形状を結合できませんでした。何も変更されていません。</translation>
+    </message>
+    <message>
+        <source>Trim spikes</source>
+        <translation>ギザギザを除去</translation>
+    </message>
+    <message>
+        <source>Two references give the strongest detection. Draw a second to reach best quality.</source>
+        <translation>参照画像が2つあると、検出精度が最も高くなります。2つ目を描いて最高品質にしましょう。</translation>
+    </message>
+    <message>
+        <source>Type a word for the object first (step 1).</source>
+        <translation>まずオブジェクトの単語を入力してください(ステップ1)。</translation>
+    </message>
+    <message>
+        <source>Unavailable while Right angles is on. Turn it off to adjust this setting.</source>
+        <translation>「直角化」がオンの間は使用できません。この設定を調整するにはオフにしてください。</translation>
+    </message>
+    <message>
+        <source>Undo</source>
+        <translation>元に戻す</translation>
+    </message>
+    <message>
+        <source>Undo last</source>
+        <translation>直前の操作を元に戻す</translation>
+    </message>
+    <message>
+        <source>Undo the last correction</source>
+        <translation>直前の修正を元に戻す</translation>
+    </message>
+    <message>
+        <source>Undo the last thing you did here: the point you just placed, or the last edit.</source>
+        <translation>ここで行った直前の操作を元に戻します。今置いた点、または直前の編集が対象です。</translation>
+    </message>
+    <message>
+        <source>Unsupported Mac and Python Combination</source>
+        <translation>サポートされていないMacとPythonの組み合わせです</translation>
+    </message>
+    <message>
+        <source>Up to</source>
+        <translation>最大</translation>
+    </message>
+    <message>
+        <source>Writing the file...</source>
+        <translation>ファイルを書き込み中...</translation>
+    </message>
+    <message>
+        <source>You place the corners, the same as on any QGIS layer.</source>
+        <translation>どのQGISレイヤでも同じように、自分で角を配置します。</translation>
+    </message>
+    <message>
+        <source>Your examples drive the search - naming the object makes it even more accurate.</source>
+        <translation>あなたが描いた例が検索の基準になります - オブジェクトに名前を付けると、さらに精度が上がります。</translation>
+    </message>
+    <message>
+        <source>Your free detections come back on {date}.</source>
+        <translation>無料検出は{date}に復活します。</translation>
+    </message>
+    <message>
+        <source>Your network proxy requires a username and password. Enter them in QGIS &gt; Settings &gt; Options &gt; Network, then restart QGIS and try again.</source>
+        <translation>ネットワークプロキシにはユーザー名とパスワードが必要です。QGIS &gt;「設定」&gt;「オプション」&gt;「ネットワーク」で入力し、QGISを再起動してから再試行してください。</translation>
+    </message>
+    <message>
+        <source>a month ago</source>
+        <translation>1か月前</translation>
+    </message>
+    <message>
+        <source>a week ago</source>
+        <translation>1週間前</translation>
+    </message>
+    <message>
+        <source>a year ago</source>
+        <translation>1年前</translation>
+    </message>
+    <message>
+        <source>applies to every polygon</source>
+        <translation>すべてのポリゴンに適用されます</translation>
+    </message>
+    <message>
+        <source>fine-tune the edges</source>
+        <translation>縁を微調整</translation>
+    </message>
+    <message>
+        <source>hide anything outside this range</source>
+        <translation>この範囲外をすべて非表示にする</translation>
+    </message>
+    <message>
+        <source>how each outline is styled</source>
+        <translation>各輪郭のスタイル</translation>
+    </message>
+    <message>
+        <source>how the outline is styled</source>
+        <translation>この輪郭のスタイル</translation>
+    </message>
+    <message>
+        <source>{count} polygons added so far.</source>
+        <translation>これまでに{count}個のポリゴンを追加しました。</translation>
+    </message>
+    <message>
+        <source>{count} vertices</source>
+        <translation>{count} 頂点</translation>
+    </message>
+    <message>
+        <source>{credits} credits</source>
+        <translation>{credits} クレジット</translation>
+    </message>
+    <message>
+        <source>{hidden} hidden by the filters</source>
+        <translation>フィルタにより{hidden}件が非表示</translation>
+    </message>
+    <message>
+        <source>{n} &quot;{object}&quot; found so far</source>
+        <translation>これまでに「{object}」が{n}件見つかりました</translation>
+    </message>
+    <message>
+        <source>{n} corrections this round</source>
+        <translation>今回の修正 {n}件</translation>
+    </message>
+    <message>
+        <source>{n} kept</source>
+        <translation>{n} 件保持</translation>
+    </message>
+    <message>
+        <source>{n} months ago</source>
+        <translation>{n}か月前</translation>
+    </message>
+    <message>
+        <source>{n} objects</source>
+        <translation>オブジェクト{n}件</translation>
+    </message>
+    <message>
+        <source>{n} point placed.</source>
+        <translation>{n}点配置しました。</translation>
+    </message>
+    <message>
+        <source>{n} points placed.</source>
+        <translation>{n}点配置しました。</translation>
+    </message>
+    <message>
+        <source>{n} results</source>
+        <translation>結果{n}件</translation>
+    </message>
+    <message>
+        <source>{n} shape(s) edited this session</source>
+        <translation>今回のセッションで{n} 件の形状を編集</translation>
+    </message>
+    <message>
+        <source>{n} shapes merged into one · Free</source>
+        <translation>{n} 件の形状を1つに結合 · 無料</translation>
+    </message>
+    <message>
+        <source>{n} shapes picked. Press Enter to join.</source>
+        <translation>{n} 件の形状を選択中です。Enterキーで結合してください。</translation>
+    </message>
+    <message>
+        <source>{n} tile(s) took too long to load and are missing from this result.</source>
+        <translation>{n} 件のタイルの読み込みに時間がかかりすぎたため、この結果には含まれていません。</translation>
+    </message>
+    <message>
+        <source>{n} weeks ago</source>
+        <translation>{n}週間前</translation>
+    </message>
+    <message>
+        <source>{n} years ago</source>
+        <translation>{n}年前</translation>
+    </message>
+    <message>
+        <source>{tiles} tiles</source>
+        <translation>{tiles} タイル</translation>
     </message>
 </context>
 </TS>

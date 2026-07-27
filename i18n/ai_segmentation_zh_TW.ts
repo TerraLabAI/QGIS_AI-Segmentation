@@ -12,20 +12,12 @@
         <translation>信心度</translation>
     </message>
     <message>
-        <source>Random</source>
-        <translation>隨機</translation>
-    </message>
-    <message>
         <source>Outline</source>
         <translation>輪廓</translation>
     </message>
     <message>
         <source>Retry</source>
         <translation>重試</translation>
-    </message>
-    <message>
-        <source>Go back to your zone, references and settings to adjust and detect again. Nothing is saved.</source>
-        <translation>回到您的範圍、參考影像和設定進行調整，再重新偵測。系統不會儲存任何內容。</translation>
     </message>
     <message>
         <source>Click to enlarge</source>
@@ -42,14 +34,6 @@
     <message>
         <source>Exclude a look-alike</source>
         <translation>排除相似物件</translation>
-    </message>
-    <message>
-        <source>Now outline a look-alike to exclude, then click the first point to close.</source>
-        <translation>現在圈選一個要排除的相似物件，再點擊起點以封閉範圍。</translation>
-    </message>
-    <message>
-        <source>Your examples drive the search.</source>
-        <translation>您的範例將引導搜尋。</translation>
     </message>
     <message>
         <source>Too generic to name. Clear the box to search from your example alone, or type a concrete object.</source>
@@ -72,20 +56,8 @@
         <translation>更精細的細節可偵測更小的物件。</translation>
     </message>
     <message>
-        <source>Refine in Manual mode</source>
-        <translation>在手動模式中細修</translation>
-    </message>
-    <message>
         <source>Finish or exit the review to switch modes.</source>
         <translation>請先完成或退出檢視，才能切換模式。</translation>
-    </message>
-    <message>
-        <source>Preparing Manual mode, loading the local model...</source>
-        <translation>正在準備手動模式，載入本機模型...</translation>
-    </message>
-    <message>
-        <source>Locked - refined in Manual mode</source>
-        <translation>已鎖定－已在手動模式中細修</translation>
     </message>
     <message>
         <source>Detection</source>
@@ -326,24 +298,12 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>分割</translation>
     </message>
     <message>
-        <source>Navigation</source>
-        <translation>導覽</translation>
-    </message>
-    <message>
         <source>Space</source>
         <translation>空格鍵</translation>
     </message>
     <message>
         <source>Hold and move to pan the map</source>
         <translation>按住並移動以平移地圖</translation>
-    </message>
-    <message>
-        <source>Middle mouse button</source>
-        <translation>滑鼠中鍵</translation>
-    </message>
-    <message>
-        <source>Click and drag to pan the map</source>
-        <translation>點擊並拖曳以平移地圖</translation>
     </message>
     <message>
         <source>The AI model works best on one element at a time.</source>
@@ -366,26 +326,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>細修選取範圍</translation>
     </message>
     <message>
-        <source>Expand/Contract:</source>
-        <translation>擴張／收縮：</translation>
-    </message>
-    <message>
-        <source>Positive = expand outward, Negative = shrink inward</source>
-        <translation>正值＝向外擴張，負值＝向內收縮</translation>
-    </message>
-    <message>
-        <source>Simplify outline:</source>
-        <translation>簡化輪廓：</translation>
-    </message>
-    <message>
-        <source>Reduce small variations in the outline (0 = no change)</source>
-        <translation>減少輪廓上的細微變化（0＝不變更）</translation>
-    </message>
-    <message>
-        <source>Fill holes:</source>
-        <translation>填補孔洞：</translation>
-    </message>
-    <message>
         <source>Fill interior holes in the selection</source>
         <translation>填補選取範圍內部的孔洞</translation>
     </message>
@@ -398,20 +338,8 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>大小</translation>
     </message>
     <message>
-        <source>Round corners:</source>
-        <translation>圓角：</translation>
-    </message>
-    <message>
-        <source>Round corners for natural shapes like trees and bushes. Increase 'Simplify outline' for smoother results.</source>
-        <translation>為樹木、灌木等自然形狀套用圓角。提高「簡化輪廓」可讓結果更平滑。</translation>
-    </message>
-    <message>
         <source>Outline</source>
         <translation>輪廓</translation>
-    </message>
-    <message>
-        <source>Selection</source>
-        <translation>選取範圍</translation>
     </message>
     <message>
         <source>Click on the element you want to segment:</source>
@@ -967,16 +895,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Min size:</source>
-        <translation>最小尺寸：</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Max size:</source>
-        <translation>最大尺寸：</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Off</source>
         <translation>關閉</translation>
     </message>
@@ -1172,11 +1090,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
-        <source>No matching objects.</source>
-        <translation>沒有符合的物件。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
         <source>Use</source>
         <translation>使用</translation>
     </message>
@@ -1194,16 +1107,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
         <source>Draw your example inside the selected zone.</source>
         <translation>在所選範圍內繪製您的範例。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Clean edges:</source>
-        <translation>清理邊緣：</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Remove thin ragged fringe attached to the outline (0 = no change)</source>
-        <translation>移除輪廓上的細碎鋸齒邊緣（0＝不變更）</translation>
     </message>
     <message>
         <location filename="../src/ui/account_settings_dialog.py" line="0"/>
@@ -1341,11 +1244,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
-        <source>Now outline one object, then click the first point to close.</source>
-        <translation>現在圈選一個物件，再點擊起點以封閉範圍。</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/auto_build.py" line="0"/>
         <source>Exit</source>
         <translation>退出</translation>
@@ -1376,11 +1274,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>顯示圖磚（偵錯）</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>Open these detections in Manual mode to fix specific objects point-by-point, then come back and export.</source>
-        <translation>在手動模式中開啟這些偵測結果，逐點修正特定物件，完成後返回並進行 Export。</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>"{word}" will run as "{token}".</source>
         <translation>「{word}」將以「{token}」執行。</translation>
@@ -1404,11 +1297,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>object</source>
         <translation>物件</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/cards.py" line="0"/>
-        <source>{tiles} tiles · {objects} objects · {credits} credits</source>
-        <translation>{tiles} 個圖磚·{objects} 個物件·{credits} 點數</translation>
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/cards.py" line="0"/>
@@ -1517,11 +1405,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
-        <source>Drop this object back into the prompt box for a new detection.</source>
-        <translation>將此物件放回提示詞欄位，以進行新的偵測。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
         <source>Remove from favorites</source>
         <translation>從收藏中移除</translation>
     </message>
@@ -1577,11 +1460,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
-        <source>Star a detection to keep it here.</source>
-        <translation>將偵測結果加入收藏即可保留在此。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
         <source>Could not load this run's stored detections. Try again later.</source>
         <translation>無法載入此次執行儲存的偵測結果，請稍後再試。</translation>
     </message>
@@ -1621,26 +1499,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>自動</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
-        <source>Automatic - detect and review</source>
-        <translation>自動－偵測與檢視</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
-        <source>Automatic - draw your zone</source>
-        <translation>自動－繪製您的範圍</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
-        <source>Cancel the drawing</source>
-        <translation>取消繪製</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
-        <source>Cancel the running detection, or exit the review</source>
-        <translation>取消進行中的偵測，或退出檢視</translation>
-    </message>
-    <message>
         <location filename="../src/core/feature_encoder.py" line="0"/>
         <source>Click</source>
         <translation>點擊</translation>
@@ -1659,11 +1517,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dock/about.py" line="0"/>
         <source>Delete the active object</source>
         <translation>刪除目前的物件</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
-        <source>Detect objects, or export the reviewed polygons</source>
-        <translation>偵測物件，或 Export 已檢視的多邊形</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -1721,16 +1574,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>手動</translation>
     </message>
     <message>
-        <location filename="../src/ui/plugin/manual_handoff.py" line="0"/>
-        <source>Manual mode needs a one-time setup</source>
-        <translation>手動模式需要進行一次性設定</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Manual session</source>
-        <translation>手動工作階段</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>Max detail for this zone - draw a larger zone for finer detail.</source>
         <translation>此範圍已達最高細節－請繪製較大的範圍以取得更精細的細節。</translation>
@@ -1744,11 +1587,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
         <source>One color per object - check neighbors are separated</source>
         <translation>每個物件使用不同顏色－請確認相鄰物件已明確區分</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>Optional shape and size controls: simplify outlines, clean edges, round corners, expand or shrink, fill holes, size filters.</source>
-        <translation>選用的形狀與大小控制項：簡化輪廓、清理邊緣、圓角、擴張或收縮、填補孔洞、大小篩選。</translation>
     </message>
     <message>
         <location filename="../src/ui/plugin/auto_lifecycle.py" line="0"/>
@@ -1881,11 +1719,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>≈ 1 個圖磚＝1 點數</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>Adjust and run again</source>
-        <translation>調整並重新執行</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>all shown</source>
         <translation>全部顯示</translation>
@@ -1896,37 +1729,14 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>已顯示 {visible}／{n}</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>{hidden} below {pct}%</source>
-        <translation>{hidden} 個低於 {pct}%</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>Adjust and run again</source>
-        <translation>調整並重新執行</translation>
-    </message>
-    <message>
         <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
         <source>all shown</source>
         <translation>全部顯示</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
-        <source>{hidden} below {pct}%</source>
-        <translation>{hidden} 個低於 {pct}%</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
         <source>{visible} of {n} shown</source>
         <translation>已顯示 {visible}／{n}</translation>
-    </message>
-    <message>
-        <source>Right angles:</source>
-        <translation>直角化：</translation>
-    </message>
-    <message>
-        <source>Snap edges to 90 degrees for man-made shapes like buildings, pools and solar panels.</source>
-        <translation>將邊緣校正為 90 度角，適用於建築物、泳池、太陽能板等人造形狀。</translation>
     </message>
     <message>
         <source>Click an object on the map and the AI outlines it. You go one object at a time, checking and saving each polygon yourself.</source>
@@ -1973,10 +1783,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>找出您範圍內同一類型的所有物件－繪製範圍、命名物件，即可一次取得所有多邊形。</translation>
     </message>
     <message>
-        <source>Tip: lower Confidence to reveal more detections, raise it to keep only the best.</source>
-        <translation>提示：降低信心度可顯示更多偵測結果，提高信心度則只保留最佳結果。</translation>
-    </message>
-    <message>
         <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
         <translation>請繪製較小的範圍，或&lt;a href=&quot;{url}&quot;&gt;訂閱&lt;/a&gt;以分割任意大小的區域。</translation>
     </message>
@@ -2009,24 +1815,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>請先完成或取消目前的偵測，才能重新執行過去的紀錄。</translation>
     </message>
     <message>
-        <source>Couldn&apos;t open your browser. Check your connection and click Sign in / Sign up to start again.</source>
-        <translation>無法開啟您的瀏覽器。請檢查您的連線，再點擊「登入／註冊」重新開始。</translation>
-    </message>
-    <message>
         <source>0 shown - lower the Min size filter to reveal them</source>
         <translation>顯示 0 個－降低最小尺寸篩選即可顯示它們</translation>
-    </message>
-    <message>
-        <source>1 detection selected</source>
-        <translation>已選取 1 個偵測結果</translation>
-    </message>
-    <message>
-        <source>1 removed</source>
-        <translation>已移除 1 個</translation>
-    </message>
-    <message>
-        <source>1 shape edited</source>
-        <translation>已編輯 1 個形狀</translation>
     </message>
     <message>
         <source>10,000 credits every month. Cancel anytime.</source>
@@ -2049,10 +1839,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>請先接受服務條款與隱私政策。</translation>
     </message>
     <message>
-        <source>Add an example</source>
-        <translation>新增範例</translation>
-    </message>
-    <message>
         <source>An install or detection is still running. Wait for it to finish, then try again.</source>
         <translation>安裝或偵測仍在進行中，請等待完成後再試一次。</translation>
     </message>
@@ -2065,10 +1851,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>在此細節層級下，{obj}太小而難以發現－請提高細節。</translation>
     </message>
     <message>
-        <source>Automatic detection needs a georeferenced raster. Use Manual mode for this image.</source>
-        <translation>自動偵測需要具有地理參照的點陣圖。此影像請使用手動模式。</translation>
-    </message>
-    <message>
         <source>Available once the current install or detection finishes.</source>
         <translation>目前的安裝或偵測完成後即可使用。</translation>
     </message>
@@ -2079,14 +1861,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Browse the library (view only while detecting).</source>
         <translation>瀏覽範例庫（偵測期間僅供檢視）。</translation>
-    </message>
-    <message>
-        <source>Click a detection on the map</source>
-        <translation>點擊地圖上的偵測結果</translation>
-    </message>
-    <message>
-        <source>Click an empty spot to deselect.</source>
-        <translation>點擊空白處即可取消選取。</translation>
     </message>
     <message>
         <source>Could not reach the service. Check your connection and try again.</source>
@@ -2115,56 +1889,20 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>偵測失敗，請再試一次。</translation>
     </message>
     <message>
-        <source>Done, back to Automatic review</source>
-        <translation>完成，返回自動檢視</translation>
-    </message>
-    <message>
         <source>Downloaded AI data removed. You have been signed out.</source>
         <translation>已移除下載的 AI 資料，您已登出。</translation>
-    </message>
-    <message>
-        <source>Draw an example of one {object}</source>
-        <translation>繪製一個{object}的範例</translation>
-    </message>
-    <message>
-        <source>Draw an example of one {object} to find more</source>
-        <translation>繪製一個{object}的範例以尋找更多</translation>
     </message>
     <message>
         <source>Draw on the map</source>
         <translation>在地圖上繪製</translation>
     </message>
     <message>
-        <source>Edit shape</source>
-        <translation>編輯形狀</translation>
-    </message>
-    <message>
-        <source>Edit your detections</source>
-        <translation>編輯您的偵測結果</translation>
-    </message>
-    <message>
-        <source>Editing this shape</source>
-        <translation>正在編輯此形狀</translation>
-    </message>
-    <message>
         <source>Extra detail keeps helping {obj} in this zone.</source>
         <translation>在此範圍中，提高細節仍能持續改善{obj}的偵測效果。</translation>
     </message>
     <message>
-        <source>Filter and refine, then export.</source>
-        <translation>篩選並細修，然後 Export。</translation>
-    </message>
-    <message>
         <source>Free plan</source>
         <translation>免費方案</translation>
-    </message>
-    <message>
-        <source>Go back to the Automatic review to switch modes.</source>
-        <translation>請返回自動檢視以切換模式。</translation>
-    </message>
-    <message>
-        <source>Grouped as continuous cover.</source>
-        <translation>已合併為連續覆蓋區域。</translation>
     </message>
     <message>
         <source>Hide parts larger than this ground area. 0 = no limit.</source>
@@ -2173,22 +1911,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Hide parts smaller than this ground area. Use it to drop tiny noise blobs. 0 = keep all.</source>
         <translation>隱藏面積小於此地面面積的部分，可用於剔除微小的雜訊斑點。0＝全部保留。</translation>
-    </message>
-    <message>
-        <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a random colour per object to tell them apart.</source>
-        <translation>地圖上偵測結果的著色方式（僅影響顯示）：一般填色、輪廓、信心度熱力圖，或依物件隨機著色以利區分。</translation>
-    </message>
-    <message>
-        <source>Invalid CRS</source>
-        <translation>無效的座標參考系統</translation>
-    </message>
-    <message>
-        <source>Kept as distinct objects.</source>
-        <translation>已保留為獨立物件。</translation>
-    </message>
-    <message>
-        <source>Left-click adds what you click to the shape</source>
-        <translation>左鍵點擊可將點擊處加入形狀</translation>
     </message>
     <message>
         <source>Load example imagery</source>
@@ -2231,10 +1953,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>第一次使用嗎？我們的 5 分鐘教學會逐步帶您完成一次完整的偵測。</translation>
     </message>
     <message>
-        <source>No detection in this zone. Try a more specific object word, or draw an example of one (best for unusual objects).</source>
-        <translation>此範圍內沒有偵測結果。請嘗試更具體的物件詞彙，或繪製一個範例（對不常見的物件效果最佳）。</translation>
-    </message>
-    <message>
         <source>Not Enough Disk Space</source>
         <translation>磁碟空間不足</translation>
     </message>
@@ -2263,20 +1981,12 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>在瀏覽器中開啟 terra-lab.ai。</translation>
     </message>
     <message>
-        <source>Opens the shape so clicks can extend or trim it. Key: E, or double-click it on the map</source>
-        <translation>開啟形狀編輯，點擊可延伸或裁剪。快捷鍵：E，或在地圖上點兩下</translation>
-    </message>
-    <message>
         <source>Opens your terra-lab.ai account in the browser.</source>
         <translation>在瀏覽器中開啟您的 terra-lab.ai 帳戶。</translation>
     </message>
     <message>
         <source>Opens your terra-lab.ai dashboard in the browser.</source>
         <translation>在瀏覽器中開啟您的 terra-lab.ai 控制台。</translation>
-    </message>
-    <message>
-        <source>Optional</source>
-        <translation>選填</translation>
     </message>
     <message>
         <source>Outline ONE example of the object on the map, then run again. Runs with a drawn example return far fewer empty results.</source>
@@ -2287,24 +1997,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>正在規劃 AI Segmentation 執行</translation>
     </message>
     <message>
-        <source>Preparing Manual mode...</source>
-        <translation>正在準備手動模式...</translation>
-    </message>
-    <message>
         <source>Pro plan</source>
         <translation>Pro 方案</translation>
-    </message>
-    <message>
-        <source>Refine</source>
-        <translation>細修</translation>
-    </message>
-    <message>
-        <source>Refining uses the free local AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and refining will open automatically when it is ready.</source>
-        <translation>細修功能使用免費的本機 AI，但尚未安裝。現在安裝嗎？（需要幾分鐘，於背景進行）。您可以在此期間繼續檢視，安裝完成後細修面板會自動開啟。</translation>
-    </message>
-    <message>
-        <source>Regrouping detections...</source>
-        <translation>正在重新分組偵測結果...</translation>
     </message>
     <message>
         <source>Remove downloaded AI data</source>
@@ -2315,40 +2009,16 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>要從這台電腦中移除已下載的 AI 資料嗎？</translation>
     </message>
     <message>
-        <source>Removes it from the results. Key: Delete (Ctrl+Z restores it)</source>
-        <translation>從結果中移除。快捷鍵：Delete（Ctrl+Z 可還原）</translation>
-    </message>
-    <message>
         <source>Removing...</source>
         <translation>正在移除...</translation>
-    </message>
-    <message>
-        <source>Returns to the Automatic review with your edits. The export happens there.</source>
-        <translation>攜帶您的編輯返回自動檢視，Export 在那裡完成。</translation>
-    </message>
-    <message>
-        <source>Review detections</source>
-        <translation>檢視偵測結果</translation>
     </message>
     <message>
         <source>Right level for {obj} in this zone.</source>
         <translation>此細節層級適合此範圍內的{obj}。</translation>
     </message>
     <message>
-        <source>Right-click removes it from the shape</source>
-        <translation>右鍵點擊可將其從形狀中移除</translation>
-    </message>
-    <message>
         <source>Rotated raster</source>
         <translation>旋轉的點陣圖</translation>
-    </message>
-    <message>
-        <source>Runs with a drawn example return far fewer empty results. This re-runs the zone with the example draw armed (new credits).</source>
-        <translation>附帶繪製範例的執行結果為空的情況會大幅減少。此操作會在啟用範例繪製的狀態下重新執行該範圍（消耗新的點數）。</translation>
-    </message>
-    <message>
-        <source>Save shape</source>
-        <translation>儲存形狀</translation>
     </message>
     <message>
         <source>Save {save} detections ({hidden} currently hidden by Confidence) to a layer before leaving?</source>
@@ -2359,32 +2029,12 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>離開前是否將 {save} 個偵測結果儲存至圖層？</translation>
     </message>
     <message>
-        <source>Saves this shape and closes the edit. Key: S</source>
-        <translation>儲存此形狀並關閉編輯。快捷鍵：S</translation>
-    </message>
-    <message>
         <source>Segment library (view only)</source>
         <translation>分割範例庫（僅供檢視）</translation>
     </message>
     <message>
         <source>Segmentation failed. Please try again.</source>
         <translation>分割失敗，請再試一次。</translation>
-    </message>
-    <message>
-        <source>Setting up Manual mode in the background. You can keep reviewing; refining opens automatically when it is ready.</source>
-        <translation>正在背景設定手動模式。您可以繼續檢視，準備就緒後細修面板會自動開啟。</translation>
-    </message>
-    <message>
-        <source>Setting up Manual mode in the background...</source>
-        <translation>正在背景設定手動模式...</translation>
-    </message>
-    <message>
-        <source>Shape and size settings</source>
-        <translation>形狀與尺寸設定</translation>
-    </message>
-    <message>
-        <source>Shape settings</source>
-        <translation>形狀設定</translation>
     </message>
     <message>
         <source>Sharper than {obj} usually needs - catches the smallest ones.</source>
@@ -2423,16 +2073,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>團隊或組織使用？</translation>
     </message>
     <message>
-        <source>The AI finds every object similar to your example.</source>
-        <translation>AI 會找出所有與您範例相似的物件。</translation>
-    </message>
-    <message>
         <source>The AI service is waking up. Holding your spot…</source>
         <translation>AI 服務正在喚醒，正在為您保留名額…</translation>
-    </message>
-    <message>
-        <source>The detection service had a problem. Your credits for the failed tiles were refunded. Please try again.</source>
-        <translation>偵測服務發生問題，失敗圖磚所耗費的點數已退還，請再試一次。</translation>
     </message>
     <message>
         <source>The detection service is busy right now. Please try again in a moment.</source>
@@ -2455,24 +2097,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>這會刪除本機的 AI 模型檔案、將您登出並重設外掛程式。您的帳戶與點數不受影響。下次使用手動模式時會重新下載檔案。</translation>
     </message>
     <message>
-        <source>This detail level is a Pro feature. Lower the detail, or</source>
-        <translation>此細節層級為 Pro 功能。請降低細節，或</translation>
-    </message>
-    <message>
         <source>This layer has no valid coordinate reference system. Set one in Layer Properties before detecting.</source>
         <translation>此圖層沒有有效的座標參考系統。請在偵測前於圖層屬性中進行設定。</translation>
-    </message>
-    <message>
-        <source>This layer has no valid coordinate reference system. Set one in Layer Properties before segmenting.</source>
-        <translation>此圖層沒有有效的座標參考系統。請在分割前於圖層屬性中進行設定。</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF before segmenting.</source>
-        <translation>此點陣圖已旋轉，請在分割前將其轉換為軸對齊的 GeoTIFF。</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF, or use Manual mode.</source>
-        <translation>此點陣圖已旋轉，請將其轉換為軸對齊的 GeoTIFF，或使用手動模式。</translation>
     </message>
     <message>
         <source>This raster uses a geographic CRS (degrees), which distorts the imagery sent to the AI. For best results, reproject it to a projected CRS (e.g. UTM).</source>
@@ -2485,22 +2111,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Try "{word}" instead</source>
         <translation>請改用「{word}」</translation>
-    </message>
-    <message>
-        <source>Try '{term}' - it's a better prompt.</source>
-        <translation>請嘗試「{term}」－這是更好的提示詞。</translation>
-    </message>
-    <message>
-        <source>Try an object from the Library - it's a better prompt.</source>
-        <translation>請嘗試範例庫中的物件－這是更好的提示詞。</translation>
-    </message>
-    <message>
-        <source>Undo click</source>
-        <translation>復原點擊</translation>
-    </message>
-    <message>
-        <source>Undoes the last change to this shape. Key: Ctrl+Z</source>
-        <translation>復原此形狀的上一次變更。快捷鍵：Ctrl+Z</translation>
     </message>
     <message>
         <source>Update now</source>
@@ -2517,14 +2127,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Very fine for {obj} - large ones may come back split in parts.</source>
         <translation>對{obj}而言細節過高－較大的物件可能會被拆分成多個部分傳回。</translation>
-    </message>
-    <message>
-        <source>View as continuous cover</source>
-        <translation>顯示為連續覆蓋區域</translation>
-    </message>
-    <message>
-        <source>View as distinct objects</source>
-        <translation>顯示為獨立物件</translation>
     </message>
     <message>
         <source>View detections as:</source>
@@ -2551,10 +2153,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>多邊形</translation>
     </message>
     <message>
-        <source>some files could not be deleted</source>
-        <translation>部分檔案無法刪除</translation>
-    </message>
-    <message>
         <source>uncertain</source>
         <translation>信心度低</translation>
     </message>
@@ -2567,20 +2165,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>您的物件</translation>
     </message>
     <message>
-        <source>{n} detections selected</source>
-        <translation>已選取 {n} 個偵測結果</translation>
-    </message>
-    <message>
         <source>{n} found so far</source>
         <translation>目前已發現 {n} 個</translation>
-    </message>
-    <message>
-        <source>{n} removed</source>
-        <translation>已移除 {n} 個</translation>
-    </message>
-    <message>
-        <source>{n} shapes edited</source>
-        <translation>已編輯 {n} 個形狀</translation>
     </message>
     <message>
         <source>{n} tiles could not be loaded from the layer server; results may be incomplete.</source>
@@ -2680,42 +2266,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>找到 1 個物件</translation>
     </message>
     <message>
-        <source>Add a second example - two references detect far better than one.</source>
-        <translation>再新增一個範例 - 兩個參考的偵測效果遠勝一個。</translation>
-    </message>
-    <message>
-        <source>Add a second example, or type what to find.</source>
-        <translation>再新增一個範例，或輸入要尋找的內容。</translation>
-    </message>
-    <message>
-        <source>Add polygon to the layer</source>
-        <translation>將多邊形加入圖層</translation>
-    </message>
-    <message>
-        <source>Add to</source>
-        <translation>加入至</translation>
-    </message>
-    <message>
-        <source>Add {count} polygons to the layer</source>
-        <translation>將 {count} 個多邊形加入圖層</translation>
-    </message>
-    <message>
-        <source>Added {count} polygon(s) to {name}.</source>
-        <translation>已將 {count} 個多邊形加入 {name}。</translation>
-    </message>
-    <message>
-        <source>Adds your {n} kept polygons to the selected layer.</source>
-        <translation>將您保留的 {n} 個多邊形加入所選圖層。</translation>
-    </message>
-    <message>
-        <source>Could not add to that layer. Created a new layer instead.</source>
-        <translation>無法加入該圖層。已改為建立新圖層。</translation>
-    </message>
-    <message>
-        <source>Create a new layer, or add these polygons to an existing layer.</source>
-        <translation>建立新圖層，或將這些多邊形加入現有圖層。</translation>
-    </message>
-    <message>
         <source>Download AI model</source>
         <translation>下載 AI 模型</translation>
     </message>
@@ -2724,16 +2274,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>Export 1 個多邊形</translation>
     </message>
     <message>
-        <source>New layer</source>
-        <translation>新圖層</translation>
-    </message>
-    <message>
         <source>Resolving object name</source>
         <translation>正在解析物件名稱</translation>
-    </message>
-    <message>
-        <source>That layer is no longer available. Created a new layer instead.</source>
-        <translation>該圖層已無法使用。已改為建立新圖層。</translation>
     </message>
     <message>
         <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
@@ -2746,6 +2288,1136 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Your free detections are used up</source>
         <translation>您的免費偵測已用完</translation>
+    </message>
+    <message>
+        <source>&quot;{obj}&quot; is not an object the AI knows well. Drawing one example on the map shows it what to find.</source>
+        <translation>「{obj}」不是 AI 熟悉的物件。在地圖上繪製一個範例，讓它知道要尋找什麼。</translation>
+    </message>
+    <message>
+        <source>&quot;{obj}&quot; is often missed from text alone. Draw one example on the map to find far more.</source>
+        <translation>單靠文字時，「{obj}」常常會被漏掉。在地圖上繪製一個範例，可以找到更多。</translation>
+    </message>
+    <message>
+        <source>1 correction this round</source>
+        <translation>本輪 1 次修正</translation>
+    </message>
+    <message>
+        <source>1 detection removed</source>
+        <translation>已移除 1 個偵測結果</translation>
+    </message>
+    <message>
+        <source>1 object</source>
+        <translation>1 個物件</translation>
+    </message>
+    <message>
+        <source>1 polygon added so far.</source>
+        <translation>目前已新增 1 個多邊形。</translation>
+    </message>
+    <message>
+        <source>1 result</source>
+        <translation>1 筆結果</translation>
+    </message>
+    <message>
+        <source>A detection run was interrupted before its results were exported. {n} detection(s) were saved.</source>
+        <translation>偵測執行在結果完成 Export 前中斷，已儲存 {n} 個偵測結果。</translation>
+    </message>
+    <message>
+        <source>A free run covers up to {cap} credits. Lower the detail or draw a smaller zone, or</source>
+        <translation>免費執行最多涵蓋 {cap} 點數。請降低細節或縮小範圍，或</translation>
+    </message>
+    <message>
+        <source>A newer version of AI Segmentation is available with the latest fixes.</source>
+        <translation>有新版本的 AI Segmentation 可供使用，內含最新修正。</translation>
+    </message>
+    <message>
+        <source>A shape was removed. Click Save to confirm.</source>
+        <translation>已移除一個形狀，請點擊「儲存」以確認。</translation>
+    </message>
+    <message>
+        <source>AI</source>
+        <translation>AI</translation>
+    </message>
+    <message>
+        <source>AI Environment Damaged</source>
+        <translation>AI 環境已損毀</translation>
+    </message>
+    <message>
+        <source>AI and Manual are two ways to fix the same polygon.</source>
+        <translation>AI 與手動是修正同一個多邊形的兩種方式。</translation>
+    </message>
+    <message>
+        <source>Add a missing polygon</source>
+        <translation>新增遺漏的多邊形</translation>
+    </message>
+    <message>
+        <source>Add an object the AI missed. In AI, point at it and the on-device model outlines it, free; in Manual, draw its corners.</source>
+        <translation>新增 AI 遺漏的物件：AI 方式下，點一下即可由本機模型免費勾勒輪廓；手動方式下，自行繪製其角點。</translation>
+    </message>
+    <message>
+        <source>Add another example - more references detect more</source>
+        <translation>新增另一個範例－更多參考影像可偵測更多</translation>
+    </message>
+    <message>
+        <source>Add one more example for the best results.</source>
+        <translation>再新增一個範例以獲得最佳結果。</translation>
+    </message>
+    <message>
+        <source>Add them to the project</source>
+        <translation>將它們加入專案</translation>
+    </message>
+    <message>
+        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and Add will arm automatically when it is ready.</source>
+        <translation>新增物件功能使用免費的本機 AI，但尚未安裝。現在安裝嗎？（需要幾分鐘，於背景進行）。您可以在此期間繼續檢視，安裝完成後「新增」會自動就緒。</translation>
+    </message>
+    <message>
+        <source>Adding needs a one-time setup</source>
+        <translation>新增需要進行一次性設定</translation>
+    </message>
+    <message>
+        <source>Almost done - building the shapes...</source>
+        <translation>即將完成－正在建立形狀...</translation>
+    </message>
+    <message>
+        <source>Almost there: in step 1, name the object your examples show - words plus examples detect best.</source>
+        <translation>快完成了：第 1 步請為您範例中的物件命名，文字加上範例的偵測效果最佳。</translation>
+    </message>
+    <message>
+        <source>Almost there: in step 2, outline one &quot;{word}&quot; on the map so the AI sees what yours look like.</source>
+        <translation>快完成了：第 2 步請在地圖上圈選一個「{word}」，讓 AI 了解您要找的樣子。</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI components. Wait for it to finish, then try again.</source>
+        <translation>另一個 QGIS 視窗正在安裝 AI 元件，請等待其完成後再試一次。</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI engine. Wait for it to finish, then try again.</source>
+        <translation>另一個 QGIS 視窗正在安裝 AI 引擎，請等待其完成後再試一次。</translation>
+    </message>
+    <message>
+        <source>Automatic detection failed</source>
+        <translation>自動偵測失敗</translation>
+    </message>
+    <message>
+        <source>Automatic: detect</source>
+        <translation>自動：偵測</translation>
+    </message>
+    <message>
+        <source>Automatic: draw the zone</source>
+        <translation>自動：繪製範圍</translation>
+    </message>
+    <message>
+        <source>Automatic: merge with neighbours</source>
+        <translation>自動：與鄰近物件合併</translation>
+    </message>
+    <message>
+        <source>Automatic: review and Correct</source>
+        <translation>自動：檢視並修正</translation>
+    </message>
+    <message>
+        <source>Best quality. Two references locked in.</source>
+        <translation>最佳品質，已鎖定兩個參考影像。</translation>
+    </message>
+    <message>
+        <source>Blocked by Antivirus or Security Software</source>
+        <translation>已被防毒軟體或安全性軟體封鎖</translation>
+    </message>
+    <message>
+        <source>Calculating...</source>
+        <translation>正在計算...</translation>
+    </message>
+    <message>
+        <source>Cancel the example box, the detection, or exit Automatic</source>
+        <translation>取消範例框或偵測，或退出自動模式</translation>
+    </message>
+    <message>
+        <source>Cancel the merge</source>
+        <translation>取消合併</translation>
+    </message>
+    <message>
+        <source>Change recorded.</source>
+        <translation>已記錄變更。</translation>
+    </message>
+    <message>
+        <source>Checking the object name</source>
+        <translation>正在檢查物件名稱</translation>
+    </message>
+    <message>
+        <source>Checking the object name...</source>
+        <translation>正在檢查物件名稱...</translation>
+    </message>
+    <message>
+        <source>Choose how to fix the polygon: AI points or QGIS vertices</source>
+        <translation>選擇修正多邊形的方式：AI 點選或 QGIS 頂點</translation>
+    </message>
+    <message>
+        <source>Clean up the outlines</source>
+        <translation>清理輪廓</translation>
+    </message>
+    <message>
+        <source>Clear all</source>
+        <translation>全部清除</translation>
+    </message>
+    <message>
+        <source>Clear the points, then exit Automatic</source>
+        <translation>清除已放置的點，然後退出自動模式</translation>
+    </message>
+    <message>
+        <source>Clear the selection, or stop the segmentation</source>
+        <translation>清除選取範圍，或停止分割</translation>
+    </message>
+    <message>
+        <source>Click a polygon, then click the spot the AI missed.</source>
+        <translation>點擊一個多邊形，再點擊 AI 遺漏的位置。</translation>
+    </message>
+    <message>
+        <source>Click a polygon, then drag any corner.</source>
+        <translation>點擊一個多邊形，再拖曳任一角點。</translation>
+    </message>
+    <message>
+        <source>Click an object on the map and the AI outlines it.</source>
+        <translation>在地圖上點擊一個物件，AI 就會勾勒出其輪廓。</translation>
+    </message>
+    <message>
+        <source>Click each corner of the object, then Finish.</source>
+        <translation>依序點擊物件的每個角點，再點擊「完成」。</translation>
+    </message>
+    <message>
+        <source>Click each corner on the map, then Finish the line.</source>
+        <translation>依序在地圖上點擊每個角點，然後完成這條線。</translation>
+    </message>
+    <message>
+        <source>Click each piece of the object you want to join.</source>
+        <translation>依序點擊要合併的每個物件部分。</translation>
+    </message>
+    <message>
+        <source>Click to open this step</source>
+        <translation>點擊以開啟此步驟</translation>
+    </message>
+    <message>
+        <source>Close the fix, clear the selection, or exit the review</source>
+        <translation>關閉修正、清除選取範圍，或退出檢視</translation>
+    </message>
+    <message>
+        <source>Close the gaps inside this polygon, without filling the courtyards the rest of the layer is meant to keep.</source>
+        <translation>封閉此多邊形內部的細縫，不影響圖層其他部分刻意保留的中庭。</translation>
+    </message>
+    <message>
+        <source>Close the line you are drawing. A right-click on the map does the same.</source>
+        <translation>封閉您正在繪製的線，在地圖上按右鍵也有相同效果。</translation>
+    </message>
+    <message>
+        <source>Closes the hairline gaps between neighbouring shapes, for land cover maps.</source>
+        <translation>封閉相鄰形狀間的細縫，適用於土地覆蓋圖。</translation>
+    </message>
+    <message>
+        <source>Confirm the merge</source>
+        <translation>確認合併</translation>
+    </message>
+    <message>
+        <source>Correct</source>
+        <translation>修正</translation>
+    </message>
+    <message>
+        <source>Correct the polygons</source>
+        <translation>修正多邊形</translation>
+    </message>
+    <message>
+        <source>Could not apply the new settings. Try a different value.</source>
+        <translation>無法套用新設定，請嘗試不同的數值。</translation>
+    </message>
+    <message>
+        <source>Could not check the AI components. See the log for details.</source>
+        <translation>無法檢查 AI 元件，詳情請見日誌。</translation>
+    </message>
+    <message>
+        <source>Could not load the saved run. The file may have been moved or deleted.</source>
+        <translation>無法載入已儲存的執行，檔案可能已被移動或刪除。</translation>
+    </message>
+    <message>
+        <source>Credits come back on {date}</source>
+        <translation>點數將於 {date} 恢復</translation>
+    </message>
+    <message>
+        <source>Crop fetch was cancelled.</source>
+        <translation>影像裁切已取消。</translation>
+    </message>
+    <message>
+        <source>Cut thin spurs off this polygon (0 = off). Raise it on a single ragged outline instead of eroding the whole layer.</source>
+        <translation>修剪此多邊形上的細小尖刺（0＝關閉）。可只針對單一鋸齒狀輪廓調高數值，而不必侵蝕整個圖層。</translation>
+    </message>
+    <message>
+        <source>Delete this corner</source>
+        <translation>刪除此角點</translation>
+    </message>
+    <message>
+        <source>Delete this polygon</source>
+        <translation>刪除此多邊形</translation>
+    </message>
+    <message>
+        <source>Delete this polygon (the Delete key works too, and a right-click on the map deletes the shape under the cursor). Undo brings it back.</source>
+        <translation>刪除此多邊形（也可以按 Delete 鍵，或在地圖上按右鍵刪除游標所在的形狀）。復原可將其還原。</translation>
+    </message>
+    <message>
+        <source>Deleting the downloaded data...</source>
+        <translation>正在刪除已下載的資料...</translation>
+    </message>
+    <message>
+        <source>Dense area {current}/{total}</source>
+        <translation>密集區域 {current}/{total}</translation>
+    </message>
+    <message>
+        <source>Dense forest? &quot;Forest&quot; takes it as one block; &quot;Tree&quot; picks individual trees.</source>
+        <translation>森林很密集嗎？「Forest」會將其視為一整塊；「Tree」則會挑出個別樹木。</translation>
+    </message>
+    <message>
+        <source>Detect with example only</source>
+        <translation>僅以範例偵測</translation>
+    </message>
+    <message>
+        <source>Detect with examples only</source>
+        <translation>僅以範例偵測</translation>
+    </message>
+    <message>
+        <source>Detect with text only</source>
+        <translation>僅以文字偵測</translation>
+    </message>
+    <message>
+        <source>Detection stopped early after {done} tile(s). The objects already found are kept below.</source>
+        <translation>偵測在完成 {done} 個圖磚後提前停止，已找到的物件會保留在下方。</translation>
+    </message>
+    <message>
+        <source>Discard reviewed results and run again? Confirm</source>
+        <translation>捨棄已檢視的結果並重新執行？確認</translation>
+    </message>
+    <message>
+        <source>Distinct</source>
+        <translation>獨立</translation>
+    </message>
+    <message>
+        <source>Drag a box around one look-alike to exclude.</source>
+        <translation>拖曳框選一個要排除的相似物件。</translation>
+    </message>
+    <message>
+        <source>Drag a box around one object.</source>
+        <translation>拖曳框選一個物件。</translation>
+    </message>
+    <message>
+        <source>Drag a corner to move it. Click an edge to add one, right-click removes.</source>
+        <translation>拖曳角點以移動，點擊邊緣可新增角點，右鍵點擊可移除。</translation>
+    </message>
+    <message>
+        <source>Drag a corner to move it. Double-click an edge to add one.</source>
+        <translation>拖曳角點以移動，雙擊邊緣可新增角點。</translation>
+    </message>
+    <message>
+        <source>Drag, add or delete the object&apos;s corners by hand.</source>
+        <translation>手動拖曳、新增或刪除物件的角點。</translation>
+    </message>
+    <message>
+        <source>Draw a line across the object to cut it into two.</source>
+        <translation>在物件上繪製一條線，將其分割成兩個。</translation>
+    </message>
+    <message>
+        <source>Draw a line right across the shape, then Finish.</source>
+        <translation>在形狀上繪製一條貫穿的線，再點擊「完成」。</translation>
+    </message>
+    <message>
+        <source>Draw an example of the object first (step 2).</source>
+        <translation>請先繪製物件的範例（第 2 步）。</translation>
+    </message>
+    <message>
+        <source>Draw an example, or type what to find.</source>
+        <translation>繪製範例，或輸入要尋找的內容。</translation>
+    </message>
+    <message>
+        <source>Draw its corners</source>
+        <translation>繪製其角點</translation>
+    </message>
+    <message>
+        <source>Draw one &apos;{object}&apos; - the AI finds the rest</source>
+        <translation>繪製一個「{object}」，AI 會找出其餘的</translation>
+    </message>
+    <message>
+        <source>Draw one example - the AI finds the rest</source>
+        <translation>繪製一個範例，AI 會找出其餘的</translation>
+    </message>
+    <message>
+        <source>Draw the new edge: start outside the shape, cross it, end outside, then Finish.</source>
+        <translation>繪製新邊緣：從形狀外部開始，穿過形狀，在外部結束，再點擊「完成」。</translation>
+    </message>
+    <message>
+        <source>Drawn examples</source>
+        <translation>已繪製的範例</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial for thinning an outline.</source>
+        <translation>移除距離直線邊緣小於此距離的節點（0＝關閉）。這是距離，而非數量：調得太高可能會壓平彎曲的牆面。若要精簡輪廓，通常「節點」是較好的控制項。</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial; this stays for comparison.</source>
+        <translation>移除距離直線邊緣小於此距離的節點（0＝關閉）。這是距離，而非數量：調得太高可能會壓平彎曲的牆面。通常「節點」是較好的控制項，此項目僅供比較保留。</translation>
+    </message>
+    <message>
+        <source>Drop this polygon&apos;s points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
+        <translation>移除此多邊形上距離直線邊緣小於此距離的節點（0＝關閉）。這是距離，而非數量；通常「節點」是較好的控制項。</translation>
+    </message>
+    <message>
+        <source>Edit an existing polygon</source>
+        <translation>編輯現有的多邊形</translation>
+    </message>
+    <message>
+        <source>Export the polygons to a layer</source>
+        <translation>Export 多邊形至圖層</translation>
+    </message>
+    <message>
+        <source>Fewer points</source>
+        <translation>較少節點</translation>
+    </message>
+    <message>
+        <source>Fill holes</source>
+        <translation>填補孔洞</translation>
+    </message>
+    <message>
+        <source>Fill only holes smaller than this ground area. Bigger holes (a road median, a courtyard) stay open. No limit = fill every hole.</source>
+        <translation>僅填補小於此地面面積的孔洞，較大的孔洞（如道路中央分隔島、中庭）會保持開放。無限制＝填補所有孔洞。</translation>
+    </message>
+    <message>
+        <source>Finish the line</source>
+        <translation>完成這條線</translation>
+    </message>
+    <message>
+        <source>Fix method</source>
+        <translation>修正方式</translation>
+    </message>
+    <message>
+        <source>Give neighbouring shapes one exact border instead of a hairline gap or overlap. For land cover, where the map is one surface.</source>
+        <translation>讓相鄰形狀共用同一條精確邊界，而非留下細縫或重疊。適用於地圖為單一表面的土地覆蓋資料。</translation>
+    </message>
+    <message>
+        <source>Give this one polygon its own shape settings, without moving the dials that drive the whole layer.</source>
+        <translation>讓這個多邊形套用專屬的形狀設定，而不影響驅動整個圖層的控制項。</translation>
+    </message>
+    <message>
+        <source>Go back to picking polygons. Everything you kept stays, and so does the outline on screen.</source>
+        <translation>返回多邊形選取畫面。您保留的內容都會保留，畫面上的輪廓也會保留。</translation>
+    </message>
+    <message>
+        <source>Go back to your zone, references and settings, then detect the whole zone again. Nothing is saved.</source>
+        <translation>回到您的範圍、參考影像和設定，然後重新偵測整個範圍。系統不會儲存任何內容。</translation>
+    </message>
+    <message>
+        <source>Grow / shrink</source>
+        <translation>擴張／收縮</translation>
+    </message>
+    <message>
+        <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a distinct colour per object to tell them apart.</source>
+        <translation>地圖上偵測結果的著色方式（僅影響顯示）：一般填色、輪廓、信心度熱力圖，或依物件套用獨立顏色以利區分。</translation>
+    </message>
+    <message>
+        <source>How many of each outline&apos;s points to keep, as a share. 100% keeps the class default; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
+        <translation>要保留每條輪廓中多少比例的節點。100% 會維持類別預設值；調低則會進一步精簡，優先捨棄最細微的細節，同時保留角點與大致外形。開啟「直角化」時，此設定會先執行，因此調低它可為直角化提供更平直的牆面依據。</translation>
+    </message>
+    <message>
+        <source>How many of the outline&apos;s points to keep, as a share. 100% keeps the standard density; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
+        <translation>要保留輪廓中多少比例的節點。100% 會維持標準密度；調低則會進一步精簡，優先捨棄最細微的細節，同時保留角點與大致外形。開啟「直角化」時，此設定會先執行，因此調低它可為直角化提供更平直的牆面依據。</translation>
+    </message>
+    <message>
+        <source>How many of this polygon&apos;s points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
+        <translation>這個多邊形要保留多少節點。標題列中的數量會隨之更新。此設定會在「直角化」之前執行，因此調低它可讓直角化後的牆面更平直，而非階梯狀。</translation>
+    </message>
+    <message>
+        <source>How sure the AI is about each object. Lower shows more, higher keeps only the sure ones.</source>
+        <translation>AI 對每個物件的把握程度。數值越低顯示越多，數值越高則只保留把握最大的物件。</translation>
+    </message>
+    <message>
+        <source>Identify new shape</source>
+        <translation>識別新形狀</translation>
+    </message>
+    <message>
+        <source>Installation Already Running</source>
+        <translation>安裝已在執行中</translation>
+    </message>
+    <message>
+        <source>Installation Path Problem</source>
+        <translation>安裝路徑問題</translation>
+    </message>
+    <message>
+        <source>Installation running in another window</source>
+        <translation>安裝正在另一個視窗中執行</translation>
+    </message>
+    <message>
+        <source>Keep</source>
+        <translation>保留</translation>
+    </message>
+    <message>
+        <source>Keep these edits and go back to picking polygons.</source>
+        <translation>保留這些編輯，並返回多邊形選取畫面。</translation>
+    </message>
+    <message>
+        <source>Keep this detection in Favorites</source>
+        <translation>收藏此偵測結果</translation>
+    </message>
+    <message>
+        <source>Keep this object in Favorites</source>
+        <translation>收藏此物件</translation>
+    </message>
+    <message>
+        <source>Keep this one</source>
+        <translation>保留這個</translation>
+    </message>
+    <message>
+        <source>Keep this one, or click again to correct the outline.</source>
+        <translation>保留這個，或再次點擊以修正輪廓。</translation>
+    </message>
+    <message>
+        <source>Keep this one, or keep placing corners.</source>
+        <translation>保留這個，或繼續放置角點。</translation>
+    </message>
+    <message>
+        <source>Keep this outline and point at the next object. Shortcut: S</source>
+        <translation>保留此輪廓，並點選下一個物件。快速鍵：S</translation>
+    </message>
+    <message>
+        <source>Left-click adds a keep point, right-click a trim point. The outline follows.</source>
+        <translation>左鍵點擊新增保留點，右鍵點擊新增修剪點，輪廓會隨之調整。</translation>
+    </message>
+    <message>
+        <source>Linux System Too Old</source>
+        <translation>Linux 系統版本過舊</translation>
+    </message>
+    <message>
+        <source>Loading stored detections ({done} of {total})</source>
+        <translation>正在載入已儲存的偵測結果（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>Maximum</source>
+        <translation>最大值</translation>
+    </message>
+    <message>
+        <source>Measuring AI data size...</source>
+        <translation>正在測量 AI 資料大小...</translation>
+    </message>
+    <message>
+        <source>Measuring the downloaded data...</source>
+        <translation>正在測量已下載的資料...</translation>
+    </message>
+    <message>
+        <source>Merge with neighbours</source>
+        <translation>與鄰近物件合併</translation>
+    </message>
+    <message>
+        <source>Merge {n} shapes · Free</source>
+        <translation>合併 {n} 個形狀·免費</translation>
+    </message>
+    <message>
+        <source>Minimum</source>
+        <translation>最小值</translation>
+    </message>
+    <message>
+        <source>Missing System Component</source>
+        <translation>缺少系統元件</translation>
+    </message>
+    <message>
+        <source>Move points</source>
+        <translation>移動角點</translation>
+    </message>
+    <message>
+        <source>Navigation (while a tool is armed)</source>
+        <translation>導覽（工具啟用時）</translation>
+    </message>
+    <message>
+        <source>New polygon</source>
+        <translation>新多邊形</translation>
+    </message>
+    <message>
+        <source>New shape added. Click Save to keep it.</source>
+        <translation>已新增一個形狀，請點擊「儲存」以保留。</translation>
+    </message>
+    <message>
+        <source>No connection to the sign-in service. Check your internet connection, then click Connect to try again.</source>
+        <translation>無法連線至登入服務，請檢查您的網路連線，然後點擊「連線」再試一次。</translation>
+    </message>
+    <message>
+        <source>No detection in this zone. Try a more specific object word, or a finer detail level.</source>
+        <translation>此範圍內沒有偵測結果，請嘗試更具體的物件名稱，或提高細節等級。</translation>
+    </message>
+    <message>
+        <source>No detection under that click.</source>
+        <translation>該點擊位置沒有偵測結果。</translation>
+    </message>
+    <message>
+        <source>No matches in this zone.</source>
+        <translation>此範圍內沒有相符結果。</translation>
+    </message>
+    <message>
+        <source>No object matches that search.</source>
+        <translation>沒有物件符合該搜尋條件。</translation>
+    </message>
+    <message>
+        <source>Nothing changed. The line has to cross the outline twice, starting and ending outside the shape.</source>
+        <translation>沒有變更。這條線必須兩次穿過輪廓，起點與終點都要在形狀外部。</translation>
+    </message>
+    <message>
+        <source>Nothing cleared the confidence bar in this zone.</source>
+        <translation>此範圍內沒有結果達到信心度門檻。</translation>
+    </message>
+    <message>
+        <source>Nothing was added. A polygon needs at least three corners.</source>
+        <translation>未新增任何內容，多邊形至少需要三個角點。</translation>
+    </message>
+    <message>
+        <source>Nothing was split. The line has to cross the shape completely, starting and ending outside it.</source>
+        <translation>未進行分割，這條線必須完全穿過形狀，起點與終點都要在形狀外部。</translation>
+    </message>
+    <message>
+        <source>Now click the other pieces of this object.</source>
+        <translation>現在請點擊此物件的其他部分。</translation>
+    </message>
+    <message>
+        <source>One object came back split into several polygons. Click the others on the map, then confirm to merge them into one.</source>
+        <translation>有一個物件被拆分成多個多邊形。請在地圖上點擊其餘部分，再確認以合併為一個物件。</translation>
+    </message>
+    <message>
+        <source>One object per run - Detect will run &quot;{first}&quot; first.</source>
+        <translation>每次執行僅能偵測一種物件－系統會先執行「{first}」。</translation>
+    </message>
+    <message>
+        <source>One object per run - detecting &quot;{first}&quot; now. Run the other objects as separate detections.</source>
+        <translation>每次執行僅能偵測一種物件－目前正在偵測「{first}」。其他物件請另外執行偵測。</translation>
+    </message>
+    <message>
+        <source>Only this polygon. Every other one follows the Shapes step.</source>
+        <translation>僅此多邊形。其他所有多邊形皆依照「形狀」步驟設定。</translation>
+    </message>
+    <message>
+        <source>Open the selected saved polygon for AI editing</source>
+        <translation>開啟所選的已儲存多邊形進行 AI 編輯</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>其他</translation>
+    </message>
+    <message>
+        <source>Package Versions Conflict</source>
+        <translation>套件版本衝突</translation>
+    </message>
+    <message>
+        <source>Pick a tool above, then edit the highlighted object.</source>
+        <translation>請於上方選擇工具，再編輯醒目顯示的物件。</translation>
+    </message>
+    <message>
+        <source>Pick at least two shapes to merge them.</source>
+        <translation>請至少選擇兩個形狀才能合併。</translation>
+    </message>
+    <message>
+        <source>Pick or un-pick an object</source>
+        <translation>選取或取消選取物件</translation>
+    </message>
+    <message>
+        <source>Point at it on the map</source>
+        <translation>在地圖上點選它</translation>
+    </message>
+    <message>
+        <source>Points</source>
+        <translation>節點</translation>
+    </message>
+    <message>
+        <source>Points the map back at this run with the same object and the same number of tiles, ready to detect. Nothing is spent until you do.</source>
+        <translation>將地圖重新指向此次執行，使用相同物件與相同圖磚數量，準備好即可偵測。在您執行前不會耗費任何點數。</translation>
+    </message>
+    <message>
+        <source>Points: {n}</source>
+        <translation>節點：{n}</translation>
+    </message>
+    <message>
+        <source>Positive = grow outward, negative = shrink inward</source>
+        <translation>正值＝向外擴張，負值＝向內收縮</translation>
+    </message>
+    <message>
+        <source>Proxy Authentication Required</source>
+        <translation>需要代理伺服器驗證</translation>
+    </message>
+    <message>
+        <source>Push this polygon&apos;s edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
+        <translation>將此多邊形的邊緣向外（正值）或向內（負值）推移，適用於模型判斷範圍過小或過大的單一物件。</translation>
+    </message>
+    <message>
+        <source>QGIS could not activate the temporary review layer. Close any other editing session, then try Edit manually again.</source>
+        <translation>QGIS 無法啟用暫存檢視圖層，請關閉其他編輯工作階段，再重新嘗試手動編輯。</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here:
+{}</source>
+        <translation>QGIS 無法開啟瀏覽器。請開啟以下網址以完成登入，再返回此處：
+{}</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here.</source>
+        <translation>QGIS 無法開啟瀏覽器。登入網址已複製到您的剪貼簿：請貼到瀏覽器中以完成登入，再返回此處。</translation>
+    </message>
+    <message>
+        <source>QGIS could not save these edits. Fix the geometry and click Done again.</source>
+        <translation>QGIS 無法儲存這些編輯，請修正幾何圖形，再次點擊「確定」。</translation>
+    </message>
+    <message>
+        <source>Re-run the whole zone</source>
+        <translation>重新執行整個範圍</translation>
+    </message>
+    <message>
+        <source>Reading the imagery around this polygon...</source>
+        <translation>正在讀取此多邊形周圍的影像...</translation>
+    </message>
+    <message>
+        <source>Reading the imagery around your click...</source>
+        <translation>正在讀取您點擊位置周圍的影像...</translation>
+    </message>
+    <message>
+        <source>Reading this run...</source>
+        <translation>正在讀取此次執行...</translation>
+    </message>
+    <message>
+        <source>Rebuilding shapes ({done} of {total})</source>
+        <translation>正在重建形狀（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>Recovered {n} detection(s) to the layer {name}.</source>
+        <translation>已將 {n} 個偵測結果還原至圖層 {name}。</translation>
+    </message>
+    <message>
+        <source>Redraw edge</source>
+        <translation>重新繪製邊緣</translation>
+    </message>
+    <message>
+        <source>Remove the corner you picked. The Delete key does the same.</source>
+        <translation>移除您所選取的角點，按 Delete 鍵也有相同效果。</translation>
+    </message>
+    <message>
+        <source>Remove the selected detection</source>
+        <translation>移除所選的偵測結果</translation>
+    </message>
+    <message>
+        <source>Removing the downloaded AI data. This window closes when it is done.</source>
+        <translation>正在移除已下載的 AI 資料，完成後此視窗會自動關閉。</translation>
+    </message>
+    <message>
+        <source>Removing the downloaded AI data...</source>
+        <translation>正在移除已下載的 AI 資料...</translation>
+    </message>
+    <message>
+        <source>Replace one side by drawing a new line across the outline.</source>
+        <translation>繪製一條貫穿輪廓的新線條，以取代其中一側。</translation>
+    </message>
+    <message>
+        <source>Report this problem</source>
+        <translation>回報此問題</translation>
+    </message>
+    <message>
+        <source>Reset to shared</source>
+        <translation>重設為共用設定</translation>
+    </message>
+    <message>
+        <source>Reshape needs a one-time setup</source>
+        <translation>重塑需要進行一次性設定</translation>
+    </message>
+    <message>
+        <source>Reshaping uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and reshaping will open automatically when it is ready.</source>
+        <translation>重塑功能使用免費的本機 AI，但尚未安裝。現在安裝嗎？（需要幾分鐘，於背景進行）。您可以在此期間繼續檢視，安裝完成後重塑面板會自動開啟。</translation>
+    </message>
+    <message>
+        <source>Right angles</source>
+        <translation>直角化</translation>
+    </message>
+    <message>
+        <source>Round corners</source>
+        <translation>圓角</translation>
+    </message>
+    <message>
+        <source>Round corners for natural shapes like trees and bushes. Lower Points for smoother results.</source>
+        <translation>為樹木、灌木等自然形狀套用圓角，降低「節點」可讓結果更平滑。</translation>
+    </message>
+    <message>
+        <source>Round this polygon&apos;s corners, for a tree or a pond among squared neighbours.</source>
+        <translation>為此多邊形套用圓角，適合在方正的鄰近物件中呈現樹木或池塘等形狀。</translation>
+    </message>
+    <message>
+        <source>Run the detection</source>
+        <translation>執行偵測</translation>
+    </message>
+    <message>
+        <source>Run this zone again</source>
+        <translation>重新執行此範圍</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
+        <translation>免費次數即將用完：剩餘 {n} 次免費偵測，{date} 恢復。&lt;a href=&quot;{url}&quot;&gt;訂閱&lt;/a&gt;即可繼續使用。</translation>
+    </message>
+    <message>
+        <source>Same setup as your last run - the result will match. Add an example or change the detail for a different result.</source>
+        <translation>設定與您上次執行相同，結果會一致。新增範例或變更細節即可得到不同的結果。</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>儲存</translation>
+    </message>
+    <message>
+        <source>Save the fix and go back to the review</source>
+        <translation>儲存修正並返回檢視</translation>
+    </message>
+    <message>
+        <source>Save this polygon and go back to picking.</source>
+        <translation>儲存此多邊形並返回選取畫面。</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI in the background. You can keep reviewing; reshaping opens automatically when it is ready.</source>
+        <translation>正在背景設定本機 AI，您可以在此期間繼續檢視；準備就緒後重塑面板會自動開啟。</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI in the background...</source>
+        <translation>正在背景設定本機 AI...</translation>
+    </message>
+    <message>
+        <source>Settings for this polygon</source>
+        <translation>此多邊形的設定</translation>
+    </message>
+    <message>
+        <source>Shadows getting detected instead of trees? Draw an &apos;Exclude a look-alike&apos; box on one shadow - the AI drops similar false positives.</source>
+        <translation>偵測到陰影而非樹木？在一處陰影上繪製「排除相似物件」框，AI 就會捨棄類似的誤判結果。</translation>
+    </message>
+    <message>
+        <source>Shape updated. Keep editing, or click Save.</source>
+        <translation>形狀已更新，可繼續編輯，或點擊「儲存」。</translation>
+    </message>
+    <message>
+        <source>Shapes</source>
+        <translation>形狀</translation>
+    </message>
+    <message>
+        <source>Shared borders:</source>
+        <translation>共用邊界：</translation>
+    </message>
+    <message>
+        <source>Shave thin spikes and ragged bits off each shape&apos;s outline. It leaves the main body alone; higher values trim more. 0 = off.</source>
+        <translation>修剪每個形狀輪廓上的細小尖刺與鋸齒狀部分，主體不受影響；數值越高修剪越多。0＝關閉。</translation>
+    </message>
+    <message>
+        <source>Show what it looks like</source>
+        <translation>顯示外觀</translation>
+    </message>
+    <message>
+        <source>Simplify</source>
+        <translation>簡化</translation>
+    </message>
+    <message>
+        <source>Snap walls to right angles, 45 degree walls included. Made for buildings, pools and solar panels. A shape it would distort is left as it is.</source>
+        <translation>將牆面校正為直角，包含 45 度角的牆面。適用於建築物、泳池、太陽能板。若校正會使形狀失真，則會保持原樣。</translation>
+    </message>
+    <message>
+        <source>Something went wrong preparing the results. Please run Detect again.</source>
+        <translation>準備結果時發生問題，請重新執行偵測。</translation>
+    </message>
+    <message>
+        <source>Something went wrong preparing the results. Your detections were saved to the layer {name}.</source>
+        <translation>準備結果時發生問題，您的偵測結果已儲存至圖層 {name}。</translation>
+    </message>
+    <message>
+        <source>Split</source>
+        <translation>分割</translation>
+    </message>
+    <message>
+        <source>Square this polygon&apos;s edges, or leave them as traced while the rest of the layer stays squared.</source>
+        <translation>將此多邊形的邊緣校正為直角，或維持原始描繪的形狀，即使圖層其餘部分仍為直角化。</translation>
+    </message>
+    <message>
+        <source>Star a detection or an object to keep it here.</source>
+        <translation>將偵測結果或物件加入收藏，即可保留在這裡。</translation>
+    </message>
+    <message>
+        <source>Still waiting for the sign-in page. If no browser opened, or the page shows an error, click Cancel and try again.</source>
+        <translation>仍在等待登入頁面。若瀏覽器未開啟，或頁面顯示錯誤，請點擊「取消」再試一次。</translation>
+    </message>
+    <message>
+        <source>Stop adding</source>
+        <translation>停止新增</translation>
+    </message>
+    <message>
+        <source>Stopping the local AI...</source>
+        <translation>正在停止本機 AI...</translation>
+    </message>
+    <message>
+        <source>Switch to AI to shape this polygon on its own.</source>
+        <translation>切換至 AI 方式，自動為此多邊形塑形。</translation>
+    </message>
+    <message>
+        <source>That area does not touch the object you are editing, so nothing was added. Refining works on one object at a time.</source>
+        <translation>該區域未接觸到您正在編輯的物件，因此未新增任何內容。細修一次僅能處理一個物件。</translation>
+    </message>
+    <message>
+        <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
+        <translation>該區域屬於另一個物件，因此未新增任何內容。請改為編輯該物件，或使用「與鄰近物件合併」將兩者合併。</translation>
+    </message>
+    <message>
+        <source>That is another object. The one you were editing is saved, and this one is now selected.</source>
+        <translation>這是另一個物件。您原本編輯的物件已儲存，現在已選取這一個。</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples - you can draw up to 3.</source>
+        <translation>AI 會找出所有與您範例相似的物件－最多可繪製 3 個範例。</translation>
+    </message>
+    <message>
+        <source>The AI outlines it, free, on your computer.</source>
+        <translation>AI 會在您的電腦上免費為其勾勒輪廓。</translation>
+    </message>
+    <message>
+        <source>The connection to the server was interrupted. Please try again.</source>
+        <translation>與伺服器的連線已中斷，請再試一次。</translation>
+    </message>
+    <message>
+        <source>The detection service had a problem and the run stopped. Please try again.</source>
+        <translation>偵測服務發生問題，執行已停止，請再試一次。</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the {n} tiles already found.</source>
+        <translation>偵測已停止回應，已找到的 {n} 個圖磚將保留。</translation>
+    </message>
+    <message>
+        <source>The imagery reader could not be loaded, and repairing the installation did not fix it. Please report this so we can look into it.
+
+{details}</source>
+        <translation>無法載入影像讀取工具，且修復安裝也未能解決問題。請回報此問題，以便我們進行調查。
+
+{details}</translation>
+    </message>
+    <message>
+        <source>The installer could not start a helper process (a damaged Python launcher). Click Reinstall Dependencies to rebuild the environment from scratch.</source>
+        <translation>安裝程式無法啟動輔助處理程序（Python 啟動器已損毀）。請點擊「重新安裝相依套件」以重新建立環境。</translation>
+    </message>
+    <message>
+        <source>The pieces do not touch, so the result is one object in several parts.</source>
+        <translation>各部分並未相接，因此結果會是一個由多個部分組成的物件。</translation>
+    </message>
+    <message>
+        <source>The removal could not start. You are signed out, but the downloaded AI data is still on this computer. Try again.</source>
+        <translation>無法開始移除。您已登出，但已下載的 AI 資料仍在此電腦上，請再試一次。</translation>
+    </message>
+    <message>
+        <source>The removal did not finish. Close this window, then check the AI data folder before trying again.</source>
+        <translation>移除未完成，請關閉此視窗，並在再試一次之前先檢查 AI 資料夾。</translation>
+    </message>
+    <message>
+        <source>The removal is already running.</source>
+        <translation>移除作業已在執行中。</translation>
+    </message>
+    <message>
+        <source>The reply did not come from the service. If this network shows a sign-in page, open it in your browser first, then try again.</source>
+        <translation>回應並非來自該服務。若此網路會顯示登入頁面，請先在瀏覽器中開啟該頁面，再試一次。</translation>
+    </message>
+    <message>
+        <source>The server returned an unexpected response. Please try again.</source>
+        <translation>伺服器傳回非預期的回應，請再試一次。</translation>
+    </message>
+    <message>
+        <source>Thin this polygon&apos;s points before you edit them by hand. 100% keeps the outline as it is.</source>
+        <translation>在手動編輯前先精簡此多邊形的節點。100% 會維持輪廓原狀。</translation>
+    </message>
+    <message>
+        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Manual mode on it as is.</source>
+        <translation>此影像在地圖上沒有位置資訊，因此自動模式無法放置偵測結果。請使用 QGIS 地理參照工具為其設定位置，或直接以手動模式處理。</translation>
+    </message>
+    <message>
+        <source>This polygon</source>
+        <translation>此多邊形</translation>
+    </message>
+    <message>
+        <source>This raster has no coordinate reference system, so polygons will use pixel coordinates. Set a CRS in Layer Properties for georeferenced output.</source>
+        <translation>此點陣圖沒有座標參考系統，因此多邊形將使用像素座標。請在圖層屬性中設定 CRS，以取得具地理參照的輸出結果。</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it before segmenting.</source>
+        <translation>此點陣圖已旋轉。請先執行「Warp（重新投影）」將其校正，再進行分割。</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Manual mode cannot read it either.</source>
+        <translation>此點陣圖已旋轉。請先執行「Warp（重新投影）」將其校正。手動模式同樣無法讀取此影像。</translation>
+    </message>
+    <message>
+        <source>This run costs more credits than a free run covers. Lower the detail or draw a smaller zone, or</source>
+        <translation>此次執行所需點數超過免費額度，請降低細節或縮小範圍，或</translation>
+    </message>
+    <message>
+        <source>This run did not keep where it looked, so it cannot be pointed at the same place. Draw the zone again.</source>
+        <translation>此次執行未保留偵測範圍的位置資訊，因此無法重新指向相同地點，請重新繪製範圍。</translation>
+    </message>
+    <message>
+        <source>Those shapes could not be joined. Nothing was changed.</source>
+        <translation>這些形狀無法合併，未進行任何變更。</translation>
+    </message>
+    <message>
+        <source>Trim spikes</source>
+        <translation>修剪尖刺</translation>
+    </message>
+    <message>
+        <source>Two references give the strongest detection. Draw a second to reach best quality.</source>
+        <translation>兩個參考影像可提供最強的偵測效果，請再繪製第二個以達到最佳品質。</translation>
+    </message>
+    <message>
+        <source>Type a word for the object first (step 1).</source>
+        <translation>請先輸入物件的名稱（第 1 步）。</translation>
+    </message>
+    <message>
+        <source>Unavailable while Right angles is on. Turn it off to adjust this setting.</source>
+        <translation>開啟「直角化」時無法使用，請關閉後再調整此設定。</translation>
+    </message>
+    <message>
+        <source>Undo</source>
+        <translation>復原</translation>
+    </message>
+    <message>
+        <source>Undo last</source>
+        <translation>復原上一步</translation>
+    </message>
+    <message>
+        <source>Undo the last correction</source>
+        <translation>復原上一次修正</translation>
+    </message>
+    <message>
+        <source>Undo the last thing you did here: the point you just placed, or the last edit.</source>
+        <translation>復原您剛才在此處的操作：剛放置的點，或上一次編輯。</translation>
+    </message>
+    <message>
+        <source>Unsupported Mac and Python Combination</source>
+        <translation>不支援的 Mac 與 Python 組合</translation>
+    </message>
+    <message>
+        <source>Up to</source>
+        <translation>最多</translation>
+    </message>
+    <message>
+        <source>Writing the file...</source>
+        <translation>正在寫入檔案...</translation>
+    </message>
+    <message>
+        <source>You place the corners, the same as on any QGIS layer.</source>
+        <translation>由您自行放置角點，與在任何 QGIS 圖層中操作相同。</translation>
+    </message>
+    <message>
+        <source>Your examples drive the search - naming the object makes it even more accurate.</source>
+        <translation>您的範例將引導搜尋，為物件命名可讓結果更精確。</translation>
+    </message>
+    <message>
+        <source>Your free detections come back on {date}.</source>
+        <translation>您的免費偵測次數將於 {date} 恢復。</translation>
+    </message>
+    <message>
+        <source>Your network proxy requires a username and password. Enter them in QGIS &gt; Settings &gt; Options &gt; Network, then restart QGIS and try again.</source>
+        <translation>您的網路代理伺服器需要使用者名稱與密碼。請在 QGIS &gt; 偏好設定 &gt; 選項 &gt; 網路 中輸入，然後重新啟動 QGIS 並再試一次。</translation>
+    </message>
+    <message>
+        <source>a month ago</source>
+        <translation>一個月前</translation>
+    </message>
+    <message>
+        <source>a week ago</source>
+        <translation>一週前</translation>
+    </message>
+    <message>
+        <source>a year ago</source>
+        <translation>一年前</translation>
+    </message>
+    <message>
+        <source>applies to every polygon</source>
+        <translation>套用至所有多邊形</translation>
+    </message>
+    <message>
+        <source>fine-tune the edges</source>
+        <translation>微調邊緣</translation>
+    </message>
+    <message>
+        <source>hide anything outside this range</source>
+        <translation>隱藏此範圍外的所有內容</translation>
+    </message>
+    <message>
+        <source>how each outline is styled</source>
+        <translation>每條輪廓的樣式</translation>
+    </message>
+    <message>
+        <source>how the outline is styled</source>
+        <translation>輪廓的樣式</translation>
+    </message>
+    <message>
+        <source>{count} polygons added so far.</source>
+        <translation>目前已新增 {count} 個多邊形。</translation>
+    </message>
+    <message>
+        <source>{count} vertices</source>
+        <translation>{count} 個頂點</translation>
+    </message>
+    <message>
+        <source>{credits} credits</source>
+        <translation>{credits} 點數</translation>
+    </message>
+    <message>
+        <source>{hidden} hidden by the filters</source>
+        <translation>{hidden} 個因篩選條件而隱藏</translation>
+    </message>
+    <message>
+        <source>{n} &quot;{object}&quot; found so far</source>
+        <translation>目前已找到 {n} 個「{object}」</translation>
+    </message>
+    <message>
+        <source>{n} corrections this round</source>
+        <translation>本輪已修正 {n} 次</translation>
+    </message>
+    <message>
+        <source>{n} kept</source>
+        <translation>已保留 {n} 個</translation>
+    </message>
+    <message>
+        <source>{n} months ago</source>
+        <translation>{n} 個月前</translation>
+    </message>
+    <message>
+        <source>{n} objects</source>
+        <translation>{n} 個物件</translation>
+    </message>
+    <message>
+        <source>{n} point placed.</source>
+        <translation>已放置 {n} 個點。</translation>
+    </message>
+    <message>
+        <source>{n} points placed.</source>
+        <translation>已放置 {n} 個點。</translation>
+    </message>
+    <message>
+        <source>{n} results</source>
+        <translation>{n} 筆結果</translation>
+    </message>
+    <message>
+        <source>{n} shape(s) edited this session</source>
+        <translation>本次工作階段已編輯 {n} 個形狀</translation>
+    </message>
+    <message>
+        <source>{n} shapes merged into one · Free</source>
+        <translation>{n} 個形狀已合併為一個·免費</translation>
+    </message>
+    <message>
+        <source>{n} shapes picked. Press Enter to join.</source>
+        <translation>已選取 {n} 個形狀，按 Enter 鍵即可合併。</translation>
+    </message>
+    <message>
+        <source>{n} tile(s) took too long to load and are missing from this result.</source>
+        <translation>{n} 個圖磚載入時間過長，未包含在此結果中。</translation>
+    </message>
+    <message>
+        <source>{n} weeks ago</source>
+        <translation>{n} 週前</translation>
+    </message>
+    <message>
+        <source>{n} years ago</source>
+        <translation>{n} 年前</translation>
+    </message>
+    <message>
+        <source>{tiles} tiles</source>
+        <translation>{tiles} 個圖磚</translation>
     </message>
 </context>
 </TS>

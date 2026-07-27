@@ -12,20 +12,12 @@
         <translation>Betrouwbaarheid</translation>
     </message>
     <message>
-        <source>Random</source>
-        <translation>Willekeurig</translation>
-    </message>
-    <message>
         <source>Outline</source>
         <translation>Omtrek</translation>
     </message>
     <message>
         <source>Retry</source>
         <translation>Opnieuw proberen</translation>
-    </message>
-    <message>
-        <source>Go back to your zone, references and settings to adjust and detect again. Nothing is saved.</source>
-        <translation>Ga terug naar je zone, referenties en instellingen om ze aan te passen en opnieuw te detecteren. Er wordt niets opgeslagen.</translation>
     </message>
     <message>
         <source>Click to enlarge</source>
@@ -42,14 +34,6 @@
     <message>
         <source>Exclude a look-alike</source>
         <translation>Gelijkende uitsluiten</translation>
-    </message>
-    <message>
-        <source>Now outline a look-alike to exclude, then click the first point to close.</source>
-        <translation>Omlijn nu een gelijkend object om uit te sluiten en klik daarna op het eerste punt om af te sluiten.</translation>
-    </message>
-    <message>
-        <source>Your examples drive the search.</source>
-        <translation>Je voorbeelden bepalen de zoekopdracht.</translation>
     </message>
     <message>
         <source>Too generic to name. Clear the box to search from your example alone, or type a concrete object.</source>
@@ -72,20 +56,8 @@
         <translation>Een fijnere detailinstelling vindt kleinere objecten.</translation>
     </message>
     <message>
-        <source>Refine in Manual mode</source>
-        <translation>Verfijnen in Handmatige modus</translation>
-    </message>
-    <message>
         <source>Finish or exit the review to switch modes.</source>
         <translation>Voltooi of verlaat de beoordeling om van modus te wisselen.</translation>
-    </message>
-    <message>
-        <source>Preparing Manual mode, loading the local model...</source>
-        <translation>Handmatige modus wordt voorbereid, lokaal model wordt geladen...</translation>
-    </message>
-    <message>
-        <source>Locked - refined in Manual mode</source>
-        <translation>Vergrendeld - verfijnd in Handmatige modus</translation>
     </message>
     <message>
         <source>Detection</source>
@@ -326,24 +298,12 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
         <translation>Segmentatie</translation>
     </message>
     <message>
-        <source>Navigation</source>
-        <translation>Navigatie</translation>
-    </message>
-    <message>
         <source>Space</source>
         <translation>Spatie</translation>
     </message>
     <message>
         <source>Hold and move to pan the map</source>
         <translation>Ingedrukt houden en bewegen om de kaart te verschuiven</translation>
-    </message>
-    <message>
-        <source>Middle mouse button</source>
-        <translation>Middelste muisknop</translation>
-    </message>
-    <message>
-        <source>Click and drag to pan the map</source>
-        <translation>Klikken en slepen om de kaart te verschuiven</translation>
     </message>
     <message>
         <source>The AI model works best on one element at a time.</source>
@@ -366,26 +326,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
         <translation>Selectie verfijnen</translation>
     </message>
     <message>
-        <source>Expand/Contract:</source>
-        <translation>Uitbreiden/Verkleinen:</translation>
-    </message>
-    <message>
-        <source>Positive = expand outward, Negative = shrink inward</source>
-        <translation>Positief = naar buiten uitbreiden, Negatief = naar binnen verkleinen</translation>
-    </message>
-    <message>
-        <source>Simplify outline:</source>
-        <translation>Contour vereenvoudigen:</translation>
-    </message>
-    <message>
-        <source>Reduce small variations in the outline (0 = no change)</source>
-        <translation>Kleine variaties in de contour verminderen (0 = geen wijziging)</translation>
-    </message>
-    <message>
-        <source>Fill holes:</source>
-        <translation>Gaten opvullen:</translation>
-    </message>
-    <message>
         <source>Fill interior holes in the selection</source>
         <translation>Interne gaten in de selectie opvullen</translation>
     </message>
@@ -398,20 +338,8 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
         <translation>Grootte</translation>
     </message>
     <message>
-        <source>Round corners:</source>
-        <translation>Hoeken afronden:</translation>
-    </message>
-    <message>
-        <source>Round corners for natural shapes like trees and bushes. Increase 'Simplify outline' for smoother results.</source>
-        <translation>Rond hoeken af voor natuurlijke vormen zoals bomen en struiken. Verhoog 'Contour vereenvoudigen' voor een vloeiender resultaat.</translation>
-    </message>
-    <message>
         <source>Outline</source>
         <translation>Contour</translation>
-    </message>
-    <message>
-        <source>Selection</source>
-        <translation>Selectie</translation>
     </message>
     <message>
         <source>Click on the element you want to segment:</source>
@@ -934,14 +862,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Beschikbaar zodra de detectie is voltooid</translation>
     </message>
     <message>
-        <source>Min size:</source>
-        <translation>Min. grootte:</translation>
-    </message>
-    <message>
-        <source>Max size:</source>
-        <translation>Max. grootte:</translation>
-    </message>
-    <message>
         <source>Off</source>
         <translation>Uit</translation>
     </message>
@@ -1098,10 +1018,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Gebruik deze prompt</translation>
     </message>
     <message>
-        <source>No matching objects.</source>
-        <translation>Geen overeenkomende objecten.</translation>
-    </message>
-    <message>
         <source>Use</source>
         <translation>Gebruiken</translation>
     </message>
@@ -1116,14 +1032,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>Draw your example inside the selected zone.</source>
         <translation>Teken uw voorbeeld binnen de geselecteerde zone.</translation>
-    </message>
-    <message>
-        <source>Clean edges:</source>
-        <translation>Randen opschonen:</translation>
-    </message>
-    <message>
-        <source>Remove thin ragged fringe attached to the outline (0 = no change)</source>
-        <translation>Verwijder dunne, rafelige randjes langs de omtrek (0 = geen wijziging)</translation>
     </message>
     <message>
         <source>Share anonymous usage statistics</source>
@@ -1234,10 +1142,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>annuleren</translation>
     </message>
     <message>
-        <source>Now outline one object, then click the first point to close.</source>
-        <translation>Omlijn nu één object en klik vervolgens op het eerste punt om te sluiten.</translation>
-    </message>
-    <message>
         <source>Exit</source>
         <translation>Afsluiten</translation>
     </message>
@@ -1262,10 +1166,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Tegels tonen (debug)</translation>
     </message>
     <message>
-        <source>Open these detections in Manual mode to fix specific objects point-by-point, then come back and export.</source>
-        <translation>Open deze detecties in de Handmatige modus om specifieke objecten punt voor punt te corrigeren, en keer daarna terug om te exporteren.</translation>
-    </message>
-    <message>
         <source>"{word}" will run as "{token}".</source>
         <translation>"{word}" wordt uitgevoerd als "{token}".</translation>
     </message>
@@ -1284,10 +1184,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>object</source>
         <translation>object</translation>
-    </message>
-    <message>
-        <source>{tiles} tiles · {objects} objects · {credits} credits</source>
-        <translation>{tiles} tegels · {objects} objecten · {credits} credits</translation>
     </message>
     <message>
         <source>Older detection</source>
@@ -1374,10 +1270,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Exporteren...</translation>
     </message>
     <message>
-        <source>Drop this object back into the prompt box for a new detection.</source>
-        <translation>Zet dit object terug in het promptvak voor een nieuwe detectie.</translation>
-    </message>
-    <message>
         <source>Remove from favorites</source>
         <translation>Verwijderen uit favorieten</translation>
     </message>
@@ -1422,10 +1314,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Hier is nog niets. Je automatische detecties komen hier terecht, klaar om opnieuw te gebruiken, te herstellen of te exporteren.</translation>
     </message>
     <message>
-        <source>Star a detection to keep it here.</source>
-        <translation>Markeer een detectie met een ster om deze hier te bewaren.</translation>
-    </message>
-    <message>
         <source>Could not load this run's stored detections. Try again later.</source>
         <translation>De opgeslagen detecties van deze run konden niet worden geladen. Probeer het later opnieuw.</translation>
     </message>
@@ -1458,22 +1346,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Automatisch</translation>
     </message>
     <message>
-        <source>Automatic - detect and review</source>
-        <translation>Automatisch - detecteren en controleren</translation>
-    </message>
-    <message>
-        <source>Automatic - draw your zone</source>
-        <translation>Automatisch - teken je zone</translation>
-    </message>
-    <message>
-        <source>Cancel the drawing</source>
-        <translation>Tekenen annuleren</translation>
-    </message>
-    <message>
-        <source>Cancel the running detection, or exit the review</source>
-        <translation>Lopende detectie annuleren, of controle afsluiten</translation>
-    </message>
-    <message>
         <source>Click</source>
         <translation>Klik</translation>
     </message>
@@ -1488,10 +1360,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>Delete the active object</source>
         <translation>Het actieve object verwijderen</translation>
-    </message>
-    <message>
-        <source>Detect objects, or export the reviewed polygons</source>
-        <translation>Objecten detecteren, of de gecontroleerde polygonen exporteren</translation>
     </message>
     <message>
         <source>Detection continues in the background. Reopen AI Segmentation to follow it.</source>
@@ -1538,14 +1406,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Handmatig</translation>
     </message>
     <message>
-        <source>Manual mode needs a one-time setup</source>
-        <translation>Handmatige modus heeft een eenmalige installatie nodig</translation>
-    </message>
-    <message>
-        <source>Manual session</source>
-        <translation>Handmatige sessie</translation>
-    </message>
-    <message>
         <source>Max detail for this zone - draw a larger zone for finer detail.</source>
         <translation>Maximaal detailniveau voor deze zone - teken een grotere zone voor meer detail.</translation>
     </message>
@@ -1556,10 +1416,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>One color per object - check neighbors are separated</source>
         <translation>Één kleur per object - controleer of buren gescheiden zijn</translation>
-    </message>
-    <message>
-        <source>Optional shape and size controls: simplify outlines, clean edges, round corners, expand or shrink, fill holes, size filters.</source>
-        <translation>Optionele vorm- en grootte-instellingen: contouren vereenvoudigen, randen opschonen, hoeken afronden, vergroten of verkleinen, gaten vullen, groottefilters.</translation>
     </message>
     <message>
         <source>Out of credits after {done}/{total} tiles. Your detections are kept below.</source>
@@ -1666,10 +1522,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>≈ 1 tegel = 1 credit</translation>
     </message>
     <message>
-        <source>Adjust and run again</source>
-        <translation>Aanpassen en opnieuw uitvoeren</translation>
-    </message>
-    <message>
         <source>all shown</source>
         <translation>alles getoond</translation>
     </message>
@@ -1678,32 +1530,12 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>{visible} van {n} getoond</translation>
     </message>
     <message>
-        <source>{hidden} below {pct}%</source>
-        <translation>{hidden} onder {pct}%</translation>
-    </message>
-    <message>
-        <source>Adjust and run again</source>
-        <translation>Aanpassen en opnieuw uitvoeren</translation>
-    </message>
-    <message>
         <source>all shown</source>
         <translation>alles getoond</translation>
     </message>
     <message>
-        <source>{hidden} below {pct}%</source>
-        <translation>{hidden} onder {pct}%</translation>
-    </message>
-    <message>
         <source>{visible} of {n} shown</source>
         <translation>{visible} van {n} getoond</translation>
-    </message>
-    <message>
-        <source>Right angles:</source>
-        <translation>Rechte hoeken:</translation>
-    </message>
-    <message>
-        <source>Snap edges to 90 degrees for man-made shapes like buildings, pools and solar panels.</source>
-        <translation>Lijn randen uit op 90 graden voor door mensen gemaakte vormen zoals gebouwen, zwembaden en zonnepanelen.</translation>
     </message>
     <message>
         <source>Click an object on the map and the AI outlines it. You go one object at a time, checking and saving each polygon yourself.</source>
@@ -1750,10 +1582,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Vindt elk object van één soort in je zone - teken een zone, benoem het object en krijg direct alle polygonen.</translation>
     </message>
     <message>
-        <source>Tip: lower Confidence to reveal more detections, raise it to keep only the best.</source>
-        <translation>Tip: verlaag Betrouwbaarheid om meer detecties te tonen, verhoog het om alleen de beste te bewaren.</translation>
-    </message>
-    <message>
         <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
         <translation>Teken een kleinere zone, of &lt;a href=&quot;{url}&quot;&gt;abonneer je&lt;/a&gt; om gebieden van elke omvang te segmenteren.</translation>
     </message>
@@ -1786,24 +1614,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Rond de huidige detectie af of annuleer deze voordat je een eerdere opnieuw uitvoert.</translation>
     </message>
     <message>
-        <source>Couldn&apos;t open your browser. Check your connection and click Sign in / Sign up to start again.</source>
-        <translation>Kon je browser niet openen. Controleer je verbinding en klik op Inloggen / Registreren om opnieuw te beginnen.</translation>
-    </message>
-    <message>
         <source>0 shown - lower the Min size filter to reveal them</source>
         <translation>0 getoond - verlaag het filter Min. grootte om ze te tonen</translation>
-    </message>
-    <message>
-        <source>1 detection selected</source>
-        <translation>1 detectie geselecteerd</translation>
-    </message>
-    <message>
-        <source>1 removed</source>
-        <translation>1 verwijderd</translation>
-    </message>
-    <message>
-        <source>1 shape edited</source>
-        <translation>1 vorm bewerkt</translation>
     </message>
     <message>
         <source>10,000 credits every month. Cancel anytime.</source>
@@ -1826,10 +1638,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Accepteer eerst de Algemene Voorwaarden en het Privacybeleid.</translation>
     </message>
     <message>
-        <source>Add an example</source>
-        <translation>Voeg een voorbeeld toe</translation>
-    </message>
-    <message>
         <source>An install or detection is still running. Wait for it to finish, then try again.</source>
         <translation>Er is nog een installatie of detectie bezig. Wacht tot deze klaar is en probeer het dan opnieuw.</translation>
     </message>
@@ -1842,10 +1650,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Bij dit detailniveau is {obj} te klein om te herkennen - verhoog het detail.</translation>
     </message>
     <message>
-        <source>Automatic detection needs a georeferenced raster. Use Manual mode for this image.</source>
-        <translation>Automatische detectie heeft een gegeorefereerd raster nodig. Gebruik de Handmatige modus voor deze afbeelding.</translation>
-    </message>
-    <message>
         <source>Available once the current install or detection finishes.</source>
         <translation>Beschikbaar zodra de huidige installatie of detectie is voltooid.</translation>
     </message>
@@ -1856,14 +1660,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>Browse the library (view only while detecting).</source>
         <translation>Blader door de bibliotheek (alleen bekijken tijdens het detecteren).</translation>
-    </message>
-    <message>
-        <source>Click a detection on the map</source>
-        <translation>Klik op een detectie op de kaart</translation>
-    </message>
-    <message>
-        <source>Click an empty spot to deselect.</source>
-        <translation>Klik op een lege plek om de selectie op te heffen.</translation>
     </message>
     <message>
         <source>Could not reach the service. Check your connection and try again.</source>
@@ -1892,56 +1688,20 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Detectie mislukt. Probeer het opnieuw.</translation>
     </message>
     <message>
-        <source>Done, back to Automatic review</source>
-        <translation>Klaar, terug naar de Automatische beoordeling</translation>
-    </message>
-    <message>
         <source>Downloaded AI data removed. You have been signed out.</source>
         <translation>Gedownloade AI-gegevens verwijderd. Je bent afgemeld.</translation>
-    </message>
-    <message>
-        <source>Draw an example of one {object}</source>
-        <translation>Teken een voorbeeld van één {object}</translation>
-    </message>
-    <message>
-        <source>Draw an example of one {object} to find more</source>
-        <translation>Teken een voorbeeld van één {object} om er meer te vinden</translation>
     </message>
     <message>
         <source>Draw on the map</source>
         <translation>Teken op de kaart</translation>
     </message>
     <message>
-        <source>Edit shape</source>
-        <translation>Vorm bewerken</translation>
-    </message>
-    <message>
-        <source>Edit your detections</source>
-        <translation>Bewerk je detecties</translation>
-    </message>
-    <message>
-        <source>Editing this shape</source>
-        <translation>Deze vorm wordt bewerkt</translation>
-    </message>
-    <message>
         <source>Extra detail keeps helping {obj} in this zone.</source>
         <translation>Extra detail blijft helpen voor {obj} in deze zone.</translation>
     </message>
     <message>
-        <source>Filter and refine, then export.</source>
-        <translation>Filter en verfijn, exporteer daarna.</translation>
-    </message>
-    <message>
         <source>Free plan</source>
         <translation>Gratis abonnement</translation>
-    </message>
-    <message>
-        <source>Go back to the Automatic review to switch modes.</source>
-        <translation>Ga terug naar de Automatische beoordeling om van modus te wisselen.</translation>
-    </message>
-    <message>
-        <source>Grouped as continuous cover.</source>
-        <translation>Gegroepeerd als aaneengesloten bedekking.</translation>
     </message>
     <message>
         <source>Hide parts larger than this ground area. 0 = no limit.</source>
@@ -1950,22 +1710,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Hide parts smaller than this ground area. Use it to drop tiny noise blobs. 0 = keep all.</source>
         <translation>Verberg delen kleiner dan dit grondoppervlak. Gebruik dit om kleine ruisvlekken te verwijderen. 0 = alles behouden.</translation>
-    </message>
-    <message>
-        <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a random colour per object to tell them apart.</source>
-        <translation>Hoe detecties op de kaart worden gekleurd (alleen visueel): Normale vulling, Omtrek, Betrouwbaarheid-heatmap, of een willekeurige kleur per object om ze uit elkaar te houden.</translation>
-    </message>
-    <message>
-        <source>Invalid CRS</source>
-        <translation>Ongeldig CRS</translation>
-    </message>
-    <message>
-        <source>Kept as distinct objects.</source>
-        <translation>Behouden als afzonderlijke objecten.</translation>
-    </message>
-    <message>
-        <source>Left-click adds what you click to the shape</source>
-        <translation>Linksklik voegt wat je aanklikt toe aan de vorm</translation>
     </message>
     <message>
         <source>Load example imagery</source>
@@ -2008,10 +1752,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Nieuw hier? Onze tutorial van 5 minuten leidt je stap voor stap door een volledige detectie.</translation>
     </message>
     <message>
-        <source>No detection in this zone. Try a more specific object word, or draw an example of one (best for unusual objects).</source>
-        <translation>Geen detectie in deze zone. Probeer een specifieker woord voor het object, of teken een voorbeeld van één (het beste voor ongewone objecten).</translation>
-    </message>
-    <message>
         <source>Not Enough Disk Space</source>
         <translation>Onvoldoende schijfruimte</translation>
     </message>
@@ -2040,20 +1780,12 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Opent terra-lab.ai in je browser.</translation>
     </message>
     <message>
-        <source>Opens the shape so clicks can extend or trim it. Key: E, or double-click it on the map</source>
-        <translation>Opent de vorm zodat klikken deze kunnen uitbreiden of inkorten. Toets: E, of dubbelklik erop op de kaart</translation>
-    </message>
-    <message>
         <source>Opens your terra-lab.ai account in the browser.</source>
         <translation>Opent je terra-lab.ai-account in de browser.</translation>
     </message>
     <message>
         <source>Opens your terra-lab.ai dashboard in the browser.</source>
         <translation>Opent je terra-lab.ai-dashboard in de browser.</translation>
-    </message>
-    <message>
-        <source>Optional</source>
-        <translation>Optioneel</translation>
     </message>
     <message>
         <source>Outline ONE example of the object on the map, then run again. Runs with a drawn example return far fewer empty results.</source>
@@ -2064,24 +1796,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>AI Segmentation-run wordt gepland</translation>
     </message>
     <message>
-        <source>Preparing Manual mode...</source>
-        <translation>Handmatige modus wordt voorbereid...</translation>
-    </message>
-    <message>
         <source>Pro plan</source>
         <translation>Pro-abonnement</translation>
-    </message>
-    <message>
-        <source>Refine</source>
-        <translation>Verfijnen</translation>
-    </message>
-    <message>
-        <source>Refining uses the free local AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and refining will open automatically when it is ready.</source>
-        <translation>Verfijnen gebruikt de gratis lokale AI, die nog niet is geïnstalleerd. Nu installeren (enkele minuten, op de achtergrond)? Je kunt blijven beoordelen; het verfijnen opent automatisch zodra het klaar is.</translation>
-    </message>
-    <message>
-        <source>Regrouping detections...</source>
-        <translation>Detecties worden hergroepeerd...</translation>
     </message>
     <message>
         <source>Remove downloaded AI data</source>
@@ -2092,40 +1808,16 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>De gedownloade AI-gegevens van deze computer verwijderen?</translation>
     </message>
     <message>
-        <source>Removes it from the results. Key: Delete (Ctrl+Z restores it)</source>
-        <translation>Verwijdert het uit de resultaten. Toets: Delete (Ctrl+Z zet het terug)</translation>
-    </message>
-    <message>
         <source>Removing...</source>
         <translation>Verwijderen...</translation>
-    </message>
-    <message>
-        <source>Returns to the Automatic review with your edits. The export happens there.</source>
-        <translation>Keert terug naar de Automatische beoordeling met je bewerkingen. Het exporteren gebeurt daar.</translation>
-    </message>
-    <message>
-        <source>Review detections</source>
-        <translation>Detecties beoordelen</translation>
     </message>
     <message>
         <source>Right level for {obj} in this zone.</source>
         <translation>Het juiste niveau voor {obj} in deze zone.</translation>
     </message>
     <message>
-        <source>Right-click removes it from the shape</source>
-        <translation>Rechtsklik verwijdert het uit de vorm</translation>
-    </message>
-    <message>
         <source>Rotated raster</source>
         <translation>Geroteerd raster</translation>
-    </message>
-    <message>
-        <source>Runs with a drawn example return far fewer empty results. This re-runs the zone with the example draw armed (new credits).</source>
-        <translation>Runs met een getekend voorbeeld geven veel minder lege resultaten. Dit voert de zone opnieuw uit met het tekenen van een voorbeeld actief (nieuwe credits).</translation>
-    </message>
-    <message>
-        <source>Save shape</source>
-        <translation>Vorm opslaan</translation>
     </message>
     <message>
         <source>Save {save} detections ({hidden} currently hidden by Confidence) to a layer before leaving?</source>
@@ -2136,32 +1828,12 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>{save} detecties opslaan in een laag voordat je weggaat?</translation>
     </message>
     <message>
-        <source>Saves this shape and closes the edit. Key: S</source>
-        <translation>Slaat deze vorm op en sluit de bewerking. Toets: S</translation>
-    </message>
-    <message>
         <source>Segment library (view only)</source>
         <translation>Segmentbibliotheek (alleen bekijken)</translation>
     </message>
     <message>
         <source>Segmentation failed. Please try again.</source>
         <translation>Segmentatie mislukt. Probeer het opnieuw.</translation>
-    </message>
-    <message>
-        <source>Setting up Manual mode in the background. You can keep reviewing; refining opens automatically when it is ready.</source>
-        <translation>Handmatige modus wordt op de achtergrond ingesteld. Je kunt blijven beoordelen; het verfijnen opent automatisch zodra het klaar is.</translation>
-    </message>
-    <message>
-        <source>Setting up Manual mode in the background...</source>
-        <translation>Handmatige modus wordt op de achtergrond ingesteld...</translation>
-    </message>
-    <message>
-        <source>Shape and size settings</source>
-        <translation>Vorm- en grootte-instellingen</translation>
-    </message>
-    <message>
-        <source>Shape settings</source>
-        <translation>Vorminstellingen</translation>
     </message>
     <message>
         <source>Sharper than {obj} usually needs - catches the smallest ones.</source>
@@ -2200,16 +1872,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Team of organisatie?</translation>
     </message>
     <message>
-        <source>The AI finds every object similar to your example.</source>
-        <translation>De AI vindt elk object dat op je voorbeeld lijkt.</translation>
-    </message>
-    <message>
         <source>The AI service is waking up. Holding your spot…</source>
         <translation>De AI-service wordt wakker. Je plek wordt vastgehouden…</translation>
-    </message>
-    <message>
-        <source>The detection service had a problem. Your credits for the failed tiles were refunded. Please try again.</source>
-        <translation>De detectieservice had een probleem. Je credits voor de mislukte tegels zijn terugbetaald. Probeer het opnieuw.</translation>
     </message>
     <message>
         <source>The detection service is busy right now. Please try again in a moment.</source>
@@ -2232,24 +1896,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Dit verwijdert de lokale AI-modelbestanden, meldt je af en herstelt de plugin. Je account en credits worden niet beïnvloed. De Handmatige modus downloadt de bestanden opnieuw wanneer je deze de volgende keer gebruikt.</translation>
     </message>
     <message>
-        <source>This detail level is a Pro feature. Lower the detail, or</source>
-        <translation>Dit detailniveau is een Pro-functie. Verlaag het detail, of</translation>
-    </message>
-    <message>
         <source>This layer has no valid coordinate reference system. Set one in Layer Properties before detecting.</source>
         <translation>Deze laag heeft geen geldig coördinatenreferentiesysteem. Stel er een in bij Laageigenschappen voordat je detecteert.</translation>
-    </message>
-    <message>
-        <source>This layer has no valid coordinate reference system. Set one in Layer Properties before segmenting.</source>
-        <translation>Deze laag heeft geen geldig coördinatenreferentiesysteem. Stel er een in bij Laageigenschappen voordat je segmenteert.</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF before segmenting.</source>
-        <translation>Dit raster is geroteerd. Converteer het naar een as-uitgelijnde GeoTIFF voordat je segmenteert.</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Convert it to an axis-aligned GeoTIFF, or use Manual mode.</source>
-        <translation>Dit raster is geroteerd. Converteer het naar een as-uitgelijnde GeoTIFF, of gebruik de Handmatige modus.</translation>
     </message>
     <message>
         <source>This raster uses a geographic CRS (degrees), which distorts the imagery sent to the AI. For best results, reproject it to a projected CRS (e.g. UTM).</source>
@@ -2262,22 +1910,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Try "{word}" instead</source>
         <translation>Probeer "{word}" in plaats daarvan</translation>
-    </message>
-    <message>
-        <source>Try '{term}' - it's a better prompt.</source>
-        <translation>Probeer '{term}' - dat is een betere prompt.</translation>
-    </message>
-    <message>
-        <source>Try an object from the Library - it's a better prompt.</source>
-        <translation>Probeer een object uit de Bibliotheek - dat is een betere prompt.</translation>
-    </message>
-    <message>
-        <source>Undo click</source>
-        <translation>Klik ongedaan maken</translation>
-    </message>
-    <message>
-        <source>Undoes the last change to this shape. Key: Ctrl+Z</source>
-        <translation>Maakt de laatste wijziging aan deze vorm ongedaan. Toets: Ctrl+Z</translation>
     </message>
     <message>
         <source>Update now</source>
@@ -2294,14 +1926,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Very fine for {obj} - large ones may come back split in parts.</source>
         <translation>Zeer fijn voor {obj} - grote exemplaren kunnen in delen gesplitst terugkomen.</translation>
-    </message>
-    <message>
-        <source>View as continuous cover</source>
-        <translation>Weergeven als aaneengesloten bedekking</translation>
-    </message>
-    <message>
-        <source>View as distinct objects</source>
-        <translation>Weergeven als afzonderlijke objecten</translation>
     </message>
     <message>
         <source>View detections as:</source>
@@ -2328,10 +1952,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>polygonen</translation>
     </message>
     <message>
-        <source>some files could not be deleted</source>
-        <translation>sommige bestanden konden niet worden verwijderd</translation>
-    </message>
-    <message>
         <source>uncertain</source>
         <translation>onzeker</translation>
     </message>
@@ -2344,20 +1964,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>je object</translation>
     </message>
     <message>
-        <source>{n} detections selected</source>
-        <translation>{n} detecties geselecteerd</translation>
-    </message>
-    <message>
         <source>{n} found so far</source>
         <translation>{n} gevonden tot nu toe</translation>
-    </message>
-    <message>
-        <source>{n} removed</source>
-        <translation>{n} verwijderd</translation>
-    </message>
-    <message>
-        <source>{n} shapes edited</source>
-        <translation>{n} vormen bewerkt</translation>
     </message>
     <message>
         <source>{n} tiles could not be loaded from the layer server; results may be incomplete.</source>
@@ -2457,42 +2065,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>1 object gevonden</translation>
     </message>
     <message>
-        <source>Add a second example - two references detect far better than one.</source>
-        <translation>Voeg een tweede voorbeeld toe - twee referenties detecteren veel beter dan één.</translation>
-    </message>
-    <message>
-        <source>Add a second example, or type what to find.</source>
-        <translation>Voeg een tweede voorbeeld toe, of typ wat er gevonden moet worden.</translation>
-    </message>
-    <message>
-        <source>Add polygon to the layer</source>
-        <translation>Polygoon aan de laag toevoegen</translation>
-    </message>
-    <message>
-        <source>Add to</source>
-        <translation>Toevoegen aan</translation>
-    </message>
-    <message>
-        <source>Add {count} polygons to the layer</source>
-        <translation>{count} polygonen aan de laag toevoegen</translation>
-    </message>
-    <message>
-        <source>Added {count} polygon(s) to {name}.</source>
-        <translation>{count} polygoon(en) toegevoegd aan {name}.</translation>
-    </message>
-    <message>
-        <source>Adds your {n} kept polygons to the selected layer.</source>
-        <translation>Voegt je {n} bewaarde polygonen toe aan de geselecteerde laag.</translation>
-    </message>
-    <message>
-        <source>Could not add to that layer. Created a new layer instead.</source>
-        <translation>Kon niet aan die laag toevoegen. In plaats daarvan is een nieuwe laag gemaakt.</translation>
-    </message>
-    <message>
-        <source>Create a new layer, or add these polygons to an existing layer.</source>
-        <translation>Maak een nieuwe laag, of voeg deze polygonen toe aan een bestaande laag.</translation>
-    </message>
-    <message>
         <source>Download AI model</source>
         <translation>AI-model downloaden</translation>
     </message>
@@ -2501,16 +2073,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Export 1 polygoon</translation>
     </message>
     <message>
-        <source>New layer</source>
-        <translation>Nieuwe laag</translation>
-    </message>
-    <message>
         <source>Resolving object name</source>
         <translation>Objectnaam wordt bepaald</translation>
-    </message>
-    <message>
-        <source>That layer is no longer available. Created a new layer instead.</source>
-        <translation>Die laag is niet meer beschikbaar. In plaats daarvan is een nieuwe laag gemaakt.</translation>
     </message>
     <message>
         <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
@@ -2523,6 +2087,1136 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Your free detections are used up</source>
         <translation>Je gratis detecties zijn opgebruikt</translation>
+    </message>
+    <message>
+        <source>&quot;{obj}&quot; is not an object the AI knows well. Drawing one example on the map shows it what to find.</source>
+        <translation>&quot;{obj}&quot; is geen object dat de AI goed kent. Teken één voorbeeld op de kaart om te laten zien wat het moet vinden.</translation>
+    </message>
+    <message>
+        <source>&quot;{obj}&quot; is often missed from text alone. Draw one example on the map to find far more.</source>
+        <translation>&quot;{obj}&quot; wordt vaak gemist als je alleen tekst gebruikt. Teken één voorbeeld op de kaart om er veel meer te vinden.</translation>
+    </message>
+    <message>
+        <source>1 correction this round</source>
+        <translation>1 correctie deze ronde</translation>
+    </message>
+    <message>
+        <source>1 detection removed</source>
+        <translation>1 detectie verwijderd</translation>
+    </message>
+    <message>
+        <source>1 object</source>
+        <translation>1 object</translation>
+    </message>
+    <message>
+        <source>1 polygon added so far.</source>
+        <translation>Tot nu toe 1 polygoon toegevoegd.</translation>
+    </message>
+    <message>
+        <source>1 result</source>
+        <translation>1 resultaat</translation>
+    </message>
+    <message>
+        <source>A detection run was interrupted before its results were exported. {n} detection(s) were saved.</source>
+        <translation>Een detectie-run werd onderbroken voordat de resultaten werden geëxporteerd. {n} detectie(s) zijn opgeslagen.</translation>
+    </message>
+    <message>
+        <source>A free run covers up to {cap} credits. Lower the detail or draw a smaller zone, or</source>
+        <translation>Een gratis run dekt tot {cap} credits. Verlaag het detail of teken een kleinere zone, of</translation>
+    </message>
+    <message>
+        <source>A newer version of AI Segmentation is available with the latest fixes.</source>
+        <translation>Er is een nieuwere versie van AI Segmentation beschikbaar, met de nieuwste verbeteringen.</translation>
+    </message>
+    <message>
+        <source>A shape was removed. Click Save to confirm.</source>
+        <translation>Een vorm is verwijderd. Klik op Opslaan om te bevestigen.</translation>
+    </message>
+    <message>
+        <source>AI</source>
+        <translation>AI</translation>
+    </message>
+    <message>
+        <source>AI Environment Damaged</source>
+        <translation>AI-omgeving beschadigd</translation>
+    </message>
+    <message>
+        <source>AI and Manual are two ways to fix the same polygon.</source>
+        <translation>AI en Handmatig zijn twee manieren om dezelfde polygoon te corrigeren.</translation>
+    </message>
+    <message>
+        <source>Add a missing polygon</source>
+        <translation>Ontbrekende polygoon toevoegen</translation>
+    </message>
+    <message>
+        <source>Add an object the AI missed. In AI, point at it and the on-device model outlines it, free; in Manual, draw its corners.</source>
+        <translation>Voeg een object toe dat de AI heeft gemist. Bij AI wijs je het aan en omlijnt het lokale model het gratis; bij Handmatig teken je de hoekpunten.</translation>
+    </message>
+    <message>
+        <source>Add another example - more references detect more</source>
+        <translation>Voeg nog een voorbeeld toe - meer referenties detecteren meer</translation>
+    </message>
+    <message>
+        <source>Add one more example for the best results.</source>
+        <translation>Voeg nog één voorbeeld toe voor het beste resultaat.</translation>
+    </message>
+    <message>
+        <source>Add them to the project</source>
+        <translation>Voeg ze toe aan het project</translation>
+    </message>
+    <message>
+        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and Add will arm automatically when it is ready.</source>
+        <translation>Een object toevoegen gebruikt de gratis lokale AI, die nog niet is geïnstalleerd. Nu installeren (enkele minuten, op de achtergrond)? Je kunt blijven beoordelen; Toevoegen wordt automatisch actief zodra het klaar is.</translation>
+    </message>
+    <message>
+        <source>Adding needs a one-time setup</source>
+        <translation>Toevoegen heeft een eenmalige installatie nodig</translation>
+    </message>
+    <message>
+        <source>Almost done - building the shapes...</source>
+        <translation>Bijna klaar - de vormen worden opgebouwd...</translation>
+    </message>
+    <message>
+        <source>Almost there: in step 1, name the object your examples show - words plus examples detect best.</source>
+        <translation>Bijna klaar: benoem in stap 1 het object dat je voorbeelden tonen - woorden plus voorbeelden detecteren het best.</translation>
+    </message>
+    <message>
+        <source>Almost there: in step 2, outline one &quot;{word}&quot; on the map so the AI sees what yours look like.</source>
+        <translation>Bijna klaar: omlijn in stap 2 één &quot;{word}&quot; op de kaart, zodat de AI ziet hoe die van jou eruitzien.</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI components. Wait for it to finish, then try again.</source>
+        <translation>Een ander QGIS-venster installeert de AI-componenten. Wacht tot dit klaar is en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI engine. Wait for it to finish, then try again.</source>
+        <translation>Een ander QGIS-venster installeert de AI-engine. Wacht tot dit klaar is en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Automatic detection failed</source>
+        <translation>Automatische detectie mislukt</translation>
+    </message>
+    <message>
+        <source>Automatic: detect</source>
+        <translation>Automatisch: detecteren</translation>
+    </message>
+    <message>
+        <source>Automatic: draw the zone</source>
+        <translation>Automatisch: zone tekenen</translation>
+    </message>
+    <message>
+        <source>Automatic: merge with neighbours</source>
+        <translation>Automatisch: samenvoegen met buren</translation>
+    </message>
+    <message>
+        <source>Automatic: review and Correct</source>
+        <translation>Automatisch: beoordelen en corrigeren</translation>
+    </message>
+    <message>
+        <source>Best quality. Two references locked in.</source>
+        <translation>Beste kwaliteit. Twee referenties vastgelegd.</translation>
+    </message>
+    <message>
+        <source>Blocked by Antivirus or Security Software</source>
+        <translation>Geblokkeerd door antivirus- of beveiligingssoftware</translation>
+    </message>
+    <message>
+        <source>Calculating...</source>
+        <translation>Wordt berekend...</translation>
+    </message>
+    <message>
+        <source>Cancel the example box, the detection, or exit Automatic</source>
+        <translation>Annuleer het voorbeeldvak, de detectie, of verlaat Automatisch</translation>
+    </message>
+    <message>
+        <source>Cancel the merge</source>
+        <translation>Annuleer het samenvoegen</translation>
+    </message>
+    <message>
+        <source>Change recorded.</source>
+        <translation>Wijziging vastgelegd.</translation>
+    </message>
+    <message>
+        <source>Checking the object name</source>
+        <translation>De objectnaam wordt gecontroleerd</translation>
+    </message>
+    <message>
+        <source>Checking the object name...</source>
+        <translation>De objectnaam wordt gecontroleerd...</translation>
+    </message>
+    <message>
+        <source>Choose how to fix the polygon: AI points or QGIS vertices</source>
+        <translation>Kies hoe je de polygoon corrigeert: AI-punten of QGIS-hoekpunten</translation>
+    </message>
+    <message>
+        <source>Clean up the outlines</source>
+        <translation>Contouren opschonen</translation>
+    </message>
+    <message>
+        <source>Clear all</source>
+        <translation>Alles wissen</translation>
+    </message>
+    <message>
+        <source>Clear the points, then exit Automatic</source>
+        <translation>Wis de punten en verlaat Automatisch</translation>
+    </message>
+    <message>
+        <source>Clear the selection, or stop the segmentation</source>
+        <translation>Wis de selectie, of stop de segmentatie</translation>
+    </message>
+    <message>
+        <source>Click a polygon, then click the spot the AI missed.</source>
+        <translation>Klik op een polygoon en klik dan op de plek die de AI heeft gemist.</translation>
+    </message>
+    <message>
+        <source>Click a polygon, then drag any corner.</source>
+        <translation>Klik op een polygoon en sleep dan een hoekpunt.</translation>
+    </message>
+    <message>
+        <source>Click an object on the map and the AI outlines it.</source>
+        <translation>Klik op een object op de kaart en de AI omlijnt het.</translation>
+    </message>
+    <message>
+        <source>Click each corner of the object, then Finish.</source>
+        <translation>Klik op elk hoekpunt van het object, dan Voltooien.</translation>
+    </message>
+    <message>
+        <source>Click each corner on the map, then Finish the line.</source>
+        <translation>Klik op elk hoekpunt op de kaart, dan Lijn voltooien.</translation>
+    </message>
+    <message>
+        <source>Click each piece of the object you want to join.</source>
+        <translation>Klik op elk deel van het object dat je wilt samenvoegen.</translation>
+    </message>
+    <message>
+        <source>Click to open this step</source>
+        <translation>Klik om deze stap te openen</translation>
+    </message>
+    <message>
+        <source>Close the fix, clear the selection, or exit the review</source>
+        <translation>Sluit de correctie, wis de selectie, of verlaat de beoordeling</translation>
+    </message>
+    <message>
+        <source>Close the gaps inside this polygon, without filling the courtyards the rest of the layer is meant to keep.</source>
+        <translation>Sluit de gaten binnen deze polygoon, zonder de binnenplaatsen te vullen die de rest van de laag moet behouden.</translation>
+    </message>
+    <message>
+        <source>Close the line you are drawing. A right-click on the map does the same.</source>
+        <translation>Sluit de lijn die je tekent. Een rechterklik op de kaart doet hetzelfde.</translation>
+    </message>
+    <message>
+        <source>Closes the hairline gaps between neighbouring shapes, for land cover maps.</source>
+        <translation>Sluit de haarfijne kiertjes tussen aangrenzende vormen, voor landbedekkingskaarten.</translation>
+    </message>
+    <message>
+        <source>Confirm the merge</source>
+        <translation>Bevestig het samenvoegen</translation>
+    </message>
+    <message>
+        <source>Correct</source>
+        <translation>Corrigeren</translation>
+    </message>
+    <message>
+        <source>Correct the polygons</source>
+        <translation>Polygonen corrigeren</translation>
+    </message>
+    <message>
+        <source>Could not apply the new settings. Try a different value.</source>
+        <translation>Kon de nieuwe instellingen niet toepassen. Probeer een andere waarde.</translation>
+    </message>
+    <message>
+        <source>Could not check the AI components. See the log for details.</source>
+        <translation>Kon de AI-componenten niet controleren. Zie het logbestand voor meer details.</translation>
+    </message>
+    <message>
+        <source>Could not load the saved run. The file may have been moved or deleted.</source>
+        <translation>Kon de opgeslagen run niet laden. Het bestand is mogelijk verplaatst of verwijderd.</translation>
+    </message>
+    <message>
+        <source>Credits come back on {date}</source>
+        <translation>Credits komen terug op {date}</translation>
+    </message>
+    <message>
+        <source>Crop fetch was cancelled.</source>
+        <translation>Ophalen van de uitsnede geannuleerd.</translation>
+    </message>
+    <message>
+        <source>Cut thin spurs off this polygon (0 = off). Raise it on a single ragged outline instead of eroding the whole layer.</source>
+        <translation>Snijd dunne uitsteeksels van deze polygoon af (0 = uit). Verhoog dit bij één rafelige contour in plaats van de hele laag te eroderen.</translation>
+    </message>
+    <message>
+        <source>Delete this corner</source>
+        <translation>Dit hoekpunt verwijderen</translation>
+    </message>
+    <message>
+        <source>Delete this polygon</source>
+        <translation>Deze polygoon verwijderen</translation>
+    </message>
+    <message>
+        <source>Delete this polygon (the Delete key works too, and a right-click on the map deletes the shape under the cursor). Undo brings it back.</source>
+        <translation>Deze polygoon verwijderen (de Delete-toets werkt ook, en een rechterklik op de kaart verwijdert de vorm onder de cursor). Ongedaan maken zet hem terug.</translation>
+    </message>
+    <message>
+        <source>Deleting the downloaded data...</source>
+        <translation>De gedownloade gegevens worden verwijderd...</translation>
+    </message>
+    <message>
+        <source>Dense area {current}/{total}</source>
+        <translation>Dicht gebied {current}/{total}</translation>
+    </message>
+    <message>
+        <source>Dense forest? &quot;Forest&quot; takes it as one block; &quot;Tree&quot; picks individual trees.</source>
+        <translation>Dicht bos? &quot;Forest&quot; neemt het als één geheel; &quot;Tree&quot; kiest afzonderlijke bomen.</translation>
+    </message>
+    <message>
+        <source>Detect with example only</source>
+        <translation>Alleen detecteren met voorbeeld</translation>
+    </message>
+    <message>
+        <source>Detect with examples only</source>
+        <translation>Alleen detecteren met voorbeelden</translation>
+    </message>
+    <message>
+        <source>Detect with text only</source>
+        <translation>Alleen detecteren met tekst</translation>
+    </message>
+    <message>
+        <source>Detection stopped early after {done} tile(s). The objects already found are kept below.</source>
+        <translation>Detectie vroegtijdig gestopt na {done} tegel(s). De al gevonden objecten zijn hieronder bewaard.</translation>
+    </message>
+    <message>
+        <source>Discard reviewed results and run again? Confirm</source>
+        <translation>Beoordeelde resultaten verwijderen en opnieuw uitvoeren? Bevestigen</translation>
+    </message>
+    <message>
+        <source>Distinct</source>
+        <translation>Uniek</translation>
+    </message>
+    <message>
+        <source>Drag a box around one look-alike to exclude.</source>
+        <translation>Sleep een vak om één gelijkend object om het uit te sluiten.</translation>
+    </message>
+    <message>
+        <source>Drag a box around one object.</source>
+        <translation>Sleep een vak om één object.</translation>
+    </message>
+    <message>
+        <source>Drag a corner to move it. Click an edge to add one, right-click removes.</source>
+        <translation>Sleep een hoekpunt om het te verplaatsen. Klik op een rand om er een toe te voegen, rechterklik verwijdert het.</translation>
+    </message>
+    <message>
+        <source>Drag a corner to move it. Double-click an edge to add one.</source>
+        <translation>Sleep een hoekpunt om het te verplaatsen. Dubbelklik op een rand om er een toe te voegen.</translation>
+    </message>
+    <message>
+        <source>Drag, add or delete the object&apos;s corners by hand.</source>
+        <translation>Sleep, voeg toe of verwijder de hoekpunten van het object handmatig.</translation>
+    </message>
+    <message>
+        <source>Draw a line across the object to cut it into two.</source>
+        <translation>Teken een lijn over het object om het in tweeën te splitsen.</translation>
+    </message>
+    <message>
+        <source>Draw a line right across the shape, then Finish.</source>
+        <translation>Teken een lijn dwars over de vorm, dan Voltooien.</translation>
+    </message>
+    <message>
+        <source>Draw an example of the object first (step 2).</source>
+        <translation>Teken eerst een voorbeeld van het object (stap 2).</translation>
+    </message>
+    <message>
+        <source>Draw an example, or type what to find.</source>
+        <translation>Teken een voorbeeld, of typ wat je wilt vinden.</translation>
+    </message>
+    <message>
+        <source>Draw its corners</source>
+        <translation>Teken de hoekpunten</translation>
+    </message>
+    <message>
+        <source>Draw one &apos;{object}&apos; - the AI finds the rest</source>
+        <translation>Teken één &apos;{object}&apos; - de AI vindt de rest</translation>
+    </message>
+    <message>
+        <source>Draw one example - the AI finds the rest</source>
+        <translation>Teken één voorbeeld - de AI vindt de rest</translation>
+    </message>
+    <message>
+        <source>Draw the new edge: start outside the shape, cross it, end outside, then Finish.</source>
+        <translation>Teken de nieuwe rand: begin buiten de vorm, doorkruis hem, eindig buiten, dan Voltooien.</translation>
+    </message>
+    <message>
+        <source>Drawn examples</source>
+        <translation>Getekende voorbeelden</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial for thinning an outline.</source>
+        <translation>Verwijder punten die dichter bij een rechte rand liggen dan deze afstand (0 = uit). Een afstand, geen aantal: hoog ingesteld kan het gebogen muren afvlakken. Punten is meestal de betere regelaar om een contour dunner te maken.</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial; this stays for comparison.</source>
+        <translation>Verwijder punten die dichter bij een rechte rand liggen dan deze afstand (0 = uit). Een afstand, geen aantal: hoog ingesteld kan het gebogen muren afvlakken. Punten is meestal de betere regelaar; dit blijft staan ter vergelijking.</translation>
+    </message>
+    <message>
+        <source>Drop this polygon&apos;s points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
+        <translation>Verwijder de punten van deze polygoon die dichter bij een rechte rand liggen dan deze afstand (0 = uit). Een afstand, geen aantal; Punten is meestal de betere regelaar.</translation>
+    </message>
+    <message>
+        <source>Edit an existing polygon</source>
+        <translation>Een bestaande polygoon bewerken</translation>
+    </message>
+    <message>
+        <source>Export the polygons to a layer</source>
+        <translation>Polygonen exporteren naar een laag</translation>
+    </message>
+    <message>
+        <source>Fewer points</source>
+        <translation>Minder punten</translation>
+    </message>
+    <message>
+        <source>Fill holes</source>
+        <translation>Gaten opvullen</translation>
+    </message>
+    <message>
+        <source>Fill only holes smaller than this ground area. Bigger holes (a road median, a courtyard) stay open. No limit = fill every hole.</source>
+        <translation>Vul alleen gaten die kleiner zijn dan dit grondoppervlak. Grotere gaten (een middenberm, een binnenplaats) blijven open. Geen limiet = vul elk gat.</translation>
+    </message>
+    <message>
+        <source>Finish the line</source>
+        <translation>Lijn voltooien</translation>
+    </message>
+    <message>
+        <source>Fix method</source>
+        <translation>Correctiemethode</translation>
+    </message>
+    <message>
+        <source>Give neighbouring shapes one exact border instead of a hairline gap or overlap. For land cover, where the map is one surface.</source>
+        <translation>Geef aangrenzende vormen precies dezelfde grens in plaats van een haarfijn kiertje of overlap. Voor landbedekking, waar de kaart één oppervlak is.</translation>
+    </message>
+    <message>
+        <source>Give this one polygon its own shape settings, without moving the dials that drive the whole layer.</source>
+        <translation>Geef deze ene polygoon zijn eigen vorminstellingen, zonder de regelaars te verplaatsen die de hele laag sturen.</translation>
+    </message>
+    <message>
+        <source>Go back to picking polygons. Everything you kept stays, and so does the outline on screen.</source>
+        <translation>Ga terug naar het kiezen van polygonen. Alles wat je hebt bewaard, blijft staan, en de omtrek op het scherm ook.</translation>
+    </message>
+    <message>
+        <source>Go back to your zone, references and settings, then detect the whole zone again. Nothing is saved.</source>
+        <translation>Ga terug naar je zone, referenties en instellingen, en detecteer daarna de hele zone opnieuw. Er wordt niets opgeslagen.</translation>
+    </message>
+    <message>
+        <source>Grow / shrink</source>
+        <translation>Vergroten / verkleinen</translation>
+    </message>
+    <message>
+        <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a distinct colour per object to tell them apart.</source>
+        <translation>Hoe detecties op de kaart worden gekleurd (alleen visueel): Normale vulling, Omtrek, Betrouwbaarheid-heatmap, of een unieke kleur per object om ze uit elkaar te houden.</translation>
+    </message>
+    <message>
+        <source>How many of each outline&apos;s points to keep, as a share. 100% keeps the class default; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
+        <translation>Hoeveel van de punten van elke contour behouden blijven, als percentage. 100% houdt de klassestandaard aan; lager dunt verder uit, waarbij eerst het kleinste detail verdwijnt en de hoekpunten en het oppervlak behouden blijven. Met Rechte hoeken aan werkt dit eerst, dus als je dit verlaagt, geeft dat het haaks maken rechtere muren om vanuit te starten.</translation>
+    </message>
+    <message>
+        <source>How many of the outline&apos;s points to keep, as a share. 100% keeps the standard density; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
+        <translation>Hoeveel van de punten van de contour behouden blijven, als percentage. 100% houdt de standaarddichtheid aan; lager dunt verder uit, waarbij eerst het kleinste detail verdwijnt en de hoekpunten en het oppervlak behouden blijven. Met Rechte hoeken aan werkt dit eerst, dus als je dit verlaagt, geeft dat het haaks maken rechtere muren om vanuit te starten.</translation>
+    </message>
+    <message>
+        <source>How many of this polygon&apos;s points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
+        <translation>Hoeveel punten van deze polygoon behouden blijven. Het aantal in de titelbalk volgt dit. Dit werkt vóór Rechte hoeken, dus als je dit verlaagt, geeft dat het haaks maken rechte muren in plaats van een trapje.</translation>
+    </message>
+    <message>
+        <source>How sure the AI is about each object. Lower shows more, higher keeps only the sure ones.</source>
+        <translation>Hoe zeker de AI is over elk object. Lager toont er meer, hoger houdt alleen de zekere over.</translation>
+    </message>
+    <message>
+        <source>Identify new shape</source>
+        <translation>Nieuwe vorm identificeren</translation>
+    </message>
+    <message>
+        <source>Installation Already Running</source>
+        <translation>Installatie is al bezig</translation>
+    </message>
+    <message>
+        <source>Installation Path Problem</source>
+        <translation>Probleem met installatiepad</translation>
+    </message>
+    <message>
+        <source>Installation running in another window</source>
+        <translation>Installatie loopt al in een ander venster</translation>
+    </message>
+    <message>
+        <source>Keep</source>
+        <translation>Behouden</translation>
+    </message>
+    <message>
+        <source>Keep these edits and go back to picking polygons.</source>
+        <translation>Bewaar deze bewerkingen en ga terug naar het kiezen van polygonen.</translation>
+    </message>
+    <message>
+        <source>Keep this detection in Favorites</source>
+        <translation>Bewaar deze detectie in Favorieten</translation>
+    </message>
+    <message>
+        <source>Keep this object in Favorites</source>
+        <translation>Bewaar dit object in Favorieten</translation>
+    </message>
+    <message>
+        <source>Keep this one</source>
+        <translation>Deze behouden</translation>
+    </message>
+    <message>
+        <source>Keep this one, or click again to correct the outline.</source>
+        <translation>Behoud deze, of klik opnieuw om de contour te corrigeren.</translation>
+    </message>
+    <message>
+        <source>Keep this one, or keep placing corners.</source>
+        <translation>Behoud deze, of blijf hoekpunten plaatsen.</translation>
+    </message>
+    <message>
+        <source>Keep this outline and point at the next object. Shortcut: S</source>
+        <translation>Behoud deze contour en wijs het volgende object aan. Toets: S</translation>
+    </message>
+    <message>
+        <source>Left-click adds a keep point, right-click a trim point. The outline follows.</source>
+        <translation>Linkerklik voegt een behoudpunt toe, rechterklik een inkortpunt. De contour volgt daarop.</translation>
+    </message>
+    <message>
+        <source>Linux System Too Old</source>
+        <translation>Linux-systeem te oud</translation>
+    </message>
+    <message>
+        <source>Loading stored detections ({done} of {total})</source>
+        <translation>Opgeslagen detecties worden geladen ({done} van {total})</translation>
+    </message>
+    <message>
+        <source>Maximum</source>
+        <translation>Maximum</translation>
+    </message>
+    <message>
+        <source>Measuring AI data size...</source>
+        <translation>AI-gegevensgrootte wordt gemeten...</translation>
+    </message>
+    <message>
+        <source>Measuring the downloaded data...</source>
+        <translation>De gedownloade gegevens worden gemeten...</translation>
+    </message>
+    <message>
+        <source>Merge with neighbours</source>
+        <translation>Samenvoegen met buren</translation>
+    </message>
+    <message>
+        <source>Merge {n} shapes · Free</source>
+        <translation>{n} vormen samenvoegen · Gratis</translation>
+    </message>
+    <message>
+        <source>Minimum</source>
+        <translation>Minimum</translation>
+    </message>
+    <message>
+        <source>Missing System Component</source>
+        <translation>Systeemonderdeel ontbreekt</translation>
+    </message>
+    <message>
+        <source>Move points</source>
+        <translation>Punten verplaatsen</translation>
+    </message>
+    <message>
+        <source>Navigation (while a tool is armed)</source>
+        <translation>Navigatie (terwijl een tool actief is)</translation>
+    </message>
+    <message>
+        <source>New polygon</source>
+        <translation>Nieuwe polygoon</translation>
+    </message>
+    <message>
+        <source>New shape added. Click Save to keep it.</source>
+        <translation>Nieuwe vorm toegevoegd. Klik op Opslaan om hem te behouden.</translation>
+    </message>
+    <message>
+        <source>No connection to the sign-in service. Check your internet connection, then click Connect to try again.</source>
+        <translation>Geen verbinding met de aanmeldservice. Controleer je internetverbinding en klik daarna op Verbinden om het opnieuw te proberen.</translation>
+    </message>
+    <message>
+        <source>No detection in this zone. Try a more specific object word, or a finer detail level.</source>
+        <translation>Geen detectie in deze zone. Probeer een specifieker objectwoord, of een fijner detailniveau.</translation>
+    </message>
+    <message>
+        <source>No detection under that click.</source>
+        <translation>Geen detectie onder die klik.</translation>
+    </message>
+    <message>
+        <source>No matches in this zone.</source>
+        <translation>Geen overeenkomsten in deze zone.</translation>
+    </message>
+    <message>
+        <source>No object matches that search.</source>
+        <translation>Geen object komt overeen met die zoekopdracht.</translation>
+    </message>
+    <message>
+        <source>Nothing changed. The line has to cross the outline twice, starting and ending outside the shape.</source>
+        <translation>Er is niets veranderd. De lijn moet de contour twee keer kruisen, en buiten de vorm beginnen en eindigen.</translation>
+    </message>
+    <message>
+        <source>Nothing cleared the confidence bar in this zone.</source>
+        <translation>Niets kwam in deze zone boven de betrouwbaarheidsdrempel uit.</translation>
+    </message>
+    <message>
+        <source>Nothing was added. A polygon needs at least three corners.</source>
+        <translation>Er is niets toegevoegd. Een polygoon heeft minstens drie hoekpunten nodig.</translation>
+    </message>
+    <message>
+        <source>Nothing was split. The line has to cross the shape completely, starting and ending outside it.</source>
+        <translation>Er is niets gesplitst. De lijn moet de vorm volledig doorkruisen, en erbuiten beginnen en eindigen.</translation>
+    </message>
+    <message>
+        <source>Now click the other pieces of this object.</source>
+        <translation>Klik nu op de andere delen van dit object.</translation>
+    </message>
+    <message>
+        <source>One object came back split into several polygons. Click the others on the map, then confirm to merge them into one.</source>
+        <translation>Eén object kwam terug als meerdere polygonen. Klik op de andere op de kaart en bevestig daarna om ze samen te voegen tot één.</translation>
+    </message>
+    <message>
+        <source>One object per run - Detect will run &quot;{first}&quot; first.</source>
+        <translation>Eén object per run - Detecteren voert eerst &quot;{first}&quot; uit.</translation>
+    </message>
+    <message>
+        <source>One object per run - detecting &quot;{first}&quot; now. Run the other objects as separate detections.</source>
+        <translation>Eén object per run - &quot;{first}&quot; wordt nu gedetecteerd. Voer de andere objecten uit als aparte detecties.</translation>
+    </message>
+    <message>
+        <source>Only this polygon. Every other one follows the Shapes step.</source>
+        <translation>Alleen deze polygoon. Elke andere volgt de stap Vormen.</translation>
+    </message>
+    <message>
+        <source>Open the selected saved polygon for AI editing</source>
+        <translation>Open de geselecteerde opgeslagen polygoon voor AI-bewerking</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>Overig</translation>
+    </message>
+    <message>
+        <source>Package Versions Conflict</source>
+        <translation>Conflict tussen pakketversies</translation>
+    </message>
+    <message>
+        <source>Pick a tool above, then edit the highlighted object.</source>
+        <translation>Kies hierboven een tool, en bewerk dan het gemarkeerde object.</translation>
+    </message>
+    <message>
+        <source>Pick at least two shapes to merge them.</source>
+        <translation>Kies minstens twee vormen om ze samen te voegen.</translation>
+    </message>
+    <message>
+        <source>Pick or un-pick an object</source>
+        <translation>Een object kiezen of deselecteren</translation>
+    </message>
+    <message>
+        <source>Point at it on the map</source>
+        <translation>Wijs het aan op de kaart</translation>
+    </message>
+    <message>
+        <source>Points</source>
+        <translation>Punten</translation>
+    </message>
+    <message>
+        <source>Points the map back at this run with the same object and the same number of tiles, ready to detect. Nothing is spent until you do.</source>
+        <translation>Zet de kaart terug op deze run met hetzelfde object en hetzelfde aantal tegels, klaar om te detecteren. Er wordt niets uitgegeven totdat je dat doet.</translation>
+    </message>
+    <message>
+        <source>Points: {n}</source>
+        <translation>Punten: {n}</translation>
+    </message>
+    <message>
+        <source>Positive = grow outward, negative = shrink inward</source>
+        <translation>Positief = naar buiten groeien, negatief = naar binnen krimpen</translation>
+    </message>
+    <message>
+        <source>Proxy Authentication Required</source>
+        <translation>Proxyauthenticatie vereist</translation>
+    </message>
+    <message>
+        <source>Push this polygon&apos;s edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
+        <translation>Duw de rand van deze polygoon naar buiten (positief) of naar binnen (negatief), voor het ene grondvlak dat het model te kort of te lang maakte.</translation>
+    </message>
+    <message>
+        <source>QGIS could not activate the temporary review layer. Close any other editing session, then try Edit manually again.</source>
+        <translation>QGIS kon de tijdelijke beoordelingslaag niet activeren. Sluit elke andere bewerkingssessie en probeer daarna opnieuw Handmatig bewerken.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here:
+{}</source>
+        <translation>QGIS kon geen browser openen. Open dit adres om het aanmelden te voltooien en kom daarna hierheen terug:
+{}</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here.</source>
+        <translation>QGIS kon geen browser openen. Het aanmeldadres is gekopieerd naar je klembord: plak het in een browser om te voltooien en kom daarna hierheen terug.</translation>
+    </message>
+    <message>
+        <source>QGIS could not save these edits. Fix the geometry and click Done again.</source>
+        <translation>QGIS kon deze bewerkingen niet opslaan. Corrigeer de geometrie en klik opnieuw op Klaar.</translation>
+    </message>
+    <message>
+        <source>Re-run the whole zone</source>
+        <translation>Voer de hele zone opnieuw uit</translation>
+    </message>
+    <message>
+        <source>Reading the imagery around this polygon...</source>
+        <translation>De beelden rond deze polygoon worden gelezen...</translation>
+    </message>
+    <message>
+        <source>Reading the imagery around your click...</source>
+        <translation>De beelden rond je klik worden gelezen...</translation>
+    </message>
+    <message>
+        <source>Reading this run...</source>
+        <translation>Deze run wordt gelezen...</translation>
+    </message>
+    <message>
+        <source>Rebuilding shapes ({done} of {total})</source>
+        <translation>Vormen worden herbouwd ({done} van {total})</translation>
+    </message>
+    <message>
+        <source>Recovered {n} detection(s) to the layer {name}.</source>
+        <translation>{n} detectie(s) hersteld in de laag {name}.</translation>
+    </message>
+    <message>
+        <source>Redraw edge</source>
+        <translation>Rand hertekenen</translation>
+    </message>
+    <message>
+        <source>Remove the corner you picked. The Delete key does the same.</source>
+        <translation>Verwijder het hoekpunt dat je hebt gekozen. De Delete-toets doet hetzelfde.</translation>
+    </message>
+    <message>
+        <source>Remove the selected detection</source>
+        <translation>De geselecteerde detectie verwijderen</translation>
+    </message>
+    <message>
+        <source>Removing the downloaded AI data. This window closes when it is done.</source>
+        <translation>De gedownloade AI-gegevens worden verwijderd. Dit venster sluit zodra het verwijderen klaar is.</translation>
+    </message>
+    <message>
+        <source>Removing the downloaded AI data...</source>
+        <translation>De gedownloade AI-gegevens worden verwijderd...</translation>
+    </message>
+    <message>
+        <source>Replace one side by drawing a new line across the outline.</source>
+        <translation>Vervang één kant door een nieuwe lijn over de contour te tekenen.</translation>
+    </message>
+    <message>
+        <source>Report this problem</source>
+        <translation>Dit probleem melden</translation>
+    </message>
+    <message>
+        <source>Reset to shared</source>
+        <translation>Terugzetten naar gedeeld</translation>
+    </message>
+    <message>
+        <source>Reshape needs a one-time setup</source>
+        <translation>Vormaanpassing heeft een eenmalige installatie nodig</translation>
+    </message>
+    <message>
+        <source>Reshaping uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and reshaping will open automatically when it is ready.</source>
+        <translation>Vormaanpassing gebruikt de gratis lokale AI, die nog niet is geïnstalleerd. Nu installeren (enkele minuten, op de achtergrond)? Je kunt blijven beoordelen; Vormaanpassing wordt automatisch geopend zodra het klaar is.</translation>
+    </message>
+    <message>
+        <source>Right angles</source>
+        <translation>Rechte hoeken</translation>
+    </message>
+    <message>
+        <source>Round corners</source>
+        <translation>Hoeken afronden</translation>
+    </message>
+    <message>
+        <source>Round corners for natural shapes like trees and bushes. Lower Points for smoother results.</source>
+        <translation>Rond hoeken af voor natuurlijke vormen zoals bomen en struiken. Verlaag Punten voor een vloeiender resultaat.</translation>
+    </message>
+    <message>
+        <source>Round this polygon&apos;s corners, for a tree or a pond among squared neighbours.</source>
+        <translation>Rond de hoeken van deze polygoon af, voor een boom of vijver tussen rechthoekige buren.</translation>
+    </message>
+    <message>
+        <source>Run the detection</source>
+        <translation>Voer de detectie uit</translation>
+    </message>
+    <message>
+        <source>Run this zone again</source>
+        <translation>Voer deze zone opnieuw uit</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: nog {n} gratis detecties over, terug op {date}. &lt;a href=&quot;{url}&quot;&gt;Abonneer je&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Same setup as your last run - the result will match. Add an example or change the detail for a different result.</source>
+        <translation>Dezelfde instellingen als je laatste run - het resultaat komt overeen. Voeg een voorbeeld toe of wijzig het detail voor een ander resultaat.</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Opslaan</translation>
+    </message>
+    <message>
+        <source>Save the fix and go back to the review</source>
+        <translation>Sla de correctie op en ga terug naar de beoordeling</translation>
+    </message>
+    <message>
+        <source>Save this polygon and go back to picking.</source>
+        <translation>Sla deze polygoon op en ga terug naar het kiezen.</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI in the background. You can keep reviewing; reshaping opens automatically when it is ready.</source>
+        <translation>De lokale AI wordt op de achtergrond ingesteld. Je kunt blijven beoordelen; Vormaanpassing wordt automatisch geopend zodra het klaar is.</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI in the background...</source>
+        <translation>De lokale AI wordt op de achtergrond ingesteld...</translation>
+    </message>
+    <message>
+        <source>Settings for this polygon</source>
+        <translation>Instellingen voor deze polygoon</translation>
+    </message>
+    <message>
+        <source>Shadows getting detected instead of trees? Draw an &apos;Exclude a look-alike&apos; box on one shadow - the AI drops similar false positives.</source>
+        <translation>Worden schaduwen gedetecteerd in plaats van bomen? Teken een vak met &apos;Gelijkende uitsluiten&apos; rond één schaduw - de AI laat vergelijkbare fout-positieven vallen.</translation>
+    </message>
+    <message>
+        <source>Shape updated. Keep editing, or click Save.</source>
+        <translation>Vorm bijgewerkt. Blijf bewerken, of klik op Opslaan.</translation>
+    </message>
+    <message>
+        <source>Shapes</source>
+        <translation>Vormen</translation>
+    </message>
+    <message>
+        <source>Shared borders:</source>
+        <translation>Gedeelde grenzen:</translation>
+    </message>
+    <message>
+        <source>Shave thin spikes and ragged bits off each shape&apos;s outline. It leaves the main body alone; higher values trim more. 0 = off.</source>
+        <translation>Snijd dunne pieken en rafelige stukjes van de contour van elke vorm. De hoofdvorm blijft ongemoeid; hogere waarden snijden meer weg. 0 = uit.</translation>
+    </message>
+    <message>
+        <source>Show what it looks like</source>
+        <translation>Laat zien hoe het eruitziet</translation>
+    </message>
+    <message>
+        <source>Simplify</source>
+        <translation>Vereenvoudigen</translation>
+    </message>
+    <message>
+        <source>Snap walls to right angles, 45 degree walls included. Made for buildings, pools and solar panels. A shape it would distort is left as it is.</source>
+        <translation>Lijn muren uit op rechte hoeken, inclusief muren van 45 graden. Gemaakt voor gebouwen, zwembaden en zonnepanelen. Een vorm die hierdoor zou vervormen, blijft ongewijzigd.</translation>
+    </message>
+    <message>
+        <source>Something went wrong preparing the results. Please run Detect again.</source>
+        <translation>Er ging iets mis bij het voorbereiden van de resultaten. Voer Detecteren opnieuw uit.</translation>
+    </message>
+    <message>
+        <source>Something went wrong preparing the results. Your detections were saved to the layer {name}.</source>
+        <translation>Er ging iets mis bij het voorbereiden van de resultaten. Je detecties zijn opgeslagen in de laag {name}.</translation>
+    </message>
+    <message>
+        <source>Split</source>
+        <translation>Splitsen</translation>
+    </message>
+    <message>
+        <source>Square this polygon&apos;s edges, or leave them as traced while the rest of the layer stays squared.</source>
+        <translation>Maak de randen van deze polygoon haaks, of laat ze zoals getraceerd terwijl de rest van de laag haaks blijft.</translation>
+    </message>
+    <message>
+        <source>Star a detection or an object to keep it here.</source>
+        <translation>Markeer een detectie of een object met een ster om het hier te bewaren.</translation>
+    </message>
+    <message>
+        <source>Still waiting for the sign-in page. If no browser opened, or the page shows an error, click Cancel and try again.</source>
+        <translation>Wachten nog steeds op de aanmeldpagina. Als er geen browser is geopend, of de pagina toont een fout, klik dan op Annuleren en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Stop adding</source>
+        <translation>Toevoegen stoppen</translation>
+    </message>
+    <message>
+        <source>Stopping the local AI...</source>
+        <translation>De lokale AI wordt gestopt...</translation>
+    </message>
+    <message>
+        <source>Switch to AI to shape this polygon on its own.</source>
+        <translation>Schakel over naar AI om deze polygoon zelfstandig te vormen.</translation>
+    </message>
+    <message>
+        <source>That area does not touch the object you are editing, so nothing was added. Refining works on one object at a time.</source>
+        <translation>Dat gebied raakt het object dat je bewerkt niet, dus er is niets toegevoegd. Verfijnen werkt op één object tegelijk.</translation>
+    </message>
+    <message>
+        <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
+        <translation>Die grond hoort bij een ander object, dus er is niets toegevoegd. Bewerk dat object in plaats daarvan, of voeg de twee samen met Samenvoegen met buren.</translation>
+    </message>
+    <message>
+        <source>That is another object. The one you were editing is saved, and this one is now selected.</source>
+        <translation>Dat is een ander object. Het object dat je aan het bewerken was, is opgeslagen, en dit is nu geselecteerd.</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples - you can draw up to 3.</source>
+        <translation>De AI vindt elk object dat lijkt op je voorbeelden - je kunt er tot 3 tekenen.</translation>
+    </message>
+    <message>
+        <source>The AI outlines it, free, on your computer.</source>
+        <translation>De AI omlijnt het, gratis, op je computer.</translation>
+    </message>
+    <message>
+        <source>The connection to the server was interrupted. Please try again.</source>
+        <translation>De verbinding met de server is onderbroken. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The detection service had a problem and the run stopped. Please try again.</source>
+        <translation>De detectieservice had een probleem en de run is gestopt. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the {n} tiles already found.</source>
+        <translation>De detectie reageerde niet meer. De {n} al gevonden tegels worden bewaard.</translation>
+    </message>
+    <message>
+        <source>The imagery reader could not be loaded, and repairing the installation did not fix it. Please report this so we can look into it.
+
+{details}</source>
+        <translation>De beeldlezer kon niet worden geladen, en het herstellen van de installatie loste dit niet op. Meld dit zodat we het kunnen onderzoeken.
+
+{details}</translation>
+    </message>
+    <message>
+        <source>The installer could not start a helper process (a damaged Python launcher). Click Reinstall Dependencies to rebuild the environment from scratch.</source>
+        <translation>Het installatieprogramma kon geen hulpproces starten (een beschadigde Python-launcher). Klik op Afhankelijkheden opnieuw installeren om de omgeving helemaal opnieuw op te bouwen.</translation>
+    </message>
+    <message>
+        <source>The pieces do not touch, so the result is one object in several parts.</source>
+        <translation>De delen raken elkaar niet, dus het resultaat is één object in meerdere delen.</translation>
+    </message>
+    <message>
+        <source>The removal could not start. You are signed out, but the downloaded AI data is still on this computer. Try again.</source>
+        <translation>Het verwijderen kon niet starten. Je bent afgemeld, maar de gedownloade AI-gegevens staan nog op deze computer. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The removal did not finish. Close this window, then check the AI data folder before trying again.</source>
+        <translation>Het verwijderen is niet voltooid. Sluit dit venster en controleer daarna de AI-gegevensmap voordat je het opnieuw probeert.</translation>
+    </message>
+    <message>
+        <source>The removal is already running.</source>
+        <translation>Het verwijderen is al bezig.</translation>
+    </message>
+    <message>
+        <source>The reply did not come from the service. If this network shows a sign-in page, open it in your browser first, then try again.</source>
+        <translation>Het antwoord kwam niet van de service. Als dit netwerk een aanmeldpagina toont, open deze dan eerst in je browser en probeer het daarna opnieuw.</translation>
+    </message>
+    <message>
+        <source>The server returned an unexpected response. Please try again.</source>
+        <translation>De server gaf een onverwacht antwoord. Probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Thin this polygon&apos;s points before you edit them by hand. 100% keeps the outline as it is.</source>
+        <translation>Dun de punten van deze polygoon uit voordat je ze handmatig bewerkt. 100% houdt de contour zoals hij is.</translation>
+    </message>
+    <message>
+        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Manual mode on it as is.</source>
+        <translation>Deze afbeelding heeft geen positie op de kaart, dus Automatisch kan niet plaatsen wat het vindt. Geef er een met de QGIS Georeferencer, of gebruik de Handmatige modus erop zoals hij is.</translation>
+    </message>
+    <message>
+        <source>This polygon</source>
+        <translation>Deze polygoon</translation>
+    </message>
+    <message>
+        <source>This raster has no coordinate reference system, so polygons will use pixel coordinates. Set a CRS in Layer Properties for georeferenced output.</source>
+        <translation>Dit raster heeft geen coördinatenreferentiesysteem, dus polygonen gebruiken pixelcoördinaten. Stel een CRS in bij Laageigenschappen voor gegeorefereerde uitvoer.</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it before segmenting.</source>
+        <translation>Dit raster is geroteerd. Voer Warp (Reproject) erop uit om het recht te trekken voordat je segmenteert.</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Manual mode cannot read it either.</source>
+        <translation>Dit raster is geroteerd. Voer eerst Warp (Reproject) erop uit om het recht te trekken. De Handmatige modus kan het ook niet lezen.</translation>
+    </message>
+    <message>
+        <source>This run costs more credits than a free run covers. Lower the detail or draw a smaller zone, or</source>
+        <translation>Deze run kost meer credits dan een gratis run dekt. Verlaag het detail of teken een kleinere zone, of</translation>
+    </message>
+    <message>
+        <source>This run did not keep where it looked, so it cannot be pointed at the same place. Draw the zone again.</source>
+        <translation>Deze run heeft niet onthouden waar hij keek, dus hij kan niet naar dezelfde plek worden teruggezet. Teken de zone opnieuw.</translation>
+    </message>
+    <message>
+        <source>Those shapes could not be joined. Nothing was changed.</source>
+        <translation>Die vormen konden niet worden samengevoegd. Er is niets veranderd.</translation>
+    </message>
+    <message>
+        <source>Trim spikes</source>
+        <translation>Pieken bijsnijden</translation>
+    </message>
+    <message>
+        <source>Two references give the strongest detection. Draw a second to reach best quality.</source>
+        <translation>Twee referenties geven de sterkste detectie. Teken een tweede voor de beste kwaliteit.</translation>
+    </message>
+    <message>
+        <source>Type a word for the object first (step 1).</source>
+        <translation>Typ eerst een woord voor het object (stap 1).</translation>
+    </message>
+    <message>
+        <source>Unavailable while Right angles is on. Turn it off to adjust this setting.</source>
+        <translation>Niet beschikbaar zolang Rechte hoeken aan staat. Zet dit uit om deze instelling aan te passen.</translation>
+    </message>
+    <message>
+        <source>Undo</source>
+        <translation>Ongedaan maken</translation>
+    </message>
+    <message>
+        <source>Undo last</source>
+        <translation>Laatste ongedaan maken</translation>
+    </message>
+    <message>
+        <source>Undo the last correction</source>
+        <translation>Laatste correctie ongedaan maken</translation>
+    </message>
+    <message>
+        <source>Undo the last thing you did here: the point you just placed, or the last edit.</source>
+        <translation>Maak het laatste ongedaan wat je hier hebt gedaan: het punt dat je net hebt geplaatst, of de laatste bewerking.</translation>
+    </message>
+    <message>
+        <source>Unsupported Mac and Python Combination</source>
+        <translation>Niet-ondersteunde combinatie van Mac en Python</translation>
+    </message>
+    <message>
+        <source>Up to</source>
+        <translation>Tot</translation>
+    </message>
+    <message>
+        <source>Writing the file...</source>
+        <translation>Bestand wordt geschreven...</translation>
+    </message>
+    <message>
+        <source>You place the corners, the same as on any QGIS layer.</source>
+        <translation>Jij plaatst de hoekpunten, net als bij elke QGIS-laag.</translation>
+    </message>
+    <message>
+        <source>Your examples drive the search - naming the object makes it even more accurate.</source>
+        <translation>Je voorbeelden bepalen de zoekopdracht - het object benoemen maakt het nog nauwkeuriger.</translation>
+    </message>
+    <message>
+        <source>Your free detections come back on {date}.</source>
+        <translation>Je gratis detecties komen terug op {date}.</translation>
+    </message>
+    <message>
+        <source>Your network proxy requires a username and password. Enter them in QGIS &gt; Settings &gt; Options &gt; Network, then restart QGIS and try again.</source>
+        <translation>Je netwerkproxy vereist een gebruikersnaam en wachtwoord. Voer deze in bij QGIS &gt; Instellingen &gt; Opties &gt; Netwerk, start QGIS daarna opnieuw op en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>a month ago</source>
+        <translation>een maand geleden</translation>
+    </message>
+    <message>
+        <source>a week ago</source>
+        <translation>een week geleden</translation>
+    </message>
+    <message>
+        <source>a year ago</source>
+        <translation>een jaar geleden</translation>
+    </message>
+    <message>
+        <source>applies to every polygon</source>
+        <translation>geldt voor elke polygoon</translation>
+    </message>
+    <message>
+        <source>fine-tune the edges</source>
+        <translation>de randen verfijnen</translation>
+    </message>
+    <message>
+        <source>hide anything outside this range</source>
+        <translation>verberg alles buiten dit bereik</translation>
+    </message>
+    <message>
+        <source>how each outline is styled</source>
+        <translation>hoe elke contour wordt vormgegeven</translation>
+    </message>
+    <message>
+        <source>how the outline is styled</source>
+        <translation>hoe de contour wordt vormgegeven</translation>
+    </message>
+    <message>
+        <source>{count} polygons added so far.</source>
+        <translation>Tot nu toe {count} polygonen toegevoegd.</translation>
+    </message>
+    <message>
+        <source>{count} vertices</source>
+        <translation>{count} hoekpunten</translation>
+    </message>
+    <message>
+        <source>{credits} credits</source>
+        <translation>{credits} credits</translation>
+    </message>
+    <message>
+        <source>{hidden} hidden by the filters</source>
+        <translation>{hidden} verborgen door de filters</translation>
+    </message>
+    <message>
+        <source>{n} &quot;{object}&quot; found so far</source>
+        <translation>Tot nu toe {n} &quot;{object}&quot; gevonden</translation>
+    </message>
+    <message>
+        <source>{n} corrections this round</source>
+        <translation>{n} correcties deze ronde</translation>
+    </message>
+    <message>
+        <source>{n} kept</source>
+        <translation>{n} behouden</translation>
+    </message>
+    <message>
+        <source>{n} months ago</source>
+        <translation>{n} maanden geleden</translation>
+    </message>
+    <message>
+        <source>{n} objects</source>
+        <translation>{n} objecten</translation>
+    </message>
+    <message>
+        <source>{n} point placed.</source>
+        <translation>{n} punt geplaatst.</translation>
+    </message>
+    <message>
+        <source>{n} points placed.</source>
+        <translation>{n} punten geplaatst.</translation>
+    </message>
+    <message>
+        <source>{n} results</source>
+        <translation>{n} resultaten</translation>
+    </message>
+    <message>
+        <source>{n} shape(s) edited this session</source>
+        <translation>{n} vorm(en) bewerkt deze sessie</translation>
+    </message>
+    <message>
+        <source>{n} shapes merged into one · Free</source>
+        <translation>{n} vormen samengevoegd tot één · Gratis</translation>
+    </message>
+    <message>
+        <source>{n} shapes picked. Press Enter to join.</source>
+        <translation>{n} vormen gekozen. Druk op Enter om samen te voegen.</translation>
+    </message>
+    <message>
+        <source>{n} tile(s) took too long to load and are missing from this result.</source>
+        <translation>{n} tegel(s) duurden te lang om te laden en ontbreken in dit resultaat.</translation>
+    </message>
+    <message>
+        <source>{n} weeks ago</source>
+        <translation>{n} weken geleden</translation>
+    </message>
+    <message>
+        <source>{n} years ago</source>
+        <translation>{n} jaar geleden</translation>
+    </message>
+    <message>
+        <source>{tiles} tiles</source>
+        <translation>{tiles} tegels</translation>
     </message>
 </context>
 </TS>
