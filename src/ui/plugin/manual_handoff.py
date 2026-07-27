@@ -6,7 +6,6 @@ plain mixin members: state lives on the plugin instance (self).
 """
 from __future__ import annotations
 
-
 from qgis.core import (
     Qgis,
     QgsGeometry,
@@ -22,6 +21,7 @@ from qgis.PyQt.QtWidgets import (
 from ...core.i18n import tr
 from ...core.prompt_manager import FrozenCropSession
 from ...core.qt_compat import PolygonGeometry
+from ...core.review_defaults import REFINE_SMOOTH_ITERATIONS
 from ..canvas_palette import PENDING_FILL, PENDING_STROKE
 from .shared import _debounce_timer
 
@@ -91,71 +91,93 @@ class ManualHandoffMixin:
         # stale cached positive so a venv that broke since re-routes to install.
         try:
             from ...core.venv_manager import get_venv_status
-            ready, _msg = get_venv_status()
+            # UI thread, on a click: never a subprocess probe. An environment
+            # with no stored deps hash would otherwise pay a cold torch import
+            # (up to a minute on Windows) right here, so the first Refine after
+            # an upgrade froze the window. Packages on disk count as ready; the
+            # background startup check runs the real verification.
+            ready, _msg = get_venv_status(allow_subprocess_probe=False)
             self._env_ready = bool(ready)
             return bool(ready)
         except Exception:
             return True  # never block a legitimate refine on a check error
 
-    def _on_refine_in_manual_clicked(self) -> None:
-        """Hand the reviewed detections to Manual mode for point-and-click fixes.
+    def _on_reshape_ai_requested(self) -> None:
+        """Reshape the SELECTED detection with the on-device AI, in place.
 
-        Confidence stays EDITABLE: hand-edited objects are protected by geometry
-        (_auto_protected_geoms) across a later confidence change, so no lock is
-        needed. When the local AI is not installed, offer a one-time install that
-        runs in the BACKGROUND while the user stays on this review (fully usable):
-        an inline banner shows progress and the handoff opens automatically once
-        the AI is ready (D1). No page detour, the review is never lost.
-        """
+        No mode switch, no separate screen: the review stays open on the Correct
+        step and shows the AI-reshaping sub-state. Under the hood this reuses the
+        Manual SAM session (start the model on the run's raster, load the
+        detections as editable polygons, open the selected one for point-and-
+        click), then folds the result back into the review on Done.
+
+        Confidence stays EDITABLE: on return every reshaped object is folded
+        into its canonical row and its det_id skips the gates, so a later
+        confidence change re-filters only the untouched detections and never
+        drops the hand work. When the local AI is not installed, a one-time
+        install runs in the BACKGROUND while the review stays usable; the
+        reshape opens itself once the AI is ready (see _on_predictor_loaded)."""
         review = self._auto_review
         if not review or not self.dock_widget:
+            return
+        # A live session or the native bridge already owns the canvas, so ignore
+        # a stray Reshape there. The same guard as the Add lane in manual_add,
+        # and it is load-bearing here: this method reaches
+        # _remove_auto_selection_layer, which would take the layer out of the
+        # project while the bridge still holds it in an open edit session, with
+        # a vertex tool bound to it and an identity write possibly queued.
+        if getattr(self, "_refine_handoff_active", False) or getattr(
+                self, "_qgis_bridge_active", False):
+            return
+        idx = getattr(self, "_correct_selected_idx", None)
+        objects = getattr(self, "_auto_objects", None) or []
+        if idx is None or idx < 0 or idx >= len(objects):
             return
         layer = self._resolve_auto_source_layer()
         if layer is None:
             return
-        # Env gate: without the local AI the predictor never arrives, so the
-        # handoff would hang on "Preparing Manual mode" forever. Offer to install
-        # it in the background; the review stays on screen and the refine opens
-        # itself when the predictor is ready (see _on_predictor_loaded).
+        # Remember which object to open once the session is up: its interior
+        # anchor point, in the run CRS the stored geometries live in.
+        geom = objects[idx][0]
+        anchor = geom.pointOnSurface() if geom is not None else None
+        if anchor is not None and not anchor.isEmpty():
+            pt = anchor.asPoint()
+            self._reshape_open_anchor = (pt.x(), pt.y())
+        else:
+            self._reshape_open_anchor = None
+        # Env gate: without the local AI the predictor never arrives. Offer to
+        # install it in the background; the review stays on screen and the
+        # reshape opens itself when the predictor is ready.
         if not self._manual_env_ready():
             if self._refine_install_pending:
-                return  # a background install is already running for this refine
+                return  # a background install is already running for this reshape
             box = QMessageBox(self.iface.mainWindow())
-            box.setWindowTitle(tr("Manual mode needs a one-time setup"))
+            box.setWindowTitle(tr("Reshape needs a one-time setup"))
             box.setText(tr(
-                "Refining uses the free local AI, which is not installed yet. "
-                "Install it now (a few minutes, in the background)? "
-                "You can keep reviewing, and refining will open automatically "
-                "when it is ready."))
+                "Reshaping uses the free on-device AI, which is not installed "
+                "yet. Install it now (a few minutes, in the background)? You "
+                "can keep reviewing, and reshaping will open automatically when "
+                "it is ready."))
             install_btn = box.addButton(tr("Install now"), QMessageBox.ButtonRole.AcceptRole)
             box.addButton(tr("Cancel"), QMessageBox.ButtonRole.RejectRole)
             box.setDefaultButton(install_btn)
             box.exec()
             if box.clickedButton() is not install_btn:
                 return  # review untouched
-            # Start the install in the background WITHOUT leaving the review: the
-            # inline banner shows progress, the Refine button is disabled until
-            # the AI is ready, and _on_predictor_loaded re-invokes this method.
             self._refine_install_pending = True
             try:
+                self.dock_widget.enter_ai_reshape_state()
                 self.dock_widget.set_auto_review_installing(True)
             except (RuntimeError, AttributeError):
                 pass
             self._on_install_requested()
             return
-        # Refining runs the LOCAL SAM model, which loads lazily/async: the
-        # predictor is None until the setup worker finishes, even when the model
-        # is fully installed (e.g. an Automatic-first open never ran Interactive
-        # setup). We therefore must NOT gate the handoff on `predictor is None`:
-        # that wrongly routed legitimate refine clicks to a plain mode switch,
-        # which discarded+autosaved the review to a RED committed layer. Instead
-        # we enter the locked handoff now; begin_refine_handoff -> the mode
-        # guard -> _ensure_interactive_setup kicks off the model load, and
-        # _enter_manual_refine_session defers the import until it is ready.
+        # Drop the resting select tool before the Manual session takes the canvas.
+        self._disarm_shape_tool()
         self._handoff_source_layer = layer
         self._pending_refine_import = False
         self._refine_handoff_active = True
-        self._auto_refined_in_manual = True  # export will report the handoff was used
+        self._auto_refined_in_manual = True  # export will report a reshape was used
         try:
             import time as _time
 
@@ -167,21 +189,51 @@ class ManualHandoffMixin:
             )
         except Exception:
             pass  # nosec B110
-        # Hide (do NOT discard) the blue review layer: the manual session shows
-        # the same detections as editable saved polygons.
+        # Hide (do NOT discard) the blue review layer + the zone/example overlays
+        # while the SAM edit runs on the same detections as editable polygons.
         self._remove_auto_selection_layer()
-        # Hide the Automatic canvas overlays for the hand-edit: the green
-        # example outline reads as one more editable polygon and the zone
-        # band/grid only distract. Restored on Back to review / discard.
         self._set_exemplar_bands_visible(False)
         self._set_auto_zone_overlays_visible(False)
+        # Re-anchor the selection ONLY NOW: _remove_auto_selection_layer just
+        # disarmed the shape tool, and every disarm clears the panel card. The
+        # session works ON this polygon, so the card must come back after the
+        # last clearing call or the dock rests on the pick hero with the
+        # session's Save out of reach.
+        self._correct_selected_idx = idx
         try:
-            # Confidence stays editable: hand-edited objects are protected across
-            # a confidence change (see _auto_protected_geoms), so no lock needed.
-            self.dock_widget.set_protected_note(False)
-            self.dock_widget.begin_refine_handoff(len(review.get("geoms", [])))
+            self.dock_widget.set_correct_selection(1)
         except (RuntimeError, AttributeError):
             pass
+        _push = getattr(self, "_push_shape_only_state", None)
+        if _push is not None:
+            _push()
+        try:
+            self.dock_widget.enter_ai_reshape_state()
+        except (RuntimeError, AttributeError):
+            pass
+        # Start the Manual SAM session directly (no mode switch): this mirrors
+        # the old _on_mode_changed handoff branch. _enter_manual_refine_session
+        # imports the detections (or defers on a still-loading predictor); the
+        # target object is opened afterwards, here or from _on_predictor_loaded.
+        self._ensure_interactive_setup()
+        self._enter_manual_refine_session()
+        self._open_reshape_target()
+
+    def _open_reshape_target(self) -> None:
+        """Open the pre-selected detection for SAM editing, once the Manual
+        session has imported the detections. No-op while the import is still
+        deferred (predictor loading): _on_predictor_loaded calls this again."""
+        if self._pending_refine_import:
+            return
+        anchor = getattr(self, "_reshape_open_anchor", None)
+        self._reshape_open_anchor = None
+        if anchor is None or not self.saved_polygons:
+            return
+        from qgis.core import QgsPointXY
+        pt = QgsPointXY(anchor[0], anchor[1])
+        idx = self._hit_test_saved_polygon(pt)
+        if idx is not None:
+            self._open_saved_polygon_for_edit(idx, pt)
 
     def _clear_refine_install_pending(self) -> None:
         """Drop the pending background-install-then-refine intent and hide its
@@ -253,23 +305,36 @@ class ManualHandoffMixin:
         with the SAME settings the review just tuned (buildings keep holes
         filled + right angles, vegetation keeps round corners) instead of
         snapping back to the generic Manual defaults, including any switch the
-        user flipped in the review, not just the run's preset. Simplify/expand
-        keep their Manual values (Manual px is the 1024 SAM mask grid, a
-        different scale); Min/Max size carry over 1:1 (both sides are true
-        ground m2). Must run AFTER _on_start_segmentation (which resets the
+        user flipped in the review, not just the run's preset. Simplify, Points
+        and Min/Max size carry over 1:1: both sides now read the same tolerance
+        from a Simplify number, the Points dial is one shared control, and both
+        sizes are true ground m2. Expand keeps its Manual value, because it is
+        still the odd one out (Manual px is the 1024 SAM mask grid, a different
+        scale). Must run AFTER _on_start_segmentation (which resets the
         session) and BEFORE the import. Shared by the direct handoff and the
         deferred (predictor-still-loading) completion in _on_predictor_loaded."""
         try:
             params = self._widget_review_params()
-            self._refine_smooth = 5 if params.get("smooth") else 0
+            self._refine_simplify = max(
+                0.0, float(params.get("simplify_px") or 0.0))
+            self._refine_points_pct = max(
+                1, min(100, int(params.get("points_pct") or 100)))
+            self._refine_smooth = (
+                REFINE_SMOOTH_ITERATIONS if params.get("smooth") else 0)
+            self._refine_clean = max(0.0, float(params.get("open_px") or 0.0))
             self._refine_fill_holes = bool(params.get("fill_holes"))
+            self._refine_fill_holes_max_m2 = max(
+                0.0, float(params.get("fill_max_m2") or 0.0))
             self._refine_ortho = bool(params.get("ortho"))
             self._refine_min_size_m2 = max(0.0, float(params.get("min_a") or 0.0))
             self._refine_max_size_m2 = max(0.0, float(params.get("max_a") or 0.0))
             self.dock_widget.set_refine_values(
                 self._refine_simplify, self._refine_smooth,
                 self._refine_expand, self._refine_fill_holes,
-                right_angles=self._refine_ortho)
+                right_angles=self._refine_ortho,
+                fill_holes_max_m2=self._refine_fill_holes_max_m2,
+                clean=self._refine_clean,
+                points_pct=self._refine_points_pct)
             self.dock_widget.set_size_filter_values(
                 self._refine_min_size_m2, self._refine_max_size_m2)
         except (RuntimeError, AttributeError):
@@ -337,16 +402,23 @@ class ManualHandoffMixin:
         # the return arrays free of NULLs. Starts above the largest real id.
         max_id = max((int(i) for i in ids if i is not None), default=-1)
         self._handoff_det_id_seq = max_id + 1
+        # Carry the "hand edited" mark across repeat refine visits: an object
+        # whose det_id was folded/exempted on an earlier pass re-imports already
+        # marked touched, so it stays exempt from the confidence/size gates.
+        exempt_ids = set(getattr(self, "_auto_manual_object_ids", None) or ())
+        # Which canonical objects this session can speak for. The import carries
+        # the VISIBLE set only, so a detection the confidence or size filter is
+        # hiding was never on the user's canvas and they cannot have deleted it.
+        # _removed_canonical_objects reads this to scope the deletion diff.
+        imported_ids: set[int] = set()
         for n, g in enumerate(geoms):
             if g is None or g.isEmpty():
                 continue
             det_id = ids[n] if n < len(ids) and ids[n] is not None else None
             if det_id is None:
                 det_id = self._next_handoff_det_id()
+            imported_ids.add(int(det_id))
             score = scores[n] if n < len(scores) and scores[n] is not None else None
-            # Carry protection across repeat refine visits: a geom matching a
-            # previously hand-edited one is re-imported already marked touched, so
-            # it stays protected from confidence re-filtering.
             self.saved_polygons.append({
                 "geometry_wkt": g.asWkt(),
                 # Cache the parsed geometry so absorb/click/collect don't re-parse
@@ -357,14 +429,17 @@ class ManualHandoffMixin:
                 "points_positive": [],
                 "points_negative": [],
                 "refine_simplify": self._refine_simplify,
+                "refine_points_pct": self._refine_points_pct,
                 "refine_smooth": self._refine_smooth,
+                "refine_clean": self._refine_clean,
                 "refine_expand": self._refine_expand,
                 "refine_fill_holes": self._refine_fill_holes,
+                "refine_fill_holes_max_m2": self._refine_fill_holes_max_m2,
                 "refine_ortho": self._refine_ortho,
                 "refine_min_area": self._refine_min_area,
                 "refine_min_size_m2": self._refine_min_size_m2,
                 "refine_max_size_m2": self._refine_max_size_m2,
-                "manual_touched": self._geom_overlaps_any(g, self._auto_protected_geoms),
+                "manual_touched": det_id in exempt_ids,
                 # Not yet hand-validated: drawn on the pending layer.
                 "validated": False,
                 # Per-instance identity, carried through the whole handoff so
@@ -377,6 +452,7 @@ class ManualHandoffMixin:
             # None placeholder keeps the two lists index-locked; the geometry is
             # drawn by _handoff_pending_layer, not a per-object band.
             self.saved_rubber_bands.append(None)
+        self._handoff_imported_det_ids = imported_ids
         self._rebuild_handoff_layers()
         if self.dock_widget:
             try:
@@ -384,11 +460,31 @@ class ManualHandoffMixin:
             except (RuntimeError, AttributeError):
                 pass
 
-    def _on_back_to_review_clicked(self) -> None:
-        """Return from the Manual refine to the Automatic review (where Finish
-        commits). Harvests the manual edits back into the held review first."""
-        if not self._refine_handoff_active:
+    def _on_reshape_done(self) -> None:
+        """Finish the live fix session: fold the edits back into the held review,
+        rebuild the blue review layer in place, and return to the Correct step.
+        No mode switch, so the review is never left.
+
+        The panel's Done routes here for both methods. A native QGIS bridge edit
+        commits through its own path, so route it there; the AI point-refine
+        folds below."""
+        if getattr(self, "_qgis_bridge_active", False):
+            self.finish_qgis_edit_bridge()
             return
+        if not self._refine_handoff_active:
+            # The flag is already down, but the CANVAS may not be. Any path that
+            # drops it without taking the point tool back leaves that tool armed
+            # and the last edit's prompt markers painted, and then every click on
+            # empty ground opens a refine point out of nowhere. Nothing to fold
+            # here, so sweep and leave.
+            self._sweep_stale_refine_canvas()
+            return
+        # The Add lane rides this session; leaving it drops the lane arm.
+        if getattr(self, "_refine_add_mode_active", False):
+            try:
+                self._exit_ai_add_mode()
+            except (RuntimeError, AttributeError):
+                pass
         self._collect_manual_refine_into_review()
         try:
             import time as _time
@@ -402,11 +498,46 @@ class ManualHandoffMixin:
             )
         except Exception:
             pass  # nosec B110
+        # Rebuild the review UI + blue layer (this clears _refine_handoff_active),
+        # then leave the reshape sub-state and re-arm the resting select tool.
+        self._restore_auto_review_after_handoff()
         try:
-            from ..ai_segmentation_dockwidget import Mode
-            self.dock_widget.end_refine_handoff(Mode.AUTOMATIC)
+            self.dock_widget.leave_ai_reshape_state()
         except (RuntimeError, AttributeError):
             pass
+        self._arm_correct_select()
+
+    def _sweep_stale_refine_canvas(self) -> None:
+        """Leave nothing of a fix session on the canvas. Idempotent, and a no-op
+        outside a review so a Manual session's own points are never touched.
+
+        The session flag and the canvas are two different pieces of state, and
+        the exits do not all move them together. When they disagree the tool
+        stays live under a dock that says the session is over, which is the one
+        failure the user cannot undo by clicking: every click makes it worse.
+        Sweeping here covers every exit at once, rather than trusting each one.
+        """
+        if getattr(self, "_auto_review", None) is None:
+            return  # Manual mode owns its own points; not ours to clear
+        tool = getattr(self, "map_tool", None)
+        if tool is not None:
+            try:
+                tool.clear_markers()
+            except (RuntimeError, AttributeError):
+                pass
+            try:
+                canvas = self.iface.mapCanvas()
+                if canvas.mapTool() is tool:
+                    canvas.unsetMapTool(tool)
+            except (RuntimeError, AttributeError):
+                pass
+        try:
+            self.dock_widget.leave_ai_reshape_state()
+        except (RuntimeError, AttributeError):
+            pass
+        # Back to the resting pick tool, so the next click selects a polygon
+        # instead of landing on whatever tool the canvas kept.
+        self._arm_correct_select()
 
     def _collect_manual_refine_into_review(self) -> None:
         """Fold every manual edit (saved + any in-progress mask) back into
@@ -437,19 +568,18 @@ class ManualHandoffMixin:
             if self._is_refining_saved_object:
                 self._close_active_edit_to_pending()
             entries = []
-            protected = []
             for pg in self.saved_polygons:
                 g = self._entry_geom(pg)
                 if g is not None and not g.isEmpty():
-                    entries.append((g, pg.get("det_id"), pg.get("score")))
-                    if pg.get("manual_touched"):
-                        protected.append(g)
+                    entries.append((g, pg.get("det_id"), pg.get("score"),
+                                    bool(pg.get("manual_touched"))))
             # Dissolve any remaining overlaps so the committed output is uniform
             # (never stacked layers), while distinct touching objects stay split.
             # Identity-aware: a dissolved group keeps its first member's det_id
             # (so the Random colour survives the round trip) and its max score,
             # instead of dropping both lists and reshuffling every colour.
-            geoms, ids, scores = self._dissolve_overlapping_entries(entries)
+            geoms, ids, scores = self._dissolve_overlapping_entries(
+                [(g, i, s) for g, i, s, _t in entries])
             review["geoms"] = geoms
             review["scores"] = scores
             review["ids"] = ids
@@ -457,24 +587,143 @@ class ManualHandoffMixin:
             # output: drop the provenance stamp so the next review push does a
             # full rebuild instead of wrongly diffing against pre-handoff state.
             review["stamp"] = None
-            # Remember the hand-edited objects so a later confidence change keeps
-            # them and only re-filters the untouched auto detections.
-            self._auto_protected_geoms = protected
-            # And remember the DELETED ones: a later reslice (confidence or any
-            # shape param) recomputes the visible set from the canonical
-            # _auto_objects, so without this memory an object removed in Manual
-            # comes straight back on the first slider move.
-            self._auto_manual_removed = self._removed_canonical_objects(
-                review["geoms"])
+            # Every hand edit becomes the polygon's canonical base, so the Shapes
+            # pipeline drives it like any other object on the next reslice (no
+            # freeze). The reslice itself waits for _restore_auto_review_after_
+            # handoff to recreate the selection layer to push onto.
+            self._fold_manual_refine_into_objects(entries, geoms, ids, scores)
+            # No lock: this only disarms any stray armed gesture on return.
+            self._disarm_after_handoff()
         self._teardown_manual_session()
+
+    def _fold_manual_refine_into_objects(self, entries, geoms, ids, scores) -> None:
+        """Fold the harvested hand edits into the canonical object rows.
+
+        A reshaped detection overwrites its own canonical row (matched by
+        det_id) with the repaired geometry, its carried score and a re-measured
+        area, so a later Shapes reslice drives it from that base. Brand-new
+        objects append. Deletions during the session are remembered in
+        _auto_manual_removed. Every touched or added det_id skips the
+        confidence/size gates. The whole fold is journalled so one Undo restores
+        the pre-fold bases, pops the appended rows, drops the exemptions it
+        added and puts back the removal set, strictly LIFO with merge/remove.
+        """
+        objects = getattr(self, "_auto_objects", None)
+        if objects is None:
+            return
+        manual_removed_before = set(getattr(self, "_auto_manual_removed", None) or ())
+        pre_len = len(objects)
+        # Brand-new manual objects append canonical rows; their fresh det_ids
+        # come back so the journal can drop their exemption on undo.
+        added_ids = self._register_manual_only_review_objects(geoms, ids, scores)
+        appended = len(objects) - pre_len
+        # Existing detections the user reshaped: overwrite their base by det_id.
+        fids = list(getattr(self, "_auto_object_fids", None) or [])
+        by_id = {fid: idx for idx, fid in enumerate(fids)}
+        measurer = self._make_auto_area_measurer()
+        from ...core.layer_conventions import repair_polygon, to_multipolygon
+        manual_ids = self._auto_manual_object_ids
+        restored: list[tuple[int, object]] = []
+        exempted: list[int] = []
+        for g, det_id, score, touched in entries:
+            if not touched or not isinstance(det_id, int):
+                continue
+            index = by_id.get(det_id)
+            if index is None or index >= pre_len:
+                continue  # a brand-new object, handled by the append path above
+            repaired = to_multipolygon(repair_polygon(g) or g)
+            if repaired is None or repaired.isEmpty():
+                continue
+            restored.append((index, objects[index]))
+            carried = objects[index][1] if score is None else float(score)
+            objects[index] = (
+                repaired, float(carried), self._object_area_m2(repaired, measurer))
+            if det_id not in manual_ids:
+                manual_ids.add(det_id)
+                exempted.append(det_id)
+        for det_id in added_ids:
+            if det_id not in exempted:
+                exempted.append(det_id)
+        # Deletions: recomputed against the folded bases, so a reshaped object
+        # (its base now IS the edited geometry) is never read as removed.
+        new_removed = self._removed_canonical_objects(geoms)
+        self._auto_manual_removed = new_removed
+        from ...core.shape_edits import KIND_REFINE, ShapeEdit
+        edit = ShapeEdit(
+            kind=KIND_REFINE,
+            restored=tuple(restored),
+            appended=appended,
+            unremoved=(),
+            exempted=tuple(exempted),
+        )
+        # Snapshot the removal set only when it actually moved, so a Done that
+        # changed nothing (opened, looked, backed out) never journals a no-op.
+        self._record_fold_edit(
+            edit, fids=tuple(exempted),
+            manual_removed_before=(manual_removed_before
+                                   if manual_removed_before != new_removed
+                                   else None))
+        # Match the bridge fold's invalidation so the reslice recomputes cleanly.
+        self._shape_hit_geoms = {}
+        self._reset_review_refine_cache()
+        try:
+            pixel_size = (self._auto_review or {}).get("pixel_size", 1.0)
+            self._start_build_preview_cache(pixel_size)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _register_manual_only_review_objects(self, geoms, ids, scores) -> list:
+        """Make every Manual-created review object addressable by Correct.
+
+        Appends a canonical row for each review geometry whose det_id has no
+        canonical object yet (a hand-drawn add), and marks that det_id exempt
+        from the gates so a slider set for the detections never hides the user's
+        own drawing. Returns the det_ids it appended, for the fold journal."""
+        added: list[int] = []
+        if not isinstance(ids, list):
+            return added
+        objects = getattr(self, "_auto_objects", None)
+        if objects is None:
+            return added
+        known = {self._object_fid_for(index) for index in range(len(objects))}
+        fids = list(getattr(self, "_auto_object_fids", None) or [])
+        measurer = self._make_auto_area_measurer()
+        manual_ids = self._auto_manual_object_ids
+        for index, geom in enumerate(geoms or []):
+            det_id = ids[index] if index < len(ids) else None
+            if (not isinstance(det_id, int) or det_id in known or geom is None or geom.isEmpty()):
+                continue
+            score = scores[index] if isinstance(scores, list) and index < len(scores) else 1.0
+            try:
+                score = float(score) if score is not None else 1.0
+            except (TypeError, ValueError):
+                score = 1.0
+            objects.append((geom, score, self._object_area_m2(geom, measurer)))
+            fids.append(det_id)
+            known.add(det_id)
+            if det_id not in manual_ids:
+                manual_ids.add(det_id)
+            added.append(det_id)
+        self._auto_object_fids = fids
+        return added
 
     def _removed_canonical_objects(self, kept_geoms: list) -> set:
         """Indices into _auto_objects of detections deleted during the Manual
         refine: canonical objects no longer meaningfully covered (>= 30% of
         their area) by any harvested geometry. Spatial-index candidates keep
-        this linear-ish; it runs once per Back-to-review."""
+        this linear-ish; it runs once per Back-to-review.
+
+        Scoped to the det_ids the session actually IMPORTED. The import carries
+        the visible set, so walking the whole canonical list read every
+        detection the confidence or size filter was hiding as deleted: opening
+        a fix session and closing it without touching anything wiped them, and
+        a later slider move could no longer bring them back. With no recorded
+        import set, nothing is treated as deleted: under-reporting a deletion
+        costs one extra polygon, over-reporting one destroys work.
+        """
         objects = getattr(self, "_auto_objects", None) or []
-        if not objects:
+        session_ids = getattr(self, "_handoff_imported_det_ids", None)
+        if not objects or not session_ids:
             return set()
         from qgis.core import QgsFeature, QgsGeometry, QgsSpatialIndex
 
@@ -491,6 +740,8 @@ class ManualHandoffMixin:
         for det_idx, (base, _score, _area) in enumerate(objects):
             if base is None or base.isEmpty():
                 continue
+            if self._object_fid_for(det_idx) not in session_ids:
+                continue  # filtered out of this session: not the user's doing
             area = base.area()
             if area <= 0:
                 continue
@@ -508,8 +759,10 @@ class ManualHandoffMixin:
         return removed
 
     def _restore_auto_review_after_handoff(self) -> None:
-        """Rebuild the Automatic review UI + blue layer after a Manual refine.
-        Confidence stays locked so the hand edits survive."""
+        """Rebuild the Automatic review UI + blue layer after a Manual refine,
+        then reslice so the folded bases drive the display like any other
+        Shapes change. Confidence stays editable: the touched objects are
+        exempt from the gates, so they survive every later slider move."""
         review = self._auto_review
         layer = getattr(self, "_handoff_source_layer", None)
         self._refine_handoff_active = False
@@ -525,68 +778,16 @@ class ManualHandoffMixin:
                 self.dock_widget.set_auto_review_active(
                     True, count=len(review.get("geoms") or []),
                     reset_controls=False)
-                # Confidence stays editable; hand edits are protected across a
-                # confidence change (see _auto_protected_geoms). Show the truth
-                # note when there is at least one protected object.
-                self.dock_widget.set_protected_note(bool(self._auto_protected_geoms))
             except (RuntimeError, AttributeError):
                 pass
+        # Push the harvested interim set, then reslice from the folded canonical
+        # objects (the selection layer exists again now, so the reslice has a
+        # target to push onto).
         self._refresh_auto_review_preview()
+        self._start_auto_reslice()
 
-    def _teardown_manual_session(self) -> None:
-        """Stop the Manual session without the confirm dialog (its edits are
-        being harvested, not discarded)."""
-        if self._shortcut_filter is not None:
-            try:
-                self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
-                canvas = self.iface.mapCanvas()
-                canvas.viewport().removeEventFilter(self._shortcut_filter)
-                canvas.removeEventFilter(self._shortcut_filter)
-            except RuntimeError:
-                pass
-        self._stopping_segmentation = True
-        try:
-            self.iface.mapCanvas().unsetMapTool(self.map_tool)
-            self._restore_previous_map_tool()
-        finally:
-            self._stopping_segmentation = False
-        self._reset_session()
-        if self.dock_widget:
-            try:
-                self.dock_widget.reset_session()
-            except (RuntimeError, AttributeError):
-                pass
-
-    def _discard_refine_handoff(self) -> None:
-        """Abort a Manual refine handoff (mode switch / unload) without committing
-        manual edits: clear the flag + UI lock and tear the manual session down.
-        The held _auto_review is left for its own teardown path to handle."""
-        if not self._refine_handoff_active:
-            return
-        self._auto_protected_geoms = []
-        self._auto_manual_removed = set()
-        self._handoff_source_layer = None
-        self._set_exemplar_bands_visible(True)
-        self._set_auto_zone_overlays_visible(True)
-        # Tear the manual session down BEFORE clearing the handoff flag: the
-        # teardown's _reset_session suppresses the manual_session_summary event
-        # only while the flag is still set, so clearing it first fires a spurious
-        # summary for this discarded (never-committed) handoff.
-        self._teardown_manual_session()
-        self._refine_handoff_active = False
-        if self.dock_widget:
-            try:
-                self.dock_widget._refine_handoff = False
-                self.dock_widget.set_protected_note(False)
-                self.dock_widget.refine_handoff_banner.setVisible(False)
-                self.dock_widget.back_to_review_btn.setVisible(False)
-                self.dock_widget.handoff_state_card.setVisible(False)
-                # Zero + hide the footer tally so it cannot linger under a torn
-                # down handoff (the recap gates on the now-cleared flag).
-                self.dock_widget._reset_handoff_counters()
-                self.dock_widget.mode_switch.setEnabled(True)
-            except (RuntimeError, AttributeError):
-                pass
+    # _teardown_manual_session lives in ManualWorkflowMixin (the session
+    # owner); the harvest paths above call it through the assembled class.
 
     # --- click-to-refine an imported detection -------------------------------
 
@@ -735,15 +936,30 @@ class ManualHandoffMixin:
                         self._maybe_prewarm_selected_crop)
 
     def _handoff_crop_spec_for(self, geom, anchor_pt) -> tuple:
-        """Deterministic crop identity for one detection: center + scale from
-        the object's bbox corners (+ an interior anchor, which never widens the
-        bounds), exactly what the open computes, so the prewarm and the open
-        agree on whether an encode is already covered."""
+        """The crop window one detection gets refined in: ``(cx, cy, scale)``.
+
+        On a local raster the window comes from the shared grid in
+        `core/crop_window.py`, so neighbouring detections land on ONE crop and
+        the second of them opens with no encode at all. Online layers keep the
+        canvas-mupp path, which is a different unit and has no warm-up. The
+        interior anchor is accepted for signature stability; it sits inside the
+        bounds, so it never moved the window."""
+        from ...core.crop_window import crop_window_for_object
         bb = geom.boundingBox()
-        pts = [(bb.xMinimum(), bb.yMinimum()), (bb.xMaximum(), bb.yMaximum()),
-               (anchor_pt.x(), anchor_pt.y())]
-        cx, cy, scale = self._compute_crop_center_and_mupp(pts)
-        return cx, cy, scale
+        bounds = (bb.xMinimum(), bb.yMinimum(), bb.xMaximum(), bb.yMaximum())
+        held = getattr(self, "_encoded_crop_window", None)
+        if self._is_online_layer:
+            # An online crop is described by a ground size per pixel rather than
+            # a zoom-out factor on native pixels, so the same grid is asked for
+            # in that unit: one ground unit per pixel, floored at the canvas
+            # resolution. Sharing matters more here than anywhere else, since a
+            # crop the model already holds is a set of map tiles NOT fetched.
+            return crop_window_for_object(
+                bounds, 1.0, held_window=held,
+                min_scale=self.iface.mapCanvas().mapUnitsPerPixel(),
+                max_scale=float("inf"))
+        return crop_window_for_object(
+            bounds, self._get_native_pixel_size(), held_window=held)
 
     def _maybe_prewarm_selected_crop(self) -> None:
         """Speculatively encode the single selected detection's crop (silent:
@@ -767,29 +983,82 @@ class ManualHandoffMixin:
         if anchor is None or anchor.isEmpty():
             return
         pt = anchor.asPoint()
+        from ...core.crop_window import crop_window_key
         cx, cy, scale = self._handoff_crop_spec_for(
             g, QgsPointXY(pt.x(), pt.y()))
-        spec = (round(cx, 6), round(cy, 6), round(float(scale or 0.0), 6))
-        if spec == getattr(self, "_handoff_crop_spec", None) and self._current_crop_info is not None:
-            return  # this object's crop is already encoded
-        image_np, crop_info = self._extract_crop_only(
-            QgsPointXY(cx, cy), scale, quiet=True)
-        if image_np is None:
-            return
-        self._handoff_crop_spec = spec
+        spec = crop_window_key(cx, cy, scale)
+        if spec in (getattr(self, "_encoded_crop_window", None),
+                    getattr(self, "_inflight_crop_window", None)):
+            return  # this object's crop is encoded, or on its way
         QgsMessageLog.logMessage(
             "Refine handoff: prewarming selected detection's crop",
             "AI Segmentation", level=Qgis.MessageLevel.Info)
-        self._start_manual_encode(image_np, crop_info, None, show_busy=False)
+        # Off the GUI thread and silent: a selection click must not freeze for a
+        # crop nobody asked for yet, and must not report a read nobody wanted.
+        self._extract_and_encode_crop(
+            QgsPointXY(cx, cy), mupp_override=scale, show_busy=False, quiet=True)
 
     def _notify_handoff_selection(self) -> None:
-        """Push the selection count to the dock state card."""
+        """Push the selection count to the dock state card, then keep the Correct
+        panel synced to the polygon the session is now on (facts, merge)."""
         sel = getattr(self, "_handoff_selected_entries", None) or []
         if self.dock_widget:
             try:
                 self.dock_widget.set_handoff_selected(len(sel))
             except (RuntimeError, AttributeError):
                 pass
+        if len(sel) == 1:
+            self._sync_correct_panel_to_handoff_entry(sel[0])
+
+    def _sync_correct_panel_to_handoff_entry(self, entry) -> None:
+        """Keep the round-3 panel pointed at the polygon the session is editing.
+
+        In-session clicks move between polygons through the handoff (not through
+        _set_correct_selection), so the panel's facts line and Merge tile would
+        otherwise freeze on the first polygon. Resolve the entry's stable det_id
+        back to its canonical row and re-drive the panel (title stays; the class
+        is per-run). Best-effort and handoff-only; never opens a new session."""
+        if not getattr(self, "_refine_handoff_active", False) or self.dock_widget is None:
+            return
+        det_id = entry.get("det_id") if isinstance(entry, dict) else None
+        idx = None
+        if det_id is not None:
+            resolve = getattr(self, "_object_index_for_det_id", None)
+            if resolve is not None:
+                idx = resolve(det_id)
+        if idx is None:
+            return
+        self._correct_selected_idx = idx
+        try:
+            self.dock_widget.set_correct_selection(1)
+            self.dock_widget.enter_ai_reshape_state()
+            self.dock_widget.set_merge_available(
+                self._selected_has_mergeable_neighbor(idx))
+        except (RuntimeError, AttributeError):
+            pass
+        _push = getattr(self, "_push_shape_only_state", None)
+        if _push is not None:
+            _push()
+
+    def _set_ai_session_armed_line(self, loading: bool) -> None:
+        """The panel armed line during an AI fix session: an honest loading note
+        while the imagery around the polygon is being read, then the keep/trim
+        gesture help once the crop is ready. Handoff-only; add mode has its own
+        lane line, so it is left untouched there."""
+        if not getattr(self, "_refine_handoff_active", False) or self.dock_widget is None:
+            return
+        if getattr(self, "_refine_add_mode_active", False):
+            return
+        try:
+            if loading:
+                self.dock_widget.set_correct_armed_line(
+                    tr("Reading the imagery around this polygon..."), "info")
+            else:
+                self.dock_widget.set_correct_armed_line(
+                    tr("Left-click adds a keep point, right-click a trim point. "
+                       "The outline follows."), "armed")
+        except (RuntimeError, AttributeError):
+            pass
 
     def _refresh_handoff_selection_band(self) -> None:
         """Redraw the white selection outline over the selected entries. Prunes
@@ -879,9 +1148,17 @@ class ManualHandoffMixin:
             getattr(self, "_encode_cursor_set", True))
 
     def _on_handoff_cursor_moved(self, point) -> None:
-        """Map-tool hover: highlight the detection under the cursor (handoff
-        only; pure canvas work, never a model call)."""
-        if not self._refine_handoff_active or self._encode_blocks_ui():
+        """Map-tool hover during a session on the map.
+
+        In the review's fix session it highlights the detection under the cursor
+        (pure canvas work, never a model call). In plain Manual there is no
+        detection to highlight, so a resting cursor is used for the one thing it
+        does say: where the next click is going, and therefore which imagery to
+        have ready."""
+        if not self._refine_handoff_active:
+            self._schedule_manual_hover_warm(point)
+            return
+        if self._encode_blocks_ui():
             return
         if not self.saved_polygons:
             return
@@ -889,6 +1166,8 @@ class ManualHandoffMixin:
             raster_pt = self._transform_to_raster_crs(point)
         except (RuntimeError, AttributeError):
             return
+        if raster_pt is None:
+            return  # cursor is outside the raster CRS domain
         self._set_handoff_hover_entry(self._hit_test_saved_entry(raster_pt))
 
     def _click_was_additive(self) -> bool:
@@ -956,15 +1235,6 @@ class ManualHandoffMixin:
             "AI Segmentation", level=Qgis.MessageLevel.Info)
         return True
 
-    def _on_handoff_edit_clicked(self) -> None:
-        """State-card Edit shape: opens the single selected detection (the
-        button only shows when exactly one is selected)."""
-        self._edit_selected_saved_polygon()
-
-    def _on_handoff_delete_clicked(self) -> None:
-        """State-card Remove: deletes the open edit or the selection."""
-        self._on_delete_active_object()
-
     def _edit_selected_saved_polygon(self) -> bool:
         """Open the (single) selected detection for SAM editing, seeded at its
         interior point. Returns True if an edit session started."""
@@ -1009,9 +1279,9 @@ class ManualHandoffMixin:
     def _absorb_overlapping_saved(self, geom):
         """Refine handoff only: union `geom` with any already-saved detections it
         genuinely OVERLAPS (shared area, not a mere shared edge) and drop those,
-        so clicking to complete a partial detection grows ONE uniform polygon
-        instead of stacking a new layer on top. Distinct neighbours that only
-        touch are left alone. Returns the (possibly grown) geometry."""
+        so a NEW shape drawn over an existing one grows into one polygon instead
+        of stacking a layer on top. Distinct neighbours that only touch are left
+        alone. Returns the (possibly grown) geometry."""
         if not self._refine_handoff_active or geom is None or geom.isEmpty():
             return geom
         # This is the single choke point for a saved shape in the handoff (the
@@ -1022,6 +1292,15 @@ class ManualHandoffMixin:
                 self.dock_widget.note_handoff_shape_edited()
             except (RuntimeError, AttributeError):
                 pass
+        # Saving an object that was OPENED for editing never eats its
+        # neighbours. One object is edited at a time, and a click can no longer
+        # grow it over another detection (_grow_open_object_with_click), so an
+        # overlap here can only be one the run itself produced. Swallowing a
+        # neighbour over 10% of it, silently and outside the undo history, is not
+        # an edit of the object the user opened. Joining two detections is what
+        # Merge with neighbours is for.
+        if self._is_refining_saved_object:
+            return geom
         merged = geom
         merged_bb = merged.boundingBox()
         new_polys: list = []
@@ -1070,107 +1349,6 @@ class ManualHandoffMixin:
                     pass
         return merged
 
-    def _geom_overlaps_any(self, geom, others) -> bool:
-        """True if `geom` overlaps any geometry in `others` by area (>= the
-        complete-overlap fraction of the smaller), i.e. they are the same object,
-        not merely touching neighbours. Cheap bbox pre-filter first."""
-        if geom is None or geom.isEmpty() or not others:
-            return False
-        bb = geom.boundingBox()
-        for o in others:
-            if o is None or o.isEmpty():
-                continue
-            if not bb.intersects(o.boundingBox()) or not geom.intersects(o):
-                continue
-            inter = geom.intersection(o)
-            if inter is None or inter.isEmpty():
-                continue
-            smaller = min(geom.area(), o.area())
-            if smaller > 0 and inter.area() / smaller >= self._COMPLETE_OVERLAP_FRAC:
-                return True
-        return False
-
-    def _dissolve_overlapping(self, geoms: list) -> list:
-        """Union geometries that OVERLAP by area into one (no stacked layers in
-        the committed output), leaving merely-touching or disjoint objects
-        separate so the instance count is preserved. Spatially indexed (cheap
-        bbox prune first), so it stays light even on a big review set."""
-        from qgis.core import QgsFeature, QgsSpatialIndex
-        items = [g for g in geoms if g is not None and not g.isEmpty()]
-        if len(items) <= 1:
-            return items
-        index = QgsSpatialIndex()
-        keep: dict = {}
-        nid = 0
-        for g in items:
-            merged = g
-            matches = []
-            for fid in index.intersects(merged.boundingBox()):
-                h = keep.get(fid)
-                if h is None or not merged.intersects(h):
-                    continue
-                inter = merged.intersection(h)
-                if inter is None or inter.isEmpty():
-                    continue
-                smaller = min(merged.area(), h.area())
-                if smaller > 0 and inter.area() / smaller >= self._COMPLETE_OVERLAP_FRAC:
-                    matches.append(fid)
-            for fid in matches:
-                union = merged.combine(keep[fid])
-                if union is not None and not union.isEmpty():
-                    merged = union
-                    keep[fid] = None
-            feat = QgsFeature(nid)
-            feat.setGeometry(merged)
-            index.insertFeature(feat)
-            keep[nid] = merged
-            nid += 1
-        return [g for g in keep.values() if g is not None]
-
-    def _merge_kept_with_protected(self, geoms: list, protected: list) -> list:
-        """Re-merge a re-filtered auto detection set against hand-edited
-        ``protected`` geometries, scoped to the protected neighbourhood so the
-        tail stays O(protected), not O(all detections).
-
-        Drops any detection that overlaps a protected geom by area (same
-        object, so the manual edit wins), then dissolves ONLY the protected
-        geoms plus the kept detections whose bounding box touches a protected
-        bounding box. The dissolve threshold equals the filter threshold, so a
-        detection that survived the filter can never reach the dissolve
-        threshold against a protected geom; the only pairs the dissolve can
-        actually merge live in that neighbourhood, so the untouched remainder
-        (kept detections whose bbox touches no protected geom) is appended
-        as-is."""
-        prot = [g for g in protected if g is not None and not g.isEmpty()]
-        if not prot:
-            return [g for g in geoms if g is not None and not g.isEmpty()]
-        from qgis.core import QgsFeature, QgsSpatialIndex
-        # One index over the small protected set, queried per detection (the
-        # linear scan per geom is gone). The candidate list it returns is the
-        # same bbox pre-filter _geom_overlaps_any applies, so scanning it is
-        # identical to scanning all of protected.
-        index = QgsSpatialIndex()
-        pmap: dict = {}
-        for i, g in enumerate(prot):
-            feat = QgsFeature(i)
-            feat.setGeometry(g)
-            index.insertFeature(feat)
-            pmap[i] = g
-        near: list = []
-        remainder: list = []
-        for g in geoms:
-            if g is None or g.isEmpty():
-                continue
-            cands = [pmap[fid] for fid in index.intersects(g.boundingBox())]
-            if not cands:
-                # No protected bbox to touch: this detection can never merge.
-                remainder.append(g)
-                continue
-            if self._geom_overlaps_any(g, cands):
-                continue  # same object as a protected geom: the manual edit wins
-            near.append(g)
-        return self._dissolve_overlapping(near + prot) + remainder
-
     def _next_handoff_det_id(self) -> int:
         """Next synthetic per-instance id for entries with no canonical det_id
         (hand-drawn saves, legacy reviews). Monotonic within the session."""
@@ -1181,10 +1359,10 @@ class ManualHandoffMixin:
         return seq
 
     def _dissolve_overlapping_entries(self, entries: list):
-        """Identity-aware `_dissolve_overlapping`: entries are (geom, det_id,
-        score) triples. Overlapping-by-area geometries union into one whose
-        det_id is the FIRST member's (colour stability) and whose score is the
-        max (a stitched object is as confident as its best part). Returns the
+        """Union overlapping-by-area entries, identity-aware: entries are (geom,
+        det_id, score) triples. Overlapping-by-area geometries union into one
+        whose det_id is the FIRST member's (colour stability) and whose score is
+        the max (a stitched object is as confident as its best part). Returns the
         aligned (geoms, ids, scores) lists; ids are always ints (synthetic ones
         were assigned at entry creation), scores may carry a 1.0 fallback."""
         from qgis.core import QgsFeature, QgsSpatialIndex
@@ -1528,25 +1706,32 @@ class ManualHandoffMixin:
         self._unfrozen_display_polygon = geom
         self._update_mask_visualization()
 
-        # Encode a crop that fits the WHOLE object (bbox corners + click), so a
-        # large detection is not clipped by a click-centered 1024px crop. The
-        # encode is async on the interactive path (PERF-01); clicks that land
-        # while it runs are remembered and replayed on completion. When the
-        # speculative selection prewarm already encoded (or is encoding) this
-        # exact crop, skip the duplicate extract + encode entirely: the first
-        # editing click lands on a warm crop. A wrong skip only costs the
-        # normal self-heal re-encode at first click, never correctness.
+        # Encode a crop that fits the WHOLE object, so a large detection is not
+        # clipped by a click-centered 1024px crop. Three cases, and only the
+        # third makes the user wait:
+        #   - the predictor already HOLDS this window (a neighbour opened it, or
+        #     the hover warm-up did): ready for keep/trim clicks right now;
+        #   - a read for this exact window is in flight: attach to it rather
+        #     than starting a second one, and say so;
+        #   - otherwise start it, without the application busy cursor, so hover
+        #     and the next pick stay alive while the imagery is read.
+        # The comparison is against windows that were actually encoded or are
+        # actually being read, never against an intent, so a failed read can
+        # never pass as a warm crop.
+        from ...core.crop_window import crop_window_key
         cx, cy, scale = self._handoff_crop_spec_for(geom, raster_pt)
-        spec = (round(cx, 6), round(cy, 6), round(float(scale or 0.0), 6))
-        if spec == getattr(self, "_handoff_crop_spec", None) and (
-                self._encoding_in_progress or self._current_crop_covers_bbox(geom.boundingBox())):
+        spec = crop_window_key(cx, cy, scale)
+        if (spec == getattr(self, "_encoded_crop_window", None) and self._current_crop_info is not None):
+            self._set_ai_session_armed_line(loading=False)
             return
-        # Record the spec only AFTER the encode actually started: a False
-        # return (pipe busy with another crop, extraction error) must not
-        # stamp this spec, or a later re-open could skip its encode over a
-        # neighbouring crop that merely covers the bbox at the wrong scale.
-        if self._extract_and_encode_crop(QgsPointXY(cx, cy), mupp_override=scale):
-            self._handoff_crop_spec = spec
+        if (spec == getattr(self, "_inflight_crop_window", None) and self._encoding_in_progress):
+            self._set_ai_session_armed_line(loading=True)
+            return
+        if self._extract_and_encode_crop(
+                QgsPointXY(cx, cy), mupp_override=scale, show_busy=False):
+            # Honest wait: the imagery is being read; the gesture help returns
+            # when the encode completes (_on_manual_encode_done).
+            self._set_ai_session_armed_line(loading=True)
 
     def _refine_edit_session_active(self) -> bool:
         """True while a detection is open for editing: the geometry state
@@ -1631,15 +1816,42 @@ class ManualHandoffMixin:
                 pass
         self._update_handoff_progress()
 
-    def _refine_polygon_mask_input(self):
-        """SAM mask_input (low-res logits) built from the OPEN object's current
-        display geometry, rasterized onto the encoded crop grid. This is the
-        base-Manual context seed: the first editing click predicts WITH the
-        object as prior, so it refines the whole shape (a click beside the
-        polygon grows it along the underlying object) instead of segmenting an
-        unrelated element. None when there is no crop or no geometry."""
-        info = self._current_crop_info
+    def _shape_in_progress_geometry(self):
+        """Everything the object being edited holds right now, EXCEPT the live
+        mask: the display polygon plus every part frozen when a click moved the
+        session to another crop.
+
+        The frozen parts matter. A click outside the encoded crop freezes the
+        shape so far and reads new imagery, and the shape has to arrive on that
+        new crop as context or the click segments whatever sits under it as an
+        unrelated object: click a house, then click the garden beside it, and
+        the garden came back on its own instead of the house growing into it.
+        """
+        parts = [s.polygon for s in self._frozen_sessions
+                 if s.polygon is not None and not s.polygon.isEmpty()]
         base = self._unfrozen_display_polygon
+        if base is not None and not base.isEmpty():
+            parts.append(base)
+        if not parts:
+            return None
+        if len(parts) == 1:
+            return parts[0]
+        combined = QgsGeometry.unaryUnion(parts)
+        if combined is None or combined.isEmpty():
+            return None
+        return combined
+
+    def _refine_polygon_mask_input(self):
+        """SAM mask_input (low-res logits) built from the shape being edited,
+        rasterized onto the encoded crop grid. This is the base-Manual context
+        seed: a click predicts WITH the shape so far as prior, so it refines
+        that shape (a click beside it grows it along the underlying object)
+        instead of segmenting an unrelated element.
+
+        The rasterization clips to the crop, so a shape that shares no pixels
+        with the current crop yields None and the click starts clean."""
+        info = self._current_crop_info
+        base = self._shape_in_progress_geometry()
         if info is None or base is None or base.isEmpty():
             return None
         mask = self._rasterize_geom_to_crop(
@@ -1669,6 +1881,37 @@ class ManualHandoffMixin:
         if combined is None or combined.isEmpty():
             return None
         return combined
+
+    def _other_objects_mask_for_crop(self, bounds, img_shape):
+        """Every OTHER detection's ground on this crop's pixel grid, or None.
+
+        Editing runs on one object at a time, so the shape being edited must not
+        grow over its neighbours: an overlap reads as two objects claiming the
+        same ground, and the save used to answer that by swallowing the
+        neighbour whole. The object being edited is not in here, since opening
+        it took it out of ``saved_polygons``.
+        """
+        if not self._refine_handoff_active or not self.saved_polygons:
+            return None
+        try:
+            from qgis.core import QgsRectangle
+            crop = QgsRectangle(bounds[0], bounds[1], bounds[2], bounds[3])
+            parts = []
+            for entry in self.saved_polygons:
+                g = self._entry_geom(entry)
+                if g is None or g.isEmpty():
+                    continue
+                if not crop.intersects(g.boundingBox()):
+                    continue
+                parts.append(g)
+            if not parts:
+                return None
+            union = parts[0] if len(parts) == 1 else QgsGeometry.unaryUnion(parts)
+            if union is None or union.isEmpty():
+                return None
+            return self._rasterize_geom_to_crop(union, bounds, img_shape)
+        except Exception:  # noqa: BLE001 -- a click must not fail over this
+            return None
 
     def _rasterize_geom_to_crop(self, geom, bounds, img_shape):
         """Rasterize a raster-CRS geometry onto the crop pixel grid (bool

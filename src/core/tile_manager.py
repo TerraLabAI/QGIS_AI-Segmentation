@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import math
-from typing import Optional
 
-# Tiles are sent at the model's native processing size so the server skips an
-# input resize. The grid/credit/detail math reads this symbolically (stride =
-# int(TILE_SIZE * (1 - OVERLAP_FRACTION))); credits are per-tile, not per-pixel.
+# Side of a request tile, in pixels. The grid/credit/detail math reads this
+# symbolically (stride = int(TILE_SIZE * (1 - OVERLAP_FRACTION))); credits are
+# per-tile, not per-pixel.
 # Masks decode at the server-reported size and map by mask.shape, so detections
 # stay geo-exact regardless of this value.
 TILE_SIZE = 1008
@@ -54,6 +53,18 @@ NATIVE_OVERSAMPLE_MAX = 2.0
 # Minimum pixels across for an object to count as resolvable in the picker's
 # fallback. Client fallback for the server policy's `object_min_px`.
 AUTO_OBJECT_MIN_PX = 20
+# Object ground size as a fraction of a tile's ground side (TILE_SIZE * m/px)
+# at or above which the object can no longer be counted on to come back whole:
+# an object narrower than TILE_SIZE * OVERLAP_FRACTION pixels always falls
+# inside one tile, past that the run leans on the seam stitch, and near the
+# tile side each piece carries too little context to stitch. Client fallback
+# for the server policy's `seed.split_risk_tile_frac`.
+SPLIT_RISK_TILE_FRAC = 0.5
+# Native pixels an object's NARROW dimension must span before the coarse mask
+# grid may be requested for it: under this a half-cell boundary shift eats the
+# object's thin parts. Client fallback for the server policy's
+# `seed.mask_scale.min_width_px`.
+MASK_SCALE_MIN_WIDTH_PX = 12.0
 
 # Highest detail level the slider exposes (and the loop bound in
 # _max_useful_detail): the longer zone side renders as this many tiles at the
@@ -74,6 +85,7 @@ SUBDIVIDE_MIN_PARENT_PX = 256
 def subdivide_quadrants(
     x: int, y: int, w: int, h: int,
     overlap_fraction: float = SUBDIVIDE_OVERLAP_FRACTION,
+    min_parent_px: int = SUBDIVIDE_MIN_PARENT_PX,
 ) -> list[tuple[int, int, int, int]]:
     """Split one tile rect into 4 overlapping quadrants (same pixel grid).
 
@@ -83,7 +95,7 @@ def subdivide_quadrants(
     least one quadrant (or overlapping enough for the merger to stitch it).
     Degenerate parents (too small to split on either axis) return [].
     """
-    if min(w, h) < SUBDIVIDE_MIN_PARENT_PX:
+    if min(w, h) < min_parent_px:
         return []
     ov_x = int(w * overlap_fraction)
     ov_y = int(h * overlap_fraction)
@@ -141,7 +153,7 @@ class TileManager:
 
     def compute_grid(
         self, image_width: int, image_height: int
-    ) -> Optional[list[tuple[int, int, int, int]]]:
+    ) -> list[tuple[int, int, int, int]] | None:
         """Compute tile grid for an image.
 
         Returns:

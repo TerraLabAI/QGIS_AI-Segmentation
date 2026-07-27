@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from .review_defaults import HOLE_NOISE_CEILING_M
+
 if TYPE_CHECKING:
     from qgis.core import QgsRasterLayer, QgsRectangle
 
@@ -23,15 +25,27 @@ _RLE_FORMAT: str = "offset_count_row_major_one_based"
 
 # Tiles are uploaded as JPEG, not PNG. The detection backend decodes with a
 # format-agnostic PIL Image.open(), so the wire format is purely a client-side
-# size choice, and JPEG is ~4-8x smaller than lossless PNG for aerial imagery.
-# Upload bytes dominate the per-tile time on slow connections (and the submits
-# are serialized on the worker thread), so this is the single biggest network
-# win for users on poor links. Quality 90 keeps libjpeg at 4:4:4 chroma
-# (no colour subsampling), so detection quality is effectively unchanged while
-# the payload stays a fraction of the PNG size. Lower it toward 80-85 to trade
-# a little fidelity for even smaller uploads.
+# size choice, and JPEG stays a fraction of lossless PNG for aerial imagery.
+# Upload bytes dominate the per-tile time on slow connections, so the encode
+# quality is a fidelity/bandwidth trade-off. Detection scores sitting near the
+# review confidence cutoff are sensitive to compression noise, so the default
+# stays near-lossless (Qt's JPEG writer keeps 4:4:4 chroma from quality 90 up);
+# the server policy can lower it fleet-wide for bandwidth without a release
+# (seed.tile_jpeg_quality, read at encode time by _tile_jpeg_quality).
 _TILE_IMAGE_FORMAT: str = "JPEG"
-_TILE_JPEG_QUALITY: int = 90
+_TILE_JPEG_QUALITY: int = 98
+
+
+def _tile_jpeg_quality() -> int:
+    """Encode quality resolved from the cached server policy when present, else
+    the built-in default. Cache-only (no network), safe on any thread; fails to
+    the constant so offline and older servers are unaffected."""
+    try:
+        from .detection_policy import tile_jpeg_quality  # noqa: PLC0415
+        return tile_jpeg_quality(_TILE_JPEG_QUALITY)
+    except Exception:  # noqa: BLE001 - policy is optional, never break encode
+        return _TILE_JPEG_QUALITY
+
 
 # Reference-example ("exemplar") crops are pasted in ONE horizontal row along one
 # edge of a tile (composite_tile_with_stamps). The whole band MUST stay inside the
@@ -51,6 +65,49 @@ _STAMP_PAD: int = 3            # gap around each pasted crop
 _STAMP_MAX: int = 195
 
 
+def should_paste_stamp(
+    run_scale_side: float, cap: int, has_prompt: bool,
+    min_scale: float = 0.85,
+) -> bool:
+    """Decide whether an example crop is worth PASTING into tiles.
+
+    ``run_scale_side`` is the crop's long side (px) when rendered at the run's
+    tile resolution (true apparent scale); ``cap`` is the band budget
+    (stamp_size_cap). A paste that would shrink the crop below ``min_scale``
+    of true scale shows the object smaller than the tile's real objects, and
+    the model matches by apparent scale, so with a prompt present the paste
+    is skipped (the exemplar still counts in-situ on tiles that fully contain
+    it). Without a prompt the paste is the run's only query, so it always
+    goes through (a shrunk reference beats an empty query). Excludes follow
+    the same rule: a wrong-scale negative misleads the same matching.
+    """
+    if not has_prompt:
+        return True
+    if run_scale_side <= 0 or cap <= 0:
+        return True
+    return cap >= run_scale_side * min_scale
+
+
+def _stamp_pad() -> int:
+    """Crop padding resolved from the cached server policy when present, else
+    the built-in default. Cache-only (no network), safe on any thread; fails to
+    the constant so offline and older servers are unaffected."""
+    try:
+        from .detection_policy import exemplar_stamp_pad_px  # noqa: PLC0415
+        return exemplar_stamp_pad_px(_STAMP_PAD)
+    except Exception:  # noqa: BLE001 - policy is optional, never break layout
+        return _STAMP_PAD
+
+
+def _stamp_max() -> int:
+    """Crop size cap resolved the same way as _stamp_pad."""
+    try:
+        from .detection_policy import exemplar_stamp_max_px  # noqa: PLC0415
+        return exemplar_stamp_max_px(_STAMP_MAX)
+    except Exception:  # noqa: BLE001 - policy is optional, never break layout
+        return _STAMP_MAX
+
+
 def stamp_size_cap(n: int) -> int:
     """Longest-side pixel cap for ``n`` exemplar crops sharing one band row.
 
@@ -58,14 +115,20 @@ def stamp_size_cap(n: int) -> int:
     fit the vertical overlap band (minus padding), and ``n`` crops must fit the
     tile width. The binding (smallest) ceiling wins; the band budget binds for
     every supported count and the width share only bites at larger ``n``.
+
+    The size cap and the padding are server dials (``exemplar.stamp_max_px``,
+    ``exemplar.stamp_pad_px``) resolved HERE rather than by the callers, so the
+    worker's pre-sizing and the compositor's layout can never read two
+    different values.
     """
     from .tile_manager import OVERLAP_FRACTION, TILE_SIZE
 
     n = max(1, int(n))
+    pad = _stamp_pad()
     overlap_px = int(TILE_SIZE * OVERLAP_FRACTION)
-    band_budget = overlap_px - 2 * _STAMP_PAD
-    width_budget = (TILE_SIZE - _STAMP_PAD) // n - _STAMP_PAD
-    return max(1, min(_STAMP_MAX, band_budget, width_budget))
+    band_budget = overlap_px - 2 * pad
+    width_budget = (TILE_SIZE - pad) // n - pad
+    return max(1, min(_stamp_max(), band_budget, width_budget))
 
 
 def in_situ_exemplar_box(
@@ -103,9 +166,36 @@ def in_situ_exemplar_box(
     return [bx0, by0, bx1, by1]
 
 
+def region_exemplar_box(
+    full_box, tx: int, ty: int, tw: int, th: int, min_side: float = 8.0,
+) -> list[float] | None:
+    """Tile-local pixel box for a REGION marker, clipped to this tile.
+
+    A region exemplar (a review correction box) flags an AREA to look at
+    again, not the outline of one object, so a partial view keeps its meaning:
+    unlike ``in_situ_exemplar_box`` it does not require full containment. The
+    intersection with the tile's grid rect is returned whenever both clipped
+    sides reach ``min_side`` px (below that the sliver carries no usable
+    signal); None otherwise.
+    """
+    if not full_box or len(full_box) != 4:
+        return None
+    try:
+        x0, y0, x1, y1 = (float(v) for v in full_box)
+    except (TypeError, ValueError):
+        return None
+    bx0 = min(max(x0 - tx, 0.0), float(tw))
+    by0 = min(max(y0 - ty, 0.0), float(th))
+    bx1 = min(max(x1 - tx, 0.0), float(tw))
+    by1 = min(max(y1 - ty, 0.0), float(th))
+    if bx1 - bx0 < min_side or by1 - by0 < min_side:
+        return None
+    return [bx0, by0, bx1, by1]
+
+
 def top_row_bottom_stamp_ok(
     top_ty: int, top_th: int, next_ty: int, band_content_h: int,
-    pad: int = _STAMP_PAD,
+    pad: int = 0,
 ) -> bool:
     """Whether the TOP grid row can stamp its band on the BOTTOM edge safely.
 
@@ -119,7 +209,11 @@ def top_row_bottom_stamp_ok(
     overlap is too small they would hide the same strip, so the top row keeps its
     top band (the top-edge residual is unchanged, never traded for an interior
     hole). ``band_content_h`` is the tallest stamp, an upper bound on the band.
+    ``pad`` <= 0 resolves the same padding stamp_size_cap uses, so this guard
+    and the layout can never disagree.
     """
+    if pad <= 0:
+        pad = _stamp_pad()
     return next_ty + pad + band_content_h <= top_ty + top_th - pad - band_content_h
 
 
@@ -157,7 +251,9 @@ def decode_rle_to_mask(rle: str | dict, height: int, width: int) -> np.ndarray:
     Returns:
         Boolean numpy array of shape (height, width). True = foreground.
     """
-    flat = np.zeros(height * width, dtype=np.uint8)
+    # Allocate the boolean grid directly: a uint8 buffer plus astype(bool) is two
+    # full HxW allocations per mask, and a dense tile decodes over a hundred masks.
+    flat = np.zeros(height * width, dtype=bool)
 
     if isinstance(rle, dict):
         logger.warning(
@@ -166,14 +262,62 @@ def decode_rle_to_mask(rle: str | dict, height: int, width: int) -> np.ndarray:
             width,
             height,
         )
-        return flat.reshape((height, width)).astype(bool)
+        return flat.reshape((height, width))
 
     if not isinstance(rle, str) or not rle.strip():
-        return flat.reshape((height, width)).astype(bool)
+        return flat.reshape((height, width))
 
     tokens = rle.split()
     total = height * width
 
+    pairs = _rle_pairs(tokens)
+    if pairs is None:
+        # A token is not an integer: walk the pairs one by one so the log names
+        # the bad pair instead of just counting it.
+        _apply_rle_pairs_slow(flat, tokens, total)
+    else:
+        offsets, counts = pairs
+        idx = offsets - 1
+        bad = (idx < 0) | (counts <= 0)
+        if bad.any():
+            logger.warning(
+                "decode_rle_to_mask: %d malformed run pair(s) skipped "
+                "(offset below 1 or non-positive count)",
+                int(bad.sum()),
+            )
+        ends = idx + counts
+        over = ends > total
+        if over.any():
+            logger.warning(
+                "decode_rle_to_mask: %d run(s) exceed mask size %d; clipping",
+                int(over.sum()), total,
+            )
+            ends = np.minimum(ends, total)
+        keep = ~bad
+        for start, end in zip(idx[keep].tolist(), ends[keep].tolist()):
+            flat[start:end] = True
+
+    return flat.reshape((height, width))
+
+
+def _rle_pairs(tokens: list[str]):
+    """Parse the RLE tokens into (offsets, counts) int64 arrays in one numpy
+    pass. Returns None when a token is not an integer, so the caller can fall
+    back to the per-pair loop that reports which pair is malformed."""
+    n = (len(tokens) // 2) * 2
+    if n == 0:
+        empty = np.empty(0, dtype=np.int64)
+        return empty, empty
+    try:
+        nums = np.asarray(tokens[:n], dtype=np.int64)
+    except (ValueError, TypeError, OverflowError):
+        return None
+    return nums[0::2], nums[1::2]
+
+
+def _apply_rle_pairs_slow(flat: np.ndarray, tokens: list[str], total: int) -> None:
+    """Set the runs of a token list that failed the vectorized parse, reporting
+    each malformed pair by index."""
     for i in range(0, len(tokens) - 1, 2):
         try:
             offset = int(tokens[i])
@@ -211,9 +355,106 @@ def decode_rle_to_mask(rle: str | dict, height: int, width: int) -> np.ndarray:
             )
             end = total
 
-        flat[idx:end] = 1
+        flat[idx:end] = True
 
-    return flat.reshape((height, width)).astype(bool)
+
+# ---------------------------------------------------------------------------
+# Vectorization scale: parameters that live on the returned mask's pixel grid
+# ---------------------------------------------------------------------------
+# The service reports each mask's own width/height and may return masks on a
+# COARSER grid than the uploaded tile. Any per-pixel vectorization parameter
+# (the staircase simplify tolerance, the pinhole-fill ceiling) must then be
+# keyed to the mask's own grid cell, not the run's native pixel: a tolerance
+# below the actual staircase step cannot remove the stairs. CONSTRAINT: when
+# the mask grid matches the native pixel these derivations must reduce
+# BIT-EXACTLY to the historical native-gsd formulas, so already-shipped runs
+# never change geometry. The slack factor keeps float noise in the
+# ground-size / pixel-count divisions from ever flipping that equivalence;
+# only a genuinely coarser grid takes over.
+_MASK_CELL_SLACK: float = 1.000001
+
+
+def mask_cell_size(
+    ground_w: float, ground_h: float, mask_w: int, mask_h: int
+) -> float:
+    """Ground size of ONE cell of a returned mask's own pixel grid.
+
+    This is the staircase step of any polygon vectorized from that mask. The
+    max of the two axes is used so an anisotropic ratio never understates the
+    step. Returns 0.0 for degenerate inputs (no mask pixels / no ground size),
+    which every consumer treats as "grid unknown, use the native pixel".
+    """
+    if mask_w <= 0 or mask_h <= 0 or ground_w <= 0:
+        return 0.0
+    return max(ground_w / float(mask_w), ground_h / float(mask_h))
+
+
+def _vector_step(native_gsd: float, mask_cell: float) -> float:
+    """The grid step vectorization parameters scale with: the mask's own cell
+    when it is genuinely coarser than the native pixel, else the native pixel
+    exactly (see _MASK_CELL_SLACK for why not a plain max)."""
+    if mask_cell > native_gsd * _MASK_CELL_SLACK:
+        return mask_cell
+    return native_gsd
+
+
+# Multiple of the grid step used as the staircase simplify tolerance: enough to
+# strip the pixel staircase without moving a true corner by more than a cell.
+# Client fallback for the server policy's `review.tile_simplify_mult`.
+_TILE_SIMPLIFY_MULT: float = 0.75
+# Ground size (metres across) of the largest interior hole treated as a fillable
+# pinhole. Client fallback for `review.pinhole_m`. Imported rather than repeated:
+# Manual's own Fill-holes ceiling starts at the same judgement, and two copies of
+# "this hole is noise" that can drift is exactly how a courtyard gets deleted on
+# one path and kept on the other.
+_PINHOLE_GROUND_M: float = HOLE_NOISE_CEILING_M
+
+
+def tile_simplify_tolerance(
+    native_gsd: float, mask_cell: float = 0.0, mult: float = 0.0
+) -> float:
+    """Simplify tolerance (ground units) for polygonizing one returned mask.
+
+    ``mult`` times the vector step. Keyed to the MASK grid so a coarser
+    returned grid is de-staircased at its true step; identical to the
+    historical multiple of the native gsd whenever the mask grid matches the
+    tile. 0.0 (no simplify) when the run has no metric scale.
+
+    ``mult`` <= 0 uses the client constant. A live run passes the value it
+    resolved from the server policy ONCE at its start (see
+    ``detection_policy.tile_simplify_mult``); a replay of an archived run must
+    pass that run's own value, never a fresh policy read, or its geometry would
+    change under it.
+    """
+    if native_gsd <= 0:
+        return 0.0
+    if mult <= 0:
+        mult = _TILE_SIMPLIFY_MULT
+    return mult * _vector_step(native_gsd, mask_cell)
+
+
+def pinhole_fill_limit_px(
+    native_gsd: float, mask_cell: float = 0.0, ground_m: float = 0.0
+) -> int:
+    """Max hole area (in MASK-grid pixels) that counts as a fillable pinhole.
+
+    The pinhole ceiling is fixed in GROUND terms (texture pits fill, real
+    courtyards stay, see the worker's fill site); converting it to pixels of
+    the mask's own grid keeps that ground meaning when the returned grid is
+    coarser than the native pixel. Identical to the historical native-pixel
+    conversion when the grids match; 36 px when the run has no metric scale;
+    never below 9 px (a 3x3 speck is always noise, so that floor is mechanism
+    and stays client-side).
+
+    ``ground_m`` <= 0 uses the client constant; a run passes the value it
+    resolved from ``detection_policy.pinhole_fill_m`` at its start.
+    """
+    if native_gsd <= 0:
+        return 36
+    if ground_m <= 0:
+        ground_m = _PINHOLE_GROUND_M
+    step = _vector_step(native_gsd, mask_cell)
+    return max(9, int((ground_m / step) ** 2))
 
 
 def _set_quality_render_flags(settings) -> None:
@@ -257,21 +498,54 @@ def _set_blocking_remote_fetch(settings) -> None:
         pass
 
 
+# Hard cap on one zone render. The wait runs on the calling thread, which is
+# the GUI thread, so it is sized for a slow basemap to answer and not for a
+# dead one to be waited out.
+_RENDER_ZONE_TIMEOUT_MS: int = 25000
+
+# How many render waits are on this thread's stack. A caller that can be
+# reached from a queued signal reads render_loop_is_active() to know it is
+# running INSIDE one, where starting another render, or freeing the layer the
+# running job reads, is not safe.
+_render_loop_depth: int = 0
+
+
+def render_loop_is_active() -> bool:
+    """True while a render wait (nested event loop) is on the stack."""
+    return _render_loop_depth > 0
+
+
+def _exclude_user_input_flag():
+    """QEventLoop's "hold back user input" flag, for Qt5 and Qt6."""
+    from qgis.PyQt.QtCore import QEventLoop
+
+    from .qt_compat import resolve_qt_enum
+
+    return resolve_qt_enum(
+        QEventLoop, "ProcessEventsFlag", "ExcludeUserInputEvents")
+
+
 def render_zone_to_image(
-    layer: "QgsRasterLayer",
-    extent: "QgsRectangle",
+    layer: QgsRasterLayer,
+    extent: QgsRectangle,
     width: int,
     height: int,
-    timeout_ms: int = 120000,
+    timeout_ms: int = _RENDER_ZONE_TIMEOUT_MS,
     resample_local: bool = False,
 ):
-    """Render a whole zone to one QImage off the main thread, without freezing.
+    """Render a whole zone to one QImage, waiting on a nested event loop.
 
     Uses QgsMapRendererParallelJob, which renders on QGIS's own background
-    thread pool and emits finished() on the main thread. We wait on a local
-    QEventLoop so the UI keeps repainting and stays responsive (the
-    QgsMapRendererCustomPainterJob path it replaces blocked the UI, and doing it
-    once per tile froze QGIS on large online zones).
+    thread pool and emits finished() on the main thread. The caller waits on a
+    local QEventLoop, so this call still BLOCKS the caller (the whole run sits
+    here) and the flag RenderBlocking makes every uncached basemap tile
+    download before the loop quits. What the loop buys is repainting and timers,
+    not a free thread. It holds back user input for the whole wait: a click or a
+    window close delivered inside this frame would reenter the caller, and
+    quitting the application from there unwinds every loop on the stack and
+    returns into code whose objects are being destroyed. Callers reachable from
+    a queued signal can read render_loop_is_active() to tell they are already
+    inside such a wait.
 
     Critically for georeferencing: QgsMapSettings expands the requested extent to
     match the output aspect ratio. We return settings.visibleExtent() (the extent
@@ -331,8 +605,21 @@ def render_zone_to_image(
         job.finished.connect(loop.quit)
         # Safety net: never block the UI loop indefinitely on a stalled render.
         QTimer.singleShot(timeout_ms, loop.quit)
-        job.start()
-        loop.exec()
+        # Publish the job so a teardown running re-entrantly INSIDE loop.exec()
+        # (layer removal, project clear, unload, Cancel) can cancel it
+        # synchronously before the rendered layer can be freed underneath it,
+        # exactly like the per-tile render path. Queued teardown still arrives
+        # here: only user input is held back.
+        _active_render_jobs.append(job)
+        global _render_loop_depth
+        _render_loop_depth += 1
+        try:
+            job.start()
+            loop.exec(_exclude_user_input_flag())
+        finally:
+            _render_loop_depth -= 1
+            if job in _active_render_jobs:
+                _active_render_jobs.remove(job)
 
         if not job.isActive():
             img = job.renderedImage()
@@ -358,7 +645,7 @@ def render_zone_to_image(
     return img, actual_extent
 
 
-def visible_extent_for(extent: "QgsRectangle", width: int, height: int):
+def visible_extent_for(extent: QgsRectangle, width: int, height: int):
     """Return the extent QGIS would actually render for (extent, width, height).
 
     QgsMapSettings expands the requested extent to match the output aspect ratio
@@ -481,7 +768,7 @@ def _configure_downsample_resampling(layer, qgis_module) -> bool:
     return False
 
 
-def _local_raster_render_clone(layer: "QgsRasterLayer"):
+def _local_raster_render_clone(layer: QgsRasterLayer):
     """Return a private, resampling-configured CLONE of a local file-based GDAL
     raster, or None when the layer is not an eligible local raster (or the clone
     fails). The caller renders detection tiles through this clone so the user's
@@ -542,83 +829,8 @@ def _local_raster_render_clone(layer: "QgsRasterLayer"):
     return clone
 
 
-def render_tile_qimage(
-    layer: "QgsRasterLayer",
-    tile_extent: "QgsRectangle",
-    width: int,
-    height: int,
-    timeout_ms: int = 60000,
-):
-    """Render ONE tile's ground sub-extent to a width x height QImage.
-
-    Same QgsMapSettings recipe as render_zone_to_image (layer, destinationCrs,
-    output size, extent, parallel job, wait on a local QEventLoop) but for a
-    single tile rectangle instead of the whole zone. Because the per-tile extent
-    is the tile's bbox_native (derived from the global geo_transform) and the
-    output size is the tile's (tw, th) at the SAME ground-per-pixel as the zone,
-    the rendered pixels are identical to slicing the same tile out of one big
-    zone render: same destination CRS, same map units per pixel, same origin.
-
-    MAIN THREAD ONLY (QgsMapRendererParallelJob requires the GUI thread). The
-    AutoDetectionWorker calls this on the main thread via a bridge handshake, so
-    the heavy basemap fetch happens just-in-time per tile, overlapped with the
-    in-flight detections, instead of blocking on the whole zone up front.
-
-    Args:
-        layer:      Raster layer to render (local or online: XYZ/WMS/WMTS).
-        tile_extent: The tile's bbox_native as a QgsRectangle, in the layer CRS.
-        width:      Tile width in pixels (tw).
-        height:     Tile height in pixels (th).
-        timeout_ms: Hard cap so a stalled network render cannot hang forever.
-
-    Returns:
-        A QImage on success, or None on timeout / failure.
-    """
-    from qgis.core import QgsMapRendererParallelJob
-    from qgis.PyQt.QtCore import QEventLoop, QTimer
-
-    if width <= 0 or height <= 0:
-        logger.warning("render_tile_qimage: invalid dimensions %dx%d", width, height)
-        return None
-
-    try:
-        settings, render_clone = _tile_render_settings(
-            layer, tile_extent, width, height)
-
-        job = QgsMapRendererParallelJob(settings)
-        loop = QEventLoop()
-        job.finished.connect(loop.quit)
-        QTimer.singleShot(timeout_ms, loop.quit)
-        # Publish the job so a teardown running re-entrantly INSIDE loop.exec()
-        # (layer removal, project clear, unload, Cancel) can cancel it
-        # synchronously before the rendered layer can be freed underneath it.
-        _active_render_jobs.append(job)
-        try:
-            job.start()
-            loop.exec()
-        finally:
-            if job in _active_render_jobs:
-                _active_render_jobs.remove(job)
-
-        if not job.isActive():
-            img = job.renderedImage()
-        else:
-            job.cancelWithoutBlocking()
-            logger.warning("render_tile_qimage: render timed out after %d ms", timeout_ms)
-            return None
-        # The clone (when any) must outlive the render; release it only now.
-        del render_clone
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("render_tile_qimage: failed for %dx%d: %s", width, height, exc)
-        return None
-
-    if img is None or img.isNull():
-        return None
-    return img
-
-
 def _tile_render_settings(layer, tile_extent, width: int, height: int):
-    """Shared QgsMapSettings recipe for one tile render (sync AND async paths).
+    """The QgsMapSettings recipe for one tile render.
 
     Returns (settings, render_clone). The clone (None for online providers)
     MUST be kept referenced until the job has finished: it backs the layer the
@@ -658,11 +870,11 @@ def start_tile_render_job(
 
     ``on_done(img_or_None)`` is called exactly once on the main thread when the
     job finishes, times out, or is torn down by cancel_active_tile_render()
-    (a cancelled job reports None). Unlike render_tile_qimage this never blocks
-    the caller, so several tile renders overlap: each parallel job renders in
-    its own threads, and the blocking remote fetches of N tiles run side by
-    side instead of one after the other. Returns False when the job could not
-    be started (on_done is then NOT called).
+    (a cancelled job reports None). This never blocks the caller and never
+    opens a nested event loop, so several tile renders overlap: each parallel
+    job renders in its own threads, and the blocking remote fetches of N tiles
+    run side by side instead of one after the other. Returns False when the job
+    could not be started (on_done is then NOT called).
     """
     from qgis.core import QgsMapRendererParallelJob
     from qgis.PyQt.QtCore import QTimer
@@ -722,7 +934,8 @@ def start_tile_render_job(
 
 
 def tile_is_blank_array(
-    arr: np.ndarray, dominant_frac: float = _BLANK_TILE_DOMINANT_FRAC
+    arr: np.ndarray, dominant_frac: float = _BLANK_TILE_DOMINANT_FRAC,
+    quant: int = _BLANK_TILE_QUANT,
 ) -> bool:
     """True when a small RGB sample is essentially a single colour (nodata /
     uniform fill), using a coarse dominant-bucket test.
@@ -735,6 +948,7 @@ def tile_is_blank_array(
     Args:
         arr: (H, W, 3+) uint8-ish array. Extra channels beyond RGB are ignored.
         dominant_frac: fraction the top bucket must reach to call it blank.
+        quant: colour quantization step (bucket width per channel).
 
     Returns:
         True only when the sample is confidently uniform; False for anything it
@@ -743,7 +957,7 @@ def tile_is_blank_array(
     if arr is None or arr.ndim != 3 or arr.shape[2] < 3 or arr.size == 0:
         return False
     rgb = arr[:, :, :3].astype(np.int64)
-    q = rgb // _BLANK_TILE_QUANT
+    q = rgb // max(1, int(quant))
     # Pack the three quantized channels into one integer per pixel.
     packed = (q[:, :, 0] << 16) | (q[:, :, 1] << 8) | q[:, :, 2]
     flat = packed.reshape(-1)
@@ -752,6 +966,108 @@ def tile_is_blank_array(
     counts = np.unique(flat, return_counts=True)[1]
     dominant = int(counts.max())
     return (dominant / float(flat.size)) >= dominant_frac
+
+
+def tile_is_degenerate_array(
+    arr: np.ndarray, nodata_frac: float = 1.0, band_eps: float = 2.0
+) -> bool:
+    """True when a FULL-RESOLUTION tile array provably cannot contain an
+    object, so it can settle as an empty result with no model pass at all.
+
+    Two rules, both zero-loss by construction:
+
+    - No-data: the fraction of fully transparent pixels (alpha channel 0)
+      reaches ``nodata_frac``. There is no imagery there to detect on.
+    - Uniform: over the remaining (valid) pixels, every band's full spread
+      (max - min) stays within ``band_eps``. A truly uniform region has no
+      edges, and an object would create at least one.
+
+    This is deliberately NOT a low-variance / low-texture test: a calm lake
+    with one boat or a plain roof carrying panels has low variance but real
+    content, and must never be settled here (the broader dominant-bucket
+    ``tile_is_blank`` covers the retry-then-drop path for near-uniform
+    renders). The zero-loss claim also requires FULL-RES input: a downsampled
+    sample can lose a small object entirely, so it can never prove absence.
+
+    Args:
+        arr: (H, W, 3) RGB or (H, W, 4) RGBA uint8-ish array. With 4 channels
+             the last one is read as alpha; with 3 every pixel counts as valid.
+        nodata_frac: transparent fraction at/above which the tile settles.
+             Only fractions in (0, 1] are honoured (anything else disables the
+             no-data rule, never loosens it).
+        band_eps: max per-band spread (negative values are clamped to 0).
+
+    Returns:
+        True only when the tile is provably empty; False for anything the
+        check cannot classify (never over-skips).
+    """
+    if arr is None or arr.ndim != 3 or arr.shape[2] < 3 or arr.size == 0:
+        return False
+    eps = max(0.0, float(band_eps))
+    # Keep the tile's own dtype: widening a full-resolution tile to int64 costs
+    # 8x its size for a max-min that only ever needs the per-band extremes. The
+    # subtraction below is the one place that must not wrap, and it runs on 3
+    # values, so it takes the wide type there instead.
+    rgb = arr[:, :, :3].reshape(-1, 3)
+    if arr.shape[2] >= 4:
+        valid = arr[:, :, 3].reshape(-1) != 0
+        n_nodata = int(arr.shape[0] * arr.shape[1] - int(valid.sum()))
+        frac = n_nodata / float(arr.shape[0] * arr.shape[1])
+        if 0.0 < float(nodata_frac) <= 1.0 and frac >= float(nodata_frac):
+            return True
+        if not valid.any():
+            return True  # nothing but transparency, whatever the threshold
+        rgb = rgb[valid]
+    spread = np.subtract(rgb.max(axis=0), rgb.min(axis=0), dtype=np.float64)
+    return bool((spread <= eps).all())
+
+
+def tile_is_degenerate(img, nodata_frac: float = 1.0, band_eps: float = 2.0) -> bool:
+    """True when a rendered tile QImage is provably empty (all no-data or
+    uniform in every band), per tile_is_degenerate_array. Unlike
+    tile_is_blank this reads the FULL-resolution pixels (required for the
+    zero-loss guarantee) including the alpha channel. Reentrant (QImage),
+    safe on the worker thread; returns False on any conversion failure."""
+    try:
+        from qgis.PyQt.QtGui import QImage
+
+        if img is None or img.isNull():
+            return False
+        # Unpremultiplied ARGB so alpha reads directly and RGB is unscaled.
+        full = img.convertToFormat(QImage.Format.Format_ARGB32)
+        w, h = full.width(), full.height()
+        if w <= 0 or h <= 0:
+            return False
+        ptr = full.bits()
+        ptr.setsize(h * full.bytesPerLine())
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(h, full.bytesPerLine() // 4, 4)
+        arr = arr[:, :w, :]
+        # Qt BGRA byte order -> RGBA.
+        rgba = arr[:, :, [2, 1, 0, 3]]
+        return tile_is_degenerate_array(rgba, nodata_frac, band_eps)
+    except Exception as exc:  # noqa: BLE001 - a failed check must never skip a tile
+        logger.debug("tile_is_degenerate: check failed: %s", exc)
+        return False
+
+
+def _blank_tile_dials() -> tuple[int, float, int]:
+    """(sample side, dominant fraction, quantization step) resolved from the
+    cached server policy when present, else the built-in defaults. Cache-only
+    (no network), safe on any thread; fails to the constants so offline and
+    older servers skip exactly the tiles they skip today."""
+    try:
+        from .detection_policy import (  # noqa: PLC0415
+            blank_dominant_frac,
+            blank_quant,
+            blank_sample_px,
+        )
+        return (
+            blank_sample_px(_BLANK_TILE_SAMPLE_PX),
+            blank_dominant_frac(_BLANK_TILE_DOMINANT_FRAC),
+            blank_quant(_BLANK_TILE_QUANT),
+        )
+    except Exception:  # noqa: BLE001 - policy is optional, never break the check
+        return (_BLANK_TILE_SAMPLE_PX, _BLANK_TILE_DOMINANT_FRAC, _BLANK_TILE_QUANT)
 
 
 def tile_is_blank(img) -> bool:
@@ -765,8 +1081,9 @@ def tile_is_blank(img) -> bool:
 
         if img is None or img.isNull():
             return False
+        sample_px, dominant_frac, quant = _blank_tile_dials()
         small = img.scaled(
-            QSize(_BLANK_TILE_SAMPLE_PX, _BLANK_TILE_SAMPLE_PX),
+            QSize(sample_px, sample_px),
             Qt.AspectRatioMode.IgnoreAspectRatio,
             Qt.TransformationMode.FastTransformation,
         ).convertToFormat(QImage.Format.Format_RGB32)
@@ -778,7 +1095,7 @@ def tile_is_blank(img) -> bool:
         arr = np.frombuffer(ptr, dtype=np.uint8).reshape(h, w, 4)
         # Qt BGRA byte order -> RGB.
         rgb = arr[:, :, [2, 1, 0]]
-        return tile_is_blank_array(rgb)
+        return tile_is_blank_array(rgb, dominant_frac, quant)
     except Exception as exc:  # noqa: BLE001 - a failed check must never skip a tile
         logger.debug("tile_is_blank: check failed: %s", exc)
         return False
@@ -824,7 +1141,7 @@ def encode_tile_png(
     sub = img.copy(QRect(tx, ty, cw, ch))
     buf = QBuffer()
     buf.open(WriteOnly)
-    sub.save(buf, _TILE_IMAGE_FORMAT, _TILE_JPEG_QUALITY)
+    sub.save(buf, _TILE_IMAGE_FORMAT, _tile_jpeg_quality())
     data = bytes(buf.data())
     buf.close()
     if not data:
@@ -862,9 +1179,9 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps, bottom=False):
     example itself) can be dropped. Returns None on an empty/failed tile.
     """
     from qgis.PyQt.QtCore import QBuffer, QRect
+    from qgis.PyQt.QtGui import QPainter
 
     from .qt_compat import WriteOnly
-    from qgis.PyQt.QtGui import QPainter
 
     cw = min(tw, img.width() - tx)
     ch = min(th, img.height() - ty)
@@ -876,7 +1193,7 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps, bottom=False):
     min_x = min_y = None
     max_x = 0
     max_y = 0
-    pad = _STAMP_PAD
+    pad = _stamp_pad()
     if stamps:
         from .tile_manager import OVERLAP_FRACTION, TILE_SIZE
 
@@ -898,6 +1215,8 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps, bottom=False):
             else:
                 crop, label = stamp
                 obj_box = None
+            if crop is None:  # in-situ-only exemplar: nothing to paste
+                continue
             sw = crop.width()
             sh = crop.height()
             # Row full: stop (never wrap down past the overlap band).
@@ -946,7 +1265,7 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps, bottom=False):
 
     buf = QBuffer()
     buf.open(WriteOnly)
-    sub.save(buf, _TILE_IMAGE_FORMAT, _TILE_JPEG_QUALITY)
+    sub.save(buf, _TILE_IMAGE_FORMAT, _tile_jpeg_quality())
     data = bytes(buf.data())
     buf.close()
     if not data:
@@ -999,13 +1318,143 @@ def encoded_image_size(data: bytes) -> tuple[int, int] | None:
     return None
 
 
-def decode_detection_response(
+def should_request_semantic(
+    enabled: bool, has_prompt: bool, merge_separate: bool
+) -> bool:
+    """Whether to ask the service for a semantic coverage map on this run.
+
+    Only a map-like TEXT prompt qualifies: the coverage map is a fallback for
+    continuous features the per-instance pass can miss whole, and it needs a
+    text query to answer, so it is requested only when the server dial is on, a
+    text prompt is present, and that prompt's merge policy is map-like (not the
+    counting / SEPARATE policy). Off by default (the dial is fail-closed)."""
+    return bool(enabled) and bool(has_prompt) and not bool(merge_separate)
+
+
+def mask_scale_field(scale: int | None) -> int | None:
+    """The ``mask_scale`` value to attach to a /predict request, or None to omit.
+
+    The service accepts a per-request mask grid keyed to 1 or 2 (absent = the
+    full grid). Only the coarser grid is worth sending, and only scale 2 is
+    validated, so the client clamps the run's resolved decision to {1, 2} and
+    attaches the field ONLY for 2; scale 1 (the default full grid) and every
+    other value omit it, keeping the request byte-identical to a client that
+    never learned the field. Additive and optional: an older service ignores an
+    unknown field, so sending it is always backward-compatible."""
+    return 2 if scale == 2 else None
+
+
+def _opt_float(val: object) -> float | None:
+    """A plain float from an optional numeric field, else None. A JSON bool is
+    rejected (never read as 0.0/1.0)."""
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        return float(val)
+    return None
+
+
+def parse_semantic_fields(
+    response: dict,
+) -> tuple[str | None, float | None, float | None]:
+    """(semantic_rle, semantic_coverage, presence) from a response, each None
+    when the field is absent or malformed.
+
+    All three are additive and optional: an older service, or a tile with no
+    coverage output, omits them, and the caller treats absence as "no rescue
+    possible", never an error. The RLE is a non-empty string; coverage and
+    presence are plain floats."""
+    rle = response.get("semantic_rle")
+    if not isinstance(rle, str) or not rle.strip():
+        rle = None
+    return (
+        rle,
+        _opt_float(response.get("semantic_coverage")),
+        _opt_float(response.get("presence")),
+    )
+
+
+def should_rescue_with_semantic(
+    instance_count: int,
+    coverage: float | None,
+    has_rle: bool,
+    enabled: bool,
+    coverage_floor: float,
+) -> bool:
+    """Whether a tile's semantic coverage mask should stand in for a missing
+    per-instance result.
+
+    Fires ONLY when the rescue is enabled, the per-instance pass returned
+    NOTHING for this tile (``instance_count == 0``), a coverage mask is present,
+    and its coverage reaches the floor. A tile with any instance keeps today's
+    result untouched; a missing mask or a coverage below the floor leaves the
+    tile empty."""
+    if not enabled or instance_count > 0 or not has_rle:
+        return False
+    if not isinstance(coverage, (int, float)) or isinstance(coverage, bool):
+        return False
+    return float(coverage) >= float(coverage_floor)
+
+
+def _response_mask_list(response: dict) -> list:
+    """The response's "masks" list, or [] when absent or of the wrong type."""
+    raw_masks = response.get("masks") or []
+    return raw_masks if isinstance(raw_masks, list) else []
+
+
+def _iter_mask_entries(raw_masks: list, score_threshold: float):
+    """Yield the (entry, score) pairs of a masks list that pass the score gate,
+    in server order.
+
+    Pure dict work: the RLE stays a string, so a caller that only needs the
+    count never allocates a pixel grid.
+    """
+    for entry in raw_masks:
+        if not isinstance(entry, dict):
+            continue
+        score = float(entry.get("score", 0.0))
+        if score < score_threshold:
+            continue
+        yield entry, score
+
+
+def detection_mask_count(response: dict, score_threshold: float = 0.0) -> int:
+    """How many masks a response decodes to, WITHOUT decoding any of them.
+
+    Lets a caller take a decision that only needs the count (the saturation
+    cap) while still consuming the masks one at a time.
+    """
+    return sum(1 for _ in _iter_mask_entries(
+        _response_mask_list(response), score_threshold))
+
+
+def _iter_masks(raw_masks: list, decode_h: int, decode_w: int, score_threshold: float):
+    """The lazy half of :func:`iter_detection_masks`: one decoded mask per step."""
+    for entry, score in _iter_mask_entries(raw_masks, score_threshold):
+        mask = decode_rle_to_mask(entry.get("rle", ""), decode_h, decode_w)
+        raw_box = entry.get("box")
+        if isinstance(raw_box, (list, tuple)) and len(raw_box) == 4:
+            box = [float(v) for v in raw_box]
+        else:
+            box = [0.0, 0.0, 0.0, 0.0]
+        yield mask, score, box
+
+
+def iter_detection_masks(
     response: dict,
     tile_w: int,
     tile_h: int,
     score_threshold: float = 0.0,
-) -> list[tuple[np.ndarray, float, list[float]]]:
-    """Decode the completed status response into (mask, score, box) tuples.
+):
+    """Decode a completed status response into (mask, score, box), ONE AT A TIME.
+
+    Same values, same order as :func:`decode_detection_response`, but a mask is
+    built only when the consumer asks for it. A saturated tile can carry over a
+    hundred full-tile boolean grids, and holding them together is a large
+    simultaneous allocation on the machines least able to afford it; a consumer
+    that turns each mask into geometry and drops it keeps only one alive.
+
+    The masks-list check and the decode dimensions are resolved EAGERLY (this is
+    a plain function returning an iterator, not a generator), so a malformed
+    response fails at the call, exactly where it did before.
 
     The server response contains a "masks" list where each entry has:
       - "rle":   space-separated "offset count" string (1-based, row-major)
@@ -1014,6 +1463,32 @@ def decode_detection_response(
 
     When response["width"] or ["height"] is None (the server may omit them),
     the caller-supplied tile_w / tile_h are used for RLE decoding.
+    """
+    raw_masks = response.get("masks") or []
+    if not isinstance(raw_masks, list):
+        logger.warning("decode_detection_response: 'masks' is not a list; returning []")
+        return iter(())
+
+    # Prefer server-reported dimensions; fall back to caller-supplied tile dims.
+    srv_w = response.get("width")
+    srv_h = response.get("height")
+    decode_w = int(srv_w) if srv_w is not None else tile_w
+    decode_h = int(srv_h) if srv_h is not None else tile_h
+
+    return _iter_masks(raw_masks, decode_h, decode_w, score_threshold)
+
+
+def decode_detection_response(
+    response: dict,
+    tile_w: int,
+    tile_h: int,
+    score_threshold: float = 0.0,
+) -> list[tuple[np.ndarray, float, list[float]]]:
+    """Every mask of one tile, materialized together.
+
+    Prefer :func:`iter_detection_masks` on any path that processes a whole run:
+    this holds every mask of the tile at once. Kept for callers that genuinely
+    need the list (and for the characterization tests).
 
     Args:
         response:        Completed status dict with a "masks" list.
@@ -1025,31 +1500,4 @@ def decode_detection_response(
         List of (mask, score, box) where mask is bool (H, W), score is float,
         box is [cx, cy, w, h] normalized (may be [0,0,0,0] if server omits it).
     """
-    raw_masks = response.get("masks") or []
-    if not isinstance(raw_masks, list):
-        logger.warning("decode_detection_response: 'masks' is not a list; returning []")
-        return []
-
-    # Prefer server-reported dimensions; fall back to caller-supplied tile dims.
-    srv_w = response.get("width")
-    srv_h = response.get("height")
-    decode_w = int(srv_w) if srv_w is not None else tile_w
-    decode_h = int(srv_h) if srv_h is not None else tile_h
-
-    results: list[tuple[np.ndarray, float, list[float]]] = []
-    for entry in raw_masks:
-        if not isinstance(entry, dict):
-            continue
-        score = float(entry.get("score", 0.0))
-        if score < score_threshold:
-            continue
-        rle = entry.get("rle", "")
-        mask = decode_rle_to_mask(rle, decode_h, decode_w)
-        raw_box = entry.get("box")
-        if isinstance(raw_box, (list, tuple)) and len(raw_box) == 4:
-            box = [float(v) for v in raw_box]
-        else:
-            box = [0.0, 0.0, 0.0, 0.0]
-        results.append((mask, score, box))
-
-    return results
+    return list(iter_detection_masks(response, tile_w, tile_h, score_threshold))

@@ -4,7 +4,6 @@ SHARED: keep in sync with the copy in the sibling TerraLab plugin.
 """
 from __future__ import annotations
 
-
 from qgis.PyQt.QtWidgets import QToolBar
 
 _TOOLBAR_OBJECT_NAME = "TerraLabToolbar"

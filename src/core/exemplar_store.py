@@ -18,13 +18,47 @@ from qgis.core import QgsGeometry, QgsRectangle
 from qgis.PyQt.QtGui import QImage
 
 # Hard per-label ceilings: at most 3 positive and at most 2 exclude examples.
+# Client fallbacks for the server policy's `exemplar.max_positive` /
+# `exemplar.max_exclude`, read through the resolvers below.
 EXEMPLAR_MAX_POSITIVE = 3
 EXEMPLAR_MAX_EXCLUDE = 2
+# REGION markers (review correction boxes) have their own ceiling, separate
+# from the object-exemplar caps above: they are never pasted (no band space)
+# and a request sends at most 8 exemplars anyway, so correction gestures must
+# not eat the user's chip slots, and chips must not silently evict recorded
+# corrections.
+EXEMPLAR_MAX_REGION = 8
 # Total ceiling (both labels at their cap). Kept for callers that only need the
 # combined count; the real gate is the per-label cap above.
 EXEMPLAR_MAX = EXEMPLAR_MAX_POSITIVE + EXEMPLAR_MAX_EXCLUDE
 LABEL_POSITIVE = 1
 LABEL_EXCLUDE = 0
+
+
+def _policy_cap(getter_name: str, fallback: int) -> int:
+    """One exemplar ceiling resolved from the cached server policy, else the
+    client constant. Cache-only (no network), safe on any thread; any failure
+    keeps the shipped ceiling, so an offline run behaves exactly as before."""
+    try:
+        from . import detection_policy
+        return int(getattr(detection_policy, getter_name)(fallback))
+    except Exception:  # noqa: BLE001 - policy is optional, never break the store
+        return fallback
+
+
+def max_positive() -> int:
+    """How many positive examples this run may hold."""
+    return _policy_cap("exemplar_max_positive", EXEMPLAR_MAX_POSITIVE)
+
+
+def max_exclude() -> int:
+    """How many exclude examples this run may hold."""
+    return _policy_cap("exemplar_max_exclude", EXEMPLAR_MAX_EXCLUDE)
+
+
+def max_region() -> int:
+    """How many region markers this run may hold."""
+    return _policy_cap("exemplar_max_region", EXEMPLAR_MAX_REGION)
 
 
 @dataclass
@@ -55,6 +89,11 @@ class Exemplar:
     # one paste row whose per-crop size cap can shrink as more examples are
     # added, so a stamp cached wider than the current cap is rebuilt at Detect.
     stamp_side: int = 0
+    # True for a REGION marker (a review correction box): the box flags an area
+    # to look at again, not the outline of one object. Region boxes are sent
+    # clipped to each tile they overlap instead of requiring full containment,
+    # and are never pasted as crops.
+    region: bool = False
 
 
 class ExemplarStore:
@@ -75,6 +114,7 @@ class ExemplarStore:
         label: int,
         thumbnail: QImage | None = None,
         polygon: QgsGeometry | None = None,
+        region: bool = False,
     ) -> str | None:
         """Store a new exemplar. Returns its id, or None if that label is full.
 
@@ -83,8 +123,12 @@ class ExemplarStore:
             label: LABEL_POSITIVE (1) or LABEL_EXCLUDE (0).
             thumbnail: Optional preview image (not required).
             polygon: Optional precise outline (canvas CRS); map_rect is its bbox.
+            region: Area marker (correction box) rather than an object outline.
         """
-        if self.is_full_for(label):
+        if region:
+            if self.regions() >= max_region():
+                return None
+        elif self.is_full_for(label):
             return None
         self._seq += 1
         exemplar_id = f"ex{self._seq}"
@@ -94,6 +138,7 @@ class ExemplarStore:
             label=label,
             thumbnail=thumbnail,
             polygon=QgsGeometry(polygon) if polygon is not None else None,
+            region=bool(region),
         )
         return exemplar_id
 
@@ -109,17 +154,25 @@ class ExemplarStore:
         return len(self._exemplars)
 
     def positives(self) -> int:
-        return sum(1 for e in self._exemplars.values() if e.label == LABEL_POSITIVE)
+        return sum(1 for e in self._exemplars.values()
+                   if e.label == LABEL_POSITIVE and not e.region)
 
     def excludes(self) -> int:
-        return sum(1 for e in self._exemplars.values() if e.label == LABEL_EXCLUDE)
+        return sum(1 for e in self._exemplars.values()
+                   if e.label == LABEL_EXCLUDE and not e.region)
+
+    def regions(self) -> int:
+        return sum(1 for e in self._exemplars.values() if e.region)
 
     def is_full_for(self, label: int) -> bool:
-        """True when the cap for THIS label is reached (no more of it can be
-        added). Positive and exclude examples are capped independently."""
+        """True when the OBJECT-exemplar cap for THIS label is reached (no
+        more chips of it can be added). Positive and exclude examples are
+        capped independently; REGION markers have their own separate ceiling
+        (EXEMPLAR_MAX_REGION, checked in add) so correction gestures and chips
+        never compete for slots."""
         if label == LABEL_POSITIVE:
-            return self.positives() >= EXEMPLAR_MAX_POSITIVE
-        return self.excludes() >= EXEMPLAR_MAX_EXCLUDE
+            return self.positives() >= max_positive()
+        return self.excludes() >= max_exclude()
 
     def is_full(self) -> bool:
         """True only when BOTH labels are at their cap (nothing more can be

@@ -69,7 +69,8 @@ class OfflineFastFail:
     budget (~150s per tile) before the end-of-run "could not reach the service"
     message appears, so a doomed 30-tile run sits on "Detecting..." for minutes.
     This counts CONSECUTIVE hard-connectivity failures (DNS / connection refused
-    / proxy) and trips once ``threshold`` of them are seen in a row. The worker
+    / proxy / link down) and trips once ``threshold`` of them are
+    seen in a row. The worker
     feeds it throughout the run: before the first success it aborts at
     ``threshold``; after it, the worker only aborts on a much longer streak
     (its ``_MIDRUN_OFFLINE_STREAK``, read via :pyattr:`streak`), so a genuine
@@ -79,10 +80,19 @@ class OfflineFastFail:
     streak: a slow-but-alive server must never fast-fail.
     """
 
-    #: Codes that unambiguously mean "cannot reach the host" (see
-    #: terralab_client._classify_qt_error). A pure TIMEOUT is deliberately NOT
-    #: here: a very slow but alive link times out without being offline.
-    HARD_CODES = frozenset({"DNS_ERROR", "CONNECTION_REFUSED", "PROXY_ERROR"})
+    #: Codes that mean "the request never reached a server" (see
+    #: terralab_client._classify_qt_error). NO_INTERNET is one of them: the
+    #: classifier returns it only for a genuine connect failure, and every
+    #: condition the server itself produced (including an unnamed one) comes
+    #: back as SERVER_ERROR instead. That split is what this set relies on, so
+    #: nothing here may be a code a live server can trigger: three unparseable
+    #: 404s would otherwise end a paid run with "no internet".
+    #: A pure TIMEOUT is deliberately NOT here: a very slow but alive link
+    #: times out without being offline, and so do SERVICE_WARMING,
+    #: SERVER_ERROR and RATE_LIMITED, which all prove the server answered.
+    HARD_CODES = frozenset({
+        "DNS_ERROR", "CONNECTION_REFUSED", "PROXY_ERROR", "NO_INTERNET",
+    })
 
     def __init__(self, threshold: int = 3) -> None:
         self._threshold = max(1, int(threshold))

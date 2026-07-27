@@ -115,7 +115,7 @@ def clear_activation(settings=None) -> None:
         pass
 
 
-def migrate_legacy_key(settings=None) -> bool:
+def migrate_legacy_activation_key(settings=None) -> bool:
     """Idempotent. False = retry on next plugin load (legacy key still in QSettings)."""
     s = settings or QgsSettings()
     legacy = s.value(_LEGACY_KEY, "", type=str)

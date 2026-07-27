@@ -6,7 +6,6 @@ plain mixin members: state lives on the plugin instance (self).
 """
 from __future__ import annotations
 
-
 from qgis.core import (
     Qgis,
     QgsCoordinateReferenceSystem,
@@ -26,7 +25,15 @@ from ...core.i18n import tr
 from ...core.qt_compat import PolygonGeometry
 from ..canvas_palette import GRID_LINE, ZONE_FILL, ZONE_STROKE
 from ..shortcut_filter import ShortcutFilter
-from .shared import free_zone_cap_km2, max_tiles_per_run_cap
+from .shared import (
+    free_zone_cap_km2,
+    max_tiles_per_run_cap,
+    zone_too_large_message,
+)
+
+# How many already-clipped grid geometries to keep. Enough to cover a Detail
+# drag in both directions without holding every zone of the session.
+_ZONE_GRID_CACHE_SIZE = 8
 
 
 class AutoZoneMixin:
@@ -123,6 +130,10 @@ class AutoZoneMixin:
         self._auto_zone_polygon = None
         self._tile_manager = None
         self._auto_run_ctx = None
+        # Drop the last-run signature so the identical-re-run note never fires
+        # against a run from a torn-down flow.
+        self._auto_last_run_sig = None
+        self._rerun_guard_emitted_sig = None
 
         # Stop any running detection worker and remove the live selection layer.
         self._stop_auto_detection()
@@ -226,7 +237,53 @@ class AutoZoneMixin:
         # Feed the rebuilt zone through the normal commit path (wrong-layer +
         # free-cap guards, badge, grid, credit estimate, and the jump to step 2).
         self._on_zone_polygon_drawn(geom)
+        self._match_stored_tile_count(entry.get("tiles"))
         self._track_history_rerun("same_zone")
+
+    def _match_stored_tile_count(self, wanted) -> None:
+        """Move the detail slider to whatever reproduces the old run's tile
+        count, so re-running a zone bills and looks like it did before.
+
+        The slider holds a detail level, not a tile count, and the mapping
+        depends on the zone and the layer under it. So the levels are walked
+        and the closest one wins. Silent on any failure: the seeded default is
+        already a usable run.
+        """
+        try:
+            target = int(wanted or 0)
+        except (TypeError, ValueError):
+            return
+        if target <= 0:
+            return
+        dock = self.dock_widget
+        layer = self._get_active_raster_layer()
+        if dock is None or layer is None or self._auto_zone is None:
+            return
+        try:
+            slider = dock.auto_detail_slider
+            zone_in_layer = self._reproject_zone_to_layer_crs(self._auto_zone, layer)
+            best, best_gap = None, None
+            for level in range(slider.minimum(), slider.maximum() + 1):
+                grid = self._grid_for_detail(layer, zone_in_layer, level)
+                if not grid or grid[3] <= 0:
+                    continue
+                gap = abs(grid[3] - target)
+                if best_gap is None or gap < best_gap:
+                    best, best_gap = level, gap
+                if gap == 0:
+                    break
+            if best is None or best == slider.value():
+                return
+            dock.set_auto_detail_value(best)
+            # The user did not touch the slider, but this is still a deliberate
+            # level rather than the seed, so the per-prompt re-seed must not
+            # overwrite it on the way to step 2.
+            self._auto_detail_user_locked = True
+            self._auto_detail_lock_prompt = (
+                self._resolved_auto_object_class() or "").lower()
+            self._update_credit_estimate()
+        except (RuntimeError, AttributeError):
+            return
 
     def _history_reuse_prompt(self, prompt: str) -> None:
         """Same object, fresh zone: land on the draw-zone step with the prompt
@@ -392,7 +449,7 @@ class AutoZoneMixin:
                 self.iface.messageBar().pushInfo(
                     "AI Segmentation",
                     tr(
-                        "Part of your zone is outside \"{layer}\" - only the "
+                        'Part of your zone is outside "{layer}" - only the '
                         "overlapping area will return objects."
                     ).format(layer=layer.name()),
                 )
@@ -461,7 +518,7 @@ class AutoZoneMixin:
         self.iface.messageBar().pushWarning(
             "AI Segmentation",
             tr(
-                "Your zone is outside \"{layer}\". Pick the right layer "
+                'Your zone is outside "{layer}". Pick the right layer '
                 "or draw inside it."
             ).format(layer=name),
         )
@@ -471,13 +528,13 @@ class AutoZoneMixin:
         in ``crs`` (default: the canvas CRS). Returns 0.0 on any failure so
         callers fail open (a zone that cannot be measured is never blocked)."""
         try:
-            from qgis.core import QgsDistanceArea
-            da = QgsDistanceArea()
+            # make_area_measurer handles the "NONE" project-ellipsoid trap
+            # (planar degrees^2 on a geographic CRS); one owner for all
+            # geodesic-area measurement setup.
+            from ...core.layer_conventions import make_area_measurer
             if crs is None:
                 crs = self.iface.mapCanvas().mapSettings().destinationCrs()
-            if crs is not None and crs.isValid():
-                da.setSourceCrs(crs, QgsProject.instance().transformContext())
-            da.setEllipsoid(QgsProject.instance().ellipsoid() or "WGS84")
+            da = make_area_measurer(crs)
             return max(0.0, da.measureArea(geom) / 1_000_000.0)
         except Exception:  # nosec B110 -- measurement guard, never blocks
             return 0.0
@@ -551,9 +608,61 @@ class AutoZoneMixin:
             self.dock_widget.set_auto_zone_state(
                 "drawing" if still_drawing else "idle")
 
+    def _tile_grid_allowed(self) -> bool:
+        """True only on the pre-Detect setup screen.
+
+        The tile grid is a planning aid: once Detect is clicked it must stay
+        off the canvas for the whole run AND the review that follows (the
+        review's debug toggle is the one way back to it, and it asks
+        explicitly).
+
+        `_auto_grid_suppressed` is the authority here, because every other
+        signal below is transient. A run's terminal drops the worker reference
+        and the dock's in-run layout BEFORE the review exists, and the finalize
+        in between is cooperative: it yields to the event loop for as long as
+        the sweep and the object build take. An async reply landing in that gap
+        (the post-run credit refresh above all) saw four idle flags, redrew the
+        grid, and it then sat over the reviewed detections with nothing left to
+        clear it. The latch is armed at the Detect click and released by the two
+        owners that mean the flow is done with the canvas:
+        `_restore_tile_grid_after_run` (back on the prompt step with the zone
+        kept) and `_clear_auto_canvas` (every full exit of the flow).
+
+        The run and review references plus the dock layout flags stay as a
+        belt: they still refuse the grid to a live run or review whose latch a
+        teardown dropped, and they cover the gap at the START of a run, where
+        the dock flips to the in-run layout before the worker exists.
+        """
+        if getattr(self, "_auto_grid_suppressed", False):
+            return False
+        if (getattr(self, "_auto_worker", None) is not None or getattr(self, "_auto_review", None) is not None):
+            return False
+        dock = self.dock_widget
+        if dock is None:
+            return True
+        return not (getattr(dock, "_auto_run_active", False) or getattr(dock, "_auto_review_active", False))
+
+    def _restore_tile_grid_after_run(self) -> None:
+        """The flow is back on the pre-Detect setup screen with the zone kept:
+        let the grid draw again, and redraw it with the cost label.
+
+        The single owner of that release. Every path that lands back on the
+        prompt step calls it (a failed run, a run that found nothing, an
+        aborted finalize, Re-run the whole zone) instead of calling
+        `_update_credit_estimate` directly, which the latch would refuse. The
+        paths that go back to Start instead drop the zone itself, so they
+        release the latch in `_clear_auto_canvas`.
+        """
+        self._auto_grid_suppressed = False
+        self._update_credit_estimate()
+
     def _update_credit_estimate(self) -> None:
         """Compute credit estimate for current zone + layer and update the grid preview."""
         if self._tile_manager is None:
+            return
+        # The tile-grid preview + cost belong to the pre-Detect state only; the
+        # run and the review own the canvas.
+        if not self._tile_grid_allowed():
             return
         layer = self._get_active_raster_layer()
         if layer is None:
@@ -605,7 +714,7 @@ class AutoZoneMixin:
         self._auto_est_tiles = credit_count  # cached for detail_changed telemetry
 
         QgsMessageLog.logMessage(
-            "Credit estimate: {}x{}px -> {} tile(s)".format(pixel_w, pixel_h, credit_count),
+            f"Credit estimate: {pixel_w}x{pixel_h}px -> {credit_count} tile(s)",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info,
         )
@@ -614,6 +723,10 @@ class AutoZoneMixin:
         # zone-less path estimates the full raster for the overlay only.
         if self.dock_widget and self._auto_zone is not None:
             self.dock_widget.set_auto_credit_estimate(credit_count)
+            # Detail, layer, zone and post-zero returns all pass here, so this
+            # is the single chokepoint that re-evaluates the identical-re-run
+            # note against the current prompt/detail/example count.
+            self._refresh_rerun_guard()
             # GSD guard: warn when the chosen detail leaves the imagery coarser
             # than the detection quality threshold (0.5 m/px ground resolution).
             try:
@@ -622,7 +735,11 @@ class AutoZoneMixin:
                     layer, zone_in_layer, self._get_auto_detail_level())
                 if sized is not None:
                     ground_mupp = self._mupp_to_meters(layer, zone_in_layer, sized[2])
-                    self.dock_widget.set_auto_detail_gsd_warning(ground_mupp >= 0.5)
+                    # Warning cutoff is a server dial (seed.gsd_warn_max_mupp,
+                    # cache-only read); the constant is the generic fallback.
+                    from ...core.detection_policy import gsd_warn_max_mupp
+                    self.dock_widget.set_auto_detail_gsd_warning(
+                        ground_mupp >= gsd_warn_max_mupp(0.5))
                     # Object-aware slider guidance: same debounced chokepoint,
                     # so it tracks drags, prompt commits and zone redraws.
                     self._push_detail_feedback(layer, zone_in_layer, ground_mupp)
@@ -643,8 +760,7 @@ class AutoZoneMixin:
             # Zone exceeds tile cap: hide the preview, show warning
             self._clear_zone_tile_grid()
             QgsMessageLog.logMessage(
-                tr("Zone too large. Reduce the area to {max} tiles or fewer.").format(
-                    max=self._tile_manager.max_tiles),
+                zone_too_large_message(self._tile_manager.max_tiles),
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Warning,
             )
@@ -663,7 +779,7 @@ class AutoZoneMixin:
         except (RuntimeError, AttributeError):
             pass
 
-    def _show_zone_tile_grid(self, layer, grid: dict) -> None:
+    def _show_zone_tile_grid(self, layer, grid: dict, force: bool = False) -> None:
         """Draw the tile grid inside the drawn zone as a canvas rubber band.
 
         Follows the detail slider live, so the user sees how the zone will
@@ -672,7 +788,15 @@ class AutoZoneMixin:
         blurry double grid. The preview shows clean equal cells instead:
         same row and column counts, honest cost, readable layout. A rubber
         band, not a memory layer: nothing lands in the project's layer tree.
+
+        force=True is the review's debug toggle asking for the grid on top of
+        a finished result; every other caller is refused once Detect is
+        clicked (see _tile_grid_allowed). Refusing does NOT clear what is
+        already drawn, so a stray recompute cannot wipe the debug overlay the
+        user just switched on.
         """
+        if not force and not self._tile_grid_allowed():
+            return
         self._clear_zone_tile_grid()
         if self._tile_manager is None or self._auto_zone is None:
             return
@@ -687,6 +811,26 @@ class AutoZoneMixin:
                 return
 
             poly = self._polygon_in_layer_crs(layer)  # None for rectangle/MCP path
+            # Same zone at the same grid gives the same picture. The Detail
+            # slider is quantised, so a drag crosses several positions that map
+            # to one grid, and every settle used to re-clip every cell against
+            # the polygon before drawing what was already on screen.
+            # The lookup is an optimisation, never a reason not to draw: any
+            # failure building the key falls through to the full path.
+            cache = getattr(self, "_zone_grid_geom_cache", None)
+            cache_key = None
+            try:
+                if cache is not None:
+                    zone_id = bytes(poly.asWkb()) if poly is not None else b"rect"
+                    cache_key = (zone_id, cols, rows, minx, miny, maxx, maxy)
+            except (RuntimeError, AttributeError, TypeError):
+                cache, cache_key = None, None
+            if cache_key is not None:
+                cached = cache.get(cache_key)
+                if cached is not None:
+                    self._zone_grid_rubber_band = self._new_zone_grid_band(
+                        cached, layer)
+                    return
             # Rectangle zones (or the MCP path with no poly) never need a
             # per-cell clip: the grid already sits flush inside the bbox, so
             # skip the GEOS intersection call entirely for every cell.
@@ -700,24 +844,6 @@ class AutoZoneMixin:
             if not is_rect_zone:
                 engine = QgsGeometry.createGeometryEngine(poly.constGet())
                 engine.prepareGeometry()
-            canvas = self.iface.mapCanvas()
-            rb = QgsRubberBand(canvas, PolygonGeometry)
-            # Lines only, no cell fill: the grid must NOT tint the zone interior
-            # (a coloured fill doubled the blue and read as a background change).
-            # DASHED + low opacity, no dark casing: a solid cased grid read as
-            # heavy furniture over the imagery; a faint dashed line shows the
-            # split without competing with the detections. Same brand blue as the
-            # zone outline so the grid stays in one colour family. Each cell is
-            # clipped to the polygon so the grid stays inside the drawn shape.
-            rb.setColor(QColor(0, 0, 0, 0))  # transparent fill: no interior tint
-            # Clearly visible while adjusting detail (the old alpha-110 width-1
-            # line was nearly invisible over imagery), but still a DASHED line in
-            # the same brand-blue family as the zone outline so it stays coherent
-            # and never reads as the heavy solid cased grid we had before.
-            rb.setStrokeColor(GRID_LINE)  # brand blue, clearly visible
-            rb.setSecondaryStrokeColor(QColor(0, 0, 0, 0))  # no casing: lighter footprint
-            rb.setLineStyle(Qt.PenStyle.DashLine)  # dashed: a guide, not furniture
-            rb.setWidth(2)
             step_x = (maxx - minx) / cols
             step_y = (maxy - miny) / rows
             cells = []
@@ -749,14 +875,43 @@ class AutoZoneMixin:
                     parts.extend(cell.asGeometryCollection())
                 else:
                     parts.append(cell)
-            # CRS overload, NOT the layer: setToGeometry has no QgsMapLayer
-            # overload (unlike addGeometry), so passing the raster layer is a
-            # TypeError on every QGIS build. The CRS reprojects layer -> canvas
-            # exactly like the per-cell addGeometry(cell, layer) did.
-            rb.setToGeometry(QgsGeometry.collectGeometry(parts), layer.crs())
-            self._zone_grid_rubber_band = rb
+            collected = QgsGeometry.collectGeometry(parts)
+            if cache is not None and cache_key is not None:
+                # A handful of entries covers a slider drag both ways. Drop the
+                # oldest rather than grow: a zone redraw changes the key, so an
+                # unbounded dict would keep every zone of the session alive.
+                if len(cache) >= _ZONE_GRID_CACHE_SIZE:
+                    cache.pop(next(iter(cache)))
+                cache[cache_key] = collected
+            self._zone_grid_rubber_band = self._new_zone_grid_band(collected, layer)
         except (RuntimeError, AttributeError, ZeroDivisionError):
             pass
+
+    def _new_zone_grid_band(self, geom, layer):
+        """A styled rubber band showing one already-clipped grid geometry."""
+        rb = QgsRubberBand(self.iface.mapCanvas(), PolygonGeometry)
+        # Lines only, no cell fill: the grid must NOT tint the zone interior
+        # (a coloured fill doubled the blue and read as a background change).
+        # DASHED + low opacity, no dark casing: a solid cased grid read as
+        # heavy furniture over the imagery; a faint dashed line shows the
+        # split without competing with the detections. Same brand blue as the
+        # zone outline so the grid stays in one colour family. Each cell is
+        # clipped to the polygon so the grid stays inside the drawn shape.
+        rb.setColor(QColor(0, 0, 0, 0))  # transparent fill: no interior tint
+        # Clearly visible while adjusting detail (the old alpha-110 width-1
+        # line was nearly invisible over imagery), but still a DASHED line in
+        # the same brand-blue family as the zone outline so it stays coherent
+        # and never reads as the heavy solid cased grid we had before.
+        rb.setStrokeColor(GRID_LINE)  # brand blue, clearly visible
+        rb.setSecondaryStrokeColor(QColor(0, 0, 0, 0))  # no casing: lighter footprint
+        rb.setLineStyle(Qt.PenStyle.DashLine)  # dashed: a guide, not furniture
+        rb.setWidth(2)
+        # CRS overload, NOT the layer: setToGeometry has no QgsMapLayer
+        # overload (unlike addGeometry), so passing the raster layer is a
+        # TypeError on every QGIS build. The CRS reprojects layer -> canvas
+        # exactly like the per-cell addGeometry(cell, layer) did.
+        rb.setToGeometry(geom, layer.crs())
+        return rb
 
     def _clear_zone_tile_grid(self) -> None:
         """Remove the tile grid preview rubber band from the canvas."""
@@ -990,6 +1145,28 @@ class AutoZoneMixin:
             self._on_auto_cancel_clicked()  # running: Escape = soft Cancel
             return True
         if self._auto_review is not None:
+            # A manual edit session owns Escape before anything else: it drops
+            # the line being traced, or ends the session. Without this branch
+            # Escape fell through to the review exit and asked to save the whole
+            # run mid-edit.
+            if getattr(self, "_qgis_bridge_active", False):
+                return self._route_escape_qgis_bridge()
+            # The AI-assisted Add lane owns Escape first: cancel the in-progress
+            # outline, or leave Add (folding what was kept) when nothing is drawn.
+            if getattr(self, "_refine_add_mode_active", False):
+                return self._route_escape_add_mode()
+            # A live AI fix session ends on Escape, folding its edits (the Done
+            # equivalent) and landing back on the resting Correct step.
+            if getattr(self, "_refine_handoff_active", False):
+                self._on_reshape_done()
+                return True
+            # In Correct, Escape first clears the current shape selection. It
+            # mirrors the resting pick tool and prevents a reflexive Escape
+            # from opening the review-exit dialog while an object is selected.
+            on_correct = getattr(self, "_auto_review_step", 0) == 1
+            if on_correct and getattr(self, "_correct_selected_idx", None) is not None:
+                self._set_correct_selection(None)
+                return True
             self._on_auto_review_exit_clicked()
             return True
         # Two-stage Escape on the draw step. Single-fire by construction: per
@@ -1025,6 +1202,14 @@ class AutoZoneMixin:
             return False
         try:
             if dock.auto_detect_btn.isVisible() and dock.auto_detect_btn.isEnabled():
+                self._on_auto_detect_requested()
+                return True
+            # Half-setup (prompt only / examples only): the green button is
+            # gated but the floor passes, shown by the visible escape link.
+            # Enter must not be a dead keystroke: route it into the commit
+            # guard, which shows the "Almost there" line naming the missing
+            # half (it will not run without the explicit escape click).
+            if (dock.auto_detect_btn.isVisible() and dock.auto_detect_anyway_btn.isVisible()):
                 self._on_auto_detect_requested()
                 return True
         except (RuntimeError, AttributeError):
@@ -1111,6 +1296,9 @@ class AutoZoneMixin:
         self._clear_exemplars()
         self._clear_zone_rubber_band()  # also removes the x badge + tile grid
         self._remove_auto_selection_layer()
+        # The run's hold on the grid dies with the artifacts it protected, so
+        # the next zone drawn gets its preview and cost back.
+        self._auto_grid_suppressed = False
 
     def _on_project_cleared_auto(self) -> None:
         """Full teardown when the project is cleared or replaced (T14).
@@ -1135,6 +1323,8 @@ class AutoZoneMixin:
         self._auto_review = None
         self._stop_auto_detection()  # hard teardown; joined later via cancelled
         self._refine_handoff_active = False
+        self._refine_add_mode_active = False
+        self._ai_add_install_pending = False
         if self.dock_widget and getattr(self.dock_widget, "_refine_handoff", False):
             try:
                 from ..ai_segmentation_dockwidget import Mode

@@ -13,6 +13,15 @@ def get_clean_env_for_venv() -> dict:
         "QGIS_PREFIX_PATH", "QGIS_PLUGINPATH",
         "PROJ_DATA", "PROJ_LIB",
         "GDAL_DATA", "GDAL_DRIVER_PATH",
+        # The dynamic loader's own search path. Flatpak, Snap, AppImage, conda
+        # and any hand-rolled launcher set it to QGIS's lib dir, and the
+        # downloaded interpreter would then resolve libssl, libffi and
+        # libstdc++ from there instead of the system: "GLIBCXX not found" on
+        # import, or a segfault. macOS strips the DYLD pair itself under SIP,
+        # so this only ever bites on Linux; listed for both so the helper says
+        # what it guarantees.
+        "LD_LIBRARY_PATH", "LD_PRELOAD",
+        "DYLD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
     ]
     for var in vars_to_remove:
         env.pop(var, None)
@@ -29,6 +38,12 @@ def get_clean_env_for_venv() -> dict:
     if ssl_cert_file and not os.path.isfile(ssl_cert_file):
         env.pop("SSL_CERT_FILE", None)
     env["PYTHONIOENCODING"] = "utf-8"
+    # Keep the working directory off the child's sys.path. Around twenty
+    # `python -c` probes run with cwd set to the cache directory, and without
+    # this a torch.py sitting there would be imported instead of the real one.
+    # Ignored by Python below 3.11, which is fine: it is the downloaded
+    # interpreter that matters and that one is current.
+    env["PYTHONSAFEPATH"] = "1"
     return env
 
 

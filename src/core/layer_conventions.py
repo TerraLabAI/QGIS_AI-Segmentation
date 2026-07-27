@@ -3,8 +3,9 @@ persistence and layer-level provenance metadata.
 
 Mirrors the AI Edit plugin's conventions so both TerraLab plugins hand
 professionals the same kind of deliverable: real square metres whatever
-the CRS, valid geometries, a style that travels inside the GeoPackage,
-and run-level provenance in Layer Properties > Metadata instead of being
+the CRS, coordinates written in a CRS where a metre is a ground metre,
+valid geometries, a style that travels inside the GeoPackage, and
+run-level provenance in Layer Properties > Metadata instead of being
 repeated identically on every row.
 """
 from __future__ import annotations
@@ -12,11 +13,13 @@ from __future__ import annotations
 import time
 
 from qgis.core import (
-    Qgis,
+    QgsCategorizedSymbolRenderer,
+    QgsCoordinateReferenceSystem,
     QgsDistanceArea,
     QgsFillSymbol,
     QgsGeometry,
     QgsProject,
+    QgsRendererCategory,
     QgsSingleSymbolRenderer,
     QgsVectorFileWriter,
     QgsVectorLayer,
@@ -24,7 +27,14 @@ from qgis.core import (
 )
 from qgis.PyQt.QtGui import QColor
 
-from .qt_compat import PolygonGeometry, WkbMultiPolygon, WkbPolygon
+from . import class_symbology
+from .i18n import tr
+from .qt_compat import (
+    DistanceMeters,
+    PolygonGeometry,
+    WkbMultiPolygon,
+    WkbPolygon,
+)
 
 # Result-polygon color semantic, shared by both modes and the MCP path so the
 # meaning lives in one place: RED = committed/saved deliverable, BLUE = a
@@ -37,6 +47,130 @@ _COMMITTED_RED = "220,0,0,255"
 # outline alone is unreadable there.
 _REVIEW_FILL = "0,120,255,100"
 _REVIEW_OUTLINE = "0,80,200,255"
+
+# Measures are rounded when they are written, not when they are displayed: a
+# GeoPackage REAL column carries no precision, so OGR reports 0 decimals for
+# every double and a QgsField precision set on the memory layer is gone the
+# moment the saved table is reloaded. Rounding at write time is the only form
+# that survives into CSV, DXF and a colleague's spreadsheet. 1 cm2 and 1 cm are
+# already finer than the imagery any run segments.
+MEASURE_DECIMALS = 2
+
+# Column headers a reader sees in place of the raw field names. English on
+# purpose: the file travels to whoever the deliverable is for, and the layer
+# metadata written beside it is English too.
+EXPORT_FIELD_ALIASES = {
+    "label": "Label",
+    "class": "Class",
+    "score": "Confidence",
+    "area_m2": "Area (m²)",
+    "perimeter_m": "Perimeter (m)",
+}
+
+
+def crs_measures_in_ground_metres(crs) -> bool:
+    """Whether a straight coordinate difference in this CRS is a ground metre.
+
+    False for a geographic CRS (the numbers are degrees) and for any Mercator,
+    Pseudo-Mercator included: Mercator stretches by 1/cos(latitude), so at 49
+    degrees north a 4 m car is stored 1.53 times too long. A deliverable
+    measured or sent to CAD in those coordinates is wrong, silently.
+    """
+    try:
+        if crs is None or not crs.isValid() or crs.isGeographic():
+            return False
+        if str(crs.projectionAcronym()).lower() == "merc":
+            return False
+        return crs.mapUnits() == DistanceMeters
+    except (RuntimeError, AttributeError, TypeError):
+        return False
+
+
+def pick_output_crs(source_crs, extent, project_crs=None):
+    """The CRS a saved layer should be written in.
+
+    Keeps the source CRS whenever it already measures in ground metres, so a
+    user working in a national grid gets their own grid back untouched. Only a
+    run off a web basemap (Pseudo-Mercator) or a degrees raster is moved, to
+    the project CRS when that one is metric, otherwise to the UTM zone under
+    the data. Returns the source CRS unchanged if nothing better can be built.
+
+    ``extent`` is a QgsRectangle in ``source_crs``; its centre picks the zone.
+    """
+    if crs_measures_in_ground_metres(source_crs):
+        return source_crs
+    if project_crs is None:
+        try:
+            project_crs = QgsProject.instance().crs()
+        except (RuntimeError, AttributeError):
+            project_crs = None
+    if crs_measures_in_ground_metres(project_crs):
+        return project_crs
+    return _utm_crs_for_extent(source_crs, extent) or source_crs
+
+
+def _utm_crs_for_extent(source_crs, extent):
+    """The WGS84 UTM zone covering the centre of ``extent``, or None.
+
+    UTM is the fallback because it exists everywhere and its scale error stays
+    around 1 part in 2500, which is finer than the imagery this plugin reads.
+    """
+    from qgis.core import QgsCoordinateTransform, QgsPointXY
+
+    try:
+        if extent is None or extent.isEmpty():
+            return None
+        centre = QgsPointXY(extent.center())
+        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+        if source_crs is not None and source_crs.isValid() and source_crs != wgs84:
+            centre = QgsCoordinateTransform(
+                source_crs, wgs84, QgsProject.instance()).transform(centre)
+        lon, lat = centre.x(), centre.y()
+        if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
+            return None
+        zone = int((lon + 180.0) / 6.0) + 1
+        zone = min(max(zone, 1), 60)
+        code = (32600 if lat >= 0 else 32700) + zone
+        utm = QgsCoordinateReferenceSystem(f"EPSG:{code}")
+        return utm if utm.isValid() else None
+    except (RuntimeError, AttributeError, TypeError, ValueError):
+        return None
+
+
+def round_measure(value) -> float | None:
+    """One rounding rule for every area and perimeter written to a file.
+
+    None in, None out, so an unknown measure stays an honest NULL instead of
+    becoming 0.0.
+    """
+    if value is None:
+        return None
+    try:
+        return round(float(value), MEASURE_DECIMALS)
+    except (TypeError, ValueError):
+        return None
+
+
+def apply_export_field_aliases(layer) -> None:
+    """Readable attribute-table headers on a saved layer.
+
+    Aliases live in the layer style, so saveStyleToDatabase carries them into
+    the GeoPackage and the file opens with readable columns in any QGIS, with
+    or without this plugin. Must run BEFORE the style is saved. Unknown field
+    names (a user-added column) keep their own name.
+    """
+    try:
+        fields = layer.fields()
+    except (RuntimeError, AttributeError):
+        return
+    for index, field in enumerate(fields):
+        alias = EXPORT_FIELD_ALIASES.get(field.name().lower())
+        if not alias:
+            continue
+        try:
+            layer.setFieldAlias(index, alias)
+        except (RuntimeError, AttributeError, TypeError):
+            pass
 
 
 def make_committed_renderer(
@@ -70,6 +204,67 @@ def make_committed_renderer(
         "outline_style": "solid",
     })
     return QgsSingleSymbolRenderer(symbol)
+
+
+def _class_category(value: str, hex_color: str, label: str) -> QgsRendererCategory:
+    """One category symbol: light fill + a darker outline of the same hue,
+    the same look make_committed_renderer uses for its per-prompt color."""
+    color = QColor(hex_color)
+    outline = color.darker(115)
+    fill = QColor(color)
+    fill.setAlpha(64)
+    symbol = QgsFillSymbol.createSimple({
+        "color": f"{fill.red()},{fill.green()},{fill.blue()},{fill.alpha()}",
+        "style": "solid",
+        "outline_color": f"{outline.red()},{outline.green()},{outline.blue()},255",
+        "outline_width": "0.66",
+        "outline_style": "solid",
+    })
+    return QgsRendererCategory(value, symbol, label)
+
+
+def make_class_categorized_renderer(
+    layer: QgsVectorLayer, field: str = "class",
+    *, max_categories: int | None = None,
+) -> QgsCategorizedSymbolRenderer | None:
+    """Categorized renderer keyed on field, one color per distinct value.
+
+    Returns None when the field is missing or holds fewer than 2 distinct
+    values, so the caller falls back to make_committed_renderer (the common
+    one-prompt run keeps today's single-color look, unchanged). Values past
+    max_categories share one fallback color instead of growing the legend
+    without bound; that fallback is one "all other values" category when the
+    running QGIS build supports it, else one category per folded value (still
+    correctly colored, just more legend rows on that older-build path).
+    """
+    field_index = layer.fields().indexOf(field)
+    if field_index < 0:
+        return None
+    try:
+        raw_values = [str(v) for v in layer.uniqueValues(field_index) if v is not None]
+    except Exception:  # nosec B110
+        return None
+    if not class_symbology.needs_categorized_renderer(raw_values):
+        return None
+    mapping = class_symbology.class_color_mapping(raw_values, max_categories=max_categories)
+    # The fold color is read once so the mapping and the legend row for it can
+    # never come from two different configurations.
+    other_color = class_symbology.legend_other_color()
+    kept = [v for v, c in mapping.items() if c != other_color]
+    folded = [v for v, c in mapping.items() if c == other_color]
+    categories = [_class_category(value, mapping[value], value) for value in kept]
+    if folded:
+        supports_else = hasattr(QgsRendererCategory, "setElseValue")
+        if supports_else:
+            other = _class_category("", other_color, tr("Other"))
+            other.setElseValue(True)
+            categories.append(other)
+        else:
+            categories.extend(
+                _class_category(value, other_color, tr("Other"))
+                for value in folded
+            )
+    return QgsCategorizedSymbolRenderer(field, categories)
 
 
 def make_review_renderer() -> QgsSingleSymbolRenderer:
@@ -115,21 +310,15 @@ def make_area_measurer(crs) -> QgsDistanceArea:
 
 
 def write_vector_layer(layer, file_path: str, options, transform_context=None):
-    """Write a layer to disk, picking the newest writer the QGIS version has.
+    """Write a layer to disk with the one writer every supported build has.
 
-    writeAsVectorFormatV3 only exists since QGIS 3.20 (our current floor); on
-    any older build it falls back to writeAsVectorFormatV2, which has the same
-    leading (error_code, error_message) tuple shape. Keeping the branch means
-    the code stays correct if the minimum version is lowered further later.
-    Returns the writer's result tuple unchanged so callers keep reading
-    result[0] / result[1].
+    writeAsVectorFormatV3 exists since QGIS 3.20, below the declared floor, so
+    there is nothing to fall back to. Returns the writer's result tuple
+    unchanged so callers keep reading result[0] / result[1].
     """
     if transform_context is None:
         transform_context = QgsProject.instance().transformContext()
-    if Qgis.QGIS_VERSION_INT >= 32000:
-        return QgsVectorFileWriter.writeAsVectorFormatV3(
-            layer, file_path, transform_context, options)
-    return QgsVectorFileWriter.writeAsVectorFormatV2(
+    return QgsVectorFileWriter.writeAsVectorFormatV3(
         layer, file_path, transform_context, options)
 
 
@@ -212,7 +401,14 @@ def to_multipolygon(geom: QgsGeometry) -> QgsGeometry | None:
         return geom
     if flat == WkbPolygon:
         promoted = QgsGeometry(geom)
-        promoted.convertToMultiType()
+        if promoted.convertToMultiType():
+            return promoted
+        # In-place promotion refused: collect the part instead. Handing a
+        # single Polygon back would let the provider reject the feature, and
+        # this guard exists so that never happens.
+        promoted = QgsGeometry.collectGeometry([geom])
+        if promoted is None or promoted.isEmpty() or not promoted.isMultipart():
+            return None
         return promoted
     parts = _polygon_parts(geom)
     if not parts:
@@ -220,8 +416,8 @@ def to_multipolygon(geom: QgsGeometry) -> QgsGeometry | None:
     combined = QgsGeometry.collectGeometry(parts)
     if combined is None or combined.isEmpty():
         return None
-    if not combined.isMultipart():
-        combined.convertToMultiType()
+    if not combined.isMultipart() and not combined.convertToMultiType():
+        return None
     return combined
 
 
@@ -245,6 +441,9 @@ def apply_output_conventions(
     old call sites keep today's behavior unchanged. Metadata stays English.
     """
     created = created_iso or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    # Before the style is saved: aliases are part of the style, so this is the
+    # only point where they still reach the GeoPackage.
+    apply_export_field_aliases(layer)
     try:
         md = layer.metadata()
         md.setTitle(layer.name())
@@ -281,6 +480,15 @@ def apply_output_conventions(
     except Exception:  # nosec B110
         pass  # metadata is cosmetic, never block an export
     try:
+        # setMetadata() only fills the in-memory layer property, which dies with
+        # the QGIS session. Write it down as well so the provenance is still
+        # there when the file is opened on its own, outside this project.
+        save_metadata = getattr(layer, "saveDefaultMetadata", None)
+        if save_metadata is not None:
+            save_metadata()
+    except Exception:  # nosec B110
+        pass  # a read-only output keeps the in-memory metadata
+    try:
         layer.saveStyleToDatabase(layer.name(), "AI Segmentation", True, "")
     except Exception:  # nosec B110
         pass  # style persistence is cosmetic, never block an export
@@ -294,15 +502,15 @@ def attribute_values_for_fields(fields, geom: QgsGeometry, crs, raster_name: str
     for field in fields:
         name = field.name().lower()
         if name == "area_m2":
-            values.append(geodesic_area_m2(geom, crs))
+            values.append(round_measure(geodesic_area_m2(geom, crs)))
         elif name == "perimeter_m":
             try:
-                values.append(
-                    float(make_area_measurer(crs).measurePerimeter(geom)))
+                values.append(round_measure(
+                    make_area_measurer(crs).measurePerimeter(geom)))
             except Exception:
                 values.append(None)
         elif name == "area":
-            values.append(float(geom.area()))
+            values.append(round_measure(geom.area()))
         elif name == "raster_source":
             values.append(raster_name)
         elif name == "created_at":

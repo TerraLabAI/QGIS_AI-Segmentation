@@ -7,11 +7,7 @@ from __future__ import annotations
 
 import os
 import platform
-import re
 import sys
-import threading
-from collections import deque
-from datetime import datetime
 
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
@@ -23,6 +19,19 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ..core.i18n import tr
+
+# Path anonymization + log capture live in core/log_scrub.py (telemetry
+# scrubs every payload with them, so they must not depend on this UI module).
+# Re-exported under the historical names for existing callers.
+from ..core.log_scrub import (  # noqa: F401
+    anonymize_paths as _anonymize_paths,
+)
+from ..core.log_scrub import (
+    get_recent_logs as _get_recent_logs,
+)
+from ..core.log_scrub import (
+    scrub_report as _scrub_report,
+)
 from .dock.styles import _BTN_BLUE, _BTN_GREEN
 
 SUPPORT_EMAIL = "yvann.barbot@terra-lab.ai"
@@ -30,84 +39,6 @@ SUPPORT_EMAIL = "yvann.barbot@terra-lab.ai"
 # Subtle down-arrow between step 1 and step 2: a muted, small glyph so it
 # reads as flow guidance, not content.
 _ARROW_STYLE = "color: rgba(128,128,128,0.65); font-size: 10px;"
-
-# In-memory log buffer - captures AI Segmentation messages
-_log_buffer = deque(maxlen=100)
-_log_buffer_lock = threading.Lock()
-_log_collector_connected = False
-
-
-def _anonymize_paths(text: str) -> str:
-    """
-    Anonymize file paths to hide the username.
-
-    Replaces patterns like:
-    - /Users/<username>/... -> <USER>/...
-    - /home/<username>/... -> <USER>/...
-    - C:\\Users\\<username>\\... -> <USER>/...
-
-    This protects user privacy when sending logs and reports.
-    """
-    if not text:
-        return text
-
-    # macOS: /Users/<username>/... (with or without trailing slash)
-    text = re.sub(r"/Users/[^/\s]+(?=/|$|\s)", "<USER>", text)
-
-    # Linux: /home/<username>/... (with or without trailing slash)
-    text = re.sub(r"/home/[^/\s]+(?=/|$|\s)", "<USER>", text)
-
-    # Windows: C:\Users\<username>\... (and other drive letters, forward/back slashes)
-    text = re.sub(r"[A-Za-z]:[/\\]Users[/\\][^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text)
-
-    # Windows UNC paths: \\server\Users\<username>\...
-    return re.sub(r"\\\\[^\\]+\\Users\\[^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text)
-
-
-def start_log_collector():
-    """Connect to QgsMessageLog to capture AI Segmentation messages.
-    Call once at plugin startup."""
-    global _log_collector_connected
-    with _log_buffer_lock:
-        if _log_collector_connected:
-            return
-        try:
-            from qgis.core import QgsApplication
-            QgsApplication.messageLog().messageReceived.connect(_on_log_message)
-            _log_collector_connected = True
-        except Exception:
-            pass  # nosec B110
-
-
-def stop_log_collector():
-    """Disconnect from QgsMessageLog. Call on plugin unload."""
-    global _log_collector_connected
-    with _log_buffer_lock:
-        if not _log_collector_connected:
-            return
-        try:
-            from qgis.core import QgsApplication
-            QgsApplication.messageLog().messageReceived.disconnect(_on_log_message)
-        except (TypeError, RuntimeError):
-            pass
-        _log_collector_connected = False
-
-
-def _on_log_message(message, tag, level):
-    """Callback for QgsMessageLog.messageReceived signal."""
-    if tag == "AI Segmentation":
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        with _log_buffer_lock:
-            _log_buffer.append(f"[{timestamp}] {message}")
-
-
-def _get_recent_logs() -> str:
-    """Return recent AI Segmentation log lines (with paths anonymized)."""
-    with _log_buffer_lock:
-        if not _log_buffer:
-            return "(No logs captured this session)"
-        logs = "\n".join(_log_buffer)
-    return _anonymize_paths(logs)
 
 
 def _collect_diagnostic_info(error_message: str) -> str:
@@ -188,19 +119,75 @@ def _collect_diagnostic_info(error_message: str) -> str:
         lines.append("Device: could not detect (dependencies not installed)")
     lines.append("")
 
+    # Environment: the isolated venv path (anonymized on the way out) so a
+    # report says WHICH environment failed, plus whether it exists at all.
+    lines.append("--- Environment ---")
+    venv_python = None
+    try:
+        from ..core.venv_manager import get_venv_python_path, venv_exists
+        if venv_exists():
+            venv_python = get_venv_python_path()
+            lines.append(f"Venv Python: {venv_python}")
+        else:
+            lines.append("Venv: not found (dependencies not installed)")
+    except Exception as e:
+        lines.append(f"Venv: could not resolve ({str(e)[:80]})")
+    lines.append("")
+
+    # Import status: whether the heavy native packages actually IMPORT in the
+    # venv. This is the single most useful install signal: pip can list a
+    # package that then fails to import (broken native extension, antivirus
+    # quarantine, arch mismatch), which is exactly the case pip list hides.
+    lines.append("--- Import Status ---")
+    if venv_python:
+        try:
+            import subprocess  # nosec B404
+
+            from ..core.subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
+            probe = (
+                "import importlib\n"
+                "for m in ['numpy','torch','torchvision','rasterio','scipy','cv2','PIL']:\n"
+                "    try:\n"
+                "        mod=importlib.import_module(m)\n"
+                "        print(m+': OK '+str(getattr(mod,'__version__','')))\n"
+                "    except Exception as e:\n"
+                "        print(m+': FAIL '+type(e).__name__+': '+str(e)[:120])\n"
+            )
+            env = get_clean_env_for_venv()
+            kwargs = get_subprocess_kwargs()
+            result = subprocess.run(  # nosec B603
+                [venv_python, "-c", probe],
+                capture_output=True, text=True,
+                # The child is forced to write UTF-8 (PYTHONIOENCODING), so it
+                # must be decoded as UTF-8: the Windows ANSI code page turns an
+                # accented path into mojibake, or raises and loses the whole
+                # section.
+                encoding="utf-8", errors="replace", timeout=20,
+                stdin=subprocess.DEVNULL, env=env, **kwargs
+            )
+            out = (result.stdout or "").strip()
+            lines.append(out or "(no import output)")
+            err = (result.stderr or "").strip()
+            if err:
+                lines.append("stderr: " + err.splitlines()[-1][:120])
+        except Exception as e:
+            lines.append(f"Could not check imports: {str(e)[:100]}")
+    else:
+        lines.append("(skipped: no venv)")
+    lines.append("")
+
     # Installed packages
     lines.append("--- Packages ---")
     try:
         from ..core.subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs
-        from ..core.venv_manager import get_venv_python_path, venv_exists
-        if venv_exists():
+        if venv_python:
             import subprocess  # nosec B404
-            python_path = get_venv_python_path()
             env = get_clean_env_for_venv()
             kwargs = get_subprocess_kwargs()
             result = subprocess.run(  # nosec B603
-                [python_path, "-m", "pip", "list", "--format=columns"],
-                capture_output=True, text=True, timeout=5,
+                [venv_python, "-m", "pip", "list", "--format=columns"],
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=5,
                 stdin=subprocess.DEVNULL, env=env, **kwargs
             )
             if result.returncode == 0:
@@ -252,9 +239,15 @@ def _collect_diagnostic_info(error_message: str) -> str:
                         all_maxx = [float(r["maxx"]) for r in rows]
                         all_miny = [float(r["miny"]) for r in rows]
                         all_maxy = [float(r["maxy"]) for r in rows]
+                        # SIZE, not position. The raster name is withheld just
+                        # above for privacy, and printing the corners to two
+                        # decimals in a projected CRS would put the site back
+                        # in the report to the centimetre. What diagnoses a
+                        # bug is how big the area is, with the CRS and the
+                        # resolution already above.
                         lines.append(
-                            f"Bounds: [{min(all_minx):.2f}, {max(all_maxx):.2f}, "
-                            f"{min(all_miny):.2f}, {max(all_maxy):.2f}]"
+                            f"Extent size: {max(all_maxx) - min(all_minx):.0f} x "
+                            f"{max(all_maxy) - min(all_miny):.0f} (CRS units)"
                         )
                 else:
                     lines.append("(CSV index not found)")
@@ -272,9 +265,10 @@ def _collect_diagnostic_info(error_message: str) -> str:
 
     lines.append("")
     lines.append("=== End of Report ===")
-    # Anonymize all paths in the report to protect user privacy
+    # Scrub the WHOLE report: user paths (privacy) AND any backend/infra/model
+    # shape (a network error can carry an endpoint URL into the error text).
     report = "\n".join(lines)
-    return _anonymize_paths(report)
+    return _scrub_report(report)
 
 
 class ErrorReportDialog(QDialog):
@@ -292,9 +286,23 @@ class ErrorReportDialog(QDialog):
 
         self._error_title = error_title
         self._error_message = error_message
-        self._diagnostic_info = _collect_diagnostic_info(error_message)
+        # Diagnostics run two subprocesses in the isolated environment (up to
+        # 25 s together). Collected on the copy click, not here: gathering them
+        # up front froze QGIS before the dialog even painted, so the user saw
+        # nothing at all after the failure.
+        self._diagnostic_info: str | None = None
 
         self._setup_ui()
+
+    def _get_diagnostic_info(self) -> str:
+        """Collect the diagnostics once, on first use."""
+        if self._diagnostic_info is None:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            try:
+                self._diagnostic_info = _collect_diagnostic_info(self._error_message)
+            finally:
+                QApplication.restoreOverrideCursor()
+        return self._diagnostic_info
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -342,10 +350,14 @@ class ErrorReportDialog(QDialog):
     def _on_copy(self):
         """Copy diagnostic info to clipboard."""
         clipboard = QApplication.clipboard()
-        clipboard.setText(self._diagnostic_info)
+        clipboard.setText(self._get_diagnostic_info())
         self._copy_btn.setText(tr("Copied!"))
-        from qgis.PyQt.QtCore import QTimer
-        QTimer.singleShot(2000, lambda: self._copy_btn.setText(tr("1. Click to copy logs")))
+        # Bound to the dialog: a bare singleShot keeps the lambda and the
+        # button alive in the global event loop, so closing the dialog inside
+        # the two seconds landed the call on a freed widget.
+        from ..core.qt_compat import safe_single_shot
+        safe_single_shot(
+            2000, self, lambda: self._copy_btn.setText(tr("1. Click to copy logs")))
 
     def _on_open_email(self):
         """Open email client with support address."""
@@ -357,7 +369,10 @@ class ErrorReportDialog(QDialog):
         QDesktopServices.openUrl(QUrl(f"mailto:{SUPPORT_EMAIL}?subject={subject}"))
 
 
-def show_error_report(parent, error_title: str, error_message: str, error_code: str = ""):
+def show_error_report(
+    parent, error_title: str, error_message: str, error_code: str = "",
+    track: bool = True,
+):
     """Convenience function to show the error report dialog.
 
     `error_code` should be a canonical English snake_case identifier
@@ -365,23 +380,28 @@ def show_error_report(parent, error_title: str, error_message: str, error_code: 
     `_short_code()` constant - it never derives a code from the translated
     `error_title`, so dashboards aggregate cleanly across UI languages.
     Callers should still pass an explicit code so the breakdown stays useful.
+
+    `track=False` skips the internal plugin_error event: callers that already
+    tracked the same failure (or that re-open this dialog from a persistent
+    "Report this problem" link) pass False so one failure counts exactly once.
     """
-    try:
-        from ..core.telemetry import track_plugin_error
-        stage = _infer_stage(error_title, error_message)
-        first_line = (error_message or "").splitlines()[0] if error_message else ""
-        code = error_code or _short_code(error_title)
-        # Install/download logs are pip and download output (no user
-        # geodata, paths and coords scrubbed anyway); the tail is what
-        # turns a useless "network error" event into a diagnosable one.
-        track_plugin_error(
-            stage=stage,
-            error_code=code,
-            message=first_line,
-            include_log_tail=stage in ("install", "download"),
-        )
-    except Exception:
-        pass  # nosec B110
+    if track:
+        try:
+            from ..core.telemetry import track_plugin_error
+            stage = _infer_stage(error_title, error_message)
+            first_line = (error_message or "").splitlines()[0] if error_message else ""
+            code = error_code or _short_code(error_title)
+            # Install/download logs are pip and download output (no user
+            # geodata, paths and coords scrubbed anyway); the tail is what
+            # turns a useless "network error" event into a diagnosable one.
+            track_plugin_error(
+                stage=stage,
+                error_code=code,
+                message=first_line,
+                include_log_tail=stage in ("install", "download"),
+            )
+        except Exception:
+            pass  # nosec B110
 
     dialog = ErrorReportDialog(error_title, error_message, parent)
     dialog.exec()

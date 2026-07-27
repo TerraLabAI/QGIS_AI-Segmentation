@@ -80,11 +80,31 @@ def is_ssl_module_missing(error_text: str) -> bool:
     return any(p in lower for p in patterns)
 
 
+def is_untrusted_certificate_error(error_text: str) -> bool:
+    """True when the download reached the server and refused its certificate.
+
+    That is a different problem from a blocked address, and it needs different
+    advice: the connection works, but something re-signed it with a certificate
+    this machine does not vouch for.
+    """
+    lower = error_text.lower()
+    patterns = [
+        "unknownissuer",
+        "unable to get local issuer certificate",
+        "self signed certificate",
+        "self-signed certificate",
+        "certificate verify failed",
+        "invalid peer certificate",
+        "certificate is not trusted",
+    ]
+    return any(p in lower for p in patterns)
+
+
 def get_ssl_error_help(error_text: str = "", cache_dir: str = "") -> str:
     """Get actionable help message for SSL errors.
 
-    Differentiates between SSL module missing (broken Python) and
-    SSL certificate errors (network/proxy).
+    Differentiates between SSL module missing (broken Python), a certificate
+    this machine does not trust, and a blocked address.
     """
     if is_ssl_module_missing(error_text):
         return (
@@ -94,6 +114,18 @@ def get_ssl_error_help(error_text: str = "", cache_dir: str = "") -> str:
             f"  1. Delete the folder: {cache_dir}\n"
             "  2. Restart QGIS and try again\n"
             "  3. If the issue persists, reinstall QGIS"
+        )
+    if is_untrusted_certificate_error(error_text):
+        return (
+            "Installation failed: the download server presented a certificate "
+            "this computer does not trust.\n\n"
+            "Your network inspects secure connections and re-signs them with "
+            "its own certificate, and that certificate is not in the "
+            "computer's certificate store.\n\n"
+            "Ask your IT department to either:\n"
+            "  - install the network's root certificate on this machine, or\n"
+            "  - exclude pypi.org, files.pythonhosted.org and "
+            "download.pytorch.org from inspection."
         )
     return (
         "Installation failed due to network restrictions.\n\n"
@@ -137,6 +169,13 @@ _NETWORK_ERROR_PATTERNS = [
     "host non trouvé",             # fr (alt)
     "host desconhecido",           # pt-BR
     "host desconocido",            # es
+    # uv (Rust/reqwest) vocabulary: none of the Python spellings above appear
+    # in its output, so its network failures fell into the generic bucket.
+    "request failed after",        # "error: Request failed after 5 retries"
+    "error sending request",       # reqwest transport error
+    "client error (connect)",      # reqwest connect phase
+    "dns error",
+    "operation timed out",
 ]
 
 
@@ -176,9 +215,7 @@ def is_proxy_auth_error(output: str) -> bool:
 
 _DISK_FULL_PATTERNS = [
     "no space left on device",
-    "errno 28",
     "enospc",
-    "os error 28",                       # uv / Rust on POSIX
     "not enough space on the disk",      # en (Windows)
     "there is not enough space on the disk",
     "espace disque insuffisant",         # fr
@@ -186,6 +223,12 @@ _DISK_FULL_PATTERNS = [
     "espaco em disco insuficiente",      # pt-BR (no cedilla, defensive)
     "espaço em disco insuficiente",      # pt-BR
 ]
+
+# The numeric forms: 28 is POSIX ENOSPC, 112 is Windows ERROR_DISK_FULL. Both
+# are needed, because the prose above only covers four of the languages Windows
+# ships in and everything else falls through to the wrong classifier. Anchored
+# with a word boundary so a code is never read as the prefix of a longer one.
+_DISK_FULL_CODE_RE = re.compile(r"(?:errno|os error|winerror)\s+(?:28|112)\b")
 
 
 def is_disk_full(output: str) -> bool:
@@ -197,6 +240,8 @@ def is_disk_full(output: str) -> bool:
     error on Windows, which the antivirus classifier would misattribute.
     """
     lower = output.lower()
+    if _DISK_FULL_CODE_RE.search(lower):
+        return True
     return any(p in lower for p in _DISK_FULL_PATTERNS)
 
 
@@ -331,9 +376,7 @@ def is_dll_init_error(output: str) -> bool:
         return False
     # A policy/antivirus block is not a missing-runtime error; let the
     # antivirus classifier own it (it carries the whitelist guidance).
-    if is_antivirus_error(output):
-        return False
-    return True
+    return not is_antivirus_error(output)
 
 
 def get_vcpp_help() -> str:
@@ -378,6 +421,18 @@ _APP_CONTROL_PATTERNS = [
     "strategie de controle d'application",    # fr (accents stripped in logs)
     "stratégie de contrôle d'application",    # fr
     "beleid voor toepassingsbeheer",          # nl
+    # "This program is blocked by group policy" also arrives as WinError 1260
+    # (ERROR_ACCESS_DISABLED_BY_POLICY). The numeric form is locale-independent;
+    # the localized phrases cover logs where only the OS sentence survives.
+    "winerror 1260",
+    "os error 1260",
+    "directiva de grupo",                     # es
+    "diretiva de grupo",                      # pt-BR
+    "gruppenrichtlinie",                      # de
+    "groepsbeleid",                           # nl
+    "strategie de groupe",                    # fr (accents stripped in logs)
+    "stratégie de groupe",                    # fr
+    "criteri di gruppo",                      # it
 ]
 
 
@@ -444,6 +499,17 @@ _ACCESS_DENIED_LOCALIZED = [
 ]
 
 
+# Numeric codes that mean a scanner or a policy held the file:
+# 5 ERROR_ACCESS_DENIED, 110 ERROR_OPEN_FAILED (scan race on a new wheel),
+# 225 ERROR_VIRUS_INFECTED, and os error 13 for uv's POSIX EACCES.
+# Anchored with a word boundary: matched as a bare substring, "winerror 5" also
+# covers the whole 50-to-59 network and device block, so "[winerror 53] the
+# network path was not found" told a user on a mapped drive to disable their
+# antivirus and run QGIS as administrator.
+_BLOCKED_ERROR_CODE_RE = re.compile(
+    r"winerror\s+(?:5|110|225)\b|os error\s+(?:5|13)\b")
+
+
 def is_antivirus_error(stderr: str) -> bool:
     """Detect antivirus/permission blocking in pip/uv output.
 
@@ -451,16 +517,13 @@ def is_antivirus_error(stderr: str) -> bool:
     and localized Windows "access denied" messages.
     """
     stderr_lower = stderr.lower()
+    if _BLOCKED_ERROR_CODE_RE.search(stderr_lower):
+        return True
     patterns = [
         *_ACCESS_DENIED_LOCALIZED,
         # Application-control policy blocks are a subset: is_app_control_error
         # narrows them down for the targeted IT allow-rule guidance.
         *_APP_CONTROL_PATTERNS,
-        "winerror 5",
-        "winerror 225",
-        "winerror 110",        # ERROR_OPEN_FAILED - AV scan race on new wheel
-        "os error 5",          # uv format on Windows (distinct from winerror 5)
-        "os error 13",         # uv format on POSIX (EACCES)
         # Windows text for ERROR_OPEN_FAILED; seen during install of fresh
         # wheels (e.g. tqdm) when Defender holds the file during real-time
         # scan. HRESULT 0x8007006E shows up as signed "os error -2147024786".
@@ -503,10 +566,11 @@ def is_file_locked_error(output: str) -> bool:
         return False
     if any(p in lower for p in _ACCESS_DENIED_LOCALIZED):
         return True
-    return any(
-        phrase in lower
-        for phrase in ("os error 5", "os error 13", "winerror 5", "permission denied")
-    )
+    # Anchored, for the same reason as _BLOCKED_ERROR_CODE_RE above: the bare
+    # substring "os error 5" is a prefix of the whole 50-to-59 network block,
+    # so a cache on a mapped drive ("the network path was not found (os error
+    # 53)") read as a locked binary and sent the user to restart QGIS.
+    return bool(_BLOCKED_ERROR_CODE_RE.search(lower)) or "permission denied" in lower
 
 
 def get_file_locked_help() -> str:
@@ -524,15 +588,21 @@ def get_file_locked_help() -> str:
     )
 
 
-def get_pip_antivirus_help(venv_dir: str) -> str:
-    """Get actionable help message for antivirus blocking pip."""
+def get_pip_antivirus_help(exclude_dir: str) -> str:
+    """Get actionable help message for antivirus blocking pip.
+
+    `exclude_dir` must be the whole plugin cache folder, never the venv alone.
+    Callers used to pass the venv, and a real 2026-07-27 install failure was
+    antivirus locking a file under `uv_cache`, a SIBLING of the venv: the user
+    was told to exclude a folder that could not stop the failure they had.
+    """
     steps = (
         "Installation was blocked, likely by antivirus software "
         "or security policy.\n\n"
         "Please try:\n"
         "  1. Temporarily disable real-time antivirus scanning\n"
         "  2. Add an exclusion for the plugin folder:\n"
-        f"     {venv_dir}\n"
+        f"     {exclude_dir}\n"
     )
     if sys.platform == "win32":
         steps += (
@@ -543,7 +613,7 @@ def get_pip_antivirus_help(venv_dir: str) -> str:
     else:
         steps += (
             "  3. Check folder permissions: "
-            f'chmod -R u+rwX "{venv_dir}"\n'
+            f'chmod -R u+rwX "{exclude_dir}"\n'
             "  4. Try the installation again"
         )
     return steps
@@ -595,4 +665,157 @@ def get_crash_help(venv_dir: str) -> str:
         f"     {venv_dir}\n"
         "  3. Click 'Reinstall Dependencies' to recreate the environment\n"
         "  4. If the issue persists, run QGIS as administrator"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Invalid install path (cloud-synced, special characters, over-long)
+# ---------------------------------------------------------------------------
+
+_INVALID_PATH_PATTERNS = [
+    # pip: "OSError: [Errno 22] Invalid argument: 'C:\\Users\\...'"
+    "errno 22",
+    # Windows "The filename, directory name, or volume label syntax is
+    # incorrect", numeric forms first (locale-independent).
+    "winerror 123",
+    "os error 123",
+    "volume label syntax is incorrect",
+    # Windows path-length limit (260 chars) hit inside a deep venv tree.
+    "winerror 206",
+    "os error 206",
+]
+
+
+def is_invalid_path_error(output: str) -> bool:
+    """Detect a file path the OS refuses to write during install.
+
+    Seen in production as pip's "Could not install packages due to an
+    OSError: [Errno 22] Invalid argument: '<path>'" on Windows homes that
+    live under a cloud-synced or redirected folder (OneDrive placeholders
+    reject normal writes), contain unusual characters, or exceed the legacy
+    260-character path limit.
+    """
+    lower = output.lower()
+    return any(p in lower for p in _INVALID_PATH_PATTERNS)
+
+
+def get_invalid_path_help(cache_dir: str = "") -> str:
+    """Actionable help when the install path itself is the problem."""
+    location = cache_dir or "~/.qgis_ai_segmentation"
+    return (
+        "Windows refused a file path during installation.\n\n"
+        "This usually means the install folder is cloud-synced "
+        "(OneDrive/Dropbox), contains unusual characters, or the path grew "
+        "past the Windows length limit.\n\n"
+        f"The environment installs under: {location}\n\n"
+        "Please try:\n"
+        "  1. If that folder is inside OneDrive or another sync tool, pause\n"
+        "     syncing (or mark the folder 'Always keep on this device')\n"
+        "  2. Or set the AI_SEGMENTATION_CACHE_DIR environment variable to a\n"
+        "     short local folder outside any synced area (e.g. C:\\qgis_ai),\n"
+        "     then restart QGIS\n"
+        "  3. Click 'Install Dependencies' again"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Broken local Python runtime (gutted stdlib)
+# ---------------------------------------------------------------------------
+
+_BROKEN_RUNTIME_PATTERNS = [
+    # The interpreter cannot even start: stdlib missing or unreachable.
+    "no module named 'encodings'",
+    "no module named encodings",
+    "init_fs_encoding",
+    "failed to get the python codec of the filesystem encoding",
+]
+
+
+def is_broken_python_runtime(output: str) -> bool:
+    """Detect a damaged local Python runtime (stdlib gutted or unreachable).
+
+    Antivirus quarantine or an interrupted first install can leave the
+    standalone Python (or the venv that points at it) unable to boot at all:
+    "Fatal Python error: init_fs_encoding ... No module named 'encodings'".
+    Every later package build then fails with the same wall of text.
+    """
+    lower = output.lower()
+    return any(p in lower for p in _BROKEN_RUNTIME_PATTERNS)
+
+
+def get_broken_python_runtime_help(cache_dir: str = "") -> str:
+    """Actionable help for a damaged local Python runtime."""
+    location = cache_dir or "~/.qgis_ai_segmentation"
+    return (
+        "The plugin's local Python runtime is damaged and cannot start.\n"
+        "This is usually caused by antivirus quarantine or an interrupted\n"
+        "first installation.\n\n"
+        "The next installation will rebuild it from scratch automatically.\n\n"
+        "Please try:\n"
+        "  1. Add an antivirus exclusion for the folder:\n"
+        f"     {location}\n"
+        "  2. Click 'Install Dependencies' again to rebuild everything"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Corrupt virtual environment (survives superficial checks)
+# ---------------------------------------------------------------------------
+
+_CORRUPT_VENV_PATTERNS = [
+    # venv python without its bundled pip: "python.exe: No module named pip"
+    "no module named pip",
+    "no module named 'pip'",
+    # uv cannot read the venv's interpreter metadata
+    "failed to inspect python interpreter",
+]
+
+
+def is_corrupt_venv(output: str) -> bool:
+    """Detect a virtual environment too damaged to install into.
+
+    The venv directory exists (so quick checks pass) but its interpreter or
+    bundled pip is gone: cleanup tools, quarantine, or a kill mid-build.
+    """
+    lower = output.lower()
+    return any(p in lower for p in _CORRUPT_VENV_PATTERNS)
+
+
+def get_corrupt_venv_help() -> str:
+    """Actionable help for a corrupt virtual environment."""
+    return (
+        "The plugin's Python environment is damaged (files are missing "
+        "inside it).\n\n"
+        "Click 'Install Dependencies' again: the environment will be "
+        "rebuilt from scratch automatically."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dependency resolution conflicts
+# ---------------------------------------------------------------------------
+
+_DEPENDENCY_CONFLICT_PATTERNS = [
+    "conflicting dependencies",       # pip
+    "resolutionimpossible",           # pip resolver class name
+    "no solution found when resolving",  # uv
+]
+
+
+def is_dependency_conflict(output: str) -> bool:
+    """Detect a package-resolver conflict (no installable version set)."""
+    lower = output.lower()
+    return any(p in lower for p in _DEPENDENCY_CONFLICT_PATTERNS)
+
+
+def get_dependency_conflict_help() -> str:
+    """Actionable help for a dependency-resolution conflict."""
+    return (
+        "The package resolver could not find a compatible set of versions.\n"
+        "This usually comes from stale cached package data or a Python\n"
+        "version the AI packages no longer support.\n\n"
+        "Please try:\n"
+        "  1. Click 'Reinstall Dependencies' to rebuild with fresh data\n"
+        "  2. If it persists, update QGIS to the latest LTR release\n"
+        "     (newer QGIS ships a newer Python) and try again"
     )

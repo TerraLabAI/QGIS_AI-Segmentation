@@ -66,7 +66,17 @@ class GenericRequestTask(QgsTask):
         if self.isCanceled():
             return False
 
-        if isinstance(result, dict) and "error" in result:
+        if not isinstance(result, dict):
+            # Every request_fn wired into this generic task promises a dict
+            # (TerraLabClient._request itself defaults to that now); the one
+            # client route that legitimately answers a list (fetch_run_masks)
+            # uses its own dedicated worker, never this task. A non-dict here
+            # is a server or client bug, not data to hand to a caller typed
+            # to expect a dict.
+            self._failure = ("Invalid server response", "SERVER_ERROR")
+            return False
+
+        if "error" in result:
             self._failure = (
                 str(result.get("error", "Unknown error")),
                 str(result.get("code", "")),

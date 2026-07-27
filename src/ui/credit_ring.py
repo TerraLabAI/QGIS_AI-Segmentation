@@ -16,7 +16,20 @@ from .dock.styles import ERROR_TEXT as _BRAND_RED
 
 _LOW_ORANGE = "#ff8f00"  # free-tier low-credit nudge (amber, not alarm red)
 _TRACK_RGBA = (128, 128, 128, 64)  # rgba(128,128,128,0.25)
+# Shipped fraction below which the ring turns amber. The value in force comes
+# from credit_gate.low_credit_threshold(), which is also where the second copy
+# of this number (the review's low-credit note) should read it from.
 _LOW_THRESHOLD = 0.20
+
+
+def _low_threshold() -> float:
+    """The low-credit fraction in force. Never raises: this runs in paint."""
+    try:
+        from ..core.credit_gate import low_credit_threshold
+
+        return low_credit_threshold()
+    except Exception:  # noqa: BLE001 -- paintEvent must never raise  # nosec B110
+        return _LOW_THRESHOLD
 
 
 def _cap_style(name: str):
@@ -76,7 +89,7 @@ class CreditRing(QWidget):
 
     def _progress_color(self) -> QColor:
         ratio = self._ratio_remaining()
-        if ratio <= _LOW_THRESHOLD:
+        if ratio <= _low_threshold():
             # Free tier running low is a soft nudge (amber), paired with the
             # Start-page "Running low" note; subscribers keep the red at low.
             return QColor(_LOW_ORANGE) if self._free_tier else QColor(_BRAND_RED)

@@ -1,63 +1,56 @@
-"""Automatic post-run review panel construction.
+"""Automatic post-run review panel construction: the linear 3-step review.
 
 Part of AISegmentationDockWidget (see ai_segmentation_dockwidget.py);
 split out of auto_build.py so agents and humans work on one concern per
 file. Methods are plain mixin members: widgets/signals live on the dock
 instance.
+
+Layout: ONE review card (single instrument surface) holding the title, the
+step-dials row (Keep / Correct / Shapes), then a step stack whose pages are
+Keep (this file), Correct (auto_correct_build.py) and Shapes
+(auto_review_steps.py). Below the card: the dynamic step primary, the Export
+primary (Shapes step only) and the quiet links row. The View-as block is NOT
+in the card: it is built by _setup_auto_review_view_block and pinned to the
+dock bottom, just above the footer credits row (about.py). Store-only setters
+live in auto_state.py.
 """
 from __future__ import annotations
 
-
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDoubleSpinBox,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
-    QProgressBar,
     QPushButton,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-
 from ...core.i18n import tr
-from ...core.review_defaults import (
-    AUTO_REVIEW_CLEAN_DEFAULT as _AUTO_REVIEW_CLEAN_DEFAULT,
-    AUTO_REVIEW_EXPAND_DEFAULT as _AUTO_REVIEW_EXPAND_DEFAULT,
-    AUTO_REVIEW_FILL_HOLES_DEFAULT as _AUTO_REVIEW_FILL_HOLES_DEFAULT,
-    AUTO_REVIEW_ORTHO_DEFAULT as _AUTO_REVIEW_ORTHO_DEFAULT,
-    AUTO_REVIEW_SIMPLIFY_DEFAULT as _AUTO_REVIEW_SIMPLIFY_DEFAULT,
-    AUTO_REVIEW_SMOOTH_DEFAULT as _AUTO_REVIEW_SMOOTH_DEFAULT,
-)
+from .auto_correct_build import _REVIEW_HEADING_NOTE_QSS, _REVIEW_HEADING_QSS
 from .guidance import (
     BLUE_TINT,
     HINT_REVIEW_CONFIDENCE,
     DismissibleHint,
 )
 from .styles import (
-    _BTN_BLUE_OUTLINE,
     _BTN_GREEN,
-    _BTN_LINK,
     _BTN_LINK_MUTED,
+    _CARD_MARGINS,
     _CARD_QSS,
-    _CHIP_QSS,
     _COMBO_THEME_QSS,
-    _PROGRESS_THIN_QSS,
     _REVIEW_CONF_MAX,
     _REVIEW_CONF_MIN,
     _REVIEW_CONF_SPIN_MIN,
     _REVIEW_CONF_STEP,
-    _SECTION_TOGGLE_QSS,
     _SLIDER_QSS,
+    ERROR_TEXT,
     _card_divider,
-    _micro_header,
-    _msg_card_qss,
+    _step_dial,
 )
-
 
 # Swatch colours for the Display-colors legend, each SAMPLED FROM THE REAL
 # renderer (auto_results): the review blue fill, the outline-mode red stroke,
@@ -66,11 +59,82 @@ from .styles import (
 # new UI tint: the dot next to the words is exactly the colour on the canvas.
 _LEGEND_RANDOM_DOTS = ("#e65133", "#b3e633", "#33e67a", "#3389e6")
 
+# Two-stage retry guard (D11): with a non-empty correction journal the muted
+# escape link swaps to this error-warm confirm look on the first click; the
+# state machine is plugin-side, the dock only swaps the look
+# (set_retry_confirm_pending).
+_BTN_LINK_CONFIRM = (
+    "QPushButton { background: transparent; border: none;"  # ui-ok: confirm-stage variant of _BTN_LINK_MUTED
+    f" color: {ERROR_TEXT}; font-size: 11px; padding: 4px 8px;"
+    " text-decoration: underline; }"
+)
+
+
+class _CurrentPageStack(QWidget):
+    """Page stack that sizes to the CURRENT page only (QStackedWidget API).
+
+    A real QStackedWidget always sizes to its TALLEST page: sizeHint takes
+    the max even over Ignored-policy pages, and worse, the parent card's
+    layout sizes by heightForWidth (its labels word-wrap), for which
+    QWidgetItem bypasses every widget-level virtual and asks the internal
+    QStackedLayout directly, again the max over ALL pages. So a short step
+    (Keep) inherited the Shapes page's wrapped height as
+    dead space between its content and the primary button. Here the layout
+    only ever CONTAINS the current page (swapped on setCurrentIndex), so
+    every size channel naturally reports the current page alone."""
+
+    currentChanged = pyqtSignal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._pages: list[QWidget] = []
+        self._current = -1
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
+    def addWidget(self, page: QWidget) -> int:
+        self._pages.append(page)
+        page.setParent(self)
+        page.hide()
+        if self._current < 0:
+            self.setCurrentIndex(0)
+        return len(self._pages) - 1
+
+    def count(self) -> int:
+        return len(self._pages)
+
+    def widget(self, index: int):
+        if 0 <= index < len(self._pages):
+            return self._pages[index]
+        return None
+
+    def currentIndex(self) -> int:
+        return self._current
+
+    def currentWidget(self):
+        return self.widget(self._current)
+
+    def setCurrentIndex(self, index: int) -> None:
+        if index == self._current or not 0 <= index < len(self._pages):
+            return
+        lay = self.layout()
+        old = self.currentWidget()
+        if old is not None:
+            lay.removeWidget(old)
+            old.hide()
+        self._current = index
+        page = self._pages[index]
+        lay.addWidget(page)
+        page.show()
+        self.updateGeometry()
+        self.currentChanged.emit(index)
+
 
 def _legend_dots(colors, glyph: str = "●") -> str:
     """Inline swatch run for the legend line (rich-text colored dots)."""
     return "".join(
-        '<span style="color:{c};">{g}</span>'.format(c=c, g=glyph)
+        f'<span style="color:{c};">{glyph}</span>'
         for c in colors
     )
 
@@ -105,54 +169,70 @@ def _export_btn_label(n: int) -> str:
     return tr("Export {n} polygons").format(n=n)
 
 
+def _dial_label_qss(active: bool) -> str:
+    """10px label under a step dial: the active step's label is bolder and in
+    the full text colour, the others stay muted."""
+    if active:
+        return ("font-size: 10px; font-weight: 600; color: palette(text);"
+                " background: transparent; border: none;")
+    return ("font-size: 10px; color: rgba(128,128,128,0.95);"
+            " background: transparent; border: none;")
+
+
+class _StepDialColumn(QWidget):
+    """One clickable dial column of the review ladder.
+
+    The dial row doubles as free navigation: click Keep to re-tune the
+    cutoff, come back to Correct, jump ahead to Shapes. Navigability is driven
+    by _set_review_dials_locked, so the pointer cursor never invites a click
+    the plugin would refuse (only the already-current step is non-navigable)."""
+
+    clicked = pyqtSignal(int)
+
+    def __init__(self, step: int, parent=None):
+        super().__init__(parent)
+        self._step = int(step)
+        self._navigable = False
+
+    def set_navigable(self, on: bool) -> None:
+        self._navigable = bool(on)
+        self.setCursor(Qt.CursorShape.PointingHandCursor if self._navigable
+                       else Qt.CursorShape.ArrowCursor)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802 - Qt virtual
+        # Qt6 mouse events carry position(); Qt5 carries localPos() (same
+        # QPointF contract). Resolved BY NAME so the static Qt6 checker never
+        # sees a flat deprecated access on either branch.
+        getter = (getattr(event, "position", None) or getattr(event, "localPos", None))
+        hit = getter is not None and self._navigable and event.button() == Qt.MouseButton.LeftButton
+        if hit and self.rect().contains(getter().toPoint()):
+            self.clicked.emit(self._step)
+        super().mouseReleaseEvent(event)
+
+
 class DockAutoReviewBuildMixin:
-    """Automatic post-run review panel construction."""
+    """Automatic post-run review panel construction (linear 3-step review)."""
 
     def _setup_auto_review_panel(self, parent_layout):
         """Post-run review panel (hidden until a run finishes successfully).
 
-        Three zones, in the order the work happens: ONE titled review card
-        holding the whole edit phase (Confidence / View as / Refine, split by
-        quiet dividers), then the green Export primary, then a muted
-        start-over text line. Size alone carries the hierarchy: no naked
-        group labels between widgets."""
+        ONE titled review card (single instrument surface: title, step dials,
+        step stack), then the dynamic step primary, the Export primary (Shapes
+        step only) and the quiet links row. The View-as block lives at the dock
+        bottom, not here (_setup_auto_review_view_block)."""
         self.auto_review_panel = QWidget()
         self.auto_review_panel.setVisible(False)
         _review_layout = QVBoxLayout(self.auto_review_panel)
         _review_layout.setContentsMargins(0, 0, 0, 0)
-        # 8px between the three zones (review card / Export / start-over
-        # line) keeps a calm, clearly hierarchised review area.
+        # 8px between the zones (review card / primaries / links line) keeps
+        # a calm, clearly hierarchised review area.
         _review_layout.setSpacing(8)
 
-        # Inline install banner (D1): when Refine in Manual mode is clicked
-        # without the local AI installed, the setup runs in the BACKGROUND while
-        # this review stays fully usable. This banner shows the progress; the
-        # Refine button re-enables and the handoff opens automatically once the AI
-        # is ready (driven by set_auto_review_installing + set_install_progress).
-        self._auto_review_installing = False
-        self.auto_review_install_banner = QWidget()
-        self.auto_review_install_banner.setObjectName("autoReviewInstallBanner")
-        self.auto_review_install_banner.setAttribute(
-            Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.auto_review_install_banner.setStyleSheet(
-            _msg_card_qss("autoReviewInstallBanner", "info"))
-        _install_col = QVBoxLayout(self.auto_review_install_banner)
-        _install_col.setContentsMargins(10, 8, 10, 8)
-        _install_col.setSpacing(4)
-        self.auto_review_install_label = QLabel(
-            tr("Setting up Manual mode in the background..."))
-        self.auto_review_install_label.setWordWrap(True)
-        self.auto_review_install_label.setStyleSheet(
-            "font-size: 11px; color: palette(text);")
-        _install_col.addWidget(self.auto_review_install_label)
-        self.auto_review_install_progress = QProgressBar()
-        self.auto_review_install_progress.setRange(0, 100)
-        self.auto_review_install_progress.setValue(0)
-        self.auto_review_install_progress.setTextVisible(False)
-        self.auto_review_install_progress.setStyleSheet(_PROGRESS_THIN_QSS)
-        _install_col.addWidget(self.auto_review_install_progress)
-        self.auto_review_install_banner.setVisible(False)
-        _review_layout.addWidget(self.auto_review_install_banner)
+        # Linear-review state read by the auto_state setters. Initialized
+        # with the widgets they describe (the dock __init__ stays signals +
+        # assembly only).
+        self._auto_review_step = 0
+        self._auto_zero_entry = False
 
         # THE review card: the whole edit phase in one card. The page names
         # itself inside this first card (no frameless header); the checkbox
@@ -168,35 +248,179 @@ class DockAutoReviewBuildMixin:
         _card_qss += checkbox_indicator_qss(self)
         _card.setStyleSheet(_card_qss)
         _card_layout = QVBoxLayout(_card)
-        _card_layout.setContentsMargins(10, 10, 10, 10)
+        _card_layout.setContentsMargins(*_CARD_MARGINS)
         _card_layout.setSpacing(6)
 
-        _review_title = QLabel(tr("Review detections"))
-        _review_title.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: palette(text);")
-        _card_layout.addWidget(_review_title)
-        _review_subtitle = QLabel(tr("Filter and refine, then export."))
-        _review_subtitle.setStyleSheet(
+        # No card title: the step dials below name the review, and each step
+        # page heads itself (_review_step_heading), so a static "Review
+        # detections" line only spent height repeating them.
+        # Step dials row: three equal-width columns, the 10px label BELOW
+        # each dial (i18n width rule). Clickable for free navigation; only the
+        # already-current step is non-navigable. Kept as a handle so the QGIS
+        # bridge can hide the ladder while leaving the card (and the View-as
+        # control) in place.
+        self._auto_review_dials_row = self._build_review_dials()
+        _card_layout.addWidget(self._auto_review_dials_row)
+        # Breathing room between the ladder and the step page: the dial labels
+        # otherwise sit flush on the next line and the two zones read as one
+        # block.
+        _card_layout.addSpacing(8)
+
+        # Step stack, in build order: 0 Keep / 1 Correct / 2 Shapes.
+        # Mirrors the auto_steps pattern; navigation happens only through the
+        # auto_state setters, driven by the plugin.
+        from .auto_review_steps import build_shapes_page
+        self.auto_review_step_stack = _CurrentPageStack()
+        self.auto_review_step_stack.addWidget(self._build_auto_keep_page())
+        self.auto_review_step_stack.addWidget(self._build_auto_correct_page())
+        self.auto_review_step_stack.addWidget(build_shapes_page(self))
+        self.auto_review_step_stack.currentChanged.connect(
+            self._sync_review_stack_height)
+        self._sync_review_stack_height()
+        # Never let the stack absorb surplus vertical space: a QStackedWidget
+        # defaults to Expanding, and any surplus the page layout hands the
+        # card would balloon the stack into dead space between the step
+        # content and the primary button.
+        self.auto_review_step_stack.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        _card_layout.addWidget(self.auto_review_step_stack)
+
+        # Kept as an instance handle so the QGIS-bridge banner can hide the
+        # whole review card while the user edits in QGIS's own tools.
+        self._auto_review_card = _card
+        _review_layout.addWidget(_card)
+
+        # The two green primaries belong to the review flow: directly under the
+        # card, above the quiet links. They are also what a user who does not
+        # want to correct anything reaches for, so _keep_review_primary_in_view
+        # scrolls them into view on every step change rather than pinning them
+        # somewhere else on the dock.
+
+        # Dynamic step primary: ONE green "Next: ..." button whose label the
+        # setters swap per step (set_auto_review_step). Hidden on the Shapes
+        # step (Export is that step's primary) and on the zero-detection empty
+        # state, where there is nothing to advance to.
+        self.auto_step_next_btn = QPushButton("")
+        self.auto_step_next_btn.setStyleSheet(_BTN_GREEN)
+        self.auto_step_next_btn.setMinimumHeight(40)
+        self.auto_step_next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auto_step_next_btn.clicked.connect(
+            self._on_auto_step_next_clicked)
+        _review_layout.addWidget(self.auto_step_next_btn)
+
+        # Export: the Shapes step's primary, final commit. Names the outcome
+        # (a saved layer) instead of the vague "Finish"; taller than every
+        # other control so the finish line is unmistakable.
+        self.auto_export_btn = QPushButton(_export_btn_label(0))
+        self.auto_export_btn.setStyleSheet(_BTN_GREEN)
+        self.auto_export_btn.setMinimumHeight(44)
+        self.auto_export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auto_export_btn.clicked.connect(self.auto_export_requested.emit)
+        self.auto_export_btn.setVisible(False)
+        _review_layout.addWidget(self.auto_export_btn)
+
+        # Quiet links row: "Re-run the whole zone" + Exit on every step. Retry
+        # keeps the zone, references and settings (non-destructive re-run, new
+        # credits); Exit discards. The dials handle back-navigation, so there
+        # is no back-link.
+        self.auto_retry_btn = QPushButton("↻  " + tr("Re-run the whole zone"))
+        self.auto_retry_btn.setStyleSheet(_BTN_LINK_MUTED)
+        self.auto_retry_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auto_retry_btn.setToolTip(tr(
+            "Go back to your zone, references and settings, then detect the "
+            "whole zone again. Nothing is saved."))
+        self.auto_retry_btn.clicked.connect(self.auto_retry_requested.emit)
+        self.auto_review_exit_btn = QPushButton(tr("Exit"))
+        self.auto_review_exit_btn.setStyleSheet(_BTN_LINK_MUTED)
+        self.auto_review_exit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auto_review_exit_btn.clicked.connect(
+            self.auto_review_exit_requested.emit)
+        _review_actions_row = QHBoxLayout()
+        _review_actions_row.setContentsMargins(0, 0, 0, 0)
+        _review_actions_row.setSpacing(2)
+        self._auto_review_links_sep = QLabel("·")
+        self._auto_review_links_sep.setStyleSheet(
+            "font-size: 11px; color: rgba(128,128,128,0.9);"
+            " background: transparent; border: none;")
+        _review_actions_row.addStretch(1)
+        _review_actions_row.addWidget(self.auto_retry_btn)
+        _review_actions_row.addWidget(self._auto_review_links_sep)
+        _review_actions_row.addWidget(self.auto_review_exit_btn)
+        _review_actions_row.addStretch(1)
+        _review_layout.addLayout(_review_actions_row)
+
+        parent_layout.addWidget(self.auto_review_panel)
+
+    def _setup_auto_review_view_block(self, parent_layout):
+        """View-detections-as block, pinned to the DOCK BOTTOM.
+
+        It is a way to look at the results, not a step of the review, so it
+        sits under the whole flow (just above the footer credits row, added by
+        _setup_about_section) instead of leading the review card. Always there
+        while a review is live, on every step, and never the first thing the
+        eye lands on.
+
+        Visibility follows the review: set_auto_review_active shows and hides
+        it, and the teardown paths that skip that call hide it themselves."""
+        self.auto_review_view_row = QWidget()
+        self.auto_review_view_row.setObjectName("autoReviewViewBlock")
+        self.auto_review_view_row.setAttribute(
+            Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.auto_review_view_row.setStyleSheet(
+            _CARD_QSS.format(name="autoReviewViewBlock") + "QLabel { background: transparent; border: none; }")
+        self.auto_review_view_row.setVisible(False)
+        _view_col = QVBoxLayout(self.auto_review_view_row)
+        _view_col.setContentsMargins(*_CARD_MARGINS)
+        _view_col.setSpacing(2)
+        _display_row = QHBoxLayout()
+        _display_lbl = QLabel(tr("View detections as:"))
+        _display_lbl.setStyleSheet("font-size: 11px;")
+        _display_row.addWidget(_display_lbl)
+        _display_row.addStretch()
+        self.auto_display_combo = _build_display_combo(self)
+        _display_row.addWidget(self.auto_display_combo)
+        _view_col.addLayout(_display_row)
+
+        self.auto_display_legend = QLabel(display_legend_html("random"))
+        self.auto_display_legend.setWordWrap(True)
+        self.auto_display_legend.setTextFormat(Qt.TextFormat.RichText)
+        self.auto_display_legend.setStyleSheet(
             "font-size: 11px; color: rgba(128,128,128,0.95);")
-        _card_layout.addWidget(_review_subtitle)
+        _view_col.addWidget(self.auto_display_legend)
+        parent_layout.addWidget(self.auto_review_view_row)
 
-        _card_layout.addWidget(_card_divider())
+    # -- Keep page (step 0) --------------------------------------------------
 
-        # -- Confidence sub-block (live post-run re-filter): the run keeps
-        # every mask above a low recall floor, so dragging this re-filters the
-        # detections instantly with no re-detection and no extra credits.
-        # Fires on release (not every tick) so the re-merge runs once per
-        # adjustment.
+    def _build_auto_keep_page(self) -> QWidget:
+        """Keep page: everything that decides WHICH objects survive, and
+        nothing that changes how they look. Confidence leads, the two size
+        filters follow. All three re-filter the stored objects live (the run
+        keeps every mask above a low recall floor), so no re-detection and no
+        credits. Confidence fires on release (not every tick) so the re-merge
+        runs once per adjustment.
+
+        The step has no heading of its own: the dial above already names it,
+        and each group carries its own title in the shared heading style. What
+        the confidence number MEANS is the part that was missing, and it lives
+        in the tip under the slider."""
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        # This label IS the step's head, so it wears the shared heading style
+        # and lines up with the titles on the other two steps.
         _conf_hdr = QHBoxLayout()
         _conf_review_lbl = QLabel(tr("Confidence"))
-        _conf_review_lbl.setStyleSheet("font-size: 11px; font-weight: bold;")
+        _conf_review_lbl.setStyleSheet(_REVIEW_HEADING_QSS)
         _conf_hdr.addWidget(_conf_review_lbl)
         _conf_hdr.addStretch()
         # Editable number so the user can dial an exact cutoff instead of having
         # to nudge the slider. Slider and spinbox stay in sync; either one drives
         # the (debounced) re-filter.
         self.auto_review_confidence_spin = QSpinBox()
-        self.auto_review_confidence_spin.setRange(_REVIEW_CONF_SPIN_MIN, _REVIEW_CONF_MAX)
+        self.auto_review_confidence_spin.setRange(
+            _REVIEW_CONF_SPIN_MIN, _REVIEW_CONF_MAX)
         # Free 1% precision in the number box: the spinbox is the exact-cutoff
         # control; only the slider snaps to _REVIEW_CONF_STEP.
         self.auto_review_confidence_spin.setSingleStep(1)
@@ -205,7 +429,7 @@ class DockAutoReviewBuildMixin:
         self.auto_review_confidence_spin.setMinimumWidth(62)
         self.auto_review_confidence_spin.setMaximumWidth(78)
         _conf_hdr.addWidget(self.auto_review_confidence_spin)
-        _card_layout.addLayout(_conf_hdr)
+        lay.addLayout(_conf_hdr)
 
         # Live readout of the cutoff, INSIDE the group it describes: ONE compact
         # line ("✓ 158 of 352 shown · 194 below 65%", built by
@@ -216,7 +440,7 @@ class DockAutoReviewBuildMixin:
         self._auto_review_count_label.setWordWrap(True)
         self._auto_review_count_label.setStyleSheet(
             "font-size: 11px; color: palette(text);")
-        _card_layout.addWidget(self._auto_review_count_label)
+        lay.addWidget(self._auto_review_count_label)
 
         # Score distribution strip above the slider: bars right of the cutoff are
         # bright (kept), left are dimmed (filtered out). Visual only.
@@ -224,9 +448,10 @@ class DockAutoReviewBuildMixin:
         self.auto_conf_histogram = ConfidenceHistogram()
         self.auto_conf_histogram.setToolTip(
             tr("How many objects sit at each confidence level."))
-        _card_layout.addWidget(self.auto_conf_histogram)
+        lay.addWidget(self.auto_conf_histogram)
         self.auto_review_confidence_slider = QSlider(Qt.Orientation.Horizontal)
-        self.auto_review_confidence_slider.setRange(_REVIEW_CONF_MIN, _REVIEW_CONF_MAX)
+        self.auto_review_confidence_slider.setRange(
+            _REVIEW_CONF_MIN, _REVIEW_CONF_MAX)
         self.auto_review_confidence_slider.setValue(30)
         self.auto_review_confidence_slider.setSingleStep(_REVIEW_CONF_STEP)
         self.auto_review_confidence_slider.setPageStep(_REVIEW_CONF_STEP)
@@ -236,33 +461,40 @@ class DockAutoReviewBuildMixin:
             " higher keeps only the strongest. Free and instant."))
         # Dragging the slider mirrors into the spinbox live (cheap); the heavy
         # re-merge runs once via the debounce timer on release / spinbox edit.
-        self.auto_review_confidence_slider.valueChanged.connect(self._on_conf_slider_moved)
-        self.auto_review_confidence_slider.sliderReleased.connect(self._schedule_conf_refilter)
-        self.auto_review_confidence_spin.valueChanged.connect(self._on_conf_spin_changed)
-        _card_layout.addWidget(self.auto_review_confidence_slider)
+        self.auto_review_confidence_slider.valueChanged.connect(
+            self._on_conf_slider_moved)
+        self.auto_review_confidence_slider.sliderReleased.connect(
+            self._schedule_conf_refilter)
+        self.auto_review_confidence_spin.valueChanged.connect(
+            self._on_conf_spin_changed)
+        lay.addWidget(self.auto_review_confidence_slider)
 
         # End labels so the slider direction reads at a glance (mirrors the
         # detail slider's Coarse/Fine ends).
         _conf_ends = QHBoxLayout()
         _conf_ends.setContentsMargins(2, 0, 2, 0)
         _conf_left = QLabel(tr("More objects"))
-        _conf_left.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.95);")
+        _conf_left.setStyleSheet(
+            "font-size: 10px; color: rgba(128,128,128,0.95);")
         _conf_right = QLabel(tr("Only confident"))
-        _conf_right.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.95);")
+        _conf_right.setStyleSheet(
+            "font-size: 10px; color: rgba(128,128,128,0.95);")
         _conf_ends.addWidget(_conf_left)
         _conf_ends.addStretch()
         _conf_ends.addWidget(_conf_right)
-        _card_layout.addLayout(_conf_ends)
+        lay.addLayout(_conf_ends)
 
-        # Inline reason the slider is frozen after a Manual refine (a disabled
-        # control with no caption reads as a bug). Hidden unless locked.
-        self._auto_conf_lock_note = QLabel(
-            "\U0001F512 " + tr("Locked - refined in Manual mode"))
-        self._auto_conf_lock_note.setWordWrap(True)
-        self._auto_conf_lock_note.setStyleSheet(
-            "font-size: 10px; color: rgba(128,128,128,0.95);")
-        self._auto_conf_lock_note.setVisible(False)
-        _card_layout.addWidget(self._auto_conf_lock_note)
+        # What the number on the spinbox actually is. Nothing on the step said
+        # it: a user reading "30%" had no way to know it is the AI rating its
+        # own work. One line in the blue tip box, under the control it
+        # explains, closed for good with the x once read.
+        self.auto_confidence_hint = DismissibleHint(
+            HINT_REVIEW_CONFIDENCE,
+            tr("How sure the AI is about each object. Lower shows more, "
+               "higher keeps only the sure ones."),
+            tint=BLUE_TINT,
+        )
+        lay.addWidget(self.auto_confidence_hint)
 
         # Note shown when the review auto-lowered its starting cutoff because
         # nothing scored above 30%. Hidden by default; cleared on the first
@@ -272,282 +504,48 @@ class DockAutoReviewBuildMixin:
         self.auto_conf_lowered_note.setStyleSheet(
             "font-size: 10px; color: rgba(128,128,128,0.95);")
         self.auto_conf_lowered_note.setVisible(False)
-        _card_layout.addWidget(self.auto_conf_lowered_note)
+        lay.addWidget(self.auto_conf_lowered_note)
 
-        # Guidance tip: a one-line, dismissible explainer as the quiet last
-        # line of the Confidence sub-block, so a first-time reviewer knows
-        # the confidence slider re-filters for free. Re-enable from Account
-        # Settings.
-        self.auto_review_confidence_hint = DismissibleHint(
-            HINT_REVIEW_CONFIDENCE,
-            tr("Tip: lower Confidence to reveal more detections, raise it to "
-               "keep only the best."),
-            tint=BLUE_TINT,
-        )
-        _card_layout.addWidget(self.auto_review_confidence_hint)
+        lay.addWidget(self._build_size_filter_block())
+        lay.addWidget(self._build_boundary_snap_block())
 
-        _card_layout.addWidget(_card_divider())
+        lay.addStretch(1)
+        return page
 
-        # -- View-as sub-block: how the detections are DRAWN during review
-        # (visual only, never geometry/filters/export). Below Confidence: the
-        # counts + cutoff are the decision, the colours are how you look at it.
-        # Normal = review blue fill; Outline = red outline, see-through;
-        # Confidence = Viridis heatmap on the per-object score; Random = one
-        # distinct colour per object (tell touching or merged objects apart).
-        _display_row = QHBoxLayout()
-        # Reads as a sentence with the picked option ("View detections as:
-        # Outline"): says it changes how you LOOK at detections, nothing else.
-        _display_lbl = QLabel(tr("View detections as:"))
-        _display_lbl.setStyleSheet("font-size: 11px;")
-        _display_row.addWidget(_display_lbl)
-        _display_row.addStretch()
-        self.auto_display_combo = QComboBox()
-        # Theme-safe colors: inside the styled card the native combo loses the
-        # app palette on the dark QGIS theme (its text painted black on dark).
-        self.auto_display_combo.setStyleSheet(_COMBO_THEME_QSS)
-        self.auto_display_combo.addItem(tr("Normal"), "normal")
-        self.auto_display_combo.addItem(tr("Outline"), "outline")
-        self.auto_display_combo.addItem(tr("Confidence"), "confidence")
-        self.auto_display_combo.addItem(tr("Random"), "random")
-        # Random by default: a fresh review opens with one colour per object so
-        # instances read as distinct (re-seeded per review by the plugin).
-        self.auto_display_combo.setCurrentIndex(
-            max(0, self.auto_display_combo.findData("random")))
-        self.auto_display_combo.setToolTip(tr(
-            "How detections are coloured on the map (visual only): Normal fill, "
-            "Outline, Confidence heatmap, or a random colour per object to tell "
-            "them apart."))
-        self.auto_display_combo.currentIndexChanged.connect(
-            lambda _i: self.auto_display_mode_changed.emit(
-                self.auto_display_combo.currentData() or "confidence"))
-        _display_row.addWidget(self.auto_display_combo)
-        _card_layout.addLayout(_display_row)
+    def _build_size_filter_block(self) -> QWidget:
+        """Min / Max size: the second way an object is kept or dropped.
 
-        # Legend line under the combo: swatch dots in the real renderer colours
-        # + what they mean for the selected mode (re-set per mode from
-        # _on_auto_display_mode_changed). Seeded for Random (the start mode).
-        self.auto_display_legend = QLabel(display_legend_html("random"))
-        self.auto_display_legend.setWordWrap(True)
-        self.auto_display_legend.setTextFormat(Qt.TextFormat.RichText)
-        self.auto_display_legend.setStyleSheet(
-            "font-size: 11px; color: rgba(128,128,128,0.95);")
-        _card_layout.addWidget(self.auto_display_legend)
+        Both hide detections client-side by true ground area (free, instant;
+        0 = off / no limit), so they belong beside Confidence and not with the
+        outline controls they used to sit under. The count line above names
+        this filter when it, rather than Confidence, is what hides everything:
+        the control it names now sits on the same step.
+        """
+        from qgis.PyQt.QtWidgets import QDoubleSpinBox
 
-        # Count-vs-map override (exemplar-only runs only): one muted line
-        # stating how the run was auto-grouped, plus a link-styled button to
-        # re-group the other way. No re-detection, no credits. Hidden for
-        # prompted runs (the object word already decides the grouping) and when
-        # the run's fragments overflowed retention. Lives in this sub-block:
-        # like the colours, it is about how the found objects are PRESENTED.
-        self.auto_merge_override_row = QWidget()
-        _ov_row = QHBoxLayout(self.auto_merge_override_row)
-        _ov_row.setContentsMargins(0, 0, 0, 0)
-        _ov_row.setSpacing(6)
-        self.auto_merge_override_label = QLabel("")
-        self.auto_merge_override_label.setWordWrap(True)
-        self.auto_merge_override_label.setStyleSheet(
-            "font-size: 11px; color: rgba(128,128,128,0.95);")
-        _ov_row.addWidget(self.auto_merge_override_label)
-        self.auto_merge_override_btn = QPushButton("")
-        self.auto_merge_override_btn.setFlat(True)
-        self.auto_merge_override_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.auto_merge_override_btn.setStyleSheet(_BTN_LINK)
-        self.auto_merge_override_btn.clicked.connect(
-            lambda: self.auto_merge_override_requested.emit())
-        _ov_row.addWidget(self.auto_merge_override_btn)
-        _ov_row.addStretch()
-        self.auto_merge_override_row.setVisible(False)
-        _card_layout.addWidget(self.auto_merge_override_row)
+        block = QWidget()
+        col = QVBoxLayout(block)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(6)
+        col.addWidget(_card_divider())
+        # Same header shape as the Confidence group above it: the two filters
+        # on this step read as siblings, and the step still heads itself
+        # through its groups rather than a bare title row.
+        hdr = QHBoxLayout()
+        size_lbl = QLabel(tr("Size"))
+        size_lbl.setStyleSheet(_REVIEW_HEADING_QSS)
+        size_note = QLabel(tr("hide anything outside this range"))
+        size_note.setWordWrap(True)
+        size_note.setStyleSheet(_REVIEW_HEADING_NOTE_QSS)
+        hdr.addWidget(size_lbl)
+        hdr.addWidget(size_note, 1)
+        col.addLayout(hdr)
 
-        _card_layout.addWidget(_card_divider())
-
-        # -- Refine sub-block: fixing the result is part of the EDIT phase, so
-        # it lives in this card, not next to Export. Refine in Manual mode
-        # leads (the per-object fix, the strongest lever); the bulk shape and
-        # size controls fold behind a normal-case chevron toggle below it.
-        _refine_hdr = QLabel(tr("Refine"))
-        _refine_hdr.setStyleSheet("font-size: 11px; font-weight: bold;")
-        _card_layout.addWidget(_refine_hdr)
-
-        # Outline blue: blue is the "still editing" colour, so this reads as
-        # "keep working on this result" while the green Export below the card
-        # keeps the screen's single filled-CTA commit role.
-        self.auto_refine_in_manual_btn = QPushButton(
-            "✎  " + tr("Refine in Manual mode"))
-        self.auto_refine_in_manual_btn.setStyleSheet(_BTN_BLUE_OUTLINE)
-        self.auto_refine_in_manual_btn.setMinimumHeight(36)
-        self.auto_refine_in_manual_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.auto_refine_in_manual_btn.setToolTip(tr(
-            "Open these detections in Manual mode to fix specific objects "
-            "point-by-point, then come back and export."))
-        self.auto_refine_in_manual_btn.clicked.connect(
-            self.auto_refine_in_manual_requested.emit)
-        _card_layout.addWidget(self.auto_refine_in_manual_btn)
-
-        # Collapsible bulk shape + size controls (mirrors the Manual panel's
-        # collapsible "Refine selection" group). Collapsed by default on every
-        # NEW review (reset via set_auto_review_active) so Confidence and
-        # Export stay above the fold; the toggle only flips visibility, so it
-        # never emits a slider/spinbox signal.
-        self._auto_shape_expanded = False
-        self.auto_shape_toggle_btn = QPushButton()
-        self.auto_shape_toggle_btn.setStyleSheet(_SECTION_TOGGLE_QSS)
-        self.auto_shape_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        # Never steal focus from the confidence spin / prompt on toggle.
-        self.auto_shape_toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.auto_shape_toggle_btn.setToolTip(tr(
-            "Optional shape and size controls: simplify outlines, clean edges, "
-            "round corners, expand or shrink, fill holes, size filters."))
-        self.auto_shape_toggle_btn.clicked.connect(self._on_auto_shape_toggle)
-        self._refresh_auto_shape_header()
-        _card_layout.addWidget(self.auto_shape_toggle_btn)
-
-        # All shape + size controls live in one container so the header toggle
-        # is a single setVisible (no per-row bookkeeping, no signals). A plain
-        # container: the review card already frames it, so no nested border.
-        self.auto_shape_content = QWidget()
-        _shape_layout = QVBoxLayout(self.auto_shape_content)
-        _shape_layout.setContentsMargins(0, 2, 0, 0)
-        _shape_layout.setSpacing(6)
-
-        # Shape refinement (simplify outline / round corners / expand-shrink)
-        # acts on the WHOLE detected objects, live and free. Simplify is a compact
-        # spinbox and defaults low so the polygons keep their true detail out of
-        # the box; the user opts in to smoothing by raising it. These mirror the
-        # Manual refine knobs, applied to the merged geometry (there is no mask
-        # left in review). Any change re-derives the visible set via
-        # auto_refine_changed (debounced, cooperative).
-
-        # Simplify: a compact numeric spinbox. 0 = faithful (no simplification),
-        # higher = smoother outline. Drives the debounced re-derive directly.
-        _simplify_hdr = QHBoxLayout()
-        _simplify_lbl = QLabel(tr("Simplify outline:"))
-        _simplify_lbl.setStyleSheet("font-size: 11px;")
-        _simplify_lbl.setToolTip(tr(
-            "Reduce small variations in the outline (0 = no change)"))
-        _simplify_hdr.addWidget(_simplify_lbl)
-        _simplify_hdr.addStretch()
-        self.auto_simplify_spin = QDoubleSpinBox()
-        self.auto_simplify_spin.setDecimals(1)
-        self.auto_simplify_spin.setSingleStep(0.1)
-        self.auto_simplify_spin.setRange(0.0, 1000.0)
-        self.auto_simplify_spin.setValue(_AUTO_REVIEW_SIMPLIFY_DEFAULT)
-        self.auto_simplify_spin.setSuffix(" px")
-        self.auto_simplify_spin.setMinimumWidth(62)
-        self.auto_simplify_spin.setMaximumWidth(78)
-        self.auto_simplify_spin.setToolTip(_simplify_lbl.toolTip())
-        _simplify_hdr.addWidget(self.auto_simplify_spin)
-
-        # Clean edges: morphological opening (shrink-then-grow) that strips thin
-        # attached fringe / tendrils the cloud model leaves around objects. Unlike Min size
-        # (which only drops SEPARATE small features), this removes noise that is
-        # part of the SAME polygon. Light default so panels/buildings come out
-        # clean; 0 = off. px, converted to ground units by the source pixel size.
-        _clean_hdr = QHBoxLayout()
-        _clean_lbl = QLabel(tr("Clean edges:"))
-        _clean_lbl.setStyleSheet("font-size: 11px;")
-        _clean_lbl.setToolTip(tr(
-            "Remove thin ragged fringe attached to the outline (0 = no change)"))
-        _clean_hdr.addWidget(_clean_lbl)
-        _clean_hdr.addStretch()
-        self.auto_clean_spin = QDoubleSpinBox()
-        self.auto_clean_spin.setDecimals(1)
-        self.auto_clean_spin.setSingleStep(0.5)
-        self.auto_clean_spin.setRange(0.0, 50.0)
-        self.auto_clean_spin.setValue(_AUTO_REVIEW_CLEAN_DEFAULT)
-        self.auto_clean_spin.setSuffix(" px")
-        self.auto_clean_spin.setMinimumWidth(62)
-        self.auto_clean_spin.setMaximumWidth(78)
-        self.auto_clean_spin.setToolTip(_clean_lbl.toolTip())
-        _clean_hdr.addWidget(self.auto_clean_spin)
-
-        # Round corners checkbox + Expand/Contract spinbox, on compact rows to
-        # keep the review panel short.
-        _round_row = QHBoxLayout()
-        _round_lbl = QLabel(tr("Round corners:"))
-        _round_lbl.setStyleSheet("font-size: 11px;")
-        _round_lbl.setToolTip(tr(
-            "Round corners for natural shapes like trees and bushes. "
-            "Increase 'Simplify outline' for smoother results."))
-        self.auto_round_corners_check = QCheckBox()
-        self.auto_round_corners_check.setChecked(_AUTO_REVIEW_SMOOTH_DEFAULT)
-        self.auto_round_corners_check.setToolTip(_round_lbl.toolTip())
-        _round_row.addWidget(_round_lbl)
-        _round_row.addStretch()
-        _round_row.addWidget(self.auto_round_corners_check)
-
-        # Right angles: opt-in orthogonalization for man-made shapes. Applied to
-        # ALL visible objects when checked (an explicit user intent beats an
-        # automatic rectangularity gate, which would skip L/U-shaped buildings).
-        _ortho_row = QHBoxLayout()
-        _ortho_lbl = QLabel(tr("Right angles:"))
-        _ortho_lbl.setStyleSheet("font-size: 11px;")
-        _ortho_lbl.setToolTip(tr(
-            "Snap edges to 90 degrees for man-made shapes like buildings, "
-            "pools and solar panels."))
-        self.auto_ortho_check = QCheckBox()
-        self.auto_ortho_check.setChecked(_AUTO_REVIEW_ORTHO_DEFAULT)
-        self.auto_ortho_check.setToolTip(_ortho_lbl.toolTip())
-        _ortho_row.addWidget(_ortho_lbl)
-        _ortho_row.addStretch()
-        _ortho_row.addWidget(self.auto_ortho_check)
-
-        _expand_row = QHBoxLayout()
-        _expand_lbl = QLabel(tr("Expand/Contract:"))
-        _expand_lbl.setStyleSheet("font-size: 11px;")
-        _expand_lbl.setToolTip(tr("Positive = expand outward, Negative = shrink inward"))
-        self.auto_expand_spin = QSpinBox()
-        self.auto_expand_spin.setRange(-1000, 1000)
-        self.auto_expand_spin.setValue(_AUTO_REVIEW_EXPAND_DEFAULT)
-        self.auto_expand_spin.setSuffix(" px")
-        self.auto_expand_spin.setMinimumWidth(62)
-        self.auto_expand_spin.setMaximumWidth(78)
-        _expand_row.addWidget(_expand_lbl)
-        _expand_row.addStretch()
-        _expand_row.addWidget(self.auto_expand_spin)
-
-        # Fill holes: kept as an opt-in control but OFF by default so detected
-        # holes (gaps between crowns, courtyards) are preserved unless asked.
-        _fill_row = QHBoxLayout()
-        _fill_lbl = QLabel(tr("Fill holes:"))
-        _fill_lbl.setStyleSheet("font-size: 11px;")
-        _fill_lbl.setToolTip(tr("Fill interior holes in the selection"))
-        self.auto_fill_holes_check = QCheckBox()
-        self.auto_fill_holes_check.setChecked(_AUTO_REVIEW_FILL_HOLES_DEFAULT)
-        self.auto_fill_holes_check.setToolTip(_fill_lbl.toolTip())
-        _fill_row.addWidget(_fill_lbl)
-        _fill_row.addStretch()
-        _fill_row.addWidget(self.auto_fill_holes_check)
-
-        # Re-derive the visible set (via the debounced auto_refine_changed) on
-        # any shape change; track the adjustment once per control per review.
-        self.auto_simplify_spin.valueChanged.connect(
-            lambda v: self._on_shape_control_changed("simplify", v))
-        self.auto_clean_spin.valueChanged.connect(
-            lambda v: self._on_shape_control_changed("clean", v))
-        self.auto_round_corners_check.stateChanged.connect(
-            lambda s: self._on_shape_control_changed("round_corners", s))
-        self.auto_ortho_check.stateChanged.connect(
-            lambda s: self._on_shape_control_changed("right_angles", s))
-        self.auto_expand_spin.valueChanged.connect(
-            lambda v: self._on_shape_control_changed("expand", v))
-        self.auto_fill_holes_check.stateChanged.connect(
-            lambda s: self._on_shape_control_changed("fill_holes", s))
-
-        # Size filters: drop noise (below Min) and oversized blobs (above Max) by
-        # true ground area in m2. A post-run filter only (free, instant): it just
-        # hides detections client-side, no re-detection. 0 = off / no limit.
-        # Merge policy (count distinct objects vs merge tile-split continuous
-        # features) is decided automatically per object type and applied silently
-        # (no UI control): it only ever changes large >~tile-overlap features, so
-        # exposing a toggle would add a knob that does nothing for the common
-        # countable objects. See plugin _default_merge_separate / _auto_seam_min_dim.
-
-        # Size filters on ONE compact row (Min ... Max); both hide detections
-        # client-side by true ground area (free, instant); 0 = off / no limit.
-        _size_row = QHBoxLayout()
-        _min_size_lbl = QLabel(tr("Min size:"))
-        _min_size_lbl.setStyleSheet("font-size: 11px;")
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+        min_lbl = QLabel(tr("Minimum"))
+        min_lbl.setStyleSheet("font-size: 11px;")
         self.auto_min_size_spin = QDoubleSpinBox()
         self.auto_min_size_spin.setRange(0.0, 1_000_000.0)
         self.auto_min_size_spin.setDecimals(1)
@@ -559,8 +557,8 @@ class DockAutoReviewBuildMixin:
         self.auto_min_size_spin.setToolTip(tr(
             "Hide detections smaller than this ground area. Use it to drop tiny "
             "noise blobs. 0 = keep all."))
-        _max_size_lbl = QLabel(tr("Max size:"))
-        _max_size_lbl.setStyleSheet("font-size: 11px;")
+        max_lbl = QLabel(tr("Maximum"))
+        max_lbl.setStyleSheet("font-size: 11px;")
         self.auto_max_size_spin = QDoubleSpinBox()
         self.auto_max_size_spin.setRange(0.0, 10_000_000.0)
         self.auto_max_size_spin.setDecimals(1)
@@ -571,164 +569,208 @@ class DockAutoReviewBuildMixin:
         self.auto_max_size_spin.setMaximumWidth(110)
         self.auto_max_size_spin.setToolTip(tr(
             "Hide detections larger than this ground area. 0 = no limit."))
-        _size_row.addWidget(_min_size_lbl)
-        _size_row.addWidget(self.auto_min_size_spin)
-        _size_row.addStretch()
-        _size_row.addWidget(_max_size_lbl)
-        _size_row.addWidget(self.auto_max_size_spin)
+        row.addWidget(min_lbl)
+        row.addWidget(self.auto_min_size_spin)
+        row.addStretch()
+        row.addWidget(max_lbl)
+        row.addWidget(self.auto_max_size_spin)
+        col.addLayout(row)
 
-        # Assembly, mirroring the Manual refine panel's sectioned card. The
-        # one-click shape switches lead (the preset's headline decisions, and
-        # the first thing to glance at), the size filter follows, and the
-        # numeric outline fine-tuning closes the section.
-        _shape_layout.addWidget(_micro_header(tr("Shape")))
-        _shape_layout.addLayout(_ortho_row)
-        _shape_layout.addLayout(_round_row)
-        _shape_layout.addLayout(_fill_row)
-        _shape_layout.addWidget(_micro_header(tr("Size")))
-        _shape_layout.addLayout(_size_row)
-        _shape_layout.addWidget(_micro_header(tr("Outline")))
-        _shape_layout.addLayout(_simplify_hdr)
-        _shape_layout.addLayout(_clean_hdr)
-        _shape_layout.addLayout(_expand_row)
-
-        self.auto_shape_content.setVisible(self._auto_shape_expanded)
-        _card_layout.addWidget(self.auto_shape_content)
-
-        # Debug-only: show the segmentation tile grid over the result. This is a
-        # developer aid (inspect which tile a detection came from / spot seam
-        # issues), NOT an end-user control, so it is hidden unless the
-        # TerraLab/auto_debug_tiles QSettings flag is on. The checkbox still
-        # exists (set_auto_review_active resets it), it just isn't shown.
-        self._auto_tiles_debug_row = QWidget()
-        _tiles_row = QHBoxLayout(self._auto_tiles_debug_row)
-        _tiles_row.setContentsMargins(0, 0, 0, 0)
-        _tiles_lbl = QLabel(tr("Show tiles (debug)"))
-        _tiles_lbl.setStyleSheet("font-size: 11px;")
-        self.auto_show_tiles_check = QCheckBox()
-        self.auto_show_tiles_check.setChecked(False)
-        self.auto_show_tiles_check.stateChanged.connect(
-            lambda s: self.auto_show_tiles_changed.emit(bool(s)))
-        _tiles_row.addWidget(_tiles_lbl)
-        _tiles_row.addStretch()
-        _tiles_row.addWidget(self.auto_show_tiles_check)
-        _card_layout.addWidget(self._auto_tiles_debug_row)
-        from qgis.PyQt.QtCore import QSettings as _QSettingsDbg
-        self._auto_tiles_debug_row.setVisible(
-            _QSettingsDbg().value("TerraLab/auto_debug_tiles", False, type=bool))
-
-        # Wire the size filters to emit auto_refine_changed (confidence has its
-        # own debounced re-filter path). Shape sliders moved to Manual mode.
+        # Re-derive the visible set on any change (confidence has its own
+        # debounced re-filter path).
         self.auto_min_size_spin.valueChanged.connect(
             lambda _v: self.auto_refine_changed.emit())
         self.auto_max_size_spin.valueChanged.connect(
             lambda _v: self.auto_refine_changed.emit())
+        return block
 
-        _review_layout.addWidget(_card)
+    def _build_boundary_snap_block(self) -> QWidget:
+        """Shared borders: one checkbox plus its one-line tip.
 
-        # Export: the primary, final commit, and the ONLY filled button on the
-        # panel. Names the outcome (a saved layer) instead of the vague
-        # "Finish"; taller than every other control so the finish line is
-        # unmistakable, with no group label needed above it.
-        self.auto_export_btn = QPushButton(_export_btn_label(0))
-        self.auto_export_btn.setStyleSheet(_BTN_GREEN)
-        self.auto_export_btn.setMinimumHeight(44)
-        self.auto_export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.auto_export_btn.clicked.connect(self.auto_export_requested.emit)
-        _review_layout.addWidget(self.auto_export_btn)
+        A land-cover map is one surface cut into classes, so neighbouring
+        shapes are meant to meet exactly; a detector returns each shape on its
+        own, leaving a hairline gap or overlap. This closes them, free and
+        instantly, on the shapes currently shown.
 
-        # Exemplar nudge: shown only when the run's scores were bottom-heavy
-        # AND no example was drawn. Clicking it routes through Adjust and run
-        # again and arms the example draw, so it sits with the start-over line
-        # it triggers. Hidden by default; the plugin drives it via
-        # show/hide_auto_exemplar_nudge. Styled as a tinted callout, not a
-        # muted text link: the link form shipped at launch and no user ever
-        # clicked it, so the one lever that most improves weak runs (an
-        # example cuts empty tiles by two thirds) needs to read as a button.
-        self.auto_exemplar_nudge_link = QPushButton("")
-        self.auto_exemplar_nudge_link.setStyleSheet(_CHIP_QSS)
-        self.auto_exemplar_nudge_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.auto_exemplar_nudge_link.setVisible(False)
-        self.auto_exemplar_nudge_link.clicked.connect(
-            self.auto_exemplar_retry_requested.emit)
-        _review_layout.addWidget(self.auto_exemplar_nudge_link)
+        The whole block is HIDDEN unless the run looks like land cover (see
+        set_boundary_snap_offered): between two buildings or two cars the gap
+        is real data, so there the option must not exist at all.
+        """
+        from qgis.PyQt.QtWidgets import QCheckBox
 
-        # Start over: the two escape hatches as ONE muted text line, centered
-        # and deliberately tiny next to the Export primary. Retry keeps the
-        # zone, references and settings (non-destructive re-run, new credits);
-        # Exit discards.
-        self.auto_retry_btn = QPushButton("↻  " + tr("Adjust and run again"))
-        self.auto_retry_btn.setStyleSheet(_BTN_LINK_MUTED)
-        self.auto_retry_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.auto_retry_btn.setToolTip(tr(
-            "Go back to your zone, references and settings to adjust and detect "
-            "again. Nothing is saved."))
-        self.auto_retry_btn.clicked.connect(self.auto_retry_requested.emit)
-        self.auto_review_exit_btn = QPushButton(tr("Exit"))
-        self.auto_review_exit_btn.setStyleSheet(_BTN_LINK_MUTED)
-        self.auto_review_exit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.auto_review_exit_btn.clicked.connect(self.auto_review_exit_requested.emit)
-        _review_actions_row = QHBoxLayout()
-        _review_actions_row.setContentsMargins(0, 0, 0, 0)
-        _review_actions_row.setSpacing(2)
-        _sep = QLabel("·")
-        _sep.setStyleSheet(
-            "font-size: 11px; color: rgba(128,128,128,0.9);"
-            " background: transparent; border: none;")
-        _review_actions_row.addStretch(1)
-        _review_actions_row.addWidget(self.auto_retry_btn)
-        _review_actions_row.addWidget(_sep)
-        _review_actions_row.addWidget(self.auto_review_exit_btn)
-        _review_actions_row.addStretch(1)
-        _review_layout.addLayout(_review_actions_row)
+        from ...core.boundary_snap import snap_default_enabled
+        from .guidance import HINT_REVIEW_SHARED_BORDERS
 
-        parent_layout.addWidget(self.auto_review_panel)
+        self._auto_boundary_snap_offered = False
+        block = QWidget()
+        col = QVBoxLayout(block)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(4)
+        col.addWidget(_card_divider())
 
-    def set_merge_override(self, mode: str | None) -> None:
-        """Show the exemplar-only count-vs-map override line. ``mode`` is the
-        grouping the run CURRENTLY uses ('map' or 'separate'); the line names it
-        and offers the opposite. None hides the row (prompted runs, or when the
-        run's fragments overflowed retention so re-grouping is unavailable)."""
-        row = getattr(self, "auto_merge_override_row", None)
-        if row is None:
-            return
-        if mode == "map":
-            self.auto_merge_override_label.setText(tr("Grouped as continuous cover."))
-            self.auto_merge_override_btn.setText(tr("View as distinct objects"))
-        elif mode == "separate":
-            self.auto_merge_override_label.setText(tr("Kept as distinct objects."))
-            self.auto_merge_override_btn.setText(tr("View as continuous cover"))
-        else:
-            row.setVisible(False)
-            return
-        row.setVisible(True)
+        row = QHBoxLayout()
+        label = QLabel(tr("Shared borders:"))
+        label.setStyleSheet("font-size: 11px;")
+        tip = tr(
+            "Give neighbouring shapes one exact border instead of a hairline "
+            "gap or overlap. For land cover, where the map is one surface.")
+        label.setToolTip(tip)
+        self.auto_boundary_snap_check = QCheckBox()
+        self.auto_boundary_snap_check.setChecked(snap_default_enabled())
+        self.auto_boundary_snap_check.setToolTip(tip)
+        self.auto_boundary_snap_check.stateChanged.connect(
+            lambda s: self._on_shape_control_changed(
+                "shared_boundaries", bool(s)))
+        row.addWidget(label)
+        row.addStretch()
+        row.addWidget(self.auto_boundary_snap_check)
+        col.addLayout(row)
 
-    # -- Collapsible shape-and-size section state ---------------------------
+        self.auto_boundary_snap_hint = DismissibleHint(
+            HINT_REVIEW_SHARED_BORDERS,
+            tr("Closes the hairline gaps between neighbouring shapes, for "
+               "land cover maps."),
+            tint=BLUE_TINT,
+        )
+        col.addWidget(self.auto_boundary_snap_hint)
 
-    def _refresh_auto_shape_header(self) -> None:
-        """Chevron + normal-case title for the collapsible section header
-        (text swap only, no layout jump)."""
-        arrow = "▾" if self._auto_shape_expanded else "▸"
-        self.auto_shape_toggle_btn.setText(
-            arrow + " " + tr("Shape and size settings"))
+        self.auto_boundary_snap_row = block
+        block.setVisible(False)
+        return block
 
-    def _on_auto_shape_toggle(self) -> None:
-        """Header clicked: flip the section. Pure setVisible, so collapsing or
-        expanding never emits a control signal or steals focus."""
-        self.set_auto_shape_expanded(not self._auto_shape_expanded)
+    # -- Step dials ---------------------------------------------------------
 
-    def set_auto_shape_expanded(self, expanded: bool) -> None:
-        """Programmatically expand/collapse the shape-and-size section
-        (set_auto_review_active collapses it for every NEW review)."""
-        self._auto_shape_expanded = bool(expanded)
+    def _build_review_dials(self) -> QWidget:
+        """The three-step dials row: equal-width CLICKABLE columns (stretch 1
+        each), dial above, 10px label below. Clicking a dial navigates the
+        ladder both ways; state refreshed by _set_review_dial."""
+        row = QWidget()
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        self._auto_review_dials = []
+        for i, name in enumerate(
+                (tr("Keep"), tr("Correct"), tr("Shapes"))):
+            col = _StepDialColumn(i)
+            col.setToolTip(tr("Click to open this step"))
+            col.clicked.connect(self._on_review_dial_clicked)
+            v = QVBoxLayout(col)
+            v.setContentsMargins(0, 0, 0, 0)
+            v.setSpacing(2)
+            dial = _step_dial(i + 1, "active" if i == 0 else "todo")
+            v.addWidget(dial, 0, Qt.AlignmentFlag.AlignHCenter)
+            lab = QLabel(name)
+            lab.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            lab.setStyleSheet(_dial_label_qss(i == 0))
+            v.addWidget(lab)
+            lay.addWidget(col, 1)
+            self._auto_review_dials.append((col, dial, lab))
+        self.auto_review_dials_row = row
+        return row
+
+    def _on_review_dial_clicked(self, step: int) -> None:
+        """A step dial was clicked: free back/forward ladder navigation,
+        ignored only on the current step. Every step is always reachable now
+        (the Manual lock is gone)."""
         try:
-            self.auto_shape_content.setVisible(self._auto_shape_expanded)
-            self._refresh_auto_shape_header()
+            if step == getattr(self, "_auto_review_step", 0):
+                return
+            self.auto_review_step_requested.emit(int(step))
         except (RuntimeError, AttributeError):
             pass
 
-    # The empty-run guidance box (title + credits + four fixes + zero-assist
-    # chips + a dismissible guide nudge) is gone: a finished run
-    # that finds nothing now shows a single quiet status line at the top of
-    # step 2 ("No detection in this zone.") and leaves the user on the normal
-    # prompt screen to adjust and run again or Exit. See _on_auto_zero_detections.
+    def _set_review_dial(self, idx: int, state: str) -> None:
+        """Restyle one dial in place (todo/active/done). Borrows the exact
+        text + QSS from a throwaway _step_dial so the look can never drift
+        from the styles.py helper."""
+        try:
+            _col, dial, lab = self._auto_review_dials[idx]
+        except (AttributeError, IndexError):
+            return
+        tmp = _step_dial(idx + 1, state)
+        dial.setText(tmp.text())
+        dial.setStyleSheet(tmp.styleSheet())
+        tmp.deleteLater()
+        lab.setStyleSheet(_dial_label_qss(state == "active"))
+
+    def _set_review_dials_locked(self, locked: bool, current: int) -> None:
+        """Drive each dial column's click affordance: only a non-current step
+        is navigable and shows the pointer cursor plus the "click to open"
+        tooltip; the current step gets neither, so the tooltip never invites a
+        click the ladder ignores. ``locked`` is retained for API stability
+        (the batch/Manual-lock states that dimmed the whole row are gone); a
+        True value still dims every non-current column to 45% opacity."""
+        try:
+            dials = self._auto_review_dials
+        except AttributeError:
+            return
+        for i, (col, _dial, _lab) in enumerate(dials):
+            if locked and i != current:
+                dim = QGraphicsOpacityEffect(col)
+                dim.setOpacity(0.45)
+                col.setGraphicsEffect(dim)
+            else:
+                col.setGraphicsEffect(None)
+            navigable = not locked and i != current
+            try:
+                col.set_navigable(navigable)
+                col.setToolTip(tr("Click to open this step") if navigable
+                               else "")
+            except AttributeError:
+                pass
+
+    def _sync_review_stack_height(self, _index: int = -1) -> None:
+        """Nudge the parent layouts to re-read the stack's hint on a page
+        switch. The snug-per-step sizing itself lives in _CurrentPageStack
+        (its layout only contains the current page), so a plain
+        updateGeometry() is enough to re-flow the height.
+
+        No adjustSize() here: it resized the current page to its preferred
+        sizeHint, whose WIDTH can exceed the docked panel width (a long
+        word-wrapped line reports its full one-line width as preferred).
+        Inside the setWidgetResizable scroll area that transiently made the
+        content wider than the viewport, and the main window then grew the
+        dock to that width and never shrank it back, so switching steps (e.g.
+        Correct back to Keep) sometimes ballooned the whole panel
+        sideways. Letting the layout own the geometry keeps the width put."""
+        try:
+            self.auto_review_step_stack.updateGeometry()
+        except (RuntimeError, AttributeError):
+            pass
+
+    # The shape-and-size section no longer folds: it owns the Shapes step, so
+    # its controls always show (the collapsible header and its setter are
+    # gone).
+
+    # The empty-run guidance box is gone: a run that finds nothing enters the
+    # review directly on the Correct step with the zero-detection welcome
+    # line (D8, set_zero_detection_entry).
+
+
+def _build_display_combo(dock):
+    """Build the View-detections-as combo (theme-safe inside the styled
+    card). Split out only to keep _setup_auto_review_panel readable."""
+    from qgis.PyQt.QtWidgets import QComboBox
+
+    combo = QComboBox()
+    # Theme-safe colors: inside the styled card the native combo loses the
+    # app palette on the dark QGIS theme (its text painted black on dark).
+    combo.setStyleSheet(_COMBO_THEME_QSS)
+    combo.addItem(tr("Normal"), "normal")
+    combo.addItem(tr("Outline"), "outline")
+    combo.addItem(tr("Confidence"), "confidence")
+    # Label "Distinct"; the stored mode key stays "random" so the whole
+    # pipeline (state, telemetry, renderer) is unchanged.
+    combo.addItem(tr("Distinct"), "random")
+    # Distinct by default: a fresh review opens with one colour per object so
+    # instances read apart (re-seeded per review by the plugin). Each object
+    # keeps its colour across recomputes; only a new detection run re-assigns.
+    combo.setCurrentIndex(max(0, combo.findData("random")))
+    combo.setToolTip(tr(
+        "How detections are coloured on the map (visual only): Normal fill, "
+        "Outline, Confidence heatmap, or a distinct colour per object to tell "
+        "them apart."))
+    combo.currentIndexChanged.connect(
+        lambda _i: dock.auto_display_mode_changed.emit(
+            combo.currentData() or "confidence"))
+    return combo

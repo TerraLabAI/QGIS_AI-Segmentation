@@ -13,7 +13,7 @@ _cached_device = None
 _device_info = None
 
 
-def get_optimal_device():  # -> torch.device
+def probe_inprocess_torch_device():  # -> torch.device
     global _cached_device, _device_info
 
     if _cached_device is not None:
@@ -102,5 +102,5 @@ def _configure_cpu_optimizations():
 
 def get_device_info() -> str:
     if _device_info is None:
-        get_optimal_device()
+        probe_inprocess_torch_device()
     return _device_info or "Unknown"

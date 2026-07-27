@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from qgis.core import QgsPointXY
 from qgis.gui import QgsMapCanvas, QgsMapTool, QgsVertexMarker
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QCursor
 
 from ..core.qt_compat import event_pos
@@ -43,6 +43,12 @@ class AISegmentationMapTool(QgsMapTool):
     MARKER_SIZE = 10
     MARKER_PEN_WIDTH = 2
 
+    # Full canvas re-renders during a pan are throttled to at most one per
+    # this many ms; the pan extent itself still updates on every move, so the
+    # gesture tracks the cursor and only the expensive redraw is coalesced.
+    # Same value in every map tool that pans, so all of them feel identical.
+    PAN_REFRESH_THROTTLE_MS: int = 80
+
     def __init__(self, canvas: QgsMapCanvas):
         super().__init__(canvas)
         self.canvas = canvas
@@ -50,6 +56,10 @@ class AISegmentationMapTool(QgsMapTool):
         self._markers: list[QgsVertexMarker] = []
         self._space_panning = False
         self._pan_last_point = None
+        self._pan_refresh_timer = QTimer(self)
+        self._pan_refresh_timer.setSingleShot(True)
+        self._pan_refresh_timer.setInterval(self.PAN_REFRESH_THROTTLE_MS)
+        self._pan_refresh_timer.timeout.connect(self._flush_pan_refresh)
         # Modifiers of the LAST emitted click, read by the plugin handlers
         # (Ctrl+click = additive selection in the refine handoff). Stored as an
         # attribute so the click signal signatures stay stable.
@@ -67,6 +77,7 @@ class AISegmentationMapTool(QgsMapTool):
         self._active = False
         self._space_panning = False
         self._pan_last_point = None
+        self._pan_refresh_timer.stop()
         # Don't clear markers here - the plugin decides whether to keep them
         # (e.g. when user is asked to confirm leaving segmentation mode).
         self.tool_deactivated.emit()
@@ -166,8 +177,19 @@ class AISegmentationMapTool(QgsMapTool):
                 center.y() + (start_map.y() - end_map.y()),
             )
             self.canvas.setCenter(new_center)
-            self.canvas.refresh()
+            # The extent moves on every event so the map tracks the cursor,
+            # but the full re-render is coalesced: every move starts the same
+            # single-shot timer, so a fast drag over a live basemap does not
+            # cancel and restart a render job on each pixel of motion.
+            if not self._pan_refresh_timer.isActive():
+                self._pan_refresh_timer.start()
         self._pan_last_point = current
+
+    def _flush_pan_refresh(self):
+        try:
+            self.canvas.refresh()
+        except (RuntimeError, AttributeError):
+            pass
 
     def start_space_pan(self):
         """Called when Space is pressed - enable temporary pan mode."""
@@ -180,6 +202,13 @@ class AISegmentationMapTool(QgsMapTool):
         """Called when Space is released - restore segmentation mode."""
         self._space_panning = False
         self._pan_last_point = None
+        # A throttled refresh may still be pending: flush it now so releasing
+        # Space never leaves the map showing a stale render. Only when one is
+        # pending: nothing queued means nothing moved, and a Space tap that
+        # panned nothing would otherwise restart the whole basemap tile job.
+        if self._pan_refresh_timer.isActive():
+            self._pan_refresh_timer.stop()
+            self._flush_pan_refresh()
         if self._active:
             self.canvas.setCursor(QCursor(Qt.CursorShape.CrossCursor))
 

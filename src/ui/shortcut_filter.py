@@ -6,7 +6,6 @@ dock widget updates steal keyboard focus from the map canvas.
 """
 from __future__ import annotations
 
-
 from qgis.core import QgsPointXY
 from qgis.PyQt.QtCore import QEvent, QObject, Qt
 from qgis.PyQt.QtWidgets import QApplication, QDoubleSpinBox, QLineEdit, QPlainTextEdit, QSpinBox, QTextEdit
@@ -24,6 +23,16 @@ class ShortcutFilter(QObject):
     def __init__(self, plugin, parent=None):
         super().__init__(parent)
         self._plugin = plugin
+
+    def _typing_in_text_field(self) -> bool:
+        """True while a text or spin widget holds focus (or focus is unknown):
+        typing keys must never be stolen from an input field."""
+        app = QApplication.instance()
+        if not app:
+            return True
+        focused = app.focusWidget()
+        return isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit,
+                                    QSpinBox, QDoubleSpinBox))
 
     def eventFilter(self, _obj, event):
         event_type = event.type()
@@ -46,18 +55,36 @@ class ShortcutFilter(QObject):
                     pan_tool.stop_space_pan()
                     return True
 
+        # --- Session-owned editing keys. While the segmentation tool is armed,
+        # Delete / Ctrl+Backspace (delete the open object) and Ctrl+Z (undo the
+        # last gesture) belong to the session. The review dock binds the same
+        # keys as window-level QShortcuts, and a matched QShortcut consumes the
+        # key even when its own gate then does nothing, so the branches below
+        # would never receive the KeyPress. Accepting the ShortcutOverride
+        # skips the shortcut map and routes the key here instead.
+        if event_type == QEvent.Type.ShortcutOverride:
+            if not plugin.map_tool or not plugin.map_tool.isActive():
+                return False
+            if self._typing_in_text_field():
+                return False
+            key = event.key()
+            ctrl = event.modifiers() & Qt.KeyboardModifier.ControlModifier
+            if (key == Qt.Key.Key_Delete or (key == Qt.Key.Key_Backspace and ctrl) or (key == Qt.Key.Key_Z and ctrl)):
+                event.accept()
+                return True
+            return False
+
         if event_type != QEvent.Type.KeyPress:
             return False
         if not plugin.map_tool or not plugin.map_tool.isActive():
             return False
 
+        if self._typing_in_text_field():
+            return False
         app = QApplication.instance()
         if not app:
             return False
         focused = app.focusWidget()
-        if isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit,
-                                QSpinBox, QDoubleSpinBox)):
-            return False
         # Don't intercept arrow keys in table/tree views (attribute table, etc.)
         # but allow them on the map canvas (QGraphicsView subclass).
         from qgis.PyQt.QtWidgets import QAbstractItemView, QListView, QTableView, QTreeView
@@ -99,6 +126,25 @@ class ShortcutFilter(QObject):
         blocking_mods |= Qt.KeyboardModifier.AltModifier
         blocking_mods |= Qt.KeyboardModifier.ShiftModifier
         if key == Qt.Key.Key_S and not (modifiers & blocking_mods):
+            # In a Correct-step reshape session S is the Save BUTTON, which
+            # both saves AND closes the session back to the resting select
+            # state (_on_reshape_done). The bare _on_save_polygon is the
+            # base-Manual save that keeps segmenting, so during a handoff it
+            # saved the edit but left the session armed and the panel stuck
+            # open. Mirror the Esc handling in manual_workflow: an open edit
+            # routes to the full done; a resting selection has nothing to save.
+            if getattr(plugin, "_refine_handoff_active", False):
+                # The AI Add lane owns Save first: it keeps the outline as its
+                # own new object and stays armed for the next one. Its outline
+                # is NOT an open edit session (no saved object was reopened),
+                # so without this branch the gate below saw nothing to save and
+                # S did nothing at all.
+                add_save = getattr(plugin, "_route_save_add_mode", None)
+                if callable(add_save) and add_save():
+                    return True
+                if (getattr(plugin, "_refine_edit_session_active", None) and plugin._refine_edit_session_active()):
+                    plugin._on_reshape_done()
+                return True
             plugin._on_save_polygon()
             return True
         # E opens the single selected detection for SAM editing (the keyboard

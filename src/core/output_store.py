@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 import time
 import zlib
 from pathlib import Path
@@ -24,9 +25,6 @@ from typing import NamedTuple
 
 from qgis.core import (
     Qgis,
-    QgsCoordinateTransform,
-    QgsFeature,
-    QgsGeometry,
     QgsLayerTree,
     QgsMapLayer,
     QgsMessageLog,
@@ -39,17 +37,9 @@ from qgis.PyQt.QtCore import QDate, QLocale
 from qgis.PyQt.QtGui import QColor
 
 from .i18n import tr
-from .qt_compat import CapabilityAddFeatures, PolygonGeometry
 
-# Provider capability flag, resolved by qt_compat (scoped on newer QGIS/Qt6,
-# flat on QGIS 3.x). Used to keep the append destination list to layers that
-# actually accept new features.
-_CAP_ADD_FEATURES = CapabilityAddFeatures
-
-# Custom property stamped on every committed layer with its creation epoch, so
-# the append destination list can order our own outputs most-recent-first
-# (the just-finished Automatic run is the obvious append target). Survives a
-# project save/reload since custom properties serialize into the .qgz.
+# Custom property stamped on every committed layer with its creation epoch.
+# Survives a project save/reload since custom properties serialize into the .qgz.
 _COMMITTED_AT_PROP = "ai_segmentation/committed_at"
 
 GPKG_FILENAME = "ai_segmentation.gpkg"
@@ -105,6 +95,71 @@ class WriteResult(NamedTuple):
     error_message: str
 
 
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+# A served palette is a handful of colours, not a catalogue.
+_MAX_SERVED_COLORS = 128
+
+
+def _served_color_map(path: str) -> dict[str, str]:
+    """Served ``{keyword: "#rrggbb"}`` entries that are usable. Never raises."""
+    out: dict[str, str] = {}
+    try:
+        from .server_dials import read_value
+
+        value = read_value(path)
+        if not isinstance(value, dict):
+            return out
+        for key, color in list(value.items())[:_MAX_SERVED_COLORS]:
+            if not isinstance(key, str) or not isinstance(color, str):
+                continue
+            word = key.strip().lower()
+            if word and _HEX_COLOR_RE.match(color.strip()):
+                out[word] = color.strip().lower()
+    except Exception:  # noqa: BLE001 -- colour is cosmetic, never break a save  # nosec B110
+        pass
+    return out
+
+
+def semantic_colors() -> list[tuple[str, str]]:
+    """The keyword-to-colour table in force.
+
+    A served ``taxonomy.class_colors`` map ADDS keywords and may retune a
+    shipped one. Naming a new object class is otherwise a three-file change
+    plus a release, which is far more ceremony than picking a hue deserves.
+    Colour is cosmetic: nothing here can gate, bill or hide anything, so a
+    served entry replacing a shipped hue costs at most an ugly map until the
+    next deploy.
+    """
+    served = _served_color_map("taxonomy.class_colors")
+    if not served:
+        return list(_SEMANTIC_COLORS)
+    merged = dict(_SEMANTIC_COLORS)
+    merged.update(served)
+    return list(merged.items())
+
+
+def fallback_palette() -> list[str]:
+    """The hashed-pick palette in force: the shipped hues plus any served one.
+
+    Additive, so the colour a given prompt already hashes to only moves when
+    the palette grows, and never disappears.
+    """
+    out = list(_FALLBACK_PALETTE)
+    try:
+        from .server_dials import read_value
+
+        value = read_value("taxonomy.fallback_palette")
+        if isinstance(value, (list, tuple)):
+            for item in value[:_MAX_SERVED_COLORS]:
+                if isinstance(item, str) and _HEX_COLOR_RE.match(item.strip()):
+                    color = item.strip().lower()
+                    if color not in out:
+                        out.append(color)
+    except Exception:  # noqa: BLE001 -- colour is cosmetic  # nosec B110
+        pass
+    return out
+
+
 def committed_color_for_prompt(prompt: str) -> QColor:
     """Stable color for a committed run, keyed to the prompt.
 
@@ -115,12 +170,13 @@ def committed_color_for_prompt(prompt: str) -> QColor:
     if not norm:
         return QColor(_LEGACY_COMMITTED_RED)
     for keyword, hex_color in sorted(
-        _SEMANTIC_COLORS, key=lambda kv: len(kv[0]), reverse=True
+        semantic_colors(), key=lambda kv: len(kv[0]), reverse=True
     ):
         if keyword in norm:
             return QColor(hex_color)
-    index = zlib.crc32(norm.encode("utf-8")) % len(_FALLBACK_PALETTE)
-    return QColor(_FALLBACK_PALETTE[index])
+    palette = fallback_palette()
+    index = zlib.crc32(norm.encode("utf-8")) % len(palette)
+    return QColor(palette[index])
 
 
 def _find_output_group(root):
@@ -217,14 +273,21 @@ def snake_table_name(prompt: str, gpkg_path: str) -> str:
 
 
 def _probe_writable(directory: str) -> bool:
-    probe = os.path.join(directory, f".ai_seg_write_probe_{os.getpid()}")
+    """Whether a file can be created in this directory.
+
+    The probe is a real temp file, so the OS removes it on close (unlinked at
+    once on POSIX, delete-on-close on Windows) and nothing we name can be left
+    lying next to the user's project. Cleanup is also out of the answer: an
+    on-write scanner or a sync client can hold a freshly written file for a
+    moment, and reading that as "not writable" would send the GeoPackage to
+    the home folder instead of the project folder.
+    """
     try:
-        with open(probe, "w", encoding="utf-8") as f:
-            f.write("ok")
-        os.remove(probe)
-        return True
+        with tempfile.TemporaryFile(dir=directory, suffix=".tmp") as probe:
+            probe.write(b"ok")
     except OSError:
         return False
+    return True
 
 
 def _source_layer_dir(source_layer) -> str:
@@ -260,12 +323,36 @@ def project_gpkg_path(source_layer) -> str:
     return os.path.join(_output_directory(source_layer), GPKG_FILENAME)
 
 
-def _write_gpkg(memory_layer, path: str, table: str, overwrite_file: bool) -> str:
+def _ground_metre_transform(memory_layer):
+    """Transform onto the CRS the saved layer should be written in, or None.
+
+    None when the layer's own CRS already measures in ground metres, which is
+    the common case for a user working off their own projected raster. See
+    layer_conventions.pick_output_crs for the choice.
+    """
+    from qgis.core import QgsCoordinateTransform
+
+    from .layer_conventions import pick_output_crs
+
+    try:
+        source = memory_layer.crs()
+        target = pick_output_crs(source, memory_layer.extent())
+        if target is None or not target.isValid() or target == source:
+            return None
+        return QgsCoordinateTransform(source, target, QgsProject.instance())
+    except (RuntimeError, AttributeError, TypeError):
+        return None
+
+
+def _write_gpkg(memory_layer, path: str, table: str, overwrite_file: bool,
+                transform=None) -> str:
     """Run one V3 write. Returns '' on success, the error message otherwise."""
     options = QgsVectorFileWriter.SaveVectorOptions()
     options.driverName = "GPKG"
     options.fileEncoding = "UTF-8"
     options.layerName = table
+    if transform is not None:
+        options.ct = transform
     options.actionOnExistingFile = (
         QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile
         if overwrite_file
@@ -279,8 +366,7 @@ def _write_gpkg(memory_layer, path: str, table: str, overwrite_file: bool) -> st
     )
     if result[0] == QgsVectorFileWriter.WriterError.NoError:
         return ""
-    message = str(result[1]) if len(result) > 1 and result[1] else "unknown writer error"
-    return message
+    return str(result[1]) if len(result) > 1 and result[1] else "unknown writer error"
 
 
 def _load_table(path: str, table: str, display_name: str) -> QgsVectorLayer | None:
@@ -303,9 +389,11 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
     gpkg_path = project_gpkg_path(source_layer)
     table = snake_table_name(prompt, gpkg_path)
     friendly = friendly_layer_name(prompt)
+    transform = _ground_metre_transform(memory_layer)
 
     error_message = _write_gpkg(
-        memory_layer, gpkg_path, table, overwrite_file=not os.path.exists(gpkg_path)
+        memory_layer, gpkg_path, table,
+        overwrite_file=not os.path.exists(gpkg_path), transform=transform,
     )
     if not error_message:
         layer = _load_table(gpkg_path, table, friendly)
@@ -313,9 +401,7 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
             return WriteResult(gpkg_path, table, layer, False, "")
         error_message = "saved table could not be reloaded"
     QgsMessageLog.logMessage(
-        "Shared GeoPackage write failed ({}), falling back to a per-run file".format(
-            error_message
-        ),
+        f"Shared GeoPackage write failed ({error_message}), falling back to a per-run file",
         _LOG_TAG, level=Qgis.MessageLevel.Warning,
     )
 
@@ -325,14 +411,15 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
     fallback_path = os.path.join(
         _output_directory(source_layer), f"{stem}_{timestamp}.gpkg"
     )
-    fallback_error = _write_gpkg(memory_layer, fallback_path, table, overwrite_file=True)
+    fallback_error = _write_gpkg(
+        memory_layer, fallback_path, table, overwrite_file=True, transform=transform)
     if not fallback_error:
         layer = _load_table(fallback_path, table, friendly)
         if layer is not None:
             return WriteResult(fallback_path, table, layer, True, error_message)
         fallback_error = "saved file could not be reloaded"
     QgsMessageLog.logMessage(
-        "Fallback export failed too: {}".format(fallback_error),
+        f"Fallback export failed too: {fallback_error}",
         _LOG_TAG, level=Qgis.MessageLevel.Critical,
     )
     return None
@@ -385,7 +472,13 @@ def add_committed_layer(layer, source_name: str | None = None) -> None:
     ``source_name`` is that raster's layer name; when absent the layer lands
     directly in the top group (legacy behavior).
     """
-    QgsProject.instance().addMapLayer(layer, False)
+    if QgsProject.instance().addMapLayer(layer, False) is None:
+        # The registry refused the layer (invalid source). Adding a tree node
+        # for it would leave a row pointing at nothing in the Layers panel.
+        QgsMessageLog.logMessage(
+            "Output store: the saved layer could not be registered",
+            _LOG_TAG, level=Qgis.MessageLevel.Warning)
+        return
     try:
         layer.setCustomProperty(_COMMITTED_AT_PROP, time.time())
     except Exception:  # nosec B110 - recency stamp is a convenience, never block
@@ -458,158 +551,3 @@ def sweep_stale_temp_layers() -> None:
             project.removeMapLayers(stale)
     except Exception:  # nosec B110
         pass
-
-
-# ---------------------------------------------------------------------------
-# Append to an existing layer (incremental digitization). The killer path is a
-# user who ran an Automatic detection (which committed a polygon layer) and now
-# wants to add a few hand-drawn shapes to that SAME layer instead of a new one.
-# ---------------------------------------------------------------------------
-
-class AppendCandidate(NamedTuple):
-    """One layer the current run could be appended to."""
-
-    layer_id: str
-    display_name: str
-    is_ai_output: bool
-
-
-class AppendResult(NamedTuple):
-    """Outcome of append_run_to_layer: how many features landed, and why not."""
-
-    added: int
-    error_message: str
-
-
-def is_appendable_polygon_layer(layer) -> bool:
-    """True when ``layer`` is a valid, writable, polygon vector layer a run can
-    be appended to. Excludes our own on-screen scratch layers (flagged temp)
-    and read-only / non-feature-adding providers. Main-thread only."""
-    if not isinstance(layer, QgsVectorLayer) or not layer.isValid():
-        return False
-    try:
-        if layer.geometryType() != PolygonGeometry:
-            return False
-        if layer.customProperty("ai_segmentation/temp"):
-            return False
-        if layer.readOnly():
-            return False
-        provider = layer.dataProvider()
-        if provider is None:
-            return False
-        return bool(provider.capabilities() & _CAP_ADD_FEATURES)
-    except Exception:  # nosec B110 - a probing failure just excludes the layer
-        return False
-
-
-def list_appendable_polygon_layers() -> list[AppendCandidate]:
-    """Editable polygon layers of the project, ours first (most-recent first),
-    then the user's own polygon layers by name. Best-effort, main-thread only:
-    any failure yields an empty list so the caller degrades to a new layer.
-    """
-    try:
-        project = QgsProject.instance()
-        group = _find_output_group(project.layerTreeRoot())
-        ours: set[str] = set()
-        if group is not None:
-            for node in group.findLayers():
-                layer = node.layer()
-                if layer is not None:
-                    ours.add(layer.id())
-        ai_cands: list[tuple[float, AppendCandidate]] = []
-        other_cands: list[AppendCandidate] = []
-        for layer_id, layer in project.mapLayers().items():
-            if not is_appendable_polygon_layer(layer):
-                continue
-            name = layer.name()
-            if layer_id in ours:
-                try:
-                    stamp = float(layer.customProperty(_COMMITTED_AT_PROP) or 0.0)
-                except (TypeError, ValueError):
-                    stamp = 0.0
-                ai_cands.append((stamp, AppendCandidate(layer_id, name, True)))
-            else:
-                other_cands.append(AppendCandidate(layer_id, name, False))
-        ai_cands.sort(key=lambda item: item[0], reverse=True)
-        other_cands.sort(key=lambda cand: cand.display_name.lower())
-        return [cand for _, cand in ai_cands] + other_cands
-    except Exception:  # nosec B110
-        return []
-
-
-def _coerce_to_layer_type(geom: QgsGeometry, target_layer) -> list[QgsGeometry]:
-    """Coerce a repaired polygon geometry to the target layer's WKB type,
-    returning one or more non-empty geometries. Uses ``coerceToType`` so a
-    single-part Polygon target and a MultiPolygon target both accept the
-    result; falls back to a MultiPolygon coercion when unavailable."""
-    from .layer_conventions import to_multipolygon
-
-    try:
-        parts = geom.coerceToType(target_layer.wkbType())
-    except Exception:  # nosec B110 - fall back to the MultiPolygon guard below
-        parts = None
-    if parts:
-        return [g for g in parts if g is not None and not g.isEmpty()]
-    coerced = to_multipolygon(geom)
-    return [coerced] if coerced is not None and not coerced.isEmpty() else []
-
-
-def append_run_to_layer(target_layer, memory_layer, *, source_name: str) -> AppendResult:
-    """Append every feature of ``memory_layer`` into ``target_layer``.
-
-    Reprojects to the target CRS when it differs, matches the target's schema
-    BY FIELD NAME (label / area_m2, plus class / score / perimeter_m when the
-    target has them; a hand-drawn shape has no score, so it stays NULL), repairs
-    each geometry, and writes through the provider (or the open edit buffer when
-    the layer is already being edited). Best-effort and fail-open: any error
-    returns ``added=0`` with a message so the caller can create a new layer
-    instead of losing the work, and the target's style / metadata are never
-    touched. Main-thread only."""
-    from .layer_conventions import attribute_values_for_fields, repair_polygon
-
-    try:
-        target_fields = target_layer.fields()
-        target_crs = target_layer.crs()
-        src_crs = memory_layer.crs()
-        transform = None
-        if src_crs.isValid() and target_crs.isValid() and src_crs != target_crs:
-            transform = QgsCoordinateTransform(src_crs, target_crs, QgsProject.instance())
-        timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-        features: list[QgsFeature] = []
-        for feat in memory_layer.getFeatures():
-            geom = feat.geometry()
-            if geom is None or geom.isEmpty():
-                continue
-            g = QgsGeometry(geom)
-            if transform is not None:
-                # transform() raises QgsCsException on an unrecoverable CRS
-                # failure; caught below so a broken transform never crashes.
-                g.transform(transform)
-            g = repair_polygon(g) or g
-            for coerced in _coerce_to_layer_type(g, target_layer):
-                nf = QgsFeature(target_fields)
-                nf.setGeometry(coerced)
-                nf.setAttributes(attribute_values_for_fields(
-                    target_fields, coerced, target_crs, source_name, timestamp))
-                features.append(nf)
-
-        if not features:
-            return AppendResult(0, "no valid geometries to append")
-
-        # Provider-level write when the layer is idle (persists straight to the
-        # file, like the MCP path); the edit buffer when the user has it open,
-        # so our features integrate with their session instead of writing behind
-        # an unsaved edit buffer.
-        if target_layer.isEditable():
-            ok = target_layer.addFeatures(features)
-        else:
-            ok, _ = target_layer.dataProvider().addFeatures(features)
-        if not ok:
-            return AppendResult(0, "the layer provider rejected the features")
-
-        target_layer.updateExtents()
-        target_layer.triggerRepaint()
-        return AppendResult(len(features), "")
-    except Exception as exc:  # nosec B110 - fail open, caller falls back
-        return AppendResult(0, str(exc))

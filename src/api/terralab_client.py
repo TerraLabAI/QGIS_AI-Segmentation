@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import math
+import time
 
 from qgis.core import Qgis, QgsBlockingNetworkRequest, QgsMessageLog
 from qgis.PyQt.QtCore import QByteArray, QUrl
@@ -17,13 +19,16 @@ _TIMEOUT_SUBMIT_DETECTION = 45_000   # ms: submit is small (base64 PNG inline)
 # model load, ~18-60s) must not trip the client timeout - that would retry and
 # DOUBLE-CHARGE a tile the server already billed + computed. 110s waits a cold
 # start out while staying under the detection endpoint's request timeout (120s).
+# Server-overridable, so the two sides can move together: see _submit_timeout.
 _TIMEOUT_SUBMIT_DETECTION_DIRECT = 110_000
 _TIMEOUT_POLL_DETECTION = 15_000     # ms: poll is GET with tiny JSON response
 _TIMEOUT_WARMUP = 5_000              # ms: warmup is a tiny best-effort ping
-_TIMEOUT_TRANSLATE = 6_000           # ms: prompt translation blocks a Detect
+# ms: prompt translation holds a Detect back (it runs off the GUI thread, so it
+# never freezes QGIS, but the user is waiting on it), so fail fast and run the
+# word as typed.
+_TIMEOUT_TRANSLATE = 6_000
 # ms: final-output upload can carry a few MB of geometry; background task only.
 _TIMEOUT_RUN_EXPORT = 60_000
-#                                      click, so fail fast and run as typed
 
 # Qt6 (QGIS 4) uses scoped enums; Qt5 uses flat. Resolve at import time.
 _NE = getattr(QNetworkReply, "NetworkError", QNetworkReply)
@@ -42,6 +47,19 @@ _ContentDenied = getattr(_NE, "ContentAccessDenied", getattr(QNetworkReply, "Con
 _AuthRequired = getattr(_NE, "AuthenticationRequiredError", getattr(QNetworkReply, "AuthenticationRequiredError", None))
 _UnknownNetwork = getattr(_NE, "UnknownNetworkError", getattr(QNetworkReply, "UnknownNetworkError", None))
 _NoError = getattr(_NE, "NoError", getattr(QNetworkReply, "NoError", 0))
+
+# Genuine connect failures: the request never reached a server, so the link
+# itself is down. Host-not-found and connection-refused have their own codes
+# and are classified before this set is consulted; these are Qt's remaining
+# "the network went away" cases. They are kept apart from the unnamed-failure
+# fallthrough because ONLY a genuine connect failure may count toward the
+# offline fast-fail (see workers.adaptive_concurrency.OfflineFastFail).
+_CONNECT_FAILURE_ERRORS = set(filter(None, [
+    getattr(_NE, "TemporaryNetworkFailureError",
+            getattr(QNetworkReply, "TemporaryNetworkFailureError", None)),
+    getattr(_NE, "NetworkSessionFailedError",
+            getattr(QNetworkReply, "NetworkSessionFailedError", None)),
+]))
 
 _PROXY_ERRORS = set(filter(None, [
     getattr(_NE, "ProxyConnectionRefusedError", getattr(QNetworkReply, "ProxyConnectionRefusedError", None)),
@@ -63,25 +81,113 @@ _REDIRECT_ATTR = getattr(_Attr, "RedirectPolicyAttribute",
 _RedirectPolicy = getattr(QNetworkRequest, "RedirectPolicy", QNetworkRequest)
 _NO_LESS_SAFE_REDIRECT = getattr(_RedirectPolicy, "NoLessSafeRedirectPolicy",
                                  getattr(QNetworkRequest, "NoLessSafeRedirectPolicy", None))
+_SAME_ORIGIN_REDIRECT = getattr(_RedirectPolicy, "SameOriginRedirectPolicy",
+                                getattr(QNetworkRequest, "SameOriginRedirectPolicy", None))
 
 
 def _log_warning(msg: str):
     QgsMessageLog.logMessage(msg, "AI Segmentation", level=Qgis.MessageLevel.Warning)
 
 
-def _read_plugin_version() -> str:
-    """Plugin version from metadata.txt, or "unknown". Never raises."""
-    import os
+# How long one real answer keeps counting as proof the service is reachable.
+# It has to outlast the longest single request deadline (the direct submit
+# window), so a request that started while the link was good is still judged
+# against that good link when its own deadline expires. Past it, the link has
+# gone quiet for longer than any legitimate wait and a silent deadline is read
+# as a dead link again.
+_SERVER_CONTACT_TTL_S = 180.0
+_last_server_contact_monotonic: float | None = None
 
+
+def note_server_contact() -> None:
+    """Record that a request came back with a real answer.
+
+    Any HTTP status counts, including a failure status: the point is that the
+    bytes made the round trip, not that the service liked them."""
+    global _last_server_contact_monotonic
+    _last_server_contact_monotonic = time.monotonic()
+
+
+def server_reached_recently() -> bool:
+    """Whether a real answer arrived inside _SERVER_CONTACT_TTL_S.
+
+    This is what separates a service that is slow from a link that is gone. A
+    firewall or captive portal that DROPs packets instead of refusing them ends
+    a request exactly like a cold-starting service does, with a silent deadline
+    and no HTTP status, so the deadline alone cannot tell them apart. A recent
+    answer can. A clock jump backwards reads as expired, never as fresh."""
+    stamp = _last_server_contact_monotonic
+    if stamp is None:
+        return False
+    age = time.monotonic() - stamp
+    return 0.0 <= age <= _SERVER_CONTACT_TTL_S
+
+
+def _apply_redirect_policy(req: QNetworkRequest, has_auth: bool) -> None:
+    """Pick the redirect policy for one request.
+
+    Authenticated calls carry the activation key in a raw header and Qt replays
+    raw headers on every hop it follows, so they are limited to same-origin
+    redirects: a 3xx pointing at another host is refused instead of handing the
+    key to that host. Unauthenticated calls keep the wider same-or-safer policy
+    (signed-URL hops), which still never downgrades HTTPS to HTTP."""
+    if _REDIRECT_ATTR is None:
+        return
+    policy = _SAME_ORIGIN_REDIRECT if has_auth else _NO_LESS_SAFE_REDIRECT
+    if policy is not None:
+        req.setAttribute(_REDIRECT_ATTR, policy)
+
+
+def _parse_json_body(raw_body: str, allow_list: bool = False):
+    """Parse a response body into a shape callers can actually read.
+
+    Every caller does ``.get(...)`` on what the client returns, so a body that
+    parses to ``null``, a bare string or a number must never be handed back:
+    that turns a misbehaving gateway into an AttributeError deep in a run.
+    Returns the parsed value when usable, else None so the caller falls back to
+    its own error result. ``allow_list`` keeps the one route that legitimately
+    answers a JSON array (the stored masks archive) working.
+
+    Raises whatever json.loads raises; the callers already handle that."""
+    parsed = json.loads(raw_body)
+    if isinstance(parsed, dict):
+        return parsed
+    if allow_list and isinstance(parsed, list):
+        return parsed
+    return None
+
+
+def _unreadable_answer() -> dict:
+    """The failure for a 2xx whose body is not ours to read.
+
+    Its own code, apart from SERVER_ERROR, because the cause is between the two
+    machines rather than on either of them: a wifi sign-in page answering every
+    address, or a proxy that strips the body. The service never saw the request,
+    so "try again in a few minutes" is the wrong advice and silence is worse:
+    the account panel would just show stale numbers with no reason given."""
+    return {
+        "error": tr(
+            "The reply did not come from the service. If this network shows a "
+            "sign-in page, open it in your browser first, then try again."
+        ),
+        "code": "UNREADABLE_RESPONSE",
+    }
+
+
+def _qobject_alive(obj) -> bool:
+    """True while obj still has its C++ half.
+
+    A destroyed QObject leaves a Python wrapper behind that raises RuntimeError
+    ("wrapped C/C++ object ... has been deleted") on every attribute call, so
+    the only probe is a call whose answer we throw away.
+    """
+    if obj is None:
+        return False
     try:
-        plugin_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        with open(os.path.join(plugin_dir, "metadata.txt"), encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("version="):
-                    return line.strip().split("=", 1)[1]
-    except Exception:  # noqa: BLE001
-        pass  # nosec B110
-    return "unknown"
+        obj.thread()
+    except RuntimeError:
+        return False
+    return True
 
 
 def _http_status_of(reply) -> int | None:
@@ -101,20 +207,48 @@ def _http_status_of(reply) -> int | None:
 def _classify_network_error(blocker: QgsBlockingNetworkRequest) -> tuple[str, str]:
     reply = blocker.reply()
     qt_error = reply.error() if reply else _UnknownNetwork
-    return _classify_qt_error(qt_error, blocker.errorMessage(), _http_status_of(reply))
+    return _classify_qt_error(
+        qt_error, blocker.errorMessage(), _http_status_of(reply),
+        service_reachable=server_reached_recently(),
+    )
 
 
-def _classify_qt_error(qt_error, error_string: str, http_status: int | None) -> tuple[str, str]:
+def _classify_qt_error(
+    qt_error,
+    error_string: str,
+    http_status: int | None,
+    service_reachable: bool = False,
+) -> tuple[str, str]:
     """Map a Qt NetworkError to a (code, user-message) pair. Shared by the
     blocking path (_classify_network_error) and the concurrent path
-    (_parse_reply) so both classify identically."""
+    (_parse_reply) so both classify identically.
+
+    Contract: NO_INTERNET means the request never reached a server. Anything
+    the server answered, and anything unnamed after a connection was
+    established, is SERVER_ERROR. Consumers act on that split (the offline
+    fast-fail ends a run on a streak of hard-connectivity codes), so an
+    unnamed failure must never borrow the offline code.
+
+    ``service_reachable`` says whether an answer came back recently (see
+    server_reached_recently). It is the only evidence available on a silent
+    deadline, so callers pass it; the default is the safe reading, no evidence
+    of a reachable service."""
     # PyQt6's NetworkError is a real Python enum: int() raises TypeError on it
     # (Qt6 QGIS builds), which turned every network hiccup into a raw
     # "TypeError: int() argument..." instead of the friendly message + retry.
     qt_error_num = getattr(qt_error, "value", qt_error)
+    # Qt's error strings for DNS, TLS and proxy failures quote the target host,
+    # so the raw text would put the backend address in the QGIS message panel.
+    # Scrub before logging (production-safe logging).
+    try:
+        from ..core.log_scrub import scrub_sensitive
+
+        detail = scrub_sensitive(error_string or "")
+    except Exception:  # noqa: BLE001 -- never let logging break a request
+        detail = ""
     _log_warning(
         f"Network error: qt_error={qt_error_num}, http_status={http_status}, "
-        f"detail={error_string[:500]}"
+        f"detail={detail[:500]}"
     )
 
     if qt_error == _HostNotFound:
@@ -123,12 +257,22 @@ def _classify_qt_error(qt_error, error_string: str, http_status: int | None) -> 
         return "CONNECTION_REFUSED", tr("Server refused the connection.")
     if qt_error == _Timeout or (_OpCanceled is not None and qt_error == _OpCanceled):
         # No HTTP status means the socket never got an answer within the
-        # deadline: on the detection hot path this is a cold-starting / busy
-        # detection host, not a dead link. Code TIMEOUT keeps it a transient retry AND
-        # (unlike NO_INTERNET) makes the worker surface the "your spot is held"
-        # waiting state instead of blaming the user's connection.
+        # deadline. Two very different things end that way: a cold-starting /
+        # busy detection host, and a firewall or captive portal that DROPs
+        # packets instead of refusing them. Only a recent real answer tells
+        # them apart, so only then is this the service warming up. SERVICE_WARMING
+        # holds the tile on the queue TIME budget and shows "your spot is held",
+        # which a blocked link must never be allowed to claim: it would keep the
+        # offline fast-fail permanently reset and leave the user watching a
+        # waiting room that can never end.
         if http_status is None:
-            return "SERVICE_WARMING", tr("The AI service is waking up. Holding your spot…")
+            if service_reachable:
+                return "SERVICE_WARMING", tr("The AI service is waking up. Holding your spot…")
+            # Nothing has answered for longer than any legitimate wait, and this
+            # request got nothing either. That is the NO_INTERNET contract: the
+            # request never reached a server. A hard-connectivity code, so a
+            # streak of them ends a run instead of grinding every tile's retries.
+            return "NO_INTERNET", tr("Network error. Check your internet connection.")
         return "TIMEOUT", tr("Request timed out. Check your connection or try again.")
     if qt_error == _SslFailed:
         return "SSL_ERROR", tr("SSL certificate error. Your network may be blocking secure connections.")
@@ -137,7 +281,13 @@ def _classify_qt_error(qt_error, error_string: str, http_status: int | None) -> 
             "Proxy connection failed. "
             "Check QGIS proxy settings (Settings > Options > Network)."
         )
-    if qt_error in (_ContentDenied, _AuthRequired):
+    if qt_error in (_ContentDenied, _AuthRequired) and http_status == 401:
+        # 401 only. Qt raises ContentAccessDenied for any 403, and on a blocked
+        # network that 403 comes from a proxy or a portal, not from us. Telling
+        # a user whose network is blocking the request to sign in again points
+        # them at the wrong fix. A 401 or 403 that really is ours carries our
+        # JSON error body, and both callers return that body before ever
+        # reaching this classifier.
         return "AUTH_ERROR", tr("Authentication failed. Please sign in again.")
     # The server DID answer, with a failure status whose body was not
     # parseable JSON (typically an infrastructure incident page). The user's
@@ -149,7 +299,29 @@ def _classify_qt_error(qt_error, error_string: str, http_status: int | None) -> 
             "The service is temporarily unavailable (server error). "
             "Your connection is fine - please try again in a few minutes."
         )
-    return "NO_INTERNET", tr("Network error. Check your internet connection.")
+    # Any other HTTP status (400, 404, 409, 429...) whose body was not parseable
+    # JSON: the request still completed a full round trip, so the link is fine
+    # and the failure is on the service side. Same code as the 5xx case, which
+    # every consumer already treats as transient and none counts as a
+    # connectivity failure.
+    if http_status is not None:
+        return "SERVER_ERROR", tr(
+            "The server returned an unexpected response. Please try again."
+        )
+    # No HTTP status: the link is the only thing that can be blamed, and only
+    # for the errors that mean the request never reached a server. NO_INTERNET
+    # is a hard-connectivity code (OfflineFastFail.HARD_CODES), so a run of
+    # them ends a run early: it must never be returned for a condition the
+    # server itself produced.
+    if qt_error in _CONNECT_FAILURE_ERRORS:
+        return "NO_INTERNET", tr("Network error. Check your internet connection.")
+    # Fallthrough: a peer accepted the connection and then broke the exchange
+    # (remote host closed, malformed reply), or Qt could not name the failure.
+    # Reported as a service-side failure so a live server is never announced as
+    # "no internet" and a streak of them cannot end a paid run.
+    return "SERVER_ERROR", tr(
+        "The connection to the server was interrupted. Please try again."
+    )
 
 
 class TerraLabClient:
@@ -166,8 +338,25 @@ class TerraLabClient:
         # use it (+ the direct route shapes); otherwise everything stays on
         # base_url unchanged. Resolved once at construction.
         direct = self._read_detection_base_url()
+        if direct and not self._direct_detection_allowed():
+            direct = ""
         self.detection_direct = bool(direct)
         self.detection_base_url = (direct or self.base_url).rstrip("/")
+
+    @staticmethod
+    def _direct_detection_allowed() -> bool:
+        """Whether the one-hop detection route may be used.
+
+        A server switch, so a region can be moved back onto the main route
+        without a plugin release. Fails open: no configuration means the shipped
+        behaviour is unchanged.
+        """
+        try:
+            from ..core.server_dials import feature_enabled
+
+            return feature_enabled("direct_inference")
+        except Exception:  # noqa: BLE001 -- switch is best-effort  # nosec B110
+            return True
 
     @staticmethod
     def _read_base_url() -> str:
@@ -181,8 +370,15 @@ class TerraLabClient:
         Resolution: an .env.local `TERRALAB_DETECTION_URL` (dev opt-in) wins, else the
         shipped default below. Empty string => not direct: detection keeps using
         the main base_url and the existing backend routes (zero behaviour change,
-        the safe rollback: set the default back to "" to send everyone through
-        the backend again)."""
+        the rollback: set the default back to "" to send everyone through
+        the backend again).
+
+        The rollback is billing-safe as of 2026-07-27, and was not before: the
+        backend route charged per submission with no key, so each retry of a
+        tile cost another credit, and this client retries a tile up to eight
+        times on a flaky link. Both paths now key the charge on the same
+        (subscription, run, tile), so a tile is paid for once whichever way it
+        is sent."""
         # Shipped default: the neutral direct detection domain. Rollback stays
         # a one-line change: set back to "".
         _DEFAULT_DETECTION_DIRECT_URL = "https://inference.terra-lab.ai"
@@ -245,15 +441,18 @@ class TerraLabClient:
             return f"{self.detection_base_url}/run-export"
         return f"{self.detection_base_url}/api/ai-segmentation/run-export"
 
-    def post_run_export(self, payload: dict, auth: dict) -> dict:
+    def post_run_export_body(self, body: bytes, auth: dict) -> dict:
         """Send the finished run's export summary (review settings + the final
         exported geometry when small enough) so the run record is complete.
+
+        Takes the encoded body, not a dict: a dense run's geometry is
+        serialized straight to text on the task thread, so re-encoding it here
+        would double both the time and the peak memory.
 
         Additive and best-effort: callers fire-and-forget from a background
         task; a server without the route degrades to {"error", "code"} and the
         user's local export is never affected. Off-GUI-thread only.
         """
-        body = json.dumps(payload).encode("utf-8")
         return self._request(
             "POST", self._detection_run_export_url(), auth=auth, body=body,
             timeout_ms=_TIMEOUT_RUN_EXPORT,
@@ -262,17 +461,31 @@ class TerraLabClient:
     def _submit_timeout(self) -> int:
         """Submit timeout. Direct mode blocks for the whole inference (no async
         fallback), so it needs a cold-start-proof window to avoid a retry that
-        would double-charge; the backend route returns fast, so it keeps 45s."""
-        return _TIMEOUT_SUBMIT_DETECTION_DIRECT if self.detection_direct else _TIMEOUT_SUBMIT_DETECTION
+        would double-charge; the backend route returns fast, so it keeps 45s.
+
+        The direct window is a server dial (``network.submit_timeout_ms``),
+        because it is pinned against a request timeout on the other side and
+        that side must be able to move first. Read per request; the constant
+        below is the fallback."""
+        if not self.detection_direct:
+            return _TIMEOUT_SUBMIT_DETECTION
+        try:
+            from ..core.detection_policy import submit_timeout_ms
+
+            return submit_timeout_ms(_TIMEOUT_SUBMIT_DETECTION_DIRECT)
+        except Exception:  # noqa: BLE001 -- a dial must never break a submit
+            return _TIMEOUT_SUBMIT_DETECTION_DIRECT
 
     def get_usage(self, auth: dict) -> dict:
         return self._request(
-            "GET", "/api/plugin/usage", auth=auth, timeout_ms=_TIMEOUT_INTERACTIVE
+            "GET", "/api/plugin/usage", auth=auth, timeout_ms=_TIMEOUT_INTERACTIVE,
+            require_body=True,
         )
 
     def get_account(self, auth: dict) -> dict:
         return self._request(
-            "GET", "/api/plugin/account", auth=auth, timeout_ms=_TIMEOUT_INTERACTIVE
+            "GET", "/api/plugin/account", auth=auth, timeout_ms=_TIMEOUT_INTERACTIVE,
+            require_body=True,
         )
 
     def get_account_and_usage(self, auth: dict) -> tuple[dict, dict]:
@@ -285,15 +498,27 @@ class TerraLabClient:
         """
         account, usage = self.request_many([
             {"method": "GET", "path": "/api/plugin/account",
-             "auth": auth, "timeout_ms": _TIMEOUT_INTERACTIVE},
+             "auth": auth, "timeout_ms": _TIMEOUT_INTERACTIVE,
+             "require_body": True},
             {"method": "GET", "path": "/api/plugin/usage",
-             "auth": auth, "timeout_ms": _TIMEOUT_INTERACTIVE},
+             "auth": auth, "timeout_ms": _TIMEOUT_INTERACTIVE,
+             "require_body": True},
         ])
         return account, usage
 
     def get_config(self, product: str) -> dict:
+        """Fetch the product configuration.
+
+        The request carries a little context (language, plugin version, QGIS
+        version, platform) so the answer can be targeted. Every one of them is
+        optional and omitted when it cannot be read, so the call still works
+        with none of them.
+        """
+        from ..core.request_context import config_query
+
         return self._request(
-            "GET", f"/api/plugin/config?product={product}", timeout_ms=_TIMEOUT_INTERACTIVE
+            "GET", config_query(product), timeout_ms=_TIMEOUT_INTERACTIVE,
+            require_body=True,
         )
 
     def translate_prompt(self, text: str, auth: dict | None = None) -> dict:
@@ -307,7 +532,7 @@ class TerraLabClient:
         body = json.dumps({"text": text}).encode("utf-8")
         return self._request(
             "POST", "/api/plugin/translate-prompt", auth=auth, body=body,
-            timeout_ms=_TIMEOUT_TRANSLATE,
+            timeout_ms=_TIMEOUT_TRANSLATE, require_body=True,
         )
 
     def get_seg_run_plan(
@@ -324,15 +549,17 @@ class TerraLabClient:
         {"error", "code"} and the caller keeps the blob/generic path. Mirrors
         translate_prompt (same short interactive timeout, same auth pattern:
         pass the activation Bearer to land on the per-key rate budget)."""
+        from ..core.request_context import plugin_version
+
         body = json.dumps({
             "prompt": prompt,
             "zone_area_m2": zone_area_m2,
             "native_mupp": native_mupp,
-            "plugin_version": _read_plugin_version(),
+            "plugin_version": plugin_version() or "unknown",
         }).encode("utf-8")
         return self._request(
             "POST", "/api/plugin/seg-run-plan", auth=auth, body=body,
-            timeout_ms=_TIMEOUT_TRANSLATE,
+            timeout_ms=_TIMEOUT_TRANSLATE, require_body=True,
         )
 
     # ---- Run history (Library 2.0) ----------------------------------------
@@ -356,7 +583,7 @@ class TerraLabClient:
         ISO cursor (the oldest run's started_at from the previous page)."""
         from urllib.parse import quote
 
-        params = ["limit={}".format(int(limit))]
+        params = [f"limit={int(limit)}"]
         if before:
             params.append("before={}".format(quote(str(before), safe="")))
         if favorites_only:
@@ -364,7 +591,8 @@ class TerraLabClient:
         if deleted:
             params.append("deleted=true")
         path = "/api/ai-segmentation/history?" + "&".join(params)
-        return self._request("GET", path, auth=auth, timeout_ms=_TIMEOUT_API)
+        return self._request(
+            "GET", path, auth=auth, timeout_ms=_TIMEOUT_API, require_body=True)
 
     def get_seg_run_detail(
         self,
@@ -387,7 +615,8 @@ class TerraLabClient:
                 quote(str(group_key), safe=""))
         else:
             return {"error": "missing run identifier", "code": "CLIENT_ERROR"}
-        return self._request("GET", path, auth=auth, timeout_ms=_TIMEOUT_API)
+        return self._request(
+            "GET", path, auth=auth, timeout_ms=_TIMEOUT_API, require_body=True)
 
     def set_seg_run_favorite(self, auth: dict, run_id: str, is_favorite: bool) -> dict:
         """Star / unstar a run (server-stored, cross-device)."""
@@ -424,7 +653,9 @@ class TerraLabClient:
 
         path = "/api/ai-segmentation/image/{}?type=masks&stream=1".format(
             quote(str(request_id), safe=""))
-        return self._request("GET", path, auth=auth, timeout_ms=_TIMEOUT_API)
+        return self._request(
+            "GET", path, auth=auth, timeout_ms=_TIMEOUT_API, allow_list=True,
+            require_body=True)
 
     def poll_pairing(self, code: str, timeout_ms: int = 10_000) -> dict:
         """Poll whether a pairing code has been bound to an activation key.
@@ -438,6 +669,7 @@ class TerraLabClient:
             "GET",
             f"/api/plugin/pair/poll?code={quote(code, safe='')}",
             timeout_ms=timeout_ms,
+            require_body=True,
         )
 
     def cancel_pairing(self, code: str) -> dict:
@@ -512,15 +744,49 @@ class TerraLabClient:
             timeout_ms=self._submit_timeout(),
         )
 
+    # Additive, optional /predict request fields forwarded verbatim from a
+    # worker submission dict when present. Old servers ignore unknown fields,
+    # so forwarding is always backward-compatible:
+    #   return_semantic  opt-in coverage-map read-out (zero-instance rescue)
+    #   charge_tiles     decoupled scan-gate billing (a packed scan request
+    #                    carries its whole tile group's charge; the kept
+    #                    tiles' detect requests carry 0 = prepaid)
+    #   mask_scale       per-run coarser mask grid (2) for classes that pass
+    #                    the resolution floor; absent = the full grid
+    #   plugin_version   which client build produced the run (per-run provenance)
+    #   policy_rev       which policy revision produced the run (per-run
+    #                    provenance)
+    #   prompt_mode      "count" or "map", the client's read of the prompt kind
+    #   zone_geojson     the drawn zone polygon (sent once, on tile 0)
+    #   clean_image      the un-stamped tile image, present only when reference
+    #                    stamps were composited into the sent tile
+    _PREDICT_EXTRA_FIELDS = (
+        "return_semantic", "charge_tiles", "mask_scale",
+        "plugin_version", "policy_rev", "prompt_mode", "zone_geojson",
+        "clean_image",
+    )
+
+    @classmethod
+    def _predict_extras(cls, submission: dict) -> dict | None:
+        """The submission's additive optional /predict fields, or None."""
+        extra = {
+            k: submission[k]
+            for k in cls._PREDICT_EXTRA_FIELDS
+            if submission.get(k) is not None
+        }
+        return extra or None
+
     @staticmethod
     def _build_predict_body(
         run_id, prompt, image_b64, tile_index, crs_authid,
         tile_bbox_wgs84, tile_bbox_native, pixel_size_m,
         max_masks, threshold, mask_threshold, exemplars,
-        parent_tile_index=None,
+        parent_tile_index=None, extra=None,
     ) -> bytes:
         """Serialize one /predict payload. Shared by submit_detection (one tile)
-        and submit_detection_many (a concurrent batch)."""
+        and submit_detection_many (a concurrent batch). ``extra`` carries the
+        additive optional fields (see _PREDICT_EXTRA_FIELDS), already filtered
+        by the caller; None keeps the payload byte-identical to before."""
         payload: dict = {
             "image": image_b64,
             "run_id": run_id,
@@ -528,6 +794,8 @@ class TerraLabClient:
             "tile_index": tile_index,
             "crs_authid": crs_authid,
         }
+        if extra:
+            payload.update(extra)
         if parent_tile_index is not None:
             # Re-split quadrant of an already-billed tile in the same run.
             payload["parent_tile_index"] = int(parent_tile_index)
@@ -535,7 +803,12 @@ class TerraLabClient:
             payload["tile_bbox_wgs84"] = tile_bbox_wgs84
         if tile_bbox_native is not None:
             payload["tile_bbox_native"] = tile_bbox_native
-        if pixel_size_m is not None:
+        # Finite check, not just None: json.dumps emits a bare NaN/Infinity
+        # token for non-finite floats, which is not valid JSON. A strict decoder
+        # on the far side rejects the whole document, so one bad optional
+        # analytics field silently costs the request its audit record. Dropping
+        # the field keeps the tile itself intact.
+        if pixel_size_m is not None and math.isfinite(pixel_size_m):
             payload["pixel_size_m"] = pixel_size_m
         if max_masks is not None:
             payload["max_masks"] = max_masks
@@ -545,7 +818,28 @@ class TerraLabClient:
             payload["mask_threshold"] = mask_threshold
         if exemplars:
             payload["exemplars"] = exemplars
-        return json.dumps(payload).encode("utf-8")
+        # allow_nan=False turns a non-finite value into an error HERE instead
+        # of a bare NaN/Infinity token in the body. Those tokens are not valid
+        # JSON, and a strict decoder on the far side rejects the whole
+        # document, which is how tiles were billed while their audit record was
+        # silently dropped. Guarding the two known fields is not enough: this
+        # catches every optional float, including ones added later.
+        try:
+            return json.dumps(payload, allow_nan=False).encode("utf-8")
+        except ValueError:
+            pass
+        for key in ("pixel_size_m", "tile_bbox_native", "tile_bbox_wgs84"):
+            payload.pop(key, None)
+        _log_warning(
+            "Dropped non-finite optional fields from a tile payload; the "
+            "detection itself is unaffected."
+        )
+        try:
+            return json.dumps(payload, allow_nan=False).encode("utf-8")
+        except ValueError:
+            # A REQUIRED field is non-finite. Send it as before rather than
+            # losing the tile: this guard must never be worse than its absence.
+            return json.dumps(payload).encode("utf-8")
 
     def submit_detection_many(
         self, submissions: list[dict], auth: dict, should_abort=None
@@ -566,7 +860,7 @@ class TerraLabClient:
                 s["crs_authid"], s.get("tile_bbox_wgs84"), s.get("tile_bbox_native"),
                 s.get("pixel_size_m"), s.get("max_masks"), s.get("threshold"),
                 s.get("mask_threshold"), s.get("exemplars"),
-                s.get("parent_tile_index"),
+                s.get("parent_tile_index"), self._predict_extras(s),
             )
             specs.append({
                 "method": "POST",
@@ -598,6 +892,7 @@ class TerraLabClient:
             submission.get("pixel_size_m"), submission.get("max_masks"),
             submission.get("threshold"), submission.get("mask_threshold"),
             submission.get("exemplars"), submission.get("parent_tile_index"),
+            self._predict_extras(submission),
         )
         req = self._make_qnetwork_request(
             auth, self._submit_timeout(), self._detection_predict_url()
@@ -703,8 +998,7 @@ class TerraLabClient:
         req = QNetworkRequest(QUrl(self._resolve_url(path)))
         req.setRawHeader(b"Content-Type", b"application/json")
         req.setTransferTimeout(timeout_ms)
-        if _REDIRECT_ATTR is not None and _NO_LESS_SAFE_REDIRECT is not None:
-            req.setAttribute(_REDIRECT_ATTR, _NO_LESS_SAFE_REDIRECT)
+        _apply_redirect_policy(req, bool(auth))
         if auth:
             for key, value in auth.items():
                 req.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
@@ -714,7 +1008,8 @@ class TerraLabClient:
         """Execute several requests CONCURRENTLY, returning results in input order.
 
         Each spec is a dict: {"method": "GET"|"POST", "path": str, "auth": dict
-        (optional), "body": bytes (optional), "timeout_ms": int (optional)}.
+        (optional), "body": bytes (optional), "timeout_ms": int (optional),
+        "require_body": bool (optional, see _request)}.
         result[i] is the SAME dict shape _request returns for spec i.
 
         Where _request issues one blocking QgsBlockingNetworkRequest at a time,
@@ -770,7 +1065,10 @@ class TerraLabClient:
                 reply.finished.connect(_on_one_finished)
 
         if remaining[0] <= 0:
-            results = [self._parse_reply(r) for r in replies]
+            results = [
+                self._parse_reply(r, require_body=bool(s.get("require_body")))
+                for s, r in zip(specs, replies)
+            ]
             for r in replies:
                 r.deleteLater()
             return results
@@ -814,8 +1112,9 @@ class TerraLabClient:
         safety_timer.stop()
 
         results = []
-        for reply in replies:
-            results.append(self._parse_reply(reply))
+        for spec, reply in zip(specs, replies):
+            results.append(
+                self._parse_reply(reply, require_body=bool(spec.get("require_body"))))
             if not reply.isFinished():
                 reply.abort()  # release a still-pending socket on the timeout path
             reply.deleteLater()
@@ -848,10 +1147,30 @@ class TerraLabClient:
             self._own_nams = nams
         thread = QThread.currentThread()
         nam = nams.get(thread)
+        if nam is not None and not _qobject_alive(nam):
+            # The C++ manager went away while this cache still pointed at it
+            # (see acquire_predict_nam). Posting on the dead wrapper raises
+            # RuntimeError, and so does every reply already made by it, so
+            # rebuild instead and let the caller retry its request.
+            nam = None
         if nam is None:
             nam = self._new_private_nam()
             nams[thread] = nam
         return nam
+
+    def acquire_predict_nam(self):
+        """Return this thread's private manager for a caller that will keep a
+        strong reference to it for as long as its replies must stay readable.
+
+        Every reply is a CHILD of the manager, so destroying the manager
+        destroys every reply still in flight at once, and the next read of one
+        raises RuntimeError on a dead wrapper. The manager is Python-owned with
+        no parent, so the per-thread cache above is otherwise its only owner: a
+        pop, an overwrite, or a cyclic-GC pass on the cache would take a whole
+        run's in-flight tiles down together. A caller holding the returned
+        object for its run cannot be caught by that.
+        """
+        return self._predict_nam()
 
     def _new_private_nam(self):
         """Create a private QNetworkAccessManager configured like the QGIS one
@@ -941,7 +1260,7 @@ class TerraLabClient:
             from qgis.core import QgsApplication
 
             url = reply.url()
-            hostport = "{host}:{port}".format(host=url.host(), port=url.port(443))
+            hostport = f"{url.host()}:{url.port(443)}"
             auth_mgr = QgsApplication.authManager()
             if auth_mgr is None:
                 return
@@ -958,8 +1277,11 @@ class TerraLabClient:
         except Exception:  # noqa: BLE001 - parity is best-effort, never break the reply
             pass  # nosec B110
 
-    def _parse_reply(self, reply) -> dict:
-        """Turn a finished QNetworkReply into the same dict _request returns."""
+    def _parse_reply(self, reply, require_body: bool = False) -> dict:
+        """Turn a finished QNetworkReply into the same dict _request returns.
+
+        ``require_body`` has the same meaning as in _request: on a route whose
+        whole point is the payload, a 2xx we cannot read is a failure."""
         if not reply.isFinished():
             # Only reachable via the batch safety-net timeout (each reply also has
             # its own setTransferTimeout that fires first). Report it as a
@@ -969,38 +1291,57 @@ class TerraLabClient:
         qt_error = reply.error()
         http_status = _http_status_of(reply)
         raw_body = bytes(reply.readAll()).decode("utf-8", "replace")
+        if qt_error == _NoError or http_status is not None:
+            note_server_contact()
 
         if qt_error != _NoError:
             # A 4xx/5xx still carries our JSON error body; prefer it over the
             # generic network classification so the worker sees the real code.
             if http_status is not None and http_status >= 400 and raw_body:
                 try:
-                    return json.loads(raw_body)
+                    parsed = _parse_json_body(raw_body)
+                    if parsed is not None:
+                        return parsed
                 except Exception:
                     pass  # nosec B110
-            code, msg = _classify_qt_error(qt_error, reply.errorString(), http_status)
+            code, msg = _classify_qt_error(
+                qt_error, reply.errorString(), http_status,
+                service_reachable=server_reached_recently(),
+            )
             return {"error": msg, "code": code}
 
         if http_status is not None and http_status >= 400:
-            _log_warning(f"HTTP {http_status}: {raw_body[:500]}")
+            # Status only: error bodies can echo request URLs/details and the
+            # message log must stay free of them (production-safe logging).
+            _log_warning(f"HTTP {http_status} error response")
             try:
-                error_body = json.loads(raw_body)
-                if "error" in error_body:
-                    return error_body
-                return {
-                    "error": error_body.get("detail", raw_body[:200]),
-                    "code": "SERVER_ERROR",
-                }
-            except Exception:
+                error_body = _parse_json_body(raw_body)
+            except Exception:  # noqa: BLE001 - any unparsable body is a server error
+                error_body = None
+            if error_body is None:
                 return {"error": f"Server error (HTTP {http_status})", "code": "SERVER_ERROR"}
+            if "error" in error_body:
+                return error_body
+            return {
+                "error": error_body.get("detail", raw_body[:200]),
+                "code": "SERVER_ERROR",
+            }
 
         if not raw_body:
+            if require_body:
+                _log_warning("Empty body on a route that must carry one")
+                return _unreadable_answer()
             return {}
         try:
-            return json.loads(raw_body)
+            parsed = _parse_json_body(raw_body)
         except json.JSONDecodeError:
-            _log_warning(f"Invalid JSON response: {raw_body[:500]}")
+            parsed = None
+        if parsed is None:
+            _log_warning(f"Invalid JSON response ({len(raw_body)} bytes)")
+            if require_body:
+                return _unreadable_answer()
             return {"error": "Invalid server response", "code": "SERVER_ERROR"}
+        return parsed
 
     def _request(
         self,
@@ -1009,7 +1350,19 @@ class TerraLabClient:
         auth: dict | None = None,
         body: bytes | None = None,
         timeout_ms: int = _TIMEOUT_API,
-    ) -> dict:
+        allow_list: bool = False,
+        require_body: bool = False,
+    ) -> dict | list:
+        """One blocking round trip, returning the parsed body or {"error", "code"}.
+
+        ``require_body`` marks a route whose whole point is the payload (usage,
+        account, config, history, pairing). On those, a 2xx that carries nothing
+        we can read is a failure, not an empty success: a transparent proxy that
+        strips the body, or a captive portal answering every URL with its own
+        sign-in page, would otherwise be handed to callers as a valid empty
+        answer and rendered as a blank plan and no credits. Left off, an
+        unreadable 2xx keeps the older behaviour, so nothing on the detection
+        hot path changes shape."""
         url = self._resolve_url(path)
         req = QNetworkRequest(QUrl(url))
         req.setRawHeader(b"Content-Type", b"application/json")
@@ -1017,8 +1370,7 @@ class TerraLabClient:
         # task forever. setTransferTimeout exists on Qt 5.15+ (QGIS >= 3.22),
         # which is our floor, so this is unconditional.
         req.setTransferTimeout(timeout_ms)
-        if _REDIRECT_ATTR is not None and _NO_LESS_SAFE_REDIRECT is not None:
-            req.setAttribute(_REDIRECT_ATTR, _NO_LESS_SAFE_REDIRECT)
+        _apply_redirect_policy(req, bool(auth))
         if auth:
             for key, value in auth.items():
                 req.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
@@ -1035,13 +1387,17 @@ class TerraLabClient:
         if err != QgsBlockingNetworkRequest.ErrorCode.NoError:
             reply = blocker.reply()
             http_status = _http_status_of(reply)
+            if http_status is not None:
+                note_server_contact()
             if reply is not None and http_status is not None and http_status >= 400:
                 # A misbehaving gateway/proxy can return a non-UTF-8 body; decode
                 # leniently so a garbled error page never crashes the worker loop.
                 raw = bytes(reply.content()).decode("utf-8", "replace")
                 if raw:
                     try:
-                        return json.loads(raw)
+                        parsed = _parse_json_body(raw)
+                        if parsed is not None:
+                            return parsed
                     except Exception:
                         pass  # nosec B110
             code, msg = _classify_network_error(blocker)
@@ -1050,24 +1406,40 @@ class TerraLabClient:
         reply = blocker.reply()
         http_status = _http_status_of(reply)
         raw_body = bytes(reply.content()).decode("utf-8", "replace")
+        note_server_contact()
 
         if http_status is not None and http_status >= 400:
-            _log_warning(f"HTTP {http_status}: {raw_body[:500]}")
+            # Status only: error bodies can echo request URLs/details and the
+            # message log must stay free of them (production-safe logging).
+            _log_warning(f"HTTP {http_status} error response")
             try:
-                error_body = json.loads(raw_body)
-                if "error" in error_body:
-                    return error_body
-                return {
-                    "error": error_body.get("detail", raw_body[:200]),
-                    "code": "SERVER_ERROR",
-                }
-            except Exception:
+                error_body = _parse_json_body(raw_body)
+            except Exception:  # noqa: BLE001 - any unparsable body is a server error
+                error_body = None
+            if error_body is None:
                 return {"error": f"Server error (HTTP {http_status})", "code": "SERVER_ERROR"}
+            if "error" in error_body:
+                return error_body
+            return {
+                "error": error_body.get("detail", raw_body[:200]),
+                "code": "SERVER_ERROR",
+            }
 
         if not raw_body:
+            if require_body:
+                _log_warning("Empty body on a route that must carry one")
+                return _unreadable_answer()
             return {}
         try:
-            return json.loads(raw_body)
+            # allow_list defaults False so a stray array fails to parse here
+            # rather than reach a caller typed -> dict; fetch_run_masks is
+            # the one route that opts in (the stored-masks archive).
+            parsed = _parse_json_body(raw_body, allow_list=allow_list)
         except json.JSONDecodeError:
-            _log_warning(f"Invalid JSON response: {raw_body[:500]}")
+            parsed = None
+        if parsed is None:
+            _log_warning(f"Invalid JSON response ({len(raw_body)} bytes)")
+            if require_body:
+                return _unreadable_answer()
             return {"error": "Invalid server response", "code": "SERVER_ERROR"}
+        return parsed

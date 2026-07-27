@@ -31,31 +31,53 @@ def _normalize_to_uint8(bands, nodata_value=None):
     Returns:
         numpy array of shape (H, W, 3) uint8
     """
+    # Which source band feeds each output channel. Indexing beats materializing
+    # a repeated/stacked copy: a single-band crop no longer triples its own data
+    # just to run the same stretch three times.
     num_bands = bands.shape[0]
     if num_bands == 1:
-        bands = np.repeat(bands, 3, axis=0)
+        band_order = (0, 0, 0)
     elif num_bands == 2:
-        bands = np.stack([bands[0], bands[1], bands[0]], axis=0)
-    elif num_bands > 3:
-        bands = bands[:3, :, :]
+        band_order = (0, 1, 0)
+    else:
+        band_order = (0, 1, 2)
+
+    is_float = np.issubdtype(bands.dtype, np.floating)
 
     # Build nodata mask: True where pixel is valid
     if nodata_value is not None:
         valid_mask = bands[0] != nodata_value
     else:
-        valid_mask = np.ones(bands.shape[1:], dtype=bool)
+        valid_mask = None
 
     # Also mask NaN for float types
-    if np.issubdtype(bands.dtype, np.floating):
-        for b in range(bands.shape[0]):
-            valid_mask = valid_mask & ~np.isnan(bands[b])
+    if is_float:
+        for b in sorted(set(band_order)):
+            nan_free = ~np.isnan(bands[b])
+            valid_mask = nan_free if valid_mask is None else (valid_mask & nan_free)
 
     is_uint8 = (bands.dtype == np.uint8)
     result = np.zeros((3, bands.shape[1], bands.shape[2]), dtype=np.uint8)
 
+    # An output channel repeats a source band only when the crop has fewer than
+    # 3 bands, and the same source gives the same percentiles and the same
+    # stretch, so the work is done once and the row copied.
+    done: dict[int, int] = {}
+
     for b in range(3):
-        band = bands[b].astype(np.float64)
-        valid_pixels = band[valid_mask]
+        src = band_order[b]
+        if src in done:
+            result[b] = result[done[src]]
+            continue
+        done[src] = b
+
+        band = bands[src]
+        # Only cast to float64 where the percentile needs it: numpy already
+        # returns float64 percentiles for integer input, so a full-size float64
+        # copy of an 8-bit crop buys nothing.
+        if is_float:
+            band = band.astype(np.float64)
+        valid_pixels = band if valid_mask is None else band[valid_mask]
 
         if valid_pixels.size == 0:
             continue
@@ -66,22 +88,23 @@ def _normalize_to_uint8(bands, nodata_value=None):
             # Only stretch if histogram is compressed
             if p98 - p2 < 220:
                 if p98 > p2:
-                    stretched = np.clip(band, p2, p98)
+                    stretched = np.clip(band.astype(np.float64), p2, p98)
                     stretched = (stretched - p2) / (p98 - p2) * 255
                     result[b] = stretched.astype(np.uint8)
                 else:
-                    result[b] = band.astype(np.uint8)
+                    result[b] = band
             else:
-                result[b] = bands[b]
+                result[b] = band
         else:
             if p98 > p2:
-                stretched = np.clip(band, p2, p98)
+                stretched = np.clip(
+                    band if is_float else band.astype(np.float64), p2, p98)
                 stretched = (stretched - p2) / (p98 - p2) * 255
                 result[b] = stretched.astype(np.uint8)
             # else: stays zeros
 
     # Zero out nodata pixels
-    if nodata_value is not None or np.issubdtype(bands.dtype, np.floating):
+    if valid_mask is not None:
         nodata_mask = ~valid_mask
         if np.any(nodata_mask):
             for b in range(3):
@@ -209,10 +232,11 @@ def _fetch_online_bands(provider, extent, width, height):
     is_argb = is_argb32 or is_argb32_pre
     if is_argb:
         arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
-            block_h, block_w, 4).copy()
-        # Qt BGRA byte order -> RGB
-        image_np = np.stack(
-            [arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
+            block_h, block_w, 4)
+        # Qt BGRA byte order -> RGB. ascontiguousarray already allocates the
+        # output, so copying the 4-channel buffer first only to drop its alpha
+        # would be a whole extra pass over the crop.
+        image_np = np.ascontiguousarray(arr[:, :, 2::-1])
         return image_np, True, None
 
     # Map Qgis data types to numpy dtypes
@@ -231,9 +255,8 @@ def _fetch_online_bands(provider, extent, width, height):
         # Unknown type: try ARGB32 interpretation as fallback
         if len(raw_data) == block_w * block_h * 4:
             arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
-                block_h, block_w, 4).copy()
-            image_np = np.stack(
-                [arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
+                block_h, block_w, 4)
+            image_np = np.ascontiguousarray(arr[:, :, 2::-1])
             return image_np, True, None
         return None, False, f"Unsupported data type: {dt}"
 
@@ -260,50 +283,76 @@ def _fetch_online_bands(provider, extent, width, height):
     return bands_array, False, None
 
 
-def _render_layer_to_image(layer, extent, width, height):
+# Hard cap on the renderer fallback below. It is reached exactly when a tile
+# host is slow, it waits on the calling thread, and that thread is the GUI one,
+# so the wait needs its own stop and cannot rely on the provider's.
+_RENDER_FALLBACK_TIMEOUT_MS: int = 30000
+
+
+def _render_layer_to_image(layer, extent, width, height,
+                           timeout_ms=_RENDER_FALLBACK_TIMEOUT_MS):
     """Render a layer to an RGB image using QGIS map renderer (fallback).
 
     Works with any layer type (WMS, WMTS, XYZ, WCS, vector tiles, etc.)
+
+    The render runs as a parallel job and the wait is a local event loop with a
+    timer, so a tile host that never answers cannot hold the caller past
+    ``timeout_ms``. The loop holds back user input: a click or a window close
+    delivered inside this frame would reenter the caller while it waits.
+
+    MAIN THREAD ONLY (QgsMapRendererParallelJob).
 
     Args:
         layer: QgsMapLayer to render
         extent: QgsRectangle for the area
         width: pixel width
         height: pixel height
+        timeout_ms: hard cap on the wait
 
     Returns:
         (image_np, error) where image_np is (H, W, 3) uint8 or None
     """
     try:
-        from qgis.core import QgsMapRendererCustomPainterJob, QgsMapSettings
-        from qgis.PyQt.QtCore import QSize
-        from qgis.PyQt.QtGui import QImage, QPainter
+        from qgis.core import QgsMapRendererParallelJob, QgsMapSettings
+        from qgis.PyQt.QtCore import QEventLoop, QSize, QTimer
+        from qgis.PyQt.QtGui import QColor, QImage
 
-        img = QImage(QSize(width, height), QImage.Format.Format_RGB32)
-        img.fill(0)
+        from .qt_compat import resolve_qt_enum
 
         settings = QgsMapSettings()
         settings.setOutputSize(QSize(width, height))
         settings.setExtent(extent)
         settings.setLayers([layer])
         settings.setDestinationCrs(layer.crs())
-        settings.setBackgroundColor(img.pixelColor(0, 0))
+        settings.setBackgroundColor(QColor(0, 0, 0))
 
-        painter = QPainter(img)
-        job = QgsMapRendererCustomPainterJob(settings, painter)
+        job = QgsMapRendererParallelJob(settings)
+        loop = QEventLoop()
+        job.finished.connect(loop.quit)
+        QTimer.singleShot(int(timeout_ms), loop.quit)
         job.start()
-        job.waitForFinished()
-        painter.end()
+        loop.exec(resolve_qt_enum(
+            QEventLoop, "ProcessEventsFlag", "ExcludeUserInputEvents"))
 
-        # QImage -> numpy
+        if job.isActive():
+            job.cancelWithoutBlocking()
+            return None, f"Renderer fallback timed out after {int(timeout_ms)} ms"
+
+        img = job.renderedImage()
+        if img is None or img.isNull():
+            return None, "Renderer fallback produced no image"
+
+        # QImage -> numpy, on the image's own size (the job owns the buffer).
         img = img.convertToFormat(QImage.Format.Format_RGB32)
+        out_h = img.height()
+        out_w = img.width()
         ptr = img.bits()
-        ptr.setsize(height * width * 4)
+        ptr.setsize(out_h * out_w * 4)
         arr = np.frombuffer(ptr, dtype=np.uint8).reshape(
-            height, width, 4).copy()
-        # BGRA -> RGB
-        image_np = np.stack(
-            [arr[:, :, 2], arr[:, :, 1], arr[:, :, 0]], axis=-1)
+            out_h, out_w, 4)
+        # BGRA -> RGB. The reversed slice is not contiguous, so this always
+        # allocates its own buffer and never keeps the QImage alive.
+        image_np = np.ascontiguousarray(arr[:, :, 2::-1])
         return image_np, None
 
     except Exception as e:
@@ -314,6 +363,37 @@ def _needs_gdal_conversion(raster_path):
     """Check if raster format requires GDAL conversion for rasterio."""
     ext = os.path.splitext(raster_path)[1].lower()
     return ext in _GDAL_ONLY_FORMATS
+
+
+def _gdal_has_thread_local_config(gdal):
+    """True when this GDAL binding can scope a config option to one thread.
+
+    ``SetConfigOption`` writes the PROCESS-global table, so a value shadowed
+    there is missing for every other thread until it is put back. The
+    thread-local pair keeps the shadow on the calling thread. Both names are
+    checked: an old binding that exposes only one of them cannot do the
+    round trip.
+    """
+    return (hasattr(gdal, "SetThreadLocalConfigOption") and hasattr(gdal, "GetThreadLocalConfigOption"))
+
+
+def crop_read_is_thread_safe(raster_path):
+    """True when this raster's windowed read may run off the GUI thread.
+
+    The GDAL path blanks PROJ's and GDAL's data paths while it reads (see
+    _read_crop_with_gdal). Thread-local config options keep that shadow on the
+    reading thread. Without them the shadow is process-wide, so a canvas
+    render would look for proj.db while it is blanked and come back
+    unprojected or empty: such a read stays on the GUI thread instead.
+    """
+    if not _needs_gdal_conversion(raster_path):
+        return True
+    try:
+        from osgeo import gdal
+    except ImportError:
+        # No GDAL, so nothing is shadowed: the read returns its own error.
+        return True
+    return _gdal_has_thread_local_config(gdal)
 
 
 def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
@@ -343,17 +423,26 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
     # rasterio bundles its own proj.db in site-packages. If anything in the
     # process points PROJ_DATA/GDAL_DATA at it, GDAL (from osgeo) hits a
     # "DATABASE.LAYOUT.VERSION.MINOR = N whereas a number >= M is expected"
-    # error when forced to read rasterio's older proj.db. Shadow the vars
-    # via GDAL's own config-option table (scoped to this GDAL instance,
-    # like _scope_rasterio_data_paths does for rasterio) instead of
-    # os.environ, so no other thread or plugin in the process ever sees
-    # them missing while this call runs.
-    _proj_data_backup = gdal.GetConfigOption("PROJ_DATA")
-    _proj_lib_backup = gdal.GetConfigOption("PROJ_LIB")
-    _gdal_data_backup = gdal.GetConfigOption("GDAL_DATA")
-    gdal.SetConfigOption("PROJ_DATA", "")
-    gdal.SetConfigOption("PROJ_LIB", "")
-    gdal.SetConfigOption("GDAL_DATA", "")
+    # error when forced to read rasterio's older proj.db. Shadow the vars via
+    # GDAL's THREAD-LOCAL config table instead of os.environ, so the shadow
+    # lasts only for this read AND only on this thread: the plain setter is
+    # process-global, and this read runs on a worker while the user keeps
+    # panning, so a global blank would leave the canvas render looking for a
+    # proj.db that is not there. A binding without the thread-local pair falls
+    # back to the global one, which is why crop_read_is_thread_safe keeps that
+    # case on the GUI thread with nothing else running.
+    if _gdal_has_thread_local_config(gdal):
+        _set_option = gdal.SetThreadLocalConfigOption
+        _get_option = gdal.GetThreadLocalConfigOption
+    else:
+        _set_option = gdal.SetConfigOption
+        _get_option = gdal.GetConfigOption
+    _proj_data_backup = _get_option("PROJ_DATA")
+    _proj_lib_backup = _get_option("PROJ_LIB")
+    _gdal_data_backup = _get_option("GDAL_DATA")
+    _set_option("PROJ_DATA", "")
+    _set_option("PROJ_LIB", "")
+    _set_option("GDAL_DATA", "")
     try:
         ds = gdal.Open(raster_path)
         if ds is None:
@@ -491,9 +580,9 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
 
     finally:
         ds = None
-        gdal.SetConfigOption("PROJ_DATA", _proj_data_backup)
-        gdal.SetConfigOption("PROJ_LIB", _proj_lib_backup)
-        gdal.SetConfigOption("GDAL_DATA", _gdal_data_backup)
+        _set_option("PROJ_DATA", _proj_data_backup)
+        _set_option("PROJ_LIB", _proj_lib_backup)
+        _set_option("GDAL_DATA", _gdal_data_backup)
 
 
 def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
@@ -531,8 +620,15 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
         import rasterio
         from rasterio.enums import Resampling
         from rasterio.windows import Window
-    except ImportError:
-        return None, None, "rasterio is not available", "crop_error_rasterio_unavailable"
+    except ImportError as err:
+        # Keep the real reason. A missing package and a package whose native
+        # extension will not load both land here, and only the second one
+        # says why (a dlopen failure, an ABI mismatch against the host numpy).
+        # The caller's automatic repair only helps the first, so discarding
+        # the text left every one of these undiagnosable. Telemetry scrubs
+        # paths out of the message before it leaves the machine.
+        return (None, None, f"rasterio is not available: {err}",
+                "crop_error_rasterio_unavailable")
 
     try:
         with rasterio.open(raster_path) as src:
@@ -585,26 +681,35 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
 
             window = Window(col_off, row_off, actual_width, actual_height)
 
+            # Read at most the first 3 bands: the normalizer drops everything
+            # past band 3 anyway, so decoding a 12-band stack in full would
+            # allocate several times the crop for nothing. Mirrors the GDAL
+            # path, which has always read min(band count, 3).
+            read_bands = list(range(1, min(max(int(src.count), 1), 3) + 1))
+            n_read = len(read_bands)
+
             if scale_factor > 1.0:
                 out_h = min(crop_size, int(actual_height / scale_factor))
                 out_w = min(crop_size, int(actual_width / scale_factor))
                 out_h = max(1, out_h)
                 out_w = max(1, out_w)
                 tile_data = src.read(
+                    indexes=read_bands,
                     window=window,
-                    out_shape=(src.count, out_h, out_w),
+                    out_shape=(n_read, out_h, out_w),
                     resampling=Resampling.bilinear
                 )
             elif scale_factor < 1.0:
                 out_h = min(crop_size, max(1, int(actual_height / scale_factor)))
                 out_w = min(crop_size, max(1, int(actual_width / scale_factor)))
                 tile_data = src.read(
+                    indexes=read_bands,
                     window=window,
-                    out_shape=(src.count, out_h, out_w),
+                    out_shape=(n_read, out_h, out_w),
                     resampling=Resampling.bilinear
                 )
             else:
-                tile_data = src.read(window=window)
+                tile_data = src.read(indexes=read_bands, window=window)
                 out_h = actual_height
                 out_w = actual_width
 
@@ -675,6 +780,15 @@ class OnlineCropFetcher:
 
     _MAX_RETRIES = 8
     _RETRY_DELAY = 1.0
+    # Ceiling on the time one fetch may spend INSIDE provider.block(). On an
+    # online provider that call is a synchronous network read on the calling
+    # thread, and it carries the network stack's own timeout, so the retry
+    # ladder would otherwise let one unresponsive host hold that thread for
+    # minutes. Only the reads are charged here: the back-off waits between them
+    # belong to the caller, and the interactive path takes them off the event
+    # loop. A read already running cannot be interrupted, so the real bound is
+    # this budget plus the one read in flight when it runs out.
+    _READ_BUDGET_S = 8.0
 
     def __init__(self, layer, center_x, center_y, canvas_mupp, crop_size=1024):
         from qgis.core import QgsRectangle
@@ -690,6 +804,7 @@ class OnlineCropFetcher:
         self._attempt = 0
         self._prev_data = None
         self._reload_pending = False
+        self._read_seconds = 0.0
 
         provider = layer.dataProvider()
         self._provider = provider
@@ -760,6 +875,21 @@ class OnlineCropFetcher:
         except (AttributeError, RuntimeError):
             pass
 
+    def read_budget_spent(self) -> bool:
+        """True once the provider reads have used their whole time ceiling
+        (_READ_BUDGET_S). A driver may read this to stop early; step() and
+        finish() already refuse to start another read once it is True."""
+        return self._read_seconds >= self._READ_BUDGET_S
+
+    def _timed_block(self, band):
+        """One provider.block() read, charged to the read budget."""
+        started = time.monotonic()
+        try:
+            return self._provider.block(
+                band, self._extent, self._crop_size, self._crop_size)
+        finally:
+            self._read_seconds += time.monotonic() - started
+
     def step(self):
         """Perform one block read + stabilization check. Returns (action,
         delay_seconds):
@@ -770,17 +900,21 @@ class OnlineCropFetcher:
         - ("retry", delay): not stable yet; wait ``delay`` then step() again
           (the reload is issued at the START of the next step, matching the
           blocking loop's wait-then-reload order).
-        - ("exhausted", 0.0): retry budget spent; go to finish() with whatever
-          the provider returned.
+        - ("exhausted", 0.0): retry budget or read budget spent; go to finish()
+          with whatever the provider returned.
         """
         provider = self._provider
+        if self.read_budget_spent():
+            # The reads have held the calling thread long enough. Stop the
+            # ladder here rather than start another synchronous fetch.
+            return ("exhausted", 0.0)
         if self._reload_pending:
             # The prior retry has served its back-off; refresh the tiles now,
             # exactly as the blocking loop reloaded before each re-read.
             provider.reloadData()
             self._reload_pending = False
         attempt = self._attempt
-        block = provider.block(1, self._extent, self._crop_size, self._crop_size)
+        block = self._timed_block(1)
         if block is not None and block.isValid():
             cur_data = bytes(block.data())
             # An all-zero block means the tiles have not downloaded yet (or the
@@ -816,11 +950,22 @@ class OnlineCropFetcher:
         Returns the extract_crop_from_raster-style 4-tuple (image_np,
         crop_info, error, error_code)."""
         provider = self._provider
+        if self.read_budget_spent():
+            # The reads already held the calling thread for their whole
+            # ceiling, so the provider is not answering usably: report the
+            # network failure instead of starting one more synchronous fetch.
+            return None, None, tr(
+                "Failed to fetch tiles from the online layer. "
+                "Check your network connection."
+            ), "crop_error_online_fetch_failed"
         # Fetch bands using unified helper
+        read_started = time.monotonic()
         bands_result, is_argb, fetch_err = _fetch_online_bands(
             provider, self._extent, self._crop_size, self._crop_size)
+        self._read_seconds += time.monotonic() - read_started
 
         # If provider fetch failed, try canvas renderer fallback
+        from_renderer = False
         if fetch_err is not None:
             QgsMessageLog.logMessage(
                 f"Provider fetch failed ({fetch_err}), trying renderer "
@@ -834,6 +979,7 @@ class OnlineCropFetcher:
                     "Failed to fetch tiles from the online layer. "
                     "Check your network connection."
                 ), "crop_error_online_fetch_failed"
+            from_renderer = True
         elif is_argb:
             # Already RGB uint8 (H, W, 3) from ARGB32 path
             image_np = bands_result
@@ -855,10 +1001,16 @@ class OnlineCropFetcher:
             # Tiles fetched but all-zero: stale provider cache, zoom outside
             # the service's range, or genuinely no coverage. The canvas
             # renderer reads what QGIS actually displays, so one render-path
-            # retry rescues the stale-cache case before giving up.
-            rendered, render_err = _render_layer_to_image(
-                self._layer, self._extent, self._crop_size, self._crop_size)
-            if render_err is None and rendered is not None and int(rendered.sum()) > 0:
+            # retry rescues the stale-cache case before giving up. A crop that
+            # already came from the renderer has nothing left to try, so it
+            # never pays for a second identical render.
+            rendered = None
+            if not from_renderer:
+                rendered, render_err = _render_layer_to_image(
+                    self._layer, self._extent, self._crop_size, self._crop_size)
+                if render_err is not None:
+                    rendered = None
+            if rendered is not None and int(rendered.sum()) > 0:
                 QgsMessageLog.logMessage(
                     "Blank tiles from provider, rescued by renderer fallback",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning
@@ -882,20 +1034,36 @@ class OnlineCropFetcher:
         return image_np, crop_info, None, None
 
 
-def _blocking_wait(seconds):
+# Wall-clock ceiling for the whole synchronous online fetch. The retry policy
+# already bounds it, but this driver blocks the calling thread, so it carries
+# its own stop so no future policy change can stretch that block.
+_SYNC_FETCH_BUDGET_S: float = 25.0
+
+
+def _blocking_wait(seconds, cancel_check=None):
     """Block the calling thread for ``seconds`` while pumping the event loop.
     Used only by the synchronous (headless/recovery) online fetch driver; the
-    interactive path schedules its waits off the event loop instead."""
+    interactive path schedules its waits off the event loop instead.
+
+    ``cancel_check`` is an optional callable polled between pumps; the wait
+    stops as soon as it returns True. Returns False when the wait was cut
+    short that way, True when it ran to its deadline.
+    """
     from qgis.core import QgsApplication
 
     deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
+    while True:
+        if cancel_check is not None and cancel_check():
+            return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.0:
+            return True
         QgsApplication.processEvents()
-        time.sleep(0.05)
+        time.sleep(min(0.05, remaining))
 
 
 def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
-                                   crop_size=1024):
+                                   crop_size=1024, cancel_check=None):
     """Extract a crop_size x crop_size RGB crop from an online layer.
 
     SYNCHRONOUS and blocking (up to ~18s of tile-fetch retries): used by the
@@ -908,6 +1076,9 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
         center_x, center_y: Center of crop in layer CRS coordinates
         canvas_mupp: Map units per pixel
         crop_size: Size of the crop in pixels (default 1024)
+        cancel_check: optional callable polled during every back-off wait. When
+            it returns True the fetch gives up at once instead of sitting out
+            the rest of the retry budget.
 
     Returns:
         (image_np, crop_info, error, error_code) - same format as
@@ -918,11 +1089,16 @@ def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,
         return None, None, fetcher.error, fetcher.error_code
     try:
         fetcher.begin()
+        stop_by = time.monotonic() + _SYNC_FETCH_BUDGET_S
         while True:
             action, delay = fetcher.step()
             if action in ("stabilized", "exhausted"):
                 break
-            _blocking_wait(delay)
+            if not _blocking_wait(delay, cancel_check):
+                return (None, None, tr("Crop fetch was cancelled."),
+                        "crop_error_online_cancelled")
+            if time.monotonic() >= stop_by:
+                break
         return fetcher.finish()
     except Exception as e:  # noqa: BLE001
         return None, None, str(e), "crop_error_online_exception"

@@ -6,9 +6,11 @@ language, rare words, or a missing lexicon) with ONE short blocking call at
 commit time (Detect click), never per keystroke.
 
 Caching keeps the cost at one round-trip per distinct word per machine:
-successful translations persist in QSettings, and failures (offline, server
-down, untranslatable) are negative-cached for the session so a broken
-connection never adds repeated latency to Detect. Never logs prompt text.
+successful translations persist in QSettings, and an answer of "nothing to
+translate" is negative-cached for the session so the same word never costs a
+second round trip. A call the server never answered is NOT cached: it says
+nothing about the word, and caching it would run every later paid Detect on
+the untranslated text until QGIS restarts. Never logs prompt text.
 """
 from __future__ import annotations
 
@@ -20,13 +22,33 @@ from qgis.PyQt.QtCore import QSettings
 
 _CACHE_KEY = "TerraLab/AI_Segmentation/prompt_translations"
 _CACHE_MAX = 300
-_MAX_PROMPT_CHARS = 40
+# A prompt is a short object phrase ("building with a red roof"), not one word.
+# Kept in step with the server (translate-prompt/route.ts MAX_CHARS/MAX_WORDS).
+_MAX_PROMPT_CHARS = 60
+_MAX_PROMPT_WORDS = 8
 
-# norm -> token, or None for a lookup that already failed this session.
+# norm -> token, or None for a word the server answered nothing for.
 _session_cache: dict[str, str | None] = {}
 
+# Error codes that mean the server never got to see the word: the link, not the
+# answer, is what came back. Only these are kept out of the session cache; a
+# code from a server that did answer (a rejection, a 5xx, a route that is not
+# deployed) is a real verdict on the word and stays cached for the session.
+_UNANSWERED_CODES = frozenset({
+    "DNS_ERROR", "CONNECTION_REFUSED", "PROXY_ERROR", "NO_INTERNET",
+    "TIMEOUT", "SSL_ERROR", "SERVICE_WARMING", "UNREADABLE_RESPONSE",
+})
 
-def _normalize(text: str) -> str:
+
+def _server_answered(resp) -> bool:
+    """Whether ``resp`` is a verdict on the word rather than a dead link."""
+    if not isinstance(resp, dict):
+        return False
+    code = str(resp.get("code") or "").strip().upper()
+    return code not in _UNANSWERED_CODES
+
+
+def _normalize_lookup_key(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "")).strip().lower().strip("?.!,;:")
 
 
@@ -36,12 +58,12 @@ def _sanitize_token(token) -> str | None:
     if not isinstance(token, str):
         return None
     folded = (
-        unicodedata.normalize("NFKD", _normalize(token))
+        unicodedata.normalize("NFKD", _normalize_lookup_key(token))
         .encode("ascii", "ignore")
         .decode("ascii")
         .strip()
     )
-    if not folded or len(folded) > 30 or len(folded.split(" ")) > 3:
+    if not folded or len(folded) > _MAX_PROMPT_CHARS or len(folded.split(" ")) > _MAX_PROMPT_WORDS:
         return None
     if not re.fullmatch(r"[a-z][a-z -]*", folded):
         return None
@@ -69,8 +91,11 @@ def _save_disk_cache(cache: dict) -> None:
 def resolve_english_prompt(text: str) -> str | None:
     """English token for ``text`` via the server, or None (already English,
     untranslatable, offline, or endpoint not deployed yet). Blocking: call it
-    ONLY at commit time. The caller re-validates the token before use."""
-    norm = _normalize(text)
+    ONLY at commit time. The caller re-validates the token before use.
+
+    A None from a dead link is not remembered, so the word is looked up again
+    on the next Detect instead of running the rest of the session untranslated."""
+    norm = _normalize_lookup_key(text)
     if not norm or len(norm) > _MAX_PROMPT_CHARS:
         return None
     if norm in _session_cache:
@@ -100,7 +125,8 @@ def resolve_english_prompt(text: str) -> str | None:
         token = _sanitize_token(resp.get("token"))
     if token == norm:
         token = None  # already English: nothing to swap
-    _session_cache[norm] = token
+    if _server_answered(resp):
+        _session_cache[norm] = token
     if token:
         disk[norm] = token
         _save_disk_cache(disk)

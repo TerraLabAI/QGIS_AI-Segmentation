@@ -9,6 +9,13 @@ the stored masks + tile bboxes, raster-independent.
 Direct Export reuses the same decode+merge steps headless (no review) and
 hands the filtered geometries to polygon_exporter.export_geometries_to_file.
 
+Split by thread. ``decode_run_masks`` and ``export_decoded_run`` run on the
+library's fetch thread: a 100-tile run is thousands of masks at 10 to 30 ms
+each, which froze QGIS for minutes when it ran in the click handler. They take
+plain values (never the plugin) and report through the two callbacks so the
+caller can show progress and stop. ``run_merge_separate``, ``restore_run`` and
+``load_exported_layer`` are the GUI-thread half.
+
 CRITICAL invariant kept: masks map to ground by their OWN pixel shape (the
 cloud model returns masks at its internal size, not the uploaded tile size);
 mask_to_polygons derives the grid from mask.shape / full_shape, never from the
@@ -18,8 +25,13 @@ from __future__ import annotations
 
 from qgis.core import Qgis, QgsMessageLog
 
-from .i18n import tr
-from .qt_compat import DistanceMeters, field_type_double, field_type_string
+from ...core.i18n import tr
+from ...core.qt_compat import (
+    DistanceMeters,
+    field_type_double,
+    field_type_int,
+    field_type_string,
+)
 
 # Whole-tile blob guard in SEPARATE (count) mode; mirrors the worker's
 # _MAX_TILE_COVERAGE (auto_detection_worker.py). Kept as a local constant so
@@ -65,6 +77,28 @@ def _tile_bbox(tile: dict):
     return vals
 
 
+def zone_extent_from_tiles(tiles: list) -> tuple[tuple, str] | None:
+    """The zone a stored run covered, as ((xmin, ymin, xmax, ymax), crs_authid).
+
+    A run does not keep the polygon the user drew, but it keeps every tile it
+    billed, and the grid was built to cover that polygon. Their union is
+    therefore the same ground the run looked at, which is what "run this again"
+    has to point at. Returns None when no tile carries a usable box.
+    """
+    boxes = [b for b in (_tile_bbox(t) for t in tiles if isinstance(t, dict)) if b]
+    if not boxes:
+        return None
+    authid = ""
+    for tile in tiles:
+        if isinstance(tile, dict) and tile.get("crs_authid"):
+            authid = str(tile["crs_authid"])
+            break
+    if not authid:
+        return None
+    return (min(b[0] for b in boxes), min(b[1] for b in boxes),
+            max(b[2] for b in boxes), max(b[3] for b in boxes)), authid
+
+
 def _masks_list(payload) -> list:
     """Normalize a stored masks payload to a [{rle, score, box}] list."""
     if isinstance(payload, dict):
@@ -80,7 +114,7 @@ def _run_gsd(tiles: list) -> float:
     The widest tile bbox spans a full TILE_SIZE-pixel tile, so its width over
     TILE_SIZE recovers the grid's ground sample distance without needing the
     (unstored) per-tile pixel dimensions."""
-    from .tile_manager import TILE_SIZE
+    from ...core.tile_manager import TILE_SIZE
 
     widest = 0.0
     for tile in tiles:
@@ -90,45 +124,96 @@ def _run_gsd(tiles: list) -> float:
     return widest / TILE_SIZE if widest > 0 else 0.0
 
 
-def _decode_and_merge(plugin, run: dict, tiles: list, masks_per_tile: dict):
+def _run_simplify_mult(run: dict, tiles: list) -> float:
+    """The staircase simplify multiplier THIS run was vectorized with.
+
+    A run resolves the multiplier ONCE at its start and keeps it for every one
+    of its tiles. A replay has to reuse that run's own value: reading a fresh
+    one would change an archived run's geometry the day the value moves, and a
+    replay must reproduce the run it replays, not today's settings.
+
+    Runs archived before the value was recorded carry nothing. 0.0 is then
+    returned, which makes ``tile_simplify_tolerance`` apply the shipped
+    constant, and that constant is exactly what those runs ran with.
+    """
+    sources = [run]
+    sources.extend(t for t in tiles if isinstance(t, dict))
+    for src in sources:
+        val = src.get("tile_simplify_mult")
+        if isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0:
+            return float(val)
+    return 0.0
+
+
+def run_merge_separate(plugin, run: dict) -> bool:
+    """The merge policy a replay folds with, resolved on the GUI thread.
+
+    ``_default_merge_separate`` reads the served policy blob and the preset
+    catalogue, so it is answered here and handed to the decode as a plain bool:
+    the decode runs on a worker thread and must touch neither the plugin nor
+    anything it caches.
+    """
+    try:
+        return bool(plugin._default_merge_separate((run.get("prompt") or "").strip()))
+    except (AttributeError, RuntimeError, TypeError):
+        return True  # counting-safe default, same as a live run's
+
+
+def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
+                     merge_separate: bool, *, on_tile=None,
+                     is_cancelled=None) -> dict | None:
     """Shared steps 1-3: decode every stored mask and fold it into a fresh
     IncrementalMerger seeded exactly like a live run (same merge-policy default
     from the prompt, same seam gate formula, same per-detection refine ->
     polygonize -> repair pipeline as the worker).
 
-    Returns (merged_scored, crs_authid, gsd, merge_separate); merged_scored is
-    [] when nothing decoded.
+    Runs on the library's fetch thread. ``on_tile(done, total)`` reports what
+    is left; ``is_cancelled()`` is polled per tile AND per mask, because one
+    saturated tile is 200 masks and several seconds on its own.
+
+    Returns the decoded bundle read by ``restore_run`` and
+    ``export_decoded_run``: objects (a list of (stable_id, geometry, score),
+    [] when nothing decoded), crs_authid, gsd and the merge policy it folded
+    with. None means the caller cancelled part way.
     """
     import numpy as np
 
-    from .cloud_detection import decode_detection_response
-    from .layer_conventions import repair_polygon, to_multipolygon
-    from .polygon_exporter import (
+    from ...core.cloud_detection import (
+        iter_detection_masks,
+        mask_cell_size,
+        tile_simplify_tolerance,
+    )
+    from ...core.layer_conventions import repair_polygon, to_multipolygon
+    from ...core.polygon_exporter import (
         IncrementalMerger,
         apply_mask_refinement,
         mask_to_polygons,
     )
-    from .tile_manager import OVERLAP_FRACTION, TILE_SIZE
+    from ...core.tile_manager import OVERLAP_FRACTION, TILE_SIZE
 
     crs_authid = run.get("crs_authid") or (tiles[0].get("crs_authid") if tiles else None) or "EPSG:4326"
-    prompt = (run.get("prompt") or "").strip()
     gsd = _run_gsd(tiles)
+    simplify_mult = _run_simplify_mult(run, tiles)
 
     # Same smart default a live run uses (discrete objects stay SEPARATE,
     # continuous features MERGE across seams), same seam-gate formula as
     # plugin._auto_seam_min_dim, evaluated with this run's grid GSD.
-    merge_separate = bool(plugin._default_merge_separate(prompt))
+    merge_separate = bool(merge_separate)
     if merge_separate:
         seam_min_dim = float("inf")
     else:
         seam_min_dim = OVERLAP_FRACTION * TILE_SIZE * gsd if gsd > 0 else 0.0
     merger = IncrementalMerger(seam_min_dim=seam_min_dim)
 
-    tile_simplify_tol = 0.75 * gsd if gsd > 0 else 0.0
     min_keep_area = (1.5 * gsd) ** 2 if gsd > 0 else 0.0
 
     decoded_tiles = 0
-    for tile in tiles:
+    total = len(tiles)
+    for index, tile in enumerate(tiles):
+        if is_cancelled is not None and is_cancelled():
+            return None
+        if on_tile is not None:
+            on_tile(index, total)
         request_id = tile.get("request_id") or ""
         masks = _masks_list(masks_per_tile.get(request_id))
         if not masks:
@@ -142,24 +227,34 @@ def _decode_and_merge(plugin, run: dict, tiles: list, masks_per_tile: dict):
             "width": tile.get("output_width"),
             "height": tile.get("output_height"),
         }
-        # Fallback dims only apply when the server stored no output size; the
-        # masks were archived at the model's output resolution, which for our
-        # tiles is at most the uploaded TILE_SIZE.
-        decoded = decode_detection_response(response, TILE_SIZE, TILE_SIZE, 0.0)
-        if not decoded:
-            continue
-        decoded_tiles += 1
         tile_transform = {
             # polygon_exporter bbox convention: (minx, maxx, miny, maxy).
             "bbox": (xmin, xmax, ymin, ymax),
             "crs": crs_authid,
         }
-        for mask, score, _box in decoded:
+        tile_had_masks = False
+        # Fallback dims only apply when the server stored no output size; the
+        # masks were archived at the model's output resolution, which for our
+        # tiles is at most the uploaded TILE_SIZE. Streamed one mask at a time
+        # (same order, same values as the whole-tile list this replaced) so a
+        # saturated archived tile never holds every full-tile grid at once.
+        for mask, score, _box in iter_detection_masks(
+                response, TILE_SIZE, TILE_SIZE, 0.0):
+            if is_cancelled is not None and is_cancelled():
+                return None
+            if not tile_had_masks:
+                tile_had_masks = True
+                decoded_tiles += 1
             # Verbatim worker pipeline (_detections_to_geoms): crop the mask to
             # the object's bbox, pad 1px, fill pinholes, polygonize with the
             # crop offset against the FULL mask grid so the mapping stays
-            # pixel-exact and scale comes from the mask's own shape.
+            # pixel-exact and scale comes from the mask's own shape. Like the
+            # worker, the simplify tolerance keys on each mask's own grid cell
+            # (a coarser returned grid de-staircases at its true step;
+            # unchanged when the grids match) and on the multiplier THIS run
+            # used, so the replay reproduces the run rather than today's dial.
             full_h, full_w = mask.shape
+            cell = mask_cell_size(xmax - xmin, ymax - ymin, full_w, full_h)
             ys, xs = np.nonzero(mask)
             if ys.size == 0:
                 continue
@@ -171,7 +266,9 @@ def _decode_and_merge(plugin, run: dict, tiles: list, masks_per_tile: dict):
             sub = apply_mask_refinement(
                 sub, expand_value=0, fill_holes=True, min_area=0)
             for geom in mask_to_polygons(
-                sub, tile_transform, simplify_tolerance=tile_simplify_tol,
+                sub, tile_transform,
+                simplify_tolerance=tile_simplify_tolerance(
+                    gsd, cell, simplify_mult),
                 pixel_offset=(col0 - 1, row0 - 1), full_shape=(full_h, full_w),
             ):
                 if geom is None or geom.isEmpty():
@@ -183,10 +280,18 @@ def _decode_and_merge(plugin, run: dict, tiles: list, masks_per_tile: dict):
                     continue
                 merger.add(geom, float(score))
 
-    merged_scored = merger.result_scored()
-    _log("Run restore: decoded {} tile(s) into {} object(s)".format(
-        decoded_tiles, len(merged_scored)))
-    return merged_scored, crs_authid, gsd, merge_separate
+    if on_tile is not None:
+        on_tile(total, total)
+    # Ided triples, because the review builder keys each object's stable colour
+    # on the merger fid and reads (fid, geom, score) in that order.
+    merged_scored = merger.result_scored_ided()
+    _log(f"Run restore: decoded {decoded_tiles} tile(s) into {len(merged_scored)} object(s)")
+    return {
+        "objects": merged_scored,
+        "crs_authid": crs_authid,
+        "gsd": gsd,
+        "merge_separate": merge_separate,
+    }
 
 
 def _run_start_confidence(run: dict, tiles: list) -> float:
@@ -210,34 +315,40 @@ def _make_restore_selection_layer(crs_authid: str):
     restore is raster-independent)."""
     from qgis.core import QgsField, QgsProject, QgsVectorLayer
 
-    from .layer_conventions import make_review_renderer
+    from ...core.layer_conventions import make_review_renderer
 
     field_str = field_type_string()
     field_dbl = field_type_double()
 
     try:
         layer = QgsVectorLayer(
-            "MultiPolygon?crs={}".format(crs_authid),
+            f"MultiPolygon?crs={crs_authid}",
             tr("Auto detection (live)"), "memory")
         if not layer.isValid():
             return None
         pr = layer.dataProvider()
+        # The SAME three fields as _create_auto_selection_layer. This layer is
+        # assigned to plugin._auto_selection_layer, so the shared review code
+        # writes three-attribute features into it; with only two the provider
+        # refused every one of them ("expecting 2, received 3") and a restored
+        # run came back empty. det_id also carries the per-object colour.
         pr.addAttributes([
             QgsField("label", field_str),
             QgsField("score", field_dbl),
+            QgsField("det_id", field_type_int()),
         ])
         layer.updateFields()
         layer.setRenderer(make_review_renderer())
         try:
             # Same smoothness helpers the live layer gets (render-time simplify
             # + spatial index); optional, restore works without them.
-            from ..ui.plugin.shared import _apply_fast_render
+            from .shared import _apply_fast_render
             _apply_fast_render(layer)
         except Exception:  # nosec B110
             pass
         # Private working layer: renders via its tree node but stays out of
         # the Layers panel. Flag BEFORE the add so the panel never flashes it.
-        from .output_store import mark_temp_layer
+        from ...core.output_store import mark_temp_layer
         mark_temp_layer(layer)
         QgsProject.instance().addMapLayer(layer, False)
         QgsProject.instance().layerTreeRoot().insertLayer(0, layer)
@@ -296,25 +407,73 @@ def _run_age_days(run: dict) -> int:
     return 0
 
 
-def build_run_geometries(plugin, run: dict, tiles: list, masks_per_tile: dict,
-                         confidence: float):
-    """Headless restore for direct Export: decode + merge, then filter WHOLE
-    objects at ``confidence``. No plugin state is touched, no review opens.
+def export_decoded_run(decoded: dict, confidence: float, path: str,
+                       driver: str) -> dict:
+    """Filter WHOLE objects at ``confidence`` and write them to ``path``.
 
-    Returns (geoms, crs_authid); geoms is [] when nothing passes."""
-    merged_scored, crs_authid, _gsd, _sep = _decode_and_merge(
-        plugin, run, tiles, masks_per_tile)
-    geoms = [g for g, s in merged_scored
+    Runs on the library's fetch thread, next to the decode that produced
+    ``decoded``: per feature the exporter repairs the geometry and measures it
+    geodesically, which is seconds of frozen GUI at a few thousand objects.
+
+    Returns {"count": objects above the cutoff, "written": the file exists}.
+    The QgsVectorLayer the exporter loads back is dropped HERE, on the thread
+    that created it (a map layer must never be destroyed from another thread);
+    the GUI re-opens the finished file with ``load_exported_layer``.
+    """
+    from qgis.core import QgsCoordinateReferenceSystem
+
+    from ...core.polygon_exporter import export_geometries_to_file
+
+    geoms = [g for _fid, g, s in (decoded.get("objects") or [])
              if g is not None and not g.isEmpty() and s >= confidence]
-    return geoms, crs_authid
+    if not geoms:
+        return {"count": 0, "written": False}
+    layer = export_geometries_to_file(
+        geoms, QgsCoordinateReferenceSystem(decoded.get("crs_authid") or "EPSG:4326"),
+        path, driver=driver)
+    written = layer is not None
+    del layer
+    return {"count": len(geoms), "written": written}
 
 
-def restore_run(plugin, run: dict, tiles: list, masks_per_tile: dict) -> bool:
+def load_exported_layer(path: str, driver: str):
+    """Re-open the file a direct Export just wrote, on the GUI thread.
+
+    The exporter already loaded it once, on the worker thread that wrote it,
+    and dropped it there. A map layer belongs to the thread that made it, so
+    the copy that goes into the project is made here. Returns None when the
+    file cannot be read back.
+    """
+    import os
+
+    from qgis.core import QgsVectorLayer
+
+    from ...core.layer_conventions import make_committed_renderer
+
+    name = os.path.splitext(os.path.basename(path))[0] or "detections"
+    layer = QgsVectorLayer(path, name, "ogr")
+    if not layer.isValid():
+        layer = QgsVectorLayer(f"{path}|layername={name}", name, "ogr")
+    if not layer.isValid():
+        _log(f"Run export: file saved but could not be loaded back: {path}",
+             Qgis.MessageLevel.Warning)
+        return None
+    if driver != "GPKG":
+        # Only the GeoPackage carries the style inside the file; every other
+        # driver comes back bare, so the committed look is re-applied here.
+        layer.setRenderer(make_committed_renderer())
+    return layer
+
+
+def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
     """Rebuild a past run's detections and open the standard post-run review.
 
     Zero credits. Enters the EXISTING review-open path (the same
     _complete_auto_finalize tail a live run uses), so confidence, shape
     controls, display modes and Export all behave identically to a fresh run.
+
+    Takes the bundle ``decode_run_masks`` built on the fetch thread; everything
+    from here on is GUI work.
 
     Returns True when the review opened, False otherwise (a user-facing
     message is shown on the failure paths)."""
@@ -332,8 +491,10 @@ def restore_run(plugin, run: dict, tiles: list, masks_per_tile: dict) -> bool:
             pass
         return False
 
-    merged_scored, crs_authid, gsd, merge_separate = _decode_and_merge(
-        plugin, run, tiles, masks_per_tile)
+    merged_scored = (decoded or {}).get("objects") or []
+    crs_authid = (decoded or {}).get("crs_authid") or "EPSG:4326"
+    gsd = float((decoded or {}).get("gsd") or 0.0)
+    merge_separate = bool((decoded or {}).get("merge_separate", True))
     if not merged_scored:
         try:
             plugin.iface.messageBar().pushWarning(
@@ -352,7 +513,7 @@ def restore_run(plugin, run: dict, tiles: list, masks_per_tile: dict) -> bool:
     if dock is None:
         return False
     try:
-        from ..ui.ai_segmentation_dockwidget import Mode
+        from ..ai_segmentation_dockwidget import Mode
         if dock._mode != Mode.AUTOMATIC:
             dock._on_mode_selected(Mode.AUTOMATIC)
     except (RuntimeError, AttributeError, ImportError):
@@ -386,7 +547,6 @@ def restore_run(plugin, run: dict, tiles: list, masks_per_tile: dict) -> bool:
     plugin._auto_raw_count = len(merged_scored)
     plugin._auto_dense_tiles = 0
     plugin._auto_preview_geoms = []
-    plugin._auto_protected_geoms = []
     plugin._auto_clip_polygon = None
     plugin._auto_clip_engine = None
     plugin._auto_zone = None
@@ -472,8 +632,8 @@ def restore_run(plugin, run: dict, tiles: list, masks_per_tile: dict) -> bool:
         pass
 
     try:
-        from . import telemetry
-        from . import telemetry_events as ev
+        from ...core import telemetry
+        from ...core import telemetry_events as ev
         telemetry.track(ev.HISTORY_RESTORED, {
             "run_id": plugin._auto_run_id,
             "tiles": len(tiles),
@@ -483,6 +643,5 @@ def restore_run(plugin, run: dict, tiles: list, masks_per_tile: dict) -> bool:
     except Exception:
         pass  # nosec B110
 
-    _log("Run restore: review opened with {} object(s) at {}%".format(
-        len(visible), int(round(conf * 100))))
+    _log(f"Run restore: review opened with {len(visible)} object(s) at {int(round(conf * 100))}%")
     return True

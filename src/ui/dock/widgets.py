@@ -20,10 +20,10 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-
 from ...core.i18n import tr
 from .styles import (
     _BTN_BLUE_PRIMARY,
+    _METHOD_SWITCH_QSS,
     BRAND_BLUE,
     BRAND_BLUE_HOVER,
     BRAND_GREEN,
@@ -281,8 +281,12 @@ class _ZoneGestureGlyph(QWidget):
 
 # Shared key-badge convention across TerraLab plugins: monospace span on a
 # subtle grey pill. Same style as the About page's shortcuts dialog.
+# Named faces before the generic: Qt only resolves the CSS generic "monospace"
+# where the platform font database aliases it, which in practice means
+# fontconfig. On Windows the badge fell back to proportional Segoe UI and lost
+# the key-cap look.
 _KEY_BADGE_STYLE = (
-    "font-family: monospace;"
+    "font-family: Consolas, 'DejaVu Sans Mono', Menlo, monospace;"
     " background-color: rgba(128,128,128,0.18);"
     " border: 1px solid rgba(128,128,128,0.35);"
     " border-radius: 3px;"
@@ -312,10 +316,7 @@ def make_shortcut_hint(pairs: list[tuple[str, str]]) -> QLabel:
     parts = []
     for key, action in pairs:
         parts.append(
-            '<span style="{style}">{key}</span>&nbsp;{action}'.format(
-                style=_KEY_BADGE_STYLE,
-                key=html.escape(key),
-                action=html.escape(action)))
+            f'<span style="{_KEY_BADGE_STYLE}">{html.escape(key)}</span>&nbsp;{html.escape(action)}')
     label = QLabel("&nbsp;&nbsp;·&nbsp;&nbsp;".join(parts))
     label.setTextFormat(Qt.TextFormat.RichText)
     label.setWordWrap(True)
@@ -394,9 +395,9 @@ class _ModeSwitch(QFrame):
         # and the grey inactive container.
         self._pro_badge = QLabel("PRO", self)
         self._pro_badge.setStyleSheet(
-            "background-color: rgba(255,255,255,0.92); color: {blue};"
+            f"background-color: rgba(255,255,255,0.92); color: {BRAND_BLUE};"
             " border-radius: 3px; padding: 0px 4px;"
-            " font-size: 9px; font-weight: bold;".format(blue=BRAND_BLUE)
+            " font-size: 9px; font-weight: bold;"
         )
         self._pro_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._pro_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -473,6 +474,80 @@ class _ModeSwitch(QFrame):
         self._pro_badge.move(x, max(2, y))
 
 
+class _MethodSwitch(QFrame):
+    """Segmented AI | Manual switch for the Correct step.
+
+    Two equal halves; the active half carries the armed-blue tint. It swaps
+    ONLY the fix method (on-device AI points vs QGIS vertices), so it mirrors
+    the mode switch above but simpler: no PRO badge, and it emits the plain
+    method string ("ai" | "manual") on a user toggle only.
+    """
+
+    method_selected = pyqtSignal(str)  # "ai" | "manual"
+
+    def __init__(self, current: str = "ai", parent=None):
+        super().__init__(parent)
+        self.setObjectName("methodSwitchFrame")
+        self.setFixedHeight(32)
+        self.setAccessibleName(tr("Fix method"))
+        self.setAccessibleDescription(
+            tr("Choose how to fix the polygon: AI points or QGIS vertices"))
+
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(3, 3, 3, 3)
+        outer.setSpacing(3)
+
+        self._ai_btn = QPushButton(tr("AI"))
+        self._manual_btn = QPushButton(tr("Manual"))
+        for btn, key in ((self._ai_btn, "ai"), (self._manual_btn, "manual")):
+            btn.setCheckable(True)
+            btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setProperty("method", key)
+
+        self._btn_group = QButtonGroup(self)
+        self._btn_group.setExclusive(True)
+        self._btn_group.addButton(self._ai_btn, 0)
+        self._btn_group.addButton(self._manual_btn, 1)
+
+        outer.addWidget(self._ai_btn, 1)
+        outer.addWidget(self._manual_btn, 1)
+        self.setStyleSheet(_METHOD_SWITCH_QSS)
+
+        self._ai_btn.blockSignals(True)
+        self._manual_btn.blockSignals(True)
+        (self._manual_btn if current == "manual" else self._ai_btn).setChecked(True)
+        self._repolish(self._ai_btn)
+        self._repolish(self._manual_btn)
+        self._ai_btn.blockSignals(False)
+        self._manual_btn.blockSignals(False)
+
+        self._btn_group.idToggled.connect(self._on_id_toggled)
+
+    def _repolish(self, btn: QPushButton) -> None:
+        btn.style().unpolish(btn)
+        btn.style().polish(btn)
+        btn.update()
+
+    def _on_id_toggled(self, btn_id: int, checked: bool) -> None:
+        if not checked:
+            return
+        self._repolish(self._ai_btn)
+        self._repolish(self._manual_btn)
+        self.method_selected.emit("manual" if btn_id == 1 else "ai")
+
+    def method(self) -> str:
+        return "manual" if self._manual_btn.isChecked() else "ai"
+
+    def set_method(self, method: str) -> None:
+        """Set the active half without emitting method_selected."""
+        self._btn_group.blockSignals(True)
+        (self._manual_btn if method == "manual" else self._ai_btn).setChecked(True)
+        self._repolish(self._ai_btn)
+        self._repolish(self._manual_btn)
+        self._btn_group.blockSignals(False)
+
+
 def checkbox_indicator_qss(dock) -> str:
     """QSS fragment that draws a VISIBLE checkbox indicator in both states.
 
@@ -529,9 +604,12 @@ def checkbox_indicator_qss(dock) -> str:
         p.end()
         pm_off.save(path_off, "PNG")
         pm_on.save(path_on, "PNG")
+    # Quoted: Qt's CSS scanner only accepts a narrow character set inside an
+    # unquoted url(), so a temp path containing a space (a Windows account
+    # name with a space in it) would silently drop the whole declaration.
     return (
-        "QCheckBox {{ background: transparent; }}"
-        "QCheckBox::indicator {{ width: {sz}px; height: {sz}px; border: none;"
-        " image: url({off}); }}"
-        "QCheckBox::indicator:checked {{ image: url({on}); }}"
-    ).format(sz=sz, off=path_off, on=path_on)
+        "QCheckBox { background: transparent; }"
+        f"QCheckBox::indicator {{ width: {sz}px; height: {sz}px; border: none;"
+        f' image: url("{path_off}"); }}'
+        f'QCheckBox::indicator:checked {{ image: url("{path_on}"); }}'
+    )

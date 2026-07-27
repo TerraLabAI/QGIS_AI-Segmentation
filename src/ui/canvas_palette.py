@@ -18,7 +18,11 @@ from qgis.PyQt.QtGui import QColor
 
 from ..core.layer_conventions import (
     _COMMITTED_RED as _COMMITTED_RED,
+)
+from ..core.layer_conventions import (
     _REVIEW_FILL as _REVIEW_FILL,
+)
+from ..core.layer_conventions import (
     _REVIEW_OUTLINE as _REVIEW_OUTLINE,
 )
 
@@ -50,6 +54,12 @@ ZONE_STROKE = QColor(66, 133, 244, 200)
 ZONE_DRAW_FILL = QColor(66, 133, 244, 55)
 ZONE_DRAW_LINE = QColor(66, 133, 244, 235)
 GRID_LINE = QColor(40, 99, 196, 210)
+# Ground a run is re-reading at a finer scale right now. Its objects are held
+# back until that finer read lands, so without this the densest part of a zone
+# is bare while the run works hardest on it. Chrome blue, well under the zone
+# fill: it marks work in progress, it must not read as a detection.
+RESCAN_FILL = QColor(66, 133, 244, 34)
+RESCAN_STROKE = QColor(66, 133, 244, 120)
 BADGE_FILL = QColor(66, 133, 244)
 BADGE_FILL_DISABLED = QColor(66, 133, 244, 115)
 BADGE_FILL_HOVER = QColor(211, 47, 47)          # BRAND_RED on hover = deletion affordance
@@ -62,6 +72,19 @@ EXEMPLAR_FILL = QColor(67, 160, 71, 60)
 EXEMPLAR_STROKE = QColor(67, 160, 71)
 EXCLUDE_FILL = QColor(229, 57, 53, 60)
 EXCLUDE_STROKE = QColor(229, 57, 53)
+
+# Hand edits in the review's Correct step (merge picks, the split cut line).
+# The shared language's AMBER: it marks the object being edited RIGHT NOW, and
+# it is wider (3) so the cue is never colour alone. It lives only while the
+# gesture is armed, so this stays a transient state, not the persistent amber
+# that was rejected above.
+SHAPE_HOVER_STROKE = QColor(66, 133, 244)
+SHAPE_HOVER_WIDTH = 3
+SHAPE_EDIT_STROKE = QColor(255, 179, 0)
+SHAPE_EDIT_WIDTH = 3
+# Fill of the small vertex dots on the split cut line. White reads on any
+# basemap under the amber outline; a named constant keeps it out of the tool.
+SHAPE_EDIT_MARKER_FILL = QColor(255, 255, 255)
 
 # Click markers (manual maptool)
 MARKER_POSITIVE = QColor(0, 200, 0)

@@ -6,16 +6,12 @@ plain mixin members: state lives on the plugin instance (self).
 """
 from __future__ import annotations
 
-from qgis.core import (
-    QgsProject,
-)
-
 from ...core.i18n import tr
 from ...core.qt_compat import DistanceMeters
 from ...core.telemetry import slot_guard
 from .shared import (
-    _debounce_timer,
     _WEBMERC_MUPP_Z0,
+    _debounce_timer,
 )
 
 
@@ -56,6 +52,9 @@ class AutoFlowMixin:
         self._reset_manual_flow_to_start()
         if mode == Mode.AUTOMATIC and self.dock_widget:
             self._refresh_auto_credits()
+            # A run autosave a previous session never exported: offer it back
+            # (no-op when nothing is pending or the offer already showed).
+            self._offer_pending_run_autosave()
         elif mode == Mode.INTERACTIVE and self.dock_widget:
             self._ensure_interactive_setup()
         try:
@@ -76,8 +75,10 @@ class AutoFlowMixin:
         self._stop_auto_detection()  # hard teardown of a live worker; no-op if idle
         self._discard_auto_review(exit_path=exit_path)
         self._restore_maptool_after_zone()
-        # Drop any pending/stored run plan so it cannot leak across the switch.
+        # Drop any pending/stored run plan (and its attribute filters) so it
+        # cannot leak across the switch.
         self._auto_run_plan = None
+        self._auto_attribute_filters = []
         self._cancel_task("_auto_run_plan_task")
         self._cancel_task("_auto_token_task")
         self._auto_zone = None
@@ -169,7 +170,7 @@ class AutoFlowMixin:
     def _on_usage_fetched(self, usage: dict) -> None:
         """Main thread: push fetched usage data into the dock's credit display."""
         self._usage_fetch_task = None
-        if not usage or not self.dock_widget:
+        if not usage or not isinstance(usage, dict) or not self.dock_widget:
             return
         # Cache the last-known usage so run telemetry can report credits_before /
         # is_free_tier without an extra fetch on the critical path. Capture the
@@ -191,9 +192,11 @@ class AutoFlowMixin:
         if is_free:
             credits = free_left if free_left is not None else 0
             # Lifetime free-taste allowance. Newer servers echo the total; older
-            # deploys omit it, so fall back to the known lifetime cap (300) for
-            # the ring gauge. Keep in sync with the server cap.
-            total = int(usage.get("free_detections_total") or 300)
+            # deploys omit it, so fall back to the allowance dial for the ring
+            # gauge. Read the getter, never a second copy of the number: a
+            # literal here would let the gauge disagree with the credit gate.
+            from ...core.detection_policy import free_monthly_allowance
+            total = int(usage.get("free_detections_total") or free_monthly_allowance())
         else:
             used = usage.get("images_used", 0) or 0
             limit = usage.get("images_limit", 0) or 0
@@ -222,17 +225,14 @@ class AutoFlowMixin:
     def _auto_zone_area_km2(self) -> float:
         """Geodesic area (km2) of the active run's clip polygon; 0.0 if unknown."""
         try:
-            from qgis.core import QgsCoordinateReferenceSystem, QgsDistanceArea
+            from qgis.core import QgsCoordinateReferenceSystem
             poly = getattr(self, "_auto_clip_polygon", None)
             if poly is None or poly.isEmpty():
                 return 0.0
-            da = QgsDistanceArea()
-            ctx = QgsProject.instance().transformContext()
+            from ...core.layer_conventions import make_area_measurer
             crs = (QgsCoordinateReferenceSystem(self._auto_crs_authid)
                    if self._auto_crs_authid else None)
-            if crs is not None and crs.isValid():
-                da.setSourceCrs(crs, ctx)
-            da.setEllipsoid(QgsProject.instance().ellipsoid() or "WGS84")
+            da = make_area_measurer(crs)
             return max(0.0, da.measureArea(poly) / 1_000_000.0)
         except Exception:
             return 0.0
@@ -252,8 +252,44 @@ class AutoFlowMixin:
         """Map an auto-detection error message to a telemetry error_class enum:
         NETWORK / AUTH / CREDITS_EXHAUSTED / SERVER / CANCELLED / TIMEOUT / UNKNOWN."""
         low = (msg or "").lower()
-        if "credit" in low or "quota" in low or "402" in low:
+        # "Our backend is down" is decided FIRST, ahead of every keyword below,
+        # because the service names two of its outage codes after the thing
+        # they could not reach: an unreachable key-checking backend is
+        # AUTH_BACKEND_UNAVAILABLE and an unreachable quota store is
+        # QUOTA_CHECK_FAILED, both 503s. The worker puts the raw code in the
+        # message, so keyword order alone decided what the user was told: the
+        # first sent people to re-authenticate against a service that was
+        # merely down, the second told them their credits had run out. Both
+        # were the same outage. An explicit unavailability marker states whose
+        # fault it is, so it outranks substrings that merely appear inside a
+        # code. A genuine exhaustion cannot be swallowed here: the worker
+        # routes _EXHAUSTED_CODES to the credits_exhausted signal and never
+        # through this classifier.
+        server_fault = "backend_unavailable" in low or "quota_check_failed" in low
+        server_fault = server_fault or "service temporarily unavailable" in low or "503" in low
+        if server_fault:
+            return "SERVER"
+        # A fault on our own side (a destroyed Qt object, a bug in the worker's
+        # pipeline) is decided before any keyword scan below. Qt exception text
+        # names the class it failed on, and "QNetworkReply" contains "network",
+        # so the connectivity scan used to match it and tell a user with a
+        # perfectly good link to check their connection. UNKNOWN is the right
+        # class: reportable, quotable support code, no blame. The marker comes
+        # from the worker's last-resort net (auto_detection_worker.run).
+        if "internal error" in low:
+            return "UNKNOWN"
+        # "exhausted" is in the list because the free-tier code says nothing
+        # else: FREE_DETECTIONS_EXHAUSTED carries neither "credit" nor "quota",
+        # so a free user who ran out was classed UNKNOWN and got the generic
+        # failure banner plus a bug-report prompt for working as designed.
+        if ("credit" in low or "quota" in low or "402" in low or "exhausted" in low):
             return "CREDITS_EXHAUSTED"
+        # Transient service-side rejections (cold instance, model still
+        # loading) carry AUTH in their code but are not authentication
+        # failures: the session is valid and signing in again changes
+        # nothing, so they must never reach the AUTH banner.
+        if "backend_unavailable" in low or "warming" in low:
+            return "SERVER"
         if "auth" in low or "401" in low or "403" in low or "sign in" in low:
             return "AUTH"
         if "timeout" in low or "timed out" in low:
@@ -267,10 +303,31 @@ class AutoFlowMixin:
             return "SERVER"
         return "UNKNOWN"
 
+    def _open_auto_error_report(
+        self, title: str, message: str, error_code: str, *, track: bool,
+    ) -> None:
+        """Open the copy-logs/email report dialog for a terminal Automatic
+        failure, at most once per run: a run can reach more than one terminal
+        surface, and the popup must never stack. No-op in headless/MCP runs
+        (no human to see it). ``track`` is False when the same failure was
+        already counted, so one failure emits exactly one plugin_error."""
+        if getattr(self, "_auto_headless_run", False):
+            return
+        if getattr(self, "_auto_error_dialog_shown", False):
+            return
+        self._auto_error_dialog_shown = True
+        try:
+            from ..error_report_dialog import show_error_report
+            show_error_report(
+                self.iface.mainWindow(), title, message, error_code, track=track)
+        except Exception:  # nosec B110 -- the dialog must never mask the error
+            pass
+
     def _track_manual_run_failed(self) -> None:
         """Emit an unsampled segmentation_run(success=False) on a manual predict error."""
         try:
             import time as _time
+
             from ...core import telemetry
             start_ts = getattr(self, "_segmentation_start_ts", None)
             duration_ms = int((_time.time() - start_ts) * 1000) if start_ts else None
@@ -349,6 +406,14 @@ class AutoFlowMixin:
         dock = self.dock_widget
         if dock is not None and not dock.confirm_prompt_for_detect():
             return
+        # Second commit-time gate: steer toward the accurate default setup
+        # (prompt PLUS at least one example). A half-setup is intercepted once
+        # with an explanation and an explicit "detect anyway" escape; the
+        # escape re-emits the detect request with the override set, which
+        # passes here. Headless/MCP runs never enter this handler, so the
+        # stable programmatic contract is untouched.
+        if dock is not None and not dock.confirm_meta_for_detect():
+            return
         # First committed Detect seals Terms + Privacy consent (the checkbox
         # sits right above the button; Detect stays disabled until it is
         # ticked, so reaching this line means consent was given).
@@ -362,14 +427,64 @@ class AutoFlowMixin:
         # partial results in the review instead.
         self._start_auto_detection()
 
+    def _refresh_rerun_guard(self) -> None:
+        """Toggle the non-blocking 'identical re-run' note under the credit
+        estimate. It appears when the next Detect would repeat the last run
+        exactly (same prompt, detail and example count) and clears the moment
+        any of the three changes. It never blocks Detect: a user who wants to
+        re-run still can (the iterate-until-right path exports the most). Hidden
+        during a run/review and while the zero-result rescue is up, so the flow
+        keeps one note per state. Fires the hint telemetry once per occurrence."""
+        dock = self.dock_widget
+        if dock is None:
+            return
+        try:
+            busy = (getattr(dock, "_auto_run_active", False) or getattr(dock, "_auto_review_active", False))
+            row = getattr(dock, "auto_zero_assist_row", None)
+            zero_up = bool(row is not None and row.isVisible())
+            if busy or zero_up:
+                dock.hide_auto_rerun_guard()
+                return
+            last = getattr(self, "_auto_last_run_sig", None)
+            if not last:
+                dock.hide_auto_rerun_guard()
+                return
+            cur = (dock.auto_prompt_input.text().strip(),
+                   self._get_auto_detail_level(),
+                   self._auto_exemplar_store.count())
+        except (RuntimeError, AttributeError):
+            return
+        if cur != last:
+            dock.hide_auto_rerun_guard()
+            return
+        # A tip the user closed stays closed, so nothing was shown to report.
+        if not dock.show_auto_rerun_guard():
+            return
+        if getattr(self, "_rerun_guard_emitted_sig", None) != cur:
+            self._rerun_guard_emitted_sig = cur
+            try:
+                from ...core import telemetry
+                telemetry.track_auto_prompt_hint_shown(
+                    kind="identical_rerun", prompt=cur[0])
+            except Exception:
+                pass  # nosec B110 -- guard telemetry is best-effort
+
     def _on_auto_library_clicked(self) -> None:
         """Open the segment library gallery; drop the chosen English token into
         the prompt box. The token is the literal cloud-model prompt (labels are
-        localized, tokens are not)."""
+        localized, tokens are not).
+
+        A server switch can withdraw the library. It fails open, so no
+        configuration means it opens exactly as it always has."""
+        from ...core.server_dials import feature_enabled
+
+        if not feature_enabled("library"):
+            return
         try:
             from ..dialogs.segment_library_dialog import SegmentLibraryDialog
         except Exception as err:  # noqa: BLE001
             from qgis.core import Qgis
+
             from ...core.logging_utils import log
             log(f"Segment library unavailable: {err}", Qgis.MessageLevel.Warning)
             return
@@ -669,7 +784,28 @@ class AutoFlowMixin:
         Returns the largest n whose grid fits MAX_TILES and whose mupp is
         still strictly finer than n-1's. Always >= 1.
         """
-        from ...core.tile_manager import MAX_DETAIL_LEVEL, MAX_TILES
+        from ...core.tile_manager import MAX_DETAIL_LEVEL
+        from .shared import max_tiles_per_run_cap
+
+        # The run gate already uses the server-dialed cap; the slider ceiling
+        # must read the SAME value or a lowered cap would leave inert levels
+        # the Detect gate then refuses.
+        max_tiles = max_tiles_per_run_cap()
+
+        # One-entry memo: the debounced slider/cost ticks re-ask for the SAME
+        # layer+zone many times, and each walk re-runs up to MAX_DETAIL_LEVEL
+        # grid computations (ellipsoidal math included).
+        try:
+            key = (
+                layer.id(), max_tiles,
+                zone_in_layer.xMinimum(), zone_in_layer.yMinimum(),
+                zone_in_layer.xMaximum(), zone_in_layer.yMaximum(),
+            )
+        except (RuntimeError, AttributeError):
+            key = None
+        cached = getattr(self, "_max_detail_cache", None)
+        if key is not None and cached is not None and cached[0] == key:
+            return cached[1]
 
         best = 1
         prev_mupp = None
@@ -678,12 +814,14 @@ class AutoFlowMixin:
             if sized is None:
                 break
             _pw, _ph, mupp, tiles = sized
-            if tiles == -1 or tiles > MAX_TILES:
+            if tiles == -1 or tiles > max_tiles:
                 break  # grids only grow with n; nothing finer will fit
             if prev_mupp is not None and mupp >= prev_mupp:
                 break  # clamped to native: this level renders no finer
             best = n
             prev_mupp = mupp
+        if key is not None:
+            self._max_detail_cache = (key, best)
         return best
 
     def _free_run_tile_cap(self) -> int | None:
@@ -804,21 +942,29 @@ class AutoFlowMixin:
         The shared coarse -> fine walk behind `_auto_detail_for_object` (blob
         tier target) and the async run-plan re-seed (server target), so the two
         paths pick levels identically. ``obj_m`` is the object's typical ground
-        size, used only for the resolvable fallback. Fallbacks, in order, when
-        no level reaches the target: the cheapest level where the object still
-        renders at the object minimum pixel size, else the finest level within
-        the soft tile budget. Always >= 1.
+        size, used only for the resolvable fallback.
+
+        When no level inside the seed's tile cap reaches the target, the pick
+        is the FINEST of three floors, so a named object never seeds coarser
+        than the same zone with no prompt at all: the finest level inside the
+        soft tile budget, the cheapest level inside the adequate-quality band
+        (the zone default crosses the soft budget for this too), and the
+        cheapest level where the object still spans the minimum pixels. Always
+        >= 1.
         """
         from ...core.detection_policy import (
             object_min_px,
             soft_tile_budget,
+            sweet_spot_max_mupp,
         )
 
         cap = self._max_useful_detail(layer, zone_in_layer)
         min_px = object_min_px()
         tile_cap = self._seed_tile_cap_for_plan()
         soft_budget = soft_tile_budget()
-        resolvable_n = None
+        sweet_max = sweet_spot_max_mupp()
+        resolvable_n = 0
+        adequate_n = 0
         finest_in_budget = 1
         for n in range(1, cap + 1):
             sized = self._grid_for_detail(layer, zone_in_layer, n)
@@ -836,11 +982,11 @@ class AutoFlowMixin:
                 return n
             if tiles <= soft_budget:
                 finest_in_budget = n
-            if resolvable_n is None and obj_m / ground_mupp >= min_px:
+            if not adequate_n and ground_mupp <= sweet_max:
+                adequate_n = n
+            if not resolvable_n and obj_m / ground_mupp >= min_px:
                 resolvable_n = n
-        if resolvable_n is not None:
-            return resolvable_n
-        return max(1, finest_in_budget)
+        return max(1, finest_in_budget, adequate_n, resolvable_n)
 
     def _current_auto_object_class(self) -> str:
         """The object class currently entered in the Automatic prompt box."""
@@ -942,6 +1088,9 @@ class AutoFlowMixin:
         # backend is spinning up while they read the estimate and reach Detect.
         # Self-limited: debounced ~30s, no-op mid-run and when already warm.
         self._maybe_warmup_auto()
+        # A committed prompt may re-match (or stop matching) the last run's
+        # signature, so re-evaluate the identical-re-run note here.
+        self._refresh_rerun_guard()
 
     def _reseed_auto_detail_from_blob(self, object_class: str = "") -> None:
         """Re-pick the detail level when the object class changes (debounced).
@@ -1001,8 +1150,10 @@ class AutoFlowMixin:
         the previous plan so a stale one can never apply between commit and
         reply."""
         prompt = (prompt or "").strip()
-        # Every commit invalidates the previous plan (it was for the old prompt).
+        # Every commit invalidates the previous plan (it was for the old prompt),
+        # and with it any attribute filters that plan carried.
         self._auto_run_plan = None
+        self._auto_attribute_filters = []
         if not prompt or not self.dock_widget:
             return
         # Never fetch mid-run/review: the prompt is locked then and a late
@@ -1059,10 +1210,10 @@ class AutoFlowMixin:
                 zone_in_layer = None
         if zone_in_layer is not None:
             try:
-                from qgis.core import QgsDistanceArea, QgsGeometry
-                da = QgsDistanceArea()
-                da.setSourceCrs(layer.crs(), QgsProject.instance().transformContext())
-                da.setEllipsoid(QgsProject.instance().ellipsoid() or "WGS84")
+                from qgis.core import QgsGeometry
+
+                from ...core.layer_conventions import make_area_measurer
+                da = make_area_measurer(layer.crs())
                 area = da.measureArea(QgsGeometry.fromRect(zone_in_layer))
                 if area and area > 0:
                     zone_area_m2 = float(area)
@@ -1093,6 +1244,11 @@ class AutoFlowMixin:
         self._auto_run_plan_task = None
         if not isinstance(plan, dict) or plan.get("error"):
             return
+        # A late plan response must never act while a run, its review or a
+        # correction batch is active: the prompt is not editable then, and a
+        # swap or detail reseed would fight the in-flight or reviewed result.
+        if self._auto_worker is not None or self._auto_review is not None:
+            return
         prompt = (prompt or "").strip()
         if not prompt:
             return
@@ -1100,6 +1256,65 @@ class AutoFlowMixin:
             return  # the user moved on to a different object since the fetch
         self._auto_run_plan = {"prompt": prompt, "plan": plan}
         self._reseed_auto_detail_from_plan(prompt, plan)
+        # Optional server prompt_rewrite block (additive, fail-open). When it
+        # owns the prompt-info line (a rewrite swapped in, or a decline nudge
+        # shown), the generic plan hint below yields to it.
+        if self._apply_prompt_rewrite(prompt, plan):
+            return
+        # Optional per-prompt guidance string. Additive and fail-open: absent or
+        # malformed on older servers = exactly today's behavior. Shown verbatim
+        # (server-authored English) only when no higher-priority prompt message
+        # owns the line (the dock enforces that precedence).
+        hint = plan.get("hint")
+        if isinstance(hint, str) and self.dock_widget is not None:
+            hint = hint.strip()[:160]
+            if hint:
+                try:
+                    if self.dock_widget.show_auto_prompt_hint(hint):
+                        from ...core import telemetry
+                        telemetry.track_auto_prompt_hint_shown(
+                            kind="plan_hint", prompt=prompt)
+                except Exception:  # noqa: BLE001 -- guidance is best-effort
+                    pass  # nosec B110
+
+    def _apply_prompt_rewrite(self, prompt: str, plan: dict) -> bool:
+        """Act on the optional server ``prompt_rewrite`` block. Returns True when
+        it owns the prompt-info line (a rewrite was swapped in, or a decline
+        nudge shown), so the caller skips the generic plan hint.
+
+        Additive and fail-open: an absent or malformed block leaves exactly
+        today's behavior. The caller already checked this prompt is still the
+        committed one (the box unedited since the fetch), the same guard the
+        seed/hint path uses, so a rewrite here is safe. The rewrite is applied
+        verbatim (the server preserves any attributes) through the dock's
+        visible swap-and-tell channel ONLY; a decline shows a non-blocking
+        guard-style nudge and never blocks Detect. Attribute filters are stored
+        for the run but not yet used for filtering in this pass."""
+        from ...core.prompt_rewrite import parse_prompt_rewrite
+
+        action, payload, filters = parse_prompt_rewrite(plan.get("prompt_rewrite"))
+        # Attribute filters are informational this pass: store them (cleared on
+        # the next commit / run reset) so a later honest-count UI can read them.
+        self._auto_attribute_filters = filters
+        dock = self.dock_widget
+        if dock is None:
+            return False
+        if action == "rewrite":
+            # Route through the shared swap-and-tell channel (setText + quiet
+            # note + rewrite telemetry): the box swaps to the rewritten phrase
+            # and its own commit re-seeds the detail for the new token.
+            try:
+                return bool(dock.apply_prompt_swap(payload, "server_rewrite"))
+            except (RuntimeError, AttributeError):
+                return False
+        if action == "decline":
+            # Show the model's reason as a non-blocking nudge; never blocks the
+            # run (the user can Detect regardless).
+            try:
+                return bool(dock.show_auto_prompt_decline(payload))
+            except (RuntimeError, AttributeError):
+                return False
+        return False
 
     def _on_auto_run_plan_failed(self) -> None:
         """Run-plan fetch failed/timed out: keep the blob path silently."""
@@ -1214,11 +1429,16 @@ class AutoFlowMixin:
         The verdict compares the level the user chose with the level the seed
         logic recommends for the same prompt + zone (so the guidance moves with
         the object AND the zone), plus two physical bounds: the object no
-        longer resolvable at this resolution (too coarse to spot), and a
-        resolution far finer than the object's target (past diminishing
-        returns: extra credits, and large objects fragment across tiles).
-        Runs at the debounced credit-estimate chokepoint, so it tracks every
-        slider drag, prompt commit, zone redraw and layer switch.
+        longer resolvable at this resolution (too coarse to spot), and the
+        split-risk band, where the object's own ground size approaches the
+        tile's ground side.
+
+        The Fine-end warning is anchored on the recommended level, so it can
+        never fire on the setting the plugin itself proposes. The Coarse-end
+        one still can, on a zone so large the seed's tile cap leaves the object
+        under the minimum pixel size: there it is true, and raising the slider
+        is the fix. Runs at the debounced credit-estimate chokepoint, so it
+        tracks every slider drag, prompt commit, zone redraw and layer switch.
         """
         if self.dock_widget is None:
             return
@@ -1240,30 +1460,23 @@ class AutoFlowMixin:
             self.dock_widget.set_auto_detail_feedback(None, "")
             return
         try:
-            from ...core.detection_policy import (
-                detail_over_ratio,
-                detail_over_ratio_free,
-                object_min_px,
-            )
+            from ...core.detection_policy import object_min_px
 
             obj_m, target_mupp = self._object_detail_profile(obj_token)
             value = self._get_auto_detail_level()
             recommended = self._recommended_detail_now(layer, zone_in_layer, obj_token)
             target_met = ground_mupp <= target_mupp
-            # Free runs spend scarce lifetime trial credits, so their
-            # past-diminishing-returns nudge fires earlier than a subscriber's.
-            is_subscriber = bool(getattr(
-                self.dock_widget, "_auto_is_subscriber", False))
-            over_ratio = (detail_over_ratio() if is_subscriber
-                          else detail_over_ratio_free())
             if obj_m / ground_mupp < object_min_px():
                 state = "coarse"
-            elif ground_mupp < target_mupp * over_ratio:
-                state = "over"
             elif value > recommended:
-                # Past a budget-capped recommendation extra detail genuinely
-                # helps; past a target-met one it is mostly extra cost.
-                state = "above" if target_met else "helps"
+                if self._detail_splits_objects(
+                        layer, zone_in_layer, ground_mupp, obj_m,
+                        target_mupp, recommended):
+                    state = "over"
+                else:
+                    # Past a budget-capped recommendation extra detail genuinely
+                    # helps; past a target-met one it is mostly extra cost.
+                    state = "above" if target_met else "helps"
             elif value < recommended:
                 state = "below"
             else:
@@ -1271,6 +1484,58 @@ class AutoFlowMixin:
             self.dock_widget.set_auto_detail_feedback(state, obj)
         except (RuntimeError, AttributeError, ValueError, ZeroDivisionError):
             pass
+
+    def _detail_splits_objects(
+        self, layer, zone_in_layer, ground_mupp: float, obj_m: float,
+        target_mupp: float, recommended: int,
+    ) -> bool:
+        """Whether this level really risks returning the object in pieces, the
+        one claim the amber Fine-end warning makes.
+
+        Both conditions must hold. The object's typical ground size has to
+        reach the split-risk share of a tile's ground side
+        (TILE_SIZE * m/px): a small object on a wide tile comes back whole at
+        any resolution, so on those the warning would simply be false. And the
+        level has to sit past the point where finer pixels stop paying, taken
+        against the resolution of the RECOMMENDED level rather than a fixed
+        per-object target. The slider steps are coarse (one step near the
+        Coarse end nearly doubles the resolution), so a fixed target left the
+        warning one notch above the plugin's own pick; anchoring it on that
+        pick cannot.
+        """
+        from ...core.detection_policy import (
+            detail_over_ratio,
+            detail_over_ratio_free,
+            split_risk_tile_frac,
+        )
+        from ...core.tile_manager import TILE_SIZE
+
+        if ground_mupp <= 0 or obj_m <= 0:
+            return False
+        if obj_m < split_risk_tile_frac() * TILE_SIZE * ground_mupp:
+            return False
+        # Free runs spend scarce trial credits, so their nudge fires earlier.
+        is_subscriber = bool(getattr(
+            self.dock_widget, "_auto_is_subscriber", False))
+        over_ratio = (detail_over_ratio() if is_subscriber
+                      else detail_over_ratio_free())
+        rec_mupp = self._ground_mupp_for_detail(
+            layer, zone_in_layer, recommended)
+        # A recommendation held back by the tile budget is coarser than the
+        # target; anchoring on it there would warn early again, so take the
+        # finer of the two.
+        anchor = min(rec_mupp, target_mupp) if rec_mupp > 0 else target_mupp
+        return ground_mupp < anchor * over_ratio
+
+    def _ground_mupp_for_detail(
+        self, layer, zone_in_layer, detail_n: int
+    ) -> float:
+        """Ground resolution (m/px) one detail level renders at; 0.0 when the
+        grid or the ground measurement cannot be computed."""
+        sized = self._grid_for_detail(layer, zone_in_layer, detail_n)
+        if sized is None:
+            return 0.0
+        return self._mupp_to_meters(layer, zone_in_layer, sized[2])
 
     def _recommended_detail_now(self, layer, zone_in_layer, object_class: str) -> int:
         """The level the seed logic recommends RIGHT NOW for this prompt + zone.

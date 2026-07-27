@@ -36,11 +36,19 @@ def base_url() -> str:
 
 
 def absolute_demo_url(base: str, relative: str | None) -> str:
-    """Resolve a (possibly relative) demo image path against the API base."""
-    if not relative:
+    """Resolve a (possibly relative) demo image path against the API base.
+
+    An absolute address in the catalogue is fetched as written, so it goes
+    through the same gate as every other served address: https with a host, no
+    control characters, nothing that could travel anywhere but the network
+    stack. Anything else is dropped rather than fetched.
+    """
+    if not relative or not isinstance(relative, str):
         return ""
-    if relative.startswith("http://") or relative.startswith("https://"):
-        return relative
+    if "://" in relative[:16]:
+        from ..server_dials import safe_web_url
+
+        return safe_web_url(relative, "")
     return f"{base.rstrip('/')}{relative}"
 
 

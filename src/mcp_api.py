@@ -22,14 +22,22 @@ from qgis.core import (
     QgsVectorLayer,
 )
 
+from .core import run_recipe
 from .core.qt_compat import field_type_double, field_type_string
+from .core.review_defaults import AUTO_DEFAULT_CONFIDENCE
 
 # QgsField type args (QGIS 4 rejects raw int, #25/#36): resolved once in
 # qt_compat (QVariant on QGIS 3, QMetaType on QGIS 4).
 _FIELD_TYPE_STRING = field_type_string()
 _FIELD_TYPE_DOUBLE = field_type_double()
 
-AISEG_KEYS = ["AI_Segmentation", "QGIS_AI-Segmentation", "QGIS_AI-Segmentation-Team"]
+# QGIS registers a plugin under its install folder name. The released folder is
+# "AI_Segmentation"; a checkout installed under its repository folder registers
+# under that name instead, so this module's own folder is tried first.
+_PLUGIN_FOLDER = os.path.basename(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+AISEG_KEYS = [_PLUGIN_FOLDER, "AI_Segmentation", "QGIS_AI-Segmentation"]
 AISEG_REGISTER_URL = "https://terra-lab.ai/ai-segmentation?utm_source=qgis&utm_medium=mcp&utm_campaign=ai-agent"
 
 
@@ -160,6 +168,14 @@ class SegmentationMCPAPI:
 
         point = QgsPointXY(x, y)
         raster_pt = plugin._transform_to_raster_crs(point)
+        if raster_pt is None:
+            # No image in the raster CRS: the point sits outside the projection
+            # domain. Guard both layer kinds here, the extent check below only
+            # runs for file-based layers.
+            return {
+                "_error": f"Point ({x}, {y}) cannot be projected into the raster CRS "
+                f"({raster_layer.crs().authid()}). Pick a point closer to the imagery."
+            }
 
         # Check bounds for file-based layers
         is_online = getattr(plugin, "_is_online_layer", False)
@@ -314,8 +330,10 @@ class SegmentationMCPAPI:
                 apply_output_conventions,
                 attribute_values_for_fields,
                 geodesic_area_m2,
+                make_area_measurer,
                 make_committed_renderer,
                 repair_polygon,
+                round_measure,
                 to_multipolygon,
             )
 
@@ -324,6 +342,13 @@ class SegmentationMCPAPI:
             if existing_layer and existing_layer.dataProvider():
                 try:
                     g = QgsGeometry(geom)
+                    # The WKT arrives in the caller's CRS; the layer we append
+                    # to has its own. Reproject or the polygon lands somewhere
+                    # else entirely (and its area is measured in the wrong CRS).
+                    target_crs = existing_layer.crs()
+                    if (crs_obj.isValid() and target_crs.isValid() and crs_obj != target_crs):
+                        g.transform(QgsCoordinateTransform(
+                            crs_obj, target_crs, QgsProject.instance()))
                     g = repair_polygon(g) or g
                     # Coerce to polygon-only MultiPolygon so a collection can
                     # never reach the layer provider (it would be rejected).
@@ -370,12 +395,13 @@ class SegmentationMCPAPI:
 
             temp_layer = QgsVectorLayer("MultiPolygon", layer_name, "memory")
             temp_layer.setCrs(crs_obj)
-            # Minimal per-feature schema (editable label + geodesic measure);
+            # Lean per-feature schema (editable label + the geodesic measures);
             # run-level provenance goes in the layer metadata, not per row.
             pr = temp_layer.dataProvider()
             pr.addAttributes([
                 QgsField("label", _FIELD_TYPE_STRING),
                 QgsField("area_m2", _FIELD_TYPE_DOUBLE),
+                QgsField("perimeter_m", _FIELD_TYPE_DOUBLE),
             ])
             temp_layer.updateFields()
 
@@ -386,7 +412,15 @@ class SegmentationMCPAPI:
             g = to_multipolygon(g) or g
             feature = QgsFeature(temp_layer.fields())
             feature.setGeometry(g)
-            feature.setAttributes(["", geodesic_area_m2(g, crs_obj)])
+            try:
+                perimeter = make_area_measurer(crs_obj).measurePerimeter(g)
+            except (RuntimeError, AttributeError):
+                perimeter = None
+            feature.setAttributes([
+                "",
+                round_measure(geodesic_area_m2(g, crs_obj)),
+                round_measure(perimeter),
+            ])
             pr.addFeatures([feature])
             temp_layer.updateExtents()
 
@@ -559,7 +593,7 @@ class SegmentationMCPAPI:
                     pass
             return {"mode": mode_lower}
         except Exception as e:
-            return {"_error": "Failed to switch mode: {}".format(str(e))}
+            return {"_error": f"Failed to switch mode: {str(e)}"}
 
     def set_auto_zone(self, zone_wkt: str | None) -> dict:
         """Set the detection zone for automatic mode.
@@ -612,12 +646,8 @@ class SegmentationMCPAPI:
                 telemetry.track_auto_zone_too_large(area_km2=cap_area)
             except Exception:
                 pass  # nosec B110
-            from .ui.plugin.shared import free_zone_cap_km2
-            return {"_error": (
-                "Zone is {:.1f} km2; free trial zones go up to {:g} km2. "
-                "Use a smaller zone, or subscribe to segment areas of "
-                "any size.".format(cap_area, free_zone_cap_km2())
-            )}
+            from .ui.plugin.shared import zone_over_free_cap_message
+            return {"_error": zone_over_free_cap_message(cap_area)}
 
         if active_layer is not None:
             try:
@@ -693,6 +723,173 @@ class SegmentationMCPAPI:
             pass
         return {"cancelled": True}
 
+    def export_recipe(
+        self,
+        zone_wkt: str,
+        object_class: str,
+        layer_name: str | None = None,
+        detail: int = 1,
+        confidence: float | None = None,
+        refine: dict | None = None,
+    ) -> dict:
+        """Serialize a run's intent into a short, portable ``aiseg1:`` token.
+
+        A recipe captures WHAT to segment and WHERE (object prompt, drawn zone,
+        detail level, review confidence, refine settings) so the same run can be
+        reproduced later or on another machine. It is meant for debugging: an
+        agent that just called :meth:`detect_auto` can hand the same arguments
+        here and get one string that reconstructs the run exactly via
+        :meth:`run_from_recipe`, or that a user can paste into a bug report.
+
+        By construction the token holds no raster path, activation key, layer
+        name, or URL: what the schema cannot hold, it cannot leak. The zone is
+        stored as WGS84 lon/lat, so this reprojects ``zone_wkt`` (given in the
+        raster layer's CRS) to lon/lat before encoding.
+
+        Parameters
+        ----------
+        zone_wkt : str
+            Zone polygon in the raster layer's CRS (same CRS as
+            :meth:`detect_auto`). POLYGON or MULTIPOLYGON.
+        object_class : str
+            The object prompt, e.g. "Building". May be empty (an exemplar-only
+            run), but such a recipe cannot be re-run headlessly because
+            exemplar draws are deliberately not carried in a recipe.
+        layer_name : str | None
+            Raster layer whose CRS the ``zone_wkt`` is in. None = active layer.
+        detail : int
+            The detail-slider level used (>= 1).
+        confidence : float | None
+            Review confidence [0, 1]. None keeps the Automatic default.
+        refine : dict | None
+            Refine settings that differ from the review defaults (keys like
+            ``simplify``, ``smooth``, ``ortho``, ``expand``, ``fill_holes``,
+            and ``fill_holes_max`` for the fill-holes size cutoff in ground m2,
+            0 = every hole). Unknown keys are ignored, so an older or newer
+            reader of the same token still works.
+
+        Returns
+        -------
+        dict with key "recipe" (the token string) or "_error".
+        """
+        if not zone_wkt or not zone_wkt.strip():
+            return {"_error": "zone_wkt is required to export a recipe"}
+        geom = QgsGeometry.fromWkt(zone_wkt)
+        if geom is None or geom.isEmpty():
+            return {"_error": "Invalid zone WKT"}
+
+        layer = self._resolve_raster_layer(layer_name)
+        src_crs = layer.crs() if layer is not None else QgsCoordinateReferenceSystem("EPSG:4326")
+        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+        try:
+            ring = self._exterior_ring_in_crs(geom, src_crs, wgs84)
+        except Exception as err:  # nosec B110 -- invalid CRS / antimeridian
+            return {"_error": f"Could not reproject zone to lon/lat: {err}"}
+        if len(ring) < 3:
+            return {"_error": "zone must be a polygon with at least 3 points"}
+
+        conf = AUTO_DEFAULT_CONFIDENCE if confidence is None else float(confidence)
+        try:
+            token = run_recipe.encode(
+                run_recipe.RunRecipe(
+                    prompt=(object_class or "").strip(),
+                    detail=max(1, int(detail or 1)),
+                    zone_lonlat=ring,
+                    confidence=conf,
+                    refine=dict(refine or {}),
+                )
+            )
+        except run_recipe.RecipeError as err:
+            return {"_error": f"Could not encode recipe: {err}"}
+        return {"recipe": token}
+
+    def run_from_recipe(self, token: str, layer_name: str | None = None) -> dict:
+        """Reproduce an Automatic run from an ``aiseg1:`` recipe token.
+
+        Decodes the token, reprojects its WGS84 lon/lat zone back to the raster
+        layer's CRS, and calls :meth:`detect_auto` with the decoded prompt,
+        zone, and detail. This gives a deterministic reproduction of a
+        user-reported run for debugging.
+
+        The confidence and refine settings ride in the returned
+        ``recipe_applied`` block for reference: they are post-run client-side
+        filters (they re-shape or re-filter already-detected objects), not
+        detection inputs, so the headless path here does not apply them.
+
+        Parameters
+        ----------
+        token : str
+            An ``aiseg1:`` recipe string from :meth:`export_recipe`.
+        layer_name : str | None
+            Raster layer to run against; its CRS is used to place the zone.
+            None = active layer.
+
+        Returns
+        -------
+        dict : the :meth:`detect_auto` result, plus "recipe_applied" (the
+            decoded intent), or "_error".
+        """
+        try:
+            recipe = run_recipe.decode(token)
+        except run_recipe.RecipeError as err:
+            return {"_error": f"Invalid recipe: {err}"}
+
+        layer = self._resolve_raster_layer(layer_name)
+        dst_crs = layer.crs() if layer is not None else QgsCoordinateReferenceSystem("EPSG:4326")
+        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+        try:
+            pts = [QgsPointXY(lon, lat) for lon, lat in recipe.zone_lonlat]
+            if dst_crs != wgs84:
+                xform = QgsCoordinateTransform(wgs84, dst_crs, QgsProject.instance())
+                pts = [xform.transform(pt) for pt in pts]
+            zone_wkt = QgsGeometry.fromPolygonXY([pts]).asWkt()
+        except Exception as err:  # nosec B110 -- invalid CRS / antimeridian
+            return {"_error": f"Could not reproject recipe zone: {err}"}
+
+        result = self.detect_auto(
+            zone_wkt=zone_wkt,
+            object_class=recipe.prompt,
+            layer_name=layer_name,
+            detail=recipe.detail,
+        )
+        if isinstance(result, dict):
+            result["recipe_applied"] = {
+                "prompt": recipe.prompt,
+                "detail": recipe.detail,
+                "confidence": recipe.confidence,
+                "refine": recipe.normalized_refine(),
+            }
+        return result
+
+    def _resolve_raster_layer(self, layer_name: str | None):
+        """Return the named raster layer, or the plugin's active one, or None."""
+        if layer_name:
+            for layer in QgsProject.instance().mapLayersByName(layer_name):
+                if isinstance(layer, QgsRasterLayer):
+                    return layer
+            return None
+        try:
+            return self._plugin._get_active_raster_layer()
+        except (RuntimeError, AttributeError):
+            return None
+
+    def _exterior_ring_in_crs(self, geom, src_crs, dst_crs) -> list[tuple[float, float]]:
+        """Exterior ring of a (multi)polygon as (x, y) pairs in ``dst_crs``."""
+        if geom.isMultipart():
+            polys = geom.asMultiPolygon()
+            ring = polys[0][0] if polys and polys[0] else []
+        else:
+            rings = geom.asPolygon()
+            ring = rings[0] if rings else []
+        xform = None
+        if src_crs != dst_crs:
+            xform = QgsCoordinateTransform(src_crs, dst_crs, QgsProject.instance())
+        out: list[tuple[float, float]] = []
+        for pt in ring:
+            p = xform.transform(pt) if xform is not None else pt
+            out.append((p.x(), p.y()))
+        return out
+
     def _ensure_session(self, layer_name: str | None = None):
         """Ensure plugin has an active session. Returns (layer, error_dict_or_None)."""
         plugin = self._plugin
@@ -734,13 +931,11 @@ class SegmentationMCPAPI:
         # Setup session programmatically (no UI)
         try:
             layer_name_safe = target_layer.name().replace(" ", "_")
-            # Resolve to a clean readable file path (decodes GDAL URI options /
-            # subdatasets, "" for pathless layers so the canvas-render fallback
-            # kicks in). Mirrors the UI start path.
-            if hasattr(plugin, "_resolve_raster_file_path"):
-                raster_path = plugin._resolve_raster_file_path(target_layer)
-            else:
-                raster_path = os.path.normcase(target_layer.source())
+            # RAW source, same as the UI start path (manual_workflow.
+            # _on_start_segmentation): normcase lowercases and flips
+            # separators, which destroys a GDAL URI source on Windows
+            # (/vsicurl/, /vsizip/, GPKG:...:layer, NETCDF:"...":var).
+            raster_path = target_layer.source()
 
             if hasattr(plugin, "_reset_session"):
                 plugin._reset_session()

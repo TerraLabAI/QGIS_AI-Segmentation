@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import rasterio
@@ -21,6 +21,8 @@ from qgis.core import (  # noqa: E402
     QgsSpatialIndex,
 )
 
+from .merger import IncrementalMerger  # noqa: E402,F401
+from .polygon_packing import PACK_MAX_SIDE, pack_disjoint_crops  # noqa: E402
 from .qt_compat import field_type_double, field_type_string  # noqa: E402
 
 
@@ -53,20 +55,8 @@ def mask_to_polygons_rasterio(
             if value == 0:
                 continue
 
-            geom = _geojson_to_geometry(geojson_geom)
-            if geom is not None and not geom.isEmpty() and geom.isGeosValid():
-                if simplify_tolerance > 0:
-                    # simplify() can return a self-intersecting result that the
-                    # isGeosValid() gate above already passed; re-validate so an
-                    # invalid geometry never reaches the live merger. Repair when
-                    # possible, otherwise keep the unsimplified (valid) geometry.
-                    simplified = geom.simplify(simplify_tolerance)
-                    if simplified is not None and not simplified.isEmpty() and simplified.isGeosValid():
-                        geom = simplified
-                    elif simplified is not None:
-                        fixed = simplified.makeValid()
-                        if fixed is not None and not fixed.isEmpty() and fixed.isGeosValid():
-                            geom = fixed
+            geom = _finish_polygon(geojson_geom, simplify_tolerance)
+            if geom is not None:
                 geometries.append(geom)
 
         return geometries
@@ -81,7 +71,146 @@ def mask_to_polygons_rasterio(
         return []
 
 
-def _geojson_to_geometry(geojson: dict) -> "QgsGeometry | None":
+def _finish_polygon(geojson: dict, simplify_tolerance: float) -> QgsGeometry | None:
+    """One shapes() output -> a valid, optionally simplified QgsGeometry.
+
+    Shared by the per-mask and the packed polygonizers so the two can never
+    drift: the validity gate and the simplify-then-revalidate ladder are the
+    only thing that decides what a mask's pixels become.
+    """
+    geom = _geojson_to_geometry(geojson)
+    if geom is None or geom.isEmpty() or not geom.isGeosValid():
+        return None
+    if simplify_tolerance <= 0:
+        return geom
+    # simplify() can return a self-intersecting result that the isGeosValid()
+    # gate above already passed; re-validate so an invalid geometry never
+    # reaches the live merger. Repair when possible, otherwise keep the
+    # unsimplified (valid) geometry.
+    simplified = geom.simplify(simplify_tolerance)
+    if simplified is None:
+        return geom
+    if not simplified.isEmpty() and simplified.isGeosValid():
+        return simplified
+    fixed = simplified.makeValid()
+    if fixed is not None and not fixed.isEmpty() and fixed.isGeosValid():
+        return fixed
+    return geom
+
+
+def masks_to_polygons_packed(
+    crops: list,
+    transform_info: dict,
+    full_shape: tuple[int, int],
+    simplify_tolerance: float = 0.0,
+    max_side: int = PACK_MAX_SIDE,
+) -> list[list[QgsGeometry]]:
+    """Polygonize many crops of ONE tile grid, batching the rasterio calls.
+
+    ``crops`` is a list of ``(crop_array, (row0, col0))``: the boolean crop and
+    the pixel position of its top-left corner in the ``full_shape`` grid, the
+    same pair mask_to_polygons takes as ``pixel_offset``. Returns one geometry
+    list per input crop, in input order.
+
+    Why: shapes() carries a fixed GDAL setup cost of a few ms per call whatever
+    it is handed, and a dense tile calls it once per mask, well over a hundred
+    times. Crops whose boxes are disjoint are painted into a single int32 LABEL
+    raster and polygonized in ONE call; shapes() hands back the label with each
+    polygon, so every polygon still maps to exactly one crop, and a label's
+    polygon is its own cells whether or not another label sits next to it.
+
+    Batching is not free: shapes() walks the whole grid it is handed, and a
+    pack's grid is the bounding box of the crops in it, so spread-out crops
+    drag in background nobody needs. What keeps that bounded is max_side, which
+    caps how big one pack can get however far apart its crops are.
+
+    Output matches calling mask_to_polygons per crop: same pixels, same pixel
+    scale, same validity ladder. The two build their affine from different
+    origins, so coordinates can differ in the last bits of a float, orders
+    below the simplify tolerance and the merger's thresholds. Only the number
+    of calls changes.
+    """
+    out: list[list[QgsGeometry]] = [[] for _ in crops]
+    if not crops:
+        return out
+    bbox = transform_info.get("bbox")
+    if not bbox:
+        return out
+    try:
+        from rasterio.features import shapes as get_shapes
+        from rasterio.transform import from_bounds as transform_from_bounds
+    except ImportError:
+        # Automatic runs before any local install, and a QGIS that bundles no
+        # rasterio (every Linux packaging) would otherwise raise once per crop,
+        # get swallowed by the per-tile catch, and hand the user a billed run
+        # with nothing on the map. mask_to_polygons already falls back here; the
+        # batched path has to as well.
+        # Note the offset order: crops carry (row0, col0), mask_to_polygons_fallback
+        # reads pixel_offset as (col0, row0).
+        return [
+            mask_to_polygons_fallback(
+                crop, transform_info, simplify_tolerance, (col0, row0), full_shape)
+            for crop, (row0, col0) in crops
+        ]
+
+    # polygon_exporter bbox convention: (minx, MAXX, miny, MAXY). The pixel
+    # scale comes from the FULL grid so a crop never rescales (see
+    # mask_to_polygons).
+    minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
+    full_h, full_w = int(full_shape[0]), int(full_shape[1])
+    px_w = (maxx - minx) / max(full_w, 1)
+    px_h = (maxy - miny) / max(full_h, 1)
+
+    boxes = []
+    for crop, (row0, col0) in crops:
+        h, w = int(crop.shape[0]), int(crop.shape[1])
+        boxes.append((int(row0), int(row0) + h - 1, int(col0), int(col0) + w - 1))
+
+    try:
+        for indices, (br0, br1, bc0, bc1) in pack_disjoint_crops(boxes, max_side):
+            lab = np.zeros((br1 - br0 + 1, bc1 - bc0 + 1), np.int32)
+            for label, i in enumerate(indices, start=1):
+                crop, _origin = crops[i]
+                r0, _r1, c0, _c1 = boxes[i]
+                ro, co = r0 - br0, c0 - bc0
+                # `where` must be boolean: numpy refuses a uint8 selector under
+                # safe casting, and the tile pipeline hands uint8 crops (see
+                # fill_small_holes). Any non-zero pixel is object.
+                stamp = crop if crop.dtype == np.bool_ else crop != 0
+                np.copyto(lab[ro:ro + crop.shape[0], co:co + crop.shape[1]],
+                          np.int32(label), where=stamp)
+            pack_minx = minx + bc0 * px_w
+            pack_maxy = maxy - br0 * px_h
+            transform = transform_from_bounds(
+                pack_minx, pack_maxy - lab.shape[0] * px_h,
+                pack_minx + lab.shape[1] * px_w, pack_maxy,
+                lab.shape[1], lab.shape[0],
+            )
+            for geojson_geom, value in get_shapes(
+                lab, mask=lab > 0, connectivity=4, transform=transform
+            ):
+                label = int(value)
+                if label <= 0 or label > len(indices):
+                    continue
+                geom = _finish_polygon(geojson_geom, simplify_tolerance)
+                if geom is not None:
+                    out[indices[label - 1]].append(geom)
+        return out
+    except Exception as exc:  # noqa: BLE001 - fall back to the per-mask path
+        QgsMessageLog.logMessage(
+            f"Packed polygonize failed ({exc}); falling back to per-mask",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning,
+        )
+        return [
+            mask_to_polygons(
+                crop, transform_info, simplify_tolerance=simplify_tolerance,
+                pixel_offset=(int(col0), int(row0)), full_shape=full_shape,
+            )
+            for crop, (row0, col0) in crops
+        ]
+
+
+def _geojson_to_geometry(geojson: dict) -> QgsGeometry | None:
     """Build a QgsGeometry directly from a rasterio shapes() GeoJSON dict.
 
     Replaces a WKT round-trip (geojson -> WKT string -> fromWkt) that formatted
@@ -293,20 +422,28 @@ def find_contours(mask: np.ndarray) -> list[list[tuple[int, int]]]:
         (-1, 0), (-1, -1), (0, -1), (1, -1)
     ]
 
-    for y in range(1, h + 1):
-        for x in range(1, w + 1):
-            if padded[y, x] == 1 and not visited_pad[y, x]:
-                is_boundary = False
-                for dx, dy in directions:
-                    if padded[y + dy, x + dx] == 0:
-                        is_boundary = True
-                        break
+    # Which pixels sit on a boundary depends only on the mask, and the mask does
+    # not change while tracing, so find them all in a few numpy passes instead of
+    # asking the question per pixel in Python: a full-size mask has millions of
+    # pixels but only thousands on a boundary. Only the visited test has to stay
+    # inside the loop, because trace_contour updates it as it walks.
+    foreground = padded == 1
+    is_background = padded == 0
+    on_boundary = np.zeros_like(foreground)
+    for dx, dy in directions:
+        on_boundary[1:h + 1, 1:w + 1] |= is_background[
+            1 + dy:h + 1 + dy, 1 + dx:w + 1 + dx]
+    on_boundary &= foreground
 
-                if is_boundary:
-                    contour = trace_contour(padded, visited_pad, x, y, directions)
-                    if len(contour) >= 3:
-                        contour = [(px - 1, py - 1) for px, py in contour]
-                        contours.append(contour)
+    # np.nonzero walks row-major, the same order the per-pixel scan used.
+    ys, xs = np.nonzero(on_boundary)
+    for y, x in zip(ys.tolist(), xs.tolist()):
+        if visited_pad[y, x]:
+            continue
+        contour = trace_contour(padded, visited_pad, x, y, directions)
+        if len(contour) >= 3:
+            contour = [(px - 1, py - 1) for px, py in contour]
+            contours.append(contour)
 
     return contours
 
@@ -401,7 +538,8 @@ def apply_mask_refinement(
     mask: np.ndarray,
     expand_value: int = 0,        # -20 to +20 (pixels)
     fill_holes: bool = False,     # Fill interior holes
-    min_area: int = 0             # Remove regions smaller than this (pixels)
+    min_area: int = 0,            # Remove regions smaller than this (pixels)
+    max_hole_px: int | None = None,  # Only fill holes up to this many pixels
 ) -> np.ndarray:
     """
     Apply morphological operations to refine the mask.
@@ -413,8 +551,15 @@ def apply_mask_refinement(
         expand_value: Pixels to expand (positive) or contract (negative)
         fill_holes: If True, fill interior holes in the mask
         min_area: Remove connected regions smaller than this pixel count (0 = keep all)
+        max_hole_px: Size cutoff for fill_holes, in mask pixels. None fills every
+            hole (what the control did before the cutoff existed). A number keeps
+            holes bigger than it, so a road keeps its median and loses its parked
+            cars. The user sets a ground area; core.hole_size.hole_pixels turns it
+            into this pixel count.
     """
-    result = mask.copy().astype(np.uint8)
+    # astype already returns a fresh array, so a .copy() before it would
+    # allocate and fill a whole extra mask on every refine repaint.
+    result = mask.astype(np.uint8, order="C")
 
     # 1. Expand/Contract first so fill-holes operates on the adjusted mask
     if expand_value != 0:
@@ -426,7 +571,10 @@ def apply_mask_refinement(
 
     # 2. Fill holes (on already expanded/contracted mask)
     if fill_holes:
-        result = _fill_holes(result)
+        if max_hole_px is None:
+            result = _fill_holes(result)
+        else:
+            result = fill_small_holes(result, max(0, int(max_hole_px)))
 
     # 3. Remove small regions (artifacts/noise)
     if min_area > 0:
@@ -470,6 +618,84 @@ def fill_small_holes(mask: np.ndarray, max_hole_px: int) -> np.ndarray:
         return mask
 
 
+def _label_components(mask_bool: np.ndarray) -> tuple[np.ndarray, int]:
+    """4-connected component labels for a boolean mask, without scipy.
+
+    scipy is optional, so every labeling helper here needs a fallback that stays
+    usable on a click. A per-pixel flood fill in Python walks a million cells on
+    a full-size mask; this works on row RUNS instead, and a mask has at most
+    height + components of them, so the Python part collapses to the run count
+    while the pixel-level work stays in numpy.
+
+    Returns (labels, count) with labels an int32 (H, W) array, 0 = background
+    and components numbered 1..count in row-major order of their first pixel
+    (the same numbering scipy.ndimage.label produces).
+    """
+    h, w = mask_bool.shape
+    labels = np.zeros((h, w), dtype=np.int32)
+    if h == 0 or w == 0 or not mask_bool.any():
+        return labels, 0
+
+    # One False column on each side so no run can straddle a row boundary.
+    padded = np.zeros((h, w + 2), dtype=bool)
+    padded[:, 1:-1] = mask_bool
+    flat = padded.ravel()
+    edges = np.flatnonzero(flat[1:] != flat[:-1]) + 1
+    starts = edges[0::2]
+    stops = edges[1::2]
+    rows = starts // (w + 2)
+    col_start = starts - rows * (w + 2) - 1
+    col_stop = stops - rows * (w + 2) - 1  # exclusive
+
+    n_runs = int(starts.size)
+    parent = list(range(n_runs))
+
+    def _find(a: int) -> int:
+        root = a
+        while parent[root] != root:
+            root = parent[root]
+        while parent[a] != root:
+            parent[a], a = root, parent[a]
+        return root
+
+    # Runs are ordered by row, so each row occupies one contiguous slice.
+    row_lo = np.searchsorted(rows, np.arange(h), side="left").tolist()
+    row_hi = np.searchsorted(rows, np.arange(h), side="right").tolist()
+    cs = col_start.tolist()
+    ce = col_stop.tolist()
+    for r in range(h - 1):
+        i, i_end = row_lo[r], row_hi[r]
+        j, j_end = row_lo[r + 1], row_hi[r + 1]
+        while i < i_end and j < j_end:
+            if cs[i] < ce[j] and cs[j] < ce[i]:
+                ri, rj = _find(i), _find(j)
+                if ri != rj:
+                    if ri < rj:
+                        parent[rj] = ri
+                    else:
+                        parent[ri] = rj
+            if ce[i] < ce[j]:
+                i += 1
+            else:
+                j += 1
+
+    # Number the roots in first-pixel order, which is the run order.
+    numbering: dict[int, int] = {}
+    run_label = [0] * n_runs
+    for i in range(n_runs):
+        root = _find(i)
+        lab = numbering.get(root)
+        if lab is None:
+            lab = len(numbering) + 1
+            numbering[root] = lab
+        run_label[i] = lab
+
+    row_list = rows.tolist()
+    for i in range(n_runs):
+        labels[row_list[i], cs[i]:ce[i]] = run_label[i]
+    return labels, len(numbering)
+
+
 def _fill_holes(mask: np.ndarray) -> np.ndarray:
     """
     Fill interior holes in the mask.
@@ -489,40 +715,22 @@ def _fill_holes(mask: np.ndarray) -> np.ndarray:
         # to bubble up and kill the click handler.
         pass
 
-    # Numpy fallback: iterative flood fill from edges
+    # Numpy fallback: label the background once instead of expanding the
+    # exterior one pixel per pass. The pass-per-pixel form needed as many whole-
+    # array passes as the mask is wide, so an elongated shape cost a thousand of
+    # them on the click path; one labeling settles it whatever the shape.
     h, w = mask.shape
-    # Create a padded version to flood fill from outside
     padded = np.zeros((h + 2, w + 2), dtype=np.uint8)
     padded[1:-1, 1:-1] = mask
 
-    # Start with border pixels as exterior (only background pixels)
-    exterior = np.zeros_like(padded, dtype=bool)
-    exterior[0, :] = (padded[0, :] == 0)
-    exterior[-1, :] = (padded[-1, :] == 0)
-    exterior[:, 0] = (padded[:, 0] == 0)
-    exterior[:, -1] = (padded[:, -1] == 0)
-
-    # Iteratively expand exterior into connected background pixels
     background = (padded == 0)
-    for _ in range(min(max(h, w), 2048)):  # Capped to prevent excessive loops
-        # Dilate exterior by 1 pixel in 4 directions using slicing
-        expanded = exterior.copy()
-        expanded[1:, :] |= exterior[:-1, :]
-        expanded[:-1, :] |= exterior[1:, :]
-        expanded[:, 1:] |= exterior[:, :-1]
-        expanded[:, :-1] |= exterior[:, 1:]
+    labels, _count = _label_components(background)
+    # The pad ring is background all the way round, so every background pixel
+    # connected to the outside carries the ring's own label.
+    exterior = labels == labels[0, 0]
 
-        # Only keep background pixels
-        expanded &= background
-
-        # Check if anything changed
-        if np.array_equal(expanded, exterior):
-            break
-        exterior = expanded
-
-    # Holes are background pixels that are not exterior
     result = padded.copy()
-    result[(padded == 0) & (~exterior)] = 1
+    result[background & ~exterior] = 1
 
     return result[1:-1, 1:-1]
 
@@ -555,40 +763,19 @@ def _remove_small_regions(mask: np.ndarray, min_area: int) -> np.ndarray:
     except ImportError:
         pass
 
-    # Fallback: numpy-only implementation
-    h, w = mask.shape
-    labels = np.zeros((h, w), dtype=np.int32)
-    mask_bool = mask.astype(bool)
-    current_label = 0
-    small_labels = []
+    # Fallback: run-based labeling, so a mask with no scipy still costs a few
+    # numpy passes instead of a per-pixel Python flood fill on the click path.
+    labels, count = _label_components(mask.astype(bool))
+    if count == 0:
+        return mask.copy()
 
-    # Flood fill each component
-    for start_y in range(h):
-        for start_x in range(w):
-            if mask_bool[start_y, start_x] and labels[start_y, start_x] == 0:
-                current_label += 1
-                stack = [(start_y, start_x)]
-                labels[start_y, start_x] = current_label
-                count = 1
+    sizes = np.bincount(labels.ravel(), minlength=count + 1)
+    small = np.flatnonzero(sizes < min_area)
+    small = small[small != 0]  # label 0 is background, never a region
 
-                while stack:
-                    y, x = stack.pop()
-                    # Check 4-connected neighbors
-                    for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
-                        if 0 <= ny < h and 0 <= nx < w:
-                            if mask_bool[ny, nx] and labels[ny, nx] == 0:
-                                labels[ny, nx] = current_label
-                                stack.append((ny, nx))
-                                count += 1
-
-                if count < min_area:
-                    small_labels.append(current_label)
-
-    # Remove small regions in one operation
-    if small_labels:
-        remove_mask = np.isin(labels, small_labels)
+    if small.size:
         result = mask.copy()
-        result[remove_mask] = 0
+        result[np.isin(labels, small)] = 0
         return result
 
     return mask.copy()
@@ -626,32 +813,12 @@ def _label_region_sizes(mask: np.ndarray) -> list:
     except ImportError:
         pass
 
-    # Numpy fallback
-    h, w = mask.shape
-    labels = np.zeros((h, w), dtype=np.int32)
-    mask_bool = mask.astype(bool)
-    sizes = []
-
-    for start_y in range(h):
-        for start_x in range(w):
-            if mask_bool[start_y, start_x] and labels[start_y, start_x] == 0:
-                label = len(sizes) + 1
-                stack = [(start_y, start_x)]
-                labels[start_y, start_x] = label
-                count = 1
-
-                while stack:
-                    y, x = stack.pop()
-                    for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
-                        if 0 <= ny < h and 0 <= nx < w:
-                            if mask_bool[ny, nx] and labels[ny, nx] == 0:
-                                labels[ny, nx] = label
-                                stack.append((ny, nx))
-                                count += 1
-
-                sizes.append(count)
-
-    return sizes
+    # Numpy fallback: same run-based labeling as the rest of this module, so a
+    # missing scipy costs numpy passes rather than a per-pixel Python walk.
+    labels, count = _label_components(mask.astype(bool))
+    if count == 0:
+        return []
+    return list(np.bincount(labels.ravel(), minlength=count + 1)[1:])
 
 
 def _numpy_dilate(mask: np.ndarray, iterations: int) -> np.ndarray:
@@ -741,44 +908,7 @@ def _overlap_metrics(g1: QgsGeometry, g2: QgsGeometry) -> tuple[float, float]:
         return 0.0, 0.0
 
 
-def _ios_and_span(g1: QgsGeometry, g2: QgsGeometry,
-                  a1: float | None = None,
-                  a2: float | None = None) -> tuple[float, float]:
-    """Return (IoS, overlap_span) for two polygons.
-
-    IoS = intersection area over the SMALLER polygon's area (see _overlap_metrics).
-    overlap_span = the longer side of the intersection's bounding box, in ground
-    units. A genuine tile-seam split leaves a thin overlap strip whose longer
-    dimension runs the length of the object along the seam, so a large
-    overlap_span (comparable to the tile-overlap width) is the tell-tale of a
-    seam split even when the overlap AREA (IoS) is tiny relative to a big object.
-    Both are 0 on empty/degenerate input. ``a1``/``a2`` let a caller that
-    already computed the polygon areas skip the O(vertices) recompute
-    (QgsGeometry.area() is not cached).
-    """
-    if g1 is None or g2 is None or g1.isEmpty() or g2.isEmpty():
-        return 0.0, 0.0
-    try:
-        inter = g1.intersection(g2)
-        if inter is None or inter.isEmpty():
-            return 0.0, 0.0
-        inter_area = inter.area()
-        if inter_area <= 0.0:
-            return 0.0, 0.0
-        if a1 is None:
-            a1 = g1.area()
-        if a2 is None:
-            a2 = g2.area()
-        min_area = a1 if a1 < a2 else a2
-        ios = inter_area / min_area if min_area > 0.0 else 0.0
-        bb = inter.boundingBox()
-        span = bb.width() if bb.width() > bb.height() else bb.height()
-        return ios, span
-    except Exception:
-        return 0.0, 0.0
-
-
-def _buffer_square_corners(g: "QgsGeometry", dist: float) -> "QgsGeometry | None":
+def _buffer_square_corners(g: QgsGeometry, dist: float) -> QgsGeometry | None:
     """Buffer with a MITRE join so square corners stay square.
 
     Enum homes differ across our supported QGIS range (Qgis.JoinStyle since
@@ -798,17 +928,177 @@ def _buffer_square_corners(g: "QgsGeometry", dist: float) -> "QgsGeometry | None
     return g.buffer(dist, 8)
 
 
+def _keep_largest_part(g: QgsGeometry) -> QgsGeometry | None:
+    """The largest polygon part of g by area, or the input when single-part.
+
+    Used right after a despike opening: an opening that severs a blob joined by
+    a thin neck leaves the blob as a separate part, so keeping the largest part
+    drops it. A normal single-part footprint is returned unchanged. Best-effort:
+    returns None only on failure."""
+    try:
+        if g is None or g.isEmpty() or not g.isMultipart():
+            return g
+        parts = g.asGeometryCollection()
+        if not parts:
+            return g
+        best = max(parts, key=lambda p: p.area())
+        return QgsGeometry(best)
+    except Exception:  # noqa: BLE001 -- best-effort  # nosec B110
+        return None
+
+
+def despike_thin_necks(
+    g: QgsGeometry,
+    despike_m: float,
+    *,
+    preserve_parts: bool = False,
+) -> QgsGeometry:
+    """Cut thin spikes and necks out of a traced outline, in ground units.
+
+    Shared by the Automatic review tail and the Manual refine tail so one
+    object loses the same spikes in both modes. Runs BEFORE squaring, so the
+    regularizer never snaps a spike into a rotated diamond.
+
+    Morphological opening with MITRE joins (shrink by ``despike_m`` then grow
+    back, square corners preserved), then keep the largest part so a blob
+    severed at a thin neck is dropped instead of left as an island.
+    ``preserve_parts`` skips that last step: a multipart input is already an
+    explicit user or object decision (a Correct-step merge of disjoint roof
+    pieces, a multipart Manual selection), and must never come back with a
+    piece missing.
+
+    A distance of 0 or less is the OFF state and returns the input untouched.
+    Guarded on isEmpty so a genuinely thin object is skipped, never destroyed.
+    Best-effort: returns the input unchanged on any failure.
+    """
+    if g is None or g.isEmpty() or not despike_m or despike_m <= 0.0:
+        return g
+    try:
+        shrunk = _buffer_square_corners(g, -despike_m)
+        if shrunk is None or shrunk.isEmpty():
+            return g
+        grown = _buffer_square_corners(shrunk, despike_m)
+        if grown is None or grown.isEmpty():
+            return g
+        return grown if preserve_parts else (_keep_largest_part(grown) or grown)
+    except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
+        return g
+
+
+def rounded_corner_outline(
+    g: QgsGeometry, simplify_tol: float = 0.0,
+) -> QgsGeometry:
+    """One "Round corners" pass plus the vertex diet that pays for it.
+
+    Shared by the Automatic review tail, the Manual refine tail and the
+    Refine-in-Manual handoff, so the same object gets the same rounded outline
+    whichever one produced it.
+
+    ONE Chaikin pass, offset 0.25. Each pass roughly doubles the point count,
+    so more than one undoes the point budget that ran just before.
+    ``minimumDistance`` is the simplify tolerance: a segment already at
+    sub-tolerance scale has no visible corner to round, so splitting it would
+    only mint invisible vertices. ``maxAngle`` is 120 degrees, which leaves a
+    near-straight wall vertex alone instead of bending it. All three are
+    server-overridable (``review.smooth``), so how strong the tick is can be
+    retuned without a plugin release; the numbers here are the fallback.
+
+    Then the diet. The pass still near-doubles the vertex count, which is pure
+    render weight once thousands of objects are on canvas (every pan or zoom
+    repaint reads every vertex), so a post-smooth simplify at the same
+    tolerance strips the sub-tolerance points the rounding added while keeping
+    every curve big enough to see.
+
+    Best-effort: returns the geometry so far on any failure.
+    """
+    if g is None or g.isEmpty():
+        return g
+    passes, offset, max_angle = 1, 0.25, 120.0
+    try:
+        from .detection_policy import smooth_pass_settings
+
+        served = smooth_pass_settings()
+        passes = int(served["iterations"])
+        offset = float(served["offset"])
+        max_angle = float(served["max_angle_deg"])
+    except Exception:  # noqa: BLE001 -- policy is best-effort  # nosec B110
+        pass
+    try:
+        min_dist = simplify_tol if simplify_tol and simplify_tol > 0.0 else -1.0
+        r = g.smooth(passes, offset, min_dist, max_angle)
+        if r is None or r.isEmpty():
+            return g
+        g = r
+        if simplify_tol and simplify_tol > 0.0:
+            r2 = g.simplify(simplify_tol)
+            if r2 is not None and not r2.isEmpty():
+                g = r2
+    except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
+        pass
+    return g
+
+
+def _regularize_shape_kwargs(
+    diagonal_reduction: float | None,
+    circle_threshold: float | None,
+    multi_direction: bool = False,
+    multi_max_groups: int | None = None,
+    multi_min_separation_deg: float | None = None,
+) -> dict:
+    """The regularizer's shape dials as keyword arguments, omitting the ones
+    the caller left unset.
+
+    All are server-tunable (core.detection_policy.regularize_settings), but
+    this module stays policy-free: it is the pure geometry layer and the Manual
+    pipeline imports it offline. Omitting an unset dial hands the decision to
+    building_regularizer's own default instead of copying that value here,
+    where it would drift. multi_direction is only forwarded when on, so the
+    single-direction engine default stands for every caller that leaves it off.
+    """
+    kwargs: dict = {}
+    if diagonal_reduction is not None:
+        kwargs["diagonal_reduction"] = float(diagonal_reduction)
+    if circle_threshold is not None and circle_threshold > 0:
+        kwargs["circle_threshold"] = float(circle_threshold)
+    if multi_direction:
+        kwargs["multi_direction"] = True
+        if multi_max_groups is not None:
+            kwargs["multi_max_groups"] = int(multi_max_groups)
+        if multi_min_separation_deg is not None:
+            kwargs["multi_min_separation_deg"] = float(multi_min_separation_deg)
+    return kwargs
+
+
 def apply_geometry_refinement(
-    geom: "QgsGeometry",
+    geom: QgsGeometry,
     *,
     simplify_tol: float = 0.0,
     smooth: bool = False,
     expand_dist: float = 0.0,
     fill_holes: bool = False,
+    fill_holes_max_area: float = 0.0,
     open_dist: float = 0.0,
+    despike_m: float = 0.0,
+    vertex_spacing: float = 0.0,
+    vertex_min: int = 8,
+    vertex_max_deviation: float = 0.0,
+    vertex_max_deviation_fraction: float = 0.0,
+    vertex_keep_fraction: float = 0.0,
+    vertex_dial_max_cap_fraction: float | None = None,
     ortho: bool = False,
     ortho_tol: float = 0.0,
-) -> "QgsGeometry":
+    regularize: bool = False,
+    regularize_tol: float = 0.0,
+    allow_diagonal: bool = True,
+    allow_circles: bool = False,
+    regularize_min_iou: float = 0.0,
+    diagonal_reduction: float | None = None,
+    circle_threshold: float | None = None,
+    multi_direction: bool = False,
+    multi_max_groups: int | None = None,
+    multi_min_separation_deg: float | None = None,
+    envelope: Any = None,
+) -> QgsGeometry:
     """Geometry-level refine for Automatic-review WHOLE objects (no mask here).
 
     The Manual mask-refine controls (simplify / round corners / expand-shrink /
@@ -816,36 +1106,98 @@ def apply_geometry_refinement(
     the worker and only merged polygons remain, so the same knobs are applied
     directly to the geometry:
 
-      - fill_holes: drop every interior ring (native removeInteriorRings).
+      - fill_holes: drop interior rings (native removeInteriorRings).
+      - fill_holes_max_area: size cutoff for fill_holes, in CRS UNITS SQUARED
+        (0 = drop every ring, the behaviour before the cutoff existed). Only
+        rings under it go, so a road keeps its median and loses the holes its
+        parked cars punched. The user sets a ground area; the caller scales it
+        with core.hole_size.ring_area_arg, since one CRS unit is not one metre
+        outside a metric projection.
       - open_dist: morphological opening (shrink then grow back) that removes
         thin attached fringe / tendrils narrower than 2*open_dist, ground units.
       - simplify_tol: Douglas-Peucker simplify to a ground-unit tolerance.
+      - vertex_spacing + vertex_min + vertex_max_deviation(_fraction) +
+        vertex_keep_fraction: the point budget (core.vertex_budget), which thins
+        the outline to one point per vertex_spacing of its own length, never
+        below vertex_min points and never moving the boundary by more than the
+        cap (the flat distance, or a share of the object's narrow dimension,
+        whichever is tighter). vertex_keep_fraction is the user's dial, the
+        share of its own points an outline may keep, and it can only take the
+        budget lower. vertex_dial_max_cap_fraction caps how far that dial may
+        let a corner travel, as a share of the object's narrow dimension; it is
+        a server dial, and None means "use the client fallback", so every
+        caller of the budget reads one value. Distances in CRS units.
+        It runs BEFORE squaring, never
+        after: thinning an already-squared footprint would un-square it, but
+        squaring a thinned outline is exactly what the shape wants. When it
+        runs it also serves as the de-staircase pass, so ortho_tol does not
+        raise simplify on top of it.
       - ortho + ortho_tol: "Right angles" regularizer for man-made shapes
         (native QgsGeometry.orthogonalize snaps edges to 90 degrees). A raw
         mask outline is ALREADY all right-angle stair steps, so it must be
         de-staircased first: the simplify pass runs at max(simplify_tol,
-        ortho_tol) when ortho is on (ortho_tol ~ 2.5 detection px, the
-        regularization literature's simplify-then-orthogonalize tolerance).
+        ortho_tol) when ortho is on. ortho_tol is a GROUND distance the caller
+        resolves (core.detection_policy.destair_tolerance_m), so the same
+        building de-staircases the same way whatever detail it was tiled at.
+      - regularize: the diagonals-aware footprint regularizer (building_
+        regularizer). Used INSTEAD of the plain orthogonalize when on, so a
+        45-degree building wall is snapped clean, not left as stair steps. It
+        de-staircases internally (regularize_tol, ground units), so no extra
+        simplify bump is needed. allow_diagonal enables the 45-degree snaps;
+        diagonal_reduction narrows the window an edge must fall in to land on
+        one, so raising it turns chamfered corners back into square ones;
+        allow_circles fits near-circular blobs, circle_threshold sets how round
+        a blob must be first; regularize_min_iou reverts to the input when the
+        snapped shape drifts too far. Which classes get this and the tuning
+        come from the server policy; an unset dial keeps the engine default.
       - expand_dist: buffer out (positive) or shrink in (negative), ground units.
       - smooth: Chaikin round the corners (native QgsGeometry.smooth).
 
-    Order: fill, then open (strip fringe), then simplify, then right angles,
-    then expand, then a final smooth. Best-effort: any failed step is skipped
-    and the geometry so far is kept, so one degenerate object never breaks a
-    refresh.
+      - despike_m: the spike and neck cut (despike_thin_necks), ground units,
+        0 = off.
+
+    Order: fill, then de-spike, then open (strip fringe), then simplify, then
+    the point budget, then right angles, then expand, then a final smooth.
+    Best-effort: any failed step is skipped and the geometry so far is kept, so
+    one degenerate object never breaks a refresh.
+
+    The de-spike and the final smooth live in despike_thin_necks and
+    rounded_corner_outline, shared with the Manual refine tail so one object
+    gets the same outline in both modes.
     """
     if geom is None or geom.isEmpty():
         return geom
     g = geom
+    # A multipart input is already an explicit user/object decision: it can be
+    # a Correct-step merge of disjoint roof pieces.  The de-spike opening may
+    # split a single noisy mask at a thin neck, where keeping its main part is
+    # intentional; it must never turn an existing MultiPolygon into one part
+    # and silently discard a piece the user deliberately merged.
+    preserve_input_parts = bool(g.isMultipart())
+    budget_on = bool((vertex_spacing and vertex_spacing > 0.0) or (vertex_keep_fraction and vertex_keep_fraction > 0.0))
     if ortho and ortho_tol > 0.0:
+        # De-staircase before squaring, ALWAYS when Right angles is on. ortho_tol
+        # is the small de-staircase distance (a couple of pixels), not a hard
+        # reduction, so it only strips stair steps and never sweeps a wall into
+        # a slanted chord. The point budget below thins further, but it can
+        # decline every vertex when its deviation cap is strict, so leaving the
+        # regularizer a raw pixel staircase in that case. This gentle pass is
+        # cheap insurance that squaring always starts from a de-staircased
+        # outline, budget or no budget.
         simplify_tol = max(simplify_tol or 0.0, ortho_tol)
     if fill_holes:
+        from .hole_size import REMOVE_ALL_RINGS
+
+        cutoff = (float(fill_holes_max_area) if fill_holes_max_area and fill_holes_max_area > 0.0 else REMOVE_ALL_RINGS)
         try:
-            r = g.removeInteriorRings(-1.0)
+            r = g.removeInteriorRings(cutoff)
             if isinstance(r, QgsGeometry) and not r.isEmpty():
                 g = r
         except (AttributeError, TypeError, ValueError):
             pass
+    # Cut the thin spikes and necks the raw mask carries (a tile-seam join, an
+    # uncertain point) BEFORE squaring. Shared with the Manual tail.
+    g = despike_thin_necks(g, despike_m, preserve_parts=preserve_input_parts)
     if open_dist and open_dist > 0.0:
         # Morphological opening: shrink by open_dist then grow back. Thin fringe
         # / tendrils narrower than 2*open_dist vanish while the main shape keeps
@@ -864,7 +1216,68 @@ def apply_geometry_refinement(
                 g = r
         except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
             pass
-    if ortho:
+    if budget_on:
+        # The point budget: cut the traced outline down to the number of points
+        # a person would have drawn. Runs under squaring too, where it replaces
+        # the Douglas-Peucker de-staircase above.
+        try:
+            from .vertex_budget import (
+                _DIAL_MAX_CAP_NARROW_FRACTION,
+                simplify_to_budget,
+            )
+
+            # None = no server dial, so fall back to the engine's own value.
+            # Read from there rather than restated here: one client-side
+            # default for every caller of the budget.
+            dial_cap = (_DIAL_MAX_CAP_NARROW_FRACTION
+                        if vertex_dial_max_cap_fraction is None
+                        else float(vertex_dial_max_cap_fraction))
+            r = simplify_to_budget(
+                g, spacing=vertex_spacing, min_vertices=vertex_min,
+                max_deviation=vertex_max_deviation,
+                max_deviation_fraction=vertex_max_deviation_fraction,
+                keep_fraction=vertex_keep_fraction,
+                dial_max_cap_fraction=dial_cap)
+            if r is not None and not r.isEmpty():
+                g = r
+        except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
+            pass
+    regularized_ok = False
+    if regularize:
+        # Diagonals-aware path: snap edges to the dominant direction plus its
+        # perpendicular and (optionally) 45-degree diagonals, bounded by a
+        # ground-unit tolerance. Falls back to the simplify tolerance when the
+        # caller passes none; skipped when neither is positive. Best-effort:
+        # returns the input unchanged on any failure.
+        tol = regularize_tol if regularize_tol > 0.0 else simplify_tol
+        if tol and tol > 0.0:
+            try:
+                from .building_regularizer import regularize_qgs_geometry_ex
+                res = regularize_qgs_geometry_ex(
+                    g,
+                    tolerance_m=tol,
+                    allow_diagonal=allow_diagonal,
+                    allow_circles=allow_circles,
+                    min_keep_iou=regularize_min_iou,
+                    policy=envelope,
+                    **_regularize_shape_kwargs(
+                        diagonal_reduction, circle_threshold,
+                        multi_direction, multi_max_groups,
+                        multi_min_separation_deg),
+                )
+                if res.regularized and not res.geometry.isEmpty():
+                    g = res.geometry
+                    regularized_ok = True
+            except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
+                pass
+    # Right angles must still do SOMETHING when the plain path is in use and no
+    # regularizer ran. But when the diagonals-aware regularizer was requested
+    # and DECLINED this shape (its IoU guard reverted it), orthogonalizing the
+    # outline manufactures a staircase on exactly the complex/off-axis footprints
+    # it could not handle. The simplify above already de-staircased g (ortho
+    # forces simplify_tol up to ortho_tol), so we leave it as that smooth
+    # simplified outline instead.
+    if ortho and not regularized_ok and not regularize:
         # Tiny snap tolerance, plenty of iterations, and only nudge segments
         # already within 15 degrees of 0/90 (a genuinely diagonal wall is
         # left alone).
@@ -876,115 +1289,270 @@ def apply_geometry_refinement(
             pass
     if expand_dist and expand_dist != 0.0:
         try:
-            # With Right angles on, a round-join buffer would re-round every
-            # corner the ortho step just squared; a mitre join preserves them.
-            r = _buffer_square_corners(g, expand_dist) if ortho else g.buffer(expand_dist, 8)
+            # With Right angles or the regularizer on, a round-join buffer would
+            # re-round every corner just squared; a mitre join preserves them.
+            r = (
+                _buffer_square_corners(g, expand_dist)
+                if (ortho or regularize)
+                else g.buffer(expand_dist, 8)
+            )
             if r is not None and not r.isEmpty():
                 g = r
         except Exception:  # noqa: BLE001  # nosec B110
             pass
     if smooth:
-        try:
-            # minimumDistance = the simplify tolerance: a segment already at
-            # sub-tolerance scale has no visible corner to round, so splitting
-            # it would only mint invisible vertices.
-            min_dist = simplify_tol if simplify_tol and simplify_tol > 0.0 else -1.0
-            r = g.smooth(1, 0.25, min_dist, 120.0)
-            if r is not None and not r.isEmpty():
-                g = r
-                # Vertex diet: one Chaikin pass near-doubles the vertex count,
-                # which is pure render weight once thousands of review objects
-                # are on canvas (every pan/zoom repaint reads every vertex).
-                # Round corners is now a smart DEFAULT for vegetation prompts,
-                # so the weight must be paid off here: a post-smooth simplify
-                # at the same tolerance strips the sub-tolerance points the
-                # rounding added while keeping every curve big enough to see.
-                if simplify_tol and simplify_tol > 0.0:
-                    r2 = g.simplify(simplify_tol)
-                    if r2 is not None and not r2.isEmpty():
-                        g = r2
-        except Exception:  # noqa: BLE001  # nosec B110
-            pass
+        # Round corners plus its vertex diet, shared with the Manual tail.
+        g = rounded_corner_outline(g, simplify_tol)
     return g
 
 
-def apply_right_angles(geom: "QgsGeometry", destair_tol: float = 0.0) -> "QgsGeometry":
-    """"Right angles" for the Manual pipeline: orthogonalize a polygon that
-    came straight from a mask. A raw mask outline is ALREADY all right-angle
-    stair steps, so orthogonalize alone is a no-op: when ``destair_tol`` is
-    given, the outline is first simplified up to that tolerance (callers pass
-    it only when their own simplify was weaker). Best-effort: returns the
-    input on any failure, never raises."""
+def apply_right_angles(
+    geom: QgsGeometry,
+    destair_tol: float = 0.0,
+    *,
+    tolerance_m: float = 0.0,
+    allow_diagonal: bool = True,
+    allow_circles: bool = False,
+    min_keep_iou: float = 0.7,
+    diagonal_reduction: float | None = None,
+    circle_threshold: float | None = None,
+    multi_direction: bool = False,
+    multi_max_groups: int | None = None,
+    multi_min_separation_deg: float | None = None,
+    envelope: Any = None,
+) -> QgsGeometry:
+    """"Right angles" for the Manual pipeline and the Refine-in-Manual handoff.
+
+    Uses the diagonals-aware footprint regularizer (building_regularizer), the
+    SAME engine the Automatic review uses, so both modes behave the same: a
+    45-degree wall snaps clean, not just edges already within 15 degrees of
+    0/90. Falls back to the native QgsGeometry.orthogonalize when the
+    regularizer is unavailable or leaves the shape empty.
+
+    A raw mask outline is ALREADY all right-angle stair steps, so it is
+    de-staircased first: when ``destair_tol`` is given the outline is simplified
+    up to it. ``tolerance_m`` is the regularizer's max snap distance (ground
+    units); callers pass the server ground tolerance so the snap keeps a scale
+    even when destair_tol collapses to 0. ``allow_diagonal``, ``allow_circles``,
+    ``min_keep_iou``, ``diagonal_reduction``, ``circle_threshold``,
+    ``multi_direction``, ``multi_max_groups`` and ``multi_min_separation_deg``
+    are the server shape dials (core.detection_policy.regularize_settings), so
+    Manual and the Refine-in-Manual handoff square exactly like the Automatic
+    review; each defaults to the engine default, so an old caller is unchanged.
+    ``multi_direction`` off is the single-direction engine, today's behaviour:
+    with it on, a building whose wing sits at an angle to the main block keeps
+    each wing on its own grid instead of staircasing off one global axis.
+
+    The regularizer's IoU guard reverts a shape the snap would distort. When it
+    does, we do NOT run the native orthogonalize over the outline: on a complex
+    or off-axis footprint that manufactures a staircase. The outline is already
+    de-staircased, so we return that smooth simplified shape, which is never
+    worse than the input. Best-effort: returns the input on any failure, never
+    raises."""
     if geom is None or geom.isEmpty():
         return geom
     g = geom
+    destaired = False
     if destair_tol and destair_tol > 0.0:
         try:
             r = g.simplify(destair_tol)
             if r is not None and not r.isEmpty():
                 g = r
+                destaired = True
         except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
             pass
-    try:
-        r = g.orthogonalize(1.0e-8, 1000, 15.0)
-        if r is not None and not r.isEmpty():
-            g = r
-    except Exception:  # noqa: BLE001 -- refine is best-effort
-        return geom
+    tol = tolerance_m if tolerance_m and tolerance_m > 0.0 else destair_tol
+    if tol and tol > 0.0:
+        try:
+            from .building_regularizer import regularize_qgs_geometry_ex
+            res = regularize_qgs_geometry_ex(
+                g,
+                tolerance_m=tol,
+                allow_diagonal=allow_diagonal,
+                allow_circles=allow_circles,
+                min_keep_iou=min_keep_iou,
+                policy=envelope,
+                **_regularize_shape_kwargs(
+                    diagonal_reduction, circle_threshold,
+                    multi_direction, multi_max_groups,
+                    multi_min_separation_deg),
+            )
+            # Only the regularized outcome short-circuits. When it changed
+            # nothing (guard reverted, or the engine is unavailable) it returns
+            # the INPUT; fall through to the de-staircase degradation below.
+            if res.regularized and not res.geometry.isEmpty():
+                return res.geometry
+        except Exception:  # noqa: BLE001 -- fall back to the de-staircased outline  # nosec B110
+            pass
+    # Reverted or unavailable: degrade to a de-staircased simplified outline,
+    # never a manufactured or raw staircase. When no destair distance was given,
+    # simplify to the snap tolerance so the fallback is still a cleaned outline.
+    if not destaired and tol and tol > 0.0:
+        try:
+            r = geom.simplify(tol)
+            if r is not None and not r.isEmpty():
+                return r
+        except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
+            pass
     return g
 
 
 def shape_polygon_geometry(
-    geom: "QgsGeometry",
+    geom: QgsGeometry,
     mupp: float,
-    simplify_px: int = 0,
+    simplify_px: float = 0.0,
     smooth: bool = False,
     expand_px: int = 0,
     fill_holes: bool = False,
     ortho: bool = False,
-) -> "QgsGeometry":
+    fill_holes_max_area: float = 0.0,
+    *,
+    open_dist: float = 0.0,
+    vertex_spacing: float = 0.0,
+    vertex_min: int = 8,
+    vertex_max_deviation: float = 0.0,
+    vertex_max_deviation_fraction: float = 0.0,
+    vertex_keep_fraction: float = 0.0,
+    vertex_dial_max_cap_fraction: float | None = None,
+    regularize_tol: float = 0.0,
+    destair_tol: float = 0.0,
+    allow_diagonal: bool = True,
+    allow_circles: bool = False,
+    min_keep_iou: float = 0.7,
+    diagonal_reduction: float | None = None,
+    circle_threshold: float | None = None,
+    multi_direction: bool = False,
+    multi_max_groups: int | None = None,
+    multi_min_separation_deg: float | None = None,
+    envelope: Any = None,
+) -> QgsGeometry:
     """Apply the Manual refine controls to an EXISTING polygon geometry.
 
     The Refine-in-Manual handoff edits detections that have no source mask
     (their shape came from the cloud run), so the mask-space refinement
     pipeline cannot run. This is its geometry-space twin: same controls,
-    same order (fill holes, expand/contract, simplify, right angles, round
-    corners), with pixel-denominated controls converted to ground units via
-    ``mupp`` (map units per pixel of the source raster). Callers keep the
-    PRISTINE geometry and re-shape from it on every settings change, so the
+    same order as ``apply_geometry_refinement`` (fill holes, trim spikes,
+    simplify, point budget, right angles, expand/contract, round corners),
+    with pixel-denominated controls converted to ground
+    units via ``mupp`` (map units per pixel of the source raster). Callers keep
+    the PRISTINE geometry and re-shape from it on every settings change, so the
     operation stays non-destructive. Best-effort: returns the input on any
     failure, never raises.
+
+    ``fill_holes_max_area`` is the fill-holes size cutoff in CRS UNITS SQUARED
+    (0 = every hole, as before): only rings under it go, so a big real hole
+    survives. Scale a ground-m2 setting with core.hole_size.ring_area_arg first.
+
+    ``open_dist`` is the Trim-spikes morphological opening distance in CRS units
+    (0 = off).
+
+    ``expand_px`` runs AFTER the squaring, with mitre joins under it, the same
+    slot as ``apply_geometry_refinement``: a round-join buffer before the
+    squaring feeds it rounded corners, and one after it re-rounds the corners
+    the squaring just produced.
+
+    ``vertex_spacing`` + ``vertex_min`` + ``vertex_max_deviation(_fraction)`` +
+    ``vertex_keep_fraction`` + ``vertex_dial_max_cap_fraction`` are the point
+    budget (core.vertex_budget), the same set and the same slot as
+    ``apply_geometry_refinement``: after the simplify, before the squaring,
+    because squaring a thinned outline is what the shape wants while thinning an
+    already-squared one un-squares it. ``vertex_keep_fraction`` is the user's
+    Points dial and ``vertex_spacing`` the class density; a caller whose geometry
+    already carries its class density (an object handed off from the Automatic
+    review) passes spacing 0 so the dial is the only budget. All distances in CRS
+    units; both budgets at 0 skips the pass, so an old caller is unchanged.
+
+    ``regularize_tol``/``destair_tol`` are the Right-angles snap and
+    de-staircase distances in CRS units, and ``allow_diagonal``,
+    ``allow_circles``, ``min_keep_iou``, ``diagonal_reduction`` and
+    ``circle_threshold``, ``multi_direction``, ``multi_max_groups`` and
+    ``multi_min_separation_deg`` are the server shape dials
+    (core.detection_policy.regularize_settings). When ``regularize_tol`` is 0
+    the squaring falls back to the old pixel-anchored tolerance, so a caller
+    that passes none is unchanged. ``multi_direction`` off is the
+    single-direction engine, so a building whose wings sit at an angle to each
+    other is snapped to one grid; the dial is what lets each wing keep its own.
     """
     if geom is None or geom.isEmpty() or not mupp or mupp <= 0:
         return geom
     g = QgsGeometry(geom)
     try:
         if fill_holes:
-            parts = g.asMultiPolygon() if g.isMultipart() else [g.asPolygon()]
-            shells = [[rings[0]] for rings in parts if rings]
-            if shells:
-                r = QgsGeometry.fromMultiPolygonXY(shells)
-                if r is not None and not r.isEmpty():
-                    g = r
-        if expand_px:
-            r = g.buffer(expand_px * mupp, 8)
+            if fill_holes_max_area and fill_holes_max_area > 0.0:
+                r = g.removeInteriorRings(float(fill_holes_max_area))
+            else:
+                parts = g.asMultiPolygon() if g.isMultipart() else [g.asPolygon()]
+                shells = [[rings[0]] for rings in parts if rings]
+                r = QgsGeometry.fromMultiPolygonXY(shells) if shells else None
+            if r is not None and not r.isEmpty():
+                g = r
+        # Trim spikes: morphological opening (shrink then grow back) that drops
+        # thin attached fringe narrower than 2*open_dist. The same op as the
+        # Automatic review's Trim spikes; guarded on isEmpty so a genuinely thin
+        # object is skipped, never destroyed.
+        if open_dist and open_dist > 0.0:
+            r = g.buffer(-open_dist, 8).buffer(open_dist, 8)
             if r is not None and not r.isEmpty():
                 g = r
         # Same px -> tolerance scale as the Manual mask pipeline
         # (_compute_simplification_tolerance), so the spinbox value means the
         # same thing whether the polygon came from a local mask or the cloud.
-        tolerance = simplify_px * mupp * 0.5 if simplify_px > 0 else 0.0
+        tolerance = simplify_px * mupp if simplify_px > 0 else 0.0
         if tolerance > 0:
             r = g.simplify(tolerance)
             if r is not None and not r.isEmpty():
                 g = r
-        if ortho:
-            g = apply_right_angles(
-                g, destair_tol=max(0.0, 3 * mupp * 0.5 - tolerance))
-        if smooth:
-            r = g.smooth(1, 0.25, -1.0, 120.0)
+        if ((vertex_spacing and vertex_spacing > 0.0) or (vertex_keep_fraction and vertex_keep_fraction > 0.0)):
+            # The point budget, in the same slot as apply_geometry_refinement so
+            # the two refine tails stay one pipeline.
+            from .vertex_budget import (
+                _DIAL_MAX_CAP_NARROW_FRACTION,
+                simplify_to_budget,
+            )
+
+            # None = no server dial: read the engine's own value rather than
+            # restating a second client default here.
+            dial_cap = (_DIAL_MAX_CAP_NARROW_FRACTION
+                        if vertex_dial_max_cap_fraction is None
+                        else float(vertex_dial_max_cap_fraction))
+            r = simplify_to_budget(
+                g, spacing=vertex_spacing, min_vertices=vertex_min,
+                max_deviation=vertex_max_deviation,
+                max_deviation_fraction=vertex_max_deviation_fraction,
+                keep_fraction=vertex_keep_fraction,
+                dial_max_cap_fraction=dial_cap)
             if r is not None and not r.isEmpty():
                 g = r
+        if ortho:
+            # Ground snap + de-staircase distances (server dials), converted to
+            # CRS units by the caller. Fall back to the old pixel-anchored 3-px
+            # tolerance when none was passed, so an old caller is unchanged.
+            reg_tol = regularize_tol if regularize_tol and regularize_tol > 0.0 else 1.5 * mupp
+            destair = destair_tol if destair_tol and destair_tol > 0.0 else reg_tol
+            g = apply_right_angles(
+                g, destair_tol=max(0.0, destair - tolerance),
+                tolerance_m=reg_tol,
+                allow_diagonal=allow_diagonal,
+                allow_circles=allow_circles,
+                min_keep_iou=min_keep_iou,
+                diagonal_reduction=diagonal_reduction,
+                circle_threshold=circle_threshold,
+                multi_direction=multi_direction,
+                multi_max_groups=multi_max_groups,
+                multi_min_separation_deg=multi_min_separation_deg,
+                envelope=envelope)
+        if expand_px:
+            # After the squaring, never before: with Right angles on, a
+            # round-join buffer would re-round every corner just produced, so
+            # the join is mitre there.
+            dist = expand_px * mupp
+            r = _buffer_square_corners(g, dist) if ortho else g.buffer(dist, 8)
+            if r is not None and not r.isEmpty():
+                g = r
+        if smooth:
+            # Round corners plus its vertex diet, the same pass the Automatic
+            # review runs.
+            g = rounded_corner_outline(g, tolerance)
         if g.isGeosValid() is False:
             r = g.makeValid()
             if r is not None and not r.isEmpty():
@@ -995,11 +1563,11 @@ def shape_polygon_geometry(
 
 
 def suppress_redundant_hypotheses(
-    items: "list[tuple[QgsGeometry, float]]",
+    items: list[tuple[QgsGeometry, float]],
     ios_threshold: float = 0.5,
     dup_ios_floor: float = 0.3,
     dup_centroid_frac: float = 0.35,
-) -> "list[tuple[QgsGeometry, float]]":
+) -> list[tuple[QgsGeometry, float]]:
     """Keep ONE detection hypothesis per region: greedy score-descending NMS.
 
     The cloud model emits overlapping hypotheses at several granularities for
@@ -1045,7 +1613,7 @@ def suppress_redundant_hypotheses(
             ih = min(bb.yMaximum(), kbb.yMaximum()) - max(bb.yMinimum(), kbb.yMinimum())
             if iw <= 0.0 or ih <= 0.0:
                 continue
-            small = area if area < karea else karea
+            small = min(karea, area)
             if small <= 0.0 or (iw * ih) / small < dup_ios_floor:
                 continue
             inter = geom.intersection(kept_pair[0])
@@ -1068,9 +1636,9 @@ def suppress_redundant_hypotheses(
 
 
 def drop_covered_objects(
-    items: "list[tuple[int, QgsGeometry, float]]",
+    items: list[tuple[int, QgsGeometry, float]],
     cover_threshold: float = 0.40,
-) -> "list[tuple[int, QgsGeometry, float]]":
+) -> list[tuple[int, QgsGeometry, float]]:
     """End-of-run redundancy sweep on the merger's WHOLE objects.
 
     An object mostly painted over by LARGER objects is a leftover partial
@@ -1107,7 +1675,7 @@ class CoverSweep:
 
     def __init__(
         self,
-        items: "list[tuple[int, QgsGeometry, float]]",
+        items: list[tuple[int, QgsGeometry, float]],
         cover_threshold: float = 0.40,
     ) -> None:
         self._items = items
@@ -1120,7 +1688,7 @@ class CoverSweep:
         self._index = QgsSpatialIndex()
         if self._done:
             return
-        for pos, (sid, geom, score) in enumerate(items):
+        for pos, (_sid, geom, _score) in enumerate(items):
             try:
                 bb, area = geom.boundingBox(), geom.area()
             except Exception:
@@ -1129,6 +1697,9 @@ class CoverSweep:
             self._metas.append((bb, area))
             feat = QgsFeature(pos)
             feat.setGeometry(QgsGeometry.fromRect(bb))
+            # Return ignored on purpose: a refused insert only costs one
+            # covering candidate (a degenerate box), and the sweep only ever
+            # drops an object, so a missing candidate keeps more, never less.
             self._index.addFeature(feat)
 
     def step(self, max_items: int) -> bool:
@@ -1170,12 +1741,19 @@ class CoverSweep:
             if not covers:
                 continue
             # Union the per-neighbour overlaps: two large neighbours overlapping
-            # each other over this object must not double count.
-            merged = covers[0]
-            for g in covers[1:]:
-                u = merged.combine(g)
-                if u is not None and not u.isEmpty():
-                    merged = u
+            # each other over this object must not double count. One unaryUnion
+            # over the whole list beats a chain of pairwise combine() (fewer
+            # intermediate geometries) on a dense tile.
+            if len(covers) == 1:
+                merged = covers[0]
+            else:
+                merged = QgsGeometry.unaryUnion(covers)
+                if merged is None or merged.isEmpty():
+                    merged = covers[0]
+                    for g in covers[1:]:
+                        u = merged.combine(g)
+                        if u is not None and not u.isEmpty():
+                            merged = u
             if merged.area() / area >= threshold:
                 if best_cover_score is not None and items[i][2] > best_cover_score:
                     continue
@@ -1184,409 +1762,8 @@ class CoverSweep:
             self._done = True
         return self._done
 
-    def result(self) -> "list[tuple[int, QgsGeometry, float]]":
+    def result(self) -> list[tuple[int, QgsGeometry, float]]:
         return [it for it, k in zip(self._items, self._keep) if k]
-
-
-class IncrementalMerger:
-    """Greedy non-max merging maintained online as tile fragments arrive.
-
-    A single batch merge at the end of a run would leave the live preview showing
-    raw, cut tile fragments until then. This keeps a running merged set instead:
-    each add() folds a fragment in immediately, so the preview shows whole,
-    stitched objects as tiles complete.
-
-    A fragment unions into EVERY existing object it overlaps by at least the
-    pair's threshold (IoS, intersection over the smaller area), fusing them all
-    into one. IoS (not IoU) is used so the thin overlap a long object (road,
-    river) leaves in the tile overlap strip still registers. Merging all matches
-    (not just the best) is what fully stitches a long object whose pieces arrive
-    out of tile order: a bridging fragment that touches two already-grown keepers
-    fuses them into one.
-
-    Size-aware gate (the anti-over-merge safety). The low merge_ios is meant only
-    to stitch one large object cut by a tile boundary. But IoS divides by the
-    SMALLER area, so a sliver of overlap between two small objects also clears it,
-    and the bridging then chains distinct small neighbours (solar panels, cars,
-    trees) into one blob even when there is clear space between them. The fix:
-    an object shorter than ``seam_min_dim`` in both bbox dimensions is guaranteed
-    to fit whole inside one tile (it is <= the inter-tile overlap strip), so it
-    can only ever be a cross-tile DUPLICATE, never a seam-split half. Two pieces
-    therefore merge at the low merge_ios only when BOTH could span a seam (both
-    >= seam_min_dim); any pair involving a small object must instead clear the
-    strict dedup_ios (a near-duplicate). Distinct small neighbours have IoS well
-    below dedup_ios, so they stay apart, while a true duplicate of a small object
-    (the same panel seen in two overlapping tiles) sits near IoS 1.0 and still
-    merges. seam_min_dim = 0.0 disables the gate (every pair uses merge_ios, the
-    original behaviour) for callers without a known tile size.
-
-    Order-independent: union is commutative, so the result does not depend on the
-    order tiles complete in.
-    """
-
-    def __init__(
-        self,
-        merge_ios: float = 0.15,
-        dedup_ios: float = 0.5,
-        seam_min_dim: float = 0.0,
-        dup_ios_floor: float = 0.3,
-        dup_centroid_frac: float = 0.35,
-        seam_span_ios: float = 0.03,
-        select_duplicates: bool = False,
-        gsd: float = 0.0,
-    ):
-        self._merge_ios = merge_ios
-        self._dedup_ios = dedup_ios
-        self._seam_min_dim = seam_min_dim
-        # Ground units per detection pixel. Sizes the one-pixel erosion that
-        # separates jitter duplicates from real seam complements in the
-        # additive-union select branch (see add()). 0.0 (unknown gsd) falls
-        # back to a relative added-area floor instead of the erosion test.
-        self._gsd = float(gsd)
-        # SEPARATE/count mode: a matched group is EITHER redundant readings of
-        # one footprint (cross-tile jitter duplicate, parent vs child
-        # hypothesis) OR the pieces of one object cut by a tile seam. The
-        # additive-union select branch in add() tells them apart PER MEMBER
-        # with an erosion test on the member's added area: redundant members
-        # are skipped (union would only add outline dilation or rebuild the
-        # mega-blob the per-tile NMS killed; score comes only from
-        # co-extensive or contributing members so a small high-score child
-        # never promotes a big low-score parent), real complements are
-        # stitched in (discarding one renders the object truncated flat along
-        # the tile grid). MAP/continuous callers keep the plain union
-        # (coverage is a union by design).
-        self._select_duplicates = select_duplicates
-        # Seam-span rescue for MISSED JOINS: a large object split ~50/50 by a
-        # tile seam overlaps only inside the thin (~20%) overlap strip, so its
-        # IoS can fall below merge_ios and plain IoS merging leaves a straight
-        # seam line through the object. When BOTH pieces are seam-eligible (each
-        # big enough to be a tile-cut half) and the overlap REGION spans at least
-        # a seam-strip width in its longer dimension (the tell-tale of a seam
-        # split, not an incidental corner touch), merge them at this much lower
-        # IoS floor. Gated to seam-eligible pairs, a finite positive
-        # seam_min_dim AND union mode (select_duplicates=False), so it never
-        # fuses small distinct neighbours, never fires when the size gate is
-        # off, and never lets a common-wall sliver between two DISTINCT large
-        # buildings reach the selection-mode stitch (see add()).
-        self._seam_span_ios = seam_span_ios
-        # Robust same-object dedup: a duplicate the cloud model drew slightly differently
-        # across two tiles can fall below dedup_ios yet still be ONE object. Treat
-        # it as a duplicate when the overlap clears dup_ios_floor AND the
-        # centroids sit within dup_centroid_frac of the smaller object's size.
-        # Conservative: distinct neighbours have far-apart centroids, so this
-        # never fuses them. Applies to the non-seam (small-object) branch only.
-        self._dup_ios_floor = dup_ios_floor
-        self._dup_centroid_frac = dup_centroid_frac
-        self._index = QgsSpatialIndex()
-        self._keepers: dict[int, "QgsGeometry | None"] = {}
-        # Representative score per keeper: the MAX of its constituent fragments'
-        # scores, so a strong object survives the review confidence filter even
-        # if one seam-half scored low (that is exactly the "confidence cuts
-        # buildings" bug: filtering fragments before stitching drops the weak
-        # half). Merges take the max across the candidate and every keeper it
-        # absorbs.
-        self._scores: dict[int, float] = {}
-        self._next_id = 0
-        # Ids of the non-retired keepers, kept in lockstep with _keepers/_scores
-        # (add on _insert, drop on retirement). result()/result_scored() walk this
-        # instead of scanning every id ever inserted, so the retired None slots
-        # that pile up over a dense run cost nothing. Stored as a
-        # dict used as an INSERTION-ORDERED set (keys only) so result order is
-        # byte-identical to the old _keepers.items() scan (an object retired then
-        # re-inserted lands last in both). Pure bookkeeping: the merge LOGIC is
-        # unchanged. The candidate loop in add() deliberately stays driven by
-        # _index.intersects()+_keepers.get(), so a retired fid still returned by
-        # the index is skipped exactly as before.
-        self._live_ids: dict[int, None] = {}
-
-    def _is_seam_eligible(self, geom: "QgsGeometry") -> bool:
-        """True if geom is large enough to possibly be cut by a tile boundary.
-
-        Below seam_min_dim in both bbox dimensions an object always fits whole in
-        one tile, so it can only be a duplicate, not a seam-split half. When the
-        gate is off (seam_min_dim <= 0) everything is treated as seam-eligible.
-        """
-        if self._seam_min_dim <= 0.0:
-            return True
-        bb = geom.boundingBox()
-        return max(bb.width(), bb.height()) >= self._seam_min_dim
-
-    def add(self, geom: "QgsGeometry", score: float = 0.0) -> None:
-        if geom is None or geom.isEmpty():
-            return
-        # Find every existing object this fragment overlaps enough to be part of.
-        # Merging ALL of them (not just the best) stitches a long object whose
-        # pieces arrive out of tile order. The size-aware threshold keeps that
-        # from chaining distinct SMALL neighbours: a low merge_ios bridge is
-        # allowed only when both pieces are large enough to be tile-cut halves;
-        # any pair with a small object needs the strict dedup_ios (true duplicate).
-        cand_bbox = geom.boundingBox()
-        cand_area = geom.area()
-        cand_seam = self._is_seam_eligible(geom)
-        # Seam-span rescue is only armed when the size gate is a finite positive
-        # span (a known GSD) AND the caller wants unions (map/continuous). In
-        # selection mode it stays off: two DISTINCT adjacent buildings sharing a
-        # long thin overlap (common wall, shadow fringe) have a large overlap
-        # span at a tiny IoS, exactly what the rescue accepts, and the stitch
-        # branch would then fuse them. Seam halves of one big object clear the
-        # plain merge_ios instead (their overlap strip is a large fraction of
-        # the smaller half up to ~500 m objects).
-        seam_span_armed = (
-            0.0 < self._seam_min_dim < float("inf") and not self._select_duplicates
-        )
-        matches = []
-        # dict.fromkeys dedupes the candidate fids: a merge reuses the primary
-        # keeper's fid (see the branches below), so after that reuse the index
-        # holds TWO bbox entries under that fid (the stale retired bbox plus the
-        # fresh union bbox) until the next compaction. Without this dedupe
-        # intersects() would return the reused fid twice within one add(); the
-        # second occurrence now sees a LIVE keeper and would self-merge the
-        # object into itself (or, in the stitch branch, combine() a keeper that
-        # the first occurrence already retired to None). Processing each fid at
-        # most once keeps matches unique and the merge logic byte-unchanged.
-        for fid in dict.fromkeys(self._index.intersects(cand_bbox)):
-            keeper = self._keepers.get(fid)
-            if keeper is None:
-                continue
-            both_large = cand_seam and self._is_seam_eligible(keeper)
-            threshold = self._merge_ios if both_large else self._dedup_ios
-            # The lowest IoS we might still accept, used only to size the cheap
-            # bbox pre-filter below. The non-seam branch can merge a near-
-            # coincident duplicate down at dup_ios_floor (centroid test); the
-            # seam branch can rescue a seam split down at seam_span_ios. The
-            # pre-filter must not prune below whichever floor applies.
-            if both_large:
-                min_threshold = (
-                    min(threshold, self._seam_span_ios) if seam_span_armed else threshold
-                )
-            else:
-                min_threshold = min(threshold, self._dup_ios_floor)
-            # Cheap bbox pre-filter before the costly intersection(): the real
-            # geometry overlap can never exceed the bbox overlap, so if even
-            # bbox_overlap / smaller_area is below the threshold the pair cannot
-            # merge. This skips intersection() for the many bbox-adjacent-but-
-            # distinct neighbours in dense scenes (packed panels, urban roofs),
-            # the dominant main-thread cost of a big run. No false negatives:
-            # bbox overlap is an upper bound on the true overlap.
-            kb = keeper.boundingBox()
-            iw = min(cand_bbox.xMaximum(), kb.xMaximum()) - max(cand_bbox.xMinimum(), kb.xMinimum())
-            ih = min(cand_bbox.yMaximum(), kb.yMaximum()) - max(cand_bbox.yMinimum(), kb.yMinimum())
-            if iw <= 0.0 or ih <= 0.0:
-                continue
-            keeper_area = keeper.area()
-            min_area = cand_area if cand_area < keeper_area else keeper_area
-            if min_area <= 0.0 or (iw * ih) / min_area < min_threshold:
-                continue
-            ios, span = _ios_and_span(geom, keeper, a1=cand_area, a2=keeper_area)
-            if ios >= threshold:
-                matches.append(fid)
-                continue
-            # Seam-span rescue (large pairs only): a true tile-seam split has a
-            # low IoS but its overlap strip runs the object's length along the
-            # seam, so its span reaches a seam-strip width. Distinct large
-            # neighbours are spatially apart, so their overlap span is small.
-            # The span requirement takes a tolerance: mask edges land a pixel
-            # or two short of the tile border and the simplify pass shaves the
-            # strip further, so a genuine seam strip measures slightly UNDER
-            # the theoretical overlap width; requiring the full width lets
-            # near-exact seam splits through as overlapping duplicates. An
-            # incidental corner touch between distinct neighbours stays far
-            # below this scale.
-            if both_large and seam_span_armed:
-                if ios >= self._seam_span_ios and span >= 0.85 * self._seam_min_dim:
-                    matches.append(fid)
-                    continue
-            # Robust same-object dedup (non-seam only): decent overlap + nearly
-            # coincident centroids => the same object split/redrawn across tiles,
-            # so it must not be counted twice.
-            if (not both_large) and ios >= self._dup_ios_floor:
-                smaller_bb = cand_bbox if cand_area <= keeper_area else kb
-                smax = max(smaller_bb.width(), smaller_bb.height())
-                if smax > 0.0:
-                    cc = geom.centroid().asPoint()
-                    kc = keeper.centroid().asPoint()
-                    dist = ((cc.x() - kc.x()) ** 2 + (cc.y() - kc.y()) ** 2) ** 0.5
-                    if dist < self._dup_centroid_frac * smax:
-                        matches.append(fid)
-
-        if matches and self._select_duplicates:
-            # A matched group is one of two things, and the ADDITIVE UNION
-            # below tells them apart PER MEMBER instead of by a single
-            # union/largest ratio (a single ratio test discards a seam
-            # complement that extends the object by less than the ratio margin,
-            # which leaves big buildings with a flat wall along the tile grid
-            # where the discarded complement would have carried the real width):
-            #  - REDUNDANT readings of the same footprint (cross-tile jitter
-            #    duplicate, parent/child hypothesis): the member adds no real
-            #    area, unioning it would only dilate the outline or rebuild
-            #    the mega-blob the per-tile NMS killed -> skipped.
-            #  - PIECES of ONE object cut by a tile seam (or emitted as
-            #    sections): the member contributes real new area past the
-            #    growing shape -> unioned (the stitch; discarding it renders
-            #    the object truncated along the tile grid).
-            # The discriminator: the member's difference against the growing
-            # shape must SURVIVE a one-pixel erosion. A duplicate's difference
-            # is a sub-pixel jitter ring that erodes to nothing; a genuine
-            # complement's difference is real width that survives, so it heals
-            # the flat wall without growing the outline or rebuilding a
-            # mega-blob. Cross-tile parent-vs-children
-            # is unchanged: the largest member already won before, and a
-            # child inside it adds no surviving difference.
-            # The union carries the PRIMARY keeper's fid (lowest among the
-            # matched keepers, deterministic) so an object keeps ONE stable id
-            # across every merge that grows it (the id drives the live per-object
-            # colour and the refine cache in the repaint loop). All matched
-            # keepers are retired; the primary's fid is reused for the union.
-            primary_fid = min(matches)
-            members = [(geom, float(score))]
-            for fid in matches:
-                keeper = self._keepers[fid]
-                if keeper is not None:
-                    members.append((keeper, self._scores.get(fid, 0.0)))
-                self._keepers[fid] = None
-                self._live_ids.pop(fid, None)
-            members.sort(key=lambda t: t[0].area(), reverse=True)
-            largest_area = members[0][0].area()
-            current = members[0][0]
-            contributing = {0}
-            for i in range(1, len(members)):
-                g = members[i][0]
-                diff = g.difference(current)
-                if diff is None or diff.isEmpty():
-                    continue
-                if self._gsd > 0.0:
-                    eroded = diff.buffer(-self._gsd, 5)
-                    if eroded is None or eroded.isEmpty() or eroded.area() <= 0.0:
-                        continue
-                elif diff.area() < 0.02 * largest_area:
-                    # Unknown gsd (no pixel size to erode by): fall back to a
-                    # small relative floor so pure-jitter rings still never
-                    # dilate the outline.
-                    continue
-                union = current.combine(g)
-                if union is not None and not union.isEmpty():
-                    current = union
-                    contributing.add(i)
-            # Score: the MAX over members that are co-extensive with the
-            # largest (area >= half of it: a redundant full reading) or that
-            # actually contributed area (a stitched seam half). A small
-            # high-score child that added nothing never promotes the object;
-            # a contributing half keeps its score (filtering a half before
-            # stitching is the "confidence cuts buildings" bug).
-            floor_area = 0.5 * largest_area
-            best_score = max(
-                s for i, (g, s) in enumerate(members)
-                if i in contributing or g.area() >= floor_area
-            )
-            self._insert(current, best_score, fid=primary_fid)
-        elif matches:
-            combined = geom
-            best_score = float(score)
-            retired = []
-            for fid in matches:
-                keeper = self._keepers[fid]
-                union = combined.combine(keeper)
-                if union is not None and not union.isEmpty():
-                    combined = union
-                    # Only retire a keeper whose geometry was actually absorbed;
-                    # retiring on a failed union would silently drop its area.
-                    # The merged object keeps the MAX score of everything in it.
-                    if self._scores.get(fid, 0.0) > best_score:
-                        best_score = self._scores.get(fid, 0.0)
-                    self._keepers[fid] = None
-                    self._live_ids.pop(fid, None)
-                    retired.append(fid)
-            if retired:
-                # Reuse the lowest RETIRED keeper's fid (primary) so the stitched
-                # object keeps one stable id across merges. min(retired), not
-                # min(matches): a matched fid whose combine() failed stays LIVE,
-                # so reusing it would collide two live keepers on one id.
-                self._insert(combined, best_score, fid=min(retired))
-            else:
-                # No union succeeded (all combine() calls failed); keep the
-                # fragment as its own object rather than losing it.
-                self._insert(geom, float(score))
-        else:
-            self._insert(geom, float(score))
-
-    def _insert(self, geom: "QgsGeometry", score: float = 0.0, fid: "int | None" = None) -> None:
-        # fid=None mints a genuinely new object from _next_id (unchanged path).
-        # An explicit fid REUSES a retired keeper's id for a merge product: the
-        # object keeps its stable colour/refine id across the stitch. _next_id is
-        # NOT bumped on reuse (it stays a strict high-water mark, so a future new
-        # object can never collide with a reused id). Reuse re-adds a bbox entry
-        # under an id whose stale retired bbox still sits in _index until the next
-        # compaction; add()'s candidate dedupe absorbs that duplicate.
-        use_id = self._next_id if fid is None else fid
-        feat = QgsFeature(use_id)
-        feat.setGeometry(geom)
-        self._index.insertFeature(feat)
-        self._keepers[use_id] = geom
-        self._scores[use_id] = float(score)
-        self._live_ids[use_id] = None
-        if fid is None:
-            self._next_id += 1
-        self._maybe_compact()
-
-    def _maybe_compact(self) -> None:
-        """Drop the retired None slots from _keepers/_scores AND rebuild _index
-        from the survivors once they dominate the dicts (retired > 4x live), so a
-        dense run's memory and add()'s intersects() scan both track the live
-        object count instead of every fragment ever inserted.
-        Behavior-preserving: _next_id is never reset (so it can never collide
-        with a retired fid still living in _index), and add() reads keepers via
-        .get(), so a dropped key reads identically to a None slot. _live_ids is
-        the surviving id set, so the rebuilt dicts hold exactly the live objects
-        in the same order."""
-        live = len(self._live_ids)
-        if len(self._keepers) - live <= 4 * live:
-            return
-        self._keepers = {fid: self._keepers[fid] for fid in self._live_ids}
-        self._scores = {fid: self._scores[fid] for fid in self._live_ids}
-        # Rebuild the spatial index from the survivors too: retired fids are
-        # skipped by add() anyway (keepers.get() is None), but their bboxes
-        # otherwise pile up and add()'s intersects() scan grows with every
-        # fragment ever inserted instead of the live count. _next_id is still
-        # never reset, so fresh ids can never collide with pruned ones. Each
-        # feature carries the CURRENT merged geometry (_keepers[fid]) under its
-        # own live fid, so the index stays consistent with the keeper dicts.
-        index = QgsSpatialIndex()
-        for fid in self._live_ids:
-            feat = QgsFeature(fid)
-            feat.setGeometry(self._keepers[fid])
-            index.insertFeature(feat)
-        self._index = index
-
-    def result(self) -> list:
-        """Current merged objects (one geometry per stitched object)."""
-        return [self._keepers[fid] for fid in self._live_ids]
-
-    def result_scored(self) -> list:
-        """Current merged objects as (geometry, score) pairs.
-
-        score is the representative (MAX) score of the object's constituent
-        fragments, so the review confidence filter acts on WHOLE objects and a
-        strong object survives even if one of its seam halves scored low.
-        """
-        return [
-            (self._keepers[fid], self._scores.get(fid, 0.0))
-            for fid in self._live_ids
-        ]
-
-    def result_scored_ided(self) -> list:
-        """Current merged objects as (stable_id, geometry, score) triples.
-
-        stable_id is the keeper's fid, assigned once when the object first
-        appears and preserved across later merges (a merge folds a fragment
-        INTO an existing keeper, reusing its id; only NEW objects get a fresh
-        id). A caller that keys a per-object colour on it keeps an object's hue
-        fixed as more tiles arrive, unlike the positional index which reshuffles
-        whenever an earlier keeper retires.
-        """
-        return [
-            (fid, self._keepers[fid], self._scores.get(fid, 0.0))
-            for fid in self._live_ids
-        ]
 
 
 # ---------------------------------------------------------------------------
@@ -1623,11 +1800,13 @@ def export_geometries_to_file(
 
     Additive export helper used by the Library's direct Export (and reusable by
     any caller that already has final geometries). Keeps the export layer
-    conventions: minimal per-feature schema (editable ``label`` + geodesic
-    ``area_m2``), geometries repaired with makeValid before save (repair, never
-    silently drop). For GPKG the run-level provenance metadata and the style
+    conventions: lean per-feature schema (editable ``label`` + the geodesic
+    ``area_m2`` and ``perimeter_m``), geometries repaired with makeValid before
+    save (repair, never silently drop). For GPKG the run-level provenance metadata and the style
     are stored INTO the file; the other drivers cannot embed a style, so they
-    skip it. KML is always written in EPSG:4326 (the format mandates it).
+    skip it. KML is always written in EPSG:4326 (the format mandates it); every
+    other driver gets the ground-metre CRS from pick_output_crs, so a length
+    read off the file is a length on the ground.
 
     Args:
         geoms:             QgsGeometry list (any polygonal type).
@@ -1657,7 +1836,9 @@ def export_geometries_to_file(
         apply_output_conventions,
         make_area_measurer,
         make_committed_renderer,
+        pick_output_crs,
         repair_polygon,
+        round_measure,
         to_multipolygon,
     )
 
@@ -1665,6 +1846,12 @@ def export_geometries_to_file(
         return None
     if driver not in EXPORT_DRIVERS:
         driver = "GPKG"
+    if not str(output_path or "").strip():
+        return None
+    # A bare filename lands in the process working directory, which is never a
+    # place the user picked (on Windows it sits under the QGIS install). Anchor
+    # a relative path before anything touches the disk.
+    output_path = os.path.abspath(output_path)
 
     # Field-type enums: Qt6/PyQt6 (QGIS 4) scoped QMetaType vs Qt5 QVariant.
     field_str = field_type_string()
@@ -1678,10 +1865,16 @@ def export_geometries_to_file(
         return None
     temp_layer.setCrs(crs)
     pr = temp_layer.dataProvider()
-    pr.addAttributes([
+    if not pr.addAttributes([
         QgsField("label", field_str),
         QgsField("area_m2", field_dbl),
-    ])
+        QgsField("perimeter_m", field_dbl),
+    ]):
+        QgsMessageLog.logMessage(
+            "Export: could not build the attribute schema",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning,
+        )
+        return None
     temp_layer.updateFields()
 
     measurer = make_area_measurer(crs)
@@ -1695,14 +1888,24 @@ def export_geometries_to_file(
         feat = QgsFeature(temp_layer.fields())
         feat.setGeometry(geom)
         try:
-            area = float(measurer.measureArea(geom))
+            area = measurer.measureArea(geom)
+            perimeter = measurer.measurePerimeter(geom)
         except (RuntimeError, AttributeError):
-            area = float(geom.area())
-        feat.setAttributes(["", area])
+            area, perimeter = geom.area(), geom.length()
+        feat.setAttributes(
+            ["", round_measure(area), round_measure(perimeter)])
         feats.append(feat)
     if not feats:
         return None
-    pr.addFeatures(feats)
+    # A rejected batch must not be reported as a saved file: without this the
+    # writer would produce an empty layer and the caller would tell the user
+    # their polygons are on disk.
+    if not pr.addFeatures(feats):
+        QgsMessageLog.logMessage(
+            f"Export: could not stage {len(feats)} polygon(s) for writing",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning,
+        )
+        return None
     temp_layer.updateExtents()
 
     out_dir = os.path.dirname(output_path)
@@ -1711,7 +1914,7 @@ def export_geometries_to_file(
             os.makedirs(out_dir, exist_ok=True)
         except OSError as err:
             QgsMessageLog.logMessage(
-                "Export: cannot create directory: {}".format(err),
+                f"Export: cannot create directory: {err}",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
             return None
@@ -1720,18 +1923,31 @@ def export_geometries_to_file(
     options.driverName = driver
     options.fileEncoding = "UTF-8"
     options.layerName = name
+    # A GeoPackage holds several tables and is often already open as a map
+    # layer: replace the one table, never the file. Recreating the file drops
+    # every other table in it, and a file with a live handle cannot be unlinked
+    # at all on Windows.
+    options.actionOnExistingFile = (
+        QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
+        if driver == "GPKG" and os.path.exists(output_path)
+        else QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile
+    )
     if driver == "KML":
         # KML is defined on WGS84 only; write reprojected coordinates.
-        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
-        if crs is not None and crs.isValid() and crs != wgs84:
-            options.ct = QgsCoordinateTransform(crs, wgs84, QgsProject.instance())
+        target = QgsCoordinateReferenceSystem("EPSG:4326")
+    else:
+        # Ground metres, so a length read off the file is a length on the
+        # ground. See layer_conventions.pick_output_crs.
+        target = pick_output_crs(crs, temp_layer.extent())
+    if (crs is not None and crs.isValid() and target is not None and target.isValid() and target != crs):
+        options.ct = QgsCoordinateTransform(crs, target, QgsProject.instance())
 
     error = QgsVectorFileWriter.writeAsVectorFormatV3(
         temp_layer, output_path, QgsProject.instance().transformContext(), options,
     )
     if error[0] != QgsVectorFileWriter.WriterError.NoError:
         QgsMessageLog.logMessage(
-            "Export failed ({}): {}".format(driver, error[1]),
+            f"Export failed ({driver}): {error[1]}",
             "AI Segmentation", level=Qgis.MessageLevel.Warning,
         )
         return None
@@ -1739,7 +1955,7 @@ def export_geometries_to_file(
     result_layer = QgsVectorLayer(output_path, name, "ogr")
     if not result_layer.isValid():
         result_layer = QgsVectorLayer(
-            "{}|layername={}".format(output_path, name), name, "ogr")
+            f"{output_path}|layername={name}", name, "ogr")
     if not result_layer.isValid():
         QgsMessageLog.logMessage(
             "Export: file saved but could not be loaded back",

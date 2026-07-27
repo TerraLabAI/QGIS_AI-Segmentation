@@ -10,6 +10,11 @@ Strictly LOCAL-ONLY state: nothing here is ever sent anywhere (no telemetry,
 no network). It is the richer sibling of ``presets/segment_history`` (which
 keeps only the prompt token in QSettings for one-click reuse).
 
+One store per account: a signed-in session reads and writes its own
+subdirectory, named after the account fingerprint, while the signed-out state
+keeps the shared root. Nothing is copied between them, so signing in to another
+account on the same machine never surfaces the previous account's runs.
+
 Fail-safe by design: reads return [] on any problem, and the store is capped
 at :data:`MAX_ENTRIES` with orphaned thumbnails garbage-collected on write.
 """
@@ -25,6 +30,7 @@ _HISTORY_DIR = os.path.join(
     "detection_history",
 )
 _HISTORY_FILE = "history.json"
+_ACCOUNT_DIR_PREFIX = "account_"
 
 # Last N runs kept locally. This is the user's own segmentation history and we
 # keep all of it (there is no in-app delete): the server is the true unbounded
@@ -35,10 +41,29 @@ _HISTORY_FILE = "history.json"
 MAX_ENTRIES = 500
 
 
+def account_history_dir() -> str:
+    """The store directory for the account signed in right now (not created).
+
+    The lookup goes through the presets package, which is QGIS-bound, so a
+    context without QGIS falls back to the signed-out store instead of raising:
+    this module has to stay importable and fail-safe on its own.
+    """
+    try:
+        from .presets.run_history_cache import account_fingerprint
+
+        fingerprint = account_fingerprint()
+    except Exception:
+        return _HISTORY_DIR
+    if not fingerprint:
+        return _HISTORY_DIR
+    return os.path.join(_HISTORY_DIR, f"{_ACCOUNT_DIR_PREFIX}{fingerprint}")
+
+
 def history_dir() -> str:
-    """The store directory (created on demand)."""
-    os.makedirs(_HISTORY_DIR, exist_ok=True)
-    return _HISTORY_DIR
+    """The store directory for the current account (created on demand)."""
+    path = account_history_dir()
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def _history_path() -> str:
@@ -66,7 +91,7 @@ def _write_entries(entries: list[dict]) -> None:
     """Atomic JSON write: temp file + os.replace, so a crash mid-write can
     never corrupt the existing store."""
     path = _history_path()
-    tmp = "{}.tmp".format(path)
+    tmp = f"{path}.tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(entries, fh, ensure_ascii=False)
     os.replace(tmp, path)
@@ -74,7 +99,7 @@ def _write_entries(entries: list[dict]) -> None:
 
 def new_thumb_filename() -> str:
     """A fresh unique thumbnail filename to save inside :func:`history_dir`."""
-    return "thumb_{}.png".format(uuid.uuid4().hex[:16])
+    return f"thumb_{uuid.uuid4().hex[:16]}.png"
 
 
 def thumb_abspath(entry: dict) -> str | None:
@@ -85,7 +110,7 @@ def thumb_abspath(entry: dict) -> str | None:
     name = str(entry.get("thumb") or "")
     if not name or os.path.basename(name) != name:
         return None
-    path = os.path.join(_HISTORY_DIR, name)
+    path = os.path.join(account_history_dir(), name)
     return path if os.path.isfile(path) else None
 
 
@@ -121,22 +146,30 @@ def add_entry(
     _gc_thumbs(entries)
 
 
-def clear() -> None:
-    """Drop every stored run and its thumbnails."""
+def clear_detection_history() -> None:
+    """Drop the current account's stored runs and thumbnails.
+
+    Other accounts' stores sit in their own subdirectories and are left alone.
+    """
     _write_entries([])
     _gc_thumbs([])
 
 
 def _gc_thumbs(entries: list[dict]) -> None:
-    """Best-effort delete of thumbnail files no kept entry references."""
+    """Best-effort delete of thumbnail files no kept entry references.
+
+    Scoped to the current account's directory, and to thumbnail file names, so
+    the per-account subdirectories under the signed-out root are never touched.
+    """
     keep = {e.get("thumb") for e in entries if e.get("thumb")}
+    directory = account_history_dir()
     try:
-        names = os.listdir(_HISTORY_DIR)
+        names = os.listdir(directory)
     except OSError:
         return
     for name in names:
         if name.startswith("thumb_") and name.endswith(".png") and name not in keep:
             try:
-                os.remove(os.path.join(_HISTORY_DIR, name))
+                os.remove(os.path.join(directory, name))
             except OSError:
                 pass  # nosec B110 -- GC is best-effort; retried on next write

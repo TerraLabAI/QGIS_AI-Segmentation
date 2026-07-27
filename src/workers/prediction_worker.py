@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import base64
+import hashlib
 import json
 import os
 import sys
+from collections import OrderedDict
 
 # Plugin is CPU-only on NVIDIA; hide devices before torch imports (#31).
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -117,7 +119,7 @@ def build_sam1_model(checkpoint, device):
     return model
 
 
-def get_optimal_device():
+def resolve_venv_torch_device():
     if sys.platform == "darwin":
         try:
             if torch.backends.mps.is_available() and torch.backends.mps.is_built():
@@ -131,7 +133,11 @@ def get_optimal_device():
             pass  # nosec B110
 
     num_cores = os.cpu_count() or 4
-    optimal_threads = max(4, num_cores // 2) if sys.platform == "darwin" else num_cores
+    # Leave the machine a core for QGIS: the image encode runs for seconds and
+    # a fully saturated CPU freezes the canvas, the event loop and the plugin's
+    # own array work. Torch still keeps at least half the cores, so the encode
+    # stays close to full speed.
+    optimal_threads = max(1, min(num_cores - 1, max(2, num_cores // 2)))
     torch.set_num_threads(optimal_threads)
     if hasattr(torch, "set_num_interop_threads"):
         try:
@@ -139,6 +145,119 @@ def get_optimal_device():
         except RuntimeError:
             pass
     return torch.device("cpu")
+
+
+# Encoded crops kept in memory, most-recently-used last. The image encoder is
+# the entire cost of set_image (seconds); the mask decoder that answers a click
+# is milliseconds. A fix pass walks the same neighbourhood over and over, so the
+# same crop comes back, and a repeat has to be a dict lookup instead of a second
+# forward pass. Content-addressed on the crop's own bytes, so a caller re-sending
+# the same pixels needs to know nothing about this. Each entry holds the encoder
+# feature maps for one crop, so the ceiling is a memory budget, not a count.
+ENCODED_CROP_CACHE_MAX = 4
+_encoded_crop_cache = OrderedDict()
+
+
+def crop_cache_key(image_bytes, shape):
+    """Content address for one crop: its bytes plus its shape."""
+    digest = hashlib.blake2b(image_bytes, digest_size=16).hexdigest()
+    return f"{digest}:{'x'.join(str(n) for n in shape)}"
+
+
+def capture_encoded_crop(predictor):
+    """The predictor's post-encode state for the crop just encoded."""
+    if _USE_SAM2:
+        return {
+            "_features": predictor._features,
+            "_orig_hw": predictor._orig_hw,
+        }
+    return {
+        "features": predictor.features,
+        "original_size": predictor.original_size,
+        "input_size": predictor.input_size,
+    }
+
+
+def restore_encoded_crop(predictor, state):
+    """Put a cached crop back into the predictor, skipping the encoder."""
+    if _USE_SAM2:
+        predictor._features = state["_features"]
+        predictor._orig_hw = state["_orig_hw"]
+        predictor._is_batch = False
+        predictor._is_image_set = True
+        return
+    predictor.features = state["features"]
+    predictor.original_size = state["original_size"]
+    predictor.input_size = state["input_size"]
+    predictor.is_image_set = True
+
+
+def encode_or_reuse_crop(predictor, request):
+    """Make one crop the predictor's current image, and answer for it.
+
+    Runs the image encoder only for a crop this process has not seen lately.
+    Returns the ``image_set`` payload; ``cached`` says which of the two happened,
+    which is advisory (older callers ignore the field).
+    """
+    image_shape = request["image_shape"]
+    image_bytes = base64.b64decode(request["image"].encode("utf-8"))
+    key = crop_cache_key(image_bytes, image_shape)
+
+    cached = _encoded_crop_cache.get(key)
+    if cached is not None:
+        _encoded_crop_cache.move_to_end(key)
+        restore_encoded_crop(predictor, cached)
+        original_size = tuple(image_shape[:2])
+    else:
+        image_np = np.frombuffer(
+            image_bytes, dtype=request["image_dtype"]).reshape(image_shape)
+        with torch.inference_mode():
+            predictor.set_image(image_np)
+        original_size = image_np.shape[:2]
+        if ENCODED_CROP_CACHE_MAX > 0:
+            _encoded_crop_cache[key] = capture_encoded_crop(predictor)
+            while len(_encoded_crop_cache) > ENCODED_CROP_CACHE_MAX:
+                _encoded_crop_cache.popitem(last=False)
+
+    response_data = {
+        "original_size": list(original_size),
+        "cached": cached is not None,
+    }
+    # SAM1 exposes the resized input size through its transform.
+    if not _USE_SAM2 and hasattr(predictor, "input_size"):
+        response_data["input_size"] = list(predictor.input_size)
+    return response_data
+
+
+def warm_up_kernels(predictor, device):
+    """Run one throwaway encode + one throwaway click at the real crop size.
+
+    The first forward pass of a process pays for kernel compilation and
+    allocator growth on top of the actual work, so the user's first click was
+    the slowest one of the session. Doing it here, while nobody is waiting,
+    hands the first real click a steady-state model. Never fatal, never
+    cached, and the predictor is reset afterwards so it holds no stale image.
+    """
+    try:
+        blank = np.full((1024, 1024, 3), 128, dtype=np.uint8)
+        with torch.inference_mode():
+            predictor.set_image(blank)
+            predictor.predict(
+                point_coords=np.array([[512, 512]]),
+                point_labels=np.array([1]),
+                multimask_output=False,
+            )
+        if _USE_SAM2:
+            predictor.reset_predictor()
+        else:
+            predictor.reset_image()
+        if device.type == "mps":
+            torch.mps.synchronize()
+        return True
+    except Exception as e:  # noqa: BLE001 - a cold model still works, just slower
+        sys.stderr.write(f"[prediction_worker] warm-up skipped: {e}\n")
+        sys.stderr.flush()
+        return False
 
 
 def send_response(response_type, data):
@@ -194,7 +313,7 @@ def main():
             send_error(f"Checkpoint file not found: {checkpoint_path}")
             sys.exit(1)
 
-        device = get_optimal_device()
+        device = resolve_venv_torch_device()
 
         if _USE_SAM2:
             sam_model = build_sam2_model(checkpoint_path, device)
@@ -216,6 +335,18 @@ def main():
         )
         sys.stderr.flush()
 
+        # Before announcing ready, not after: the caller does not block on this
+        # spawn (warm_up returns as soon as init is sent), so the seconds spent
+        # here are seconds nobody is waiting on. Announcing first would let a
+        # real crop queue up behind the throwaway one.
+        import time as _time
+        _t_warm = _time.monotonic()
+        if warm_up_kernels(predictor, device):
+            sys.stderr.write(
+                "[prediction_worker] warmed in "
+                f"{(_time.monotonic() - _t_warm) * 1000:.0f} ms\n")
+            sys.stderr.flush()
+
         send_ready()
 
         while True:
@@ -228,25 +359,8 @@ def main():
                 action = request.get("action")
 
                 if action == "set_image":
-                    image_b64 = request["image"]
-                    image_shape = request["image_shape"]
-                    image_dtype = request["image_dtype"]
-
-                    image_np = decode_numpy_array(
-                        image_b64, image_shape, image_dtype)
-
-                    with torch.inference_mode():
-                        predictor.set_image(image_np)
-                    original_size = image_np.shape[:2]
-
-                    response_data = {
-                        "original_size": list(original_size),
-                    }
-                    # SAM1 predictor exposes input_size via transform
-                    if not _USE_SAM2 and hasattr(predictor, "input_size"):
-                        response_data["input_size"] = list(predictor.input_size)
-
-                    send_response("image_set", response_data)
+                    send_response("image_set",
+                                  encode_or_reuse_crop(predictor, request))
 
                 elif action == "predict":
                     point_coords = np.array(

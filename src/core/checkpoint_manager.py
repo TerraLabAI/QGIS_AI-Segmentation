@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import stat
 import time
 from typing import Callable
 
@@ -10,6 +11,7 @@ from qgis.core import Qgis, QgsMessageLog
 from qgis.PyQt.QtCore import QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
+from .cache_paths import PLUGIN_CACHE_DIR
 from .model_config import (
     CHECKPOINT_FILENAME,
     CHECKPOINT_SHA256,
@@ -17,14 +19,46 @@ from .model_config import (
     USE_SAM2,
 )
 
-CACHE_DIR = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser("~/.qgis_ai_segmentation")
-CHECKPOINTS_DIR = os.path.join(CACHE_DIR, "checkpoints")
-FEATURES_DIR = os.path.join(CACHE_DIR, "features")
+CHECKPOINTS_DIR = os.path.join(PLUGIN_CACHE_DIR, "checkpoints")
+FEATURES_DIR = os.path.join(PLUGIN_CACHE_DIR, "features")
 
 SAM_CHECKPOINT_URL = CHECKPOINT_URL
 SAM_CHECKPOINT_FILENAME = CHECKPOINT_FILENAME
 SAM_CHECKPOINT_SHA256 = CHECKPOINT_SHA256
 OLD_CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
+
+# Shipped download settings: five attempts, two minutes of silence tolerated,
+# one hour of ceiling on a live but slow connection.
+DOWNLOAD_MAX_RETRIES = 5
+DOWNLOAD_IDLE_TIMEOUT_MS = 120_000
+DOWNLOAD_HARD_TIMEOUT_MS = 3_600_000
+# Shipped retry ladder for moving the finished file into place past an
+# antivirus lock.
+REPLACE_ATTEMPTS = 5
+REPLACE_DELAY_S = 2.0
+# How long an unresumed partial download is kept before the startup sweep drops
+# it. Long enough to cover a user who retries next week, short enough that a
+# few hundred megabytes do not sit in the cache for good.
+PARTIAL_DOWNLOAD_MAX_AGE_S = 7 * 24 * 60 * 60
+
+
+def resolved_checkpoint() -> tuple[str, str, tuple[str, ...]]:
+    """Where the weights come from, what they must hash to, and any mirror.
+
+    The shipped address is a third-party host we do not run. When it goes
+    away, every NEW install stops here until a plugin release clears the
+    plugin repository, so the address, the digest and a list of alternates are
+    all correctable from the product configuration. The digest is never
+    optional: whichever address answers, the bytes are verified exactly as
+    they are today, and a file that does not match is deleted and re-fetched.
+    """
+    try:
+        from .install_config import checkpoint_source
+
+        return checkpoint_source(
+            SAM_CHECKPOINT_FILENAME, SAM_CHECKPOINT_URL, SAM_CHECKPOINT_SHA256)
+    except Exception:  # noqa: BLE001 -- a bad config must never block an install
+        return SAM_CHECKPOINT_URL, SAM_CHECKPOINT_SHA256, ()
 
 
 def get_checkpoints_dir() -> str:
@@ -41,7 +75,8 @@ def checkpoint_exists() -> bool:
 
 
 def verify_checkpoint_hash(filepath: str) -> bool:
-    if not SAM_CHECKPOINT_SHA256:
+    expected_sha256 = resolved_checkpoint()[1]
+    if not expected_sha256:
         # Fail closed: with no expected hash we cannot prove integrity, so we
         # refuse to treat the file as verified rather than silently trusting it.
         # (Both shipped checkpoints define a hash; an empty value here would be
@@ -63,7 +98,7 @@ def verify_checkpoint_hash(filepath: str) -> bool:
             # chunks instead.
             for byte_block in iter(lambda: f.read(1024 * 1024), b""):
                 sha256_hash.update(byte_block)
-        return sha256_hash.hexdigest() == SAM_CHECKPOINT_SHA256
+        return sha256_hash.hexdigest() == expected_sha256
     except OSError as e:
         QgsMessageLog.logMessage(
             f"Failed to verify checkpoint hash: {e}",
@@ -96,22 +131,42 @@ def is_corrupt_checkpoint_error(error_message: str | None) -> bool:
 def delete_checkpoint() -> bool:
     """Delete the on-disk checkpoint (e.g. when found corrupt).
 
-    Returns True if the file is gone afterwards (deleted or already absent),
-    False if it could not be removed.
+    Returns True if the path is clear afterwards (deleted, moved aside, or
+    already absent), False if the bad file is still where the loader looks.
+
+    This is called the moment an encode reports a corrupt checkpoint, while the
+    predictor subprocess may still hold the file open, so a single unlink is
+    not enough: clear the read-only bit, retry the delete, then move the file
+    aside as a last resort. A rename succeeds on a file a delete cannot touch,
+    and it frees the name so the re-download has somewhere to land. Anything
+    else dead-ends the user in "delete this folder and restart QGIS".
     """
     path = get_checkpoint_path()
-    try:
-        if os.path.exists(path):
-            os.remove(path)
-            QgsMessageLog.logMessage(
-                "Removed corrupt checkpoint, will re-download",
-                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+    if not os.path.exists(path):
         return True
+    # Windows refuses to delete a read-only file, so clear that bit before the
+    # retries rather than after them. Adding the write bit rather than setting
+    # the whole mode leaves a POSIX file's permissions alone.
+    try:
+        os.chmod(path, os.stat(path).st_mode | stat.S_IWRITE)
+    except OSError:
+        pass  # nosec B110 - the retries below report the real problem
+    if _remove_with_retry(path):
+        QgsMessageLog.logMessage(
+            "Removed corrupt checkpoint, will re-download",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        return True
+    try:
+        os.replace(path, path + ".corrupt")
     except OSError as e:
         QgsMessageLog.logMessage(
             f"Could not remove corrupt checkpoint: {e}",
             "AI Segmentation", level=Qgis.MessageLevel.Warning)
         return False
+    QgsMessageLog.logMessage(
+        "Moved the corrupt checkpoint aside, will re-download",
+        "AI Segmentation", level=Qgis.MessageLevel.Warning)
+    return True
 
 
 def _disk_space_preflight_hint(dest_dir: str, min_free_mb: float = 1024.0) -> str | None:
@@ -140,21 +195,148 @@ def _disk_space_preflight_hint(dest_dir: str, min_free_mb: float = 1024.0) -> st
     return None
 
 
-def _replace_with_retry(src: str, dst: str, max_attempts: int = 5, delay: float = 2.0):
-    """Rename src to dst, retrying on PermissionError (Windows antivirus lock)."""
+# Cancel request for an in-flight checkpoint download. The download runs in a
+# worker thread with its own event loop, so the request travels through this
+# module-level flag instead of a call into the worker: the flag can be set from
+# the GUI thread (Cancel button) and from teardown, where the worker object may
+# already be unreachable. One download runs at a time, so one flag is enough.
+_cancel_requested = False
+
+DOWNLOAD_CANCELLED_MESSAGE = "Download cancelled"
+
+
+def request_download_cancel() -> None:
+    """Ask an in-flight checkpoint download to stop as soon as it can.
+
+    Never raises: it is called from the Cancel button and from plugin
+    teardown, where nothing may block QGIS from closing.
+    """
+    global _cancel_requested
+    _cancel_requested = True
+
+
+def download_cancel_requested() -> bool:
+    """True while a cancel has been requested and not yet consumed."""
+    return _cancel_requested
+
+
+def _wait_or_cancel(seconds: float) -> bool:
+    """Sleep in short slices, returning False as soon as a cancel arrives.
+
+    A plain time.sleep of up to 2 minutes between retries would keep the
+    worker thread alive long after the user pressed Cancel or QGIS started
+    tearing down.
+    """
+    deadline = time.monotonic() + seconds
+    while True:
+        if _cancel_requested:
+            return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return True
+        time.sleep(min(0.25, remaining))
+
+
+def _resolved_retry_ladder(max_attempts: int | None,
+                           delay: float | None) -> tuple[int, float]:
+    """The shipped attempts and delay, with any served override applied.
+
+    How long to fight a lock is a server dial: the machines that need more
+    patience are the ones we cannot reach to ask. A bad configuration must
+    never stop a file from being moved or removed, so it falls back to the
+    shipped pair.
+    """
+    if max_attempts is not None and delay is not None:
+        return max_attempts, delay
+    try:
+        from .install_config import replace_attempts, replace_delay_s
+
+        served_attempts = replace_attempts(REPLACE_ATTEMPTS)
+        served_delay = replace_delay_s(REPLACE_DELAY_S)
+    except Exception:  # noqa: BLE001 -- a bad config must never block a cleanup
+        served_attempts, served_delay = REPLACE_ATTEMPTS, REPLACE_DELAY_S
+    return (
+        served_attempts if max_attempts is None else max_attempts,
+        served_delay if delay is None else delay,
+    )
+
+
+def _replace_with_retry(src: str, dst: str, max_attempts: int | None = None,
+                        delay: float | None = None) -> bool:
+    """Rename src to dst, retrying on PermissionError (Windows antivirus lock).
+
+    True once the move landed, False when a cancel arrived mid-wait. Raises the
+    last PermissionError when every attempt lost to the lock.
+    """
     import gc
+
+    max_attempts, delay = _resolved_retry_ladder(max_attempts, delay)
     gc.collect()
     for attempt in range(1, max_attempts + 1):
         try:
             os.replace(src, dst)
-            return
+            return True
         except PermissionError:
             if attempt == max_attempts:
                 raise
             QgsMessageLog.logMessage(
                 f"File locked, retry {attempt}/{max_attempts} in {delay}s...",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
-            time.sleep(delay)
+            # Every other wait in this module is cancellable, and this one can
+            # run while QGIS is closing: a plain sleep would hold the worker
+            # thread and freeze the window.
+            if not _wait_or_cancel(delay):
+                return False
+    return False
+
+
+def _remove_with_retry(path: str, max_attempts: int | None = None,
+                       delay: float | None = None) -> bool:
+    """Delete path, retrying past a transient lock. True once it is gone.
+
+    Same ladder as _replace_with_retry, for the same reason: a file that was
+    just read end to end is the one a scanner is most likely to still hold, and
+    a raw unlink surfaces as an access error the user can do nothing about.
+    Never raises: every caller has a way to carry on without the delete.
+    """
+    max_attempts, delay = _resolved_retry_ladder(max_attempts, delay)
+    last_error: OSError | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            os.remove(path)
+            return True
+        except FileNotFoundError:
+            return True
+        except OSError as err:
+            last_error = err
+            if attempt == max_attempts:
+                break
+            if not _wait_or_cancel(delay):
+                return False
+    QgsMessageLog.logMessage(
+        f"Could not remove {os.path.basename(path)}: {last_error}",
+        "AI Segmentation", level=Qgis.MessageLevel.Warning)
+    return False
+
+
+def _discard_partial_download(temp_path: str) -> None:
+    """Drop a partial download so the next attempt starts from zero.
+
+    Truncating in place is the fallback because it succeeds where an unlink
+    does not. The resume offset is read from the file size, so an empty file
+    restarts the download exactly as a missing one does, while a survivor with
+    bytes in it would send a Range past its end on every future attempt and
+    never recover.
+    """
+    if _remove_with_retry(temp_path):
+        return
+    try:
+        with open(temp_path, "wb"):
+            pass
+    except OSError as err:
+        QgsMessageLog.logMessage(
+            f"Could not clear the partial download: {err}",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning)
 
 
 def download_checkpoint(
@@ -170,6 +352,11 @@ def download_checkpoint(
     from qgis.core import QgsNetworkAccessManager
     from qgis.PyQt.QtCore import QByteArray, QEventLoop, QTimer
     from qgis.PyQt.QtNetwork import QNetworkReply
+
+    # Clear any cancel left over from a previous download, so a new one is not
+    # stopped before it starts.
+    global _cancel_requested
+    _cancel_requested = False
 
     checkpoint_path = get_checkpoint_path()
     temp_path = checkpoint_path + ".tmp"
@@ -187,7 +374,11 @@ def download_checkpoint(
             "AI Segmentation",
             level=Qgis.MessageLevel.Warning
         )
-        os.remove(checkpoint_path)
+        # The file was just read end to end by the hash check, which is exactly
+        # when a scanner still holds it. The delete only frees disk space for
+        # the temp file: the good download lands through an atomic replace at
+        # the end, so a lock here must not stop the re-download.
+        _remove_with_retry(checkpoint_path)
 
     disk_hint = _disk_space_preflight_hint(os.path.dirname(checkpoint_path))
     if disk_hint:
@@ -197,10 +388,26 @@ def download_checkpoint(
     if progress_callback:
         progress_callback(0, "Connecting to download server...")
 
-    max_retries = 5
+    from .install_config import (
+        checkpoint_hard_timeout_ms,
+        checkpoint_idle_timeout_ms,
+        checkpoint_max_retries,
+    )
+
+    download_url, _expected_sha256, mirrors = resolved_checkpoint()
+    # The primary address first, then any mirror, one per attempt. A mirror
+    # serves the same file, so the digest check after the download is what
+    # decides, exactly as before.
+    download_urls = (download_url,) + mirrors
+    max_retries = max(checkpoint_max_retries(DOWNLOAD_MAX_RETRIES), len(download_urls))
+    idle_timeout_ms = checkpoint_idle_timeout_ms(DOWNLOAD_IDLE_TIMEOUT_MS)
+    hard_timeout_ms = checkpoint_hard_timeout_ms(DOWNLOAD_HARD_TIMEOUT_MS)
     last_error = ""
 
     for attempt in range(1, max_retries + 1):
+        if _cancel_requested:
+            return False, DOWNLOAD_CANCELLED_MESSAGE
+
         # Check for existing partial download to resume
         resume_offset = 0
         if os.path.exists(temp_path):
@@ -300,14 +507,30 @@ def download_checkpoint(
                             pass
                         return
                     download_state["resume_offset"] = 0
-            download_state["file"].write(data.data())
+            # This runs as a Qt slot: an exception raised here crosses back
+            # into C++, which kills the whole application. A disk that fills
+            # mid-download, or a network drive that drops, must end the
+            # attempt through the normal retry path instead.
+            try:
+                download_state["file"].write(data.data())
+            except OSError as write_err:
+                download_state["error"] = f"Cannot write download file: {write_err}"
+                try:
+                    download_state["file"].close()
+                except OSError:
+                    pass  # nosec B110
+                download_state["file"] = None
+                try:
+                    reply.abort()
+                except (RuntimeError, AttributeError):
+                    pass  # nosec B110
 
         def on_error(_error_code):
             download_state["error"] = reply.errorString()
 
         try:
             manager = QgsNetworkAccessManager.instance()
-            qurl = QUrl(SAM_CHECKPOINT_URL)
+            qurl = QUrl(download_urls[(attempt - 1) % len(download_urls)])
             request = QNetworkRequest(qurl)
 
             # Resume from partial download using HTTP Range header
@@ -328,7 +551,7 @@ def download_checkpoint(
                 QgsMessageLog.logMessage(
                     last_error, "AI Segmentation", level=Qgis.MessageLevel.Warning)
                 if attempt < max_retries:
-                    time.sleep(min(5 * (2 ** (attempt - 1)), 120))
+                    _wait_or_cancel(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
             reply = manager.get(request)
@@ -344,25 +567,40 @@ def download_checkpoint(
             # server (connection open, zero bytes) aborts after 2 minutes of
             # silence, while a slow but live connection gets up to 60 minutes.
             def on_idle_timeout():
-                download_state["timeout_reason"] = "no data received for 2 minutes"
+                download_state["timeout_reason"] = (
+                    f"no data received for {idle_timeout_ms // 60000} minutes")
                 loop.quit()
 
             def on_hard_timeout():
-                download_state["timeout_reason"] = "exceeded 60 minutes"
+                download_state["timeout_reason"] = (
+                    f"exceeded {hard_timeout_ms // 60000} minutes")
                 loop.quit()
 
             idle_timeout = QTimer()
             idle_timeout.setSingleShot(True)
-            idle_timeout.setInterval(120000)
+            idle_timeout.setInterval(idle_timeout_ms)
             idle_timeout.timeout.connect(on_idle_timeout)
             download_state["idle_timer"] = idle_timeout
             idle_timeout.start()
 
             hard_timeout = QTimer()
             hard_timeout.setSingleShot(True)
-            hard_timeout.setInterval(3600000)
+            hard_timeout.setInterval(hard_timeout_ms)
             hard_timeout.timeout.connect(on_hard_timeout)
             hard_timeout.start()
+
+            # Cancel poll: a stalled connection sends no data, so waiting for
+            # the progress signal to notice the flag could hold the thread for
+            # the whole idle window. Polling leaves the loop within half a
+            # second of a Cancel click or a plugin teardown.
+            def on_cancel_poll():
+                if _cancel_requested:
+                    loop.quit()
+
+            cancel_timer = QTimer()
+            cancel_timer.setInterval(500)
+            cancel_timer.timeout.connect(on_cancel_poll)
+            cancel_timer.start()
 
             if progress_callback:
                 retry_msg = ""
@@ -379,7 +617,30 @@ def download_checkpoint(
 
             idle_timeout.stop()
             hard_timeout.stop()
+            cancel_timer.stop()
             download_state["idle_timer"] = None
+
+            if _cancel_requested:
+                # Every step here must survive a half-torn-down QGIS: the
+                # partial file stays on disk so a later run can resume it.
+                try:
+                    reply.abort()
+                except (RuntimeError, AttributeError):
+                    pass  # nosec B110
+                try:
+                    reply.deleteLater()
+                except (RuntimeError, AttributeError):
+                    pass  # nosec B110
+                if download_state["file"] is not None:
+                    try:
+                        download_state["file"].close()
+                    except OSError:
+                        pass  # nosec B110
+                    download_state["file"] = None
+                QgsMessageLog.logMessage(
+                    "Model download cancelled",
+                    "AI Segmentation", level=Qgis.MessageLevel.Info)
+                return False, DOWNLOAD_CANCELLED_MESSAGE
 
             if download_state.get("timeout_reason"):
                 reply.abort()
@@ -389,7 +650,7 @@ def download_checkpoint(
                 download_state["file"] = None
                 last_error = f"Download timed out ({download_state['timeout_reason']})"
                 if attempt < max_retries:
-                    time.sleep(min(5 * (2 ** (attempt - 1)), 120))
+                    _wait_or_cancel(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
             # Check if server returned 416 (range not satisfiable)
@@ -405,12 +666,14 @@ def download_checkpoint(
                 # instead of discarding and re-downloading a good, verified file.
                 if os.path.exists(temp_path) and verify_checkpoint_hash(temp_path):
                     try:
-                        _replace_with_retry(temp_path, checkpoint_path)
+                        finalized = _replace_with_retry(temp_path, checkpoint_path)
                     except OSError as replace_err:
                         last_error = f"Could not finalize checkpoint: {replace_err}"
                         if attempt < max_retries:
-                            time.sleep(min(5 * (2 ** (attempt - 1)), 120))
+                            _wait_or_cancel(min(5 * (2 ** (attempt - 1)), 120))
                         continue
+                    if not finalized:
+                        return False, DOWNLOAD_CANCELLED_MESSAGE
                     if progress_callback:
                         progress_callback(100, "Checkpoint downloaded successfully!")
                     QgsMessageLog.logMessage(
@@ -421,12 +684,9 @@ def download_checkpoint(
                 QgsMessageLog.logMessage(
                     "Server rejected range request, restarting download",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
-                try:
-                    os.remove(temp_path)
-                except OSError:
-                    pass
+                _discard_partial_download(temp_path)
                 if attempt < max_retries:
-                    time.sleep(1)
+                    _wait_or_cancel(1)
                 continue
 
             # Check for errors
@@ -444,7 +704,7 @@ def download_checkpoint(
                     if progress_callback:
                         progress_callback(
                             5, f"Retry {attempt + 1}/{max_retries} in {wait}s...")
-                    time.sleep(wait)
+                    _wait_or_cancel(wait)
                 continue
 
             # Flush remaining data
@@ -461,7 +721,7 @@ def download_checkpoint(
             if file_size == 0:
                 last_error = "Download failed: empty file"
                 if attempt < max_retries:
-                    time.sleep(min(5 * (2 ** (attempt - 1)), 120))
+                    _wait_or_cancel(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
             if progress_callback:
@@ -475,13 +735,14 @@ def download_checkpoint(
                 QgsMessageLog.logMessage(
                     "Hash mismatch, deleting partial file and retrying",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
-                os.remove(temp_path)
+                _discard_partial_download(temp_path)
                 last_error = "Download verification failed - hash mismatch"
                 if attempt < max_retries:
-                    time.sleep(min(5 * (2 ** (attempt - 1)), 120))
+                    _wait_or_cancel(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
-            _replace_with_retry(temp_path, checkpoint_path)
+            if not _replace_with_retry(temp_path, checkpoint_path):
+                return False, DOWNLOAD_CANCELLED_MESSAGE
 
             # Clean up old SAM1 checkpoint if present (only on SAM2 path)
             if USE_SAM2:
@@ -516,7 +777,7 @@ def download_checkpoint(
                     pass  # nosec B110
                 download_state["file"] = None
             if attempt < max_retries:
-                time.sleep(min(5 * (2 ** (attempt - 1)), 120))
+                _wait_or_cancel(min(5 * (2 ** (attempt - 1)), 120))
 
     # All retries exhausted - keep partial file for next resume attempt
     partial_mb = 0
@@ -561,12 +822,49 @@ def cleanup_legacy_sam1_data():
 
     # Remove old features cache (SAM2 does on-demand encoding, no cache needed)
     if os.path.exists(FEATURES_DIR):
-        try:
-            shutil.rmtree(FEATURES_DIR)
+        # ignore_errors, because rmtree stops at the first entry it cannot
+        # delete and leaves everything after it. This runs at every start, so
+        # without it one read-only leftover means the same half-deleted tree is
+        # walked and re-logged forever.
+        shutil.rmtree(FEATURES_DIR, ignore_errors=True)
+        if os.path.exists(FEATURES_DIR):
+            QgsMessageLog.logMessage(
+                "Legacy features cache only partly removed",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        else:
             QgsMessageLog.logMessage(
                 "Removed legacy features cache",
                 "AI Segmentation", level=Qgis.MessageLevel.Info)
-        except OSError as e:
+
+    cleanup_stale_partial_downloads()
+
+
+def cleanup_stale_partial_downloads() -> None:
+    """Drop partial checkpoint downloads nobody came back to resume.
+
+    A failed download deliberately leaves its ".tmp" behind so the next attempt
+    can pick it up, and nothing else ever deletes it. Past
+    PARTIAL_DOWNLOAD_MAX_AGE_S that is a few hundred megabytes of dead weight
+    in the user's cache. One pass at startup, never raises, and a file it
+    cannot delete is simply left for the next start.
+    """
+    try:
+        names = os.listdir(CHECKPOINTS_DIR)
+    except OSError:
+        return
+    cutoff = time.time() - PARTIAL_DOWNLOAD_MAX_AGE_S
+    for name in names:
+        if not name.endswith(".tmp"):
+            continue
+        path = os.path.join(CHECKPOINTS_DIR, name)
+        try:
+            if not os.path.isfile(path) or os.path.getmtime(path) > cutoff:
+                continue
+        except OSError:
+            continue
+        # One attempt with no wait: a startup sweep must never hold the GUI on
+        # a locked file, and the next start tries again.
+        if _remove_with_retry(path, max_attempts=1, delay=0.0):
             QgsMessageLog.logMessage(
-                f"Could not remove features cache: {e}",
-                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+                f"Removed an abandoned partial download: {name}",
+                "AI Segmentation", level=Qgis.MessageLevel.Info)

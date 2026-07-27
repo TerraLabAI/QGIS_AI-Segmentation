@@ -6,12 +6,14 @@ plain mixin members: state lives on the plugin instance (self).
 """
 from __future__ import annotations
 
-
 from qgis.core import (
     Qgis,
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
     QgsFeature,
     QgsGeometry,
     QgsMessageLog,
+    QgsProject,
 )
 from qgis.PyQt.QtWidgets import (
     QMessageBox,
@@ -22,7 +24,9 @@ from ...core.telemetry import slot_guard
 from .shared import (
     _add_features_fast,
     _add_features_with_ids,
+    _clear_all_features,
     _debounce_timer,
+    _notify_provider_write,
 )
 
 # Single-slot memo for the merge-policy token/category sets, keyed on the policy
@@ -30,6 +34,10 @@ from .shared import (
 # the lists. One live policy dict at a time, so a new id replaces the entry (no
 # growth, no stale id-reuse across distinct dicts).
 _MERGE_SETS_CACHE: dict[str, object] = {"id": None, "sets": None}
+
+# Below this many objects a reslice finishes in a slice or two, so partitioning
+# the work by what is on screen would cost more than it saves.
+_RESLICE_SCREEN_FIRST_MIN_OBJECTS = 400
 
 
 def _merge_token_sets(merge: dict) -> tuple[frozenset, frozenset, frozenset]:
@@ -87,7 +95,7 @@ class AutoReviewMixin:
         objects are never fused and counting stays safe. Unknown GSD: +inf for
         SEPARATE (strict dedup, counting-safe), 0.0 for CONTINUOUS (gate off,
         original merge behaviour)."""
-        from ...core.tile_manager import TILE_SIZE, OVERLAP_FRACTION
+        from ...core.tile_manager import OVERLAP_FRACTION, TILE_SIZE
 
         if self._auto_gsd <= 0:
             return float("inf") if self._auto_merge_separate else 0.0
@@ -162,51 +170,59 @@ class AutoReviewMixin:
             "phase": "filter",
             # Enumerated so each visible geom carries its canonical det_id and
             # the Random colours stay stable across reslices.
-            "filter_pending": list(enumerate(self._auto_objects)),
+            "filter_pending": self._reslice_pending_screen_last(),
             "total_filter": len(self._auto_objects),
             "visible": [],
             "visible_scores": [],
             "visible_ids": [],
+            "visible_order": [],
             "params": self._widget_review_params(),
             "pixel_size": (self._auto_review or {}).get("pixel_size", 1.0),
             "gen": self._auto_finalize_gen,
         }
         self._step_auto_finalize_refine()
 
-    @slot_guard(stage="segment")
-    def _on_auto_merge_override_requested(self) -> None:
-        """Review override for an exemplar-only run: re-group the detections the
-        OTHER count-vs-map way from the retained raw fragments. No re-detection,
-        no credits, no dialog: re-merge, rebuild the canonical objects, rebuild
-        the confidence-drag preview cache, then reslice the visible set and swap
-        the muted line's wording."""
-        if not self._auto_review or not getattr(self, "_auto_is_exemplar_only", False):
-            return
-        if self._auto_raw_fragments is None:
-            return  # retention overflowed: re-grouping is unavailable
-        target_separate = not self._auto_merge_separate
-        if self.dock_widget is not None:
-            try:
-                self.dock_widget.set_auto_status(
-                    "info", tr("Regrouping detections..."))
-            except (RuntimeError, AttributeError):
-                pass
-        if not self._rebuild_auto_objects_for_mode(target_separate):
-            return
-        self._auto_merge_mode_source = "override"
-        self._auto_merge_override_used = True
-        # Rebuild the confidence-drag preview cache for the new object set, then
-        # reslice the visible set at the current review settings.
-        self._start_build_preview_cache(
-            (self._auto_review or {}).get("pixel_size", 1.0))
-        self._start_auto_reslice()
-        if self.dock_widget is not None:
-            try:
-                self.dock_widget.set_merge_override(
-                    "separate" if target_separate else "map")
-                self.dock_widget.set_auto_status("idle")
-            except (RuntimeError, AttributeError):
-                pass
+    def _reslice_pending_screen_last(self) -> list:
+        """``_auto_objects`` enumerated, with the ones under the user's eyes at
+        the END of the list.
+
+        The pump takes its next object with ``.pop()``, so last in the list is
+        first refined, and the progressive push writes what has been refined so
+        far every 250 ms. Order therefore decides WHEN the shapes on screen
+        change, not what they become: the whole set is refined either way, and
+        the completion sorts the result back into canonical order.
+
+        Falls back to plain enumeration whenever the canvas extent cannot be
+        read or brought into the run CRS, and skips the partition on a small
+        set, where the whole pass lands inside one or two slices anyway.
+        """
+        pending = list(enumerate(self._auto_objects))
+        if len(pending) < _RESLICE_SCREEN_FIRST_MIN_OBJECTS:
+            return pending
+        try:
+            canvas = self.iface.mapCanvas()
+            extent = canvas.extent()
+            canvas_crs = canvas.mapSettings().destinationCrs()
+            run_crs = QgsCoordinateReferenceSystem(
+                self._auto_crs_authid or "EPSG:4326")
+            if not run_crs.isValid() or extent.isEmpty():
+                return pending
+            if canvas_crs.isValid() and canvas_crs != run_crs:
+                extent = QgsCoordinateTransform(
+                    canvas_crs, run_crs,
+                    QgsProject.instance()).transformBoundingBox(extent)
+            offscreen, onscreen = [], []
+            for row in pending:
+                base = row[1][0]
+                if base is not None and extent.intersects(base.boundingBox()):
+                    onscreen.append(row)
+                else:
+                    offscreen.append(row)
+        except Exception:  # noqa: BLE001 -- ordering is an optimisation only
+            return pending
+        if not onscreen or not offscreen:
+            return pending
+        return offscreen + onscreen
 
     def _on_auto_show_tiles_toggled(self, show: bool) -> None:
         """Review debug toggle: overlay the tile grid on the finished result, or
@@ -224,17 +240,30 @@ class AutoReviewMixin:
         except (RuntimeError, AttributeError):
             grid = None
         if grid is not None:
-            self._show_zone_tile_grid(layer, grid)
+            # force: the review owns the canvas, so the grid is refused to
+            # every other caller here. This one is the user asking for it.
+            self._show_zone_tile_grid(layer, grid, force=True)
 
     def _on_auto_review_confidence_preview(self, percent: int) -> None:
         """Live preview WHILE the confidence slider is dragged: re-show the
         detections at the new cutoff. The geometries are pre-simplified ONCE in
-        _auto_preview_geoms (sorted by score desc), so a drag tick is just a
-        prefix slice - no per-tick simplify, no merge, no orthogonalize. The
-        accurate rebuild runs on release via _on_auto_review_confidence_changed."""
+        _auto_preview_geoms (gate-exempt rows first, then score desc), so a drag
+        tick is just a prefix slice - no per-tick simplify, no merge. The
+        accurate rebuild runs on release via _on_auto_review_confidence_changed.
+
+        The Min/Max size gate and the hand-drawn exemption are applied here too,
+        on the SAME params the release pass uses: without them the drag showed
+        (and counted) shapes that vanished on release, and a split piece that
+        inherited a low parent score blinked out mid-drag. The cache carries the
+        exemption per row, so applying it costs no extra scan."""
         if not self._auto_review:
             return
         conf = max(0.0, min(1.0, percent / 100.0))
+        # Shared borders is deliberately NOT applied here. It is a whole-set
+        # pass over every neighbour, so running it on each drag tick would
+        # stall the handle; the accurate pass on release snaps the set, and
+        # its stamp differs from this preview's, so the layer is rewritten
+        # then. Mid-drag the shapes show their own, unsnapped outlines.
         # Adopt the cutoff NOW, not on the accurate pass: the preview's push
         # refreshes the count header, whose pct reads _auto_confidence. With a
         # dense result the accurate reslice takes seconds, so a stale value
@@ -243,18 +272,27 @@ class AutoReviewMixin:
         preview = []
         pscores = []
         pids = []
-        # Objects deleted during a Manual refine stay deleted whatever the
-        # cutoff (the caches predate the handoff, so filter at consumption).
-        removed = getattr(self, "_auto_manual_removed", None) or set()
+        # Objects deleted during a Manual refine or a review correction stay
+        # deleted whatever the cutoff (the caches predate those gestures, so
+        # filter at consumption). Revealed objects only rejoin on the accurate
+        # release pass (the drag cache is an ordered prefix slice).
+        removed = self._review_removed_fids()
+        # The size half of the visible-set gate, read from the same widgets the
+        # release pass reads. Hand-drawn and split objects skip both gates.
+        params = self._widget_review_params()
         if self._auto_preview_geoms:
-            # Fast path: the cache is built (sorted by score desc), so the cutoff
-            # is a prefix slice - no per-tick simplify. The stamp names the cache
+            # Fast path: the cache is built (exempt rows first, then score desc),
+            # so the cutoff is a prefix slice - no per-tick simplify, and the
+            # scan stops at the first row below it. The stamp names the cache
             # build: within one build an object's preview geometry never changes,
             # so a drag tick pushes only the prefix DELTA (adds/deletes).
             stamp = ("prev", self._auto_preview_build_gen)
-            for geom, score, det_idx in self._auto_preview_geoms:
-                if score < conf:
-                    break  # everything after is below the cutoff
+            for geom, score, area, det_idx, exempt in self._auto_preview_geoms:
+                if not exempt:
+                    if score < conf:
+                        break  # ordered: everything after is below the cutoff
+                    if not self._passes_size_filters(area, params):
+                        continue
                 if det_idx in removed:
                     continue
                 preview.append(geom)
@@ -264,15 +302,17 @@ class AutoReviewMixin:
             # Fallback while the background cache build is still running: filter
             # the canonical WHOLE objects directly (correct, just heavier). Whole
             # objects, never fragments, so a drag never shows half a building. The
-            # accurate size filter + shape refine still runs on release.
+            # shape refine still runs on release.
             stamp = ("base", 0)
-            for det_idx, (g, s, _a) in enumerate(self._auto_objects):
-                if det_idx in removed:
+            for det_idx, (g, s, area) in enumerate(self._auto_objects):
+                if det_idx in removed or g is None:
                     continue
-                if s >= conf and g is not None:
-                    preview.append(g)
-                    pscores.append(s)
-                    pids.append(self._object_fid_for(det_idx))
+                if not self._object_is_manual(det_idx):
+                    if s < conf or not self._passes_size_filters(area, params):
+                        continue
+                preview.append(g)
+                pscores.append(s)
+                pids.append(self._object_fid_for(det_idx))
         self._push_review_geoms(preview, repair=False, scores=pscores, ids=pids,
                                 stamp=stamp)
 
@@ -315,8 +355,14 @@ class AutoReviewMixin:
         """
         if self._auto_review is None:
             return
+        # repair=False: _auto_review["geoms"] are the reslice output, already
+        # repaired + MultiPolygon-coerced once at cache-fill
+        # (_review_refined_geom), so a second per-feature makeValid here is pure
+        # waste. On a 26k-object run that redundant repair was the multi-minute
+        # freeze at review open. Extents still refresh (zoom-to-layer needs them).
         self._push_review_geoms(
-            self._auto_review["geoms"], scores=self._auto_review.get("scores"),
+            self._auto_review["geoms"], repair=False, update_extents=True,
+            scores=self._auto_review.get("scores"),
             ids=self._auto_review.get("ids"),
             stamp=self._auto_review.get("stamp"))
 
@@ -324,7 +370,8 @@ class AutoReviewMixin:
                            scores: list | None = None,
                            ids: list | None = None,
                            stamp: tuple | None = None,
-                           partial: bool = False) -> None:
+                           partial: bool = False,
+                           update_extents: bool | None = None) -> None:
         """Write geoms onto the live review selection layer and update the
         review count. Shared by the accurate refresh and the fast confidence-
         drag preview.
@@ -368,9 +415,18 @@ class AutoReviewMixin:
             # updateExtents rescans every feature (O(N) on a memory provider):
             # only the accurate release pass needs it (zoom-to-layer); the 40ms
             # drag preview renders by viewport via the spatial index, so the
-            # stale cached extent is invisible mid-drag.
-            if repair and not partial:
+            # stale cached extent is invisible mid-drag. Defaults to `repair`
+            # for callers that do not say (the historical coupling), but the
+            # review-entry push decouples them: its geoms are already repaired
+            # at cache-fill, so repair=False, yet it still needs fresh extents.
+            do_extents = repair if update_extents is None else update_extents
+            if do_extents and not partial:
                 layer.updateExtents()
+            # The rows above went in through the PROVIDER, which emits no signal
+            # QGIS's snapping index or vertex tool listen to. Without this the
+            # hand-edit tools keep pointing at the features from BEFORE this
+            # filter change, and clicking a vertex silently does nothing.
+            _notify_provider_write(layer)
             # triggerRepaint alone schedules the canvas update; the extra
             # mapCanvas().refresh() forced a full re-render of EVERY layer on
             # each (debounced) slider tick, which is what made review sliders lag.
@@ -470,13 +526,13 @@ class AutoReviewMixin:
     def _full_push_review_geoms(self, layer, geoms: list, repair: bool,
                                 scores: list | None, ids: list | None,
                                 stamp: tuple | None) -> int:
-        """Full truncate + re-add of the visible set (the pre-diff behaviour).
+        """Full clear + re-add of the visible set (the pre-diff behaviour).
         Rebuilds _review_fid_map when identity (ids + stamp) is available so the
         NEXT push can diff; otherwise clears it (later pushes stay full until a
         stamped one bootstraps)."""
         from ...core.layer_conventions import repair_polygon, to_multipolygon
         pr = layer.dataProvider()
-        pr.truncate()
+        _clear_all_features(pr)
         self._review_fid_map = {}
         with_identity = stamp is not None and ids is not None and len(ids) == len(geoms)
         features_to_add = []
@@ -556,13 +612,32 @@ class AutoReviewMixin:
         NOT the binding filter and the size gate must be), so the header can
         point at the lever that will actually reveal them."""
         conf = self._auto_confidence or 0.0
-        removed = getattr(self, "_auto_manual_removed", None) or set()
+        removed = self._review_removed_fids()
         for det_idx, (base, score, _area) in enumerate(self._auto_objects):
             if det_idx in removed or base is None or base.isEmpty():
                 continue
             if score >= conf:
                 return True
         return False
+
+    def _drop_preview_geom_cache(self) -> None:
+        """Free the confidence-slider preview cache and disarm any build still
+        pumping into it.
+
+        The cache holds one simplified copy of EVERY object the run found, the
+        ones the filters hide included, so on a dense run it is the largest
+        thing the review keeps alive. The export path left it resident: the
+        user pressed Finish and the whole set stayed in memory while they
+        panned the layer they had just saved.
+
+        Bumping the build generation matters as much as emptying the list. The
+        build is cooperative, so a slice already queued would otherwise publish
+        a fresh full copy one event-loop turn after the clear.
+        """
+        self._auto_preview_geoms = []
+        self._auto_preview_build_state = None
+        self._auto_preview_build_gen = (
+            getattr(self, "_auto_preview_build_gen", 0) + 1)
 
     def _current_visible_review_count(self) -> int:
         """Objects currently shown in the review (the last pushed visible set)."""
@@ -578,7 +653,7 @@ class AutoReviewMixin:
         export recomputes exactly."""
         params = dict(self._widget_review_params())
         params["conf"] = 0.0
-        removed = getattr(self, "_auto_manual_removed", None) or set()
+        removed = self._review_removed_fids()
         n = 0
         for det_idx, (base, score, area) in enumerate(self._auto_objects):
             if det_idx in removed or base is None or base.isEmpty():
@@ -591,20 +666,15 @@ class AutoReviewMixin:
         """The review's found objects with the Confidence gate dropped but the
         current size + shape refine kept. The safety-net exit paths export this
         so a billed detection hidden ONLY by the Confidence cutoff is never
-        lost. Hand-edited (protected) objects are merged back in, mirroring the
-        confidence reslice, so a Manual-refine detour survives the save too."""
+        lost. Hand edits are folded into the canonical rows and their det_ids
+        skip the gates, so _compute_visible_objects already carries them; no
+        separate protected set to merge back."""
         review = self._auto_review or {}
         pixel_size = review.get("pixel_size", 1.0) or 1.0
         params = dict(self._widget_review_params())
         params["conf"] = 0.0  # drop only the confidence gate; keep size + shape
-        geoms, scores = self._compute_visible_objects(
+        return self._compute_visible_objects(
             params, pixel_size, with_scores=True)
-        if self._auto_protected_geoms:
-            protected = self._auto_protected_geoms
-            kept = [g for g in geoms if not self._geom_overlaps_any(g, protected)]
-            geoms = self._dissolve_overlapping(kept + list(protected))
-            scores = None  # dissolve rewrote geoms; parallel scores no longer align
-        return geoms, scores
 
     def _export_auto_review(self, include_hidden: bool = False,
                             autosave: bool = False
@@ -638,11 +708,20 @@ class AutoReviewMixin:
         # export's makeValid never mutates the stored review geometry.
         geoms = review["geoms"]
         scores = review.get("scores")
+        # The confidence that actually filtered the exported set. The safety net
+        # drops the gate ONLY when it really falls back to the full found set;
+        # when the visible set is already the whole of it, the slider value still
+        # applies. Recording the gate that ran is the difference between reading
+        # this run later and guessing at it: meta records the slider position
+        # either way, so an export saved past a 0.55 cutoff and an export saved
+        # with the cutoff dropped look identical from the outside.
+        conf_applied = float(getattr(self, "_auto_confidence", 0.0) or 0.0)
         if include_hidden:
             visible_n = sum(1 for g in geoms if g is not None and not g.isEmpty())
             full_geoms, full_scores = self._full_found_review_geoms()
             if len(full_geoms) > visible_n:
                 geoms, scores = full_geoms, full_scores
+                conf_applied = 0.0
         if scores is not None and len(scores) != len(geoms):
             scores = None  # e.g. after a protected-geoms dissolve
         refined, refined_scores = [], []
@@ -654,13 +733,25 @@ class AutoReviewMixin:
         name = self._export_auto_detections(
             refined, review["crs"], review["source_layer_name"], review["prompt"],
             scores=refined_scores)
+        if name:
+            # The billed set reached a real layer: this run's crash-net
+            # autosave pointer is superseded (the disk table stays either way).
+            try:
+                from ...core.run_autosave import clear_pending
+                clear_pending(self._auto_run_id or None)
+            except Exception:  # nosec B110
+                pass
         # Capture the run's REAL outcome (chosen confidence, refine settings,
         # the kept geometry - even after a Refine-in-Manual detour) on a hidden
         # background task. Best-effort: queued only after the local export
         # succeeded, and can never block or fail it.
         try:
             from .run_export_upload import queue_run_export_upload
-            queue_run_export_upload(self, review, refined, refined_scores)
+            queue_run_export_upload(
+                self, review, refined, refined_scores,
+                export_path=("autosave" if autosave
+                             else "exit_save" if include_hidden else "finish"),
+                confidence_applied=conf_applied)
         except Exception:  # noqa: BLE001
             pass  # nosec B110
         # Record the committed object so the Segment library's Recent tab can
@@ -693,19 +784,20 @@ class AutoReviewMixin:
             pass  # nosec B110
         self._auto_review = None
         self._auto_objects = []
+        self._auto_object_fids = []
+        self._drop_preview_geom_cache()
         self._reset_review_refine_cache()
         self._remove_auto_selection_layer()
-        self._auto_protected_geoms = []
         self._auto_manual_removed = set()
         self._auto_refined_in_manual = False
         self._clear_auto_raw_fragments()
         # A background install started from this review is now orphaned (the
-        # review is committed): drop the pending refine so a late predictor load
-        # does not auto-open a handoff on a gone or a different review.
+        # review is committed): drop the pending refine/add so a late predictor
+        # load does not auto-open a handoff or Add on a gone/different review.
         self._clear_refine_install_pending()
+        self._clear_ai_add_install_pending()
         if self.dock_widget:
             try:
-                self.dock_widget.set_protected_note(False)
                 self.dock_widget.set_auto_review_active(False)
             except (RuntimeError, AttributeError):
                 pass
@@ -769,8 +861,10 @@ class AutoReviewMixin:
         to drawing a zone. The committed detections stay on the map."""
         # Disarm the zone drawing tool if it is still active.
         self._restore_maptool_after_zone()
-        # A committed run consumed its plan; the next run re-fetches per prompt.
+        # A committed run consumed its plan (and any attribute filters); the
+        # next run re-fetches per prompt.
         self._auto_run_plan = None
+        self._auto_attribute_filters = []
         self._cancel_task("_auto_run_plan_task")
         self._cancel_task("_auto_token_task")
         self._auto_zone = None
@@ -814,25 +908,33 @@ class AutoReviewMixin:
         canonical objects, the selection layer, the protected/handoff markers,
         and supersedes any in-flight cooperative finalize/reslice."""
         self._track_review_abandoned(exit_path)
+        # An explicit discard also drops this run's crash-net autosave pointer:
+        # the user chose to throw the results away, so the next start must not
+        # offer them back (the disk table itself is left in place).
+        try:
+            from ...core.run_autosave import clear_pending
+            clear_pending(self._auto_run_id or None)
+        except Exception:  # nosec B110
+            pass
         self._auto_review = None
         self._auto_objects = []
+        self._auto_object_fids = []
         self._reset_review_refine_cache()
         self._remove_auto_selection_layer()
-        self._auto_protected_geoms = []
         self._auto_manual_removed = set()
         self._auto_refined_in_manual = False
         self._auto_finalize_gen += 1
         self._auto_finalize_state = None
-        self._auto_preview_geoms = []
+        self._drop_preview_geom_cache()
         self._clear_auto_raw_fragments()
         # Orphan any background install started from this review (see above).
         self._clear_refine_install_pending()
+        self._clear_ai_add_install_pending()
         # Turn the review UI OFF here, in the one shared discard spot: the
         # Exit path used to skip it, leaving _auto_review_active stuck True
         # so the NEXT run's prompt step re-opened on the stale review panel.
         if self.dock_widget:
             try:
-                self.dock_widget.set_protected_note(False)
                 self.dock_widget.set_auto_review_active(False)
             except (RuntimeError, AttributeError):
                 pass
@@ -933,7 +1035,6 @@ class AutoReviewMixin:
         if not self.dock_widget:
             return True
         try:
-            self.dock_widget.set_protected_note(False)
             self.dock_widget.set_auto_review_active(False)
             # Bring back the zone fill the review had dropped, so the kept zone
             # reads clearly on the map again.
@@ -944,7 +1045,7 @@ class AutoReviewMixin:
             # Redraw the tile-grid preview and re-show the detail slider + cost for
             # the kept zone (both are cleared during a run/review), so the user can
             # see and control the tiles again before re-detecting.
-            self._update_credit_estimate()
+            self._restore_tile_grid_after_run()
             self._refresh_exemplar_chips()
             self.dock_widget.set_auto_status("idle")
         except (RuntimeError, AttributeError):

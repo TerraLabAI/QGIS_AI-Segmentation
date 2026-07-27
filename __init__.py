@@ -5,20 +5,10 @@ import os
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def _cleanup_old_installation():
-    """Clean up old libs/ installation if it exists."""
-    try:
-        from .src.core.venv_manager import cleanup_old_libs
-
-        cleanup_old_libs()
-    except (ImportError, Exception):
-        pass
-
-
-try:
-    _cleanup_old_installation()
-except Exception:  # nosec B110 - best-effort cleanup, must never block plugin load
-    pass
+# The legacy libs/ tree from the pre-venv layout is removed by the startup
+# check worker, off the UI thread. Deleting it here would run a multi-GB,
+# tens-of-thousands-of-files delete during plugin import, freezing the QGIS
+# splash screen with no message and no way to cancel.
 
 
 def classFactory(iface):

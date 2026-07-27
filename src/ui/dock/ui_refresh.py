@@ -6,7 +6,6 @@ are plain mixin members: widgets/signals live on the dock instance.
 """
 from __future__ import annotations
 
-
 from qgis.core import QgsProject, QgsRasterLayer
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
@@ -16,23 +15,26 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-
 from ...core.activation_manager import (
     has_tos_accepted,
     has_tos_locked,
 )
 from ...core.i18n import tr
 from .guidance import (
+    HINT_EXEMPLAR_DRAW_BOX,
+    HINT_EXEMPLAR_EXCLUDE_BOX,
     HINT_TRY_AUTOMATIC,
     HINT_TUTORIAL_FIRST_STEPS,
     is_hint_dismissed,
 )
 from .styles import (
-    ERROR_TEXT,
     _BTN_EXPORT_DISABLED,
     _BTN_EXPORT_READY,
     _INSTRUCTIONS_CARD_QSS,
     _INSTRUCTIONS_HINT_QSS,
+    BRAND_GREEN,
+    ERROR_TEXT,
+    SUCCESS_TEXT,
     _msg_label_qss,
     _msg_text,
 )
@@ -250,11 +252,6 @@ class DockStateMixin:
         self._refresh_mode_switch_visibility()
         if active:
             self._update_instructions()
-            # Recompute the append destinations once per session start (a fresh
-            # session may follow an Automatic run that just created a layer).
-            self._refresh_export_destinations()
-        else:
-            self._has_export_candidates = False
 
     def _update_button_visibility(self):
         if self._segmentation_active:
@@ -278,7 +275,7 @@ class DockStateMixin:
             # Save/Undo/Stop are base-Manual controls. In a refine handoff the
             # state card owns every action (Keep / Edit shape / Undo click /
             # Remove), so the legacy rows stay hidden for the whole handoff.
-            save_visible = False if self._refine_handoff else True
+            save_visible = not self._refine_handoff
             self.save_mask_button.setVisible(save_visible)
             self.save_mask_button.setEnabled(self._has_mask)
 
@@ -286,15 +283,9 @@ class DockStateMixin:
             # handoff, where committing goes through Back to review -> Finish (a
             # direct manual export would orphan the held Automatic review).
             self.export_button.setVisible(not self._refine_handoff)
-            # The destination row shows only when there is somewhere to append
-            # to and we are not in a refine handoff (whose commit path differs).
-            dest_widget = getattr(self, "export_dest_widget", None)
-            if dest_widget is not None:
-                dest_widget.setVisible(
-                    not self._refine_handoff and self._has_export_candidates)
             self._update_export_button_style()
 
-            secondary_visible = False if self._refine_handoff else True
+            secondary_visible = not self._refine_handoff
             self.secondary_buttons_widget.setVisible(secondary_visible)
             self.undo_button.setVisible(secondary_visible)
             has_points = self._positive_count > 0 or self._negative_count > 0
@@ -320,9 +311,6 @@ class DockStateMixin:
             self.refine_group.setVisible(False)
             self.save_mask_button.setVisible(False)
             self.export_button.setVisible(False)
-            dest_widget = getattr(self, "export_dest_widget", None)
-            if dest_widget is not None:
-                dest_widget.setVisible(False)
             self.undo_button.setVisible(False)
             self.stop_button.setVisible(False)
             self.secondary_buttons_widget.setVisible(False)
@@ -403,14 +391,7 @@ class DockStateMixin:
 
     def _update_export_button_style(self):
         count = self._saved_polygon_count
-        appending = self.selected_export_destination() is not None
-        if appending:
-            if count > 1:
-                self.export_button.setText(
-                    tr("Add {count} polygons to the layer").format(count=count))
-            else:
-                self.export_button.setText(tr("Add polygon to the layer"))
-        elif count > 1:
+        if count > 1:
             self.export_button.setText(
                 tr("Export {count} polygons to a layer").format(count=count)
             )
@@ -420,75 +401,13 @@ class DockStateMixin:
         if count > 0:
             self.export_button.setEnabled(True)
             self.export_button.setStyleSheet(_BTN_EXPORT_READY)
-            if appending:
-                self.export_button.setToolTip(
-                    tr("Adds your {n} kept polygons to the selected layer.").format(
-                        n=count))
-            else:
-                self.export_button.setToolTip(
-                    tr("Writes a GeoPackage layer with your {n} kept polygons.").format(
-                        n=count))
+            self.export_button.setToolTip(
+                tr("Writes a GeoPackage layer with your {n} kept polygons.").format(
+                    n=count))
         else:
             self.export_button.setEnabled(False)
             self.export_button.setStyleSheet(_BTN_EXPORT_DISABLED)
             self.export_button.setToolTip("")
-
-    def _refresh_export_destinations(self):
-        """Repopulate the export destination combo from the current project.
-
-        Ours (committed AI Segmentation outputs, most-recent first) lead the
-        list, then the user's own polygon layers. Hidden entirely when there is
-        no candidate, so the Manual export stays a single button as before.
-        Best-effort: any failure leaves the row hidden (new-layer path). Main
-        thread only (QgsProject access)."""
-        combo = getattr(self, "export_dest_combo", None)
-        widget = getattr(self, "export_dest_widget", None)
-        if combo is None or widget is None:
-            return
-        try:
-            from ...core import output_store
-            candidates = output_store.list_appendable_polygon_layers()
-        except Exception:  # degrade to new-layer only, never block a session
-            candidates = []
-
-        combo.blockSignals(True)
-        try:
-            combo.clear()
-            combo.addItem(tr("New layer"), None)
-            ai = [c for c in candidates if c.is_ai_output]
-            others = [c for c in candidates if not c.is_ai_output]
-            if ai:
-                combo.insertSeparator(combo.count())
-                for cand in ai:
-                    combo.addItem(cand.display_name, cand.layer_id)
-            if others:
-                combo.insertSeparator(combo.count())
-                for cand in others:
-                    combo.addItem(cand.display_name, cand.layer_id)
-            combo.setCurrentIndex(0)  # default: New layer (unchanged behavior)
-        finally:
-            combo.blockSignals(False)
-
-        self._has_export_candidates = bool(candidates)
-        show = self._has_export_candidates and self._segmentation_active
-        widget.setVisible(show and not self._refine_handoff)
-        self._update_export_button_style()
-
-    def _on_export_dest_changed(self, _index: int = 0):
-        """Destination combo changed: refresh the primary button's wording so
-        it states exactly what a click will do (export vs add to the layer)."""
-        self._update_export_button_style()
-
-    def selected_export_destination(self):
-        """The chosen append target's layer id, or None for a new layer.
-
-        Returns None whenever the row is hidden (no candidates) or "New layer"
-        is selected, so callers default to today's new-layer behavior."""
-        combo = getattr(self, "export_dest_combo", None)
-        if combo is None or not getattr(self, "_has_export_candidates", False):
-            return None
-        data = combo.currentData()
-        return data if data else None
 
     def set_point_count(self, positive: int, negative: int):
         self._positive_count = positive
@@ -524,21 +443,36 @@ class DockStateMixin:
             _INSTRUCTIONS_HINT_QSS if compact else _INSTRUCTIONS_CARD_QSS)
         self.instructions_label.setMinimumHeight(0 if compact else 70)
 
+    def set_manual_encoding(self, reading: bool) -> None:
+        """Base Manual is reading the imagery around the click, or has stopped.
+
+        That read takes seconds and used to show nothing but an hourglass, so
+        the instruction card says what the wait is for. One line, same card, no
+        second place to look."""
+        if getattr(self, "_manual_encoding", False) == bool(reading):
+            return
+        self._manual_encoding = bool(reading)
+        self._update_instructions()
+
     def _update_instructions(self):
         """Update instruction text based on current segmentation state."""
         total = self._positive_count + self._negative_count
 
         if self._refine_handoff:
-            # The morphing state card carries the handoff guidance AND the
-            # action buttons (see dock/handoff.py); the text label stays out.
+            # In-place AI reshape: the Correct card carries the guidance and the
+            # Done/Undo buttons (auto_correct_build.py); the Manual instruction
+            # label stays out of the way. No separate handoff card any more.
             self.instructions_label.setVisible(False)
-            self._update_handoff_card()
             return
 
-        # Base Manual: make sure a stray handoff card never doubles the
-        # guidance (e.g. right after a handoff ends mid-session).
-        self.handoff_state_card.setVisible(False)
         self._set_instructions_compact(False)
+        if getattr(self, "_manual_encoding", False):
+            # The only state where the panel says what the plugin is doing
+            # rather than what to do next: the click has been taken and the
+            # imagery it needs is being read.
+            self.instructions_label.setText(
+                tr("Reading the imagery around your click..."))
+            return
         if total == 0 and self._saved_polygon_count > 0:
             # Already saved polygon(s), encourage next or export
             text = (
@@ -574,12 +508,12 @@ class DockStateMixin:
             except Exception:
                 pass  # nosec B110
         elif self._refine_handoff:
-            # T13: closing mid-handoff behaves like "Back to review": harvest
-            # the manual edits into the held review, then let the dock hide
-            # (the review is there on reopen). The harvest also ends the
-            # manual session, so the stop-dialog branch below no-ops.
+            # T13: closing mid-reshape folds the AI edits into the held review,
+            # then lets the dock hide (the review is there on reopen). The fold
+            # also ends the manual session, so the stop-dialog branch below
+            # no-ops.
             try:
-                self.back_to_review_requested.emit()
+                self.auto_reshape_done_requested.emit()
             except (TypeError, RuntimeError):
                 pass
         # Route the close-button (X) through the existing Stop flow when a
@@ -607,7 +541,7 @@ class DockStateMixin:
         self._negative_count = 0
         self._handoff_editing = False
         self._handoff_selected = 0
-        self.handoff_state_card.setVisible(False)
+        self._manual_encoding = False
         self.reset_refine_sliders()
         self._update_button_visibility()
         self._update_ui_state()
@@ -655,30 +589,11 @@ class DockStateMixin:
         return provider.name() in ("wms", "wmts", "xyz", "arcgismapserver", "wcs")
 
     def _is_layer_georeferenced(self, layer) -> bool:
-        """Check if a raster layer is properly georeferenced."""
-        if layer is None or not isinstance(layer, QgsRasterLayer):
-            return False
-
-        # Check file extension for compatible formats
-        source = layer.source().lower()
-
-        # PNG, JPG, BMP etc. without world files are not georeferenced
-        non_georef_extensions = (".png", ".jpg", ".jpeg", ".bmp", ".gif")
-
-        has_non_georef_ext = any(source.endswith(ext) for ext in non_georef_extensions)
-
-        # If it's a known non-georeferenced format, check if it has a valid CRS
-        if has_non_georef_ext:
-            # Check if the layer has a valid CRS (not just default)
-            if not layer.crs().isValid():
-                return False
-            # Check if extent looks like pixel coordinates (0,0 to width,height)
-            extent = layer.extent()
-            if extent.xMinimum() == 0 and extent.yMinimum() == 0:
-                # Likely not georeferenced - just pixel dimensions
-                return False
-
-        return True
+        """Check if a raster layer is properly georeferenced. Delegates to the
+        shared helper (this copy used to lack the deleted-layer RuntimeError
+        guards the plugin's had; one owner ends that drift)."""
+        from ..plugin.shared import is_layer_georeferenced
+        return is_layer_georeferenced(layer)
 
     def _update_ui_state(self):
         if self._mode == Mode.INTERACTIVE:
@@ -793,6 +708,21 @@ class DockStateMixin:
         btn.style().unpolish(btn)
         btn.style().polish(btn)
 
+    def _auto_exemplar_line_busy(self) -> bool:
+        """True while the example card's message slot actually shows something:
+        the amber too-small warning or the armed draw instruction.
+
+        Asks the widgets, not the state flag, on purpose. A user who closed the
+        armed instruction leaves the slot free even while a draw is armed, and
+        the explainer takes it back instead of the card showing a gap."""
+        for name in ("auto_exemplar_size_warning", "auto_exemplar_armed_tip"):
+            try:
+                if getattr(self, name).isVisible():
+                    return True
+            except (RuntimeError, AttributeError):
+                continue
+        return False
+
     def set_auto_exemplar_armed(self, label) -> None:
         """Reflect the example draw-tool armed state on the draw-example /
         exclude buttons + the instruction line. label 1 = positive example
@@ -807,9 +737,11 @@ class DockStateMixin:
         except (RuntimeError, AttributeError):
             return
         if label is None:
-            self.auto_exemplar_armed_hint.setVisible(False)
+            self.auto_exemplar_size_warning.setVisible(False)
+            self.auto_exemplar_armed_tip.setVisible(False)
             self._refresh_auto_exemplar_explainer()
             self._auto_exemplar_hint_kind = None
+            self._set_exemplar_quality()
             return
         # An armed draw opens the collapsed example section so the armed
         # instruction is actually visible (e.g. armed from a rescue chip).
@@ -817,26 +749,30 @@ class DockStateMixin:
             self._set_auto_exemplar_expanded(True)
         except (RuntimeError, AttributeError):
             pass
-        # The label is shared with the too-small warning (one message at a
-        # time), which restyles it; arming always restores the armed look.
-        self.auto_exemplar_armed_hint.setStyleSheet(_msg_label_qss("armed"))
-        self.auto_exemplar_armed_hint.setText(_msg_text("armed", (
-            tr("Now outline a look-alike to exclude, then click the first "
-               "point to close.")
-            if label == 0 else
-            tr("Now outline one object, then click the first point to close."))))
-        self.auto_exemplar_armed_hint.setVisible(True)
-        # One message at a time: the armed instruction replaces the explainer.
-        self._refresh_auto_exemplar_explainer(armed=True)
+        # One message at a time: the armed instruction takes the line from the
+        # too-small warning. Each wording is its own closable tip, and a user
+        # who closed it gets the explainer back rather than an empty gap (the
+        # armed button already says the tool is live).
+        self.auto_exemplar_size_warning.setVisible(False)
+        shown = self.auto_exemplar_armed_tip.set_hint(
+            HINT_EXEMPLAR_EXCLUDE_BOX if label == 0 else HINT_EXEMPLAR_DRAW_BOX,
+            _msg_text("armed", (
+                tr("Drag a box around one look-alike to exclude.")
+                if label == 0 else
+                tr("Drag a box around one object."))),
+            dense=True)
+        self.auto_exemplar_armed_tip.setVisible(shown)
+        self._refresh_auto_exemplar_explainer(armed=shown)
         self._auto_exemplar_hint_kind = "armed"
+        self._set_exemplar_quality()
 
     def show_auto_exemplar_size_warning(self, at_max_detail: bool = False) -> None:
         """One calm line while at least one stored example renders below a
         usable pixel size AT THE CURRENT DETAIL LEVEL. Advisory only (the run
-        stays available). Reuses the example card's shared hint label,
-        restyled to the warning kind: one message at a time, so it replaces
-        the explainer and the next armed draw (or its finish) replaces or
-        clears it.
+        stays available), and never closable: it says why the run will miss
+        things. One message at a time on the example card, so it replaces the
+        explainer and the next armed draw (or its finish) replaces or clears
+        it.
 
         Dynamic, not one-shot: the caller (the plugin's
         ``_refresh_exemplar_size_warning``) re-evaluates every stored example
@@ -850,39 +786,43 @@ class DockStateMixin:
         to do something the UI already forbids.
         """
         try:
-            self.auto_exemplar_armed_hint.setStyleSheet(_msg_label_qss("warning"))
-            self.auto_exemplar_armed_hint.setText(_msg_text("warning", (
+            self.auto_exemplar_armed_tip.setVisible(False)
+            self.auto_exemplar_size_warning.setStyleSheet(
+                _msg_label_qss("warning"))
+            self.auto_exemplar_size_warning.setText(_msg_text("warning", (
                 tr("This example is very small even at the finest detail. "
                    "Draw a larger object, or it may be too small to detect.")
                 if at_max_detail else
                 tr("This example is very small at the current detail level. "
                    "Zoom the detail slider finer or draw a larger object."))))
-            self.auto_exemplar_armed_hint.setVisible(True)
+            self.auto_exemplar_size_warning.setVisible(True)
             self._refresh_auto_exemplar_explainer(armed=True)
             self._auto_exemplar_hint_kind = "warning"
             # The size warning is the more urgent message: make the
             # second-example nudge (a DIFFERENT label) yield to it now.
             self._apply_prompt_hint_on_edit()
+            self._set_exemplar_quality()
         except (RuntimeError, AttributeError):
             pass
 
     def clear_auto_exemplar_size_warning(self) -> None:
         """Hide the too-small warning, but ONLY when it is the message
-        currently showing on the shared example hint label. The label is
-        shared with the armed-draw instruction (one message at a time), so a
-        blind clear here could wipe "now outline one object..." out from under
-        an in-progress draw; the ``_auto_exemplar_hint_kind`` flag (set by the
-        three label writers: armed / warning / None) is what makes this safe.
+        currently showing on the example card. The slot is shared with the
+        armed-draw instruction (one message at a time), so a blind clear here
+        could wipe "drag a box around one object..." out from under an
+        in-progress draw; the ``_auto_exemplar_hint_kind`` flag (set by the
+        three writers: armed / warning / None) is what makes this safe.
         Mirrors the ``label is None`` branch of ``set_auto_exemplar_armed``."""
         if getattr(self, "_auto_exemplar_hint_kind", None) != "warning":
             return
         try:
-            self.auto_exemplar_armed_hint.setVisible(False)
+            self.auto_exemplar_size_warning.setVisible(False)
             self._refresh_auto_exemplar_explainer()
             self._auto_exemplar_hint_kind = None
             # The warning is gone: let the second-example nudge return if the
             # single-positive state still calls for it.
             self._apply_prompt_hint_on_edit()
+            self._set_exemplar_quality()
         except (RuntimeError, AttributeError):
             pass
 
@@ -900,37 +840,45 @@ class DockStateMixin:
                 w.setParent(None)
                 w.deleteLater()
         from ...core.detect_gate import exclude_available
-        from ...core.exemplar_store import (
-            EXEMPLAR_MAX_EXCLUDE, EXEMPLAR_MAX_POSITIVE)
+        from ...core.exemplar_store import max_exclude, max_positive
         self._auto_positive_exemplars = sum(1 for it in items if it[1] == 1)
         exclude_count = sum(1 for it in items if it[1] == 0)
+        # Adding/removing an example changes the setup: the prompt-plus-example
+        # intercept (and its one-run override) must be re-earned.
+        try:
+            self._reset_meta_intercept()
+        except (RuntimeError, AttributeError):
+            pass
         for idx, it in enumerate(items):
             eid, label = it[0], it[1]
             thumb = it[2] if len(it) > 2 else None
             card = self._make_exemplar_chip(eid, label, idx + 1, thumb)
             layout.insertWidget(layout.count() - 1, card)
-        # The positive add button disables at its own cap (3). The exclude add
+        # The positive add button disables at its own cap. The exclude add
         # button is a bonus refinement, offered ONLY once the positive set is
-        # strong enough (>= 2 positives); below that it stays HIDDEN so the
-        # primary flow is a single green "Draw an example" button. When shown it
-        # still disables at its own cap (2 excludes). Hiding, not disabling,
-        # keeps one clear affordance at a time.
+        # strong enough; below that it stays HIDDEN so the primary flow is a
+        # single green "Draw an example" button. When shown it still disables at
+        # its own cap. Hiding, not disabling, keeps one clear affordance at a
+        # time. Both ceilings come from the store's resolvers, the same ones the
+        # store enforces on insert, so the row can never offer a slot the store
+        # would refuse (or hide one the server just opened).
         try:
             self.auto_ex_inc_btn.setEnabled(
-                self._auto_positive_exemplars < EXEMPLAR_MAX_POSITIVE)
+                self._auto_positive_exemplars < max_positive())
             exc = getattr(self, "auto_ex_exc_btn", None)
             if exc is not None:
                 exc_available = exclude_available(self._auto_positive_exemplars)
                 exc.setVisible(exc_available)
                 exc.setEnabled(
-                    exc_available and exclude_count < EXEMPLAR_MAX_EXCLUDE)
+                    exc_available and exclude_count < max_exclude())
         except (RuntimeError, AttributeError):
             pass
         # A drawn reference speaks for itself: the how/why explainer yields to
         # the thumbnails, and returns if every reference is removed.
         self._auto_exemplar_count = len(items)
         self._refresh_auto_exemplar_explainer(
-            armed=self.auto_exemplar_armed_hint.isVisible())
+            armed=self._auto_exemplar_line_busy())
+        self._set_exemplar_quality()
         # An existing reference keeps the example section open (it holds the
         # thumbnails); an empty list leaves the collapse state to the user.
         if items:
@@ -943,6 +891,58 @@ class DockStateMixin:
         # every example is removed).
         self._apply_prompt_hint_on_edit()
         self._update_auto_detect_enabled()
+
+    def _set_exemplar_quality(self) -> None:
+        """Reflect how close the example set is to the recommended pair (two
+        positive references, the model's strongest mode) on the example card:
+        the header dots fill lime as they are drawn, and one subtle line
+        nudges toward the second, then confirms best quality at two.
+
+        Both hide with no example. The line also yields while a draw is armed
+        or the too-small size warning shows (that shared hint is the louder,
+        actionable message), so the card never stacks guidance; the dots stay
+        (they are a glanceable meter, not a sentence)."""
+        positives = (getattr(self, "_auto_positive_exemplars", 0)
+                     if getattr(self, "_EXEMPLARS_ENABLED", True) else 0)
+        dots = getattr(self, "auto_exemplar_quality_dots", None)
+        line = getattr(self, "auto_exemplar_quality_line", None)
+        if dots is None or line is None:
+            return
+        # Header dots: filled lime up to the drawn count, hollow grey for the
+        # rest of the recommended two.
+        filled = min(positives, 2)
+        empty = "rgba(128, 128, 128, 0.45)"
+        marks = []
+        for i in range(2):
+            color = BRAND_GREEN if i < filled else empty
+            marks.append(
+                f'<span style="color: {color}; font-size: 13px;">&#9679;</span>')
+        try:
+            dots.setText("&nbsp;".join(marks))
+            dots.setVisible(positives > 0)
+        except (RuntimeError, AttributeError):
+            pass
+        # The nudge/confirm line yields to an armed instruction or a size
+        # warning in the card's message slot.
+        armed_showing = self._auto_exemplar_line_busy()
+        try:
+            if positives <= 0 or armed_showing:
+                line.setVisible(False)
+            elif positives == 1:
+                line.setStyleSheet(
+                    "font-size: 11px; color: rgba(128, 128, 128, 0.95);"
+                    " background: transparent; border: none;")
+                line.setText(tr("Add one more example for the best results."))
+                line.setVisible(True)
+            else:
+                line.setStyleSheet(
+                    f"font-size: 11px; font-weight: 600; color: {SUCCESS_TEXT};"
+                    " background: transparent; border: none;")
+                line.setText(
+                    "✓  " + tr("Best quality. Two references locked in."))
+                line.setVisible(True)
+        except (RuntimeError, AttributeError):
+            pass
 
     def _make_exemplar_chip(self, exemplar_id: str, label: int,
                             index: int = 1, thumbnail=None) -> QWidget:
@@ -1021,8 +1021,8 @@ class DockStateMixin:
         if image is None:
             return
         try:
-            from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QLabel
             from qgis.PyQt.QtGui import QPixmap
+            from qgis.PyQt.QtWidgets import QDialog, QLabel, QVBoxLayout
             pm = QPixmap.fromImage(image)
             if pm.isNull():
                 return
@@ -1053,23 +1053,28 @@ class DockStateMixin:
         """Enable the Detect button based on current Automatic mode state."""
         if not self._plugin_activated or self._auto_review_active:
             self.auto_detect_btn.setEnabled(False)
+            self._reset_meta_intercept()
             return
-        from ...core.detect_gate import can_detect
+        from ...core.detect_gate import can_detect, meta_satisfied
         has_layer = self.auto_layer_combo.currentLayer() is not None
-        # The object is defined by EITHER a drawn reference (the primary input)
-        # OR a typed/gallery prompt (the optional secondary). Any non-empty text
-        # counts here: the guard rail runs when the user COMMITS (Detect/Enter,
-        # via confirm_prompt_for_detect), so a mid-typing prompt never greys the
-        # button, and an off-rails one gets an explanation instead of a dead
-        # click on a disabled control.
+        # The big green Detect enables ONLY on the accurate default setup:
+        # a prompt AND at least one drawn example (meta_satisfied). A
+        # half-setup that passes the permissive floor (can_detect: text
+        # alone, or two examples alone) does NOT light the button; it shows
+        # the small "Detect with text/examples only" link instead (see
+        # _refresh_meta_escape), which is the explicit, non-default escape.
         has_text = bool(self.auto_prompt_input.text().strip())
         positives = self._auto_positive_exemplars if self._EXEMPLARS_ENABLED else 0
         # An object CONCEPT exists once a prompt is typed or one example is
         # drawn; that is what the Detail slider gate needs (see below).
-        # can_run is stricter: the pure example path (no text) needs two
-        # positives, since reference-image detection is far better with a pair.
         has_object = has_text or positives > 0
-        can_run = can_detect(has_text, positives)
+        floor_ok = can_detect(has_text, positives)
+        if self._EXEMPLARS_ENABLED:
+            meta_ok = meta_satisfied(has_text, positives)
+        else:
+            # Without the example feature the floor is the only gate.
+            meta_ok = floor_ok
+        can_run = meta_ok
         # The Detail slider gates on the object CONCEPT, not on can_run: its
         # default is OBJECT-AWARE (committing a prompt re-seeds it), so a value
         # tuned BEFORE the object was named got thrown away by the re-seed and
@@ -1097,13 +1102,28 @@ class DockStateMixin:
         # Consent gates DETECT (the moment credits are spent), not Start: the
         # checkbox sits right above this button (see auto_build).
         tos_ok = has_tos_locked() or has_tos_accepted()
-        run_allowed = has_layer and can_run and not_too_large and credits_ok
-        run_allowed = run_allowed and credits_enough and premium_ok and tos_ok
+        hard_ok = has_layer and not_too_large and credits_ok
+        hard_ok = hard_ok and credits_enough and premium_ok and tos_ok
+        run_allowed = hard_ok and can_run
         self.auto_detect_btn.setEnabled(run_allowed and not self._auto_run_active)
-        # A disabled button with no reason reads as broken; consent is the one
-        # gate the user can fix right here, so say so.
-        self.auto_detect_btn.setToolTip(
-            "" if tos_ok else tr("Accept the Terms and Privacy Policy first."))
+        # A disabled button with no reason reads as broken: consent and the
+        # missing half of the prompt-plus-example setup are the two gates the
+        # user can fix right here, so say so.
+        if not tos_ok:
+            tip = tr("Accept the Terms and Privacy Policy first.")
+        elif hard_ok and not meta_ok and has_object:
+            tip = (tr("Draw an example of the object first (step 2).")
+                   if has_text else
+                   tr("Type a word for the object first (step 1)."))
+        else:
+            tip = ""
+        self.auto_detect_btn.setToolTip(tip)
+        # The escape link: visible exactly when only the meta gate blocks the
+        # button (every hard gate passes and the permissive floor is met), so
+        # the text-only / examples-only run stays one visible click away
+        # without ever being the default.
+        self._refresh_meta_escape(
+            hard_ok and floor_ok and not meta_ok and not self._auto_run_active, has_text, positives)
         # detect_blocked telemetry: once per episode, only when the run is set up
         # (layer + object) but a hard gate (credits / zone too large) blocks it.
         reason = None
@@ -1146,6 +1166,14 @@ class DockStateMixin:
                     n=remaining, total=total)
             else:
                 tooltip = tr("{n} free detection(s) remaining").format(n=remaining)
+            # A balance with no return date cannot be acted on: the quota
+            # renews on the sign-up anniversary, which nobody can guess.
+            # Pre-formatted by set_auto_credits, empty on servers that send no
+            # period_end, and the line simply drops out then.
+            reset_day = getattr(self, "_auto_reset_display", "")
+            if reset_day:
+                tooltip += "\n" + tr("Credits come back on {date}").format(
+                    date=reset_day)
             self._footer_credits_label.setToolTip(tooltip)
             self._credit_ring.setToolTip(tooltip)
             self._footer_credits_label.setVisible(True)
@@ -1153,7 +1181,18 @@ class DockStateMixin:
             self._credit_ring.setVisible(False)
             self._footer_credits_label.setVisible(False)
 
-        self._subscribe_pill.setVisible(in_auto and not self._auto_is_subscriber)
+        pill_shown = in_auto and not self._auto_is_subscriber
+        self._subscribe_pill.setVisible(pill_shown)
+        # The pill carries most of the upsell clicks in the product and used to
+        # report none of the matching impressions, so its click-through rate
+        # could not be computed at all. track_pro_upsell_viewed dedupes per
+        # trigger, so calling it on every refresh reports once per session.
+        if pill_shown:
+            try:
+                from ...core import telemetry
+                telemetry.track_pro_upsell_viewed(trigger="subscribe_pill")
+            except Exception:
+                pass  # nosec B110
         # Free-tier low-credit nudge on the Start page (driven by the same
         # remaining/total the ring uses).
         self._update_auto_low_credit_note()
@@ -1167,12 +1206,31 @@ class DockStateMixin:
         title = getattr(self, "_auto_upsell_title", None)
         if title is None:
             return
+        from ...core.server_dials import dial_copy
+
+        # Name the free way out beside the paid one, whenever the server told
+        # us when the quota renews.
+        reset_line = getattr(self, "_auto_upsell_reset", None)
+        if reset_line is not None:
+            reset_day = getattr(self, "_auto_reset_display", "")
+            if reset_day:
+                reset_line.setText(tr(
+                    "Your free detections come back on {date}.").format(
+                        date=reset_day))
+            reset_line.setVisible(bool(reset_day))
+
         total = self._auto_credits_total
         if total and total > 0:
-            title.setText(
-                tr("Your {n} free detections are used up").format(n=int(total)))
+            # A served sentence names the count with {n}. Plain replace, never
+            # format(), so a stray brace in served text cannot raise here.
+            served = dial_copy(
+                "trial.exhausted",
+                tr("Your {n} free detections are used up"))
+            title.setText(served.replace("{n}", str(int(total))))
         else:
-            title.setText(tr("Your free detections are used up"))
+            title.setText(dial_copy(
+                "trial.exhausted_no_count",
+                tr("Your free detections are used up")))
 
     def cleanup_signals(self):
         """Disconnect project signals and clean up shortcuts/timers on plugin reload."""
@@ -1199,12 +1257,25 @@ class DockStateMixin:
                 self._on_layer_visibility_changed)
         except (TypeError, RuntimeError, AttributeError):
             pass
-        # Clean up QShortcut to prevent stale callbacks
-        try:
-            self.start_shortcut.activated.disconnect()
-            self.start_shortcut.deleteLater()
-        except (TypeError, RuntimeError, AttributeError):
-            pass
+        # Clean up every QShortcut to prevent stale callbacks. They are all
+        # window-level, so one left connected keeps firing into a dock that is
+        # gone. getattr keeps this working if a shortcut was never built.
+        for name in (
+                "start_shortcut",
+                "auto_escape_shortcut",
+                "auto_enter_shortcut",
+                "auto_enter_shortcut_kp",
+                "auto_correct_remove_delete_shortcut",
+                "auto_correct_remove_backspace_shortcut",
+                "auto_correct_undo_shortcut"):
+            shortcut = getattr(self, name, None)
+            if shortcut is None:
+                continue
+            try:
+                shortcut.activated.disconnect()
+                shortcut.deleteLater()
+            except (TypeError, RuntimeError, AttributeError):
+                pass
         # Stop timers first, then disconnect to avoid race conditions
         try:
             self._progress_timer.blockSignals(True)

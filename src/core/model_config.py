@@ -15,7 +15,12 @@ import sys
 
 
 def _is_rosetta() -> bool:
-    """Detect Rosetta 2 emulation (x86_64 process on Apple Silicon)."""
+    """Detect Rosetta 2 emulation (x86_64 process on Apple Silicon).
+
+    Runs at import, and this module is imported from classFactory, so the
+    darwin plus x86_64 gate below is load-bearing: it keeps the fork off the
+    QGIS splash screen for everyone except Intel Macs, where the answer cannot
+    be had any other way."""
     if sys.platform != "darwin" or platform.machine() != "x86_64":
         return False
     try:

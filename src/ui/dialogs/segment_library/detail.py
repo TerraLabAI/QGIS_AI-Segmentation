@@ -1,4 +1,5 @@
-"""Detail popups: template preview, past-run detail, and run export.
+"""Detail popups: template preview, past-run detail, run export, and the wait
+window the restore/export flow shows while its thread works.
 
 Both detail dialogs share the AI Edit generation-detail layout: the
 before/after image fills the left pane at its native aspect ratio with a
@@ -9,7 +10,7 @@ auto-loop animation.
 """
 from __future__ import annotations
 
-from qgis.PyQt.QtCore import Qt, QTimer
+from qgis.PyQt.QtCore import QSettings, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QApplication,
     QComboBox,
@@ -21,6 +22,7 @@ from qgis.PyQt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QToolButton,
@@ -32,27 +34,44 @@ from ....core import qt_compat as QtC
 from ....core.i18n import tr
 from ....core.presets.segmentation_presets import pick_label
 from ...before_after_slider import BeforeAfterSlider
+from ...dock.styles import _PROGRESS_THIN_QSS
 from ...template_demo_loader import TemplateDemoLoader
 from .common import (
     _ACTION_BTN,
-    _AspectBox,
     _BADGE_STYLE,
     _CHIP_CAPTION,
     _CHIP_STYLE,
     _CHIP_VALUE,
     _COPY_BTN,
-    _demo_url,
     _DETAIL_STAR_BTN,
     _FS_BTN,
     _GHOST_BTN_QSS,
-    _iso_norm,
     _PRIMARY_BTN,
     _PROMPT_STYLE,
-    _relative_when,
     _SEARCH_QSS,
     _SECTION_STYLE,
     _SEPARATOR,
     _TITLE_STYLE,
+    _AspectBox,
+    _demo_url,
+    _iso_norm,
+    _relative_when,
+)
+
+# Width asked of the image route for the run popup's comparison. One of the
+# sizes the route serves; a larger request would be snapped down to it anyway.
+_DETAIL_IMAGE_WIDTH = 768
+
+# Folder of the last direct export, so the chooser reopens where the user
+# works. Same "AISegmentation/" family as the other library keys; the literal
+# is what sits in the user's profile, so rename the constant, never the string.
+_EXPORT_DIR_KEY = "AISegmentation/library_export_dir"
+
+# Names Windows reserves for devices. It refuses a file called any of these
+# whatever the extension, so a prompt of "con" or "aux" would produce a save
+# that fails with nothing to tell the user why.
+_WINDOWS_DEVICE_NAMES = frozenset(
+    ["CON", "PRN", "AUX", "NUL"] + [f"COM{i}" for i in range(1, 10)] + [f"LPT{i}" for i in range(1, 10)]
 )
 
 
@@ -373,7 +392,6 @@ class _RunDetailDialog(_DetailDialogBase):
         super().__init__(parent or library)
         self._run = run
         self._lib = library
-        self.use_requested = False
         prompt = (run.get("prompt") or "").strip() or tr("Older detection")
         self._prompt = prompt
         self._build_shell(prompt, tr("Your detection"))
@@ -395,11 +413,18 @@ class _RunDetailDialog(_DetailDialogBase):
         self._loader.failed.connect(self._on_failed)
         rid = run.get("preview_request_id") or ""
         if rid:
+            # Bigger than the card asks for, still far short of the stored tile:
+            # the popup shows the comparison at about half a dialog wide, and
+            # the full capture would cost a megabyte and a half to say the same
+            # thing. Cached apart from the card copy, and immutable, because a
+            # finished run's archived tile is never rewritten.
+            width = _DETAIL_IMAGE_WIDTH
             for which in ("input", "preview"):
                 self._loader.request(
                     rid, which,
-                    self._lib._artifact_url(rid, which),
-                    headers=self._lib._auth or None)
+                    self._lib._artifact_url(rid, which, width),
+                    headers=self._lib._auth or None,
+                    variant=str(width), immutable=True)
         else:
             self.slider.set_placeholder_text(tr("No preview"))
 
@@ -416,7 +441,7 @@ class _RunDetailDialog(_DetailDialogBase):
         try:
             mupp = float(run.get("pixel_size_m") or 0)
             if mupp > 0:
-                chips.append((tr("RESOLUTION"), "{:.2f} m/px".format(mupp)))
+                chips.append((tr("RESOLUTION"), f"{mupp:.2f} m/px"))
         except (TypeError, ValueError):
             pass
         if run.get("has_exemplars"):
@@ -457,27 +482,29 @@ class _RunDetailDialog(_DetailDialogBase):
         self.set_favorite(bool(self._run.get("is_favorite")))
         self.star_btn.clicked.connect(self._on_star_clicked)
         primary.addWidget(self.star_btn)
-        self.use_btn = QPushButton(tr("Use this prompt"))
-        self.use_btn.setStyleSheet(_PRIMARY_BTN)
-        self.use_btn.setMinimumHeight(38)
-        self.use_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.use_btn.setToolTip(tr(
-            "Drop this object back into the prompt box for a new detection."))
-        self.use_btn.clicked.connect(self._on_use)
-        primary.addWidget(self.use_btn, 1)
+        # The primary action rebuilds the whole run, not just its word: same
+        # ground, same object, same number of tiles. Handing back the prompt
+        # alone left the user to find the place and the settings again, which
+        # is the work.
+        self.rerun_btn = QPushButton(tr("Run this zone again"))
+        self.rerun_btn.setStyleSheet(_PRIMARY_BTN)
+        self.rerun_btn.setMinimumHeight(38)
+        self.rerun_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.rerun_btn.setToolTip(tr(
+            "Points the map back at this run with the same object and the same "
+            "number of tiles, ready to detect. Nothing is spent until you do."))
+        self.rerun_btn.clicked.connect(
+            lambda: self._lib._request_rerun(self._run, self))
+        primary.addWidget(self.rerun_btn, 1)
         col.addLayout(primary)
 
         # View-only (a run is in flight): keep the run inspectable but disable
         # every action that would pick a prompt or start work.
         if getattr(self._lib, "_view_only", False):
             busy_tip = tr("Available when detection finishes")
-            for btn in (self.use_btn, self.restore_btn, self.export_btn):
+            for btn in (self.rerun_btn, self.restore_btn, self.export_btn):
                 btn.setEnabled(False)
                 btn.setToolTip(busy_tip)
-
-    def _on_use(self) -> None:
-        self.use_requested = True
-        self.accept()
 
     def _on_star_clicked(self, checked: bool) -> None:
         self.set_favorite(checked)  # glyph follows the optimistic flip at once
@@ -511,6 +538,70 @@ class _RunDetailDialog(_DetailDialogBase):
     def _on_failed(self, pid: str, which: str) -> None:
         if pid == (self._run.get("preview_request_id") or "") and not self.slider.has_images():
             self.slider.set_placeholder_text(tr("No preview"))
+
+
+class _RunProgressDialog(QDialog):
+    """What restoring or exporting a past run is doing, and the way out of it.
+
+    Rebuilding a run reads every archived tile and decodes every stored mask,
+    which is minutes of work on a big one. All of it runs on a thread; this is
+    the whole of what the user sees: one line of what is happening, a thin
+    determinate line, and Cancel.
+    """
+
+    cancelled = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(tr("Segment library"))
+        self.setMinimumWidth(360)
+        # Set on any exit we asked for, so the programmatic close below is not
+        # mistaken for the user's Cancel: Qt routes close() through reject().
+        self._done = False
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(16, 14, 16, 12)
+        lay.setSpacing(10)
+
+        self._label = QLabel(tr("Reading this run..."))
+        self._label.setStyleSheet("color: palette(text); background: transparent;")
+        lay.addWidget(self._label)
+
+        self._bar = QProgressBar()
+        self._bar.setTextVisible(False)
+        self._bar.setStyleSheet(_PROGRESS_THIN_QSS)
+        self._bar.setRange(0, 0)
+        lay.addWidget(self._bar)
+
+        row = QHBoxLayout()
+        row.addStretch()
+        cancel = QPushButton(tr("Cancel"))
+        cancel.setStyleSheet(_GHOST_BTN_QSS)
+        cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.clicked.connect(self.reject)
+        row.addWidget(cancel)
+        lay.addLayout(row)
+
+    def set_step(self, text: str, done: int = 0, total: int = 0) -> None:
+        """One line of what is happening. ``total`` of 0 leaves the line busy
+        (a step whose size is not known), any other value makes it measure."""
+        self._label.setText(text)
+        if total > 0:
+            self._bar.setRange(0, total)
+            self._bar.setValue(max(0, min(done, total)))
+        else:
+            self._bar.setRange(0, 0)
+
+    def finish(self) -> None:
+        """Close because the work ended, not because the user stopped it."""
+        self._done = True
+        self.close()
+
+    def reject(self):  # noqa: N802 - Qt signature
+        if not self._done:
+            self._done = True
+            self.cancelled.emit()
+        super().reject()
 
 
 class _ExportRunDialog(QDialog):
@@ -599,21 +690,51 @@ class _ExportRunDialog(QDialog):
 
     def _default_name(self) -> str:
         token = (self._run.get("prompt") or "detections").strip()
-        safe = "".join(c if c.isalnum() else "_" for c in token) or "detections"
-        return safe
+        stem = "".join(c if c.isalnum() else "_" for c in token) or "detections"
+        if stem.upper() in _WINDOWS_DEVICE_NAMES:
+            # Windows refuses these as filenames whatever the extension, and
+            # the user would only see a failed write with no reason given.
+            stem += "_export"
+        return stem
+
+    def _start_dir(self) -> str:
+        """Where the file chooser opens: the folder of the last export, then
+        the project folder, then home.
+
+        Must be absolute. Qt resolves a bare name against the process working
+        directory, which on Windows is the QGIS bin folder under Program Files,
+        where a standard user cannot write.
+        """
+        import os
+
+        remembered = str(QSettings().value(_EXPORT_DIR_KEY, "", type=str) or "")
+        candidates = [remembered]
+        try:
+            from qgis.core import QgsProject
+            candidates.append(QgsProject.instance().homePath() or "")
+        except (RuntimeError, ImportError):
+            pass
+        candidates.append(os.path.expanduser("~"))
+        for candidate in candidates:
+            if candidate and os.path.isdir(candidate):
+                return candidate
+        return os.path.expanduser("~")
 
     def _pick_path(self) -> None:
+        import os
+
         from ....core.polygon_exporter import driver_extension
         ext = driver_extension(self.driver())
         label = self._FORMATS[self.format_combo.currentIndex()][0]
-        suggested = self._default_name() + ext
+        suggested = os.path.join(self._start_dir(), self._default_name() + ext)
         path, _filter = QFileDialog.getSaveFileName(
             self, tr("Export..."), suggested,
-            "{} (*{})".format(label, ext))
+            f"{label} (*{ext})")
         if not path:
             return
         if not path.lower().endswith(ext):
             path += ext
+        QSettings().setValue(_EXPORT_DIR_KEY, os.path.dirname(path))
         self.path_edit.setText(path)
         self.ok_btn.setEnabled(True)
 

@@ -9,35 +9,39 @@ from __future__ import annotations
 import os
 
 from qgis.PyQt.QtCore import Qt, QTimer
-from qgis.PyQt.QtGui import QKeySequence, QShortcut
+from qgis.PyQt.QtGui import QKeySequence
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QStyle,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-
-from ..layer_tree_combobox import LayerTreeComboBox
-
 from ...core.activation_manager import (
     has_tos_accepted,
     has_tos_locked,
 )
+from ...core.cache_paths import PLUGIN_CACHE_DIR
 from ...core.i18n import tr
 from ...core.model_config import _IS_MACOS_X86, USE_SAM2
-from ...core.venv_manager import CACHE_DIR
+from ...core.qt_compat import QShortcut
+from ..layer_tree_combobox import LayerTreeComboBox
+from .guidance import (
+    BLUE_TINT,
+    GREEN_TINT,
+    HINT_START_MANUAL,
+    HINT_TRY_AUTOMATIC,
+    DismissibleHint,
+)
 from .styles import (
-    BRAND_BLUE,
-    BTN_GREEN,
     _BTN_BLUE,
     _BTN_EXPORT_DISABLED,
     _BTN_GRAY,
@@ -48,18 +52,12 @@ from .styles import (
     _BTN_RED,
     _CARD_MARGINS,
     _CARD_QSS,
-    _COMBO_THEME_QSS,
     _INSTRUCTIONS_CARD_QSS,
     _PROGRESS_THIN_QSS,
     _RECAP_CARD_QSS,
+    BRAND_BLUE,
+    BTN_GREEN,
     _msg_card_qss,
-)
-from .guidance import (
-    BLUE_TINT,
-    GREEN_TINT,
-    HINT_START_MANUAL,
-    HINT_TRY_AUTOMATIC,
-    DismissibleHint,
 )
 from .widgets import (
     Mode,
@@ -129,8 +127,8 @@ class DockBuildMixin:
         # (BEFORE the stretch) so it clusters with the Start view instead of
         # leaving a void above it. It stays a main_layout item (NOT moved into
         # start_container) so its show/hide keeps running through
-        # _update_try_automatic_hint_visibility, exactly as set up on 2026-07-04;
-        # only its position moved from below the stretch to above it.
+        # _update_try_automatic_hint_visibility; only its position differs,
+        # above the stretch rather than below it.
         self.main_layout.addWidget(self.try_automatic_hint)
         self.main_layout.addStretch()
         # The Automatic first-steps guide band stays pinned to the dock bottom,
@@ -138,7 +136,11 @@ class DockBuildMixin:
         # (_update_auto_tutorial_banner_visibility).
         self.main_layout.addWidget(self.auto_tutorial_banner)
         self._setup_update_notification()
+        self._setup_update_recommendation()
         self._setup_about_section()
+        # A configuration left on disk by an earlier session is already
+        # readable here, so the switches apply before the dock is ever shown.
+        self.apply_server_feature_switches()
 
     def _setup_mode_switch(self):
         """Create the Interactive / Automatic segmented control at the dock top."""
@@ -213,16 +215,6 @@ class DockBuildMixin:
         except (RuntimeError, AttributeError):
             pass
 
-    def set_protected_note(self, visible: bool) -> None:
-        """Retired note (Yvann 2026-07-11: it earned no pixels). Hand-refined
-        objects ARE still protected via geometry (_auto_protected_geoms); the
-        review just no longer narrates it. Kept as a no-op hide so the many
-        call sites need no change."""
-        try:
-            self._auto_conf_lock_note.setVisible(False)
-        except (RuntimeError, AttributeError):
-            pass
-
     def _setup_welcome_section(self):
         """Setup the welcome section."""
         self.welcome_widget = QWidget()
@@ -282,8 +274,17 @@ class DockBuildMixin:
         layout.addWidget(self.install_button)
 
         self.install_path_label = QLabel(
-            tr("Install path: {}").format(CACHE_DIR))
+            tr("Install path: {}").format(PLUGIN_CACHE_DIR))
         self.install_path_label.setWordWrap(True)
+        # Qt wraps a path at "/" and not at "\", so on Windows the whole path
+        # is one unbreakable token, and a wrapped label reports its longest
+        # token as its minimum width. That pushed the dock past its 260px
+        # minimum and took the space out of the canvas. Same fix as the layer
+        # combo below: the label may be squeezed, its content no longer sets
+        # the floor. The tooltip keeps the path readable in full.
+        self.install_path_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.install_path_label.setToolTip(PLUGIN_CACHE_DIR)
         self.install_path_label.setStyleSheet(
             "color: palette(text);"
             "font-size: 11px;"
@@ -529,7 +530,6 @@ class DockBuildMixin:
         self.layer_combo.layerChanged.connect(self._on_layer_changed)
         self.layer_combo.setToolTip(tr("Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)"))
         self.layer_combo.setStyleSheet("QComboBox { color: palette(text); }")
-        from qgis.PyQt.QtWidgets import QSizePolicy
         self.layer_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.layer_combo.setMinimumWidth(0)
         layout.addWidget(self.layer_combo)
@@ -700,6 +700,37 @@ class DockBuildMixin:
         self.auto_enter_shortcut_kp = QShortcut(QKeySequence(Qt.Key.Key_Enter), self)
         self.auto_enter_shortcut_kp.setContext(Qt.ShortcutContext.WindowShortcut)
         self.auto_enter_shortcut_kp.activated.connect(self._on_auto_enter_shortcut)
+        # Correct-step shortcuts are intentionally scoped in their handlers:
+        # they only act while the review is on Correct, so they never shadow
+        # QGIS or the prompt field elsewhere in the flow.
+        # Delete (and Ctrl+Backspace) remove the selected polygon. Their gate,
+        # _is_auto_correct_shortcut_active, stands down while the QGIS edit
+        # bridge is armed (_qgis_bridge_active_ui) or an AI fix session is
+        # running (_refine_handoff): those are exactly the states where the
+        # vertex tool claims Delete for the picked CORNER, so the polygon-delete
+        # binding and the corner-delete tool never collide. While the on-device
+        # session tool is armed, ShortcutFilter accepts the ShortcutOverride for
+        # these keys (and Ctrl+Z), so they reach the session (delete the open
+        # object, undo the last gesture) instead of this window-level pair,
+        # which would otherwise consume the key even with its gate down.
+        self.auto_correct_remove_backspace_shortcut = QShortcut(
+            QKeySequence("Ctrl+Backspace"), self)
+        self.auto_correct_remove_backspace_shortcut.setContext(
+            Qt.ShortcutContext.WindowShortcut)
+        self.auto_correct_remove_backspace_shortcut.activated.connect(
+            self._on_auto_correct_remove_shortcut)
+        self.auto_correct_remove_delete_shortcut = QShortcut(
+            QKeySequence(Qt.Key.Key_Delete), self)
+        self.auto_correct_remove_delete_shortcut.setContext(
+            Qt.ShortcutContext.WindowShortcut)
+        self.auto_correct_remove_delete_shortcut.activated.connect(
+            self._on_auto_correct_remove_shortcut)
+        self.auto_correct_undo_shortcut = QShortcut(
+            QKeySequence.StandardKey.Undo, self)
+        self.auto_correct_undo_shortcut.setContext(
+            Qt.ShortcutContext.WindowShortcut)
+        self.auto_correct_undo_shortcut.activated.connect(
+            self._on_auto_correct_undo_shortcut)
 
         layout.addWidget(self.start_container)
 
@@ -724,29 +755,6 @@ class DockBuildMixin:
                "polygons to a layer.")
         )
         layout.addWidget(self.save_mask_button)
-
-        # Export destination: a "New layer" default (today's behavior) or one of
-        # the project's existing polygon layers. Hidden entirely when there is
-        # no candidate layer, so the Manual export then looks exactly as before.
-        # The just-committed Automatic detections layer surfaces first here, so
-        # adding hand-drawn shapes onto it is one obvious click.
-        self.export_dest_widget = QWidget()
-        dest_row = QHBoxLayout(self.export_dest_widget)
-        dest_row.setContentsMargins(0, 0, 0, 0)
-        dest_row.setSpacing(6)
-        dest_label = QLabel(tr("Add to"))
-        dest_label.setStyleSheet(
-            "font-size: 11px; color: rgba(128,128,128,0.95);")
-        dest_row.addWidget(dest_label)
-        self.export_dest_combo = QComboBox()
-        self.export_dest_combo.setStyleSheet(_COMBO_THEME_QSS)
-        self.export_dest_combo.setToolTip(
-            tr("Create a new layer, or add these polygons to an existing layer."))
-        self.export_dest_combo.currentIndexChanged.connect(
-            self._on_export_dest_changed)
-        dest_row.addWidget(self.export_dest_combo, 1)
-        self.export_dest_widget.setVisible(False)
-        layout.addWidget(self.export_dest_widget)
 
         self.export_button = QPushButton(tr("Export polygon to a layer"))
         self.export_button.clicked.connect(self._on_export_clicked)

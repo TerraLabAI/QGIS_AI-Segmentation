@@ -27,6 +27,18 @@ from .shared import (
     park_orphaned_worker,
 )
 
+# Terminal auto-detection error classes that deserve an actionable report: the
+# banner carries a "Report this problem" link and, when nothing was salvaged
+# into a review, the report dialog auto-opens. AUTH/CREDITS_EXHAUSTED/CANCELLED
+# are excluded (they have their own next step: sign in, subscribe, or nothing).
+_AUTO_REPORTABLE_CLASSES = frozenset({"NETWORK", "SERVER", "TIMEOUT", "UNKNOWN"})
+
+# Stand-in object name for a run driven by examples only (no typed prompt). It
+# is a machine value: it lands in the `class` column, in the table name and in
+# the per-object colour lookup, so it stays English in every locale. The other
+# export paths write the same token. Translate it only for display copy.
+EXAMPLE_MATCH_CLASS = "Example match"
+
 
 class AutoLifecycleMixin:
     """Run wind-down: autosave/discard, worker signal handlers, detection export."""
@@ -85,6 +97,12 @@ class AutoLifecycleMixin:
         review state is cleared. ``exit_path`` names the leave path for the
         abandonment telemetry.
         """
+        # If a QGIS digitizing bridge is open on the selection layer, roll it
+        # back and restore the user's editing aids BEFORE the layer is removed
+        # below. Every review-leave path (Exit, zone drop, mode switch, new run,
+        # unload) funnels through here, so this is the one place that guarantees
+        # no leaked global editing aid.
+        self._abort_qgis_edit_bridge_if_active()
         self._autosave_pending_auto_review(exit_path)
         self._auto_review = None
         # Supersede any in-flight cooperative finalize/reslice (same gen-bump +
@@ -94,20 +112,130 @@ class AutoLifecycleMixin:
         self._auto_finalize_gen += 1
         self._auto_finalize_state = None
         self._remove_auto_selection_layer()
-        self._auto_protected_geoms = []
         self._auto_manual_removed = set()
         # Orphan any background install started from the review (D1): a late
-        # predictor load must not open a handoff on a review that is gone.
+        # predictor load must not open a handoff or the Add lane on a review
+        # that is gone.
         self._clear_refine_install_pending()
+        self._clear_ai_add_install_pending()
         if self.dock_widget:
             try:
-                self.dock_widget.set_protected_note(False)
                 self.dock_widget.set_auto_review_active(False)
             except (RuntimeError, AttributeError):
                 pass
 
+    # ---- Crash-net run autosave (disk copy before the finalize tail) --------
+
+    def _autosave_billed_results(self, merged_ided: list) -> None:
+        """Persist the merged scored set to disk the moment the merger is read
+        at finalize, BEFORE the sweep/build/filter/review tail runs on it. A
+        billed run then always has a recoverable artifact on disk, whatever
+        happens to the (main-thread, geometry-heavy) tail after this point.
+
+        Best-effort by contract: a failed write logs and changes nothing, so
+        the autosave can never break finalize. Once the write confirms, the
+        retained duplicate raw fragments are freed, unless this run still needs
+        them (_auto_retain_raw, exemplar-only).
+        """
+        if self._auto_headless_run:
+            return  # headless exports synchronously right after this point
+        try:
+            from ...core import run_autosave
+            ctx = self._auto_run_ctx or {}
+            prompt = str(ctx.get("prompt") or "").strip()
+            source_layer = None
+            layer_id = ctx.get("layer_id")
+            if layer_id:
+                source_layer = QgsProject.instance().mapLayer(layer_id)
+            info = run_autosave.write_autosave(
+                merged_ided, self._auto_crs_authid or "EPSG:4326", prompt,
+                self._auto_run_id or "", source_layer=source_layer)
+            if not info:
+                return
+            run_autosave.record_pending(info)
+            QgsMessageLog.logMessage(
+                "Auto detection: autosaved {n} object(s) to disk before "
+                "review".format(n=info.get("count", 0)),
+                "AI Segmentation", level=Qgis.MessageLevel.Info,
+            )
+            # The merged set is safe on disk: the raw per-tile fragments are
+            # now a duplicate copy. Keep them only where the exemplar-only
+            # count-vs-map re-merge still reads them.
+            if not getattr(self, "_auto_retain_raw", False):
+                self._auto_raw_fragments = None
+        except Exception:  # noqa: BLE001 -- the crash net never breaks finalize
+            try:
+                QgsMessageLog.logMessage(
+                    "Auto detection: pre-review autosave failed",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            except Exception:  # nosec B110
+                pass
+
+    def _offer_pending_run_autosave(self) -> None:
+        """Offer back a run autosave that was never exported (QGIS closed or
+        died between finalize and Finish). Checked on plugin start and on
+        entering Automatic; shows one message-bar offer per session. The offer
+        loads the already-written GeoPackage table, so recovery reuses the
+        normal committed-layer path end to end. Never raises."""
+        try:
+            if getattr(self, "_run_autosave_offer_shown", False):
+                return
+            if self._auto_worker is not None or self._auto_review is not None:
+                return
+            from ...core import run_autosave
+            pending = run_autosave.read_pending()
+            if not pending:
+                return
+            run_id = str(pending.get("run_id") or "")
+            if run_id and run_id == (self._auto_run_id or ""):
+                return  # the run that wrote it is still alive in this session
+            self._run_autosave_offer_shown = True
+            from qgis.PyQt.QtWidgets import QPushButton
+            bar = self.iface.messageBar()
+            count = int(pending.get("count", 0) or 0)
+            widget = bar.createMessage(
+                "AI Segmentation",
+                tr("A detection run was interrupted before its results were "
+                   "exported. {n} detection(s) were saved.").format(n=count))
+            button = QPushButton(tr("Add them to the project"), widget)
+            button.clicked.connect(
+                lambda: self._recover_pending_run_autosave(pending))
+            widget.layout().addWidget(button)
+            self._run_autosave_offer_widget = widget
+            bar.pushWidget(widget, Qgis.MessageLevel.Info, 0)
+        except Exception:  # nosec B110 -- the offer is best-effort
+            pass
+
+    def _recover_pending_run_autosave(self, pending: dict) -> None:
+        """Load the pending autosave into the project and clear the pointer.
+        On a failed load the pointer stays armed so a later start can retry."""
+        try:
+            widget = getattr(self, "_run_autosave_offer_widget", None)
+            self._run_autosave_offer_widget = None
+            if widget is not None:
+                try:
+                    self.iface.messageBar().popWidget(widget)
+                except (RuntimeError, AttributeError):
+                    pass
+            from ...core import run_autosave
+            name = run_autosave.load_pending_layer(pending)
+            if name:
+                run_autosave.clear_pending()
+                self.iface.messageBar().pushInfo(
+                    "AI Segmentation",
+                    tr("Recovered {n} detection(s) to the layer {name}.").format(
+                        n=int(pending.get("count", 0) or 0), name=name))
+            else:
+                self.iface.messageBar().pushWarning(
+                    "AI Segmentation",
+                    tr("Could not load the saved run. The file may have "
+                       "been moved or deleted."))
+        except Exception:  # nosec B110 -- recovery is best-effort
+            pass
+
     def _on_auto_progress(self, completed: int, total: int) -> None:
         """Slot: update progress bar in dock."""
+        self._note_auto_progress()  # the run advanced: reset the stall window
         if self.dock_widget:
             try:
                 self.dock_widget.set_auto_tile_progress(completed, total)
@@ -152,7 +280,7 @@ class AutoLifecycleMixin:
 
     def _on_auto_warning(self, msg: str) -> None:
         QgsMessageLog.logMessage(
-            "Auto detection warning: {}".format(msg),
+            f"Auto detection warning: {msg}",
             "AI Segmentation", level=Qgis.MessageLevel.Warning,
         )
         # Aggregate degraded-tile warnings for the auto_tiles_degraded event
@@ -165,7 +293,7 @@ class AutoLifecycleMixin:
 
     def _on_auto_error(self, msg: str) -> None:
         QgsMessageLog.logMessage(
-            "Auto detection error: {}".format(msg),
+            f"Auto detection error: {msg}",
             "AI Segmentation", level=Qgis.MessageLevel.Warning,
         )
         self._set_zone_badge_enabled(True)
@@ -184,11 +312,24 @@ class AutoLifecycleMixin:
         # Be honest about whose fault it is: only a real connectivity failure
         # blames the user's connection. A server or timeout is ours, so we say so
         # and point at the right next step.
+        # Tiles that already landed are salvaged into the review a few lines
+        # below, so a run that got part-way is not a failure the user can do
+        # nothing with. Lead with what they still have (one thing per state):
+        # "Detection failed" over a review holding hundreds of objects reads as
+        # if the work was lost.
+        salvaged_tiles = getattr(self._auto_worker, "tiles_succeeded", 0)
         if is_auth:
             banner = tr("Session expired. Sign in again to continue.")
+        elif salvaged_tiles > 0 and not self._auto_headless_run:
+            banner = tr("Detection stopped early after {done} tile(s). "
+                        "The objects already found are kept below.").format(
+                            done=salvaged_tiles)
         elif error_class == "SERVER":
-            banner = tr("The detection service had a problem. Your credits "
-                        "for the failed tiles were refunded. Please try again.")
+            # Never promise a refund here: the plugin has no count of what the
+            # server charged for this run, and a tile can be billed even when
+            # its answer never reached us.
+            banner = tr("The detection service had a problem and the run "
+                        "stopped. Please try again.")
         elif error_class == "TIMEOUT":
             banner = tr("The detection service is busy right now. "
                         "Please try again in a moment.")
@@ -202,10 +343,18 @@ class AutoLifecycleMixin:
         code = (self._auto_run_id or "")[:8]
         if code and error_class in ("SERVER", "TIMEOUT", "UNKNOWN"):
             banner = banner + "\n" + tr("Support code: {code}").format(code=code)
+        # Reportable failures make the banner actionable (persistent report link)
+        # and, when zero-success, auto-open the report dialog below.
+        report_payload = None
+        if error_class in _AUTO_REPORTABLE_CLASSES:
+            report_payload = (
+                tr("Automatic detection failed"), msg,
+                "auto_detect_" + error_class.lower())
         if self.dock_widget:
             try:
                 self.dock_widget.set_auto_run_active(False)
-                self.dock_widget.set_auto_status("error", banner)
+                self.dock_widget.set_auto_status(
+                    "error", banner, report_payload=report_payload)
             except (RuntimeError, AttributeError):
                 pass
         # Record result for MCP/headless callers waiting on QEventLoop.
@@ -259,15 +408,29 @@ class AutoLifecycleMixin:
                 except (RuntimeError, AttributeError):
                     pass
         else:
+            # Nothing to salvage, so nothing will read the merger: tear the live
+            # pipeline down here. Without this the stitcher thread sits forever
+            # on an inbox that will never get its sentinel, holding the run's
+            # merger and fragments, and preview jobs stay switched off because
+            # only the pipeline reset turns them back on.
+            self._reset_auto_live_pipeline()
+            self._stop_auto_stall_watchdog()
             self._remove_auto_selection_layer()
             # Zero-success failure lands back on the prompt step with the zone
             # kept: the run cleared the tile-grid preview but the cost label still
             # shows the old estimate. Redraw the grid + cost (interactive only).
             if self.dock_widget and not self._auto_headless_run:
                 try:
-                    self._update_credit_estimate()
+                    self._restore_tile_grid_after_run()
                 except (RuntimeError, AttributeError):
                     pass
+            # Nothing was salvaged into a review: a bare banner is a dead end, so
+            # open the report dialog (once per run). NETWORK is the only
+            # reportable class not tracked above, so it is the only one that lets
+            # the dialog emit the single plugin_error for this failure.
+            if report_payload is not None:
+                self._open_auto_error_report(
+                    *report_payload, track=(error_class == "NETWORK"))
         if is_auth and not self._auto_headless_run:
             # Persist the message (the review wind-down clears the status
             # banner) and open the account panel so signing in is one click.
@@ -282,7 +445,7 @@ class AutoLifecycleMixin:
 
     def _on_auto_credits_exhausted(self, remaining: int) -> None:
         QgsMessageLog.logMessage(
-            "Auto detection: credits exhausted (remaining={})".format(remaining),
+            f"Auto detection: credits exhausted (remaining={remaining})",
             "AI Segmentation", level=Qgis.MessageLevel.Warning,
         )
         self._set_zone_badge_enabled(True)
@@ -337,7 +500,14 @@ class AutoLifecycleMixin:
         self._last_auto_result = {"status": "credits_exhausted", "credits_remaining": remaining}
         self._finalize_auto_results(tiles_succeeded)
 
-    def _on_auto_cancelled(self) -> None:
+    def _on_auto_cancelled(self, reason: str = "user") -> None:
+        """Wind down a stopped run and salvage its billed partials into the
+        review. ``reason`` "user" is a real cancel (the worker's cancelled
+        signal); "stalled" is the stall watchdog forcing a terminal on a wedged
+        worker, which records a TIMEOUT failure instead of a cancel so the hang
+        is visible in analytics, and tells the user the run stopped responding
+        rather than that they cancelled it."""
+        stalled = reason == "stalled"
         worker = self._auto_worker
         if worker is None or self._auto_merger is None:
             # Hard stop (_stop_auto_detection): the run state was already torn
@@ -360,6 +530,24 @@ class AutoLifecycleMixin:
         self._set_zone_badge_enabled(True)
         tiles_succeeded = getattr(worker, "tiles_succeeded", 0)
         tiles_total = (self._auto_run_ctx or {}).get("total", tiles_succeeded)
+        # Backend-distress signal, read from the worker BEFORE it is released:
+        # a run that billed ZERO tiles while the service was unresponsive (time
+        # in the waiting room and/or submit retries) is a sick backend the user
+        # gave up on, NOT a healthy user cancel. Terminal-event invariant: we
+        # still emit exactly ONE terminal event, auto_detect_cancelled, and flag
+        # it backend_stalled=true rather than also emitting auto_detect_failed
+        # (the failed event stays for runs that terminate on their own), so a
+        # cancelled-during-outage run is never double-counted.
+        warming_ms = self._auto_warming_wait_ms()
+        try:
+            health = worker.run_health_summary() if worker is not None else {}
+        except (RuntimeError, AttributeError):
+            health = {}
+        submit_retries = int(health.get("submit_retries", 0) or 0)
+        skipped_network = int(health.get("tiles_skipped_network", 0) or 0)
+        from .shared import backend_stalled_flag
+        backend_stalled = backend_stalled_flag(
+            tiles_succeeded, warming_ms, submit_retries, skipped_network)
         if self.dock_widget:
             try:
                 self.dock_widget.set_auto_run_active(False)
@@ -368,24 +556,60 @@ class AutoLifecycleMixin:
                 pass
         try:
             from ...core import telemetry
-            telemetry.track_auto_detect_cancelled(
-                run_id=self._auto_run_id or "",
-                tiles_done=tiles_succeeded,
-                tiles_total=tiles_total,
-                salvaged_to_review=tiles_succeeded > 0,
-                duration_ms=self._auto_duration_ms(),
-                warming_ms=self._auto_warming_wait_ms(),
-            )
+            if stalled:
+                # ONE terminal event for a stalled run: a TIMEOUT failure, not a
+                # cancel (keeps the terminal-event invariant, and the hang is
+                # visible in analytics instead of reading as a user cancel).
+                telemetry.track_auto_detect_failed(
+                    run_id=self._auto_run_id or "",
+                    error_class="TIMEOUT",
+                    tiles_done=tiles_succeeded,
+                    duration_ms=self._auto_duration_ms(),
+                    warming_ms=warming_ms,
+                )
+            else:
+                telemetry.track_auto_detect_cancelled(
+                    run_id=self._auto_run_id or "",
+                    tiles_done=tiles_succeeded,
+                    tiles_total=tiles_total,
+                    salvaged_to_review=tiles_succeeded > 0,
+                    duration_ms=self._auto_duration_ms(),
+                    warming_ms=warming_ms,
+                    backend_stalled=backend_stalled,
+                    submit_retries=submit_retries,
+                )
         except Exception:
             pass  # nosec B110
-        self._auto_tel_stop_reason = "cancelled"
+        self._auto_tel_stop_reason = "stalled" if stalled else "cancelled"
+        # A stalled run stopped responding: say so on the message bar before the
+        # review opens (opening it swaps the dock status to idle). A user cancel
+        # needs no such line.
+        if stalled and tiles_succeeded > 0:
+            try:
+                self.iface.messageBar().pushWarning(
+                    "AI Segmentation",
+                    tr("The detection stopped responding. Keeping the {n} "
+                       "tiles already found.").format(n=tiles_succeeded))
+            except (RuntimeError, AttributeError):
+                pass
+        # Record the stop for MCP/headless callers BEFORE finalize: a headless
+        # finalize exports the billed partials and records a completed result
+        # carrying the saved layer_name. Writing the stop afterwards clobbered
+        # that, so the caller saw a bare error for work it was charged for.
+        stop_status = "stalled" if stalled else "cancelled"
+        self._last_auto_result = {"status": stop_status}
         # Keep whatever was found so far: drop the user into the review of the
         # billed partial results (the resume flow was removed).
         self._finalize_auto_results(tiles_succeeded)
-        # Record result for MCP/headless callers waiting on QEventLoop.
-        self._last_auto_result = {"status": "cancelled"}
+        # Fold the stop cause back over whatever finalize recorded, keeping its
+        # layer/instance facts: the caller needs BOTH.
+        merged = self._last_auto_result
+        if isinstance(merged, dict) and merged.get("status") == "completed":
+            merged["status"] = stop_status
+        else:
+            self._last_auto_result = {"status": stop_status}
         QgsMessageLog.logMessage(
-            "Auto detection: cancelled",
+            "Auto detection: stalled" if stalled else "Auto detection: cancelled",
             "AI Segmentation", level=Qgis.MessageLevel.Info,
         )
 
@@ -469,7 +693,7 @@ class AutoLifecycleMixin:
     def _export_auto_detections(
         self,
         deduped_geoms: list,
-        crs: "QgsCoordinateReferenceSystem",
+        crs: QgsCoordinateReferenceSystem,
         source_layer_name: str,
         prompt_label: str,
         scores: list | None = None,
@@ -495,23 +719,24 @@ class AutoLifecycleMixin:
         from ...core.layer_conventions import (
             apply_output_conventions,
             make_area_measurer,
+            make_class_categorized_renderer,
             make_committed_renderer,
             repair_polygon,
+            round_measure,
             to_multipolygon,
         )
 
         if not deduped_geoms:
-            return
+            return None
 
         # Example-only runs have no text prompt: fall back to a stable name so the
-        # class attribute, layer name, table name and colour are never empty. The
-        # English token stays "Example match" (localized for display).
-        prompt_label = (prompt_label or "").strip() or tr("Example match")
+        # class attribute, layer name, table name and colour are never empty.
+        prompt_label = (prompt_label or "").strip() or EXAMPLE_MATCH_CLASS
 
         # Build a temporary memory layer.
         temp_layer = QgsVectorLayer("MultiPolygon", "auto_export", "memory")
         if not temp_layer.isValid():
-            return
+            return None
         temp_layer.setCrs(crs)
 
         pr = temp_layer.dataProvider()
@@ -547,13 +772,13 @@ class AutoLifecycleMixin:
                 "",
                 object_class,
                 round(float(score), 3) if score is not None else None,
-                float(measurer.measureArea(geom)),
-                float(measurer.measurePerimeter(geom)),
+                round_measure(measurer.measureArea(geom)),
+                round_measure(measurer.measurePerimeter(geom)),
             ])
             features_to_add.append(feat)
 
         if not features_to_add:
-            return
+            return None
 
         _add_features_fast(pr, features_to_add)
         temp_layer.updateExtents()
@@ -574,7 +799,7 @@ class AutoLifecycleMixin:
             fallback_stem=prompt_label or "detection",
         )
         if result is None:
-            return
+            return None
         result_layer = result.layer
         layer_name = result_layer.name()
 
@@ -587,10 +812,16 @@ class AutoLifecycleMixin:
             except (RuntimeError, AttributeError):
                 pass
 
-        # Apply style and provenance, then add to project. One stable color
-        # per object prompt = committed.
-        result_layer.setRenderer(make_committed_renderer(
-            color=output_store.committed_color_for_prompt(prompt_label)))
+        # Apply style and provenance, then add to project. A layer with more
+        # than one distinct class value (a future multi-class run, or a user
+        # merging several committed runs) gets a categorized color per class;
+        # today's common one-prompt run keeps its single stable color.
+        class_renderer = make_class_categorized_renderer(result_layer)
+        if class_renderer is not None:
+            result_layer.setRenderer(class_renderer)
+        else:
+            result_layer.setRenderer(make_committed_renderer(
+                color=output_store.committed_color_for_prompt(prompt_label)))
         # Smooth pan/zoom on a dense result: render-time simplification (the GPKG
         # already ships a spatial index from the OGR writer).
         _apply_fast_render(result_layer)
@@ -606,19 +837,39 @@ class AutoLifecycleMixin:
             created_iso=datetime.now().astimezone().isoformat(timespec="seconds"),
             plugin_version=plugin_version,
         )
-        result_layer.triggerRepaint()
-
+        # Hand the map over from the live layer to the saved one in ONE swap.
+        # Without this the canvas shows its half-drawn picture while the saved
+        # layer draws, so a dense result looks like it disappeared for as long
+        # as the redraw takes (measured in seconds on tens of thousands of
+        # polygons) before filling back in.
+        try:
+            from .canvas_redraw_handover import hold_map_picture_during_redraw
+            hold_map_picture_during_redraw(self.iface.mapCanvas())
+        except (RuntimeError, AttributeError):  # nosec B110 - display only
+            pass
+        # Adding the layer to the project is what puts it on the map, and that
+        # redraw reuses the render cache for every layer that did not change.
+        # The mapCanvas().refresh() that used to follow threw the cache away and
+        # redrew everything from scratch, on a set that can hold a hundred
+        # thousand polygons: measured on 40 000, 1.8 s of CPU against 0.35 s for
+        # the redraw the add schedules on its own. Same reason the review push
+        # dropped its refresh (see _push_review_geoms).
         output_store.add_committed_layer(result_layer, source_name=source_layer_name)
-        self.iface.mapCanvas().refresh()
 
         # Local run history for the library's Recent tab: prompt + zone extent
         # + layer name + thumbnail, so a recent card can bring the user back.
-        self._record_detection_history(
-            prompt_label, layer_name, len(features_to_add), crs, result_layer)
+        # DEFERRED off the export click: it renders a map thumbnail of the zone
+        # (a full render pass), which on a dense result stacked onto the export
+        # cost. The layer is already in the project, so a later event-loop turn
+        # captures it just as well; it is local-only and best-effort either way.
+        from qgis.PyQt.QtCore import QTimer
+        _hist_count = len(features_to_add)
+        QTimer.singleShot(0, lambda: self._record_detection_history(
+            prompt_label, layer_name, _hist_count, crs, result_layer))
 
         QgsMessageLog.logMessage(
-            "Auto detection: saved {} polygon(s) to {} (table {})".format(
-                len(features_to_add), result.gpkg_path, result.table_name),
+            f"Auto detection: saved {len(features_to_add)} polygon(s) to {result.gpkg_path} "
+            f"(table {result.table_name})",
             "AI Segmentation", level=Qgis.MessageLevel.Info,
         )
 
@@ -631,8 +882,8 @@ class AutoLifecycleMixin:
         prompt_label: str,
         layer_name: str,
         count: int,
-        crs: "QgsCoordinateReferenceSystem",
-        result_layer: "QgsVectorLayer",
+        crs: QgsCoordinateReferenceSystem,
+        result_layer: QgsVectorLayer,
     ) -> None:
         """Remember this committed run locally (prompt, zone extent + CRS,
         exported layer name, object count, thumbnail) so the Segment library's
@@ -640,6 +891,9 @@ class AutoLifecycleMixin:
 
         Local-only state (see core/detection_history.py), NEVER telemetry.
         Fail-safe: any problem is logged quietly and the export is untouched.
+
+        The thumbnail render answers later, so the entry is written from its
+        callback rather than in line: see _render_history_thumbnail.
         """
         try:
             from ...core import detection_history
@@ -653,35 +907,56 @@ class AutoLifecycleMixin:
                 # layer's extent covers the same footprint.
                 rect = result_layer.extent()
             extent = None
-            thumb = None
             if rect is not None and not rect.isEmpty():
                 extent = (rect.xMinimum(), rect.yMinimum(),
                           rect.xMaximum(), rect.yMaximum())
-                thumb = self._render_history_thumbnail(rect, crs, result_layer)
-            detection_history.add_entry(
-                prompt=prompt_label,
-                layer_name=layer_name,
-                objects=count,
-                extent=extent,
-                crs_authid=crs.authid() if crs is not None else "",
-                thumb=thumb,
-            )
+
+            def _store(thumb: str | None) -> None:
+                try:
+                    detection_history.add_entry(
+                        prompt=prompt_label,
+                        layer_name=layer_name,
+                        objects=count,
+                        extent=extent,
+                        crs_authid=crs.authid() if crs is not None else "",
+                        thumb=thumb,
+                    )
+                except Exception as e:  # noqa: BLE001 -- never break Finish
+                    QgsMessageLog.logMessage(
+                        f"Detection history skipped: {e}",
+                        "AI Segmentation", level=Qgis.MessageLevel.Info)
+
+            if extent is None:
+                _store(None)
+            else:
+                self._render_history_thumbnail(rect, crs, result_layer, _store)
         except Exception as e:  # noqa: BLE001 -- history must never break Finish
             QgsMessageLog.logMessage(
-                "Detection history skipped: {}".format(e),
+                f"Detection history skipped: {e}",
                 "AI Segmentation", level=Qgis.MessageLevel.Info)
 
     def _render_history_thumbnail(
         self,
         rect,
-        crs: "QgsCoordinateReferenceSystem",
-        result_layer: "QgsVectorLayer",
-    ) -> str | None:
+        crs: QgsCoordinateReferenceSystem,
+        result_layer: QgsVectorLayer,
+        on_done,
+    ) -> None:
         """Render a small PNG of the zone (padded ~10%) from the current canvas
-        layers, one-shot on the main thread (a ~256px sequential render is a
-        few tens of ms). Returns the saved filename inside the history dir, or
-        None; never raises, a missing thumbnail just means the recent card
-        shows the no-preview placeholder."""
+        layers and hand its filename (or None) to ``on_done``.
+
+        The render runs in the background and the GUI thread is released the
+        moment it starts. Waiting on it used to cost the whole render right
+        after the Finish click: a 256px pass over a dense result is close to a
+        second, not the "few tens of ms" a small picture suggests, because the
+        cost follows the object count and not the pixels. Nothing here raises:
+        a missing thumbnail just means the recent card shows the no-preview
+        placeholder.
+
+        The job is held on the instance because the renderer drops its own
+        reference; ``QgsVectorLayerFeatureSource`` snapshots the layers at
+        start, so a layer removed mid-render cannot pull the ground away.
+        """
         try:
             from qgis.core import (
                 QgsMapRendererSequentialJob,
@@ -693,7 +968,8 @@ class AutoLifecycleMixin:
             from ...core import detection_history
 
             if rect.width() <= 0 or rect.height() <= 0:
-                return None
+                on_done(None)
+                return
             canvas = self.iface.mapCanvas()
             # The freshly exported layer on top of whatever the canvas shows,
             # so the thumbnail reads as "your detections on your imagery".
@@ -714,18 +990,48 @@ class AutoLifecycleMixin:
             settings.setOutputSize(QSize(width, height))
             settings.setBackgroundColor(canvas.canvasColor())
             job = QgsMapRendererSequentialJob(settings)
+
+            def _finished() -> None:
+                name = None
+                try:
+                    image = job.renderedImage()
+                    if not image.isNull():
+                        candidate = detection_history.new_thumb_filename()
+                        path = os.path.join(
+                            detection_history.history_dir(), candidate)
+                        if image.save(path, "PNG"):
+                            name = candidate
+                except Exception as err:  # noqa: BLE001 -- optional picture
+                    QgsMessageLog.logMessage(
+                        f"Detection thumbnail skipped: {err}",
+                        "AI Segmentation", level=Qgis.MessageLevel.Info)
+                if getattr(self, "_history_thumb_job", None) is job:
+                    self._history_thumb_job = None
+                on_done(name)
+
+            job.finished.connect(_finished)
+            # One at a time: a second Finish before the first render answers
+            # would leave the older job unreferenced mid-flight.
+            self._cancel_history_thumbnail()
+            self._history_thumb_job = job
             job.start()
-            job.waitForFinished()
-            image = job.renderedImage()
-            if image.isNull():
-                return None
-            name = detection_history.new_thumb_filename()
-            path = os.path.join(detection_history.history_dir(), name)
-            if not image.save(path, "PNG"):
-                return None
-            return name
         except Exception as e:  # noqa: BLE001 -- the thumbnail is optional
             QgsMessageLog.logMessage(
-                "Detection thumbnail skipped: {}".format(e),
+                f"Detection thumbnail skipped: {e}",
                 "AI Segmentation", level=Qgis.MessageLevel.Info)
-            return None
+            on_done(None)
+
+    def _cancel_history_thumbnail(self) -> None:
+        """Stop a thumbnail render still in flight. Idempotent, never raises.
+
+        Called before starting the next one and on teardown, so no render job
+        outlives the plugin that owns it.
+        """
+        job = getattr(self, "_history_thumb_job", None)
+        self._history_thumb_job = None
+        if job is None:
+            return
+        try:
+            job.cancel()
+        except (RuntimeError, AttributeError):
+            pass

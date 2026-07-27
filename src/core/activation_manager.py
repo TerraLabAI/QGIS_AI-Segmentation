@@ -5,6 +5,7 @@ import re
 
 from qgis.core import QgsSettings
 
+from .auth_helper import SETTINGS_PREFIX
 from .auth_helper import (
     clear_activation as _auth_clear_activation,
 )
@@ -12,7 +13,7 @@ from .auth_helper import (
     get_activation_key as _auth_get_activation_key,
 )
 from .auth_helper import (
-    migrate_legacy_key as _auth_migrate_legacy_key,
+    migrate_legacy_activation_key as _auth_migrate_legacy_key,
 )
 from .auth_helper import (
     save_activation as _auth_save_activation,
@@ -22,7 +23,6 @@ PRODUCT_ID = "ai-segmentation"
 
 _KEY_RE = re.compile(r"^tl_[0-9a-f]{32}$")
 
-SETTINGS_PREFIX = "AISegmentation/"
 TERRALAB_PREFIX = "TerraLab/"
 
 TUTORIAL_URL_FALLBACK = "https://youtu.be/lbADk75l-mk?si=q6WnwyV2NcmQYuhI"
@@ -41,8 +41,6 @@ DASHBOARD_URL = (
     "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
     "&utm_content=dashboard"
 )
-
-_cached_config: dict | None = None
 
 
 def _client():
@@ -143,43 +141,91 @@ def get_auth_header(settings=None) -> dict:
 
 
 # -- server config ---------------------------------------------------------
+#
+# The store itself lives in config_cache (memory, the disk copy left by an
+# earlier session, and the local override merged on top). It is pure Python, so
+# the dial readers reach it without going through this QGIS-bound module. What
+# stays here is the API the rest of the plugin has always called.
 
 
 def get_server_config() -> dict:
-    """Return the cached server config, or {} if not yet fetched.
+    """Return the cached server config, or {} if none is available.
 
     Cache-only by design: this is called on the GUI thread (kill-switch and
     tutorial-url lookups), so it must NEVER do network here. The fetch happens
     once off-thread via the plugin's hidden config-prefetch task, which calls
     set_cached_config(). Callers all fail open on an empty dict.
     """
-    return _cached_config or {}
+    from .config_cache import get_config
+
+    return get_config()
+
+
+def get_server_config_age_s() -> float | None:
+    """Seconds since the configuration in use was fetched, or None."""
+    from .config_cache import config_age_s
+
+    return config_age_s()
 
 
 def set_cached_config(config: dict) -> None:
-    """Populate the config cache from the off-thread prefetch result."""
-    global _cached_config
-    if isinstance(config, dict) and config:
-        _cached_config = config
+    """Populate the config cache from the off-thread prefetch result.
+
+    Also mirrors it to disk so the next cold start is not empty. The write is
+    best-effort and holds only values the server serves to any caller, so a
+    failure costs nothing and nothing secret lands on disk.
+    """
+    from .config_cache import set_config
+
+    set_config(config)
+
+
+def is_feature_enabled(name: str) -> bool:
+    """Server kill switch for one named feature, under the `features` key.
+
+    Fails open: an absent map, an absent key or garbage all mean enabled. Only
+    an explicit false disables.
+    """
+    from .server_dials import feature_enabled
+
+    return feature_enabled(name)
 
 
 def is_automatic_mode_enabled() -> bool:
     """Server-side kill switch for Automatic mode.
 
-    Fails open: if the config is unreachable or the field is absent
-    (older server), Automatic mode stays available.
+    Fails open: if the config is unreachable or both fields are absent
+    (older server), Automatic mode stays available. Honours the original
+    top-level flag and the generic `features.automatic_mode` switch.
     """
-    config = get_server_config()
-    if not config:
-        return True
-    return bool(config.get("automatic_mode_enabled", True))
+    from .server_dials import automatic_mode_enabled
+
+    return automatic_mode_enabled()
+
+
+def is_update_recommended(installed_version: str) -> bool:
+    """Whether the server asks this build to update (min_recommended_version).
+
+    Fails closed on garbage: no version, an unparsable one on either side, or
+    no server value all mean no.
+    """
+    from .server_dials import is_served_update_recommended
+
+    return is_served_update_recommended(installed_version)
 
 
 def get_tutorial_url() -> str:
-    config = get_server_config()
-    if config and "tutorial_url" in config:
-        return config["tutorial_url"]
-    return TUTORIAL_URL_FALLBACK
+    """The tutorial address: the served one only when it is a usable https URL.
+
+    Guarded rather than trusted. The caller opens this in the browser and pastes
+    it into the href of a rich-text label, both on the GUI thread, so a served
+    list, number or odd scheme has to be turned away here and not discovered by
+    the widget. Anything that is not a plain https web address with a host
+    yields the shipped constant.
+    """
+    from .server_dials import dial_url
+
+    return dial_url("tutorial_url", TUTORIAL_URL_FALLBACK)
 
 
 def get_terms_url() -> str:

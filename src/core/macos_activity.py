@@ -101,10 +101,10 @@ def _load_objc() -> dict | None:
         return None
 
 
-def begin_activity(reason: str = "AI Segmentation task"):
+def begin_app_nap_activity(reason: str = "AI Segmentation task"):
     """Start a no-App-Nap activity. Returns an opaque token to pass to
-    end_activity(), or None on non-macOS / any failure (callers must handle
-    None as a no-op)."""
+    end_app_nap_activity(), or None on non-macOS / any failure (callers must
+    handle None as a no-op)."""
     if not _IS_MACOS:
         return None
     objc = _load_objc()
@@ -122,12 +122,12 @@ def begin_activity(reason: str = "AI Segmentation task"):
         )
         return token or None
     except Exception as exc:
-        logger.debug("macos_activity: begin_activity failed: %s", exc)
+        logger.debug("macos_activity: begin_app_nap_activity failed: %s", exc)
         return None
 
 
-def end_activity(token) -> None:
-    """End an activity started by begin_activity(). Safe to call with None."""
+def end_app_nap_activity(token) -> None:
+    """End an activity started by begin_app_nap_activity(). Safe to call with None."""
     if not _IS_MACOS or token is None:
         return
     objc = _load_objc()
@@ -136,4 +136,4 @@ def end_activity(token) -> None:
     try:
         objc["send_end"](objc["process_info"], objc["sel_end"], token)
     except Exception as exc:
-        logger.debug("macos_activity: end_activity failed: %s", exc)
+        logger.debug("macos_activity: end_app_nap_activity failed: %s", exc)

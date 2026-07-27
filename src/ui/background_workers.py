@@ -24,11 +24,11 @@ class DepsInstallWorker(QThread):
         self._cancelled = True
 
     def run(self):
-        from ..core.power_inhibit import begin_activity, end_activity
+        from ..core.power_inhibit import begin_keep_awake, end_keep_awake
         # A multi-GB torch install over a slow link can be interrupted by
         # system sleep if the user walks away; hold a keep-awake activity for
         # the whole install. Best-effort, always released.
-        activity = begin_activity("AI Segmentation dependency install")
+        activity = begin_keep_awake("AI Segmentation dependency install")
         try:
             from ..core.venv_manager import create_venv_and_install
             success, message = create_venv_and_install(
@@ -41,7 +41,7 @@ class DepsInstallWorker(QThread):
             error_msg = f"{str(e)}\n{traceback.format_exc()}"
             self.done.emit(False, error_msg)
         finally:
-            end_activity(activity)
+            end_keep_awake(activity)
 
 
 class DownloadWorker(QThread):
@@ -188,6 +188,59 @@ class DeviceInfoWorker(QThread):
             self.done.emit(False, str(e))
         except Exception as e:
             self.done.emit(True, f"device_info_unavailable: {e}")
+
+
+class RemoveAiDataWorker(QThread):
+    """Deletes the downloaded AI data (isolated environment + weights).
+
+    The tree is multi-GB and holds tens of thousands of files, so both the size
+    walk and the delete run here: on the GUI thread they froze the window for
+    the whole removal. Nothing Qt-owned is touched. The caller takes the
+    cross-process install lock BEFORE starting this worker and releases it only
+    after `done`, so the tree cannot be installed into while it disappears.
+
+    The loaded model subprocess is shut down first: its open handles keep the
+    environment's files locked on Windows, which would leave the delete partial.
+    """
+    progress = pyqtSignal(str)
+    # (nothing_left, freed_label, error_detail)
+    done = pyqtSignal(bool, str, str)
+
+    def __init__(self, predictor=None, parent=None):
+        super().__init__(parent)
+        self._predictor = predictor
+
+    def run(self):
+        import os
+
+        predictor = self._predictor
+        self._predictor = None
+        if predictor is not None:
+            self.progress.emit(tr("Stopping the local AI..."))
+            try:
+                import threading
+                thread = threading.Thread(target=predictor.cleanup, daemon=True)
+                thread.start()
+                thread.join(timeout=8)
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110 - a stuck cleanup must not block the delete
+
+        freed = ""
+        try:
+            from ..core.cache_paths import PLUGIN_CACHE_DIR
+            from ..core.venv_manager import purge_cache_dir
+            from .plugin.shared import dir_size_label
+            if not os.path.isdir(PLUGIN_CACHE_DIR):
+                self.done.emit(True, "", "")
+                return
+            self.progress.emit(tr("Measuring the downloaded data..."))
+            freed = dir_size_label(PLUGIN_CACHE_DIR)
+            self.progress.emit(tr("Deleting the downloaded data..."))
+            nothing_left = purge_cache_dir()
+        except Exception as e:  # noqa: BLE001
+            self.done.emit(False, freed, str(e)[:80])
+            return
+        self.done.emit(bool(nothing_left), freed, "")
 
 
 class VerifyWorker(QThread):

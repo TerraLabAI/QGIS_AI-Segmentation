@@ -42,13 +42,73 @@ from qgis.PyQt.QtCore import QByteArray, QSettings, QThread, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from . import telemetry_events as ev
-from .qt_compat import HttpStatusCodeAttribute
+from .qt_compat import HttpStatusCodeAttribute, silent_task_flags
 from .telemetry_events import FLUSH_NOW, NO_CONSENT_EVENTS, REGISTRY_VERSION
 
 _TIMEOUT_MS = 5_000
 _BATCH_MAX = 10
 _PENDING_PRE_AUTH_MAX = 50
 _TELEMETRY_ENABLED_KEY = "TerraLab/telemetry_enabled"
+
+# How much telemetry travels is a server dial: batch size, transport timeout,
+# and a per-event sample rate for throttling one noisy event during an
+# incident. All three default to exactly what ships.
+#
+# WHAT the plugin is allowed to send is NOT a dial and must never become one.
+# The opt-out default, NO_CONSENT_EVENTS and the scrubbing patterns are
+# privacy commitments published in the FAQ; a server that could widen them
+# could collect, from an installed plugin, something the user never agreed to.
+# Volume can be tuned remotely. Scope cannot.
+
+
+def _batch_max() -> int:
+    """Events queued before a flush goes out."""
+    try:
+        from .server_dials import dial_in_range
+
+        return int(dial_in_range("telemetry.batch_max", _BATCH_MAX, 1, 200))
+    except Exception:  # noqa: BLE001 -- telemetry must never break a caller
+        return _BATCH_MAX
+
+
+def _timeout_ms() -> int:
+    """Transport timeout on one relay call."""
+    try:
+        from .server_dials import dial_in_range
+
+        return int(dial_in_range("telemetry.timeout_ms", _TIMEOUT_MS, 500, 60_000))
+    except Exception:  # noqa: BLE001 -- telemetry must never break a caller
+        return _TIMEOUT_MS
+
+
+def _event_sampled_in(event: str) -> bool:
+    """Whether this occurrence of ``event`` is kept.
+
+    ``telemetry.sample_rates`` is a ``{event_name: rate}`` map, every event
+    defaulting to 1.0 (keep everything, today's behaviour). A rate below one
+    drops that share of occurrences at random, which is how one noisy event
+    gets throttled during an incident without shipping a release. Only a
+    number in [0, 1] counts; anything else keeps the event.
+
+    A dropped event is never queued, so this cannot be used to collect more.
+    """
+    try:
+        from .server_dials import read_value
+
+        rates = read_value("telemetry.sample_rates")
+        if not isinstance(rates, dict):
+            return True
+        rate = rates.get(event)
+        if not isinstance(rate, (int, float)) or isinstance(rate, bool):
+            return True
+        if not 0.0 <= rate < 1.0:
+            return True
+        import random  # noqa: PLC0415 -- only needed when a rate is served
+
+        return random.random() < rate  # nosec B311 -- sampling, not security
+    except Exception:  # noqa: BLE001 -- telemetry must never break a caller
+        return True
+
 
 # Guards _batch / _pending_pre_auth / _inflight: track() can run on a worker
 # thread while the main thread flushes, so the list mutations must not race.
@@ -210,20 +270,6 @@ def _has_consent() -> bool:
         return False
 
 
-def _silent_task_flags():
-    """CanCancel plus Hidden/Silent when the running QGIS exposes them.
-
-    Hidden/Silent landed in QGIS 3.26; resolve defensively so the task-manager
-    widget never fills with "AI Segmentation telemetry" rows on modern builds,
-    and degrades to a plain cancellable task on older ones."""
-    flags = QgsTask.Flag.CanCancel
-    for name in ("Hidden", "Silent"):
-        flag = getattr(QgsTask.Flag, name, None)
-        if flag is not None:
-            flags = flags | flag
-    return flags
-
-
 def _on_main_thread() -> bool:
     try:
         app = QgsApplication.instance()
@@ -239,7 +285,7 @@ class _TelemetryFlushTask(QgsTask):
     """Sends one batch. Failures swallowed: telemetry must never break the plugin."""
 
     def __init__(self, events: list, auth: dict):
-        super().__init__("AI Segmentation telemetry flush", _silent_task_flags())
+        super().__init__("AI Segmentation telemetry flush", silent_task_flags())
         self._events = events
         self._auth = auth
 
@@ -263,7 +309,7 @@ class _TelemetryFlushTask(QgsTask):
             req = QNetworkRequest(QUrl(url))
             req.setRawHeader(b"Content-Type", b"application/json")
             if hasattr(req, "setTransferTimeout"):
-                req.setTransferTimeout(_TIMEOUT_MS)
+                req.setTransferTimeout(_timeout_ms())
             for k, v in self._auth.items():
                 req.setRawHeader(k.encode("utf-8"), v.encode("utf-8"))
             blocker = QgsBlockingNetworkRequest()
@@ -323,6 +369,10 @@ def track(event: str, properties: dict | None = None, flush_now: bool = False) -
     or the batch is full; otherwise it waits for the next flush()."""
     if not is_telemetry_enabled():
         return
+    # A milestone always travels: sampling is for volume, not for losing the
+    # events the funnel is measured on.
+    if not (flush_now or event in FLUSH_NOW) and not _event_sampled_in(event):
+        return
     try:
         evt = {
             "event": event,
@@ -332,7 +382,7 @@ def track(event: str, properties: dict | None = None, flush_now: bool = False) -
         return
     with _lock:
         _batch.append(evt)
-        should_flush = flush_now or event in FLUSH_NOW or len(_batch) >= _BATCH_MAX
+        should_flush = flush_now or event in FLUSH_NOW or len(_batch) >= _batch_max()
     if should_flush:
         flush()
 
@@ -386,7 +436,7 @@ def _scrub_payload_value(value: str) -> str:
     from telemetry strings.
 
     Applied defensively to any string leaving the machine. We already call
-    _anonymize_paths upstream for filesystem paths, but this pass also catches
+    log_scrub.anonymize_paths for filesystem paths, but this pass also catches
     leftover coordinate-like artefacts (crop bounds, click tuples, bbox
     extents) plus URLs/emails: the unhandled-error catch-all forwards raw
     third-party exception text, which can embed a host or an address, and the
@@ -401,11 +451,10 @@ def _scrub_payload_value(value: str) -> str:
         )
         _URL_PATTERN = _re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s'\"]+")
         _EMAIL_PATTERN = _re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
-    try:
-        from ..ui.error_report_dialog import _anonymize_paths
-        value = _anonymize_paths(value)
-    except Exception:
-        pass  # nosec B110
+    # core-to-core import, deliberately NOT wrapped in try/except: a broken
+    # scrubber must fail loudly, never silently ship unscrubbed paths.
+    from .log_scrub import anonymize_paths
+    value = anonymize_paths(value)
     value = _URL_PATTERN.sub("<URL>", value or "")
     value = _EMAIL_PATTERN.sub("<EMAIL>", value)
     return _COORD_PATTERN.sub("<COORDS>", value)
@@ -535,7 +584,16 @@ def track_auto_zone_too_large(area_km2: float) -> None:
 
 
 def track_auto_prompt_committed(prompt: str, from_library: bool = False) -> None:
-    """prompt is the validated 1-2 word object class (no PII by construction)."""
+    """prompt is what the user typed, verbatim.
+
+    NOT the validated object class, whatever this docstring used to claim. The
+    commit fires on a debounce and on focus loss, both of which run before the
+    Detect-time guard, so free-form text reaches this call unchanged. That is
+    deliberate: the demand mining behind the object catalogue and the pricing
+    work reads these rows, and a cleaned value would answer a different
+    question. It does mean the "no PII by construction" guarantee does not hold
+    here, and the privacy FAQ has to keep covering it.
+    """
     track(ev.AUTO_PROMPT_COMMITTED, {"prompt": prompt, "from_library": bool(from_library)})
 
 
@@ -543,6 +601,25 @@ def track_auto_prompt_steered(prompt: str, suggestion: str = "") -> None:
     """prompt is the weak 1-2 word object the user typed; suggestion is the term
     steered toward ("" = pointed at the Library). No PII by construction."""
     track(ev.AUTO_PROMPT_STEERED, {"prompt": prompt, "suggestion": suggestion or ""})
+
+
+def track_auto_prompt_rewritten(kind: str, prompt: str = "") -> None:
+    """A committed prompt was swapped for a cleaner run phrase. kind is one of
+    "translated" / "plural" / "alias" (the commit-time guard) or
+    "server_rewrite" (a server-side language-model rewrite from the run plan);
+    prompt is the 1-2 word English token/phrase that will run (no PII by
+    construction)."""
+    track(ev.AUTO_PROMPT_REWRITTEN, {"kind": kind, "prompt": prompt or ""})
+
+
+def track_auto_prompt_hint_shown(kind: str, prompt: str = "") -> None:
+    """A non-blocking pre-Detect guidance note was shown. kind is
+    "exemplar_boost" (a curated high-value-exemplar object with no example
+    drawn), "unknown_object" (a word the model does not know well), "plan_hint"
+    (a server run-plan hint under the prompt box), or "identical_rerun" (the
+    next Detect would repeat the last run exactly); prompt is the 1-2 word
+    object class (no PII by construction)."""
+    track(ev.AUTO_PROMPT_HINT_SHOWN, {"kind": kind, "prompt": prompt or ""})
 
 
 def track_tutorial_opened(source: str) -> None:
@@ -573,8 +650,8 @@ def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
                               merge_mode: str = "separate",
                               merge_mode_source: str = "prompt") -> None:
     """merge_mode is the count-vs-map policy the run picked ("separate"/"map");
-    merge_mode_source says how it was decided: "prompt" (token), "choice" (the
-    exemplar-only chips) or "policy" (server default / fallback)."""
+    merge_mode_source says how it was decided: "prompt" (object token) or
+    "signal" (exemplar-only, read from the run's own masks)."""
     track(ev.AUTO_DETECT_STARTED, {
         "run_id": run_id,
         "tiles": tiles,
@@ -597,14 +674,12 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
                                 p95_tile_ms: int | None = None,
                                 stop_reason: str = "completed",
                                 warming_ms: int = 0,
-                                merge_mode_final: str = "separate",
-                                merge_override_used: bool = False) -> None:
+                                merge_mode_final: str = "separate") -> None:
     """warming_ms is the wall time the run spent in the server waiting room
     (cold start / queue) as perceived by the user; 0 = the run never waited.
     Per-tile latency lives server-side keyed by run_id, so no client percentiles.
     merge_mode_final is the count-vs-map grouping the run finished on
-    ("separate"/"map"); merge_override_used is True when the user re-grouped it
-    in the review (exemplar-only runs only)."""
+    ("separate"/"map")."""
     track(ev.AUTO_DETECT_COMPLETED, {
         "run_id": run_id,
         "duration_ms": duration_ms,
@@ -618,7 +693,32 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
         "stop_reason": stop_reason,
         "warming_ms": warming_ms,
         "merge_mode_final": merge_mode_final,
-        "merge_override_used": bool(merge_override_used),
+    })
+
+
+def track_auto_gate_scan(run_id: str, tiles: int, group: int, scans: int,
+                         blocks: int, tiles_skipped: int, tiles_prepaid: int,
+                         tiles_unscanned: int, fallback: str,
+                         scan_ms: int, tiles_prefiltered: int = 0) -> None:
+    """Empty-tile scan gate outcome for one run. Emitted only when the server
+    policy armed the gate for the run; fallback carries the stand-down reason
+    (resolution / not_text_run / bad_config / no_blocks / offline) or "" when
+    the scan phase actually ran. tiles_prefiltered counts the tiles the
+    client degenerate prefilter settled during the scan phase (no request).
+    Safe from the worker thread (track() only queues; the next main-thread
+    flush ships it)."""
+    track(ev.AUTO_GATE_SCAN, {
+        "run_id": run_id,
+        "tiles": tiles,
+        "group": group,
+        "scans": scans,
+        "blocks": blocks,
+        "tiles_skipped": tiles_skipped,
+        "tiles_prepaid": tiles_prepaid,
+        "tiles_unscanned": tiles_unscanned,
+        "tiles_prefiltered": tiles_prefiltered,
+        "fallback": fallback,
+        "scan_ms": scan_ms,
     })
 
 
@@ -638,9 +738,17 @@ def track_auto_detect_failed(run_id: str, error_class: str, tiles_done: int,
 def track_auto_detect_cancelled(run_id: str, tiles_done: int, tiles_total: int,
                                 salvaged_to_review: bool,
                                 duration_ms: int | None = None,
-                                warming_ms: int = 0) -> None:
+                                warming_ms: int = 0,
+                                backend_stalled: bool = False,
+                                submit_retries: int = 0) -> None:
     """duration_ms separates a reflex cancel from a gave-up-after-minutes one;
-    warming_ms says how much of that wait was the server waiting room."""
+    warming_ms says how much of that wait was the server waiting room (this is
+    the busy-time signal; no separate seconds field, so the *_ms convention
+    holds). backend_stalled is True when the run billed ZERO tiles AND the
+    service was unresponsive (waiting-room time and/or submit retries): the user
+    cancelled a sick backend, not a healthy run. submit_retries is the run's
+    total transient submit-retry count. Together they keep a backend outage from
+    reading as a user-initiated cancel in analytics."""
     track(ev.AUTO_DETECT_CANCELLED, {
         "run_id": run_id,
         "tiles_done": tiles_done,
@@ -648,6 +756,8 @@ def track_auto_detect_cancelled(run_id: str, tiles_done: int, tiles_total: int,
         "salvaged_to_review": bool(salvaged_to_review),
         "duration_ms": duration_ms,
         "warming_ms": warming_ms,
+        "backend_stalled": bool(backend_stalled),
+        "submit_retries": int(submit_retries),
     })
 
 
@@ -785,6 +895,55 @@ def track_auto_exit_clicked(from_step: int, autosaved_count: int) -> None:
     })
 
 
+def track_review_correct_box(run_id: str, label: int, outcome: str,
+                             objects: int, gesture: str = "box") -> None:
+    """One completed correction gesture.
+
+    gesture is box (the drawn add/remove rectangle) | merge | split, so the two
+    free hand edits report through the same event instead of adding one.
+    outcome is revealed | removed | queued | empty for a box, merged | split for
+    a hand edit; objects counts the objects the gesture touched. label keeps the
+    box convention (1 include, 0 exclude) and a hand edit reports 1, since it
+    reshapes rather than drops.
+    """
+    track(ev.REVIEW_CORRECT_BOX, {
+        "run_id": run_id,
+        "label": int(label),
+        "outcome": outcome,
+        "objects": int(objects),
+        "gesture": gesture,
+    })
+
+
+def track_review_correct_undo(run_id: str, kind: str) -> None:
+    """kind is the undone journal entry's kind (merge | split), or
+    clear_all for the whole-round clear."""
+    track(ev.REVIEW_CORRECT_UNDO, {"run_id": run_id, "kind": kind})
+
+
+def track_review_step(run_id: str, step: int) -> None:
+    """Step navigation within the linear review; callers dedupe per run+step."""
+    track(ev.REVIEW_STEP, {"run_id": run_id, "step": int(step)})
+
+
+def track_qgis_edit_bridge(run_id: str, outcome: str,
+                           duration_ms: int | None = None,
+                           features: int | None = None) -> None:
+    """QGIS digitizing bridge lifecycle from the review's Correct step.
+
+    outcome is opened (armed native editing) | committed | rolled_back.
+    duration_ms and features are absent on 'opened' and carried on the two
+    terminal outcomes (how long the bridge stayed open, and how many features
+    folded back).
+    """
+    props: dict = {"run_id": run_id, "outcome": outcome}
+    if duration_ms is not None:
+        props["duration_ms"] = int(duration_ms)
+    if features is not None:
+        props["features"] = int(features)
+    track(ev.AUTO_EDIT_IN_QGIS, props)
+
+
 # Manual --------------------------------------------------------------------
 
 
@@ -868,16 +1027,22 @@ def track_first_generation_milestone(mode: str) -> None:
 # Monetization --------------------------------------------------------------
 
 
-_upsell_viewed_this_session = False
+_upsell_viewed_triggers: set[str] = set()
 _low_credit_banner_viewed_this_session = False
 
 
 def track_pro_upsell_viewed(trigger: str = "free_exhausted") -> None:
-    """Fire at most once per session when the upsell card first renders."""
-    global _upsell_viewed_this_session
-    if _upsell_viewed_this_session:
+    """Fire at most once per session PER TRIGGER when an upsell first renders.
+
+    Deduplicated by trigger, not by process. A single flag for every trigger
+    made the surfaces compete for one slot: whichever fired first in a QGIS
+    session silenced the others for its whole lifetime, so the view count came
+    out below the click count, which is impossible and made every view-to-click
+    ratio unusable.
+    """
+    if trigger in _upsell_viewed_triggers:
         return
-    _upsell_viewed_this_session = True
+    _upsell_viewed_triggers.add(trigger)
     track(ev.PRO_UPSELL_VIEWED, {"trigger": trigger})
 
 
@@ -941,8 +1106,8 @@ def track_plugin_error(
         props["module"] = module
     if include_log_tail:
         try:
-            from ..ui.error_report_dialog import _get_recent_logs
-            tail_lines = _get_recent_logs().splitlines()[-20:]
+            from .log_scrub import get_recent_logs
+            tail_lines = get_recent_logs().splitlines()[-20:]
             scrubbed = _scrub_payload_value("\n".join(tail_lines))
             props["last_log_lines"] = scrubbed.encode("utf-8")[:4096].decode(
                 "utf-8", errors="ignore"
@@ -975,7 +1140,7 @@ def _short_traceback_hash(exc: BaseException) -> str:
     import traceback as _tb
     try:
         parts = [
-            "{}:{}:{}".format(_os.path.basename(fr.filename), fr.lineno, fr.name)
+            f"{_os.path.basename(fr.filename)}:{fr.lineno}:{fr.name}"
             for fr in _tb.extract_tb(exc.__traceback__)
         ]
         parts.append(exc.__class__.__name__)

@@ -15,6 +15,7 @@ from qgis.PyQt.QtCore import pyqtSignal
 from ..core.activation_manager import _KEY_RE
 from ..core.i18n import tr
 from ..core.logging_utils import log
+from .adaptive_concurrency import OfflineFastFail
 
 
 class PairingPollTask(QgsTask):
@@ -39,6 +40,14 @@ class PairingPollTask(QgsTask):
     # How long to poll without ever seeing the browser before hinting the
     # user that the page probably never opened.
     STALL_AFTER_S = 45.0
+
+    # Polls in a row that never reached a server before the wait is called off.
+    # The browser signs in from this same machine, so a link that cannot carry
+    # the poll cannot carry the sign-in either; holding the full deadline only
+    # delays the one sentence that helps, and ends on "try again" without ever
+    # naming the connection. Any answer at all resets the count, so a single
+    # blip inside a working sign-in costs nothing.
+    OFFLINE_STREAK = 4
 
     def __init__(
         self,
@@ -71,6 +80,7 @@ class PairingPollTask(QgsTask):
         deadline = started + self._total_timeout_s
         browser_seen = False
         stall_hinted = False
+        offline_streak = 0
         while not self.isCanceled() and time.monotonic() < deadline:
             try:
                 result = self._client.poll_pairing(self._code)
@@ -81,6 +91,21 @@ class PairingPollTask(QgsTask):
                 return False
 
             status = result.get("status") if isinstance(result, dict) else None
+            error_code = ""
+            if status is None and isinstance(result, dict):
+                error_code = str(result.get("code") or "").strip().upper()
+            if error_code in OfflineFastFail.HARD_CODES:
+                offline_streak += 1
+                if offline_streak >= self.OFFLINE_STREAK:
+                    self._failure = (
+                        tr("No connection to the sign-in service. Check your "
+                           "internet connection, then click Connect to try again."),
+                        "NO_NETWORK",
+                    )
+                    return False
+            else:
+                offline_streak = 0
+
             if status == "ready":
                 key = (result.get("activation_key") or "").strip()
                 if _KEY_RE.match(key):

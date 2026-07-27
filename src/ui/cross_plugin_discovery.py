@@ -6,9 +6,13 @@ place (with the product page as a fallback when the manager can't open).
 from __future__ import annotations
 
 from qgis.PyQt.QtCore import QUrl
-from qgis.PyQt.QtGui import QAction, QDesktopServices, QIcon
+from qgis.PyQt.QtGui import QDesktopServices, QIcon
 
-_AI_EDIT_KEYS = ("AI_Edit", "QGIS_AI-Edit", "QGIS_AI-Edit-Team")
+from ..core.qt_compat import QAction
+
+# QGIS registers a plugin under its install folder name, so match the released
+# folder first and fall back to any folder that starts with one of these.
+_AI_EDIT_KEYS = ("AI_Edit", "QGIS_AI-Edit")
 # Must match the sibling's metadata.txt name= so the Plugin Manager filter lands
 # on the right row.
 _AI_EDIT_PLUGIN_NAME = "AI Edit by TerraLab"
@@ -24,6 +28,9 @@ def _find_installed_plugin(keys: tuple[str, ...]):
         for key in keys:
             plugin = qgis.utils.plugins.get(key)
             if plugin is not None:
+                return plugin
+        for name, plugin in qgis.utils.plugins.items():
+            if plugin is not None and name.startswith(keys):
                 return plugin
     except Exception:
         pass  # nosec B110

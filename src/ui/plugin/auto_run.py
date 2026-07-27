@@ -6,7 +6,6 @@ plain mixin members: state lives on the plugin instance (self).
 """
 from __future__ import annotations
 
-
 from qgis.core import (
     Qgis,
     QgsCoordinateTransform,
@@ -34,6 +33,19 @@ from .shared import (
 # a genuinely stuck cancel still feels handled.
 _CANCEL_WATCHDOG_MS = 5000
 
+# Stall watchdog. The worker's poll loop gives every in-flight tile a per-tile
+# deadline, so no tile stays "pending" forever at the protocol level. What that
+# cannot catch is the network CALL itself blocking forever (a half-open socket,
+# a reply that never signals finished): the loop is stuck INSIDE the call and
+# cannot self-check, so no terminal signal ever fires and the run shows forever
+# progress. A field report had two 100-tile runs do exactly this. This
+# main-thread timer watches the age of the last progress; if a run makes no
+# progress for the timeout it forces a terminal, salvaging billed partials into
+# the review. The timeout is server-tunable (network.stall_timeout_s); this is
+# the generic client fallback.
+_STALL_TIMEOUT_S = 300.0           # 5 min of zero progress = wedged worker
+_STALL_CHECK_INTERVAL_MS = 30000   # main-thread poll cadence
+
 
 class AutoRunMixin:
     """Automatic run lifecycle: start/launch/cancel/stop and the headless MCP path."""
@@ -45,6 +57,19 @@ class AutoRunMixin:
         georeferenced by construction and skip the georef/rotation checks.
         Fail-open on any classification error so a legitimate run is never
         blocked by a false positive."""
+        # CRS first: a missing CRS also makes the georef test below fail, and
+        # "set one in Layer Properties" is the more actionable advice of the
+        # two for a raster that is otherwise fine (a CRS-less GeoTIFF keeps its
+        # geotransform, so naming its CRS is all it takes to unblock Automatic).
+        try:
+            crs_valid = layer.crs().isValid()
+        except (RuntimeError, AttributeError):
+            crs_valid = False
+        if not crs_valid:
+            return tr(
+                "This layer has no valid coordinate reference system. "
+                "Set one in Layer Properties before detecting."
+            )
         try:
             online = self._is_online_provider(layer)
         except (RuntimeError, AttributeError):
@@ -55,24 +80,25 @@ class AutoRunMixin:
             except (RuntimeError, AttributeError):
                 georef = True
             if not georef:
+                # Name the tool that fixes it, not just the fallback: this
+                # image has no position on Earth, and QGIS ships the thing
+                # that gives it one. Named without a menu path, which moved
+                # between the QGIS versions this plugin supports.
                 return tr(
-                    "Automatic detection needs a georeferenced raster. "
-                    "Use Manual mode for this image."
+                    "This image has no position on the map, so Automatic "
+                    "cannot place what it finds. Give it one with the QGIS "
+                    "Georeferencer, or use Manual mode on it as is."
                 )
             if self._raster_is_rotated(layer):
+                # Never offer Manual here: manual_workflow refuses a rotated
+                # raster on the same detector, so the old "or use Manual mode"
+                # sent the user to a second refusal. "Warp (Reproject)" is the
+                # Processing algorithm name and has been stable across every
+                # supported QGIS.
                 return tr(
-                    "This raster is rotated. Convert it to an axis-aligned "
-                    "GeoTIFF, or use Manual mode."
+                    "This raster is rotated. Run Warp (Reproject) on it to "
+                    "straighten it first. Manual mode cannot read it either."
                 )
-        try:
-            crs_valid = layer.crs().isValid()
-        except (RuntimeError, AttributeError):
-            crs_valid = False
-        if not crs_valid:
-            return tr(
-                "This layer has no valid coordinate reference system. "
-                "Set one in Layer Properties before detecting."
-            )
         return None
 
     def _warn_local_raster_quality(self, layer) -> None:
@@ -364,14 +390,12 @@ class AutoRunMixin:
             tiles = self._tiles_in_polygon(tiles, geo_bbox, pixel_w, pixel_h, layer)
             if len(tiles) != before:
                 QgsMessageLog.logMessage(
-                    "Auto detection: polygon culled {} of {} tiles".format(
-                        before - len(tiles), before),
+                    f"Auto detection: polygon culled {before - len(tiles)} of {before} tiles",
                     "AI Segmentation", level=Qgis.MessageLevel.Info,
                 )
         if tiles is None:
             QgsMessageLog.logMessage(
-                "Auto detection: zone too large (exceeds {} tiles)".format(
-                    max_tiles_per_run_cap()),
+                f"Auto detection: zone too large (exceeds {max_tiles_per_run_cap()} tiles)",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
             return
@@ -396,8 +420,8 @@ class AutoRunMixin:
                     except (RuntimeError, AttributeError):
                         pass
                 QgsMessageLog.logMessage(
-                    "Auto detection: {} tiles exceed the {} credit balance; "
-                    "aborting before billing".format(len(tiles), int(balance)),
+                    f"Auto detection: {len(tiles)} tiles exceed the {int(balance)} credit balance; "
+                    "aborting before billing",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning,
                 )
                 return
@@ -455,10 +479,8 @@ class AutoRunMixin:
         self._auto_render_ms = 0
         self._auto_detect_t0 = _time.monotonic()
         QgsMessageLog.logMessage(
-            "Auto detection: per-tile JIT render, zone {}x{}px, {} tile(s) "
-            "(provider={})".format(
-                pixel_w, pixel_h, len(tiles),
-                _provider_name_for_log(layer)),
+            f"Auto detection: per-tile JIT render, zone {pixel_w}x{pixel_h}px, {len(tiles)} tile(s) "
+            f"(provider={_provider_name_for_log(layer)})",
             "AI Segmentation", level=Qgis.MessageLevel.Info,
         )
 
@@ -468,14 +490,14 @@ class AutoRunMixin:
         except (RuntimeError, AttributeError):
             prompt = ""
 
-        # Pick the merge policy default from the object type (overridable in the
-        # review): discrete countable objects stay SEPARATE; continuous features
-        # (roads, rivers, water, land cover) merge tile-split pieces. Set before
-        # the merger is built below so the live preview already uses it. An
-        # EMPTY prompt with drawn exemplars carries no token signal at all: it
-        # streams the live preview as continuous cover (MAP) and the client
-        # decides count-vs-map automatically at the end of the run from the run's
-        # own masks (see _finalize_drain_done), with a one-click review override.
+        # Pick the merge policy from the object type: discrete countable objects
+        # stay SEPARATE; continuous features (roads, rivers, water, land cover)
+        # merge tile-split pieces. Set before the merger is built below so the
+        # live preview already uses it. An EMPTY prompt with drawn exemplars
+        # carries no token signal at all: it streams the live preview as
+        # continuous cover (MAP) and the client decides count-vs-map
+        # automatically at the end of the run from the run's own masks (see
+        # _finalize_drain_done).
         if prompt:
             self._auto_merge_separate = self._default_merge_separate(prompt)
             self._auto_merge_mode_source = "prompt"
@@ -518,16 +540,14 @@ class AutoRunMixin:
             self._auto_run_id = None
             return
 
-        # Two-positive rule for the pure example path: with no text prompt, a
-        # single reference detects poorly, so require at least two positives.
-        # A text prompt lifts this (examples are then a bonus on top). Blocks
-        # BEFORE any billable call, exactly like the empty-query guard above, so
-        # a weak one-positive run never spends a credit. Also covers the
-        # interactive Enter path and the headless/MCP path (via _headless_error).
-        from ...core.detect_gate import MIN_EXAMPLE_POSITIVES, can_detect
+        # Floor guard (single source of truth: detect_gate.can_detect, a
+        # NON-EMPTY query): belt-and-braces behind the empty-query guard
+        # above, and the one gate the headless/MCP path reads (via
+        # _headless_error). Blocks BEFORE any billable call.
+        from ...core.detect_gate import can_detect
         positives = self._auto_exemplar_store.positives()
         if not can_detect(bool(prompt), positives):
-            msg = tr("Add a second example, or type what to find.")
+            msg = tr("Draw an example, or type what to find.")
             try:
                 self.dock_widget.set_auto_run_active(False)
                 self.dock_widget.set_auto_status("error", msg)
@@ -536,9 +556,8 @@ class AutoRunMixin:
             self._headless_error = msg
             self.iface.messageBar().pushWarning("AI Segmentation", msg)
             QgsMessageLog.logMessage(
-                "Auto detection: example-only run needs at least {} positive "
-                "examples; aborting before any credit is spent".format(
-                    MIN_EXAMPLE_POSITIVES),
+                "Auto detection: empty query (no prompt, no positive "
+                "example); aborting before any credit is spent",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
             self._auto_gsd = 0.0
@@ -580,8 +599,7 @@ class AutoRunMixin:
             )
             QgsMessageLog.logMessage(
                 "Auto detection (exemplar): composite-per-tile, full image "
-                "{}x{}px, {} example(s), smallest example {:.0f}px".format(
-                    pixel_w, pixel_h, len(exemplar_payload), smallest_px),
+                f"{pixel_w}x{pixel_h}px, {len(exemplar_payload)} example(s), smallest example {smallest_px:.0f}px",
                 "AI Segmentation", level=Qgis.MessageLevel.Info,
             )
 
@@ -596,8 +614,18 @@ class AutoRunMixin:
             # fully contains it, the worker sends the box at the REAL in-situ
             # object instead of pasting the crop there.
             exemplar_stamps = self._build_exemplar_stamps(
-                layer, geo_bbox, pixel_w, pixel_h)
-            if not exemplar_stamps:
+                layer, geo_bbox, pixel_w, pixel_h, has_prompt=bool(prompt))
+            if not exemplar_stamps and prompt:
+                # With a text prompt the query still stands on its own: an
+                # unusable example (render failed AND no in-situ box) degrades
+                # to a text run with a log line, never an abort.
+                QgsMessageLog.logMessage(
+                    "Auto detection: no usable example (render failed, no "
+                    "in-situ box); continuing on the text prompt alone",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning,
+                )
+                exemplar_stamps = None
+            elif not exemplar_stamps:
                 msg = tr(
                     "Could not place the example on the image. Redraw the "
                     "example box inside the zone and try again."
@@ -625,11 +653,17 @@ class AutoRunMixin:
         from qgis.PyQt.QtWidgets import QApplication
 
         self._clear_zone_tile_grid()
+        if not self._auto_headless_run:
+            # Clearing it is not enough: latch it off until the flow is back on
+            # the setup screen. Every other "a run owns the canvas" signal is
+            # transient, so an async reply landing after the last tile could
+            # redraw the grid over the results (see _tile_grid_allowed).
+            self._auto_grid_suppressed = True
         # Drop the zone's light blue fill for the WHOLE run, not just the
         # review: the wash over the streaming detections made them read darker
         # and more opaque live than the same objects after the run (the review
         # already hides it). The zone outline stays; error/zero paths and
-        # "Adjust and run again" restore the fill.
+        # "Re-run the whole zone" restore the fill.
         self._set_zone_band_fill_visible(False)
         try:
             self.dock_widget.set_auto_run_active(True)
@@ -662,15 +696,29 @@ class AutoRunMixin:
         # per-tile merge helpers so both share one policy read.
         from ...core import detection_policy
         self._auto_merge_scalars = detection_policy.merge_scalars()
+        # Give back the objects a coarse reading swallows, on the classes the
+        # server lists (empty by default, so this is off until it is turned
+        # on). Resolved ONCE for the run and kept, because the exemplar
+        # re-merge and the review's mode override build their own mergers from
+        # the retained fragments: reading the policy again there would be fine,
+        # but reading the PROMPT again would not (an exemplar-only run has
+        # none), and the three mergers of one run must never disagree.
+        # _auto_is_exemplar_only is set further down, so derive it here from the
+        # same two values rather than reading it before it exists.
+        self._auto_restore_partitions = detection_policy.restore_partitions_for(
+            prompt, exemplar_only=bool(has_exemplars) and not prompt)
         self._auto_merger = IncrementalMerger(
             seam_min_dim=self._auto_seam_min_dim(),
             select_duplicates=self._auto_merge_separate,
             gsd=self._auto_gsd,
-            merge_ios=self._auto_merge_scalars["merge_ios"],
-            dedup_ios=self._auto_merge_scalars["dedup_ios"],
-            dup_ios_floor=self._auto_merge_scalars["dup_ios_floor"],
-            dup_centroid_frac=self._auto_merge_scalars["dup_centroid_frac"],
-            seam_span_ios=self._auto_merge_scalars["seam_span_ios"],
+            # Only meaningful in count mode: union mode has no skipped members
+            # to give back.
+            restore_partitions=(self._auto_merge_separate and self._auto_restore_partitions),
+            # Every shared scalar the merger takes, picked off its own
+            # signature: a key listed by hand here would silently keep the
+            # GUI merger on a stale default the moment a scalar is added.
+            **detection_policy.merge_scalar_kwargs(
+                IncrementalMerger, self._auto_merge_scalars),
         )
         # Confidence becomes a live post-run filter: capture the pre-run cutoff
         # for the live merge, and reset the scored-geom store this run fills.
@@ -682,7 +730,8 @@ class AutoRunMixin:
         # ones, so a flat cutoff would hide live detections the review reveals),
         # else the generic spin value.
         from ...core.review_presets import (
-            class_confidence_for, review_start_confidence_default,
+            class_confidence_for,
+            review_start_confidence_default,
         )
 
         if bool(has_exemplars) and not prompt:
@@ -697,22 +746,27 @@ class AutoRunMixin:
         self._auto_objects = []
         self._auto_preview_geoms = []
         self._reset_review_refine_cache()
-        # Exemplar-only count-vs-map auto decision: on an empty-prompt run the
-        # worker collects raw (NMS-only, un-gated) fragments; the pump retains
-        # them (bounded) and accumulates the area-weighted mean tile coverage so
-        # finalize can decide MAP vs SEPARATE from the run's own masks. The tile
-        # ground area the coverage is measured against is constant per run.
+        # Count-vs-map plumbing, for exemplar-only runs alone: with no prompt
+        # token to read, they decide MAP vs SEPARATE from the run's own masks
+        # (the area-weighted mean tile coverage, accumulated below) and re-merge
+        # the retained fragments that way at finalize. collect_raw makes the
+        # worker emit NMS-only, un-gated, un-pre-stitched fragments, the neutral
+        # form that decision needs. A prompted run reads its grouping from the
+        # prompt, so it keeps the worker's per-tile pre-stitch and retains
+        # nothing.
         from ...core.tile_manager import TILE_SIZE
         self._auto_is_exemplar_only = bool(has_exemplars) and not prompt
-        self._auto_raw_fragments = [] if self._auto_is_exemplar_only else None
+        self._auto_collect_raw = self._auto_is_exemplar_only
+        self._auto_retain_raw = self._auto_collect_raw
+        self._auto_raw_fragments = [] if self._auto_retain_raw else None
         self._auto_raw_n_total = 0
         self._auto_raw_cov_sum = 0.0
         self._auto_raw_cov_sq_sum = 0.0
+        # Tile ground area the count-vs-map coverage + the separate-mode gate are
+        # measured against; constant per run. Needed whenever fragments are kept.
         self._auto_tile_ground_area = (
             (TILE_SIZE * self._auto_gsd) ** 2
-            if self._auto_is_exemplar_only and self._auto_gsd > 0 else 0.0)
-        self._auto_merge_override_used = False
-        self._auto_protected_geoms = []  # fresh run: no hand-edited objects yet
+            if self._auto_retain_raw and self._auto_gsd > 0 else 0.0)
         self._auto_manual_removed = set()
         # CRS/GSD are known here from the render; do not reset them (a stale
         # reset to 0.0 here used to disable GSD-relative edge refinement).
@@ -749,6 +803,15 @@ class AutoRunMixin:
         self._remove_auto_selection_layer()
         self._auto_selection_layer = self._create_auto_selection_layer(layer)
 
+        # Coarse mask-grid routing: the server may let specific classes return
+        # masks on a coarser grid at fine run resolutions (faster, a validated
+        # no-op on the final polygons for those classes). Resolved ONCE here
+        # from the run's seeded ground resolution (meters/px) so the whole run
+        # shares one decision and any re-detect over the same grid inherits it;
+        # fail-closed to the full grid without a server table.
+        self._auto_mask_scale = detection_policy.mask_scale_for_run(
+            prompt, getattr(self, "_auto_gsd_m", 0.0))
+
         # Remember the run inputs for layer resolution in the post-run Manual
         # refine handoff (resume was removed). No whole-zone image is rendered
         # any more (tiles render just-in-time), so there is none to keep here.
@@ -762,8 +825,17 @@ class AutoRunMixin:
             "detail": self._get_auto_detail_level(),
             "detection_threshold": self.dock_widget.get_auto_confidence(),
             "exemplars": exemplar_payload,
+            "mask_scale": self._auto_mask_scale,
             "total": len(tiles),
         }
+
+        # Signature of THIS run's inputs. A later Detect with the same prompt,
+        # detail and example count would return the same masks and only spend
+        # credits, so _refresh_rerun_guard flags it before launch. Advisory
+        # only, never blocks (the iterate-until-right path is a real one).
+        self._auto_last_run_sig = (
+            prompt, self._get_auto_detail_level(),
+            self._auto_exemplar_store.count())
 
         # exemplar_stamps was pre-rendered above (before run setup) so a render
         # failure aborts cleanly instead of billing a misleading text-only run;
@@ -794,6 +866,23 @@ class AutoRunMixin:
                 recall_exemplar = float(pv)
         detection_threshold = (
             recall_text if (prompt or "").strip() else recall_exemplar)
+
+        # Coverage-map zero-instance rescue: request the coverage map only for a
+        # map-like TEXT prompt when the server dial is on (the same count-vs-map
+        # policy the review uses decides map-like: not self._auto_merge_separate).
+        # Fail-closed and additive, so nothing changes until the blob enables it.
+        from ...core.cloud_detection import should_request_semantic
+        return_semantic = should_request_semantic(
+            detection_policy.semantic_rescue_enabled(),
+            bool(prompt),
+            self._auto_merge_separate,
+        )
+
+        # Additive, optional per-run provenance + benchmark fields for the
+        # worker (which client + policy produced the run, the map-vs-count read,
+        # and the drawn zone). None-safe end to end: absent values are omitted
+        # and the request stays byte-identical to before.
+        client_meta = self._build_auto_client_meta()
 
         # Build and start the worker via the shared launcher. The worker renders
         # + encodes each tile on demand on its own thread (render hops to the main
@@ -826,9 +915,19 @@ class AutoRunMixin:
             merge_scalars=self._auto_merge_scalars,
             subdivide_budget=self._auto_subdivide_budget(
                 len(tiles), bool(exemplar_stamps)),
-            # Exemplar-only runs collect raw (NMS-only) fragments so the client
-            # can decide count-vs-map after the run and offer a review override.
-            collect_raw=self._auto_is_exemplar_only,
+            # Collect raw (NMS-only, un-gated, un-pre-stitched) fragments so the
+            # client can flip count-vs-map after the run: exemplar-only runs
+            # (their own auto decision) and small continuous-default runs (so the
+            # Keep step's toggle can un-split to separate). Resolved above.
+            collect_raw=self._auto_collect_raw,
+            # Coverage-map zero-instance rescue (map-like text prompts only,
+            # server-gated); off until the blob enables it.
+            return_semantic=return_semantic,
+            # Empty-tile scan gate (sparse text prompts only, server-gated);
+            # None until the blob enables it for this run's shape class.
+            gate_config=self._auto_gate_config(
+                prompt, bool(exemplar_stamps), len(tiles)),
+            client_meta=client_meta,
         )
 
         # Telemetry: the paid run is now committed (all guards passed, worker
@@ -836,6 +935,9 @@ class AutoRunMixin:
         self._auto_tel_stop_reason = None
         self._auto_skipped_tiles = 0
         self._auto_timeout_tiles = 0
+        # One auto-opened error report per run (a run can hit more than one
+        # terminal surface); reset here so the next run can surface its own.
+        self._auto_error_dialog_shown = False
         # Pre-submit, uncharged tile drops (captured from the worker at its
         # terminal); reset per run so a stale count never leaks across runs.
         self._auto_skipped_blank_tiles = 0
@@ -865,6 +967,50 @@ class AutoRunMixin:
             )
         except Exception:
             pass  # nosec B110
+
+    def _auto_gate_config(
+        self, prompt: str, has_exemplars: bool, n_tiles: int
+    ) -> dict | None:
+        """Empty-tile scan gate settings for THIS run, or None (today's
+        behaviour). Fail-CLOSED end to end: the gate arms only for a text-only
+        run of a shape class the SERVER policy explicitly gates (the client
+        ships no class table), on a grid big enough to be worth a scan phase.
+        The worker applies one more guard at run time (the packed scan's
+        ground resolution vs the class's validated cap)."""
+        try:
+            from ...core import detection_policy
+            if has_exemplars or not (prompt or "").strip():
+                return None
+            if not detection_policy.gate_enabled():
+                return None
+            if n_tiles < detection_policy.gate_min_tiles():
+                return None
+            from ...core.review_presets import shape_class_for
+            # The gate keys on its OWN class taxonomy when the policy ships
+            # one (gate.class_map), because the review shape classes group
+            # prompts by geometry and can force classes with very different
+            # scan behaviour onto one rule; the shape class stays the
+            # fallback so a partial map extends the table.
+            rule = detection_policy.gate_class_rule(
+                detection_policy.gate_class_for_prompt(
+                    prompt, shape_class_for(prompt)))
+            if not rule:
+                return None
+            config = {
+                "group": detection_policy.gate_group(),
+                # Adaptive packing ceiling (the worker deepens the block side
+                # up to it when the class's resolution cap allows); the
+                # per-class override wins over the top-level dial.
+                "max_group": rule.get(
+                    "max_group", detection_policy.gate_max_group()),
+                "min_score": rule["min_score"],
+                "min_pixels": detection_policy.gate_min_pixels(),
+            }
+            if "max_scan_mupp" in rule:
+                config["max_scan_mupp"] = rule["max_scan_mupp"]
+            return config
+        except Exception:  # noqa: BLE001 - policy doubt = gate off  # nosec B110
+            return None
 
     def _tel_detect_blocked(self, reason: str) -> None:
         """Best-effort detect_blocked telemetry for the hard Detect guards."""
@@ -896,7 +1042,44 @@ class AutoRunMixin:
         credits, _is_free = self._auto_credit_snapshot()
         return subdivide_budget(credits, base_tiles, every)
 
-    def _launch_auto_worker(
+    def _build_auto_client_meta(self) -> dict:
+        """The run's optional per-run provenance + benchmark fields for the
+        worker: which client build and policy revision produced the run, the
+        client's map-vs-count read of the prompt, and the drawn zone as a
+        GeoJSON geometry in the run CRS. Every value is best-effort; a missing
+        one is simply omitted, so the worker leaves the payload byte-identical
+        to before."""
+        from ...core import detection_policy
+
+        # The map-vs-count read is the same signal the review uses: map = the
+        # continuous-cover (not counting/SEPARATE) merge policy for this prompt.
+        prompt_mode = (
+            "count" if getattr(self, "_auto_merge_separate", True) else "map")
+        meta: dict = {
+            "plugin_version": self._read_plugin_version(),
+            "policy_rev": detection_policy.policy_rev(),
+            "prompt_mode": prompt_mode,
+        }
+        zone = self._auto_zone_geojson()
+        if zone is not None:
+            meta["zone_geojson"] = zone
+        return meta
+
+    def _auto_zone_geojson(self) -> dict | None:
+        """The drawn zone polygon as a GeoJSON geometry dict in the run CRS, or
+        None on the rectangle/MCP path (no polygon) or any failure. Derived from
+        the same geometry that seeds the run's clip polygon."""
+        poly = getattr(self, "_auto_clip_polygon", None)
+        if poly is None:
+            return None
+        try:
+            import json
+
+            return json.loads(poly.asJson(6))
+        except Exception:  # noqa: BLE001 - best-effort provenance field
+            return None
+
+    def _build_auto_worker(
         self,
         *,
         tile_renderer=None,
@@ -906,7 +1089,7 @@ class AutoRunMixin:
         prompt: str,
         auth: dict,
         run_id: str,
-        max_concurrent: int = 6,  # match the inference service max concurrency
+        max_concurrent: int = 6,
         detection_threshold: float = 0.30,
         progress_offset: int = 0,
         progress_total: int | None = None,
@@ -914,16 +1097,24 @@ class AutoRunMixin:
         merge_scalars: dict | None = None,
         subdivide_budget: int = 0,
         collect_raw: bool = False,
-    ) -> None:
-        """Build, wire and start the detection worker; flip the dock to its
-        running state. The worker renders + encodes each tile on its own thread
-        (render hops to the main thread via tile_renderer), so neither the encode
-        nor the basemap fetch freezes the GUI."""
+        return_semantic: bool = False,
+        gate_config: dict | None = None,
+        mask_scale: int | None = None,
+        client_meta: dict | None = None,
+    ):
+        """Construct (without wiring or starting) a detection worker from the
+        current run state.
+
+        gate_config and mask_scale ride to the worker so the scan gate and the
+        per-run mask grid apply. mask_scale defaults to the run's stored value,
+        so a caller that omits it still shares the run's grid. client_meta rides
+        as the run's optional per-run provenance + benchmark fields (None = the
+        request stays byte-identical to before)."""
         from ...workers.auto_detection_worker import AutoDetectionWorker
 
-        # The mask -> geometry pipeline runs on the worker now, so it needs the
+        # The mask -> geometry pipeline runs on the worker, so it needs the
         # zone clip polygon (as WKB, run CRS) and the run GSD. Both are set on
-        # self by _start_auto_detection before this launcher is called. WKB is a
+        # self by _start_auto_detection before any worker is built. WKB is a
         # plain immutable bytes payload, safe to hand to the worker thread.
         clip_polygon_wkb = None
         if self._auto_clip_polygon is not None:
@@ -932,7 +1123,7 @@ class AutoRunMixin:
             except (RuntimeError, AttributeError):
                 clip_polygon_wkb = None
 
-        self._auto_worker = AutoDetectionWorker(
+        return AutoDetectionWorker(
             tile_renderer=tile_renderer,
             tiles=tiles,
             geo_transform=geo_transform,
@@ -952,12 +1143,74 @@ class AutoRunMixin:
             merge_scalars=merge_scalars,
             subdivide_budget=subdivide_budget,
             collect_raw=collect_raw,
+            return_semantic=return_semantic,
+            gate_config=gate_config,
+            mask_scale=(getattr(self, "_auto_mask_scale", 1)
+                        if mask_scale is None else mask_scale),
+            client_meta=client_meta,
         )
+
+    def _launch_auto_worker(
+        self,
+        *,
+        tile_renderer=None,
+        tiles: list,
+        geo_transform: dict,
+        crs_authid: str,
+        prompt: str,
+        auth: dict,
+        run_id: str,
+        max_concurrent: int = 6,  # match the inference service max concurrency
+        detection_threshold: float = 0.30,
+        progress_offset: int = 0,
+        progress_total: int | None = None,
+        exemplar_stamps: list | None = None,
+        merge_scalars: dict | None = None,
+        subdivide_budget: int = 0,
+        collect_raw: bool = False,
+        return_semantic: bool = False,
+        gate_config: dict | None = None,
+        client_meta: dict | None = None,
+    ) -> None:
+        """Build, wire and start the detection worker; flip the dock to its
+        running state. The worker renders + encodes each tile on its own thread
+        (render hops to the main thread via tile_renderer), so neither the encode
+        nor the basemap fetch freezes the GUI. client_meta rides to the worker as
+        the run's optional per-run provenance + benchmark fields."""
+        self._auto_worker = self._build_auto_worker(
+            tile_renderer=tile_renderer,
+            tiles=tiles,
+            geo_transform=geo_transform,
+            crs_authid=crs_authid,
+            prompt=prompt,
+            auth=auth,
+            run_id=run_id,
+            max_concurrent=max_concurrent,
+            detection_threshold=detection_threshold,
+            progress_offset=progress_offset,
+            progress_total=progress_total,
+            exemplar_stamps=exemplar_stamps,
+            merge_scalars=merge_scalars,
+            subdivide_budget=subdivide_budget,
+            collect_raw=collect_raw,
+            return_semantic=return_semantic,
+            gate_config=gate_config,
+            # Resolved once per run in _start_auto_detection and stored on the
+            # run context, so every worker built for this run (and any re-detect
+            # over the same grid) shares the same mask grid.
+            mask_scale=getattr(self, "_auto_mask_scale", 1),
+            client_meta=client_meta,
+        )
+        # Start the live stitcher BEFORE the worker: it owns the merger for the
+        # length of the run, and the first tile must already have somewhere to
+        # go. Without it every tile_completed would be dropped on the floor.
+        self._start_auto_stitcher(geo_transform)
         # Explicit QueuedConnection: these slots touch QGIS objects on the main
         # thread and the worker emits from its own thread. AutoConnection would
         # marshal correctly today (connect() runs on the main thread), but the
-        # pump/repaint contract depends on queued delivery, so pin it so a future
-        # refactor that wires these from another thread cannot silently break it.
+        # hand-off to the stitcher depends on queued delivery, so pin it so a
+        # future refactor that wires these from another thread cannot silently
+        # break it.
         from qgis.PyQt.QtCore import Qt
         _queued = Qt.ConnectionType.QueuedConnection
         self._auto_worker.tile_completed.connect(self._on_auto_tile_completed, _queued)
@@ -968,16 +1221,23 @@ class AutoRunMixin:
         self._auto_worker.credits_exhausted.connect(self._on_auto_credits_exhausted, _queued)
         self._auto_worker.cancelled.connect(self._on_auto_cancelled, _queued)
         self._auto_worker.queue_state.connect(self._on_auto_queue_state, _queued)
+        self._auto_worker.rescan_state.connect(self._on_auto_rescan_state, _queued)
         self._auto_worker.start()
+        # Arm the stall watchdog for this run (see _on_auto_stall_check).
+        self._start_auto_stall_watchdog()
         # Canvas preview jobs re-render (and on online basemaps re-FETCH) the
         # out-of-view margin after every repaint; during live tile streaming
         # that is pure waste stacked on our own coalesced repaints. Paused for
         # the run, restored by _stop_auto_live_pump at every terminal.
         self._pause_preview_jobs()
 
-        total_display = progress_total if progress_total else len(tiles)
+        total_display = progress_total or len(tiles)
         self.dock_widget.set_auto_run_active(True)
         self._set_zone_badge_enabled(False)
+        # The grid the user was quoted and is charged for. A dense run re-splits
+        # saturated tiles into free quadrants, which grow the worker's total, so
+        # the count row would otherwise read a number nobody agreed to pay.
+        self.dock_widget.set_auto_billed_tile_total(total_display)
         self.dock_widget.set_auto_tile_progress(progress_offset, total_display)
         # No "running" banner: the tile progress bar already says it.
         try:
@@ -985,6 +1245,111 @@ class AutoRunMixin:
             self.dock_widget.set_auto_status("progress")
         except (RuntimeError, AttributeError):
             pass
+
+    # ------------------------------------------------------------------
+    # Stall watchdog (main thread): guarantee a hung run always terminates
+    # ------------------------------------------------------------------
+
+    def _start_auto_stall_watchdog(self) -> None:
+        """Arm the per-run stall watchdog: a repeating main-thread timer that
+        forces a terminal if the worker stops making progress (a network call
+        wedged with no timeout, which the worker's own loop cannot catch because
+        it is blocked inside it). Idempotent; the timestamp is reset here so a
+        fresh run always gets the full window."""
+        import time as _t
+        self._auto_last_progress_ts = _t.monotonic()
+        timer = getattr(self, "_auto_stall_timer", None)
+        if timer is None:
+            from qgis.PyQt.QtCore import QTimer
+            timer = QTimer(self.dock_widget)  # parented to the dock (never to
+            # the controller, which is not a QObject), so it dies with the dock
+            timer.setInterval(_STALL_CHECK_INTERVAL_MS)
+            timer.timeout.connect(self._on_auto_stall_check)
+            self._auto_stall_timer = timer
+        timer.start()
+
+    def _stop_auto_stall_watchdog(self) -> None:
+        """Disarm the stall watchdog. Called at every terminal (via
+        _finalize_auto_results and the hard teardown), so the timer never ticks
+        into a review or an idle dock. Best-effort and idempotent."""
+        timer = getattr(self, "_auto_stall_timer", None)
+        if timer is not None:
+            try:
+                timer.stop()
+            except (RuntimeError, AttributeError):
+                pass
+
+    def _note_auto_progress(self) -> None:
+        """Record that the run advanced, so the stall watchdog's window resets.
+        Called from the progress and tile-completed handlers."""
+        import time as _t
+        self._auto_last_progress_ts = _t.monotonic()
+
+    def _on_auto_stall_check(self) -> None:
+        """Watchdog tick. Forces a terminal when the live worker has made no
+        progress for the stall timeout: the worker is wedged inside a network
+        call, so the run would otherwise show forever progress with no signal.
+        Self-stops when there is no running worker (a terminal already resolved
+        the run)."""
+        worker = self._auto_worker
+        if worker is None:
+            self._stop_auto_stall_watchdog()
+            return
+        try:
+            running = worker.isRunning()
+        except RuntimeError:
+            return
+        import time as _t
+
+        from ...core.detection_policy import stall_timeout_s
+        from ...core.run_watchdog import run_is_stalled
+        timeout = stall_timeout_s(_STALL_TIMEOUT_S)
+        if not run_is_stalled(
+            running, getattr(self, "_auto_last_progress_ts", None),
+            _t.monotonic(), timeout,
+        ):
+            return
+        # Stalled. One-shot: disarm before handling so we never double-fire.
+        self._stop_auto_stall_watchdog()
+        self._handle_auto_stall(worker, int(timeout))
+
+    def _handle_auto_stall(self, worker, timeout_s: int) -> None:
+        """A run made no progress for the timeout: wake the wedged worker, then
+        salvage its billed partials into the review as a TIMEOUT (never a silent
+        forever-progress). Mirrors the cancel watchdog's safe wind-down."""
+        if worker is None or self._auto_worker is not worker:
+            return
+        QgsMessageLog.logMessage(
+            "Auto detection: stall watchdog forcing wind-down "
+            f"(no progress for {timeout_s}s)",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning,
+        )
+        # Mark the worker stalled so its own terminal (if it ever unwinds) stays
+        # silent, then wake it out of the blocked network call.
+        try:
+            worker._stop_reason = "stalled"
+            worker.request_stop()
+        except (RuntimeError, AttributeError):
+            pass
+        self._cancel_active_tile_render()
+        # Detach live-paint + result signals so the still-winding thread cannot
+        # repaint or double-finalize after we salvage; keep 'cancelled'
+        # connected (it never fires for a stalled worker, but this mirrors the
+        # cancel watchdog and stays safe if the reason is ever cleared).
+        for sig, slot in (
+            (worker.tile_completed, self._on_auto_tile_completed),
+            (worker.progress, self._on_auto_progress),
+            (worker.all_tiles_finished, self._on_auto_all_finished),
+            (worker.warning, self._on_auto_warning),
+            (worker.error, self._on_auto_error),
+            (worker.credits_exhausted, self._on_auto_credits_exhausted),
+            (worker.queue_state, self._on_auto_queue_state),
+        ):
+            try:
+                sig.disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass
+        self._on_auto_cancelled(reason="stalled")
 
     @slot_guard(stage="segment")
     def _on_auto_cancel_clicked(self) -> None:
@@ -1021,16 +1386,8 @@ class AutoRunMixin:
             worker.request_stop()
         except (RuntimeError, AttributeError):
             pass
-        # If the worker is blocked on a JIT tile render, cancel that too: it
-        # makes Cancel instant on a slow basemap, and it is the use-after-free
-        # guard when this cancel was triggered re-entrantly from INSIDE that
-        # render's nested event loop by a layer removal or project clear (the
-        # raster must not be freed while the render job still reads it).
-        try:
-            from ...core.cloud_detection import cancel_active_tile_render
-            cancel_active_tile_render()
-        except Exception:  # noqa: BLE001 - cancel is best-effort
-            pass  # nosec B110
+        # If the worker is blocked on a JIT tile render, cancel that too.
+        self._cancel_active_tile_render()
         # Watchdog: guarantee the UI leaves the run even if the worker never
         # confirms (a wedged cold-start reply, a lost terminal signal). If this
         # same worker is still active after the grace window, force the normal
@@ -1047,7 +1404,7 @@ class AutoRunMixin:
             return
         QgsMessageLog.logMessage(
             "Auto detection: cancel watchdog forcing wind-down "
-            "(worker did not confirm within {}ms)".format(_CANCEL_WATCHDOG_MS),
+            f"(worker did not confirm within {_CANCEL_WATCHDOG_MS}ms)",
             "AI Segmentation", level=Qgis.MessageLevel.Warning,
         )
         # Detach live-paint + result signals so the still-winding thread cannot
@@ -1082,6 +1439,20 @@ class AutoRunMixin:
         # salvages any billed partials into review, and restores step-2.
         self._on_auto_cancelled()
 
+    def _cancel_active_tile_render(self) -> None:
+        """Tear down any in-flight just-in-time tile render. Best-effort.
+
+        The render runs a nested event loop on the GUI thread, so a teardown
+        can re-enter from inside it (a layer removal, a project clear). The
+        raster must not be freed while the render job still reads it, and a
+        cancel also makes the user's Cancel instant on a slow basemap.
+        """
+        try:
+            from ...core.cloud_detection import cancel_active_tile_render
+            cancel_active_tile_render()
+        except Exception:  # noqa: BLE001 - cancel is best-effort
+            pass  # nosec B110
+
     def _stop_auto_detection(self) -> None:
         """Cancel the running worker instantly, without freezing the UI.
 
@@ -1098,6 +1469,15 @@ class AutoRunMixin:
         a crash on shutdown, and blocking on wait() here would freeze the UI for
         the length of the in-flight request (the freeze the user reported).
         """
+        # Hard teardown does not route through _finalize_auto_results, so disarm
+        # the stall watchdog here too.
+        self._stop_auto_stall_watchdog()
+        # Cancel any in-flight JIT tile render FIRST, before the no-worker exit
+        # below: this teardown can be running re-entrantly inside a render's
+        # nested event loop (a layer removed while an exemplar stamp renders),
+        # and the rendered layer may be about to be freed. Every teardown path
+        # has to cancel, worker or not (use-after-free guard).
+        self._cancel_active_tile_render()
         worker = self._auto_worker
         if worker is None:
             # No live worker, but a cooperative finalize/reslice/preview chain
@@ -1123,6 +1503,9 @@ class AutoRunMixin:
             # A late queue_state from the winding-down worker would otherwise
             # repaint the bar / hide the "Cancelling..." banner post-teardown.
             (worker.queue_state, self._on_auto_queue_state),
+            # Same for a late rescan mark: it would draw on a canvas the
+            # teardown has just cleared, with no run left to remove it.
+            (worker.rescan_state, self._on_auto_rescan_state),
         ):
             try:
                 sig.disconnect(slot)
@@ -1133,15 +1516,6 @@ class AutoRunMixin:
             worker.request_stop()
         except (RuntimeError, AttributeError):
             pass
-        # Cancel any in-flight JIT tile render synchronously: on the unload /
-        # project-clear paths this teardown can be running re-entrantly inside
-        # the render's nested event loop, and the rendered layer may be about
-        # to be freed (use-after-free guard, mirrors _on_auto_cancel_clicked).
-        try:
-            from ...core.cloud_detection import cancel_active_tile_render
-            cancel_active_tile_render()
-        except Exception:  # noqa: BLE001 - cancel is best-effort
-            pass  # nosec B110
 
         # Clear the in-progress results now; a late queued tile_completed will
         # no-op because the merger is gone. We deliberately do NOT null
@@ -1156,6 +1530,10 @@ class AutoRunMixin:
         self._set_zone_badge_enabled(True)
         if self.dock_widget:
             try:
+                # A hard teardown mid-hand-over kills the finalize chain, so no
+                # review will ever claim the screen: release the run-card hold
+                # or the dock stays frozen on it (see set_auto_finalizing).
+                self.dock_widget.set_auto_finalizing(False)
                 self.dock_widget.set_auto_run_active(False)
                 self.dock_widget.auto_status_banner.setText(tr("Cancelling..."))
                 self.dock_widget.auto_status_banner.setVisible(True)
@@ -1214,7 +1592,7 @@ class AutoRunMixin:
                     target_layer = lyr
                     break
             if target_layer is None:
-                return {"_error": "Raster layer '{}' not found".format(layer_name)}
+                return {"_error": f"Raster layer '{layer_name}' not found"}
             # _get_active_raster_layer reads the combo of the current mode;
             # set both so the target sticks regardless of mode.
             try:
@@ -1250,9 +1628,9 @@ class AutoRunMixin:
                 active = self._get_active_raster_layer()
                 if active is None or active.id() != target_layer.id():
                     return {"_error": (
-                        "Raster layer '{}' exists but could not be selected "
+                        f"Raster layer '{layer_name}' exists but could not be selected "
                         "(hidden in the layer tree or filtered out). Make it "
-                        "visible and retry.".format(layer_name))}
+                        "visible and retry.")}
 
         # Parse and transform zone WKT (layer CRS) to canvas CRS.
         if zone_wkt and zone_wkt.strip():
@@ -1276,12 +1654,8 @@ class AutoRunMixin:
                     telemetry.track_auto_zone_too_large(area_km2=cap_area)
                 except Exception:
                     pass  # nosec B110
-                from .shared import free_zone_cap_km2
-                return {"_error": (
-                    "Zone is {:.1f} km2; free trial zones go up to {:g} km2. "
-                    "Use a smaller zone, or subscribe to segment areas of "
-                    "any size.".format(cap_area, free_zone_cap_km2())
-                )}
+                from .shared import zone_over_free_cap_message
+                return {"_error": zone_over_free_cap_message(cap_area)}
             if active_layer is not None:
                 try:
                     layer_crs = active_layer.crs()
@@ -1363,6 +1737,32 @@ class AutoRunMixin:
             except (RuntimeError, AttributeError):
                 pass
 
+        # Fetch the server run plan inline (bounded, best-effort, fail-open)
+        # BEFORE the run. The interactive path fires this on the debounced
+        # prompt-commit; a headless/MCP run has no such commit, so it used to
+        # skip the plan and fall back to the neutral cached-policy preset. With
+        # the plan in hand the finalize applies the SAME per-prompt review shape
+        # (right angles / fill / simplify) and tuned confidence the product
+        # uses, so an agent result is refined like the product. Any failure
+        # leaves _auto_run_plan None and keeps today's cached-policy path.
+        # Stored exactly like _on_auto_run_plan_ready, keyed on object_class
+        # (which set_prompt_text put in the box, so _auto_run_ctx["prompt"]
+        # matches it and _active_run_plan resolves during finalize).
+        self._auto_run_plan = None
+        if object_class:
+            try:
+                from ...core.activation_manager import get_auth_header
+                plan_auth = get_auth_header()
+                if plan_auth:
+                    from ...api.terralab_client import TerraLabClient
+                    zone_area_m2, native_mupp = self._auto_run_plan_inputs()
+                    plan = TerraLabClient().get_seg_run_plan(
+                        object_class, zone_area_m2, native_mupp, auth=plan_auth)
+                    if isinstance(plan, dict) and not plan.get("error"):
+                        self._auto_run_plan = {"prompt": object_class, "plan": plan}
+            except Exception:  # noqa: BLE001 -- planning is best-effort
+                pass  # nosec B110 -- fail-open to the cached-policy preset
+
         # Mark this as a headless/MCP run so _on_auto_all_finished skips the
         # interactive review and exports directly (preserving MCP behavior).
         self._auto_headless_run = True
@@ -1381,6 +1781,25 @@ class AutoRunMixin:
                         "missing raster, not signed in, zone too large, or feature disabled."
                     )
                 }
+
+            # Match the product's review-open cutoff for an agent run. The
+            # finalize filters at _auto_confidence, which _start_auto_detection
+            # just set to the class value (or the dock spin). When the caller
+            # left the spin at the generic default (no explicit MCP confidence),
+            # replace it with the tuned per-prompt default the interactive review
+            # opens at (the run plan fetched above feeds _effective_confidence_
+            # default). A non-default spin means an explicit MCP confidence (the
+            # handler set it), so it is honored and never overridden. Fail-open.
+            try:
+                from ...core.review_defaults import AUTO_DEFAULT_CONFIDENCE
+                spin_conf = (
+                    self.dock_widget.get_auto_confidence()
+                    if self.dock_widget is not None else None)
+                if spin_conf is None or abs(
+                        float(spin_conf) - AUTO_DEFAULT_CONFIDENCE) < 1e-9:
+                    self._auto_confidence = self._effective_confidence_default()
+            except (RuntimeError, AttributeError, ValueError, TypeError):
+                pass  # fail-open to the run-start confidence
 
             # Block on QEventLoop until a terminal signal fires or timeout expires.
             # Connect AFTER _start_auto_detection so the plugin's own slots (wired
@@ -1425,7 +1844,7 @@ class AutoRunMixin:
             if self._last_auto_result is None:
                 # Timeout path: worker is still running (or silently died).
                 self._stop_auto_detection()
-                return {"_error": "Detection timed out after {}s".format(timeout_s)}
+                return {"_error": f"Detection timed out after {timeout_s}s"}
 
             result = self._last_auto_result
             status = result.get("status")
@@ -1458,9 +1877,19 @@ class AutoRunMixin:
                     out["layer_name"] = result.get("layer_name")
                     out["instances"] = result.get("instances", 0)
                 return out
-            if status == "cancelled":
-                return {"_error": "Cancelled"}
+            if status in ("cancelled", "stalled"):
+                out = {"_error": (
+                    "Detection stopped responding" if status == "stalled"
+                    else "Cancelled")}
+                # A stopped run still exports the tiles it was billed for;
+                # surface that layer so the caller neither orphans nor blindly
+                # retries work that was charged and kept.
+                if result.get("layer_name"):
+                    out["layer_name"] = result.get("layer_name")
+                    out["instances"] = result.get("instances", 0)
+                    out["credits_used"] = result.get("tiles_processed", 0)
+                return out
 
-            return {"_error": "Unexpected result status: {}".format(status)}
+            return {"_error": f"Unexpected result status: {status}"}
         finally:
             self._auto_headless_run = False

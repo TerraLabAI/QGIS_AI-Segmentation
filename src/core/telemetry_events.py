@@ -1,15 +1,13 @@
-"""Event-name constants + required-props registry (mirror of the website registry).
+"""Event-name constants + required-props registry.
 
-Single source of truth lives in the website repo; the ai-segmentation subset is
-vendored here (and in analytics_events.json) the same way prompt presets are
-mirrored. Never pass a raw string to telemetry.track(); use a constant below.
-Run scripts/check_telemetry.py to verify this module and the website registry
-stay in sync. Keep in sync with terralab-website analytics_events.json; bump
+Mirror of the server-side event registry: the server owns the definitions and
+this module vendors the subset the plugin emits. Never pass a raw string to
+telemetry.track(); use a constant below. Add or change an event here and bump
 REGISTRY_VERSION together.
 """
 from __future__ import annotations
 
-REGISTRY_VERSION = 10
+REGISTRY_VERSION = 13
 
 # --- Lifecycle ------------------------------------------------------------
 PLUGIN_FIRST_OPEN = "plugin_first_open"
@@ -35,6 +33,10 @@ ZONE_DRAWN = "zone_drawn"
 AUTO_ZONE_TOO_LARGE = "auto_zone_too_large"
 AUTO_PROMPT_COMMITTED = "auto_prompt_committed"
 AUTO_PROMPT_STEERED = "auto_prompt_steered"
+# Prompt silently swapped for its English run token (localized / plural / alias).
+AUTO_PROMPT_REWRITTEN = "auto_prompt_rewritten"
+# Non-blocking prompt-guidance hint shown under the box (exemplar_boost / plan_hint).
+AUTO_PROMPT_HINT_SHOWN = "auto_prompt_hint_shown"
 EXEMPLAR_ADDED = "exemplar_added"
 EXEMPLAR_REMOVED = "exemplar_removed"
 DETAIL_CHANGED = "detail_changed"
@@ -45,6 +47,9 @@ AUTO_DETECT_CANCELLED = "auto_detect_cancelled"
 CREDITS_EXHAUSTED = "credits_exhausted"
 AUTO_TILES_DEGRADED = "auto_tiles_degraded"
 AUTO_ZERO_RESULT = "auto_zero_result"
+# Empty-tile scan gate outcome for one run (emitted only when the server
+# policy armed the gate; fallback says why an armed gate stood down).
+AUTO_GATE_SCAN = "auto_gate_scan"
 
 # --- Review / refine ------------------------------------------------------
 REVIEW_OPENED = "review_opened"
@@ -65,6 +70,13 @@ EXEMPLAR_NUDGE_SHOWN = "exemplar_nudge_shown"
 EXEMPLAR_NUDGE_CLICKED = "exemplar_nudge_clicked"
 # Tutorial-discovery opens; source = touchpoint id.
 TUTORIAL_OPENED = "tutorial_opened"
+# Post-run review: the free hand edits, their undo, and step navigation.
+REVIEW_CORRECT_BOX = "review_correct_box"
+REVIEW_CORRECT_UNDO = "review_correct_undo"
+REVIEW_STEP = "review_step"
+# QGIS digitizing bridge lifecycle (Correct step -> native QGIS editing).
+# outcome = opened | committed | rolled_back.
+AUTO_EDIT_IN_QGIS = "auto_edit_in_qgis"
 
 # --- Manual ---------------------------------------------------------------
 SEGMENTATION_RUN = "segmentation_run"
@@ -141,6 +153,8 @@ ALL_EVENTS = frozenset({
     AUTO_ZONE_TOO_LARGE,
     AUTO_PROMPT_COMMITTED,
     AUTO_PROMPT_STEERED,
+    AUTO_PROMPT_REWRITTEN,
+    AUTO_PROMPT_HINT_SHOWN,
     EXEMPLAR_ADDED,
     EXEMPLAR_REMOVED,
     DETAIL_CHANGED,
@@ -151,6 +165,7 @@ ALL_EVENTS = frozenset({
     CREDITS_EXHAUSTED,
     AUTO_TILES_DEGRADED,
     AUTO_ZERO_RESULT,
+    AUTO_GATE_SCAN,
     REVIEW_OPENED,
     REVIEW_CONFIDENCE_FINAL,
     REVIEW_ABANDONED,
@@ -165,6 +180,10 @@ ALL_EVENTS = frozenset({
     EXEMPLAR_NUDGE_SHOWN,
     EXEMPLAR_NUDGE_CLICKED,
     TUTORIAL_OPENED,
+    REVIEW_CORRECT_BOX,
+    REVIEW_CORRECT_UNDO,
+    REVIEW_STEP,
+    AUTO_EDIT_IN_QGIS,
     SEGMENTATION_RUN,
     MANUAL_EXPORT_DONE,
     MANUAL_SESSION_SUMMARY,
@@ -208,6 +227,8 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     AUTO_ZONE_TOO_LARGE: ("area_km2",),
     AUTO_PROMPT_COMMITTED: ("prompt",),
     AUTO_PROMPT_STEERED: (),
+    AUTO_PROMPT_REWRITTEN: ("kind",),
+    AUTO_PROMPT_HINT_SHOWN: ("kind",),
     EXEMPLAR_ADDED: ("count_after",),
     EXEMPLAR_REMOVED: ("count_after",),
     DETAIL_CHANGED: ("detail", "tiles", "source"),
@@ -222,6 +243,7 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     CREDITS_EXHAUSTED: ("run_id",),
     AUTO_TILES_DEGRADED: ("run_id",),
     AUTO_ZERO_RESULT: ("run_id", "object_class"),
+    AUTO_GATE_SCAN: ("run_id", "scans", "tiles_skipped"),
     REVIEW_OPENED: ("run_id", "instances_found"),
     REVIEW_CONFIDENCE_FINAL: ("run_id", "final_pct"),
     REVIEW_ABANDONED: ("run_id",),
@@ -236,6 +258,10 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     EXEMPLAR_NUDGE_SHOWN: ("run_id", "object_class"),
     EXEMPLAR_NUDGE_CLICKED: ("run_id", "object_class"),
     TUTORIAL_OPENED: ("source",),
+    REVIEW_CORRECT_BOX: ("run_id", "label", "outcome", "objects"),
+    REVIEW_CORRECT_UNDO: ("run_id", "kind"),
+    REVIEW_STEP: ("run_id", "step"),
+    AUTO_EDIT_IN_QGIS: ("run_id", "outcome"),
     SEGMENTATION_RUN: ("success",),
     MANUAL_EXPORT_DONE: ("polygon_count",),
     MANUAL_SESSION_SUMMARY: ("saves",),

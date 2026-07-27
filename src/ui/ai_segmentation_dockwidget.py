@@ -1,50 +1,43 @@
 from __future__ import annotations
 
-
 from qgis.core import QgsProject
 from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QComboBox,
     QDockWidget,
+    QDoubleSpinBox,
     QFrame,
     QScrollArea,
-    QDoubleSpinBox,
     QSlider,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-
 from ..core.activation_manager import (
     is_plugin_activated,
 )
 from ..core.i18n import tr
-from .dock.build import DockBuildMixin
-from .dock.auto_build import DockAutoBuildMixin
-from .dock.auto_review_build import DockAutoReviewBuildMixin
-from .dock.refine import DockRefineMixin
-from .dock.handoff import DockHandoffMixin
 from .dock.about import DockAboutMixin
 from .dock.activation_state import DockActivationMixin
-from .dock.auto_state import DockAutoStateMixin
-from .dock.state import DockStateMixin
+from .dock.auto_build import DockAutoBuildMixin
+from .dock.auto_correct_build import DockAutoCorrectBuildMixin
+from .dock.auto_credits import DockAutoCreditsMixin
+from .dock.auto_detail_level import DockAutoDetailLevelMixin
+from .dock.auto_flow_steps import DockAutoFlowStepsMixin
+from .dock.auto_prompt_box import DockAutoPromptBoxMixin
+from .dock.auto_prompt_gate import DockAutoPromptGateMixin
+from .dock.auto_review_build import DockAutoReviewBuildMixin
+from .dock.auto_review_correct import DockAutoReviewCorrectMixin
+from .dock.auto_review_panel import DockAutoReviewPanelMixin
+from .dock.auto_run_lifecycle import DockAutoRunLifecycleMixin
+from .dock.auto_run_status import DockAutoRunStatusMixin
+from .dock.build import DockBuildMixin
+from .dock.handoff import DockHandoffMixin
+from .dock.qgis_bridge import DockQgisBridgeMixin
+from .dock.refine import DockRefineMixin
+from .dock.server_switches import DockServerSwitchesMixin
 from .dock.styles import (  # noqa: F401 - re-exported for other modules
-    BRAND_BLUE,
-    BRAND_BLUE_HOVER,
-    BRAND_DISABLED,
-    BRAND_GRAY,
-    BRAND_GRAY_HOVER,
-    BRAND_GREEN,
-    BRAND_GREEN_TEXT,
-    BRAND_RED,
-    BRAND_RED_HOVER,
-    BTN_GREEN,
-    BTN_GREEN_DISABLED,
-    BTN_GREEN_HOVER,
-    DISABLED_TEXT,
-    ERROR_TEXT,
-    SUCCESS_TEXT,
     _BTN_BLUE,
     _BTN_BLUE_AUTH,
     _BTN_BLUE_PRIMARY,
@@ -68,8 +61,24 @@ from .dock.styles import (  # noqa: F401 - re-exported for other modules
     _REVIEW_CONF_SPIN_MIN,
     _REVIEW_CONF_STEP,
     _SLIDER_QSS,
+    BRAND_BLUE,
+    BRAND_BLUE_HOVER,
+    BRAND_DISABLED,
+    BRAND_GRAY,
+    BRAND_GRAY_HOVER,
+    BRAND_GREEN,
+    BRAND_GREEN_TEXT,
+    BRAND_RED,
+    BRAND_RED_HOVER,
+    BTN_GREEN,
+    BTN_GREEN_DISABLED,
+    BTN_GREEN_HOVER,
+    DISABLED_TEXT,
+    ERROR_TEXT,
+    SUCCESS_TEXT,
     _snap_review_conf,
 )
+from .dock.ui_refresh import DockStateMixin
 from .dock.widgets import (  # noqa: F401 - re-exported for other modules
     Mode,
     _FooterIconButton,
@@ -84,11 +93,22 @@ class AISegmentationDockWidget(
     DockBuildMixin,
     DockAutoBuildMixin,
     DockAutoReviewBuildMixin,
+    DockAutoCorrectBuildMixin,
     DockRefineMixin,
     DockHandoffMixin,
+    DockQgisBridgeMixin,
     DockAboutMixin,
+    DockServerSwitchesMixin,
     DockActivationMixin,
-    DockAutoStateMixin,
+    DockAutoPromptBoxMixin,
+    DockAutoPromptGateMixin,
+    DockAutoDetailLevelMixin,
+    DockAutoCreditsMixin,
+    DockAutoFlowStepsMixin,
+    DockAutoRunLifecycleMixin,
+    DockAutoRunStatusMixin,
+    DockAutoReviewPanelMixin,
+    DockAutoReviewCorrectMixin,
     DockStateMixin,
     QDockWidget,
 ):
@@ -109,6 +129,23 @@ class AISegmentationDockWidget(
     # Min/Max size window in ground m2 (0 = off). Emitted right BEFORE
     # refine_settings_changed on the same debounce tick (store-only handler).
     size_filter_changed = pyqtSignal(float, float)
+    # Simplify tolerance in crop pixels (0 = off) and the Points dial (the share
+    # of its own points an outline keeps, 1-100). Both are outline controls the
+    # Automatic review already had; they ride their own signal for the same
+    # reason as clean_edges_changed, so refine_settings_changed keeps its
+    # published shape. Emitted on the same debounce tick, just before it
+    # (store-only handler); the `simplify` slot of refine_settings_changed is
+    # legacy and no longer read.
+    outline_budget_changed = pyqtSignal(float, int)
+    # Fill holes SMALLER than this ground area (m2, 0 = fill every hole). Its
+    # own signal so refine_settings_changed keeps its published shape; emitted
+    # on the same debounce tick, just before it (store-only handler).
+    fill_holes_size_changed = pyqtSignal(float)
+    # Clean edges (morphological opening, px; 0 = off). Its own signal for the
+    # same reason as fill_holes_size_changed: refine_settings_changed keeps its
+    # published shape. Emitted on the same debounce tick, just before it
+    # (store-only handler).
+    clean_edges_changed = pyqtSignal(float)
     mode_changed = pyqtSignal(object)          # emits Mode value
     auto_detect_requested = pyqtSignal()       # user clicked Detect in Automatic mode
     auto_library_requested = pyqtSignal()      # user clicked Library (open prompt gallery)
@@ -127,18 +164,44 @@ class AISegmentationDockWidget(
     auto_export_requested = pyqtSignal()       # user clicked Export to layer in review panel
     auto_retry_requested = pyqtSignal()        # user clicked Adjust & run again in review (keep inputs)
     auto_review_exit_requested = pyqtSignal()  # user clicked Exit in review (Save/Discard dialog)
-    auto_refine_in_manual_requested = pyqtSignal()  # hand the reviewed detections to Manual mode
-    back_to_review_requested = pyqtSignal()    # return from a Manual refine handoff to Auto review
-    handoff_edit_requested = pyqtSignal()      # state card Edit shape (single selected detection)
-    handoff_delete_requested = pyqtSignal()    # state card Remove (selection or the open edit)
     auto_exit_requested = pyqtSignal()         # user clicked Exit on the prompt step
     auto_add_exemplar_requested = pyqtSignal(int)   # draw an example (1 = positive, 0 = exclude)
-    auto_exemplar_retry_requested = pyqtSignal()    # exemplar nudge: retry then arm the example draw
     auto_exemplar_remove_requested = pyqtSignal(str)  # user clicked x on an exemplar chip (id)
-    auto_merge_override_requested = pyqtSignal()  # review: re-group the auto count-vs-map decision
     auto_zero_assist_clicked = pyqtSignal(str, str)  # zero-result rescue chip (kind, to_prompt)
     auto_escape_pressed = pyqtSignal()         # Escape in the Automatic flow (exit / cancel draw)
     auto_enter_pressed = pyqtSignal()          # Enter in the Automatic flow (detect / export review)
+    # Linear review: the ladder and the free hand edits.
+    auto_correction_undo_requested = pyqtSignal()    # undo the last edit
+    auto_correction_clear_requested = pyqtSignal()   # clear every edit this round
+    auto_review_step_requested = pyqtSignal(int)     # navigate the review ladder (step 0-2)
+    auto_correct_status_action_requested = pyqtSignal()  # status secondary action (merge confirm)
+    auto_shape_edit_requested = pyqtSignal(str)      # arm a free hand edit ("merge" or "split")
+    # QGIS digitizing bridge seam (plan 1 builds the entry control + banner;
+    # the bridge mixin does the QGIS work). Signals live on the sip class.
+    auto_edit_in_qgis_requested = pyqtSignal()       # Correct step: "Edit manually"
+    auto_add_polygon_requested = pyqtSignal()        # Correct step: draw a missed polygon
+    auto_qgis_bridge_done_requested = pyqtSignal()   # banner: "Done editing"
+    auto_qgis_bridge_tool_requested = pyqtSignal(str)  # manual edit: vertex / reshape / split
+    auto_qgis_bridge_undo_requested = pyqtSignal()   # banner: undo the last native edit
+    auto_qgis_bridge_gesture_requested = pyqtSignal(str)  # banner buttons: finish / undo_point / cancel / delete_corner
+    auto_qgis_bridge_points_changed = pyqtSignal(int)  # banner Points dial: thin the target before hand edits (percent)
+    # Correct step, selection-first: act on the one detection picked on the map.
+    auto_reshape_ai_requested = pyqtSignal()     # Refine with AI (in-place point-and-click)
+    auto_reshape_done_requested = pyqtSignal()   # Done reshaping: fold back into the review
+    auto_remove_requested = pyqtSignal()         # Remove the selected detection
+    # AI | Manual method switch and the AI-assisted Add lane (round 3). Manual
+    # Add keeps emitting auto_add_polygon_requested above; the plugin wires both.
+    auto_correct_method_changed = pyqtSignal(str)  # user toggled the switch ("ai" | "manual")
+    auto_ai_add_requested = pyqtSignal()           # Add lane, AI method: point at a missed object
+    auto_ai_add_keep_requested = pyqtSignal()      # Add lane: keep this outline, stay armed for the next
+    # Per-shape settings: the selected detection overrides the shared Shapes
+    # step (simplify px, right angles). Reset drops the override.
+    # The selected polygon's own shape settings, keyed by review param name.
+    # A dict rather than a fixed argument list: the set grew from three dials
+    # to the whole Shapes step, and a positional signal would have to be
+    # re-signed on both ends every time one is added.
+    auto_shape_only_changed = pyqtSignal(dict)
+    auto_shape_only_reset_requested = pyqtSignal()
 
     # Visual exemplars ("draw one example, find all" + exclude boxes) are the
     # PRIMARY input now: a drawn example is the cloud model's biggest quality lever, so the
@@ -148,7 +211,20 @@ class AISegmentationDockWidget(
     # example shrinks below the model's useful size). Phase 1 is scoped to zones
     # small enough to stay sharp (see _refresh_reference_guard); the
     # composite-per-tile path (stamp the crop into each tile) lifts that limit.
-    _EXEMPLARS_ENABLED = True
+    # That caveat is the reason the feature also answers to a server switch:
+    # read live below, so it can be withdrawn without a plugin release.
+    _EXEMPLARS_SHIPPED_ENABLED = True
+
+    @property
+    def _EXEMPLARS_ENABLED(self) -> bool:
+        """Whether the exemplar panel is available. Read on every use so the
+        server switch takes effect as soon as the configuration lands. Fails
+        open to the shipped constant."""
+        if not self._EXEMPLARS_SHIPPED_ENABLED:
+            return False
+        from ..core.server_dials import feature_enabled
+
+        return feature_enabled("exemplars")
 
     def __init__(self, parent=None):
         super().__init__(tr("AI Segmentation by TerraLab"), parent)
@@ -173,8 +249,11 @@ class AISegmentationDockWidget(
         self._auto_credits_total: int | None = None
         self._auto_free_left: int | None = None
         self._auto_is_subscriber: bool = False
-        # Subscription period end (ISO date) from the last usage fetch.
+        # Quota period end (ISO date) from the last usage fetch, plus the
+        # localized day it renders as. Formatted once on arrival, never at
+        # display time: a paint that raises kills QGIS at startup.
         self._auto_reset_date: str = ""
+        self._auto_reset_display: str = ""
         self._auto_run_active: bool = False
         self._auto_zone_too_large: bool = False
         self._auto_zone_is_set: bool = False
@@ -237,8 +316,8 @@ class AISegmentationDockWidget(
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
         self.setWidget(scroll_area)
-        # Kept so state code can bring a below-the-fold element into view
-        # (e.g. the zero-result rescue, which sits under the Detect row).
+        # Kept so state code can bring a below-the-fold element into view (the
+        # zero-result rescue under the Detect row, the review's green primary).
         self._dock_scroll_area = scroll_area
 
         # Stop the mouse wheel from changing combo/spin values while the user is
@@ -263,10 +342,6 @@ class AISegmentationDockWidget(
         self._segmentation_active = False
         self._has_mask = False
         self._saved_polygon_count = 0
-        # True once a Manual session has candidate layers to append to, so the
-        # export destination row is shown; when False the Manual export flow
-        # looks exactly like before (single "Export to a layer" button).
-        self._has_export_candidates = False
         self._positive_count = 0
         self._negative_count = 0
         self._plugin_activated = is_plugin_activated()
@@ -313,6 +388,18 @@ class AISegmentationDockWidget(
         self._auto_prompt_debounce_timer.timeout.connect(self._emit_auto_prompt_committed)
 
         self._auto_progress_ratio = 0.0
+        # Run-bar easing state (see auto_run_status.set_auto_tile_progress):
+        # _target is the true count in permille and only ever rises within a run,
+        # _shown is what is painted and chases it, _dirty means answers landed
+        # since the last frame so Row 1 owes a rebuild.
+        self._auto_progress_ease_timer = None
+        self._auto_progress_target = 0
+        self._auto_progress_shown = 0
+        self._auto_progress_dirty = False
+        # The grid this run is charged for, and which of the run's two passes
+        # the bar is showing (see auto_run_status._auto_progress_phase_pair).
+        self._auto_billed_tile_total = 0
+        self._auto_progress_phase = "grid"
 
         # Debounce timer for layer visibility changes (fires per-node in groups)
         self._visibility_debounce_timer = QTimer(self)

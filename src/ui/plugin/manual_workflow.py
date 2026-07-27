@@ -7,7 +7,6 @@ plain mixin members: state lives on the plugin instance (self).
 from __future__ import annotations
 
 import math
-import os
 
 from qgis.core import (
     Qgis,
@@ -33,12 +32,13 @@ from ..canvas_palette import KEPT_FILL, KEPT_STROKE
 from ..error_report_dialog import show_error_report
 from ..shortcut_filter import ShortcutFilter
 from .shared import (
-    SETTINGS_KEY_LAST_MANUAL_SESSION_TS,
-    SETTINGS_KEY_TUTORIAL_SHOWN,
     _FIELD_TYPE_DOUBLE,
     _FIELD_TYPE_STRING,
+    SETTINGS_KEY_LAST_MANUAL_SESSION_TS,
+    SETTINGS_KEY_TUTORIAL_SHOWN,
     _add_features_fast,
     _apply_fast_render,
+    looks_like_pixel_image,
 )
 
 
@@ -63,7 +63,12 @@ class ManualWorkflowMixin:
 
         try:
             layer_name = layer.name().replace(" ", "_")
-            raster_path = os.path.normcase(layer.source())
+            # RAW source: it is opened as-is by the crop reader. Normalising it
+            # here destroys a GDAL URI source on Windows (/vsicurl/, /vsizip/,
+            # GPKG:...:layer, NETCDF:"...":var), where normcase lowercases and
+            # flips the separators. The one consumer that needs a comparable
+            # form (the crop-error dedup key) normalises it itself.
+            raster_path = layer.source()
         except RuntimeError:
             QgsMessageLog.logMessage(
                 "Layer deleted during segmentation start",
@@ -71,6 +76,10 @@ class ManualWorkflowMixin:
             return
 
         self._reset_session()
+        # No warm-up of the previous session survives into this one, and a flag
+        # left standing would let a Save here abandon a crop this session asked
+        # for by name.
+        self._speculative_manual_crop = False
 
         self._current_layer = layer
         self._current_layer_name = layer_name
@@ -89,6 +98,16 @@ class ManualWorkflowMixin:
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Info
             )
+            # A PNG/JPG in pixel mode is what the user expects. A GeoTIFF-style
+            # raster landing here means its CRS is missing, and silently
+            # exporting pixel coordinates would look like a georeferencing bug.
+            # Say it once, without blocking: Manual still runs either way.
+            if not looks_like_pixel_image(layer):
+                self.iface.messageBar().pushInfo(
+                    "AI Segmentation",
+                    tr("This raster has no coordinate reference system, so "
+                       "polygons will use pixel coordinates. Set a CRS in "
+                       "Layer Properties for georeferenced output."))
 
         if self._is_online_layer:
             QgsMessageLog.logMessage(
@@ -96,19 +115,10 @@ class ManualWorkflowMixin:
                 "AI Segmentation", level=Qgis.MessageLevel.Info
             )
 
-        # CRS guard: a GEOREFERENCED raster with no valid CRS would segment in an
-        # identity transform and land polygons in the wrong place. Non-georef
-        # pixel mode (which QGIS runs without a CRS) and online layers are exempt,
-        # so this only blocks the genuinely broken case.
-        if not self._is_online_layer and not self._is_non_georeferenced_mode and not layer.crs().isValid():
-            show_error_report(
-                self.iface.mainWindow(),
-                tr("Invalid CRS"),
-                tr("This layer has no valid coordinate reference system. "
-                   "Set one in Layer Properties before segmenting."),
-                error_code="invalid_crs",
-            )
-            return
+        # No CRS guard here: a missing CRS IS the pixel-mode condition above, so
+        # Manual runs the layer in pixel coordinates instead of turning the user
+        # away. Only Automatic (which maps masks back to the ground) still
+        # requires a CRS.
 
         # Validate layer extent
         if not self._is_online_layer:
@@ -138,8 +148,8 @@ class ManualWorkflowMixin:
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Rotated raster"),
-                tr("This raster is rotated. Convert it to an axis-aligned "
-                   "GeoTIFF before segmenting."),
+                tr("This raster is rotated. Run Warp (Reproject) on it to "
+                   "straighten it before segmenting."),
                 error_code="rotated_raster",
             )
             return
@@ -235,14 +245,21 @@ class ManualWorkflowMixin:
         self._show_tutorial_notification()
 
     def _show_tutorial_notification(self):
-        """Show YouTube tutorial notification (once ever, persisted in QSettings)."""
+        """Show the tutorial notification (once ever, persisted in QSettings).
+
+        The address is server-supplied and lands inside an href, so it goes
+        through the same guard as the footer button: https only, a real host,
+        and none of the characters that would let it break out of the
+        attribute. Anything else becomes the built-in address.
+        """
         settings = QSettings()
         if settings.value(SETTINGS_KEY_TUTORIAL_SHOWN, False, type=bool):
             return
         settings.setValue(SETTINGS_KEY_TUTORIAL_SHOWN, True)
 
-        from ...core.activation_manager import get_tutorial_url
-        tutorial_url = get_tutorial_url()
+        from ...core.activation_manager import TUTORIAL_URL_FALLBACK, get_tutorial_url
+        from ...core.server_dials import safe_web_url
+        tutorial_url = safe_web_url(get_tutorial_url(), TUTORIAL_URL_FALLBACK)
         message = '{} <a href="{}">{}</a>'.format(
             tr("New here?"),
             tutorial_url,
@@ -311,15 +328,25 @@ class ManualWorkflowMixin:
                     pass  # nosec B110
 
             self._stopping_segmentation = True
-            self.iface.mapCanvas().unsetMapTool(self.map_tool)
-            self._restore_previous_map_tool()
-            self._stopping_segmentation = False
+            try:
+                self.iface.mapCanvas().unsetMapTool(self.map_tool)
+                self._restore_previous_map_tool()
+            finally:
+                # A stuck-True flag makes _on_tool_deactivated refuse to ever
+                # re-arm the segmentation tool for the rest of the session.
+                self._stopping_segmentation = False
             self._reset_session()
             self.dock_widget.reset_session()
 
     def _on_save_polygon(self):
         """Save current mask as polygon (including any frozen crop sessions)."""
-        if self._encoding_in_progress:
+        # A busy predictor pipe means the session is mid-transition (a deferred
+        # click may be waiting to replay against the incoming crop), so Save
+        # stands back. One exception: a speculative warm-up nobody asked for,
+        # which holds the pipe for seconds with no cursor and no status line.
+        # That one steps aside instead, or the Save vanishes with nothing on
+        # screen to explain it. Saving itself never touches the pipe.
+        if self._encoding_in_progress and not self._abandon_speculative_manual_crop():
             return
         # Allow save if we have frozen sessions even without active mask
         has_active = self.current_mask is not None and self.current_transform_info is not None
@@ -370,9 +397,12 @@ class ManualWorkflowMixin:
                 "points_positive": list(self.prompts.positive_points),
                 "points_negative": list(self.prompts.negative_points),
                 "refine_simplify": self._refine_simplify,
+                "refine_points_pct": self._refine_points_pct,
                 "refine_smooth": self._refine_smooth,
+                "refine_clean": self._refine_clean,
                 "refine_expand": self._refine_expand,
                 "refine_fill_holes": self._refine_fill_holes,
+                "refine_fill_holes_max_m2": self._refine_fill_holes_max_m2,
                 "refine_ortho": self._refine_ortho,
                 "refine_min_area": self._refine_min_area,
                 "refine_min_size_m2": self._refine_min_size_m2,
@@ -454,6 +484,10 @@ class ManualWorkflowMixin:
         self.current_score = 0.0
         self.current_low_res_mask = None
         self.dock_widget.set_point_count(0, 0)
+        # Nothing is on screen any more, so the Add lane's Keep goes with it.
+        refresh = getattr(self, "_refresh_ai_add_keep_button", None)
+        if refresh is not None:
+            refresh()
 
         # Keep crop info so clicks in the same area reuse the encoding.
 
@@ -463,7 +497,7 @@ class ManualWorkflowMixin:
         # direct export (it would dump the imported detections to a layer the
         # review would then commit AGAIN). Enter/Export = Back to review.
         if self._refine_handoff_active:
-            self._on_back_to_review_clicked()
+            self._on_reshape_done()
             return
         if self._exporting_in_progress:
             return
@@ -520,9 +554,13 @@ class ManualWorkflowMixin:
                 })
 
         self._stopping_segmentation = True
-        self.iface.mapCanvas().unsetMapTool(self.map_tool)
-        self._restore_previous_map_tool()
-        self._stopping_segmentation = False
+        try:
+            self.iface.mapCanvas().unsetMapTool(self.map_tool)
+            self._restore_previous_map_tool()
+        finally:
+            # A stuck-True flag makes _on_tool_deactivated refuse to ever
+            # re-arm the segmentation tool for the rest of the session.
+            self._stopping_segmentation = False
 
         from ...core import output_store
 
@@ -561,9 +599,20 @@ class ManualWorkflowMixin:
                         crs_str = self._current_layer.crs().authid()
                 except RuntimeError:
                     pass
+            crs = None
             if isinstance(crs_str, str) and crs_str.strip():
                 crs = QgsCoordinateReferenceSystem(crs_str)
-            else:
+            if crs is None or not crs.isValid():
+                # A custom or WKT-only raster CRS has no authid, so every lookup
+                # above comes back empty. Take the layer's own CRS object rather
+                # than stamping EPSG:4326 on projected coordinates, which lands
+                # the polygons thousands of km away with no visible error.
+                try:
+                    if self._is_layer_valid() and self._current_layer.crs().isValid():
+                        crs = self._current_layer.crs()
+                except RuntimeError:
+                    crs = None
+            if crs is None or not crs.isValid():
                 crs = QgsCoordinateReferenceSystem("EPSG:4326")
                 QgsMessageLog.logMessage(
                     "CRS could not be determined, falling back to EPSG:4326",
@@ -587,16 +636,21 @@ class ManualWorkflowMixin:
             make_area_measurer,
             make_committed_renderer,
             repair_polygon,
+            round_measure,
             to_multipolygon,
         )
 
-        # Minimal per-feature schema: an editable label plus the geodesic
-        # measure. Run-level provenance (source raster, date) lives in the
-        # layer metadata instead of being repeated on every row.
+        # Per-feature schema: an editable label, the model's confidence when the
+        # polygon came from one, and both geodesic measures. Same measure columns
+        # as an Automatic export, so the two modes stack in one table without a
+        # hole. Run-level provenance (source raster, date) lives in the layer
+        # metadata instead of being repeated on every row.
         pr = temp_layer.dataProvider()
         pr.addAttributes([
             QgsField("label", _FIELD_TYPE_STRING),
+            QgsField("score", _FIELD_TYPE_DOUBLE),
             QgsField("area_m2", _FIELD_TYPE_DOUBLE),
+            QgsField("perimeter_m", _FIELD_TYPE_DOUBLE),
         ])
         temp_layer.updateFields()
 
@@ -633,7 +687,14 @@ class ManualWorkflowMixin:
                 if geom is None or geom.isEmpty():
                     continue
                 feature.setGeometry(geom)
-                feature.setAttributes(["", float(measurer.measureArea(geom))])
+                # A hand-drawn save carries no model score: NULL, not 0.0.
+                score = polygon_data.get("score")
+                feature.setAttributes([
+                    "",
+                    round(float(score), 3) if score is not None else None,
+                    round_measure(measurer.measureArea(geom)),
+                    round_measure(measurer.measurePerimeter(geom)),
+                ])
                 features_to_add.append(feature)
 
         if not features_to_add:
@@ -664,15 +725,6 @@ class ManualWorkflowMixin:
             source_name = source_layer.name() if source_layer is not None else ""
         except RuntimeError:
             source_name = ""
-
-        # Destination chosen by the user: append to an existing layer (the
-        # incremental-digitization path, e.g. adding shapes to an Automatic
-        # detections layer) or, by default, create a new layer below. A stale
-        # or failed append falls through to the new-layer path so work is never
-        # lost.
-        if self._append_manual_run_if_requested(
-                temp_layer, source_name, features_to_add):
-            return
 
         # Write into the shared per-project GeoPackage (one table per run).
         # The store handles directory priority (project, raster dir, home)
@@ -766,8 +818,16 @@ class ManualWorkflowMixin:
 
         try:
             from ...core import telemetry
-            from ...core.review_defaults import REFINE_SIMPLIFY_DEFAULT
-            refine_shape_changed = self._refine_simplify != REFINE_SIMPLIFY_DEFAULT
+            from ...core.review_defaults import (
+                REFINE_POINTS_PCT_DEFAULT,
+                REFINE_SIMPLIFY_DEFAULT,
+            )
+            # Simplify is a float, so compare with a tolerance well under the
+            # spinbox step rather than on equality.
+            refine_shape_changed = abs(
+                float(self._refine_simplify) - REFINE_SIMPLIFY_DEFAULT) > 1e-6
+            refine_shape_changed = refine_shape_changed or (
+                int(self._refine_points_pct) != REFINE_POINTS_PCT_DEFAULT)
             refine_shape_changed = refine_shape_changed or self._refine_smooth or self._refine_expand
             refine_fill_or_ortho_changed = (
                 not self._refine_fill_holes or self._refine_ortho)
@@ -783,12 +843,16 @@ class ManualWorkflowMixin:
 
         # Value recap on the Manual Start view (session only, mirrors the
         # Automatic Finish recap). The per-feature geodesic area_m2 was just
-        # computed above (attribute 1), so the total is a free sum. Entirely
-        # best-effort: the export already succeeded, never raise here.
+        # computed above, so the total is a free sum. Read it by field NAME:
+        # the schema gained columns before it, and a positional read silently
+        # summed the wrong one. Entirely best-effort: the export already
+        # succeeded, never raise here.
         try:
-            if self.dock_widget is not None:
+            area_index = temp_layer.fields().indexOf("area_m2")
+            if self.dock_widget is not None and area_index >= 0:
                 total_m2 = sum(
-                    float(f.attributes()[1] or 0.0) for f in features_to_add)
+                    float(f.attributes()[area_index] or 0.0)
+                    for f in features_to_add)
                 self.dock_widget.set_manual_last_run_recap(
                     count=len(features_to_add),
                     area_km2=total_m2 / 1e6,
@@ -798,87 +862,6 @@ class ManualWorkflowMixin:
 
         self._reset_session()
         self.dock_widget.reset_session()
-
-    def _append_manual_run_if_requested(self, temp_layer, source_name, features_to_add):
-        """Append the built features to an existing layer if the user picked one.
-
-        Returns True when the append is handled (success or the whole flow is
-        done); False when the caller should create a new layer instead (no
-        destination chosen, target gone, or the append failed). Never raises:
-        every failure degrades to the new-layer path with a clear message so a
-        paid/hand-made polygon is never lost."""
-        try:
-            dest_id = self.dock_widget.selected_export_destination()
-        except (RuntimeError, AttributeError):
-            dest_id = None
-        if not dest_id:
-            return False
-
-        from ...core import output_store
-
-        target = QgsProject.instance().mapLayer(dest_id)
-        if target is None or not output_store.is_appendable_polygon_layer(target):
-            # Target deleted or made unwritable mid-flow: keep the work by
-            # falling back to a new layer, and say so.
-            self.iface.messageBar().pushMessage(
-                "AI Segmentation",
-                tr("That layer is no longer available. Created a new layer instead."),
-                level=Qgis.MessageLevel.Warning, duration=8)
-            return False
-
-        target_name = target.name()
-        res = output_store.append_run_to_layer(
-            target, temp_layer, source_name=source_name)
-        if res.added <= 0:
-            QgsMessageLog.logMessage(
-                "Append to '{}' failed ({}); creating a new layer".format(
-                    target_name, res.error_message or "unknown"),
-                "AI Segmentation", level=Qgis.MessageLevel.Warning)
-            self.iface.messageBar().pushMessage(
-                "AI Segmentation",
-                tr("Could not add to that layer. Created a new layer instead."),
-                level=Qgis.MessageLevel.Warning, duration=8)
-            return False
-
-        self.iface.mapCanvas().refresh()
-        self.iface.messageBar().pushMessage(
-            "AI Segmentation",
-            tr("Added {count} polygon(s) to {name}.").format(
-                count=res.added, name=target_name),
-            level=Qgis.MessageLevel.Success, duration=6)
-
-        try:
-            from ...core import telemetry
-            from ...core.review_defaults import REFINE_SIMPLIFY_DEFAULT
-            refine_shape_changed = self._refine_simplify != REFINE_SIMPLIFY_DEFAULT
-            refine_shape_changed = refine_shape_changed or self._refine_smooth or self._refine_expand
-            refine_fill_or_ortho_changed = (
-                not self._refine_fill_holes or self._refine_ortho)
-            refine_used = bool(refine_shape_changed or refine_fill_or_ortho_changed)
-            telemetry.track_manual_export_done(
-                polygon_count=res.added,
-                refine_used=refine_used,
-                destination="append",
-            )
-            telemetry.track_first_generation_milestone(mode="manual")
-        except Exception:
-            pass  # nosec B110
-
-        # Value recap, mirroring the new-layer path (best-effort, never raise).
-        try:
-            if self.dock_widget is not None:
-                total_m2 = sum(
-                    float(f.attributes()[1] or 0.0) for f in features_to_add)
-                self.dock_widget.set_manual_last_run_recap(
-                    count=res.added,
-                    area_km2=total_m2 / 1e6,
-                )
-        except Exception:  # nosec B110 -- recap must never break the append
-            pass
-
-        self._reset_session()
-        self.dock_widget.reset_session()
-        return True
 
     def _on_tool_deactivated(self):
         # Remove keyboard shortcut filter from all targets
@@ -928,7 +911,7 @@ class ManualWorkflowMixin:
             if self._refine_edit_session_active():
                 self._close_active_edit_to_pending()
             else:
-                self._on_back_to_review_clicked()
+                self._on_reshape_done()
             return
         polygon_count = len(self.saved_polygons)
         # Frozen/unfrozen polygons are unsaved work too: without counting
@@ -977,6 +960,22 @@ class ManualWorkflowMixin:
             # resets the session on success; a failed export leaves the work
             # in place and the teardown below still ends the session cleanly.
             self._on_export_layer()
+        self._teardown_manual_session()
+
+    def _teardown_manual_session(self) -> None:
+        """End the Manual session: drop the shortcut filter, restore the map
+        tool, reset plugin + dock state. No confirm dialog and no export here;
+        callers harvest or export unsaved work first. Idempotent; shared by
+        the stop button, the refine handoff and the zone teardown paths."""
+        # The AI-assisted Add flag rides the handoff session; a leaked True would
+        # flip the resting-click gate in the NEXT session, so drop it here (the
+        # single choke point every session end passes through) and disarm the lane.
+        if getattr(self, "_refine_add_mode_active", False):
+            exit_add = getattr(self, "_exit_ai_add_mode", None)
+            if exit_add is not None:
+                exit_add()
+            else:
+                self._refine_add_mode_active = False
         if self._shortcut_filter is not None:
             try:
                 self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
@@ -993,7 +992,10 @@ class ManualWorkflowMixin:
             self._stopping_segmentation = False
         self._reset_session()
         if self.dock_widget:
-            self.dock_widget.reset_session()
+            try:
+                self.dock_widget.reset_session()
+            except (RuntimeError, AttributeError):
+                pass
 
     def _safe_restore_canvas_focus(self):
         """Restore keyboard focus to canvas unless the user is typing in a widget."""
@@ -1021,6 +1023,26 @@ class ManualWorkflowMixin:
         self._refine_min_size_m2 = max(0.0, float(min_m2 or 0.0))
         self._refine_max_size_m2 = max(0.0, float(max_m2 or 0.0))
 
+    def _on_fill_holes_size_changed(self, max_m2: float) -> None:
+        """Store the fill-holes size threshold (ground m2, 0 = fill every
+        hole). Store-only for the same reason as the size window above: the
+        refine handler that follows on the same tick does the one repaint."""
+        self._refine_fill_holes_max_m2 = max(0.0, float(max_m2 or 0.0))
+
+    def _on_clean_edges_changed(self, clean_px: float) -> None:
+        """Store the Clean-edges opening distance (px, 0 = off). Store-only:
+        the dock emits it right before refine_settings_changed on the same
+        debounce tick, and THAT handler does the one repaint."""
+        self._refine_clean = max(0.0, float(clean_px or 0.0))
+
+    def _on_outline_budget_changed(self, simplify_px: float, points_pct: int) -> None:
+        """Store Simplify (px, 0 = off) and Points (share of an outline's own
+        points, 100 = off). Store-only: the dock emits it right before
+        refine_settings_changed on the same debounce tick, and THAT handler does
+        the one repaint."""
+        self._refine_simplify = max(0.0, float(simplify_px or 0.0))
+        self._refine_points_pct = max(1, min(100, int(points_pct or 100)))
+
     def _on_refine_settings_changed(self, simplify: int, smooth: int, expand: int,
                                     fill_holes: bool, right_angles: bool = False):
         """Handle refinement control changes.
@@ -1029,14 +1051,15 @@ class ManualWorkflowMixin:
         _compute_auto_min_area() and never overwritten from the refine panel.
         """
         QgsMessageLog.logMessage(
-            f"Refine settings: simplify={simplify}, smooth={smooth}, "
+            f"Refine settings: simplify={self._refine_simplify}, "
+            f"points_pct={self._refine_points_pct}, smooth={smooth}, "
             f"expand={expand}, fill_holes={fill_holes}, "
             f"right_angles={right_angles}, "
             f"min_area={self._refine_min_area} (auto)",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )
-        self._refine_simplify = simplify
+        # `simplify` is legacy: the float arrives on outline_budget_changed.
         self._refine_smooth = smooth
         self._refine_expand = expand
         self._refine_fill_holes = fill_holes

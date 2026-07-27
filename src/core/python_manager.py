@@ -26,29 +26,17 @@ from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from .archive_utils import safe_extract_tar as _safe_extract_tar
 from .archive_utils import safe_extract_zip as _safe_extract_zip
+from .cache_paths import PLUGIN_CACHE_DIR, plugin_cache_tmp_dir
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
 from .subprocess_utils import get_subprocess_kwargs  # nosec B404 - our helper, name merely starts with "subprocess"
-from .uv_manager import DOWNLOAD_TIMEOUT_MS
+from .uv_manager import (
+    DOWNLOAD_TIMEOUT_MS,
+    DownloadStallGuard,
+    unsupported_download_platform_reason,
+)
 
-PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CACHE_DIR = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser("~/.qgis_ai_segmentation")
-STANDALONE_DIR = os.path.join(CACHE_DIR, "python_standalone")
-
-
-def _download_tmp_dir() -> str | None:
-    """Containment temp dir on the CACHE_DIR volume, mirroring venv_manager's
-    _apply_cache_containment. The download temp file must land on the same
-    volume the rest of the install uses, or a full SYSTEM drive still ENOSPCs
-    the multi-hundred-MB download even when AI_SEGMENTATION_CACHE_DIR points at a
-    roomy secondary drive. Returns None on any failure so the caller falls back
-    to the system default temp (``dir=None`` == the old behaviour)."""
-    tmp_dir = os.path.join(CACHE_DIR, "tmp")
-    try:
-        os.makedirs(tmp_dir, exist_ok=True)
-        return tmp_dir
-    except OSError:
-        return None
+STANDALONE_DIR = os.path.join(PLUGIN_CACHE_DIR, "python_standalone")
 
 
 # Release tag from python-build-standalone
@@ -136,6 +124,51 @@ PYTHON_STANDALONE_SHA256 = {
 }
 
 
+def resolved_release_tag() -> str:
+    """RELEASE_TAG, or the interpreter release the server asked for.
+
+    The release and its digest table move together: see
+    ``resolved_python_digests``.
+    """
+    try:
+        from .install_config import python_release_tag
+
+        return python_release_tag(RELEASE_TAG)
+    except Exception:  # noqa: BLE001 -- a bad config must never block an install
+        return RELEASE_TAG
+
+
+def resolved_python_versions() -> dict:
+    """PYTHON_VERSIONS, with any server-corrected patch version.
+
+    Only a patch version for a minor version this build already fetches is
+    accepted: a new key would name an interpreter the rest of the plugin has no
+    wheels for.
+    """
+    try:
+        from .install_config import python_versions
+
+        return python_versions(PYTHON_VERSIONS)
+    except Exception:  # noqa: BLE001 -- a bad config must never block an install
+        return dict(PYTHON_VERSIONS)
+
+
+def resolved_python_digests() -> dict:
+    """The digest table for the release in force.
+
+    Additive while the served release equals the shipped one, so a shipped
+    digest always wins. When the server moves the release the shipped digests
+    describe different bytes and are dropped rather than checked against the
+    wrong file. Fail-closed either way: an asset with no digest is refused.
+    """
+    try:
+        from .install_config import python_digests
+
+        return python_digests(PYTHON_STANDALONE_SHA256, RELEASE_TAG)
+    except Exception:  # noqa: BLE001 -- a bad config must never block an install
+        return dict(PYTHON_STANDALONE_SHA256)
+
+
 def is_nixos() -> bool:
     """Detect NixOS where standalone Python binaries cannot run."""
     if sys.platform != "linux":
@@ -202,7 +235,7 @@ def is_unsupported_python_version() -> tuple[bool, str]:
     mirroring is_unsupported_windows so the install path fails fast.
     """
     major, minor = get_qgis_python_version()
-    if (major, minor) in PYTHON_VERSIONS:
+    if (major, minor) in resolved_python_versions():
         return False, ""
     return True, (
         f"Python {major}.{minor} is not supported by AI Segmentation. "
@@ -238,14 +271,15 @@ def get_qgis_python_version() -> tuple[int, int]:
 def get_python_full_version() -> str:
     """Get the full Python version string for download (e.g., '3.12.12')."""
     version_tuple = get_qgis_python_version()
-    if version_tuple in PYTHON_VERSIONS:
-        return PYTHON_VERSIONS[version_tuple]
+    versions = resolved_python_versions()
+    if version_tuple in versions:
+        return versions[version_tuple]
     # Fallback: use 3.13 (newest well-tested version) instead of X.Y.0
     # which likely doesn't exist in the release assets
     _log(
-        f"Python {version_tuple[0]}.{version_tuple[1]} not in PYTHON_VERSIONS, falling back to 3.13",
+        f"Python {version_tuple[0]}.{version_tuple[1]} has no pinned build, falling back to 3.13",
         Qgis.MessageLevel.Warning)
-    return PYTHON_VERSIONS[(3, 13)]
+    return versions[(3, 13)]
 
 
 def _create_python_symlinks(python_dir: str) -> None:
@@ -316,7 +350,11 @@ def standalone_python_is_current() -> bool:
 
 
 def _get_platform_info() -> tuple[str, str]:
-    """Get platform and architecture info for download URL."""
+    """Get platform and architecture info for download URL.
+
+    Returns ("", "") when no published build fits this machine, so the caller
+    skips a download that could only fail and goes to a system interpreter.
+    """
     system = sys.platform
     machine = platform.machine().lower()
 
@@ -325,8 +363,18 @@ def _get_platform_info() -> tuple[str, str]:
             return ("aarch64-apple-darwin", ".tar.gz")
         return ("x86_64-apple-darwin", ".tar.gz")
     if system == "win32":
+        # Windows on ARM takes the x86_64 build under emulation on purpose:
+        # the plugin loads native modules from this environment into the QGIS
+        # process itself, so the two architectures have to match, and QGIS
+        # ships x86_64 on Windows.
+        if machine in ("arm64", "aarch64"):
+            _log(
+                "Windows on ARM: using the x86_64 Python build, which matches "
+                "this QGIS process.", Qgis.MessageLevel.Info)
         return ("x86_64-pc-windows-msvc", ".tar.gz")
     # Linux
+    if unsupported_download_platform_reason():
+        return ("", "")
     if machine in ("arm64", "aarch64"):
         return ("aarch64-unknown-linux-gnu", ".tar.gz")
     return ("x86_64-unknown-linux-gnu", ".tar.gz")
@@ -342,11 +390,14 @@ def get_download_urls() -> list[str]:
     """
     python_version = get_python_full_version()
     platform_str, ext = _get_platform_info()
+    if not platform_str:
+        return []
+    release_tag = resolved_release_tag()
     base = (
         "https://github.com/astral-sh/python-build-standalone/releases/download/"
-        f"{RELEASE_TAG}"
+        f"{release_tag}"
     )
-    prefix = f"cpython-{python_version}+{RELEASE_TAG}-{platform_str}"
+    prefix = f"cpython-{python_version}+{release_tag}-{platform_str}"
     return [
         f"{base}/{prefix}-install_only_stripped{ext}",
         f"{base}/{prefix}-install_only{ext}",
@@ -372,7 +423,7 @@ def _verify_python_payload(filepath: str, asset_name: str) -> tuple[bool, str]:
     Returns (ok, message). Both a missing pin and a digest mismatch fail, so a
     tampered CDN response or an unpinned variant is never extracted or executed.
     """
-    expected = PYTHON_STANDALONE_SHA256.get(asset_name, "")
+    expected = resolved_python_digests().get(asset_name, "")
     if not expected:
         return False, f"No pinned digest for {asset_name}; refusing to install"
     if _sha256_file(filepath) != expected:
@@ -406,9 +457,27 @@ def download_python_standalone(
         _log(why, Qgis.MessageLevel.Critical)
         return False, why
 
+    reason = unsupported_download_platform_reason()
+    if reason:
+        message = f"No standalone Python build for this system: {reason}"
+        _log(message, Qgis.MessageLevel.Warning)
+        return False, message
+
     if standalone_python_exists():
-        _log("Python standalone already exists", Qgis.MessageLevel.Info)
-        return True, "Python standalone already installed"
+        # An existing standalone is only reusable if it still RUNS. Antivirus
+        # quarantine or a partial extraction can leave the executable in place
+        # with its stdlib gutted; reusing it blind sent every later install
+        # attempt into the same "No module named 'encodings'" wall with no way
+        # out. A broken standalone is removed here so the download below
+        # rebuilds it in the same run.
+        ok, why = verify_standalone_python()
+        if ok:
+            _log("Python standalone already exists", Qgis.MessageLevel.Info)
+            return True, "Python standalone already installed"
+        _log(
+            f"Existing Python standalone is broken ({why}), re-downloading...",
+            Qgis.MessageLevel.Warning)
+        remove_standalone_python()
 
     urls = get_download_urls()
     python_version = get_python_full_version()
@@ -418,9 +487,9 @@ def download_python_standalone(
     if progress_callback:
         progress_callback(0, f"Downloading Python {python_version}...")
 
-    # Create temp file for download, contained on the CACHE_DIR volume so a
-    # full system drive does not ENOSPC the download (see _download_tmp_dir).
-    fd, temp_path = tempfile.mkstemp(suffix=".tar.gz", dir=_download_tmp_dir())
+    # Create temp file for download, contained on the cache volume so a full
+    # system drive does not ENOSPC the download (see plugin_cache_tmp_dir).
+    fd, temp_path = tempfile.mkstemp(suffix=".tar.gz", dir=plugin_cache_tmp_dir())
     os.close(fd)
 
     try:
@@ -452,12 +521,20 @@ def download_python_standalone(
                 net_req = QNetworkRequest(qurl)
                 if hasattr(net_req, "setTransferTimeout"):
                     net_req.setTransferTimeout(DOWNLOAD_TIMEOUT_MS)
-                err = request.get(net_req)
+                # The guard covers Cancel during the transfer, and the whole
+                # timeout below Qt 5.15 where setTransferTimeout is absent.
+                with DownloadStallGuard(
+                        request, DOWNLOAD_TIMEOUT_MS, cancel_check) as guard:
+                    err = request.get(net_req)
+                if guard.aborted_reason == "cancelled":
+                    return False, "Download cancelled"
 
                 if err == QgsBlockingNetworkRequest.ErrorCode.NoError:
                     break
 
                 error_msg = request.errorMessage()
+                if guard.aborted_reason == "stalled":
+                    error_msg = "the download stalled, no data was received"
                 if "404" in error_msg or "Not Found" in error_msg:
                     # No point retrying a 404; move on to the next variant
                     break

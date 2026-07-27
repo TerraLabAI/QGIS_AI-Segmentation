@@ -3,8 +3,8 @@
 Produces an irreversible device hash so the backend can count how many distinct
 machines use a single activation key, without ever learning the machine's real
 identity. The hash is a one-way SHA256 digest, so the raw machine id never
-leaves the user's computer. Mirrors AI Edit so both plugins report the same
-device to the shared TerraLab account page.
+leaves the user's computer. Same shape as AI Edit's, under this plugin's own
+settings key.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import uuid
 from qgis.core import QgsSettings
 from qgis.PyQt.QtCore import QSysInfo
 
-# Random per-machine fallback seed, persisted when the OS machine id is unavailable.
+# Per-machine secret, persisted on first use. This IS the identity.
 _SETTINGS_KEY = "TerraLab/device_seed"
 # 16 hex chars (64 bits): collision-safe across our user base, well under the
 # server's 32-char cap, and stays lowercase hex as the route handler expects.
@@ -23,22 +23,52 @@ _HASH_LEN = 16
 _cached: str | None = None
 
 
-def _machine_seed(settings) -> bytes:
-    """Return a stable per-machine seed.
+def _inherited_seed() -> str | None:
+    """Return the OS machine id as a seed string, or None when there is none.
 
-    Prefers the OS machine id (QSysInfo). Falls back to a random UUID persisted
-    in QSettings when the OS id is unavailable (some containers, locked-down hosts).
+    Installs made before the random secret existed hashed the OS machine id
+    straight from ``QSysInfo.machineUniqueId()``. Reusing that id as the stored
+    seed makes those machines keep the device hash they already report, so an
+    update does not register every one of them a second time.
+
+    ``machineUniqueId`` is missing on the Qt5 binding, where the call raises and
+    the caller mints a random secret instead. That is the right answer there:
+    that binding never had a stable OS id to inherit.
     """
     try:
         raw = bytes(QSysInfo.machineUniqueId())
-        if raw:
-            return raw
-    except Exception:  # nosec B110
-        pass
+    except Exception:
+        return None
+    if not raw:
+        return None
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    # Reuse it only when the round trip is byte-exact, since the seed is stored
+    # as text and re-encoded on every read. Anything else would move the hash.
+    return text if text.encode("utf-8") == raw else None
 
+
+def _machine_seed(settings) -> bytes:
+    """Return a stable per-machine seed, persisted in QSettings on first use.
+
+    A machine that already has an OS machine id inherits it once, so its hash
+    does not change. Everything else gets a random UUID, which is preferable:
+
+    - ``QSysInfo.machineUniqueId()`` exists only on the Qt6 binding, so a fresh
+      install that relied on it would report a different device depending on
+      which QGIS major version it is running.
+    - A hashed hardware address (MAC, host name) is short and structured enough
+      to be brute-forced back out of the digest, which would break the promise
+      that the raw machine identity never leaves the user's computer.
+
+    A random secret has neither problem: it is unguessable, and it is read the
+    same way on both bindings.
+    """
     seed = settings.value(_SETTINGS_KEY, "", type=str)
     if not seed:
-        seed = uuid.uuid4().hex
+        seed = _inherited_seed() or uuid.uuid4().hex
         settings.setValue(_SETTINGS_KEY, seed)
     return seed.encode("utf-8")
 

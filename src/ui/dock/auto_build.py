@@ -6,70 +6,90 @@ are plain mixin members: widgets/signals live on the dock instance.
 """
 from __future__ import annotations
 
-
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
+    QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QProgressBar,
     QPushButton,
-    QDoubleSpinBox,
     QSlider,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
-
-from ..layer_tree_combobox import LayerTreeComboBox
-
 from ...core.activation_manager import has_tos_accepted, has_tos_locked
 from ...core.i18n import tr
 from ...core.review_defaults import (
     AUTO_DEFAULT_CONFIDENCE as _AUTO_DEFAULT_CONFIDENCE,
+)
+from ...core.review_defaults import (
     AUTO_REVIEW_CLEAN_DEFAULT as _AUTO_REVIEW_CLEAN_DEFAULT,
+)
+from ...core.review_defaults import (
     AUTO_REVIEW_EXPAND_DEFAULT as _AUTO_REVIEW_EXPAND_DEFAULT,
+)
+from ...core.review_defaults import (
     AUTO_REVIEW_FILL_HOLES_DEFAULT as _AUTO_REVIEW_FILL_HOLES_DEFAULT,
+)
+from ...core.review_defaults import (
+    AUTO_REVIEW_FILL_HOLES_MAX_M2_DEFAULT as _AUTO_REVIEW_FILL_MAX_M2_DEFAULT,
+)
+from ...core.review_defaults import (
     AUTO_REVIEW_ORTHO_DEFAULT as _AUTO_REVIEW_ORTHO_DEFAULT,
+)
+from ...core.review_defaults import (
+    AUTO_REVIEW_POINTS_PCT_DEFAULT as _AUTO_REVIEW_POINTS_PCT_DEFAULT,
+)
+from ...core.review_defaults import (
     AUTO_REVIEW_SIMPLIFY_DEFAULT as _AUTO_REVIEW_SIMPLIFY_DEFAULT,
+)
+from ...core.review_defaults import (
     AUTO_REVIEW_SMOOTH_DEFAULT as _AUTO_REVIEW_SMOOTH_DEFAULT,
 )
+from ...core.server_dials import dial_copy
 from ...core.tile_manager import MAX_DETAIL_LEVEL
+from ..layer_tree_combobox import LayerTreeComboBox
+from .guidance import (
+    BLUE_TINT,
+    GREEN_TINT,
+    HINT_EXEMPLAR_DRAW_BOX,
+    HINT_EXEMPLAR_TIP,
+    HINT_PROMPT_TREE_OR_FOREST,
+    HINT_RERUN_SAME_SETUP,
+    HINT_START_AUTO,
+    HINT_TUTORIAL_FIRST_STEPS,
+    NEUTRAL_TINT,
+    DismissibleHint,
+    open_guide,
+)
 from .styles import (
-    BRAND_BLUE,
     _BTN_BLUE,
-    _BTN_BLUE_OUTLINE,
     _BTN_BLUE_PRIMARY,
     _BTN_CHIP,
     _BTN_GHOST,
     _BTN_GREEN,
     _BTN_LINK,
     _BTN_LINK_MUTED,
+    _CARD_CHILD_BTN_RESET_QSS,
     _CARD_MARGINS,
     _CARD_QSS,
     _CHIP_QSS,
+    _INPUT_THEME_QSS,
     _MSG_GLYPHS,
     _PROGRESS_THIN_QSS,
     _RECAP_CARD_QSS,
     _SLIDER_QSS,
+    _SUBCARD_MARGINS,
     _btn_toggle_qss,
     _micro_header,
     _msg_card_qss,
     _msg_label_qss,
     _step_dial,
-)
-from .guidance import (
-    BLUE_TINT,
-    GREEN_TINT,
-    HINT_EXEMPLAR_TIP,
-    HINT_START_AUTO,
-    HINT_TUTORIAL_FIRST_STEPS,
-    NEUTRAL_TINT,
-    DismissibleHint,
-    open_guide,
 )
 from .widgets import (
     _ZoneGestureGlyph,
@@ -98,11 +118,10 @@ class DockAutoBuildMixin:
         self.auto_upsell_card.setObjectName("autoUpsellCard")
         self.auto_upsell_card.setAttribute(
             Qt.WidgetAttribute.WA_StyledBackground, True)
-        _card_btn_qss = "QPushButton { border: none; }"  # ui-ok: child-button border reset inside the card
         self.auto_upsell_card.setStyleSheet(
-            _msg_card_qss("autoUpsellCard", "info") + _card_btn_qss)
+            _msg_card_qss("autoUpsellCard", "info") + _CARD_CHILD_BTN_RESET_QSS)
         upsell_layout = QVBoxLayout(self.auto_upsell_card)
-        upsell_layout.setContentsMargins(10, 10, 10, 10)
+        upsell_layout.setContentsMargins(*_SUBCARD_MARGINS)
         upsell_layout.setSpacing(8)
 
         # The count is filled in from the fetched free-detection total by
@@ -112,37 +131,56 @@ class DockAutoBuildMixin:
         self._auto_upsell_title.setWordWrap(True)
         upsell_layout.addWidget(self._auto_upsell_title)
 
-        _upsell_sub = QLabel(tr("Subscribe to keep detecting without limits:"))
+        # The other way out of this card. A blocked user has two moves, wait or
+        # pay, and until now the card only ever named the second one. Filled by
+        # _refresh_auto_upsell_title from the fetched period end; stays hidden
+        # when the server sends none.
+        self._auto_upsell_reset = QLabel()
+        self._auto_upsell_reset.setStyleSheet(
+            "font-size: 11px; color: palette(text);")
+        self._auto_upsell_reset.setWordWrap(True)
+        self._auto_upsell_reset.setVisible(False)
+        upsell_layout.addWidget(self._auto_upsell_reset)
+
+        # The whole card is served copy with the shipped lines as fallback. The
+        # offer it describes ("10,000 detections every month") is a commercial
+        # fact that can change any week, and until it can be corrected from the
+        # server a change of offer makes the plugin lie until the next release.
+        _upsell_sub = QLabel(dial_copy(
+            "upsell.subtitle", tr("Subscribe to keep detecting without limits:")))
         _upsell_sub.setStyleSheet("font-size: 11px; color: palette(text);")
         _upsell_sub.setWordWrap(True)
         upsell_layout.addWidget(_upsell_sub)
 
-        for bullet in [
-            tr("10,000 detections every month (~1,700 km²)"),
-            tr("Every building, tree, or road as clean polygons"),
-            tr("Cancel anytime; your exported layers stay yours"),
+        for bullet_id, bullet in [
+            ("upsell.bullet_quota", tr("10,000 detections every month (~1,700 km²)")),
+            ("upsell.bullet_objects", tr("Every building, tree, or road as clean polygons")),
+            ("upsell.bullet_cancel", tr("Cancel anytime; your exported layers stay yours")),
         ]:
-            _lbl = QLabel(bullet)
+            _lbl = QLabel(dial_copy(bullet_id, bullet))
             _lbl.setStyleSheet("font-size: 11px; color: palette(text);")
             _lbl.setWordWrap(True)
             upsell_layout.addWidget(_lbl)
 
         # Reassurance: even out of free detections, the local Manual mode never
         # stops. Keeps the exhausted card from reading as a hard wall.
-        _upsell_free = QLabel(
-            tr("Manual mode stays free and unlimited on your computer."))
+        _upsell_free = QLabel(dial_copy(
+            "upsell.manual_free",
+            tr("Manual mode stays free and unlimited on your computer.")))
         _upsell_free.setStyleSheet("font-size: 11px; color: rgba(128,128,128,0.95);")
         _upsell_free.setWordWrap(True)
         upsell_layout.addWidget(_upsell_free)
 
-        self.auto_upgrade_btn = QPushButton(tr("Upgrade to Pro"))
+        self.auto_upgrade_btn = QPushButton(
+            dial_copy("upsell.cta", tr("Upgrade to Pro")))
         self.auto_upgrade_btn.setStyleSheet(_BTN_BLUE)
         self.auto_upgrade_btn.setMinimumHeight(36)
         self.auto_upgrade_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_upgrade_btn.clicked.connect(self._on_upgrade_clicked)
         upsell_layout.addWidget(self.auto_upgrade_btn)
 
-        _upsell_hint = QLabel(tr("Opens your TerraLab dashboard"))
+        _upsell_hint = QLabel(dial_copy(
+            "upsell.cta_hint", tr("Opens your TerraLab dashboard")))
         _upsell_hint.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.95);")
         _upsell_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         _upsell_hint.setWordWrap(True)
@@ -252,13 +290,16 @@ class DockAutoBuildMixin:
             HINT_TUTORIAL_FIRST_STEPS,
             # Says "tutorial", medium-neutral (the tutorial page has a video
             # too, so no "read"); quiet grey card + small blue button so it
-            # never shouts.
+            # never shouts. show_glyph=False: a neutral-tinted card must not
+            # carry the blue info lightbulb (that glyph belongs to the info
+            # tint only).
             tr("New here? Our 5-minute tutorial walks you through a full "
                "detection, step by step."),
             tint=NEUTRAL_TINT,
             action_text=tr("Open the tutorial"),
             action_color=BLUE_TINT,
             visibility_gate=self._should_show_auto_tutorial,
+            show_glyph=False,
         )
         self.auto_tutorial_banner.action.connect(
             lambda: open_guide("post_signin"))
@@ -353,14 +394,16 @@ class DockAutoBuildMixin:
         _zone_exit_row.addStretch()
         _s2_layout.addLayout(_zone_exit_row)
 
-        # ---- Step 2: describe, then (optionally) show an example, then detail.
+        # ---- Step 2: describe, then show an example, then detail.
         # Three calm cards, one job each, read top to bottom so the user does
-        # one thing at a time instead of facing a wall of parameters. Only the
-        # required path is numbered (1 describe, 2 detail); the example card
-        # sits between them UNNUMBERED and marked Optional, so it never reads
-        # as a mandatory step (a plain description is the recommended path).
-        # Detect enables on EITHER a valid prompt or one positive example, so
-        # neither the prompt nor the example card is strictly mandatory.
+        # one thing at a time instead of facing a wall of parameters. All three
+        # are numbered (1 describe, 2 example, 3 detail): prompt PLUS example
+        # is the model's most accurate mode and the default path. Detect still
+        # ENABLES on the floor (a valid prompt, or two positive examples), but
+        # committing without the full combination is intercepted once with an
+        # explanation and a quiet "detect anyway" escape (see
+        # confirm_meta_for_detect), so the accurate setup stays the default
+        # without ever hard-locking the user in.
 
         # --- Card 1: describe what to find (the text prompt). ---
         self.auto_prompt_card = QWidget()
@@ -394,12 +437,11 @@ class DockAutoBuildMixin:
         _prompt_row.setSpacing(6)
         self.auto_prompt_input = QLineEdit()
         self.auto_prompt_input.setPlaceholderText(tr("e.g. building, tree, road, car"))
+        # The backend rejects prompts over 200 chars (422), and the model only
+        # reads a short phrase anyway; without a cap a long paste dies server-side.
+        self.auto_prompt_input.setMaxLength(200)
         self.auto_prompt_input.setClearButtonEnabled(True)
-        self.auto_prompt_input.setStyleSheet(
-            "QLineEdit { border: 1px solid rgba(128,128,128,0.35);"
-            " border-radius: 6px; padding: 7px 10px; background: palette(base);"
-            " color: palette(text); }"
-            f"QLineEdit:focus {{ border: 1px solid {BRAND_BLUE}; }}")
+        self.auto_prompt_input.setStyleSheet(_INPUT_THEME_QSS)
         self.auto_prompt_input.textChanged.connect(self._on_auto_search_text_changed)
         self.auto_prompt_input.returnPressed.connect(self._on_auto_search_return_pressed)
         # Enter / focus-out = the prompt is settled: flush the debounce and
@@ -428,17 +470,34 @@ class DockAutoBuildMixin:
         self.auto_prompt_info.setWordWrap(True)
         self.auto_prompt_info.setVisible(False)
         _prompt_card_layout.addWidget(self.auto_prompt_info)
+        # The advisory half of the same line: every closable tip about the
+        # prompt (the tree-versus-forest heads-up, one object per run, the swap
+        # note, the example nudges, the server plan hint) is written here, one
+        # at a time, with its own hint id. One widget, so a tip and the guard
+        # can never show together. The gate keeps a guidance reset from
+        # flashing a stale tip back onto a step it does not belong to: the next
+        # message writes this line itself.
+        self.auto_prompt_tip = DismissibleHint(
+            HINT_PROMPT_TREE_OR_FOREST,
+            tr('Dense forest? "Forest" takes it as one block; '
+               '"Tree" picks individual trees.'),
+            tint=BLUE_TINT,
+            visibility_gate=lambda: False,
+        )
+        self.auto_prompt_tip.setVisible(False)
+        _prompt_card_layout.addWidget(self.auto_prompt_tip)
         self._set_prompt_info()
 
         _s3_layout.addWidget(self.auto_prompt_card)
 
-        # --- Optional example card, ALWAYS VISIBLE like its step siblings
-        # (a collapsed row read as noise, not as an option). Optionality is a
-        # clearly readable "Optional" pill on the header, the title stays a
-        # plain noun ("Add an example") and the button inside keeps the map
-        # verb ("Draw an example"), so no two lines repeat each other. The
-        # explainer under the header says why/how; it yields to the armed
-        # instruction or the drawn thumbnails. Gated behind _EXEMPLARS_ENABLED.
+        # --- Example card, step 2 of the default path (prompt + example is
+        # the model's most accurate mode, so it is numbered like its siblings,
+        # no longer marked Optional). The title stays a plain noun ("Add an
+        # example") and the button inside keeps the map verb ("Draw on the
+        # map"), so no two lines repeat each other. The explainer under the
+        # header says why/how; it yields to the armed instruction or the drawn
+        # thumbnails. Gated behind _EXEMPLARS_ENABLED. Skipping it is still
+        # possible through the one-click "detect anyway" escape at commit.
         self.auto_exemplar_panel = QWidget()
         self.auto_exemplar_panel.setObjectName("autoExemplarCard")
         self.auto_exemplar_panel.setAttribute(
@@ -449,25 +508,37 @@ class DockAutoBuildMixin:
         _ex_outer.setContentsMargins(*_CARD_MARGINS)
         _ex_outer.setSpacing(6)
 
-        # Header row: bold title + a bordered "Optional" pill (readable in
-        # both themes, unlike the old small grey word). Wrapped in one widget
-        # so the in-run read-only swap can hide the whole header at once.
+        # Header row: step dial + bold title, the same ordered-step treatment
+        # as the describe and detail cards. Wrapped in one widget so the
+        # in-run read-only swap can hide the whole header at once.
         self._auto_exemplar_expanded = True
         self._auto_exemplar_header = QWidget()
         _ex_hdr_row = QHBoxLayout(self._auto_exemplar_header)
         _ex_hdr_row.setContentsMargins(0, 0, 0, 0)
-        _ex_hdr_row.setSpacing(8)
-        _ex_title = QLabel(tr("Add an example"))
+        _ex_hdr_row.setSpacing(6)
+        _ex_hdr_row.addWidget(_step_dial(2, "active"))
+        # "Show what it looks like" pairs with step 1's "Describe what to
+        # find" (words, then visuals) and says the PURPOSE - point the AI at
+        # a real instance - where "Add an example" read as one abstract
+        # attachment. The tip below carries the plural (up to 3).
+        _ex_title = QLabel(tr("Show what it looks like"))
         _ex_title.setStyleSheet(
             "font-size: 12px; font-weight: bold; color: palette(text);")
         _ex_hdr_row.addWidget(_ex_title)
-        _ex_optional = QLabel(tr("Optional"))
-        _ex_optional.setStyleSheet(
-            "font-size: 10px; color: palette(text);"
-            " border: 1px solid rgba(128,128,128,0.45); border-radius: 8px;"
-            " padding: 1px 8px;")
-        _ex_hdr_row.addWidget(_ex_optional)
         _ex_hdr_row.addStretch(1)
+        # Quality dots: two small dots that fill lime as positive examples are
+        # drawn, so the "aim for two" goal (the model's strongest mode) reads
+        # at a glance without a sentence. Hidden until the first example, then
+        # driven by _set_exemplar_quality. Right-aligned in the header.
+        self.auto_exemplar_quality_dots = QLabel("")
+        self.auto_exemplar_quality_dots.setTextFormat(Qt.TextFormat.RichText)
+        self.auto_exemplar_quality_dots.setToolTip(tr(
+            "Two references give the strongest detection. Draw a second to "
+            "reach best quality."))
+        self.auto_exemplar_quality_dots.setStyleSheet(
+            "background: transparent; border: none;")
+        self.auto_exemplar_quality_dots.setVisible(False)
+        _ex_hdr_row.addWidget(self.auto_exemplar_quality_dots)
         _ex_outer.addWidget(self._auto_exemplar_header)
 
         # Card content (editing controls + thumbnails), always visible; the
@@ -501,11 +572,12 @@ class DockAutoBuildMixin:
         # The armed state is driven by the plugin via set_auto_exemplar_armed, so
         # a cancel (Escape) or a finished draw both clear it. The [armed] dynamic
         # property toggles the filled look without rebuilding the stylesheet.
-        # Quiet ghost rest state: the example path is optional, so its button
-        # must never compete with Detect (the screen's one loud primary). It
-        # takes the green only on hover, and fills solid while armed.
+        # Filled green rest state: at this step Detect is disabled until an
+        # example is drawn, and the example is the main quality lever, so this
+        # button IS the step's action and reads as a clear green button (black
+        # text, darker on hover / while drawing).
         _ex_inc_style = _btn_toggle_qss(
-            (67, 160, 71), "#6bbf6f", "#06210b", quiet=True)
+            (67, 160, 71), "#6bbf6f", "#06210b", filled=True)
         # The exclude button is the red counterpart: it drops false positives
         # by pointing at a look-alike the model should NOT return. It is a bonus
         # refinement, unlocked ONLY once two positive examples exist (a single
@@ -519,7 +591,7 @@ class DockAutoBuildMixin:
         _ex_mode_row.setContentsMargins(0, 0, 0, 0)
         _ex_mode_row.setSpacing(8)
         # "Draw on the map" (the how), never a re-statement of the card title
-        # "Add an example" (the what): the two lines must not repeat.
+        # "Show what it looks like" (the what): the two lines must not repeat.
         self.auto_ex_inc_btn = QPushButton(tr("Draw on the map"))
         self.auto_ex_inc_btn.setStyleSheet(_ex_inc_style)
         self.auto_ex_inc_btn.setMinimumHeight(28)
@@ -547,19 +619,49 @@ class DockAutoBuildMixin:
         # _refresh_auto_exemplar_explainer).
         self.auto_exemplar_explainer = DismissibleHint(
             HINT_EXEMPLAR_TIP,
-            tr("The AI finds every object similar to your example."),
+            tr("The AI finds every object that looks like your examples - "
+               "you can draw up to 3."),
             tint=BLUE_TINT,
         )
         _ex_edit_col.addWidget(self.auto_exemplar_explainer)
 
-        # Armed instruction line: hidden until a button arms the draw tool, then
-        # a blue callout telling the user to outline an object on the map. This
-        # is the "in-between" feedback that the click started a draw action.
-        self.auto_exemplar_armed_hint = QLabel("")
-        self.auto_exemplar_armed_hint.setWordWrap(True)
-        self.auto_exemplar_armed_hint.setStyleSheet(_msg_label_qss("armed"))
-        self.auto_exemplar_armed_hint.setVisible(False)
-        _ex_edit_col.addWidget(self.auto_exemplar_armed_hint)
+        # The too-small warning line: an amber callout when a drawn example
+        # renders below a usable pixel size. Never dismissible, it says why a
+        # run will miss things. Kept separate from the armed instruction below
+        # so one of the two can close and the other cannot.
+        self.auto_exemplar_size_warning = QLabel("")
+        self.auto_exemplar_size_warning.setWordWrap(True)
+        self.auto_exemplar_size_warning.setStyleSheet(_msg_label_qss("warning"))
+        self.auto_exemplar_size_warning.setVisible(False)
+        _ex_edit_col.addWidget(self.auto_exemplar_size_warning)
+
+        # Armed instruction: hidden until a button arms the draw tool, then a
+        # denser blue callout telling the user to outline an object on the map.
+        # This is the "in-between" feedback that the click started a draw
+        # action, and it closes with the same small x as every other tip (the
+        # armed button itself keeps saying the tool is live). Its two wordings,
+        # example and exclude, carry one hint id each. Same gate reason as the
+        # prompt tip: the next armed draw writes this line.
+        self.auto_exemplar_armed_tip = DismissibleHint(
+            HINT_EXEMPLAR_DRAW_BOX,
+            tr("Drag a box around one object."),
+            tint=BLUE_TINT,
+            show_glyph=False,  # the armed glyph, not the info lightbulb
+            visibility_gate=lambda: False,
+        )
+        self.auto_exemplar_armed_tip.setVisible(False)
+        _ex_edit_col.addWidget(self.auto_exemplar_armed_tip)
+
+        # Quality line: the subtle push toward the recommended pair. One
+        # example -> a quiet muted nudge to add a second; two or more -> a
+        # calm lime confirmation that the best-quality setup is reached. Plain
+        # tinted text (no boxed callout) so it stays minimal, and it yields
+        # while a draw is armed or the size warning shows (one message at a
+        # time). Driven by _set_exemplar_quality.
+        self.auto_exemplar_quality_line = QLabel("")
+        self.auto_exemplar_quality_line.setWordWrap(True)
+        self.auto_exemplar_quality_line.setVisible(False)
+        _ex_edit_col.addWidget(self.auto_exemplar_quality_line)
         _ex_card_col.addWidget(self.auto_exemplar_edit_controls)
 
         # Reference thumbnail strip: one card per drawn example (AI-Edit
@@ -602,7 +704,7 @@ class DockAutoBuildMixin:
         _detail_hdr = QHBoxLayout()
         _detail_hdr.setContentsMargins(0, 0, 0, 0)
         _detail_hdr.setSpacing(6)
-        _detail_hdr.addWidget(_step_dial(2, "active"))
+        _detail_hdr.addWidget(_step_dial(3, "active"))
         _detail_lbl = QLabel(tr("Detail"))
         _detail_lbl.setStyleSheet(
             "font-size: 12px; font-weight: bold; color: palette(text);")
@@ -617,6 +719,25 @@ class DockAutoBuildMixin:
         self.auto_credit_cost_label.setVisible(False)
         _detail_hdr.addWidget(self.auto_credit_cost_label)
         _detail_outer.addLayout(_detail_hdr)
+        # Non-blocking tip shown right under the credit estimate when the next
+        # Detect would repeat the last run exactly (same prompt, detail and
+        # example count): that re-run returns the same masks and only spends
+        # credits. Points at the two levers that change the output. Never
+        # intercepts Detect; clears itself the moment any input changes. Driven
+        # by show/hide_auto_rerun_guard. Dismissible like every other blue tip:
+        # the x closes it for good, Account Settings brings it back. The gate
+        # tracks whether the condition still holds, so restoring the tips never
+        # reveals it over a setup that changed since.
+        self._auto_rerun_guard_applies = False
+        self.auto_rerun_guard_hint = DismissibleHint(
+            HINT_RERUN_SAME_SETUP,
+            tr("Same setup as your last run - the result will match. "
+               "Add an example or change the detail for a different result."),
+            tint=BLUE_TINT,
+            visibility_gate=self._should_show_rerun_guard,
+        )
+        self.auto_rerun_guard_hint.setVisible(False)
+        _detail_outer.addWidget(self.auto_rerun_guard_hint)
         # Slider row: plain "Less <-> More" ends (paired with the "Detail" title
         # above) replace the abstract grid numbers, and read simpler than the old
         # Coarse/Fine. The slider still drives the tile subdivision under the hood.
@@ -812,6 +933,38 @@ class DockAutoBuildMixin:
         self.auto_detect_row.setLayout(_detect_row)
         _s3_layout.addWidget(self.auto_detect_row)
 
+        # Prompt-plus-example intercept (confirm_meta_for_detect): when Detect
+        # is committed without the accurate default combination (a prompt AND
+        # at least one example), the first click does not run - this blue line
+        # explains what completes the setup, and the tiny text link under it
+        # (the Cancel-detection recipe: _BTN_LINK, centered, no chrome) is the
+        # explicit, non-default escape that never competes with the green
+        # primary. Both hide again the moment the combination is completed,
+        # edited, or a run starts. One container so every show/hide site
+        # toggles a single widget.
+        self.auto_meta_intercept = QWidget()
+        self._auto_meta_override = False
+        _meta_col = QVBoxLayout(self.auto_meta_intercept)
+        _meta_col.setContentsMargins(0, 0, 0, 0)
+        _meta_col.setSpacing(2)
+        self.auto_meta_hint = QLabel("")
+        self.auto_meta_hint.setWordWrap(True)
+        self.auto_meta_hint.setStyleSheet(_msg_label_qss("info"))
+        _meta_col.addWidget(self.auto_meta_hint)
+        self.auto_detect_anyway_btn = QPushButton("")
+        self.auto_detect_anyway_btn.setStyleSheet(_BTN_LINK)
+        self.auto_detect_anyway_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auto_detect_anyway_btn.clicked.connect(
+            self._on_auto_detect_anyway_clicked)
+        _meta_link_row = QHBoxLayout()
+        _meta_link_row.setContentsMargins(0, 0, 0, 0)
+        _meta_link_row.addStretch(1)
+        _meta_link_row.addWidget(self.auto_detect_anyway_btn, 0)
+        _meta_link_row.addStretch(1)
+        _meta_col.addLayout(_meta_link_row)
+        self.auto_meta_intercept.setVisible(False)
+        _s3_layout.addWidget(self.auto_meta_intercept)
+
         # 9. Progress card: an information-rich framed card (same card family as
         # the step cards) so a long tiled run always shows real movement - tile
         # count, live found count and percent - instead of a bare bar that reads
@@ -878,18 +1031,26 @@ class DockAutoBuildMixin:
         _cancel_row.addStretch(1)
         _s3_layout.addLayout(_cancel_row)
 
-        # 11. Status banner
+        # 11. Status banner. Wired for links once here: a terminal-error status
+        # can carry a persistent "Report this problem" link (set_auto_status with
+        # a report_payload renders RichText); the sentinel href is intercepted,
+        # never opened as a URL.
         self.auto_status_banner = QLabel("")
         self.auto_status_banner.setWordWrap(True)
         self.auto_status_banner.setStyleSheet(_msg_label_qss("info"))
+        self.auto_status_banner.setOpenExternalLinks(False)
+        self.auto_status_banner.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction)
+        self.auto_status_banner.linkActivated.connect(
+            self._on_auto_status_link_activated)
         self.auto_status_banner.setVisible(False)
         _s3_layout.addWidget(self.auto_status_banner)
 
         # 11a. Zero-result rescue, right under the status banner. A paid run
         # that found nothing is the worst moment of the flow, and the drawn
-        # example is the proven lever that rescues it, so it leads: a
-        # full-width blue-outline call (the strong-secondary family, same as
-        # "Refine in Manual mode") with the outcome in its label. The synonym
+        # example is the proven lever that rescues it (runs with an example come
+        # back empty far less often), so it leads as a full-width FILLED-blue
+        # call, a primary, with the object named in its label. The synonym
         # prefill stays a quiet chip below it, only when the server steer
         # table knows a stronger word. Hidden by default; driven by
         # show/hide_auto_zero_assist. The row never outlives its status:
@@ -899,7 +1060,7 @@ class DockAutoBuildMixin:
         _za_col.setContentsMargins(0, 0, 0, 0)
         _za_col.setSpacing(4)
         self.auto_zero_example_chip = QPushButton("")
-        self.auto_zero_example_chip.setStyleSheet(_BTN_BLUE_OUTLINE)
+        self.auto_zero_example_chip.setStyleSheet(_BTN_BLUE)
         self.auto_zero_example_chip.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_zero_example_chip.clicked.connect(
             lambda: self.auto_zero_assist_clicked.emit("draw_example", ""))
@@ -931,6 +1092,12 @@ class DockAutoBuildMixin:
         # (auto_review_build.py) so this construction module stays a readable
         # size. A zero-detection run reuses the status banner above, no box.
         self._setup_auto_review_panel(_s3_layout)
+
+        # Top-align the prompt/review page too: without a trailing stretch
+        # the layout hands its surplus height to the review card (the only
+        # growable child), which pads the card with dead space and pushes
+        # the step primary to the bottom of the panel.
+        _s3_layout.addStretch(1)
 
         # Top-align every page's content inside the stacked widget (step 2
         # uses matched stretches so its draw hero floats mid-panel).
@@ -980,24 +1147,67 @@ class DockAutoBuildMixin:
         spin = getattr(self, "auto_max_size_spin", None)
         return float(spin.value()) if spin is not None else 0.0
 
+    def get_auto_fill_holes_max(self) -> float:
+        """Review Fill-holes size threshold in ground m2 (0 = fill every hole).
+
+        Its own accessor rather than a seventh slot in get_auto_refine_params,
+        so the published tuple keeps its shape. Falls back to the generic
+        client default pre-build."""
+        spin = getattr(self, "auto_fill_max_spin", None)
+        if spin is None:
+            return _AUTO_REVIEW_FILL_MAX_M2_DEFAULT
+        return max(0.0, float(spin.value()))
+
+    def _sync_auto_fill_max_row(self) -> None:
+        """Show the size threshold only while Fill holes is on (an irrelevant
+        control is hidden, never greyed)."""
+        row = getattr(self, "auto_fill_max_row", None)
+        check = getattr(self, "auto_fill_holes_check", None)
+        if row is not None and check is not None:
+            row.setVisible(check.isChecked())
+
+    def get_auto_points_pct(self) -> int:
+        """The Points control: the share of its own points each outline keeps.
+
+        Its own accessor rather than a seventh slot in get_auto_refine_params,
+        whose tuple shape other call sites unpack positionally.
+        """
+        spin = getattr(self, "auto_points_spin", None)
+        if spin is None:
+            return _AUTO_REVIEW_POINTS_PCT_DEFAULT
+        try:
+            return int(spin.value())
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            return _AUTO_REVIEW_POINTS_PCT_DEFAULT
+
     def get_auto_refine_params(self) -> tuple[float, bool, int, bool, float, bool]:
         """Current Automatic-review shape-refine controls as
         (simplify_px, round_corners, expand_px, fill_holes, clean_px,
         right_angles). Falls back to the faithful-by-default values pre-build
         (simplify low, no round, expand 0, fill holes off so holes are
         preserved, light clean, no right angles). simplify_px and clean_px are
-        floats (sub-pixel tolerances allowed)."""
+        floats (sub-pixel tolerances allowed). Points is read separately via
+        get_auto_points_pct, so this tuple keeps its positional shape."""
         simplify = getattr(self, "auto_simplify_spin", None)
         round_c = getattr(self, "auto_round_corners_check", None)
         expand = getattr(self, "auto_expand_spin", None)
         fill = getattr(self, "auto_fill_holes_check", None)
         clean = getattr(self, "auto_clean_spin", None)
         ortho = getattr(self, "auto_ortho_check", None)
+        right_angles = bool(ortho.isChecked()) if ortho is not None else _AUTO_REVIEW_ORTHO_DEFAULT
+        # The UI disables Trim spikes and Round corners under Right angles.
+        # Repeat the rule here so programmatic callers and stale widget values
+        # cannot stack a second cleanup/rounding pass onto the controlled
+        # regularizer. Simplify and Points both stay live: squaring runs on a
+        # de-staircased outline, and both are passes that produce one.
         return (
-            float(simplify.value()) if simplify is not None else _AUTO_REVIEW_SIMPLIFY_DEFAULT,
-            bool(round_c.isChecked()) if round_c is not None else _AUTO_REVIEW_SMOOTH_DEFAULT,
+            (float(simplify.value()) if simplify is not None
+             else _AUTO_REVIEW_SIMPLIFY_DEFAULT),
+            (False if right_angles else
+             (bool(round_c.isChecked()) if round_c is not None else _AUTO_REVIEW_SMOOTH_DEFAULT)),
             int(expand.value()) if expand is not None else _AUTO_REVIEW_EXPAND_DEFAULT,
             bool(fill.isChecked()) if fill is not None else _AUTO_REVIEW_FILL_HOLES_DEFAULT,
-            float(clean.value()) if clean is not None else _AUTO_REVIEW_CLEAN_DEFAULT,
-            bool(ortho.isChecked()) if ortho is not None else _AUTO_REVIEW_ORTHO_DEFAULT,
+            (0.0 if right_angles else
+             (float(clean.value()) if clean is not None else _AUTO_REVIEW_CLEAN_DEFAULT)),
+            right_angles,
         )

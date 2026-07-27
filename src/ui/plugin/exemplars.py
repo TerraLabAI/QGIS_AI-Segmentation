@@ -33,76 +33,17 @@ class ExemplarsMixin:
     """Visual exemplars: draw, thumbnails, model-ready stamps, chips."""
 
     # ------------------------------------------------------------------
-    # Exemplar nudge in review
-    # ------------------------------------------------------------------
-
-    def _maybe_show_exemplar_nudge(self, object_word, scores) -> None:
-        """Show the review exemplar tip once for a bottom-heavy, no-example run.
-
-        Fires only when the run's kept scores have a median below 0.35 AND no
-        example was drawn (an example IS the lever the tip suggests). Interactive
-        only; the caller is the interactive review path."""
-        self._auto_nudge_median = None
-        if getattr(self, "_auto_headless_run", False):
-            return
-        try:
-            if self._auto_exemplar_store.count() > 0:
-                return
-        except (RuntimeError, AttributeError):
-            return
-        vals = sorted(float(s) for s in (scores or []) if s is not None)
-        if not vals:
-            return
-        n = len(vals)
-        median = (vals[n // 2] if n % 2
-                  else (vals[n // 2 - 1] + vals[n // 2]) / 2.0)
-        if median >= 0.35:
-            return
-        self._auto_nudge_median = median
-        obj = object_word or tr("object")
-        try:
-            self.dock_widget.show_auto_exemplar_nudge(obj)
-        except (RuntimeError, AttributeError):
-            return
-        try:
-            from ...core import telemetry, telemetry_events as ev
-            telemetry.track(ev.EXEMPLAR_NUDGE_SHOWN, {
-                "run_id": getattr(self, "_auto_run_id", "") or "",
-                "object_class": obj,
-                "median_score": round(median, 3),
-            })
-        except Exception:
-            pass  # nosec B110
-
-    def _on_auto_exemplar_retry_clicked(self) -> None:
-        """Review exemplar nudge link: run the standard Adjust & run again path
-        (confirm dialog included), then arm the example draw on step 2. Arms only
-        when the retry was confirmed, so a cancelled discard leaves nothing armed."""
-        median = getattr(self, "_auto_nudge_median", None)
-        try:
-            from ...core import telemetry, telemetry_events as ev
-            telemetry.track(ev.EXEMPLAR_NUDGE_CLICKED, {
-                "run_id": getattr(self, "_auto_run_id", "") or "",
-                "object_class": (self._auto_run_ctx or {}).get("prompt", "") or "",
-                "median_score": round(median, 3) if median is not None else -1.0,
-            })
-        except Exception:
-            pass  # nosec B110
-        if self._on_auto_retry_clicked():
-            self._on_add_exemplar_requested(1)
-
-    # ------------------------------------------------------------------
     # Visual exemplars ("draw one example, find all")
     # ------------------------------------------------------------------
 
     def _on_add_exemplar_requested(self, label: int) -> None:
-        """Arm the example-POLYGON draw tool (label 1 positive / 0 exclude).
+        """Arm the example-box draw tool (label 1 positive / 0 exclude).
 
-        The user outlines ONE object point-by-point (the same UX as the zone, in
-        green for a positive example / red for an exclude). On finish it is stored
-        with its polygon + bounding box; the worker masks the stamped crop to the
-        polygon so the cloud model's box exemplar isn't polluted by neighbours. No-op without
-        a zone, once the store is full, or while a run/review is active.
+        The user drags a box around ONE object (green for a positive example /
+        red for an exclude). On finish it is stored as that rectangle's polygon
+        plus its bounding box; the worker sends the cloud model a box tight to
+        the object. No-op without a zone, once the store is full, or while a
+        run/review is active.
         """
         # Already armed: the button is a toggle, a second click disarms. This
         # also prevents re-capturing _maptool_before_exemplar from the CURRENT
@@ -116,16 +57,21 @@ class ExemplarsMixin:
             return
         if self._auto_zone is None or self._auto_exemplar_store.is_full_for(int(label)):
             return
-        from ..polygon_zone_maptool import PolygonZoneMapTool
+        from ..box_draw_maptool import BoxDrawMapTool
         canvas = self.iface.mapCanvas()
         # Remember the tool to restore after the one-shot draw (usually the zone tool).
         self._maptool_before_exemplar = canvas.mapTool()
         self._pending_exemplar_label = int(label)
         color = EXEMPLAR_STROKE if label == 1 else EXCLUDE_STROKE
-        tool = PolygonZoneMapTool(canvas, color=color)
-        tool.zone_selected.connect(self._on_exemplar_polygon_drawn)
-        tool.zone_cleared.connect(self._on_exemplar_cancelled)
-        tool.back_requested.connect(self._on_exemplar_cancelled)
+        tool = BoxDrawMapTool(canvas, color)
+        tool.box_selected.connect(self._on_exemplar_box_drawn)
+        tool.cancelled.connect(self._on_exemplar_cancelled)
+        # The user picking another QGIS tool mid-draw deactivates ours; reset
+        # the armed UI without fighting their new tool choice.
+        try:
+            tool.tool_deactivated.connect(self._on_exemplar_tool_deactivated)
+        except (RuntimeError, AttributeError):
+            pass
         self._exemplar_maptool = tool
         # The draw tool owns Escape (cancel) while armed; disable the dock
         # Escape/Enter shortcuts so they cannot exit the flow mid-draw.
@@ -133,7 +79,15 @@ class ExemplarsMixin:
             self.dock_widget.set_auto_shortcuts_enabled(False)
         except (RuntimeError, AttributeError):
             pass
-        canvas.setMapTool(tool)
+        self._connect_exemplar_undo_shortcut()
+        # setMapTool deactivates the outgoing tool; if that happens to be a
+        # leftover draw tool whose signal is still live, ignore its
+        # deactivation so it cannot null the tool we just set.
+        self._suspend_exemplar_deactivate = True
+        try:
+            canvas.setMapTool(tool)
+        finally:
+            self._suspend_exemplar_deactivate = False
         # Light up the chosen button + show the "now outline on the map"
         # instruction so the click clearly started a draw action. Tracked on
         # the plugin too (not just the dock label): the live size-warning
@@ -144,6 +98,15 @@ class ExemplarsMixin:
             self.dock_widget.set_auto_exemplar_armed(int(label))
         except (RuntimeError, AttributeError):
             pass
+
+    def _on_exemplar_box_drawn(self, rect) -> None:
+        """Adapt the drag-box tool's rectangle to the stored polygon contract.
+
+        The example/exclude gesture is a drag rectangle now, but everything
+        downstream (crop mask, pixel box, stamps, chips, telemetry) still works
+        on a polygon geometry. Build the rectangle polygon and hand it to the
+        unchanged storage path. rect is a QgsRectangle in canvas CRS."""
+        self._on_exemplar_polygon_drawn(QgsGeometry.fromRect(rect))
 
     def _on_exemplar_polygon_drawn(self, geom) -> None:
         """Store a drawn example polygon (clipped to the zone), mark it on the
@@ -208,6 +171,9 @@ class ExemplarsMixin:
         # every detail change too, so the warning stays live instead of
         # sticking once the object is later drawn big enough.
         self._refresh_exemplar_size_warning()
+        # A new example changes the run signature, so the identical-re-run note
+        # must clear if it was showing.
+        self._refresh_rerun_guard()
 
     @staticmethod
     def _geom_centroid_in(geom, zone_poly) -> bool:
@@ -263,6 +229,8 @@ class ExemplarsMixin:
             return
         if run_mupp <= 0:
             return
+        from ...core.detection_policy import exemplar_render_abs_min_side_px
+        abs_min_side = exemplar_render_abs_min_side_px(self._STAMP_ABS_MIN_SIDE)
         any_valid = False
         too_small = False
         for ex in store.list():
@@ -272,7 +240,7 @@ class ExemplarsMixin:
                 continue
             any_valid = True
             if exemplar_too_small(
-                    rect.width(), rect.height(), run_mupp, self._STAMP_ABS_MIN_SIDE):
+                    rect.width(), rect.height(), run_mupp, abs_min_side):
                 too_small = True
                 break  # one small example is enough to warn
         try:
@@ -375,6 +343,8 @@ class ExemplarsMixin:
             telemetry.track_exemplar_removed(count_after=self._auto_exemplar_store.count())
         except Exception:
             pass  # nosec B110
+        # The example count dropped, so re-evaluate the identical-re-run note.
+        self._refresh_rerun_guard()
 
     def _clear_exemplars(self) -> None:
         """Drop all exemplars + their rubber bands (zone redraw / exit / reset)."""
@@ -398,6 +368,60 @@ class ExemplarsMixin:
             except (RuntimeError, AttributeError):
                 pass
 
+    # -- Ctrl/Cmd+Z while the example box is being drawn --------------------
+    # The dock binds the platform Undo at WINDOW level (for the review's
+    # Correct step), so it matches the key before the canvas ever sees the
+    # press and the draw could never undo from the keyboard. The zone draw was
+    # fixed by routing that shortcut to the armed tool; the example and exclude
+    # box now do the same, so Undo behaves identically in both draws. Scoped to
+    # the armed draw: connected on arm, dropped on disarm, and the handler
+    # re-checks that our tool is the live one, so nothing else is shadowed.
+
+    def _connect_exemplar_undo_shortcut(self) -> None:
+        """Listen to the dock's Undo shortcut for as long as the draw is armed."""
+        shortcut = getattr(self.dock_widget, "auto_correct_undo_shortcut", None)
+        if shortcut is None or getattr(self, "_exemplar_undo_connected", False):
+            return
+        try:
+            shortcut.activated.connect(self._on_exemplar_undo_shortcut)
+        except (RuntimeError, AttributeError, TypeError):
+            return
+        self._exemplar_undo_connected = True
+
+    def _disconnect_exemplar_undo_shortcut(self) -> None:
+        """Stop listening once the draw is over. Idempotent."""
+        if not getattr(self, "_exemplar_undo_connected", False):
+            return
+        self._exemplar_undo_connected = False
+        shortcut = getattr(self.dock_widget, "auto_correct_undo_shortcut", None)
+        if shortcut is None:
+            return
+        try:
+            shortcut.activated.disconnect(self._on_exemplar_undo_shortcut)
+        except (RuntimeError, AttributeError, TypeError):
+            pass
+
+    def _on_exemplar_undo_shortcut(self) -> bool:
+        """Platform Undo during an example/exclude draw: take back the
+        rectangle being dragged, or (nothing under way) disarm the draw.
+
+        Returns True when the draw acted on the press. The dock's own handler
+        for this shortcut only covers the review's Correct step and its gate is
+        down while a draw is armed, so exactly one of the two acts on a press.
+        """
+        tool = self._exemplar_maptool
+        if tool is None:
+            return False
+        try:
+            if self.iface.mapCanvas().mapTool() is not tool:
+                return False
+            if tool.undo_point():
+                return True
+        except (RuntimeError, AttributeError):
+            return False
+        self._restore_maptool_after_exemplar()
+        return True
+
     def _restore_maptool_after_exemplar(self) -> None:
         """Restore the map tool active before a one-shot example draw."""
         tool = self._exemplar_maptool
@@ -405,6 +429,7 @@ class ExemplarsMixin:
         # size-warning refresh triggered right after (draw-completion path)
         # is no longer blocked by the armed no-op guard.
         self._auto_exemplar_arming = False
+        self._disconnect_exemplar_undo_shortcut()
         # Re-enable the dock Escape/Enter shortcuts the draw had suspended, and
         # clear the armed button + instruction line (covers finish AND cancel).
         if self.dock_widget:
@@ -419,6 +444,12 @@ class ExemplarsMixin:
         if tool is None:
             return
         self._exemplar_maptool = None
+        # We are switching the tool ourselves: silence its deactivate signal
+        # (it would re-enter this reset) and free the C++ object afterwards.
+        try:
+            tool.suppress_deactivate_signal = True
+        except (RuntimeError, AttributeError):
+            pass
         try:
             canvas = self.iface.mapCanvas()
             prev = self._maptool_before_exemplar
@@ -428,7 +459,31 @@ class ExemplarsMixin:
                 canvas.unsetMapTool(tool)
         except (RuntimeError, AttributeError):
             pass
+        try:
+            tool.deleteLater()
+        except (RuntimeError, AttributeError):
+            pass
         self._maptool_before_exemplar = None
+
+    def _on_exemplar_tool_deactivated(self) -> None:
+        """The armed example-draw tool was dropped because the user picked
+        another QGIS map tool. Reset the armed UI (shortcuts, lit button) but
+        do NOT restore the previous tool: QGIS already switched to the user's
+        new choice."""
+        if getattr(self, "_suspend_exemplar_deactivate", False):
+            return
+        if self._exemplar_maptool is None:
+            return
+        self._exemplar_maptool = None
+        self._maptool_before_exemplar = None
+        self._auto_exemplar_arming = False
+        self._disconnect_exemplar_undo_shortcut()
+        if self.dock_widget:
+            try:
+                self.dock_widget.set_auto_shortcuts_enabled(True)
+                self.dock_widget.set_auto_exemplar_armed(None)
+            except (RuntimeError, AttributeError):
+                pass
 
     def _restore_maptool_after_zone(self) -> None:
         """Disarm the zone drawing tool and restore the tool active before it
@@ -569,60 +624,11 @@ class ExemplarsMixin:
             out.append([round(px, 1), round(py, 1)])
         return out
 
-    def _mask_stamp_to_polygon(self, img, ex, layer, act):
-        """Neutralize everything OUTSIDE the drawn example polygon in the rendered
-        crop. NO LONGER called from the stamp path: live user feedback showed the
-        natural crop (real surrounding pixels) recalls more true objects than an
-        object-on-grey patch, and the tight object box handles neighbour leak.
-        Kept for reference / possible reuse. Returns a new QImage (object on
-        neutral grey), or the input unchanged when the exemplar has no polygon
-        (box-only / MCP path) or on any error."""
-        poly = getattr(ex, "polygon", None)
-        if poly is None or poly.isEmpty() or act is None:
-            return img
-        try:
-            from qgis.PyQt.QtGui import (
-                QImage, QPainter, QColor, QPolygonF, QPainterPath)
-            from qgis.PyQt.QtCore import QPointF
-            g = QgsGeometry(poly)  # canvas CRS copy
-            canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
-            layer_crs = layer.crs()
-            if canvas_crs.isValid() and layer_crs.isValid() and canvas_crs != layer_crs:
-                g.transform(QgsCoordinateTransform(
-                    canvas_crs, layer_crs, QgsProject.instance()))
-            rings = g.asPolygon()
-            if not rings:
-                mp = g.asMultiPolygon()
-                rings = mp[0] if mp else []
-            ring = rings[0] if rings else []
-            if len(ring) < 3:
-                return img
-            aw = act.xMaximum() - act.xMinimum()
-            ah = act.yMaximum() - act.yMinimum()
-            iw, ih = img.width(), img.height()
-            if aw <= 0 or ah <= 0 or iw <= 0 or ih <= 0:
-                return img
-            # Map the polygon ring to crop pixels (y flip: map y up, pixel y down).
-            pts = [
-                QPointF((p.x() - act.xMinimum()) / aw * iw,
-                        (act.yMaximum() - p.y()) / ah * ih)
-                for p in ring
-            ]
-            masked = QImage(img.size(), QImage.Format.Format_RGB32)
-            masked.fill(QColor(127, 127, 127))  # neutral grey = clearly not an object
-            painter = QPainter(masked)
-            path = QPainterPath()
-            path.addPolygon(QPolygonF(pts))
-            painter.setClipPath(path)
-            painter.drawImage(0, 0, img)
-            painter.end()
-            return masked
-        except Exception:  # noqa: BLE001 -- masking is best-effort; keep the raw crop
-            return img
-
     # Longest-side render bounds for an exemplar stamp, px. The stamp is pasted
     # into a 1008 tile corner, so keep it small enough not to occlude real
-    # imagery, but large enough to stay crisp.
+    # imagery, but large enough to stay crisp. These four are the client
+    # fallbacks: the server may serve its own under the exemplar block, read at
+    # each use site (detection_policy.exemplar_render_*).
     #
     # Min is deliberately LOW: a genuinely small object rendered crisp at the
     # source's true resolution beats an upsampled-blurry crop stretched to a
@@ -661,16 +667,23 @@ class ExemplarsMixin:
         reports an unreliable units/px, so its finest resolution is derived
         from the source max zoom instead (web-mercator GSD,
         latitude-corrected)."""
+        from ...core.detection_policy import (
+            exemplar_render_abs_min_side_px,
+            exemplar_render_side_bounds,
+        )
+        min_side, max_side = exemplar_render_side_bounds(
+            self._STAMP_MIN_SIDE, self._STAMP_MAX_SIDE)
         gsd_m, longest_m, run_matched = self._exemplar_render_gsd(
             layer, padded, run_mupp)
         if gsd_m <= 0 or longest_m <= 0:
-            return self._STAMP_MAX_SIDE
+            return max_side
         side = int(round(longest_m / gsd_m))
         # When the run scale sized the stamp, do NOT inflate a small object
-        # back to the legacy 96 px floor: that would upsample-blur it AND
+        # back to the ordinary floor: that would upsample-blur it AND
         # reintroduce the scale mismatch (crisp-and-run-scaled beats big).
-        floor = self._STAMP_ABS_MIN_SIDE if run_matched else self._STAMP_MIN_SIDE
-        return max(floor, min(self._STAMP_MAX_SIDE, side))
+        floor = exemplar_render_abs_min_side_px(
+            self._STAMP_ABS_MIN_SIDE) if run_matched else min_side
+        return max(floor, min(max_side, side))
 
     def _exemplar_render_gsd(
         self, layer, padded, run_mupp: float = 0.0
@@ -723,7 +736,9 @@ class ExemplarsMixin:
         # units as the extent), else the sane metric default.
         if run_mupp > 0:
             return run_mupp, max(padded.width(), padded.height()), True
-        return self._STAMP_FALLBACK_GSD_M, max(padded.width(), padded.height()), False
+        from ...core.detection_policy import exemplar_render_fallback_gsd_m
+        fallback_gsd = exemplar_render_fallback_gsd_m(self._STAMP_FALLBACK_GSD_M)
+        return fallback_gsd, max(padded.width(), padded.height()), False
 
     @staticmethod
     def _layer_is_online_tiled(layer) -> bool:
@@ -845,23 +860,10 @@ class ExemplarsMixin:
         QgsMapRendererParallelJob + nested event loop), pulled out so it can run
         at DRAW time (_prebuild_exemplar_stamp) or lazily at Detect."""
         from ...core.cloud_detection import render_zone_to_image
-        from ...core.detection_policy import exemplar_context_pad
-        # Small margin so the polygon is not clipped at the crop edge.
-        context_pad = exemplar_context_pad()
-        try:
-            rect = self._reproject_zone_to_layer_crs(ex.map_rect, layer)
-        except (RuntimeError, AttributeError):
+        built = self._exemplar_padded_extent(ex, layer, run_mupp)
+        if built is None:
             return None
-        ew, eh = rect.width(), rect.height()
-        if ew <= 0 or eh <= 0:
-            return None
-        # Pad the rendered extent with surrounding context; the object box stays
-        # tight (computed below) so the object still dominates the ROI.
-        pad_x = ew * context_pad
-        pad_y = eh * context_pad
-        padded = QgsRectangle(
-            rect.xMinimum() - pad_x, rect.yMinimum() - pad_y,
-            rect.xMaximum() + pad_x, rect.yMaximum() + pad_y)
+        rect, padded = built
         fw, fh = padded.width(), padded.height()
         if fw <= 0 or fh <= 0:
             return None
@@ -908,6 +910,42 @@ class ExemplarsMixin:
             ]
         return img, obj_box
 
+    def _exemplar_padded_extent(self, ex, layer, run_mupp: float = 0.0):
+        """The drawn rect + its context-padded render extent, both in the
+        layer CRS, or None. The margin is the policy fraction of the drawn
+        bbox, CAPPED in absolute run-scale pixels: a fractional pad on a large
+        object drags whole neighbouring structures into the crop (distractors
+        the model then matches), so the margin never exceeds a thin ring."""
+        from ...core.detection_policy import exemplar_context_pad, exemplar_context_pad_px_cap
+        try:
+            rect = self._reproject_zone_to_layer_crs(ex.map_rect, layer)
+        except (RuntimeError, AttributeError):
+            return None
+        ew, eh = rect.width(), rect.height()
+        if ew <= 0 or eh <= 0:
+            return None
+        context_pad = exemplar_context_pad()
+        pad_x = ew * context_pad
+        pad_y = eh * context_pad
+        if run_mupp > 0:
+            pad_cap = exemplar_context_pad_px_cap() * run_mupp
+            pad_x = min(pad_x, pad_cap)
+            pad_y = min(pad_y, pad_cap)
+        padded = QgsRectangle(
+            rect.xMinimum() - pad_x, rect.yMinimum() - pad_y,
+            rect.xMaximum() + pad_x, rect.yMaximum() + pad_y)
+        return rect, padded
+
+    def _exemplar_runscale_side(self, ex, layer, run_mupp: float) -> int:
+        """The crop's long side (px) at the run's TRUE apparent scale (no
+        band cap applied): the paste-vs-in-situ decision compares this against
+        the band budget."""
+        built = self._exemplar_padded_extent(ex, layer, run_mupp)
+        if built is None:
+            return 0
+        _rect, padded = built
+        return self._exemplar_stamp_longest_side(layer, padded, run_mupp)
+
     def _prebuild_exemplar_stamp(self, eid: str) -> None:
         """Render + cache one exemplar's stamp right after it is drawn, so the
         Detect press does not block on a per-exemplar basemap render (plan 11
@@ -945,7 +983,8 @@ class ExemplarsMixin:
             ex.thumbnail = ex.stamp_img
             self._refresh_exemplar_chips()
 
-    def _build_exemplar_stamps(self, layer, geo_bbox=None, pixel_w=0, pixel_h=0):
+    def _build_exemplar_stamps(self, layer, geo_bbox=None, pixel_w=0, pixel_h=0,
+                               has_prompt: bool = False):
         """Return ``[(QImage, label, obj_box, full_box)]`` ready to stamp into
         every tile, one per stored exemplar. Reuses the stamp prebuilt when the
         exemplar was drawn when it is present AND still matches this layer;
@@ -957,8 +996,17 @@ class ExemplarsMixin:
         (unclamped; None when the zone grid is not supplied or the box cannot
         be mapped): the worker uses it to send the box at the REAL in-situ
         object on the one tile that fully contains it, instead of pasting the
-        crop there."""
-        from ...core.cloud_detection import stamp_size_cap
+        crop there.
+
+        Paste-vs-in-situ decision (should_paste_stamp): with a text prompt, an
+        example whose run-scale crop would have to shrink below the policy
+        fraction of true scale to fit the band is NOT pasted (the model
+        matches by apparent scale, so a smaller copy points it at the wrong
+        size). Its entry ships with a None image so the worker still sends it
+        in-situ on tiles that fully contain the real object; without any
+        usable full_box the exemplar is dropped for this run."""
+        from ...core.cloud_detection import should_paste_stamp, stamp_size_cap
+        from ...core.detection_policy import exemplar_min_paste_scale
         stamps = []
         layer_id = layer.id() if layer is not None else None
         # The run scale at Detect (the zone + committed detail level): a cached
@@ -969,10 +1017,25 @@ class ExemplarsMixin:
         # so the worker's downscale is a no-op; a cached stamp rendered wider
         # than the current cap (the count grew since it was built) is rebuilt.
         cap = stamp_size_cap(self._auto_exemplar_store.count())
+        min_scale = exemplar_min_paste_scale()
+        skipped_paste = 0
         for ex in self._auto_exemplar_store.list():
             full_box = (
                 self._exemplar_full_pixel_box(ex, layer, geo_bbox, pixel_w, pixel_h)
                 if geo_bbox is not None else None)
+            if getattr(ex, "region", False):
+                # Region marker (correction box): no crop to render or paste;
+                # the worker clips the box to every tile it overlaps. Without a
+                # mappable box it has nothing to contribute.
+                if full_box is not None:
+                    stamps.append((None, int(ex.label), None, full_box, True))
+                continue
+            true_side = self._exemplar_runscale_side(ex, layer, run_mupp)
+            if not should_paste_stamp(true_side, cap, has_prompt, min_scale):
+                if full_box is not None:
+                    stamps.append((None, int(ex.label), None, full_box))
+                skipped_paste += 1
+                continue
             stamp_valid = ex.stamp_img is not None and ex.stamp_layer_id == layer_id
             stamp_valid = stamp_valid and self._stamp_gsd_matches(ex.stamp_gsd, run_mupp)
             stamp_valid = stamp_valid and getattr(ex, "stamp_side", 0) <= cap
@@ -989,4 +1052,11 @@ class ExemplarsMixin:
             ex.stamp_side = max(ex.stamp_img.width(), ex.stamp_img.height())
             stamps.append(
                 (ex.stamp_img, int(ex.label), ex.stamp_obj_box, full_box))
+        if skipped_paste:
+            from qgis.core import Qgis, QgsMessageLog
+            QgsMessageLog.logMessage(
+                f"Auto detection: {skipped_paste} example(s) larger than the paste band at "
+                "run scale; sent in-situ only",
+                "AI Segmentation", level=Qgis.MessageLevel.Info,
+            )
         return stamps

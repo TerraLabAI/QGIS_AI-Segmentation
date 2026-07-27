@@ -3,7 +3,7 @@ name=AI Segmentation by TerraLab
 description=Segment buildings, vegetation, or any object in your raster using AI, refine & export as vector polygons
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-version=2.1.10
+version=2.2.0
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -13,6 +13,8 @@ about=
     Point-and-click AI segmentation tool that turns raster objects into vector polygons.
 
     • Fully automatic: AI model and dependencies install themselves
+
+    • Two modes: Manual runs entirely on your computer. Automatic is cloud-powered, and the imagery inside the zone you draw is sent to our detection service to be processed.
 
     • Works on any layer: local rasters (GeoTIFF, JPG, PNG) & online layers (WMS, XYZ tiles)
 
@@ -27,6 +29,21 @@ about=
     • Multilingual: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese
 
 changelog=
+    2.2.0
+    - Fix a detection by hand: click it, then drag its corners or point at what the AI missed
+    - Draw a polygon the AI missed, delete one with a right-click, merge two into one, or split one in two
+    - Right angles squares every run now, and follows the building's real edges instead of a box
+    - Manual mode gets the same shape settings as Automatic, so an object comes out the same either way
+    - Every outline carries the number of points a person would draw, instead of thousands
+    - Fill holes by size, and snap neighbours to a shared border, on the Keep step
+    - The object library is built around what people search for, and shows the imagery behind each past run
+    - Reopen a past run, restore its polygons, and go back to its zone
+    - See the day your free detections come back, next to every balance
+    - A cancelled run keeps every tile you already paid for
+    - Detections appear while the run is still going, without slowing the map
+    - Faster review and export, and a long run no longer fills your memory
+    - Installation repairs broken environments, locked files and refused certificates on its own
+    - Runs on QGIS 4, and on Linux builds that ship without some optional components
     2.1.10
     - Prompts naming several objects now run the first object with a tip, instead of being blocked
     - A detection that finds nothing now offers one-click example drawing, the best way to find unusual objects
@@ -116,7 +133,7 @@ homepage=https://terra-lab.ai/ai-segmentation
 
 hasProcessingProvider=no
 
-tags=segmentation, ai, artificial intelligence, machine learning, deep learning, computer vision, image segmentation, feature extraction, object detection, classification, vectorization, digitizing, raster, satellite, satellite imagery, remote sensing, drone, polygon, export, pytorch, automatic, automation, interactive, building detection, land cover, python, ia
+tags=segmentation, instance segmentation, image segmentation, ai, artificial intelligence, machine learning, deep learning, neural network, computer vision, object detection, feature extraction, classification, building detection, sam, sam2, segment anything, pytorch, raster, satellite, satellite imagery, satellite images, remote sensing, remote-sensing, aerial, orthophoto, ortofoto, drone, uav, sentinel, sentinel-2, landsat, geotiff, multispectral, buildings, vegetation, vectorization, vector, vetor, vector layer, polygon, polygons, digitizing, gpkg, geopackage, georeferencing, georreferenciamento, urban planning, agriculture, forestry, ia
 
 category=Raster
 icon=resources/icons/icon.png

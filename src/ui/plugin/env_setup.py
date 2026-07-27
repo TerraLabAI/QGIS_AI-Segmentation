@@ -22,6 +22,45 @@ from .shared import (
 )
 
 
+def _notify_ui(callback, *args) -> None:
+    """Call a dialog callback, tolerating a dialog that is already gone.
+
+    The removal worker outlives the window that started it (QGIS can be closing
+    while the delete finishes), so a dead Qt receiver must not turn into an
+    unhandled exception inside a signal handler."""
+    if callback is None:
+        return
+    try:
+        callback(*args)
+    except RuntimeError:
+        pass  # nosec B110 - the receiving widget was destroyed
+
+
+def _drop_untagged_account_history() -> None:
+    """Forget every history blob that is not tied to one account.
+
+    Called whenever the signed-in account changes (sign-in, sign-out, forced
+    sign-out). The per-account stores are already invisible to the other
+    accounts; what has to go is the run cache and the machine-wide Recent list
+    older versions wrote with no account attached to them. Best-effort: a
+    settings failure must never block a sign-in or a sign-out.
+    """
+    try:
+        from ...core.presets.run_history_cache import (
+            clear_run_history_cache,
+            reset_account_fingerprint_cache,
+        )
+        from ...core.presets.segment_history import clear_unscoped_recent_objects
+
+        # First, so every store below resolves against the account that is
+        # signed in now rather than the one that just left.
+        reset_account_fingerprint_cache()
+        clear_run_history_cache()
+        clear_unscoped_recent_objects()
+    except Exception:
+        pass  # nosec B110 - the cache is a warm start, never the source of truth
+
+
 class EnvSetupMixin:
     """First-time setup, install/download workers, activation, pairing, settings."""
 
@@ -46,6 +85,12 @@ class EnvSetupMixin:
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )
+
+        # This runs only when Manual is on screen: the dock opened on it, or the
+        # user switched to it (_ensure_interactive_setup). Both callers latch
+        # their own guard BEFORE scheduling this, so it cannot fire twice in a
+        # session, and the warm-up below starts no install and asks nothing.
+        self._warm_local_ai_for_manual()
 
         # All environment checks (legacy cleanup, venv status, checkpoint
         # presence) run off the UI thread: get_venv_status walks the venv and
@@ -76,7 +121,11 @@ class EnvSetupMixin:
             QgsMessageLog.logMessage(
                 f"Dependency check error: {detail}",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
-            self.dock_widget.set_dependency_status(False, f"Error: {detail[:50]}")
+            # A fixed sentence, not the first 50 characters of a Python
+            # exception cut mid-word. The full detail is in the message log
+            # two lines above, which is what a bug report carries.
+            self.dock_widget.set_dependency_status(
+                False, tr("Could not check the AI components. See the log for details."))
             # Do NOT leave the env-check latched done on an error: reset the guard
             # so a later Manual/Refine re-entry re-attempts the check instead of
             # stranding the error status until a manual Install click.
@@ -144,6 +193,11 @@ class EnvSetupMixin:
 
     def _load_predictor(self):
         """Kick off predictor initialization in the background (#34)."""
+        # Re-entry while a load is in flight must not drop the running thread's
+        # last reference (GC of a live QThread hard-aborts QGIS).
+        worker = getattr(self, "_predictor_worker", None)
+        if worker is not None and worker.isRunning():
+            return
         from ..background_workers import PredictorLoadWorker
         if self.dock_widget:
             self.dock_widget.set_checkpoint_status(True, tr("Loading AI model..."))
@@ -162,8 +216,9 @@ class EnvSetupMixin:
                 self.dock_widget.set_checkpoint_status(
                     False, tr("Model load failed"))
             # A background install started from the Automatic review can no longer
-            # complete: drop the pending refine and re-enable the Refine button.
+            # complete: drop the pending refine/add and re-enable the entry.
             self._abort_refine_install()
+            self._abort_ai_add_install()
             return
         self.predictor = predictor
         QgsMessageLog.logMessage(
@@ -177,11 +232,13 @@ class EnvSetupMixin:
         # Warm the model NOW when Manual use is predictable, so the first
         # session's first click never waits out the model load: right after a
         # fresh install/model download (the user is onboarding, about to try),
-        # or when this machine ran a Manual session recently (regular Manual
-        # users reach their resident-model steady state at startup instead of
-        # at their first click; the model stays loaded until QGIS closes
-        # anyway once a session runs). Automatic-only users trip neither
-        # signal, so they never pay the model's RAM. warm_up() is idempotent
+        # when Manual mode is on screen at all (_warm_local_ai_for_manual: it
+        # is the only mode that runs on this model), or when this machine ran a
+        # Manual session recently (regular Manual users reach their
+        # resident-model steady state at startup instead of at their first
+        # click; the model stays loaded until QGIS closes anyway once a session
+        # runs). Automatic-only users trip none of the three, so they never pay
+        # the model's RAM. warm_up() is idempotent
         # and cheap on this thread (Popen + one init line; the load happens
         # inside the subprocess). Best-effort: the Start-time warm_up retries.
         try:
@@ -210,7 +267,20 @@ class EnvSetupMixin:
                 except (RuntimeError, AttributeError):
                     pass
             if self._auto_review:
-                self._on_refine_in_manual_clicked()
+                self._on_reshape_ai_requested()
+            return
+        # D1 twin for the Add lane: a background install kicked off from the Add
+        # button has finished. Clear the banner and arm the lane now on the
+        # still-intact review (or just release the flag if the user left it).
+        if getattr(self, "_ai_add_install_pending", False):
+            self._ai_add_install_pending = False
+            if self.dock_widget:
+                try:
+                    self.dock_widget.set_auto_review_installing(False)
+                except (RuntimeError, AttributeError):
+                    pass
+            if self._auto_review:
+                self._on_ai_add_requested()
             return
         # Complete a Refine-in-Manual handoff that arrived before the model was
         # loaded: now that the predictor is up, start the Manual session and
@@ -234,11 +304,14 @@ class EnvSetupMixin:
                         pass
                 self._on_start_segmentation(layer)
                 # Inherit the review's CURRENT refine settings, exactly like the
-                # direct (predictor-already-loaded) handoff path does, so a run
+                # direct (predictor-already-loaded) reshape path does, so a run
                 # whose model was still loading is not stranded on the generic
                 # Manual defaults.
                 self._seed_refine_from_review()
                 self._import_review_geoms_as_saved(review)
+                # Now the detections are loaded, open the one the user selected
+                # for reshape (deferred until the predictor was ready).
+                self._open_reshape_target()
 
     def _manual_used_recently(self, days: int = 14) -> bool:
         """True when this machine ran a Manual session within ``days``.
@@ -249,10 +322,11 @@ class EnvSetupMixin:
         while an Automatic-only machine never gets the key at all."""
         try:
             import time
+
             from qgis.PyQt.QtCore import QSettings
             ts = QSettings().value(
                 SETTINGS_KEY_LAST_MANUAL_SESSION_TS, 0, type=int)
-            return 0 < ts and (time.time() - ts) < days * 86400
+            return ts > 0 and (time.time() - ts) < days * 86400
         except Exception:  # noqa: BLE001 - heuristic only
             return False
 
@@ -360,9 +434,32 @@ class EnvSetupMixin:
             )
             return
 
+        # Guard: never install into a tree that is being deleted. Same-process
+        # concurrency has to be caught HERE, because the cross-process lock the
+        # removal holds records this very process and would be broken as a dead
+        # leftover by an install started from this window.
+        remover = getattr(self, "_remove_data_worker", None)
+        if remover is not None:
+            try:
+                running = remover.isRunning()
+            except RuntimeError:
+                running = False
+            if running:
+                QgsMessageLog.logMessage(
+                    "Install refused: the downloaded AI data is being removed",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning)
+                self.dock_widget.set_dependency_status(
+                    False, tr("Removing the downloaded AI data..."))
+                return
+
         from ...core.venv_manager import get_venv_status
 
-        is_ready, message = get_venv_status()
+        # This runs on the UI thread, on a button click: no subprocess probe,
+        # which could freeze the window for a minute. An environment whose
+        # packages are all on disk counts as ready even when the import probe
+        # has not run yet, so a healthy install is not re-downloaded from
+        # scratch; the background startup check does the real verification.
+        is_ready, message = get_venv_status(allow_subprocess_probe=False)
         if is_ready:
             # Deps already installed, just need model download
             self.dock_widget.set_dependency_status(True, "✓ " + tr("Dependencies ready"))
@@ -459,6 +556,7 @@ class EnvSetupMixin:
         if is_rejection_code(code):
             from ...core.activation_manager import clear_auth
             clear_auth()
+            _drop_untagged_account_history()
             self._last_key_validation_unix = 0.0
             if self.dock_widget:
                 self.dock_widget.set_activated_state(False)
@@ -500,12 +598,46 @@ class EnvSetupMixin:
         )
         opened = QDesktopServices.openUrl(QUrl(url))
         if not opened:
+            # Browser pairing is the ONLY way in, so this branch used to end
+            # the product: clicking again calls the same failing openUrl. On
+            # Linux it goes through xdg-open, which returns False when that is
+            # absent, when no browser is registered, or when a sandbox has no
+            # portal, and none of those is a connection problem. So hand the
+            # user the address instead of a diagnosis. It carries a short-lived
+            # pairing code and lands on their own clipboard, which is no wider
+            # than the browser we were trying to open it in.
             self.dock_widget.show_pairing_idle()
-            self.dock_widget.set_activation_message(
-                tr("Couldn't open your browser. Check your connection and click "
-                   "Sign in / Sign up to start again."),
-                is_error=True,
-            )
+            copied = False
+            try:
+                from qgis.PyQt.QtWidgets import QApplication
+
+                clipboard = QApplication.clipboard()
+                if clipboard is not None:
+                    clipboard.setText(url)
+                    copied = True
+            except (RuntimeError, AttributeError, ImportError):
+                copied = False
+            try:
+                # Selectable, so the address can still be read and copied by
+                # hand when the clipboard itself is unavailable.
+                from qgis.PyQt.QtCore import Qt
+
+                label = self.dock_widget.activation_message_label
+                label.setWordWrap(True)
+                label.setTextInteractionFlags(
+                    Qt.TextInteractionFlag.TextSelectableByMouse)
+            except (RuntimeError, AttributeError, ImportError):
+                pass
+            if copied:
+                message = tr(
+                    "QGIS could not open a browser. The sign-in address is "
+                    "copied to your clipboard: paste it into a browser to "
+                    "finish, then come back here.")
+            else:
+                message = tr(
+                    "QGIS could not open a browser. Open this address to "
+                    "finish signing in, then come back here:\n{}").format(url)
+            self.dock_widget.set_activation_message(message, is_error=True)
             return
 
         if self._pairing_worker is not None and self._pairing_worker.is_active():
@@ -519,6 +651,10 @@ class EnvSetupMixin:
         self._pairing_worker.pairing_succeeded.connect(self._on_pairing_succeeded)
         self._pairing_worker.pairing_failed.connect(self._on_pairing_failed)
         self._pairing_worker.pairing_timeout.connect(self._on_pairing_timeout)
+        # The task has hinted at a stalled sign-in since it was written, and
+        # nothing listened: the user watched the waiting animation for the full
+        # ten minutes and was then told it timed out.
+        self._pairing_worker.pairing_stalled.connect(self._on_pairing_stalled)
         QgsApplication.taskManager().addTask(self._pairing_worker)
         import time as _time
         self._pairing_t0 = _time.monotonic()
@@ -542,6 +678,8 @@ class EnvSetupMixin:
     def _on_pairing_succeeded(self, key: str):
         from ...core.activation_manager import save_auth_token
         save_auth_token(key)
+        # Whoever was signed in before must leave nothing behind in the library.
+        _drop_untagged_account_history()
         # Fresh sign-in: clear the revalidation throttle so the next dock event
         # re-checks the new key immediately instead of waiting out the window.
         self._last_key_validation_unix = 0.0
@@ -583,6 +721,21 @@ class EnvSetupMixin:
         QgsMessageLog.logMessage(
             f"Pairing failed ({code})", "AI Segmentation",
             level=Qgis.MessageLevel.Warning)
+
+    def _on_pairing_stalled(self):
+        """The server has not seen the browser after a long wait.
+
+        A hint, not a failure: the poll keeps running and can still succeed, so
+        this only replaces the silent waiting animation with the two things the
+        user can act on. Never switches the panel back to idle, which would
+        take away the Cancel the poll is still honouring."""
+        if not self.dock_widget:
+            return
+        self.dock_widget.set_activation_message(
+            tr("Still waiting for the sign-in page. If no browser opened, or "
+               "the page shows an error, click Cancel and try again."),
+            is_error=False,
+        )
 
     def _on_pairing_timeout(self):
         if self.dock_widget:
@@ -723,6 +876,9 @@ class EnvSetupMixin:
                 # The async crop encode talks to the SAM subprocess; deleting
                 # the venv under it kills the process mid-round-trip.
                 "_manual_encode_worker",
+                # A removal already under way: the tree is disappearing, so
+                # nothing may start against it (and no second removal).
+                "_remove_data_worker",
             ):
                 worker = getattr(self, attr, None)
                 if worker is None:
@@ -736,55 +892,119 @@ class EnvSetupMixin:
         except Exception:  # nosec B110
             return True
 
-    def remove_local_ai_data(self) -> tuple[bool, str]:
-        """Delete every trace of the local AI install this plugin created: the
-        isolated venv + downloaded model weights (all under CACHE_DIR), the
-        stored activation key (QgsAuthManager + the QSettings fallback) and this
-        plugin's own QSettings groups. Signs the user out as a side effect.
+    def remove_local_ai_data(self, on_progress=None, on_finished=None) -> tuple[bool, str]:
+        """Start deleting every trace of the local AI install this plugin
+        created: the isolated venv + downloaded model weights (all under
+        PLUGIN_CACHE_DIR), the stored activation key (QgsAuthManager + the QSettings
+        fallback) and this plugin's own QSettings groups. Signs the user out as
+        a side effect.
 
-        Returns (ok, message). Refuses (returns False) while an install or a
-        detection run is in flight. Never raises: any partial-failure detail is
-        folded into the returned message so the dialog can show it."""
-        import os
-        import shutil
-
-        from ...core.venv_manager import CACHE_DIR
-
+        Returns (started, message), and the message always says where that
+        leaves the user. started=False before the account state is cleared
+        means nothing at all was touched: an install or a detection run is in
+        flight, or another QGIS window holds the install lock. started=False
+        after it (a worker that could not be created or started) means the key
+        and settings are gone but the files are not, and the message says so.
+        On True the settings and key are already cleared and the multi-GB
+        delete runs on a worker thread, so
+        the window stays responsive; `on_progress(text)` reports the current
+        step and `on_finished(ok, message)` closes it out, both on the GUI
+        thread. Never raises: any partial-failure detail is folded into the
+        message passed to on_finished."""
+        worker = getattr(self, "_remove_data_worker", None)
+        if worker is not None:
+            try:
+                if worker.isRunning():
+                    return False, tr("The removal is already running.")
+            except RuntimeError:
+                pass  # C++ side gone; the attribute is stale
         if self.is_local_ai_busy():
             return False, tr(
                 "An install or detection is still running. Wait for it to "
                 "finish, then try again.")
 
-        # 1. Shut the loaded predictor subprocess down first so its handles on
-        #    the venv are released before we delete it (a live process locks
-        #    those files on Windows). Bounded, mirrors unload.
-        if getattr(self, "predictor", None) is not None:
-            import threading
-            pred = self.predictor
-            self.predictor = None
+        # is_local_ai_busy only sees this process. The cache is shared across
+        # QGIS windows and profiles, so the cross-process install lock is what
+        # stops this delete from pulling the venv out from under another
+        # window's running install. It is held until the worker reports back.
+        from ...core.install_lock import InstallLock
+        from ...core.venv_manager import INSTALL_LOCK_FILE
+
+        lock = InstallLock(INSTALL_LOCK_FILE)
+        if not lock.acquire():
+            return False, tr(
+                "Another QGIS window is installing the AI engine. Wait for it "
+                "to finish, then try again.")
+
+        errors = self._clear_local_ai_account_state()
+
+        predictor = getattr(self, "predictor", None)
+        self.predictor = None
+        try:
+            from ..background_workers import RemoveAiDataWorker
+            from .shared import park_orphaned_worker
+
+            worker = RemoveAiDataWorker(predictor)
+            self._remove_data_worker = worker
+            if on_progress is not None:
+                worker.progress.connect(
+                    lambda text, cb=on_progress: _notify_ui(cb, text))
+            worker.done.connect(
+                lambda nothing_left, freed, error, lk=lock, errs=errors, cb=on_finished:
+                self._on_remove_ai_data_done(nothing_left, freed, error, lk, errs, cb))
+            # Anchor the thread for its whole life: the dialog that started it
+            # can be dismissed and the plugin unloaded before the delete is
+            # over, and a QThread destroyed while running aborts all of QGIS.
+            park_orphaned_worker(worker)
+            worker.start()
+            # start() does not raise when the OS refuses the thread: it warns
+            # and returns, run() never executes and `done` never fires. Treat
+            # that as a failed start rather than waiting forever for it.
+            if not (worker.isRunning() or worker.isFinished()):
+                raise RuntimeError("the removal thread did not start")
+        except Exception as err:  # noqa: BLE001 - the lock must never leak
+            # Nothing is running, so nothing will ever release the lock or
+            # report back. Give everything back here: the lock is shared across
+            # QGIS windows, and leaking it refuses every later install and
+            # removal until QGIS is restarted.
+            QgsMessageLog.logMessage(
+                f"Could not start the AI data removal: {err}",
+                "AI Segmentation", level=Qgis.MessageLevel.Critical)
+            self._remove_data_worker = None
+            self.predictor = predictor
             try:
-                t = threading.Thread(target=lambda: pred.cleanup(), daemon=True)
-                t.start()
-                t.join(timeout=8)
-            except Exception:  # nosec B110
+                lock.release()
+            except Exception:  # nosec B110 - the release is best-effort
                 pass
+            return False, tr(
+                "The removal could not start. You are signed out, but the "
+                "downloaded AI data is still on this computer. Try again.")
+        return True, tr("Removing the downloaded AI data...")
+
+    def _clear_local_ai_account_state(self) -> list:
+        """Clear the stored key and this plugin's settings, and reflect the
+        sign-out in the dock. GUI-thread work only (auth + QSettings + widgets),
+        all of it instant, and it runs BEFORE the delete so the account is
+        already clean if the file removal turns out to be partial. Returns the
+        list of failure details, for the final message."""
         self._env_ready = False
         self._first_time_setup_done = False
 
-        # 2. Clear the activation key (removes the QgsAuthManager config via the
-        #    authcfg_id, which still lives in QSettings at this point) BEFORE
-        #    wiping the QSettings groups, else the stored config would leak.
+        # Clear the activation key (removes the QgsAuthManager config via the
+        # authcfg_id, which still lives in QSettings at this point) BEFORE
+        # wiping the QSettings groups, else the stored config would leak.
         errors: list[str] = []
         try:
             from ...core.activation_manager import clear_auth
             clear_auth()
         except Exception as err:  # nosec B110
             errors.append(str(err)[:80])
+        _drop_untagged_account_history()
         self._last_key_validation_unix = 0.0
 
-        # 3. Wipe this plugin's own QSettings groups. Leave the shared TerraLab/
-        #    keys (telemetry opt-out, device seed) untouched: they are shared
-        #    with the sibling plugin and are not "downloaded AI data".
+        # Wipe this plugin's own QSettings groups. Leave the shared TerraLab/
+        # keys (telemetry opt-out, device seed) untouched: they are shared with
+        # the sibling plugin and are not "downloaded AI data".
         try:
             from qgis.PyQt.QtCore import QSettings
             settings = QSettings()
@@ -795,25 +1015,37 @@ class EnvSetupMixin:
         except Exception as err:  # nosec B110
             errors.append(str(err)[:80])
 
-        # 4. Delete the venv + weights + feature cache (all under CACHE_DIR).
-        freed = ""
-        try:
-            if os.path.isdir(CACHE_DIR):
-                freed = self._dir_size_label(CACHE_DIR)
-                shutil.rmtree(CACHE_DIR, ignore_errors=True)
-            if os.path.isdir(CACHE_DIR):
-                # Some files survived (locked / permissions): report it rather
-                # than claim a clean removal.
-                errors.append(tr("some files could not be deleted"))
-        except Exception as err:  # nosec B110
-            errors.append(str(err)[:80])
-
-        # 5. Reflect the sign-out in the dock so the UI is consistent.
         if self.dock_widget:
             try:
                 self.dock_widget.set_activated_state(False)
             except (RuntimeError, AttributeError):
                 pass
+        return errors
+
+    def _on_remove_ai_data_done(self, nothing_left, freed, error,
+                                lock, errors, on_finished) -> None:
+        """The delete worker finished: release the cross-process lock, drop the
+        emptied cache directory and report. Runs on the GUI thread."""
+        self._remove_data_worker = None
+        errors = list(errors or [])
+        if error:
+            errors.append(str(error)[:80])
+        elif not nothing_left:
+            # Some files survived (locked / permissions): report it rather
+            # than claim a clean removal.
+            errors.append("leftover files")
+
+        lock.release()
+        # The lock file is the one thing kept alive inside the cache directory
+        # while it is being emptied (see purge_cache_dir), so drop the now-empty
+        # directory once release() has removed it.
+        import os
+
+        from ...core.cache_paths import PLUGIN_CACHE_DIR
+        try:
+            os.rmdir(PLUGIN_CACHE_DIR)
+        except OSError:
+            pass  # nosec B110 - not empty (reported) or already gone
 
         QgsMessageLog.logMessage(
             "Local AI data removed ({}), errors={}".format(
@@ -821,34 +1053,17 @@ class EnvSetupMixin:
             "AI Segmentation", level=Qgis.MessageLevel.Info)
 
         if errors:
-            return True, tr(
+            message = tr(
                 "AI data removed, but some items could not be fully cleared. "
                 "You can delete the folder manually.")
-        return True, tr("Downloaded AI data removed. You have been signed out.")
-
-    @staticmethod
-    def _dir_size_label(path: str) -> str:
-        """Human-readable total size of a directory tree (for the removal log
-        line). Best-effort, never raises."""
-        import os
-        total = 0
-        try:
-            for root, _dirs, files in os.walk(path):
-                for name in files:
-                    try:
-                        total += os.path.getsize(os.path.join(root, name))
-                    except OSError:  # nosec B112
-                        continue
-        except OSError:
-            return "-"
-        mb = total / (1024 * 1024)
-        if mb >= 1024:
-            return f"{mb / 1024:.1f} GB"
-        return f"{mb:.0f} MB"
+        else:
+            message = tr("Downloaded AI data removed. You have been signed out.")
+        _notify_ui(on_finished, True, message)
 
     def _on_sign_out_requested(self):
         from ...core.activation_manager import clear_auth
         clear_auth()
+        _drop_untagged_account_history()
         self._last_key_validation_unix = 0.0
         if self.dock_widget:
             self.dock_widget.set_activated_state(False)
@@ -870,11 +1085,46 @@ class EnvSetupMixin:
             # so counting it completed here skewed the install funnel.
             # Run verification + device detection off main thread
             self.dock_widget.set_install_progress(80, tr("Verifying installation..."))
+            # A verify pass can run for minutes, and a repair install can
+            # finish while one is still going. Reassigning the attribute would
+            # drop the last reference to a live QThread, which aborts QGIS.
+            if self._verify_worker is not None and self._verify_worker.isRunning():
+                return
             self._verify_worker = VerifyWorker()
             self._verify_worker.progress.connect(self._on_verify_progress)
             self._verify_worker.done.connect(self._on_verify_finished)
             self._verify_worker.start()
         else:
+            # A user cancel reaches this handler through the SAME channel as a
+            # real failure (the installer returns (False, "Installation
+            # cancelled") from every one of its cancel checks). Left to fall
+            # through, it showed an "Installation Failed" dialog with a bug
+            # report form to someone who deliberately pressed Cancel, and
+            # emitted install_failed on top of the install_cancelled that
+            # _on_cancel_install already sent, so the two events double-counted
+            # each other and inflated the measured install failure rate.
+            # Cancels wind down quietly instead; the dock's own progress
+            # handler already renders a "cancel" message as its neutral
+            # cancelled state rather than the failed one.
+            # The worker's own flag is the authoritative discriminator: WE set
+            # it in _on_cancel_install, so it cannot be defeated by wrapping or
+            # translation. The string check stays as a fallback for a cancel
+            # that did not come through that button, and matches anywhere in
+            # the message rather than only at the start: the uv path returns
+            # the bare sentinel, but the pip fallback path (uv unavailable, so
+            # exactly the antivirus and proxy-restricted population) wraps it
+            # as "Failed to install <package>: Installation cancelled", which a
+            # prefix test misses.
+            _cancelled = bool(
+                getattr(self.deps_install_worker, "_cancelled", False))
+            _msg_lower_early = (message or "").lower()
+            if (_cancelled or "installation cancelled" in _msg_lower_early or "download cancelled" in _msg_lower_early):
+                self.dock_widget.set_install_progress(100, "Cancelled")
+                self.dock_widget.set_dependency_status(
+                    False, tr("Installation cancelled"))
+                self._abort_refine_install()
+                return
+
             self.dock_widget.set_install_progress(100, "Failed")
             error_msg = message[:300] if message else tr("Unknown error")
             self.dock_widget.set_dependency_status(False, tr("Installation failed"))
@@ -892,31 +1142,85 @@ class EnvSetupMixin:
             # one. Order matters: most specific first, and disk/app-control are
             # checked before the antivirus/permission branches (a full disk and
             # a managed policy both surface as access errors on Windows).
+            from ...core.cache_paths import PLUGIN_CACHE_DIR
             from ...core.pip_diagnostics import (
                 get_app_control_help,
+                get_broken_python_runtime_help,
+                get_corrupt_venv_help,
                 get_crash_help,
+                get_dependency_conflict_help,
                 get_file_locked_help,
                 get_glibc_too_old_help,
+                get_invalid_path_help,
                 get_macos_intel_help,
                 get_pip_antivirus_help,
                 get_vcpp_help,
                 is_antivirus_error,
                 is_app_control_error,
+                is_broken_python_runtime,
+                is_corrupt_venv,
+                is_dependency_conflict,
                 is_disk_full,
                 is_dll_init_error,
                 is_file_locked_error,
                 is_glibc_too_old,
+                is_invalid_path_error,
                 is_macos_intel_no_wheel,
                 is_proxy_auth_error,
                 is_rename_or_record_error,
                 is_unable_to_create_process,
             )
-            from ...core.venv_manager import CACHE_DIR
+            from ...core.venv_manager import mark_venv_for_rebuild
+            if "another qgis window is installing" in msg_lower:
+                # Cross-process lock contention: nothing failed, another live
+                # install owns the build. An info box is the right weight; the
+                # bug-report dialog made people file reports for waiting. No
+                # install_failed here either: counting a wait as a failure is
+                # the same metric-inflation trap the user-cancel branch avoids.
+                self.dock_widget.set_dependency_status(
+                    False, tr("Installation running in another window"))
+                from qgis.PyQt.QtWidgets import QMessageBox
+                QMessageBox.information(
+                    self.iface.mainWindow(),
+                    tr("Installation Already Running"),
+                    tr(
+                        "Another QGIS window is installing the AI components. "
+                        "Wait for it to finish, then try again."
+                    ),
+                )
+                return
             if "not enough free disk space" in msg_lower or is_disk_full(msg_lower):
                 # Preflight or mid-install disk exhaustion: the message already
                 # carries the free-up / AI_SEGMENTATION_CACHE_DIR guidance.
                 error_title = tr("Not Enough Disk Space")
                 error_code = "disk_space"
+            elif is_broken_python_runtime(msg_lower):
+                # The local runtime cannot boot (gutted stdlib). Marking the
+                # venv for rebuild + the standalone re-verification at install
+                # start make the next attempt self-heal instead of looping on
+                # the same wall.
+                error_title = tr("AI Environment Damaged")
+                error_msg = get_broken_python_runtime_help(PLUGIN_CACHE_DIR)
+                error_code = "broken_python_runtime"
+                mark_venv_for_rebuild()
+            elif is_corrupt_venv(msg_lower):
+                # The venv exists but its interpreter or pip is gone; a plain
+                # retry reused it forever. The marker forces a from-scratch
+                # rebuild on the next install run (worker thread, not UI).
+                error_title = tr("AI Environment Damaged")
+                error_msg = get_corrupt_venv_help()
+                error_code = "corrupt_venv"
+                mark_venv_for_rebuild()
+            elif is_invalid_path_error(msg_lower):
+                # Windows refused the path itself (cloud-synced placeholder,
+                # odd characters, 260-char limit), not a permission problem.
+                error_title = tr("Installation Path Problem")
+                error_msg = get_invalid_path_help(PLUGIN_CACHE_DIR)
+                error_code = "invalid_install_path"
+            elif is_dependency_conflict(msg_lower):
+                error_title = tr("Package Versions Conflict")
+                error_msg = get_dependency_conflict_help()
+                error_code = "dependency_conflict"
             elif any(p in msg_lower for p in [
                 "ssl", "certificate verify", "sslerror",
                 "unable to get local issuer",
@@ -937,7 +1241,7 @@ class EnvSetupMixin:
                 # generic "blocked" branch below, whose change-path advice is
                 # a dead end (the policy blocks any user-writable location).
                 error_title = tr("Blocked by IT Security Policy")
-                error_msg = get_app_control_help(CACHE_DIR)
+                error_msg = get_app_control_help(PLUGIN_CACHE_DIR)
                 error_code = "app_control_policy"
             elif is_dll_init_error(msg_lower):
                 # A DLL init failure (missing VC++ runtime). is_dll_init_error
@@ -960,7 +1264,7 @@ class EnvSetupMixin:
                 # English "blocked" branch above misses (uv surfaces the raw OS
                 # message in the system language). Antivirus/exclusion guidance.
                 error_title = tr("Blocked by Antivirus or Security Software")
-                error_msg = get_pip_antivirus_help(CACHE_DIR)
+                error_msg = get_pip_antivirus_help(PLUGIN_CACHE_DIR)
                 error_code = "antivirus_blocked"
             elif is_proxy_auth_error(msg_lower):
                 # HTTP 407 behind a corporate proxy: distinct from a generic
@@ -1009,7 +1313,7 @@ class EnvSetupMixin:
                 # dist-info rename/RECORD error mid torch upgrade (Windows): a
                 # stale, partially-written package. A clean rebuild resolves it.
                 error_title = tr("Restart QGIS Required")
-                error_msg = get_crash_help(CACHE_DIR)
+                error_msg = get_crash_help(PLUGIN_CACHE_DIR)
                 error_code = "dist_info_rename"
             elif is_glibc_too_old(msg_lower):
                 # Linux distro older than the current PyTorch wheels support.
@@ -1030,6 +1334,7 @@ class EnvSetupMixin:
             )
             try:
                 import time as _time
+
                 from ...core import telemetry
                 t0 = getattr(self, "_install_t0", 0.0)
                 telemetry.track_install_failed(
@@ -1056,6 +1361,7 @@ class EnvSetupMixin:
             # (DLL blocked) as completed and understated install_failed.
             try:
                 import time as _time
+
                 from ...core import telemetry
                 t0 = getattr(self, "_install_t0", 0.0)
                 if t0:
@@ -1110,14 +1416,14 @@ class EnvSetupMixin:
                 # A managed policy (AppLocker/WDAC) blocking a DLL also prints
                 # "DLL load failed": checked first so the user gets the IT
                 # allow-rule guidance, not the VC++ runtime steps.
-                from ...core.venv_manager import CACHE_DIR
+                from ...core.cache_paths import PLUGIN_CACHE_DIR
                 error_title = tr("Blocked by IT Security Policy")
                 error_code = "app_control_policy"
-                body = "{}\n\n{}".format(message, get_app_control_help(CACHE_DIR))
+                body = f"{message}\n\n{get_app_control_help(PLUGIN_CACHE_DIR)}"
             elif is_dll_init_error(low) or "required dll failed to initialize" in low:
                 error_title = tr("A Component Failed to Load")
                 error_code = "dll_init_failed"
-                body = "{}\n\n{}".format(message, get_vcpp_help())
+                body = f"{message}\n\n{get_vcpp_help()}"
             show_error_report(
                 self.iface.mainWindow(),
                 error_title,
@@ -1125,6 +1431,7 @@ class EnvSetupMixin:
                 error_code=error_code)
             try:
                 import time as _time
+
                 from ...core import telemetry
                 t0 = getattr(self, "_install_t0", 0.0)
                 telemetry.track_install_failed(
@@ -1136,6 +1443,21 @@ class EnvSetupMixin:
                 pass  # nosec B110
 
     def _on_cancel_install(self):
+        # The model download is the second half of the same install, so Cancel
+        # must stop it too: without this the worker kept retrying for up to an
+        # hour after the user asked it to stop.
+        if self.download_worker is not None and self.download_worker.isRunning():
+            self._download_cancelled = True
+            try:
+                from ...core.checkpoint_manager import request_download_cancel
+                request_download_cancel()
+            except Exception:
+                pass  # nosec B110
+            QgsMessageLog.logMessage(
+                "Model download cancelled by user",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Warning
+            )
         if self.deps_install_worker and self.deps_install_worker.isRunning():
             self.deps_install_worker.cancel()
             try:
@@ -1176,6 +1498,7 @@ class EnvSetupMixin:
             pass  # nosec B110
 
         self.dock_widget.set_install_progress(80, tr("Downloading AI model..."))
+        self._download_cancelled = False
         try:
             import time as _time
             self._model_download_t0 = _time.monotonic()
@@ -1218,6 +1541,17 @@ class EnvSetupMixin:
             self._load_predictor()
             self._refresh_activation_async()
         else:
+            # A cancel comes back through the same channel as a real failure.
+            # Wind it down quietly instead of accusing the user of a failed
+            # download they deliberately stopped.
+            if getattr(self, "_download_cancelled", False):
+                self._download_cancelled = False
+                self.dock_widget.set_install_progress(100, tr("Cancelled"))
+                self.dock_widget.set_dependency_status(
+                    True, tr("Dependencies ready, model not downloaded"))
+                self._abort_refine_install()
+                return
+
             self.dock_widget.set_install_progress(100, "Failed")
             self.dock_widget.set_dependency_status(
                 True, tr("Dependencies ready, model download failed"))

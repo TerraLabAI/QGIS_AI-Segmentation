@@ -13,17 +13,22 @@ Design notes:
   GUI thread; the caller reports a friendly busy message on failure.
 - A leftover lock from a process that has since died must not wedge every
   future install, so a lock is broken when its recorded PID is provably not
-  alive, when the content is corrupted, when the file is older than
-  ``_STALE_AGE_S`` (a recycled PID, or when liveness cannot be probed, e.g.
-  some Windows cases), or when it records OUR OWN pid but we do not hold it
-  (an install thread hard-killed on unload; only a live DIFFERENT process
-  must ever block us).
+  alive, when the PID is live but was created at a different time than the
+  file records (the number was recycled to an unrelated program), when the
+  content is corrupted, when the file is older than ``_STALE_AGE_S`` (when
+  neither liveness nor the creation time can be probed), or when it records
+  OUR OWN pid but we do not hold it (an install thread hard-killed on unload;
+  only a live DIFFERENT process must ever block us).
+- The file holds the PID, the time it was taken, and, where the platform can
+  answer for it, the owning process's creation time. Fields are appended, so a
+  lock left by an older plugin still reads.
 
 Pure standard library on purpose: no QGIS import, so it stays importable and
 unit-testable outside a QGIS Python.
 """
 from __future__ import annotations
 
+import errno
 import os
 import sys
 import time
@@ -43,17 +48,22 @@ _STALE_AGE_S = 5 * 60 * 60  # 5 hours
 # the plugin uses so callers can simply ``acquire_install_lock()``.
 _LOCK_BASENAME = "install.lock"
 
+# Create failures that no retry and no other process can get past: the volume
+# is read-only, or the account may not write there. Only these fail OPEN, so a
+# machine that can never hold a lock can still install. Every other errno is
+# treated as transient and fails CLOSED.
+_CANNOT_EVER_LOCK_ERRNOS = frozenset({errno.EACCES, errno.EPERM, errno.EROFS})
+
 
 class InstallBusyError(RuntimeError):
     """Raised when another live process already holds the install lock."""
 
 
 def default_install_lock_path() -> str:
-    """Return the default lock path, mirroring venv_manager's CACHE_DIR logic."""
-    cache_dir = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser(
-        "~/.qgis_ai_segmentation"
-    )
-    return os.path.join(cache_dir, _LOCK_BASENAME)
+    """Return the default lock path, under the shared plugin cache root."""
+    from .cache_paths import PLUGIN_CACHE_DIR
+
+    return os.path.join(PLUGIN_CACHE_DIR, _LOCK_BASENAME)
 
 
 def _pid_is_alive(pid: int) -> bool | None:
@@ -104,6 +114,69 @@ def _pid_is_alive_windows(pid: int) -> bool | None:
         return None
 
 
+def _process_start_stamp(pid: int) -> str | None:
+    """A stamp that changes when a pid is reused, or None when unavailable.
+
+    A pid alone does not identify a process. Windows hands them out in
+    multiples of four from a small pool and recycles them within minutes, so
+    after a crash the recorded number is often live again and belongs to
+    something else entirely; the lock then stands for its full stale age and
+    the user is told another QGIS window is installing when none is.
+
+    Compared as an opaque string, never interpreted. None everywhere the
+    creation time cannot be read (macOS has no /proc), which leaves the pid
+    probe and the file age exactly as they are.
+    """
+    if pid <= 0:
+        return None
+    if sys.platform == "win32":
+        return _process_start_stamp_windows(pid)
+    return _process_start_stamp_proc(pid)
+
+
+def _process_start_stamp_windows(pid: int) -> str | None:
+    """Creation time from GetProcessTimes, as a raw FILETIME count."""
+    try:
+        import ctypes
+        import ctypes.wintypes as wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # PROCESS_QUERY_LIMITED_INFORMATION (Vista+), as in the liveness probe.
+        handle = kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return None
+        try:
+            created = wintypes.FILETIME()
+            exited = wintypes.FILETIME()
+            in_kernel = wintypes.FILETIME()
+            in_user = wintypes.FILETIME()
+            ok = kernel32.GetProcessTimes(
+                handle,
+                ctypes.byref(created), ctypes.byref(exited),
+                ctypes.byref(in_kernel), ctypes.byref(in_user))
+        finally:
+            kernel32.CloseHandle(handle)
+        if not ok:
+            return None
+        return str((created.dwHighDateTime << 32) | created.dwLowDateTime)
+    except Exception:  # noqa: BLE001 - probe is best-effort; fall back to age
+        return None
+
+
+def _process_start_stamp_proc(pid: int) -> str | None:
+    """Creation time from /proc/<pid>/stat field 22 (Linux); None elsewhere."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as f:
+            data = f.read()
+        # The command name sits in parentheses and may itself contain spaces
+        # and a closing parenthesis, so the fields are counted from the LAST
+        # one: field 3 is the first token after it, and 22 is the start time.
+        tail = data[data.rindex(")") + 1:].split()
+        return tail[19]
+    except Exception:  # noqa: BLE001 - probe is best-effort; fall back to age
+        return None
+
+
 def _parse_pid(content: str) -> int | None:
     """Extract the PID from lock content; None if missing or malformed."""
     try:
@@ -111,6 +184,16 @@ def _parse_pid(content: str) -> int | None:
     except (ValueError, IndexError):
         return None
     return pid if pid > 0 else None
+
+
+def _parse_start_stamp(content: str) -> str | None:
+    """The creation stamp a lock file records, or None when it carries none.
+
+    Optional third field. A lock written on a platform with no probe, or by an
+    older plugin, has only the pid and the timestamp.
+    """
+    parts = content.split()
+    return parts[2] if len(parts) >= 3 else None
 
 
 def _file_older_than(path: str, age_s: float) -> bool:
@@ -143,6 +226,14 @@ def _lock_is_stale(path: str, content: str, self_pid: int | None = None) -> bool
         return True
     if self_pid is not None and pid == self_pid:
         return True
+    # The pid may be live and yet belong to a different program than the one
+    # that took the lock. When both sides can name the creation time, that
+    # settles it without waiting out the stale age.
+    recorded_start = _parse_start_stamp(content)
+    if recorded_start is not None:
+        live_start = _process_start_stamp(pid)
+        if live_start is not None and live_start != recorded_start:
+            return True
     # A genuinely live foreign process holds it: respect it, but never past the
     # stale age. OR-ing the age check (rather than short-circuiting on "alive")
     # also breaks a lock whose recorded pid has since been RECYCLED to an
@@ -182,17 +273,28 @@ class InstallLock:
             fd = os.open(self._path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         except FileExistsError:
             return False
-        except OSError:
-            # Cannot create the lock (read-only fs, permissions, ...). Do not
-            # invent a new failure mode: fail OPEN so the install proceeds and
-            # its own writability check reports any real problem. We record
-            # that we do not own a file, so release() is a no-op.
-            self._acquired = True
-            self._owns_file = False
-            return True
+        except OSError as err:
+            if err.errno in _CANNOT_EVER_LOCK_ERRNOS:
+                # No process on this machine will ever create this file, so
+                # failing closed would block the install for good. Fail OPEN
+                # and let the install's own writability check report the real
+                # problem. We record that we own no file, so release() is a
+                # no-op.
+                self._acquired = True
+                self._owns_file = False
+                return True
+            # Anything else is transient. Fail CLOSED: two QGIS windows that
+            # both believed they held the lock would install into the same venv
+            # at the same time, which is the corruption this module exists to
+            # prevent. The caller retries or reports a busy install.
+            return False
         try:
+            start_stamp = _process_start_stamp(os.getpid())
+            record = f"{os.getpid()} {time.time()}"
+            if start_stamp is not None:
+                record = f"{record} {start_stamp}"
             try:
-                os.write(fd, f"{os.getpid()} {time.time()}\n".encode("utf-8"))
+                os.write(fd, f"{record}\n".encode())
             finally:
                 os.close(fd)
         except OSError:

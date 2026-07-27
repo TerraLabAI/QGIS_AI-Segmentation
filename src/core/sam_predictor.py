@@ -45,10 +45,15 @@ def build_sam_predictor_config(checkpoint: str | None = None):
 
 class SamPredictor:
     # Per-operation timeouts (seconds)
-    _TIMEOUT_INIT = 120       # Model loading
+    # Model loading, plus the worker's warm-up pass at the real crop size (it
+    # runs before the ready line so no click can queue behind it).
+    _TIMEOUT_INIT = 240
     _TIMEOUT_RESET = 30
     _TIMEOUT_SET_IMAGE = 180  # Encoding 1 crop on slow CPU can take ~60s
     _TIMEOUT_PREDICT = 120
+    # How many lines that are not the awaited answer _read_typed_response
+    # steps over before it gives up on resynchronizing the pipe.
+    _MAX_FOREIGN_LINES = 4
 
     def __init__(self, sam_config: dict, device: str | None = None) -> None:
         self.venv_python = sam_config["venv_python"]
@@ -89,8 +94,17 @@ class SamPredictor:
 
         Uses a daemon thread to perform the blocking readline so
         the main thread is not blocked indefinitely.
+
+        A process that has already exited is NOT refused here. Its stdout may
+        still hold the answer it managed to write before dying, and reading it
+        is what tells a plain crash apart from a security block or an
+        out-of-memory kill. At EOF readline returns "" straight away and the
+        branch below turns that into a message carrying the exit code and the
+        stderr tail, which beats the bare "Worker process is not running" the
+        caller used to get. Callers that must not write to a dead worker
+        already check poll() themselves before sending their request.
         """
-        if self.process is None or self.process.poll() is not None:
+        if self.process is None:
             raise RuntimeError("Worker process is not running")
 
         result = [None]
@@ -121,27 +135,108 @@ class SamPredictor:
             stderr_output = self._read_stderr()
             if stderr_output and is_antivirus_error(stderr_output):
                 if is_app_control_error(stderr_output):
-                    from .venv_manager import CACHE_DIR
-                    raise RuntimeError(get_app_control_help(CACHE_DIR))
+                    from .cache_paths import PLUGIN_CACHE_DIR
+                    raise RuntimeError(get_app_control_help(PLUGIN_CACHE_DIR))
                 raise RuntimeError(
                     "A security policy is blocking the AI engine.\n\n"
                     "Ask your IT administrator to whitelist "
                     "this folder:\n"
                     f"  {os.path.dirname(self.venv_python)}\n\n"
                     "Then restart QGIS.")
-            msg = "Worker process closed stdout unexpectedly"
-            if exit_code is not None:
-                msg = f"{msg} (exit code {exit_code})"
-            if stderr_output:
-                msg = f"{msg}\nWorker stderr: {stderr_output[:500]}"
-                QgsMessageLog.logMessage(
-                    f"Prediction worker stderr:\n{stderr_output[:1000]}",
-                    "AI Segmentation",
-                    level=Qgis.MessageLevel.Critical
-                )
-            raise RuntimeError(msg)
+            raise RuntimeError(self._worker_died_message(
+                "Worker process closed stdout unexpectedly",
+                exit_code, stderr_output))
 
         return line
+
+    def _worker_died_message(
+        self, prefix: str, exit_code=None, stderr_output: str | None = None
+    ) -> str:
+        """Diagnostic text for a worker that stopped mid-exchange."""
+        if exit_code is None and self.process is not None:
+            exit_code = self.process.poll()
+        if stderr_output is None:
+            stderr_output = self._read_stderr()
+        msg = prefix
+        if exit_code is not None:
+            msg = f"{msg} (exit code {exit_code})"
+        if stderr_output:
+            msg = f"{msg}\nWorker stderr: {stderr_output[:500]}"
+            QgsMessageLog.logMessage(
+                f"Prediction worker stderr:\n{stderr_output[:1000]}",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Critical
+            )
+        return msg
+
+    def _read_typed_response(
+        self,
+        timeout_seconds: int,
+        expected: tuple[str, ...],
+        what: str,
+        error_prefix: str,
+    ) -> dict:
+        """Read the worker's answer, skipping anything that is not it.
+
+        A single foreign line used to be fatal. Anything that was not the
+        awaited answer (a stale reply from a request that timed out earlier, a
+        library writing to stdout) raised "Unexpected response: {...}" and the
+        generic handler tore the worker down, so the user lost the loaded
+        model and read an internal protocol type. A half-written line was
+        worse: json.loads surfaced its raw "Unterminated string starting at
+        char 32", which names nothing the user can act on.
+
+        Foreign lines are skipped instead, bounded in count AND inside the
+        original time budget, so a silent worker still fails at
+        `timeout_seconds`. This is what the init handshake already does.
+        A `type: error` answer keeps the subprocess alive (SamWorkerError).
+        """
+        deadline = time.monotonic() + timeout_seconds
+        for _ in range(self._MAX_FOREIGN_LINES + 1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self.cleanup()
+                raise TimeoutError(
+                    f"Worker did not respond within {timeout_seconds}s")
+            stripped = self._read_response(max(1, int(remaining))).strip()
+            if not stripped:
+                continue
+            try:
+                response = json.loads(stripped)
+            except (json.JSONDecodeError, ValueError):
+                # A truncated line means the worker died while writing its
+                # answer. An out-of-memory kill mid-way through a large mask
+                # payload looks exactly like this, so say that rather than
+                # repeating the parser's complaint.
+                if self.process is None or self.process.poll() is not None:
+                    raise RuntimeError(self._worker_died_message(
+                        "The AI engine stopped while sending its answer. "
+                        "It most likely ran out of memory: close other "
+                        "applications, or work on a smaller area, then try "
+                        "again.")) from None
+                QgsMessageLog.logMessage(
+                    f"Skipping non-JSON worker output: {stripped[:200]}",
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Warning
+                )
+                continue
+            if not isinstance(response, dict):
+                continue
+            response_type = response.get("type")
+            if response_type in expected:
+                return response
+            if response_type == "error":
+                raise SamWorkerError(
+                    f"{error_prefix}: {response.get('message', 'Unknown error')}")
+            QgsMessageLog.logMessage(
+                f"Skipping stale worker response while awaiting {what}: "
+                f"{response_type}",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Warning
+            )
+        raise RuntimeError(
+            f"The AI engine kept answering something other than the {what}. "
+            "Click again to restart it.")
 
     def __del__(self):
         """Ensure subprocess is cleaned up on garbage collection."""
@@ -226,8 +321,8 @@ class SamPredictor:
                     stderr_output = self._read_stderr()
                     if stderr_output and is_antivirus_error(stderr_output):
                         if is_app_control_error(stderr_output):
-                            from .venv_manager import CACHE_DIR
-                            raise RuntimeError(get_app_control_help(CACHE_DIR))
+                            from .cache_paths import PLUGIN_CACHE_DIR
+                            raise RuntimeError(get_app_control_help(PLUGIN_CACHE_DIR))
                         raise RuntimeError(
                             "A security policy is blocking the AI engine.\n\n"
                             "Ask your IT administrator to whitelist "
@@ -345,12 +440,15 @@ class SamPredictor:
                             proc.stdin.flush()
                             proc.wait(timeout=2)
                         except (subprocess.TimeoutExpired, BrokenPipeError, OSError):
-                            # Close stdout to unblock any daemon thread stuck on readline()
-                            try:
-                                if proc.stdout:
-                                    proc.stdout.close()
-                            except Exception:
-                                pass  # nosec B110
+                            # Kill FIRST, then close stdout. A daemon reader
+                            # thread may be mid readline() on proc.stdout (the
+                            # read-timeout path in _read_response), and closing
+                            # that pipe blocks behind the buffered-read lock
+                            # until the child exits on its own, so a truly hung
+                            # child would keep this thread stuck for its whole
+                            # lifetime. Killing the child makes the pending
+                            # readline hit EOF, which frees the lock; only then
+                            # is closing the pipe instant.
                             proc.terminate()
                             try:
                                 proc.wait(timeout=2)
@@ -360,6 +458,11 @@ class SamPredictor:
                                     proc.wait(timeout=1)
                                 except Exception:
                                     pass  # nosec B110
+                            try:
+                                if proc.stdout:
+                                    proc.stdout.close()
+                            except Exception:
+                                pass  # nosec B110
                 except Exception as e:
                     QgsMessageLog.logMessage(
                         f"Warning during predictor cleanup: {str(e)}",
@@ -385,15 +488,13 @@ class SamPredictor:
                 self.process.stdin.write(json.dumps(request) + "\n")
                 self.process.stdin.flush()
 
-                response_line = self._read_response(self._TIMEOUT_RESET)
-                response = json.loads(response_line.strip())
-
-                if response.get("type") != "reset_done":
-                    QgsMessageLog.logMessage(
-                        f"Unexpected reset response: {response}",
-                        "AI Segmentation",
-                        level=Qgis.MessageLevel.Warning
-                    )
+                # Reset is where a pipe left out of step by an earlier
+                # timeout gets back in step, so it reads through stale
+                # answers rather than warning and leaving them queued for
+                # the next click to trip over.
+                self._read_typed_response(
+                    self._TIMEOUT_RESET, ("reset_done",), "reset confirmation",
+                    "Worker error resetting image")
             except Exception as e:
                 QgsMessageLog.logMessage(
                     f"Error resetting image: {str(e)}",
@@ -445,29 +546,22 @@ class SamPredictor:
             self.process.stdin.write(json.dumps(request) + "\n")
             self.process.stdin.flush()
 
-            response_line = self._read_response(self._TIMEOUT_SET_IMAGE)
-            response = json.loads(response_line.strip())
+            response = self._read_typed_response(
+                self._TIMEOUT_SET_IMAGE, ("image_set",), "encoded image",
+                "Worker error encoding image")
 
-            if response.get("type") == "image_set":
-                self.original_size = tuple(response["original_size"])
-                if "input_size" in response:
-                    self.input_size = tuple(response["input_size"])
-                else:
-                    self.input_size = None
-                self.is_image_set = True
-
-                QgsMessageLog.logMessage(
-                    f"Set image: original_size={self.original_size}",
-                    "AI Segmentation",
-                    level=Qgis.MessageLevel.Info
-                )
-            elif response.get("type") == "error":
-                error_msg = response.get("message", "Unknown error")
-                raise SamWorkerError(
-                    f"Worker error encoding image: {error_msg}")
+            self.original_size = tuple(response["original_size"])
+            if "input_size" in response:
+                self.input_size = tuple(response["input_size"])
             else:
-                raise RuntimeError(
-                    f"Unexpected response: {response}")
+                self.input_size = None
+            self.is_image_set = True
+
+            QgsMessageLog.logMessage(
+                f"Set image: original_size={self.original_size}",
+                "AI Segmentation",
+                level=Qgis.MessageLevel.Info
+            )
 
         except SamWorkerError as e:
             # Worker is still healthy: keep it alive for the next attempt.
@@ -515,34 +609,29 @@ class SamPredictor:
             self.process.stdin.write(json.dumps(request) + "\n")
             self.process.stdin.flush()
 
-            response_line = self._read_response(self._TIMEOUT_PREDICT)
-            response = json.loads(response_line.strip())
+            response = self._read_typed_response(
+                self._TIMEOUT_PREDICT, ("prediction",), "prediction",
+                "Worker prediction error")
 
-            if response.get("type") == "prediction":
-                masks_b64 = response["masks"]
-                masks_shape = response["masks_shape"]
-                masks_dtype = response["masks_dtype"]
+            masks_b64 = response["masks"]
+            masks_shape = response["masks_shape"]
+            masks_dtype = response["masks_dtype"]
 
-                masks_bytes = base64.b64decode(masks_b64.encode("utf-8"))
-                masks = np.frombuffer(masks_bytes, dtype=masks_dtype).reshape(masks_shape)
+            masks_bytes = base64.b64decode(masks_b64.encode("utf-8"))
+            masks = np.frombuffer(masks_bytes, dtype=masks_dtype).reshape(masks_shape)
 
-                scores = np.array(response["scores"])
+            scores = np.array(response["scores"])
 
-                low_res_masks_b64 = response["low_res_masks"]
-                low_res_masks_shape = response["low_res_masks_shape"]
-                low_res_masks_dtype = response["low_res_masks_dtype"]
+            low_res_masks_b64 = response["low_res_masks"]
+            low_res_masks_shape = response["low_res_masks_shape"]
+            low_res_masks_dtype = response["low_res_masks_dtype"]
 
-                low_res_masks_bytes = base64.b64decode(low_res_masks_b64.encode("utf-8"))
-                low_res_masks = np.frombuffer(
-                    low_res_masks_bytes, dtype=low_res_masks_dtype
-                ).reshape(low_res_masks_shape)
+            low_res_masks_bytes = base64.b64decode(low_res_masks_b64.encode("utf-8"))
+            low_res_masks = np.frombuffer(
+                low_res_masks_bytes, dtype=low_res_masks_dtype
+            ).reshape(low_res_masks_shape)
 
-                return masks, scores, low_res_masks
-
-            if response.get("type") == "error":
-                error_msg = response.get("message", "Unknown error")
-                raise SamWorkerError(f"Worker prediction error: {error_msg}")
-            raise RuntimeError(f"Unexpected response: {response}")
+            return masks, scores, low_res_masks
 
         except SamWorkerError as e:
             # Worker is still healthy: keep it alive (and the encoded image)

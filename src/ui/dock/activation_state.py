@@ -6,10 +6,8 @@ are plain mixin members: widgets/signals live on the dock instance.
 """
 from __future__ import annotations
 
-
 from qgis.core import QgsRasterLayer
 from qgis.PyQt.QtCore import Qt
-
 
 from ...core.activation_manager import (
     has_tos_locked,
@@ -128,6 +126,9 @@ class DockActivationMixin:
         self.seg_widget.setVisible(False)
         self.batch_info_widget.setVisible(False)
         self.auto_page.setVisible(False)
+        # The bottom View-as block is an Automatic review surface that lives
+        # outside auto_page, so hiding the page does not take it along.
+        self.auto_review_view_row.setVisible(False)
 
         self.activation_group.setVisible(True)
         if hasattr(self, "_connect_hint_label"):
@@ -172,8 +173,11 @@ class DockActivationMixin:
         if not show_segmentation:
             self.batch_info_widget.setVisible(False)
 
-        # Always hide automatic page in Interactive mode
+        # Always hide automatic page in Interactive mode, and with it the
+        # bottom View-as block (an Automatic review surface parked outside the
+        # page, so it needs its own call).
         self.auto_page.setVisible(False)
+        self.auto_review_view_row.setVisible(False)
         # Footer credit gauge is an Automatic-mode surface only.
         self._refresh_auto_credits_display()
 

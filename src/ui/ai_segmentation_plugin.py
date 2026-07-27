@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 from qgis.core import (
@@ -10,56 +11,88 @@ from qgis.core import (
     QgsGeometry,
     QgsMessageLog,
     QgsProject,
-    QgsRasterLayer,
     QgsRectangle,
 )
 from qgis.gui import QgisInterface, QgsRubberBand
 from qgis.PyQt.QtCore import QSettings, Qt
-from qgis.PyQt.QtGui import QAction, QIcon
+from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QMenu
 
 from ..core.i18n import tr
-from ..core.qt_compat import PolygonGeometry
+from ..core.log_scrub import start_log_collector, stop_log_collector
 from ..core.prompt_manager import FrozenCropSession, PromptManager
+from ..core.qt_compat import PolygonGeometry, QAction
 from ..core.review_defaults import (
     AUTO_DEFAULT_CONFIDENCE as _AUTO_DEFAULT_CONFIDENCE,
 )
 from ..core.review_defaults import (
+    REFINE_CLEAN_DEFAULT,
     REFINE_EXPAND_DEFAULT,
     REFINE_FILL_HOLES_DEFAULT,
+    REFINE_FILL_HOLES_MAX_M2_DEFAULT,
     REFINE_MAX_SIZE_M2_DEFAULT,
     REFINE_MIN_SIZE_M2_DEFAULT,
     REFINE_ORTHO_DEFAULT,
+    REFINE_POINTS_PCT_DEFAULT,
     REFINE_SIMPLIFY_DEFAULT,
     REFINE_SMOOTH_DEFAULT,
 )
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
-from .error_report_dialog import start_log_collector, stop_log_collector
 from .canvas_palette import PENDING_FILL, PENDING_STROKE
+from .plugin.auto_correct import AutoCorrectMixin
+from .plugin.auto_exemplar_grouping import AutoExemplarGroupingMixin
+from .plugin.auto_finalize_steps import AutoFinalizeStepsMixin
 from .plugin.auto_flow import AutoFlowMixin
-from .plugin.auto_run import AutoRunMixin
+from .plugin.auto_lifecycle import AutoLifecycleMixin
+from .plugin.auto_object_build import AutoObjectBuildMixin
 from .plugin.auto_results import AutoResultsMixin
 from .plugin.auto_review import AutoReviewMixin
-from .plugin.manual_handoff import ManualHandoffMixin
-from .plugin.handoff_shape import HandoffShapeMixin
-from .plugin.exemplars import ExemplarsMixin
-from .plugin.auto_lifecycle import AutoLifecycleMixin
+from .plugin.auto_review_display import AutoReviewDisplayMixin
+from .plugin.auto_review_geometry import AutoReviewGeometryMixin
+from .plugin.auto_review_open import AutoReviewOpenMixin
+from .plugin.auto_review_params import AutoReviewParamsMixin
+from .plugin.auto_run import AutoRunMixin
+from .plugin.auto_run_terminal import AutoRunTerminalMixin
+from .plugin.auto_shape_edit import AutoShapeEditMixin
+from .plugin.auto_shape_overrides import AutoShapeOverridesMixin
 from .plugin.auto_zone import AutoZoneMixin
 from .plugin.demo_scene import DemoSceneMixin
 from .plugin.env_setup import EnvSetupMixin
-from .plugin.manual_workflow import ManualWorkflowMixin
+from .plugin.exemplars import ExemplarsMixin
+from .plugin.handoff_seed_layers import HandoffSeedLayersMixin
+from .plugin.handoff_shape import HandoffShapeMixin
+from .plugin.local_ai_warm import LocalAiWarmMixin
+from .plugin.manual_add import ManualAddMixin
 from .plugin.manual_crops import ManualCropsMixin
+from .plugin.manual_handoff import ManualHandoffMixin
 from .plugin.manual_predict import ManualPredictMixin
+from .plugin.manual_workflow import ManualWorkflowMixin
+from .plugin.qgis_edit_bridge import QgisEditBridgeMixin
 from .plugin.shared import park_orphaned_worker
 
 
 class AISegmentationPlugin(
     AutoFlowMixin,
+    AutoCorrectMixin,
+    LocalAiWarmMixin,
+    AutoShapeEditMixin,
+    AutoShapeOverridesMixin,
+    QgisEditBridgeMixin,
     AutoRunMixin,
     AutoResultsMixin,
+    AutoReviewDisplayMixin,
+    HandoffSeedLayersMixin,
+    AutoRunTerminalMixin,
+    AutoExemplarGroupingMixin,
+    AutoObjectBuildMixin,
+    AutoReviewParamsMixin,
+    AutoReviewGeometryMixin,
+    AutoFinalizeStepsMixin,
+    AutoReviewOpenMixin,
     AutoReviewMixin,
     ManualHandoffMixin,
+    ManualAddMixin,
     HandoffShapeMixin,
     ExemplarsMixin,
     AutoLifecycleMixin,
@@ -119,19 +152,17 @@ class AISegmentationPlugin(
         self._handoff_hit_index = None
         self._handoff_tok2entry: dict = {}
         self._handoff_hit_tok_seq: int = 0
-        # Speculative selection prewarm (refine handoff): debounce timer + the
-        # crop spec (center/scale) of the last handoff-initiated encode, so the
-        # open can skip a duplicate encode the selection already started.
+        # Debounce for the speculative crop warm-up (hover on the Correct step,
+        # and selection inside a fix session). Which windows are encoded or in
+        # flight is tracked by _ensure_manual_encode_state, not here.
         self._handoff_prewarm_timer = None
-        self._handoff_crop_spec: tuple | None = None
+        self._correct_hover_warm_timer = None
         # Synthetic det_id sequence for hand-drawn/legacy entries (see
         # _next_handoff_det_id).
         self._handoff_det_id_seq = None
-        # Geometries the user hand-edited/added/carved during a refine handoff.
-        # They are PROTECTED: a confidence change re-filters only the untouched
-        # auto detections and never drops these, so the slider stays usable after
-        # a manual refine without wiping hand work (run CRS QgsGeometry list).
-        self._auto_protected_geoms: list = []
+        # det_ids the live fix session imported, so the fold's deletion diff
+        # can never speak for a detection the review filters were hiding.
+        self._handoff_imported_det_ids: set[int] = set()
         # The local SAM predictor loads lazily/async (None until ready), so a
         # Refine-in-Manual click can arrive before the model is up. When that
         # happens we hold the import and complete it from _on_predictor_loaded.
@@ -172,9 +203,19 @@ class AISegmentationPlugin(
         # Shared with the dock and the session-reset/restore fallbacks via
         # core/review_defaults.py (no local copies to keep in sync).
         self._refine_simplify = REFINE_SIMPLIFY_DEFAULT
+        # Share of its own points an outline may keep (100 = dial off). Same
+        # control and same unit as the Automatic review's Points dial.
+        self._refine_points_pct = REFINE_POINTS_PCT_DEFAULT
         self._refine_smooth = REFINE_SMOOTH_DEFAULT
+        # Clean edges (morphological opening, px; 0 = off). Mirrors the
+        # Automatic review's control; a Refine-in-Manual handoff seeds it from
+        # the review's value.
+        self._refine_clean = REFINE_CLEAN_DEFAULT
         self._refine_expand = REFINE_EXPAND_DEFAULT
         self._refine_fill_holes = REFINE_FILL_HOLES_DEFAULT
+        # Fill holes SMALLER than this ground area (m2); 0 = fill every hole,
+        # the behaviour before the threshold existed.
+        self._refine_fill_holes_max_m2 = REFINE_FILL_HOLES_MAX_M2_DEFAULT
         self._refine_ortho = REFINE_ORTHO_DEFAULT
         self._refine_min_area = 200  # overridden by _compute_auto_min_area() × 2
         # User Min/Max size window in ground m2 (0 = off); a Refine-in-Manual
@@ -185,6 +226,13 @@ class AISegmentationPlugin(
         self._is_non_georeferenced_mode = False  # Track if current layer is non-georeferenced
         self._is_online_layer = False  # Track if current layer is online (WMS, XYZ, etc.)
         self._disjoint_warning_shown = False
+        # One automatic venv repair per QGIS session: a second one would never
+        # cure what the first could not, and the retry loop is a dead end.
+        self._rasterio_repair_attempted = False
+        # Crop-error dialogs already shown this session, keyed by
+        # (raster path, error code): an unreadable file stays unreadable, so
+        # re-clicking must not re-raise the same modal on every attempt.
+        self._crop_errors_reported = set()
 
         # On-demand encoding state
         self._current_crop_info = None  # dict with 'bounds', 'img_shape'
@@ -246,6 +294,13 @@ class AISegmentationPlugin(
         self._auto_clip_polygon = None  # QgsGeometry | None
         self._auto_clip_engine = None   # prepared GEOS engine for the clip polygon
         self._zone_selection_tool = None  # PolygonZoneMapTool | None
+        # Background render of the Recent card's picture, held while it runs
+        # (see _render_history_thumbnail).
+        self._history_thumb_job = None  # QgsMapRendererSequentialJob | None
+        # Review correction loop state (journal, sets, queue, batch flags).
+        self._init_auto_correct_state()
+        # QGIS digitizing bridge state (native editing on the review layer).
+        self._init_qgis_bridge_state()
         # True once the user moves the detail slider themselves: the debounced
         # object-aware re-seed then stops overriding their manual pick, for the
         # prompt recorded below. Reset whenever a new zone is drawn (a fresh
@@ -258,6 +313,21 @@ class AISegmentationPlugin(
         self._zone_badge_filter = None  # ZoneBadgeClickFilter | None
         self._zone_escape_filter = None  # ZoneEscapeFilter | None
         self._zone_grid_rubber_band = None  # QgsRubberBand | None (tile grid preview)
+        # Clipped grid geometries already built, keyed by (zone WKB, cols, rows).
+        # The Detail slider is quantised, so neighbouring positions land on the
+        # same grid and used to re-clip up to 800 cells against the zone for a
+        # picture the user is already looking at.
+        self._zone_grid_geom_cache = {}
+        # Ground the running detection is re-reading finer, whose objects are
+        # withheld until it lands (see auto_results._on_auto_rescan_state).
+        self._auto_rescan_band = None       # QgsRubberBand | None
+        self._auto_rescan_rects: dict = {}  # base tile idx -> bbox in run CRS
+        # True from the Detect click until the flow is back on the pre-Detect
+        # setup screen. The grid is a setup aid, and this latch is what keeps it
+        # off the canvas for the whole run and the review that follows, because
+        # every other signal for "a run owns the canvas" is transient (see
+        # AutoZoneMixin._tile_grid_allowed).
+        self._auto_grid_suppressed = False
         self._tile_manager = None  # TileManager | None
 
         # Visual exemplars ("draw one example, find all"). The store
@@ -265,7 +335,7 @@ class AISegmentationPlugin(
         # keep them visible on the map; the draw tool is armed on demand.
         from ..core.exemplar_store import ExemplarStore
         self._auto_exemplar_store = ExemplarStore()
-        self._exemplar_maptool = None  # PolygonZoneMapTool | None (example draw)
+        self._exemplar_maptool = None  # BoxDrawMapTool | None (example draw)
         self._exemplar_bands: dict = {}  # exemplar id -> QgsRubberBand
         self._maptool_before_exemplar = None  # restore after a one-shot draw
         self._pending_exemplar_label = 1  # label (1/0) for the armed example draw
@@ -293,12 +363,12 @@ class AISegmentationPlugin(
         # grid). The review's px->ground refine scales by it; 0.0 = none seen.
         self._auto_mask_gsd: float = 0.0
         # Merge policy: True = keep objects SEPARATE (count, never seam-merge),
-        # False = merge tile-split objects (map continuous features). Smart
-        # default per object type at run start; user-overridable in the review.
+        # False = merge tile-split objects (map continuous features). Decided
+        # per object type at run start, never surfaced as a user control.
         self._auto_merge_separate: bool = True
-        # How the merge policy was decided: "prompt" (object token), "signal"
-        # (exemplar-only auto count-vs-map from the run's own masks) or
-        # "override" (the user re-grouped it in the review). Telemetry only.
+        # How the merge policy was decided: "prompt" (object token) or "signal"
+        # (exemplar-only auto count-vs-map from the run's own masks).
+        # Telemetry only.
         self._auto_merge_mode_source: str = "prompt"
         # Exemplar-only count-vs-map auto decision: the retained raw per-tile
         # fragments (None = not an exemplar-only run, or retention overflowed).
@@ -313,7 +383,14 @@ class AISegmentationPlugin(
         self._auto_raw_cov_sum: float = 0.0
         self._auto_raw_cov_sq_sum: float = 0.0
         self._auto_tile_ground_area: float = 0.0
-        self._auto_merge_override_used: bool = False
+        # Whether THIS run keeps its per-tile fragments. Only an exemplar-only
+        # run needs them: it re-merges them SEPARATE once the map-likeness
+        # signal has read every fragment (see _resolve_exemplar_finalize_ided).
+        self._auto_retain_raw: bool = False
+        # Whether the worker was asked for raw (un-gated, un-pre-stitched)
+        # fragments this run. Exemplar-only runs only; resolved in
+        # _start_auto_detection.
+        self._auto_collect_raw: bool = False
         self._auto_selection_layer = None  # QgsVectorLayer | None (in-progress results)
         # Review display colour mode: 'normal' / 'outline' / 'confidence' /
         # 'random' (visual only; never touches geometry, filters or export).
@@ -321,6 +398,14 @@ class AISegmentationPlugin(
         # every NEW review (_seed_review_display_mode).
         self._auto_display_mode = "random"
         self._auto_run_id: str | None = None
+        # Crash-net run autosave: one recovery offer per session (the message
+        # bar widget is kept so the Recover click can dismiss it).
+        self._run_autosave_offer_shown: bool = False
+        self._run_autosave_offer_widget = None
+        # run_id of the last run whose auto-default export was archived at
+        # review-open, so that background upload fires at most once per run
+        # (Finish still uploads the reviewed set later; same run_id, latest wins).
+        self._auto_default_export_run_id: str | None = None
         self._auto_run_ctx: dict | None = None     # inputs of the active run
         self._last_usage: dict = {}  # last fetched usage (credits/is_free_tier) for telemetry
         self._usage_fetch_task = None  # GenericRequestTask | None (plan #79)
@@ -336,6 +421,11 @@ class AISegmentationPlugin(
         # generic path stands. Fire-and-forget, fails open.
         self._auto_run_plan: dict | None = None
         self._auto_run_plan_task = None  # GenericRequestTask | None
+        # Attribute filters carried by the run plan's optional prompt_rewrite
+        # block ([{"attribute", "value"}, ...]). Informational this pass (stored
+        # for a later honest-count UI, never used for filtering yet); cleared on
+        # every prompt change and run reset alongside _auto_run_plan.
+        self._auto_attribute_filters: list[dict[str, str]] = []
         # Localized prompt -> English cloud-model token, resolved once per prompt
         # on commit (offline lexicon, with an async server fallback) so the
         # detail seed keys on the SAME token the run will send. Display stays the
@@ -394,26 +484,30 @@ class AISegmentationPlugin(
         self._auto_preview_geoms: list = []
         self._auto_preview_build_state: dict | None = None
         self._auto_preview_build_gen: int = 0
-        # Live tile processing is decoupled from the worker signal so the GUI
-        # thread is never blocked converting a whole tile's masks at once (the
-        # freeze the user hit). Arriving detections queue here; a cooperative,
-        # time-budgeted pump (_pump_auto_tiles) drains them a slice at a time,
-        # and the live preview repaint is coalesced via a single-shot timer.
-        from collections import deque as _deque
-        self._auto_tile_queue = _deque()
-        self._auto_pump_scheduled: bool = False
-        self._auto_repaint_timer = None  # QTimer | None (coalesced live repaint)
-        # Live preset-refine cache: fid -> (visible, refined geom). A merger
-        # keeper is immutable (merges retire fids), so each object is refined
-        # once; reset per run via _reset_auto_live_pipeline.
-        self._auto_live_refine_cache: dict = {}
-        self._auto_live_refine_px: float = -1.0
-        self._auto_live_measurer = None  # QgsDistanceArea | None
-        self._auto_live_params = None  # per-run memo of the review preset
+        # Arriving tile geometry is folded, gated and shaped on the live
+        # stitcher thread, which owns the run's merger from the moment the
+        # worker starts until the finalize takes it back. The GUI thread only
+        # writes the objects it hands over, on a coalesced repaint tick.
+        self._auto_stitcher = None  # LiveStitchThread | None
+        self._auto_repaint_timer = None  # QTimer | None (coalesced live write)
+        # The live preview paces itself on the canvas, not on a clock: a refresh
+        # asked for while the previous one is still drawing KILLS it and starts
+        # over, so on a big zone the map never finished a frame. These hold the
+        # "data landed while it was drawing" flag and the one-shot connection to
+        # the canvas's finished signal (see _repaint_live_layer).
+        self._auto_live_repaint_pending = False
+        self._auto_live_pacer_canvas = None
+        # What one frame of that preview costs, measured, plus the cool-down it
+        # buys the run (see _note_live_repaint_sent). A frame grows with the
+        # objects found, and it is drawn on the machine that is folding tiles,
+        # so past a few thousand objects the preview has to sit out its turn.
+        self._auto_live_frame_s = 0.0
+        self._auto_live_frame_started = 0.0
+        self._auto_live_repaint_not_before = 0.0
+        self._auto_live_cooldown_timer = None  # QTimer | None
         # Live preview provider mapping: merger keeper fid -> (provider_fid,
-        # stamp, is_full, score). Lets the live repaint update the selection
-        # layer incrementally (add/change/delete only the delta) instead of
-        # truncating + re-adding every feature. Reset per run via
+        # score). Lets the live tick add / change / delete only the objects the
+        # stitcher reported, instead of rebuilding the layer. Reset per run via
         # _stop_auto_live_pump; the layer is recreated fresh each run.
         self._auto_live_fid_map: dict = {}
         # End-of-run refine is also cooperative: refining hundreds of objects in
@@ -436,6 +530,10 @@ class AISegmentationPlugin(
         # (add/change/delete only the delta) instead of truncating + re-adding
         # every feature. Reset whenever the selection layer is (re)created.
         self._review_fid_map: dict = {}
+        # Run refiners: shape-params key -> core.live_refine.LiveRefiner, the
+        # run's server dials resolved once so the per-object refine only does
+        # the object's own work. Reset with the reslice cache.
+        self._review_live_refiners: dict = {}
 
     @staticmethod
     def _safe_remove_rubber_band(rb):
@@ -463,34 +561,10 @@ class AISegmentationPlugin(
             return False
 
     def _is_layer_georeferenced(self, layer) -> bool:
-        """Check if a raster layer is properly georeferenced."""
-        if layer is None or not isinstance(layer, QgsRasterLayer):
-            return False
-
-        try:
-            source = layer.source().lower()
-        except RuntimeError:
-            return False
-
-        # PNG, JPG, BMP etc. without world files are not georeferenced
-        non_georef_extensions = (".png", ".jpg", ".jpeg", ".bmp", ".gif")
-        has_non_georef_ext = any(source.endswith(ext) for ext in non_georef_extensions)
-
-        # If it's a known non-georeferenced format, check if it has a valid CRS
-        if has_non_georef_ext:
-            try:
-                # Check if the layer has a valid CRS (not just default)
-                if not layer.crs().isValid():
-                    return False
-                # Check if extent looks like pixel coordinates (0,0 to width,height)
-                extent = layer.extent()
-                if extent.xMinimum() == 0 and extent.yMinimum() == 0:
-                    # Likely not georeferenced - just pixel dimensions
-                    return False
-            except RuntimeError:
-                return False
-
-        return True
+        """Check if a raster layer is properly georeferenced. Kept as a method
+        (MCP session setup and the mixins call it); logic lives in shared."""
+        from .plugin.shared import is_layer_georeferenced
+        return is_layer_georeferenced(layer)
 
     @staticmethod
     def _is_online_provider(layer) -> bool:
@@ -538,7 +612,9 @@ class AISegmentationPlugin(
         if bbox_width == 0:
             return 0
         pixel_size = bbox_width / width_pixels
-        return pixel_size * simplify_value * 0.5
+        # One crop pixel per unit, the same scale the Automatic review's
+        # Simplify uses (shape_polygon_geometry keeps the twin of this line).
+        return pixel_size * simplify_value
 
     def initGui(self):
         from ..mcp_api import SegmentationMCPAPI
@@ -676,6 +752,13 @@ class AISegmentationPlugin(
         # costs nothing.
         self._ensure_dock_widget()
 
+        # A previous session's run autosave that was never exported (QGIS
+        # closed or died between finalize and Finish): offer it back. One
+        # event-loop turn later so startup finishes laying out the message bar
+        # first; the offer itself is fully guarded and best-effort.
+        from qgis.PyQt.QtCore import QTimer
+        QTimer.singleShot(0, self._offer_pending_run_autosave)
+
         # Auto-open the panel on first install and after every upgrade (new
         # version), but never on a routine launch. Same-version launches let
         # QGIS restore the dock to the state the user left it in
@@ -758,6 +841,10 @@ class AISegmentationPlugin(
             _telemetry_flush()
         except Exception:
             pass  # nosec B110
+        # Roll back and restore first if a QGIS digitizing bridge is open, so
+        # the user's project never keeps our snapping / topology / avoid-overlap
+        # forced on after the plugin is gone (idempotent, never raises).
+        self._abort_qgis_edit_bridge_if_active()
         # Data-loss guard: if a Refine-in-Manual handoff is live with hand edits,
         # fold them into the held review BEFORE clearing the flag, so the autosave
         # later in unload writes the MERGED set (not just the original detections).
@@ -770,9 +857,12 @@ class AISegmentationPlugin(
         # and review chokepoints below run their normal teardown, not the
         # handoff branch, on a half-torn-down state.
         self._refine_handoff_active = False
-        self._auto_protected_geoms = []
         self._pending_refine_import = False
         self._handoff_source_layer = None
+        # The AI-assisted Add flags ride the handoff: drop them too, or a
+        # reloaded plugin instance could inherit a stale True.
+        self._refine_add_mode_active = False
+        self._ai_add_install_pending = False
         # Detach the layer-removal lifecycle hook wired in initGui.
         try:
             QgsProject.instance().layersWillBeRemoved.disconnect(
@@ -784,6 +874,14 @@ class AISegmentationPlugin(
                 self._on_project_read_sweep_temp)
         except (TypeError, RuntimeError):
             pass
+        # A commit right before unload may still be holding the canvas picture
+        # for its redraw: give the map its normal update rate back, or the
+        # user's canvas keeps the parked one after the plugin is gone.
+        try:
+            from .plugin.canvas_redraw_handover import release_map_picture_hold
+            release_map_picture_hold(self.iface.mapCanvas())
+        except (RuntimeError, AttributeError, ImportError):
+            pass  # nosec B110
         # 0. Remove keyboard shortcut filter
         try:
             if self._shortcut_filter is not None:
@@ -804,62 +902,103 @@ class AISegmentationPlugin(
                 self.dock_widget.cleanup_signals()
             except (TypeError, RuntimeError, AttributeError):
                 pass
+            # Disconnect every dock signal wired when the dock was created.
+            # This list must stay the mirror image of the connects in
+            # _ensure_dock_widget (and of the two _connect_auto_* helpers it
+            # calls); tests/test_unload_teardown_guards.py fails the build if
+            # a connect has no disconnect here. Each entry is tried on its own
+            # so one stale connection cannot abort the rest of unload().
+            # Building the list touches child widgets: if one has already
+            # lost its C++ side there is nothing left to disconnect from it,
+            # and unload still has to finish the rest of its steps.
             try:
-                self.dock_widget.layer_combo.layerChanged.disconnect(self._on_layer_combo_changed)
+                _dock_signals = [
+                    (self.dock_widget.layer_combo.layerChanged, self._on_layer_combo_changed),
+                    (self.dock_widget.install_requested, self._on_install_requested),
+                    (self.dock_widget.cancel_install_requested, self._on_cancel_install),
+                    (self.dock_widget.start_segmentation_requested, self._on_start_segmentation),
+                    (self.dock_widget.save_polygon_requested, self._on_save_polygon),
+                    (self.dock_widget.export_layer_requested, self._on_export_layer),
+                    (self.dock_widget.undo_requested, self._on_undo),
+                    (self.dock_widget.stop_segmentation_requested, self._on_stop_segmentation),
+                    (self.dock_widget.refine_settings_changed, self._on_refine_settings_changed),
+                    (self.dock_widget.size_filter_changed, self._on_size_filter_changed),
+                    (self.dock_widget.fill_holes_size_changed,
+                     self._on_fill_holes_size_changed),
+                    (self.dock_widget.clean_edges_changed, self._on_clean_edges_changed),
+                    (self.dock_widget.outline_budget_changed,
+                     self._on_outline_budget_changed),
+                    (self.dock_widget.settings_clicked, self._on_settings_clicked),
+                    (self.dock_widget.pairing_requested, self._on_pairing_requested),
+                    (self.dock_widget.pairing_cancel_requested, self._on_cancel_pairing),
+                    (self.dock_widget.visibilityChanged, self._on_dock_visibility_changed),
+                    (self.dock_widget.mode_changed, self._on_mode_changed),
+                    (self.dock_widget.auto_detect_requested, self._on_auto_detect_requested),
+                    (self.dock_widget.history_rerun_requested, self._on_history_rerun_requested),
+                    (self.dock_widget.history_reuse_prompt_requested,
+                     self._on_history_reuse_prompt_requested),
+                    (self.dock_widget.zone_draw_requested, self._on_zone_draw_requested),
+                    (self.dock_widget.auto_step_changed, self._on_auto_step_changed),
+                    (self.dock_widget.auto_detail_changed, self._on_auto_detail_changed),
+                    (self.dock_widget.auto_prompt_committed, self._reseed_auto_detail_for_object),
+                    (self.dock_widget.auto_layer_combo.layerChanged, self._on_auto_layer_combo_changed),
+                    (self.dock_widget.auto_cancel_btn.clicked, self._on_auto_cancel_clicked),
+                    (self.dock_widget.auto_refine_changed, self._on_auto_refine_changed_debounced),
+                    (self.dock_widget.auto_export_requested, self._on_auto_export_clicked),
+                    (self.dock_widget.auto_retry_requested, self._on_auto_retry_guarded),
+                    (self.dock_widget.auto_review_exit_requested, self._on_auto_review_exit_clicked),
+                    (self.dock_widget.auto_display_mode_changed, self._on_auto_display_mode_changed),
+                    (self.dock_widget.auto_library_requested, self._on_auto_library_clicked),
+                    (self.dock_widget.auto_demo_requested, self._on_auto_demo_requested),
+                    (self.dock_widget.auto_reshape_ai_requested, self._on_reshape_ai_requested),
+                    (self.dock_widget.auto_reshape_done_requested, self._on_reshape_done),
+                    (self.dock_widget.auto_correct_method_changed, self._on_correct_method_changed),
+                    (self.dock_widget.auto_ai_add_requested, self._on_ai_add_requested),
+                    (self.dock_widget.auto_ai_add_keep_requested, self._route_save_add_mode),
+                    (self.dock_widget.auto_exit_requested, self._on_auto_exit_clicked),
+                    (self.dock_widget.auto_add_exemplar_requested, self._on_add_exemplar_requested),
+                    (self.dock_widget.auto_exemplar_remove_requested, self._on_exemplar_remove_requested),
+                    (self.dock_widget.auto_zero_assist_clicked, self._on_auto_zero_assist_clicked),
+                    (self.dock_widget.auto_escape_pressed, self._on_auto_escape_shortcut),
+                    (self.dock_widget.auto_enter_pressed, self._on_auto_enter_pressed),
+                    (self.dock_widget.auto_correct_undo_shortcut.activated,
+                     self._on_auto_undo_pressed),
+                    (self.dock_widget.auto_review_confidence_changed, self._on_auto_review_confidence_changed),
+                    (self.dock_widget.auto_review_confidence_preview, self._on_auto_review_confidence_preview),
+                    (self.dock_widget.auto_show_tiles_changed, self._on_auto_show_tiles_toggled),
+                    (self.dock_widget.auto_edit_in_qgis_requested, self.enter_qgis_edit_bridge),
+                    (self.dock_widget.auto_add_polygon_requested, self._on_add_polygon_requested),
+                    (self.dock_widget.auto_qgis_bridge_done_requested,
+                     self.finish_qgis_edit_bridge),
+                    (self.dock_widget.auto_qgis_bridge_tool_requested,
+                     self.activate_qgis_bridge_tool),
+                    (self.dock_widget.auto_qgis_bridge_undo_requested,
+                     self.undo_qgis_bridge_edit),
+                    (self.dock_widget.auto_qgis_bridge_gesture_requested,
+                     self._on_bridge_gesture_requested),
+                    (self.dock_widget.auto_qgis_bridge_points_changed,
+                     self._on_bridge_points_changed),
+                    (self.dock_widget._auto_review_debounce_timer.timeout,
+                     self._on_auto_review_refine_debounced),
+                    # Mirrors _connect_auto_correct_signals.
+                    (self.dock_widget.auto_correction_undo_requested,
+                     self._on_auto_correction_undo_requested),
+                    (self.dock_widget.auto_correction_clear_requested,
+                     self._on_auto_correction_clear_requested),
+                    (self.dock_widget.auto_review_step_requested,
+                     self._on_auto_review_step_requested),
+                    (self.dock_widget.auto_correct_status_action_requested,
+                     self._on_correct_status_action_requested),
+                    # Mirrors _connect_auto_shape_edit_signals.
+                    (self.dock_widget.auto_shape_edit_requested,
+                     self._on_auto_shape_edit_requested),
+                    (self.dock_widget.auto_remove_requested, self._on_remove_requested),
+                    (self.dock_widget.auto_shape_only_changed, self._on_shape_only_changed),
+                    (self.dock_widget.auto_shape_only_reset_requested,
+                     self._on_shape_only_reset),
+                ]
             except (TypeError, RuntimeError, AttributeError):
-                pass
-            # Disconnect all dock widget signals connected in initGui()
-            _dock_signals = [
-                (self.dock_widget.install_requested, self._on_install_requested),
-                (self.dock_widget.cancel_install_requested, self._on_cancel_install),
-                (self.dock_widget.start_segmentation_requested, self._on_start_segmentation),
-                (self.dock_widget.save_polygon_requested, self._on_save_polygon),
-                (self.dock_widget.export_layer_requested, self._on_export_layer),
-                (self.dock_widget.undo_requested, self._on_undo),
-                (self.dock_widget.stop_segmentation_requested, self._on_stop_segmentation),
-                (self.dock_widget.refine_settings_changed, self._on_refine_settings_changed),
-                (self.dock_widget.size_filter_changed, self._on_size_filter_changed),
-                (self.dock_widget.settings_clicked, self._on_settings_clicked),
-                (self.dock_widget.pairing_requested, self._on_pairing_requested),
-                (self.dock_widget.pairing_cancel_requested, self._on_cancel_pairing),
-                (self.dock_widget.visibilityChanged, self._on_dock_visibility_changed),
-                (self.dock_widget.mode_changed, self._on_mode_changed),
-                (self.dock_widget.auto_detect_requested, self._on_auto_detect_requested),
-                (self.dock_widget.history_rerun_requested, self._on_history_rerun_requested),
-                (self.dock_widget.history_reuse_prompt_requested,
-                 self._on_history_reuse_prompt_requested),
-                (self.dock_widget.zone_draw_requested, self._on_zone_draw_requested),
-                (self.dock_widget.auto_step_changed, self._on_auto_step_changed),
-                (self.dock_widget.auto_detail_changed, self._on_auto_detail_changed),
-                (self.dock_widget.auto_prompt_committed, self._reseed_auto_detail_for_object),
-                (self.dock_widget.auto_layer_combo.layerChanged, self._on_auto_layer_combo_changed),
-                (self.dock_widget.auto_cancel_btn.clicked, self._on_auto_cancel_clicked),
-                (self.dock_widget.auto_refine_changed, self._on_auto_refine_changed_debounced),
-                (self.dock_widget.auto_export_requested, self._on_auto_export_clicked),
-                (self.dock_widget.auto_retry_requested, self._on_auto_retry_clicked),
-                (self.dock_widget.auto_review_exit_requested, self._on_auto_review_exit_clicked),
-                (self.dock_widget.auto_display_mode_changed, self._on_auto_display_mode_changed),
-                (self.dock_widget.auto_merge_override_requested,
-                 self._on_auto_merge_override_requested),
-                (self.dock_widget.auto_library_requested, self._on_auto_library_clicked),
-                (self.dock_widget.auto_demo_requested, self._on_auto_demo_requested),
-                (self.dock_widget.auto_refine_in_manual_requested, self._on_refine_in_manual_clicked),
-                (self.dock_widget.back_to_review_requested, self._on_back_to_review_clicked),
-                (self.dock_widget.handoff_edit_requested, self._on_handoff_edit_clicked),
-                (self.dock_widget.handoff_delete_requested, self._on_handoff_delete_clicked),
-                (self.dock_widget.auto_exit_requested, self._on_auto_exit_clicked),
-                (self.dock_widget.auto_add_exemplar_requested, self._on_add_exemplar_requested),
-                (self.dock_widget.auto_exemplar_retry_requested, self._on_auto_exemplar_retry_clicked),
-                (self.dock_widget.auto_exemplar_remove_requested, self._on_exemplar_remove_requested),
-                (self.dock_widget.auto_zero_assist_clicked, self._on_auto_zero_assist_clicked),
-                (self.dock_widget.auto_escape_pressed, self._on_auto_escape_shortcut),
-                (self.dock_widget.auto_enter_pressed, self._route_enter),
-                (self.dock_widget.auto_review_confidence_changed, self._on_auto_review_confidence_changed),
-                (self.dock_widget.auto_review_confidence_preview, self._on_auto_review_confidence_preview),
-                (self.dock_widget.auto_show_tiles_changed, self._on_auto_show_tiles_toggled),
-                (self.dock_widget._auto_review_debounce_timer.timeout,
-                 self._on_auto_review_refine_debounced),
-            ]
+                _dock_signals = []
             for sig, slot in _dock_signals:
                 try:
                     sig.disconnect(slot)
@@ -873,19 +1012,24 @@ class AISegmentationPlugin(
                 self.dock_widget._auto_prompt_debounce_timer.stop()
             except (AttributeError, RuntimeError):
                 pass
-        try:
-            if self.map_tool:
-                self.map_tool.positive_click.disconnect(self._on_positive_click)
-                self.map_tool.negative_click.disconnect(self._on_negative_click)
-                self.map_tool.double_click.disconnect(self._on_canvas_double_click)
-                self.map_tool.cursor_moved.disconnect(self._on_handoff_cursor_moved)
-                self.map_tool.tool_deactivated.disconnect(self._on_tool_deactivated)
-                self.map_tool.undo_requested.disconnect(self._on_undo)
-                self.map_tool.save_polygon_requested.disconnect(self._on_save_polygon)
-                self.map_tool.export_layer_requested.disconnect(self._on_export_layer)
-                self.map_tool.stop_segmentation_requested.disconnect(self._on_stop_segmentation)
-        except (TypeError, RuntimeError, AttributeError):
-            pass
+        if self.map_tool:
+            # One try per signal: a single stale connection used to abort the
+            # whole block and leave the rest of the tool wired to a dead plugin.
+            for sig_name, slot in (
+                ("positive_click", self._on_positive_click),
+                ("negative_click", self._on_negative_click),
+                ("double_click", self._on_canvas_double_click),
+                ("cursor_moved", self._on_handoff_cursor_moved),
+                ("tool_deactivated", self._on_tool_deactivated),
+                ("undo_requested", self._on_undo),
+                ("save_polygon_requested", self._on_save_polygon),
+                ("export_layer_requested", self._on_export_layer),
+                ("stop_segmentation_requested", self._on_stop_segmentation),
+            ):
+                try:
+                    getattr(self.map_tool, sig_name).disconnect(slot)
+                except (TypeError, RuntimeError, AttributeError):
+                    pass
 
         # 2. Cleanup predictor subprocess (with timeout to avoid blocking unload)
         if self.predictor:
@@ -938,32 +1082,32 @@ class AISegmentationPlugin(
                 except (TypeError, RuntimeError):
                     pass
 
-        # 4. Stop workers. Cooperatively cancel first: the install-family workers
-        # run subprocess-based venv/pip installs, and a hard terminate() kills the
-        # Python thread while its child process keeps running, risking a
-        # half-written venv and an orphaned installer. Only terminate() as a last
-        # resort, after a bounded wait for the cancel to unwind.
+        # 4. Stop workers. Cooperatively cancel where supported, then give EVERY
+        # worker a bounded wait and park the survivors. Never terminate(): these
+        # threads run subprocess installs, network I/O, or in-process native
+        # imports, and a hard stop there can orphan a child installer, leave a
+        # half-written venv, or abort all of QGIS outright. A thread that
+        # outlives the wait keeps its last reference parked until its finished
+        # signal fires, mirroring the auto worker path (see park_orphaned_worker).
         for worker in _qthread_workers:
             if worker and worker.isRunning() and hasattr(worker, "cancel"):
                 try:
                     worker.cancel()
                 except (RuntimeError, AttributeError):
                     pass
+        # ONE budget for the whole set, not 3 s per worker: six that ignore
+        # cancel used to mean eighteen seconds of frozen QGIS on quit, on top
+        # of the auto worker's own wait below. They were all cancelled just
+        # above, so the ones that can stop stop together; this only bounds how
+        # long we wait before parking the rest.
+        deadline = time.monotonic() + 3.0
         for worker in _qthread_workers:
             if worker and worker.isRunning():
                 try:
-                    # A cancellable worker gets a bounded chance to finish cleanly
-                    # before the hard stop.
-                    if hasattr(worker, "cancel") and worker.wait(3000):
+                    left_ms = int(max(0.0, deadline - time.monotonic()) * 1000)
+                    if left_ms > 0 and worker.wait(left_ms):
                         continue
-                    worker.terminate()
-                    if not worker.wait(5000):
-                        # Still blocked in a long network/subprocess call.
-                        # Never null a running QThread (that GC-deletes the C++
-                        # object mid-run and hard-aborts QGIS): park the last
-                        # reference until its finished signal fires, mirroring
-                        # the auto worker path. (See park_orphaned_worker.)
-                        park_orphaned_worker(worker)
+                    park_orphaned_worker(worker)
                 except RuntimeError:
                     pass
         self.deps_install_worker = None
@@ -1050,6 +1194,11 @@ class AISegmentationPlugin(
         self.saved_rubber_bands = []
         self._remove_handoff_layers()  # handoff seed layers
 
+        # A history thumbnail may still be rendering in the background: stop it
+        # here (blocking, bounded by one small render) so no render job and no
+        # callback outlives the plugin that owns them.
+        self._cancel_history_thumbnail()
+
         # 9. Stop any running auto detection worker, then tear down Pro auto mode.
         # _stop_auto_detection keeps the worker reference (the thread is winding
         # down its last network call in the background), so join it here before
@@ -1105,6 +1254,12 @@ class AISegmentationPlugin(
         self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
         self.dock_widget.refine_settings_changed.connect(self._on_refine_settings_changed)
         self.dock_widget.size_filter_changed.connect(self._on_size_filter_changed)
+        self.dock_widget.fill_holes_size_changed.connect(
+            self._on_fill_holes_size_changed)
+        self.dock_widget.clean_edges_changed.connect(
+            self._on_clean_edges_changed)
+        self.dock_widget.outline_budget_changed.connect(
+            self._on_outline_budget_changed)
         self.dock_widget.settings_clicked.connect(self._on_settings_clicked)
         self.dock_widget.pairing_requested.connect(self._on_pairing_requested)
         self.dock_widget.pairing_cancel_requested.connect(self._on_cancel_pairing)
@@ -1127,26 +1282,32 @@ class AISegmentationPlugin(
         # Auto review panel signals (plan #78 round 5).
         self.dock_widget.auto_refine_changed.connect(self._on_auto_refine_changed_debounced)
         self.dock_widget.auto_export_requested.connect(self._on_auto_export_clicked)
-        self.dock_widget.auto_retry_requested.connect(self._on_auto_retry_clicked)
+        self.dock_widget.auto_retry_requested.connect(self._on_auto_retry_guarded)
         self.dock_widget.auto_review_exit_requested.connect(self._on_auto_review_exit_clicked)
         self.dock_widget.auto_display_mode_changed.connect(self._on_auto_display_mode_changed)
-        self.dock_widget.auto_merge_override_requested.connect(
-            self._on_auto_merge_override_requested)
-        self.dock_widget.auto_refine_in_manual_requested.connect(
-            self._on_refine_in_manual_clicked)
-        self.dock_widget.back_to_review_requested.connect(self._on_back_to_review_clicked)
-        # Handoff state-card actions (Edit shape / Remove).
-        self.dock_widget.handoff_edit_requested.connect(self._on_handoff_edit_clicked)
-        self.dock_widget.handoff_delete_requested.connect(self._on_handoff_delete_clicked)
+        # Correct step: in-place AI reshape (no mode switch, no separate screen).
+        self.dock_widget.auto_reshape_ai_requested.connect(
+            self._on_reshape_ai_requested)
+        self.dock_widget.auto_reshape_done_requested.connect(self._on_reshape_done)
+        # Round 3: the AI | Manual method switch and the AI-assisted Add lane.
+        self.dock_widget.auto_correct_method_changed.connect(
+            self._on_correct_method_changed)
+        self.dock_widget.auto_ai_add_requested.connect(self._on_ai_add_requested)
+        self.dock_widget.auto_ai_add_keep_requested.connect(
+            self._route_save_add_mode)
         self.dock_widget.auto_exit_requested.connect(self._on_auto_exit_clicked)
         # Visual exemplar controls (+ Example / + Exclude / chip remove).
         self.dock_widget.auto_add_exemplar_requested.connect(self._on_add_exemplar_requested)
-        self.dock_widget.auto_exemplar_retry_requested.connect(
-            self._on_auto_exemplar_retry_clicked)
         self.dock_widget.auto_exemplar_remove_requested.connect(self._on_exemplar_remove_requested)
         self.dock_widget.auto_zero_assist_clicked.connect(self._on_auto_zero_assist_clicked)
         self.dock_widget.auto_escape_pressed.connect(self._on_auto_escape_shortcut)
-        self.dock_widget.auto_enter_pressed.connect(self._route_enter)
+        self.dock_widget.auto_enter_pressed.connect(self._on_auto_enter_pressed)
+        # Undo has no dock signal of its own: the window-level Undo QShortcut
+        # is the channel, and the dock's handler on it only covers the Correct
+        # step. Listen to the same shortcut so a press during a zone draw is
+        # routed to the map tool instead of being eaten.
+        self.dock_widget.auto_correct_undo_shortcut.activated.connect(
+            self._on_auto_undo_pressed)
         self.dock_widget.auto_review_confidence_changed.connect(
             self._on_auto_review_confidence_changed)
         self.dock_widget.auto_review_confidence_preview.connect(
@@ -1154,6 +1315,30 @@ class AISegmentationPlugin(
         self.dock_widget.auto_show_tiles_changed.connect(self._on_auto_show_tiles_toggled)
         self.dock_widget._auto_review_debounce_timer.timeout.connect(
             self._on_auto_review_refine_debounced)
+        # Review correction loop (linear ladder, gestures, batch).
+        self._connect_auto_correct_signals()
+        # QGIS digitizing bridge seam: the Correct step's "Edit precisely in
+        # QGIS" arms native editing; the banner's "Done editing" commits and
+        # folds back. Both engine entries are idempotent, so a double connect is
+        # a harmless no-op. finish_qgis_edit_bridge's commit arg defaults to
+        # True, so the no-arg Done signal commits.
+        try:
+            self.dock_widget.auto_edit_in_qgis_requested.connect(
+                self.enter_qgis_edit_bridge)
+            self.dock_widget.auto_add_polygon_requested.connect(
+                self._on_add_polygon_requested)
+            self.dock_widget.auto_qgis_bridge_done_requested.connect(
+                self.finish_qgis_edit_bridge)
+            self.dock_widget.auto_qgis_bridge_tool_requested.connect(
+                self.activate_qgis_bridge_tool)
+            self.dock_widget.auto_qgis_bridge_undo_requested.connect(
+                self.undo_qgis_bridge_edit)
+            self.dock_widget.auto_qgis_bridge_gesture_requested.connect(
+                self._on_bridge_gesture_requested)
+            self.dock_widget.auto_qgis_bridge_points_changed.connect(
+                self._on_bridge_points_changed)
+        except (AttributeError, RuntimeError):
+            pass
 
         # Environment checks (venv scan, checkpoint, key revalidation) run
         # only once the dock is actually seen: toolbar click, the
@@ -1172,6 +1357,44 @@ class AISegmentationPlugin(
         self._setup_done = True
         if self.dock_widget.isVisible():
             self._on_dock_visibility_changed(True)
+
+    def _on_auto_enter_pressed(self) -> bool:
+        """Single entry point for the Automatic flow's Enter key.
+
+        The zone draw gets first refusal. Its map tool handles Enter itself,
+        but the dock's window-level Enter shortcut matches the key before the
+        canvas ever sees it, so the draw would never close from the keyboard.
+        Anything else falls through to the shared dispatcher.
+        """
+        tool = self._zone_selection_tool
+        if tool is not None:
+            try:
+                if self.iface.mapCanvas().mapTool() is tool and tool.has_points():
+                    if tool.finish():
+                        return True
+            except (RuntimeError, AttributeError):
+                pass
+        return self._route_enter()
+
+    def _on_auto_undo_pressed(self) -> bool:
+        """Platform Undo (Ctrl+Z, Cmd+Z on macOS) during a zone draw.
+
+        Same routing as Enter: the zone draw gets first refusal. The map tool
+        undoes its own last point, but the dock's window-level Undo shortcut
+        matches the key before the canvas sees the press, so mid-draw Ctrl+Z
+        was swallowed and only Backspace worked. The dock's own handler keeps
+        the Correct-step undo and its gate is down while the zone is being
+        drawn, so exactly one of the two acts on any press.
+        """
+        tool = self._zone_selection_tool
+        if tool is None:
+            return False
+        try:
+            if self.iface.mapCanvas().mapTool() is tool:
+                return tool.undo_point()
+        except (RuntimeError, AttributeError):
+            pass
+        return False
 
     def _on_dock_visibility_changed(self, visible: bool):
         if not visible or self._first_time_setup_done:
@@ -1195,11 +1418,16 @@ class AISegmentationPlugin(
         QTimer.singleShot(0, self._do_first_time_setup)
 
     def _prefetch_server_config(self) -> None:
-        """Fetch the product config once, off the GUI thread, into the cache.
+        """Bring the product configuration up to date, entirely off the GUI thread.
 
-        get_server_config() is cache-only (it must never block the GUI), so this
-        hidden task is what actually populates it. Fails open: an empty cache
-        keeps Automatic mode available and the tutorial-URL fallback in place.
+        Every read of the configuration is a memory read, so this hidden task is
+        the one thing that fills it, and it owns all three slow steps: the copy
+        an earlier session left on disk, the fetch, and mirroring the result back
+        to disk. None of them may run on the GUI thread; get_config() is called
+        while the dock is being built.
+
+        Fails open at every step: no configuration keeps Automatic mode
+        available and the tutorial-URL fallback in place.
         """
         if self._config_prefetch_task is not None and self._config_prefetch_task.is_active():
             return
@@ -1211,22 +1439,54 @@ class AISegmentationPlugin(
         client = TerraLabClient()
         self._config_prefetch_task = GenericRequestTask(
             tr("Loading AI Segmentation settings"),
-            lambda: client.get_config(PRODUCT_ID),
+            lambda: self._refresh_server_config(client, PRODUCT_ID),
             hidden=True,
         )
         self._config_prefetch_task.succeeded.connect(self._on_config_prefetched)
         self._config_prefetch_task.failed.connect(self._on_config_prefetch_failed)
         QgsApplication.taskManager().addTask(self._config_prefetch_task)
 
-    def _on_config_prefetched(self, config: object) -> None:
-        self._config_prefetch_task = None
-        if isinstance(config, dict):
+    @staticmethod
+    def _refresh_server_config(client, product_id: str) -> dict:
+        """Publish the disk copy, fetch, publish and mirror the result.
+
+        Runs on the task's thread. Pure Python and no Qt, so nothing here needs
+        the GUI thread and nothing here may block it. The disk copy goes in
+        first, so a failed or slow fetch still leaves the last known
+        configuration in force. Priming is best-effort on its own: a damaged
+        file must not cost us the fetch that follows.
+        """
+        from ..core.config_cache import prime_from_disk
+        try:
+            prime_from_disk()
+        except Exception:  # noqa: BLE001 -- the disk copy is a bonus  # nosec B110
+            pass
+        config = client.get_config(product_id)
+        if isinstance(config, dict) and "error" not in config:
             from ..core.activation_manager import set_cached_config
             set_cached_config(config)
+        return config
+
+    def _on_config_prefetched(self, _config: object) -> None:
+        """The configuration is already published; only the dock needs telling."""
+        self._config_prefetch_task = None
+        self._reapply_server_switches()
 
     def _on_config_prefetch_failed(self, message: str, code: str) -> None:
         self._config_prefetch_task = None
+        # The fetch failed, but the task may still have published the copy an
+        # earlier session left on disk, so the dock is nudged either way.
+        self._reapply_server_switches()
         self._notify_connection_issue(code, message)
+
+    def _reapply_server_switches(self) -> None:
+        """Have the dock re-read the configuration in force. GUI thread only."""
+        if self.dock_widget is None:
+            return
+        try:
+            self.dock_widget.apply_server_feature_switches()
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- the dock can be gone by now
 
     def _prefetch_segment_catalog(self) -> None:
         """Force-refresh the segment-library catalogue into its QSettings cache,

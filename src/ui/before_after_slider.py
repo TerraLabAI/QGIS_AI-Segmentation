@@ -55,8 +55,13 @@ class BeforeAfterSlider(QWidget):
         auto_loop: bool = True,
         show_badges: bool = True,
         example_badge: str | None = None,
+        handle_grab_only: bool = False,
     ):
         super().__init__(parent)
+        # Grid cards set this: a press only grabs the divider when it lands on
+        # the handle, so the rest of the preview stays a click that opens the
+        # card instead of swallowing the gesture as a drag.
+        self._handle_grab_only = handle_grab_only
         self._show_badges = show_badges
         # Optional "Example" pill: marks a curated demo so the user reads the
         # before/after as a sample, not the exact result they will get.
@@ -68,6 +73,16 @@ class BeforeAfterSlider(QWidget):
         self.setMouseTracking(False)
         self._before: QPixmap | None = None
         self._after: QPixmap | None = None
+        # Sides the owner has given up on (404, decode failure). A side that is
+        # merely still loading is None without being flagged here, which is what
+        # separates "wait" from "there will never be a second image".
+        self._unavailable: set[str] = set()
+        # Pre-scaled "object-fit: cover" copies, keyed on (source identity,
+        # target size), rebuilt only when the source pixmap or the widget size
+        # changes. Without this, every repaint (the auto-loop animation redraws
+        # ~30 times a second) would smooth-scale the full-resolution source
+        # again for no visual change.
+        self._cover_cache: dict[str, tuple] = {}
         # Divider position 0..1 (0 = fully before visible, 1 = fully after).
         self._pos = 0.5
         self._dragging = False
@@ -105,6 +120,11 @@ class BeforeAfterSlider(QWidget):
         self._timer.stop()
         super().closeEvent(ev)
 
+    def resizeEvent(self, ev):  # noqa: N802 - Qt signature
+        # The cover-scaled cache is sized for the OLD widget rect.
+        self._cover_cache.clear()
+        super().resizeEvent(ev)
+
     def deleteLater(self):
         self._timer.stop()
         super().deleteLater()
@@ -113,14 +133,40 @@ class BeforeAfterSlider(QWidget):
 
     def set_before(self, pixmap: QPixmap | None) -> None:
         self._before = pixmap if pixmap and not pixmap.isNull() else None
+        if self._before is not None:
+            self._unavailable.discard("before")
+        self._cover_cache.pop("before", None)
         self.update()
 
     def set_after(self, pixmap: QPixmap | None) -> None:
         self._after = pixmap if pixmap and not pixmap.isNull() else None
+        if self._after is not None:
+            self._unavailable.discard("after")
+        self._cover_cache.pop("after", None)
         self.update()
+
+    def mark_unavailable(self, which: str) -> None:
+        """Declare one side permanently absent.
+
+        A run whose tiles found nothing has an archived input but no result
+        overlay, so the comparison has only one side to show. Flagging it makes
+        the widget paint that side full-bleed instead of holding half the card
+        on a placeholder that will never fill in.
+        """
+        if which in ("before", "after"):
+            self._unavailable.add(which)
+            self.update()
 
     def has_images(self) -> bool:
         return self._before is not None and self._after is not None
+
+    def _solo_pixmap(self) -> tuple[QPixmap, str] | None:
+        """The one image to paint full-bleed, when the other side is settled empty."""
+        if self._before is not None and self._after is None and "after" in self._unavailable:
+            return self._before, "before"
+        if self._after is not None and self._before is None and "before" in self._unavailable:
+            return self._after, "after"
+        return None
 
     def set_placeholder_text(self, text: str) -> None:
         """Override the empty-state caption (default 'Loading...')."""
@@ -165,28 +211,39 @@ class BeforeAfterSlider(QWidget):
     # If the mouse moved more than this from the press point, treat the
     # interaction as a drag (slider adjust) rather than a click (select).
     _CLICK_DRAG_THRESHOLD_PX = 5
+    # In handle_grab_only mode, how far from the divider a press may land and
+    # still grab it (the painted handle's radius plus slack).
+    _HANDLE_GRAB_PX = 16
 
     def mousePressEvent(self, ev):  # noqa: N802 - Qt signature
         if ev.button() == Qt.MouseButton.LeftButton:
-            self._dragging = True
             self._press_x = self._event_x(ev)
             self._moved_far = False
-            self._update_pos_from_event(ev)
+            if self._handle_grab_only:
+                divider_x = self._pos * max(1, self.width())
+                self._dragging = abs(self._press_x - divider_x) <= self._HANDLE_GRAB_PX
+            else:
+                self._dragging = True
+            if self._dragging:
+                self._update_pos_from_event(ev)
         super().mousePressEvent(ev)
 
     def mouseReleaseEvent(self, ev):  # noqa: N802 - Qt signature
         if ev.button() == Qt.MouseButton.LeftButton:
+            was_pressed = self._press_x is not None
             was_dragging = self._dragging
             moved_far = self._moved_far
             self._dragging = False
             self._moved_far = False
+            self._press_x = None
             # If the drag ended with the cursor outside the widget, drop the
             # hover-tracking we kept alive during the drag.
             if not self._hovering:
                 self.setMouseTracking(False)
             # Click only when the press barely moved; drag-to-adjust must
-            # never accidentally select the preset.
-            if was_dragging and not moved_far:
+            # never accidentally select the preset. In handle-grab mode a press
+            # that grabbed the handle is always a drag, never a click.
+            if was_pressed and not moved_far and not (self._handle_grab_only and was_dragging):
                 self.clicked.emit()
         super().mouseReleaseEvent(ev)
 
@@ -235,6 +292,17 @@ class BeforeAfterSlider(QWidget):
                 painter.end()
                 return
 
+            # One side settled empty: no comparison to make, so the image that
+            # does exist takes the whole card rather than sharing it with a
+            # placeholder. No divider, no BEFORE/AFTER badges.
+            solo = self._solo_pixmap()
+            if solo is not None:
+                self._draw_pixmap_cover(painter, solo[0], rect, solo[1])
+                if self._example_badge:
+                    self._draw_example_badge(painter, rect, self._example_badge)
+                painter.end()
+                return
+
             # Compute divider X in widget coords.
             split_x = int(rect.width() * self._pos)
 
@@ -242,7 +310,7 @@ class BeforeAfterSlider(QWidget):
             if self._before is not None:
                 painter.save()
                 painter.setClipRect(QRectF(0, 0, split_x, rect.height()))
-                self._draw_pixmap_cover(painter, self._before, rect)
+                self._draw_pixmap_cover(painter, self._before, rect, "before")
                 painter.restore()
             else:
                 painter.save()
@@ -254,7 +322,7 @@ class BeforeAfterSlider(QWidget):
             if self._after is not None:
                 painter.save()
                 painter.setClipRect(QRectF(split_x, 0, rect.width() - split_x, rect.height()))
-                self._draw_pixmap_cover(painter, self._after, rect)
+                self._draw_pixmap_cover(painter, self._after, rect, "after")
                 painter.restore()
             else:
                 painter.save()
@@ -291,13 +359,13 @@ class BeforeAfterSlider(QWidget):
 
             # --- badges ------------------------------------------------------
             if self._show_badges:
-                self._draw_badge(painter, "BEFORE", x=8, y=8, bg=_BADGE_BG_BEFORE)
+                self._draw_badge(painter, "BEFORE", y=8, bg=_BADGE_BG_BEFORE, x=8)
                 self._draw_badge(
                     painter,
                     "AFTER",
-                    x=rect.width() - 60,
                     y=8,
                     bg=_BADGE_BG_AFTER,
+                    right=rect.width() - 8,
                 )
 
             if self._example_badge:
@@ -307,8 +375,11 @@ class BeforeAfterSlider(QWidget):
         except Exception:  # noqa: BLE001 - paint must never raise
             return
 
-    def _draw_pixmap_cover(self, painter: QPainter, pm: QPixmap, rect) -> None:
-        """Center-crop the pixmap to fully cover the widget rect (object-fit:cover)."""
+    def _draw_pixmap_cover(self, painter: QPainter, pm: QPixmap, rect, slot: str) -> None:
+        """Center-crop the pixmap to fully cover the widget rect (object-fit:cover).
+
+        Draws a cached copy pre-scaled to the target size (see ``_cover_cache``)
+        instead of smooth-scaling the full-resolution source on every call."""
         if pm.isNull() or rect.width() <= 0 or rect.height() <= 0:
             return
         pw, ph = pm.width(), pm.height()
@@ -327,7 +398,23 @@ class BeforeAfterSlider(QWidget):
             scaled_h = ph * scale_w
             offset_y = (scaled_h - rect.height()) / 2
             target = QRectF(0, -offset_y, rect.width(), scaled_h)
-        painter.drawPixmap(target, pm, QRectF(0, 0, pw, ph))
+
+        target_w = max(1, round(target.width()))
+        target_h = max(1, round(target.height()))
+        # cacheKey(), not id(): CPython reuses an address once the old QPixmap is
+        # collected, so a new pixmap allocated there would hit the previous
+        # entry and paint the wrong thumbnail on a recycled card.
+        cache_key = (pm.cacheKey(), target_w, target_h)
+        cached = self._cover_cache.get(slot)
+        if cached is not None and cached[0] == cache_key:
+            scaled = cached[1]
+        else:
+            scaled = pm.scaled(
+                target_w, target_h,
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation)
+            self._cover_cache[slot] = (cache_key, scaled)
+        painter.drawPixmap(QPointF(target.x(), target.y()), scaled)
 
     def _draw_example_badge(self, painter: QPainter, rect, text: str) -> None:
         """Small centered pill at the top marking the preview as a demo."""
@@ -346,16 +433,32 @@ class BeforeAfterSlider(QWidget):
         painter.setPen(QPen(_BADGE_TEXT))
         painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
 
-    def _draw_badge(self, painter: QPainter, text: str, x: int, y: int, bg: QColor) -> None:
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(bg))
-        rect = QRectF(x, y, 52, 18)
-        painter.drawRoundedRect(rect, 4, 4)
-        painter.setPen(QPen(_BADGE_TEXT))
+    def _draw_badge(self, painter: QPainter, text: str, y: int, bg: QColor,
+                    x: float | None = None, right: float | None = None) -> None:
+        """One corner pill. Give it a left edge or a right edge, not both.
+
+        The pill is MEASURED, like _draw_example_badge above. A point size is
+        DPI-relative, so the 8pt bold that fitted a fixed 52px at the 72 DPI
+        this was designed on overflows it at Windows's 96 and clips "BEFORE".
+        """
         f = painter.font()
         f.setPointSize(8)
         f.setBold(True)
         painter.setFont(f)
+        metrics = painter.fontMetrics()
+        bw = max(52.0, float(metrics.horizontalAdvance(text)) + 16.0)
+        bh = max(18.0, float(metrics.height()) + 4.0)
+        if x is not None:
+            bx = float(x)
+        elif right is not None:
+            bx = float(right) - bw
+        else:
+            bx = 0.0
+        rect = QRectF(bx, float(y), bw, bh)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(bg))
+        painter.drawRoundedRect(rect, 4, 4)
+        painter.setPen(QPen(_BADGE_TEXT))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
     def _paint_placeholder(self, painter: QPainter, rect) -> None:

@@ -8,6 +8,7 @@ Source: https://github.com/astral-sh/uv
 """
 from __future__ import annotations
 
+import glob
 import hashlib
 import os
 import platform
@@ -27,12 +28,15 @@ from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from .archive_utils import safe_extract_tar as _safe_extract_tar
 from .archive_utils import safe_extract_zip as _safe_extract_zip
+from .cache_paths import plugin_cache_tmp_dir
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
 from .subprocess_utils import get_subprocess_kwargs  # nosec B404 - our helper, name merely starts with "subprocess"
 
-CACHE_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
-UV_DIR = os.path.join(CACHE_DIR, "uv")
+# Plain home path on purpose: the binary stays put when AI_SEGMENTATION_CACHE_DIR
+# moves the rest of the cache, so an existing install keeps finding it.
+UV_HOME_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
+UV_DIR = os.path.join(UV_HOME_DIR, "uv")
 UV_VERSION = "0.10.10"
 
 # SHA256 of each release asset, copied from the official uv-<triple><ext>.sha256
@@ -53,23 +57,151 @@ UV_SHA256 = {
 DOWNLOAD_TIMEOUT_MS = 300000
 
 
-def _download_tmp_dir() -> str | None:
-    """Containment temp dir on the cache volume, mirroring venv_manager's
-    _apply_cache_containment. The uv download temp file + extraction dir must
-    land on the same volume the install uses, or a full SYSTEM drive still
-    ENOSPCs even when AI_SEGMENTATION_CACHE_DIR points at a roomy secondary
-    drive. The env-aware cache dir is derived here the same way venv_manager
-    does (the module-level CACHE_DIR above deliberately stays the plain home
-    path for the uv binary location). Returns None on any failure so the caller
-    falls back to the system default temp (``dir=None`` == the old behaviour)."""
-    cache_dir = os.environ.get("AI_SEGMENTATION_CACHE_DIR") or os.path.expanduser(
-        "~/.qgis_ai_segmentation")
-    tmp_dir = os.path.join(cache_dir, "tmp")
+def resolved_uv_version() -> str:
+    """UV_VERSION, or the version the server asked for.
+
+    A tool release can be pulled or turn out to be broken on one platform. The
+    version and its digest table move together: see ``resolved_uv_digests``.
+    """
     try:
-        os.makedirs(tmp_dir, exist_ok=True)
-        return tmp_dir
-    except OSError:
-        return None
+        from .install_config import uv_version
+
+        return uv_version(UV_VERSION)
+    except Exception:  # noqa: BLE001 -- a bad config must never block an install
+        return UV_VERSION
+
+
+def resolved_uv_digests() -> dict:
+    """The digest table for the version in force.
+
+    While the served version equals the shipped one the table is additive and
+    a shipped digest always wins. When the server moves the version the shipped
+    digests describe different bytes, so they are dropped rather than checked
+    against the wrong file. The check stays fail-closed either way: an asset
+    with no digest is refused.
+    """
+    try:
+        from .install_config import uv_digests
+
+        return uv_digests(UV_SHA256, UV_VERSION)
+    except Exception:  # noqa: BLE001 -- a bad config must never block an install
+        return dict(UV_SHA256)
+
+
+def resolved_download_timeout_ms() -> int:
+    """Inactivity timeout on the tool download."""
+    try:
+        from .install_config import uv_download_timeout_ms
+
+        return uv_download_timeout_ms(DOWNLOAD_TIMEOUT_MS)
+    except Exception:  # noqa: BLE001 -- a bad config must never block an install
+        return DOWNLOAD_TIMEOUT_MS
+
+
+def is_musl_linux() -> bool:
+    """True on a musl userland (Alpine and friends).
+
+    The published tool builds are linked against glibc and cannot run here,
+    so downloading one wastes tens of megabytes to fail verification.
+    """
+    if not sys.platform.startswith("linux"):
+        return False
+    return bool(glob.glob("/lib/ld-musl-*.so*") or glob.glob("/usr/lib/ld-musl-*.so*"))
+
+
+# Machines the published builds cover. Anything else (i686, riscv64, ppc64le,
+# s390x) has no asset to download.
+_SUPPORTED_MACHINES = ("x86_64", "amd64", "arm64", "aarch64")
+
+
+def unsupported_download_platform_reason() -> str:
+    """Why no published build can serve this machine, or "" when one can.
+
+    Answering early keeps a musl or exotic-architecture box off a 30 MB
+    download that can only fail its verification, and sends it straight to a
+    system interpreter with the reason written down.
+    """
+    if sys.platform != "linux":
+        return ""
+    if is_musl_linux():
+        return "this Linux uses musl and the published builds need glibc"
+    machine = platform.machine()
+    if machine.lower() not in _SUPPORTED_MACHINES:
+        return f"no published build for this machine ({machine})"
+    return ""
+
+
+class DownloadStallGuard:
+    """Abort a blocking network request that stalls, or that the user cancelled.
+
+    QgsBlockingNetworkRequest.get() spins its own event loop, so nothing else
+    on the thread runs for the length of a transfer: Cancel does nothing until
+    the transfer ends, and below Qt 5.15 there is no transfer timeout at all,
+    so a stalled connection hangs for good. This watches the progress signal
+    from inside that loop and aborts the request.
+
+    Use as a context manager around the ``get()`` call, then read
+    ``aborted_reason``: "cancelled", "stalled", or "" when it did not fire.
+    """
+
+    def __init__(self, request, timeout_ms: int, cancel_check: Callable[[], bool] | None = None):
+        # Imported here rather than at module scope: this class is the only
+        # thing in the file that needs a Qt timer.
+        from qgis.PyQt.QtCore import QTimer
+
+        self._request = request
+        self._timeout_ms = max(1000, int(timeout_ms))
+        self._cancel_check = cancel_check
+        self._last_progress = time.monotonic()
+        self._timer = QTimer()
+        self._timer.setInterval(min(1000, self._timeout_ms))
+        self._timer.timeout.connect(self._tick)
+        self._watch_stall = False
+        self.aborted_reason = ""
+
+    def __enter__(self) -> DownloadStallGuard:
+        self._last_progress = time.monotonic()
+        try:
+            self._request.downloadProgress.connect(self._on_progress)
+            # Only arm the inactivity ceiling when progress is actually
+            # observable. Without the signal it would be a total-duration
+            # limit and would cut off a slow but healthy download.
+            self._watch_stall = True
+        except (AttributeError, TypeError):
+            pass  # nosec B110 - cancel still works, the stall check does not
+        try:
+            self._timer.start()
+        except (RuntimeError, TypeError):
+            pass  # nosec B110 - no event dispatcher here, nothing to watch with
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self._timer.stop()
+        try:
+            self._request.downloadProgress.disconnect(self._on_progress)
+        except (AttributeError, TypeError, RuntimeError):
+            pass  # nosec B110 - never connected, or already gone
+
+    def _on_progress(self, *_args) -> None:
+        self._last_progress = time.monotonic()
+
+    def _tick(self) -> None:
+        if self._cancel_check and self._cancel_check():
+            self.aborted_reason = "cancelled"
+            self._abort()
+            return
+        if not self._watch_stall:
+            return
+        if (time.monotonic() - self._last_progress) * 1000 >= self._timeout_ms:
+            self.aborted_reason = "stalled"
+            self._abort()
+
+    def _abort(self) -> None:
+        self._timer.stop()
+        try:
+            self._request.abort()
+        except (AttributeError, RuntimeError) as e:
+            _log(f"Could not abort the download: {e}", Qgis.MessageLevel.Info)
 
 
 def get_uv_path() -> str:
@@ -85,7 +217,11 @@ def uv_exists() -> bool:
 
 
 def _get_uv_platform_info() -> tuple[str, str]:
-    """Returns (platform_triple, extension) for the uv download URL."""
+    """Returns (platform_triple, extension) for the uv download URL.
+
+    Returns ("", "") when no published asset fits this machine, so the caller
+    skips the download instead of fetching one that cannot run.
+    """
     system = sys.platform
     machine = platform.machine().lower()
 
@@ -94,18 +230,29 @@ def _get_uv_platform_info() -> tuple[str, str]:
             return ("aarch64-apple-darwin", ".tar.gz")
         return ("x86_64-apple-darwin", ".tar.gz")
     if system == "win32":
+        # Windows on ARM runs the x86_64 build under emulation on purpose: it
+        # has to match the architecture of the QGIS process it manages an
+        # environment for, and QGIS ships x86_64 on Windows.
+        if machine in ("arm64", "aarch64"):
+            _log(
+                "Windows on ARM: using the x86_64 build, which matches this "
+                "QGIS process.", Qgis.MessageLevel.Info)
         return ("x86_64-pc-windows-msvc", ".zip")
+    if unsupported_download_platform_reason():
+        return ("", "")
     if machine in ("arm64", "aarch64"):
         return ("aarch64-unknown-linux-gnu", ".tar.gz")
     return ("x86_64-unknown-linux-gnu", ".tar.gz")
 
 
 def _get_uv_download_url() -> str:
-    """Build the GitHub release URL for uv."""
+    """Build the GitHub release URL for uv, or "" when there is no asset."""
     triple, ext = _get_uv_platform_info()
+    if not triple:
+        return ""
     return (
         "https://github.com/astral-sh/uv/releases/download/"
-        f"{UV_VERSION}/uv-{triple}{ext}"
+        f"{resolved_uv_version()}/uv-{triple}{ext}"
     )
 
 
@@ -124,7 +271,7 @@ def _verify_uv_payload(content_bytes: bytes, asset_name: str) -> tuple[bool, str
     tampered CDN response or an unpinned variant is never written to disk or
     executed. Mirrors the fail-closed policy in checkpoint_manager.
     """
-    expected = UV_SHA256.get(asset_name, "")
+    expected = resolved_uv_digests().get(asset_name, "")
     if not expected:
         return False, f"No pinned digest for {asset_name}; refusing to install"
     if hashlib.sha256(content_bytes).hexdigest() != expected:
@@ -144,8 +291,15 @@ def download_uv(
         _log(f"uv already exists at {get_uv_path()}")
         return True, "uv already installed"
 
+    reason = unsupported_download_platform_reason()
+    if reason:
+        _log(f"Skipping the uv download: {reason}", Qgis.MessageLevel.Info)
+        return False, f"No uv build for this system: {reason}"
+
     url = _get_uv_download_url()
-    _log(f"Downloading uv {UV_VERSION} from: {url}")
+    if not url:
+        return False, "No uv build for this system"
+    _log(f"Downloading uv {resolved_uv_version()} from: {url}")
 
     if progress_callback:
         progress_callback(0, "Downloading uv package installer...")
@@ -163,14 +317,22 @@ def download_uv(
 
         request = QgsBlockingNetworkRequest()
         net_req = QNetworkRequest(QUrl(url))
+        timeout_ms = resolved_download_timeout_ms()
         if hasattr(net_req, "setTransferTimeout"):
-            net_req.setTransferTimeout(DOWNLOAD_TIMEOUT_MS)
-        err = request.get(net_req)
+            net_req.setTransferTimeout(timeout_ms)
+        # The guard covers Cancel during the transfer, and the whole timeout
+        # below Qt 5.15, where setTransferTimeout does not exist.
+        with DownloadStallGuard(request, timeout_ms, cancel_check) as guard:
+            err = request.get(net_req)
+        if guard.aborted_reason == "cancelled":
+            return False, "Download cancelled"
 
         if err == QgsBlockingNetworkRequest.ErrorCode.NoError:
             break
 
         error_msg = request.errorMessage()
+        if guard.aborted_reason == "stalled":
+            error_msg = "the download stalled, no data was received"
         if attempt < max_retries - 1:
             wait = 5 * (2 ** attempt)  # 5, 10s
             _log(
@@ -207,8 +369,8 @@ def download_uv(
 
     _, ext = _get_uv_platform_info()
     suffix = ".zip" if ext == ".zip" else ".tar.gz"
-    # Contain the download temp on the CACHE_DIR volume (see _download_tmp_dir).
-    tmp_root = _download_tmp_dir()
+    # Contain the download temp on the cache volume (see plugin_cache_tmp_dir).
+    tmp_root = plugin_cache_tmp_dir()
     fd, temp_path = tempfile.mkstemp(suffix=suffix, dir=tmp_root)
     os.close(fd)
 
@@ -222,7 +384,7 @@ def download_uv(
         os.makedirs(UV_DIR, exist_ok=True)
 
         # Extract to a temp dir first, then move uv binary to UV_DIR. Same
-        # CACHE_DIR containment as the download temp above.
+        # cache-volume containment as the download temp above.
         extract_dir = tempfile.mkdtemp(prefix="uv_extract_", dir=tmp_root)
         try:
             if suffix == ".tar.gz":
@@ -255,10 +417,11 @@ def download_uv(
             progress_callback(80, "Verifying uv...")
 
         if verify_uv():
-            _log(f"uv {UV_VERSION} installed successfully", Qgis.MessageLevel.Success)
+            _installed = resolved_uv_version()
+            _log(f"uv {_installed} installed successfully", Qgis.MessageLevel.Success)
             if progress_callback:
                 progress_callback(100, "uv ready")
-            return True, f"uv {UV_VERSION} installed"
+            return True, f"uv {_installed} installed"
         # Cleanup on verification failure
         shutil.rmtree(UV_DIR, ignore_errors=True)
         return False, "uv verification failed after download"
@@ -275,35 +438,52 @@ def download_uv(
                 pass
 
 
-def verify_uv() -> bool:
-    """Run `uv --version` to verify the binary works."""
+def verify_uv(retries: int = 3) -> bool:
+    """Run `uv --version` to verify the binary works.
+
+    Retried with a short wait between attempts: a security scanner routinely
+    holds a freshly written executable on its first execute, and taking that
+    for a broken binary deleted uv and dropped the whole install onto the
+    slower path.
+    """
     uv_path = get_uv_path()
     if not os.path.isfile(uv_path):
         return False
 
-    try:
-        result = subprocess.run(  # nosec B603
-            [uv_path, "--version"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
-            **get_subprocess_kwargs(),
-        )
-        if result.returncode == 0:
-            version_out = result.stdout.strip()
-            _log(f"uv verified: {version_out}")
-            # Check version matches expected UV_VERSION
-            if UV_VERSION not in version_out:
-                _log(
-                    f"uv version mismatch: expected {UV_VERSION}, got '{version_out}'. "
-                    "Re-downloading.",
-                    Qgis.MessageLevel.Warning
-                )
-                shutil.rmtree(UV_DIR, ignore_errors=True)
-                return False
-            return True
-        _log(f"uv --version failed: {result.stderr or result.stdout}", Qgis.MessageLevel.Warning)
-    except Exception as e:
-        _log(f"uv verification failed: {e}", Qgis.MessageLevel.Warning)
+    attempts = max(1, retries)
+    last_error = ""
+    for attempt in range(attempts):
+        try:
+            result = subprocess.run(  # nosec B603
+                [uv_path, "--version"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
+                **get_subprocess_kwargs(),
+            )
+            if result.returncode == 0:
+                version_out = result.stdout.strip()
+                _log(f"uv verified: {version_out}")
+                # Check version matches the one in force
+                expected_version = resolved_uv_version()
+                if expected_version not in version_out:
+                    _log(
+                        f"uv version mismatch: expected {expected_version}, got '{version_out}'. "
+                        "Re-downloading.",
+                        Qgis.MessageLevel.Warning
+                    )
+                    shutil.rmtree(UV_DIR, ignore_errors=True)
+                    return False
+                return True
+            last_error = result.stderr or result.stdout or f"exit code {result.returncode}"
+        except Exception as e:  # noqa: BLE001 - retried, then reported below
+            last_error = str(e)
+        if attempt < attempts - 1:
+            _log(
+                f"uv check {attempt + 1}/{attempts} failed ({last_error[:120]}), retrying...",
+                Qgis.MessageLevel.Info
+            )
+            time.sleep(0.5 * (attempt + 1))
 
+    _log(f"uv verification failed: {last_error}", Qgis.MessageLevel.Warning)
     # Cleanup on failure
     shutil.rmtree(UV_DIR, ignore_errors=True)
     return False

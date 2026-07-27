@@ -8,9 +8,8 @@ it is intentionally not shown here.
 from __future__ import annotations
 
 import os
-from datetime import datetime
 
-from qgis.PyQt.QtCore import Qt, QUrl, pyqtSignal
+from qgis.PyQt.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QDesktopServices
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
@@ -25,6 +24,7 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ..core.activation_manager import (
+    PRODUCT_ID,
     get_dashboard_url,
     get_privacy_url,
     get_terms_url,
@@ -40,8 +40,18 @@ from .ai_segmentation_dockwidget import (
     BRAND_RED,
 )
 
-PRODUCT_ID = "ai-segmentation"
 PRODUCT_NAME = "AI Segmentation"
+
+# Measured install size per path, kept for the session: the walk costs seconds
+# and the value barely moves, so re-opening Settings or pressing Retry must not
+# pay for it again.
+_DIR_SIZE_CACHE: dict[str, str] = {}
+
+# Last resort for the removal: the window refuses to close while one runs, so a
+# worker that never reports back (a thread the OS would not start, a signal
+# lost with the plugin) leaves a modal dialog that only killing QGIS can shut.
+# Far above any plausible delete, so a slow disk always wins the race.
+_REMOVAL_WATCHDOG_MS = 600_000
 
 _STATUS_DISPLAY = {
     "active": (tr("Active"), BRAND_GREEN_TEXT),
@@ -131,6 +141,8 @@ def _load_account_and_usage(client, auth) -> dict:
             client.release_thread_nam()
         except Exception:  # noqa: BLE001
             pass  # nosec B110
+    if not isinstance(account, dict):
+        return {"error": "Invalid server response", "code": "SERVER_ERROR"}
     if "error" in account:
         return account
     if not isinstance(usage, dict) or "error" in usage:
@@ -147,13 +159,23 @@ class AccountSettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(tr("Account Settings"))
         self.setModal(True)
-        # Optional plugin callbacks. on_remove_ai_data() -> (ok, message)
-        # deletes the local venv + weights + key + settings; is_busy_check()
-        # -> bool tells us not to offer removal while an install/run is live.
-        # Both absent (MCP/headless construction) => the removal action is
-        # simply not shown.
+        # Optional plugin callbacks. on_remove_ai_data(on_progress, on_finished)
+        # -> (started, message) starts deleting the local venv + weights + key
+        # + settings on a worker thread and calls the two back on the GUI
+        # thread; is_busy_check() -> bool tells us not to offer removal while an
+        # install/run is live. Both absent (MCP/headless construction) => the
+        # removal action is simply not shown.
         self._on_remove_ai_data = on_remove_ai_data
         self._is_busy_check = is_busy_check
+        # True between the confirmed removal and its result: the window refuses
+        # to close then, so nobody is left with a half-deleted environment and
+        # no report of what survived.
+        self._removal_running = False
+        # Bumped per removal so the watchdog armed for one can never end a
+        # later one (the user can retry after a failure).
+        self._removal_generation = 0
+        self._remove_status = None
+        self._remove_btn = None
         # Wide enough for the Dependencies + Privacy cards to sit side by side;
         # the old 400-500 window forced everything into one tall column.
         self.setMinimumWidth(600)
@@ -163,6 +185,8 @@ class AccountSettingsDialog(QDialog):
         # longer displayed; key management happens on the web dashboard.
         del activation_key
         self._worker = None
+        self._size_task = None
+        self._size_label = None
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(16, 16, 16, 12)
@@ -252,6 +276,9 @@ class AccountSettingsDialog(QDialog):
         into a closed dialog. We never force-kill a thread mid network-call,
         which can corrupt Qt's socket state and crash QGIS; cancellation is
         cooperative and the task manager drains run() on its own."""
+        # The size measurement belongs to the card the loader rebuilds, so it
+        # follows the same lifetime.
+        self._cancel_size_task()
         if self._worker is None:
             return
         try:
@@ -323,21 +350,6 @@ class AccountSettingsDialog(QDialog):
 
         self._content_widget.setVisible(True)
         self.adjustSize()
-
-    @staticmethod
-    def _format_reset_date(iso: str | None) -> str:
-        """Parse an ISO date string to a full human-friendly form
-        ("July 23, 2026", mirrors AI Edit's reset line).
-
-        Falls back to the raw string if parsing fails.
-        """
-        if not iso:
-            return ""
-        try:
-            dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        except ValueError:
-            return iso
-        return dt.strftime("%B %d, %Y")
 
     def _on_failed(self, message: str, code: str = ""):
         self._loading_label.setVisible(False)
@@ -478,8 +490,12 @@ class AccountSettingsDialog(QDialog):
             if not is_free_tier:
                 is_subscriber = True
 
-        remaining = usage.get("remaining_credits", None)
-        total = usage.get("total_credits", 10000 if is_subscriber else 300)
+        remaining = usage.get("remaining_credits")
+        # The free-tier total is a server dial, so read the getter instead of
+        # restating the number here: a fleet-wide change must move the gauge.
+        from ..core.detection_policy import free_monthly_allowance
+        total = usage.get(
+            "total_credits", 10000 if is_subscriber else free_monthly_allowance())
         reset_date = usage.get("reset_date") or usage.get("period_end")
         free_left = usage.get("free_detections_remaining") or sub.get("free_detections_remaining")
 
@@ -493,13 +509,15 @@ class AccountSettingsDialog(QDialog):
         card_layout.addWidget(plan_status)
 
         bar: QProgressBar | None = None
-        reset_str = ""
+        # Both plans renew, so both get the date. A free user reading a spent
+        # balance has to be able to tell whether to wait or to pay.
+        from ..core.quota_reset_date import format_quota_reset_date
+        reset_str = format_quota_reset_date(reset_date)
         if is_subscriber and remaining is not None:
             # Credits line for Pro subscribers. Lime fill for the bar; the
             # darker green tone for the number so it stays AA-readable on the
             # light dialog (mirrors AI Edit); red across the board once
             # exhausted.
-            reset_str = self._format_reset_date(reset_date)
             fill = BRAND_GREEN if remaining > 0 else BRAND_RED
             text_color = BRAND_GREEN_TEXT if remaining > 0 else BRAND_RED
             credits_text = tr("{remaining} / {total} credits").format(
@@ -531,9 +549,9 @@ class AccountSettingsDialog(QDialog):
         if bar is not None:
             card_layout.addWidget(bar)
 
-        # A small reset note (paid renewal date) above the action buttons,
+        # A small reset note (the renewal date) above the action buttons,
         # replacing the old inline "(resets Jul 3)" suffix on the credits row.
-        if is_subscriber and reset_str:
+        if reset_str:
             reset_row = QHBoxLayout()
             reset_row.setContentsMargins(0, 2, 0, 0)
             reset_label = QLabel(tr("Resets {date}").format(date=reset_str))
@@ -582,7 +600,8 @@ class AccountSettingsDialog(QDialog):
         support needs (disk space, antivirus exclusions, manual cleanup) without
         the user having to hunt for a hidden folder.
         """
-        from ..core.venv_manager import CACHE_DIR, VENV_DIR
+        from ..core.cache_paths import PLUGIN_CACHE_DIR
+        from ..core.venv_manager import VENV_DIR
 
         card = QFrame()
         card.setStyleSheet(_CARD_STYLE)
@@ -600,12 +619,19 @@ class AccountSettingsDialog(QDialog):
         layout.addWidget(caption)
 
         installed = os.path.isdir(VENV_DIR)
-        size_text = self._format_dir_size(CACHE_DIR) if installed else tr("Not installed")
+        cached_size = _DIR_SIZE_CACHE.get(PLUGIN_CACHE_DIR)
+        if not installed:
+            size_text = tr("Not installed")
+        else:
+            size_text = cached_size or tr("Calculating...")
         info = QLabel(f"{tr('On disk')}: {size_text}")
         info.setStyleSheet("font-size: 11px; color: rgba(128,128,128,0.9);")
         layout.addWidget(info)
+        self._size_label = info
+        if installed and cached_size is None:
+            self._start_dir_size_task(PLUGIN_CACHE_DIR)
 
-        path_lbl = QLabel(CACHE_DIR)
+        path_lbl = QLabel(PLUGIN_CACHE_DIR)
         path_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         path_lbl.setWordWrap(True)
         path_lbl.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.7);")
@@ -614,7 +640,7 @@ class AccountSettingsDialog(QDialog):
         open_btn = QPushButton(tr("Open folder"))
         open_btn.setStyleSheet(_SECONDARY_BTN)
         open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        open_btn.clicked.connect(lambda: self._open_install_folder(CACHE_DIR))
+        open_btn.clicked.connect(lambda: self._open_install_folder(PLUGIN_CACHE_DIR))
         row = QHBoxLayout()
         row.setContentsMargins(0, 2, 0, 0)
         row.addStretch()
@@ -645,13 +671,33 @@ class AccountSettingsDialog(QDialog):
             remove_row.addWidget(self._remove_btn)
             remove_row.addStretch()
             layout.addLayout(remove_row)
+            # Working line for the removal: the delete runs on a worker thread,
+            # so the only sign it is under way is this text. Hidden until then.
+            self._remove_status = QLabel("")
+            self._remove_status.setWordWrap(True)
+            self._remove_status.setStyleSheet(
+                "font-size: 11px; color: palette(text);")
+            self._remove_status.setVisible(False)
+            layout.addWidget(self._remove_status)
+            if self._removal_running:
+                # The card was rebuilt (account refresh) while a removal runs:
+                # carry the working state onto the new widgets.
+                self._remove_btn.setEnabled(False)
+                self._remove_btn.setText(tr("Removing..."))
+                self._set_remove_status(
+                    tr("Removing the downloaded AI data..."))
 
         return card
 
     def _on_remove_ai_data_clicked(self):
         """Confirm, then ask the plugin to delete the local venv + weights and
-        clear the stored key + settings. Signs the user out on success."""
+        clear the stored key + settings. The delete runs off the GUI thread and
+        reports back through _on_remove_ai_data_progress / _finished; the user
+        is signed out on success."""
         from qgis.PyQt.QtWidgets import QMessageBox
+
+        if self._removal_running:
+            return
 
         # Re-check busy at click time: an install can finish (or start) while
         # the modal dialog's event loop is running.
@@ -680,23 +726,101 @@ class AccountSettingsDialog(QDialog):
         if box.exec() != QMessageBox.StandardButton.Yes:
             return
 
-        if hasattr(self, "_remove_btn"):
+        self._removal_running = True
+        self._removal_generation += 1
+        generation = self._removal_generation
+        if self._remove_btn is not None:
             self._remove_btn.setEnabled(False)
             self._remove_btn.setText(tr("Removing..."))
+        self._set_remove_status(tr("Removing the downloaded AI data..."))
         try:
-            ok, message = self._on_remove_ai_data()
+            started, message = self._on_remove_ai_data(
+                self._on_remove_ai_data_progress,
+                self._on_remove_ai_data_finished)
         except Exception:  # nosec B110
-            ok, message = False, tr("Could not remove the AI data. Try again.")
+            started, message = False, tr("Could not remove the AI data. Try again.")
 
+        if not started:
+            # The delete did not start: put the card back and show the reason
+            # (the message says whether anything was cleared on the way).
+            self._removal_running = False
+            self._set_remove_status("")
+            self._reset_remove_button()
+            QMessageBox.warning(self, tr("AI Segmentation"), message)
+            return
+
+        # The only way out of this window is the removal reporting back, and a
+        # worker can die without ever reporting. Arm the last resort.
+        try:
+            QTimer.singleShot(
+                _REMOVAL_WATCHDOG_MS,
+                lambda g=generation: self._on_removal_watchdog(g))
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _on_removal_watchdog(self, generation: int) -> None:
+        """The removal never reported back. Unblock the window: it refuses to
+        close while one runs, so this is the only way out of a modal dialog
+        whose worker died silently. A stale beat (the removal ended, or a later
+        one is running) is dropped on the generation check."""
+        if generation != getattr(self, "_removal_generation", 0):
+            return
+        if not self._removal_running:
+            return
+        try:
+            self._on_remove_ai_data_finished(False, tr(
+                "The removal did not finish. Close this window, then check "
+                "the AI data folder before trying again."))
+        except RuntimeError:
+            # The dialog is already gone; the flag is all that is left to clear.
+            self._removal_running = False
+
+    def _on_remove_ai_data_progress(self, text: str):
+        """Current step of the running removal, pushed from the plugin."""
+        self._set_remove_status(text)
+
+    def _on_remove_ai_data_finished(self, ok: bool, message: str):
+        """The removal ended: report it and close (the user is signed out).
+
+        Runs once per removal. A worker that answers after the watchdog gave up
+        on it lands here a second time, and the user has already been told."""
+        from qgis.PyQt.QtWidgets import QMessageBox
+
+        if not self._removal_running:
+            return
+        self._removal_running = False
+        self._set_remove_status("")
+        self._reset_remove_button()
         if ok:
+            # The measured size describes a tree that no longer exists.
+            _DIR_SIZE_CACHE.clear()
             QMessageBox.information(self, tr("AI Segmentation"), message)
             # The key is cleared and the user signed out: close the dialog.
             self.accept()
         else:
             QMessageBox.warning(self, tr("AI Segmentation"), message)
-            if hasattr(self, "_remove_btn"):
-                self._remove_btn.setEnabled(True)
-                self._remove_btn.setText(tr("Remove downloaded AI data"))
+
+    def _set_remove_status(self, text: str):
+        """Show (or hide, on an empty text) the removal working line."""
+        label = getattr(self, "_remove_status", None)
+        if label is None:
+            return
+        try:
+            label.setText(text)
+            label.setVisible(bool(text))
+        except RuntimeError:
+            self._remove_status = None  # the card was rebuilt
+
+    def _reset_remove_button(self):
+        """Put the removal button back to its resting, clickable state."""
+        btn = getattr(self, "_remove_btn", None)
+        if btn is None:
+            return
+        try:
+            btn.setEnabled(True)
+            btn.setText(tr("Remove downloaded AI data"))
+        except RuntimeError:
+            self._remove_btn = None  # the card was rebuilt
 
     def _build_privacy_card(self) -> QFrame:
         """Anonymous usage telemetry with a clear, ON-by-default opt-out.
@@ -772,20 +896,57 @@ class AccountSettingsDialog(QDialog):
 
     @staticmethod
     def _format_dir_size(path: str) -> str:
-        total = 0
+        from .plugin.shared import dir_size_label
+        return dir_size_label(path)
+
+    def _start_dir_size_task(self, path: str):
+        """Measure the on-disk size off the main thread.
+
+        The tree holds the isolated environment and the model weights, tens of
+        thousands of files: walking it while the dialog is being built stalled
+        the window for seconds, worse behind antivirus.
+        """
+        from qgis.core import QgsApplication
+
+        from .plugin.shared import dir_size_label
+
+        # The callable runs on a task thread and must not reach back into the
+        # dialog, which may be closed by then.
+        task = GenericRequestTask(
+            tr("Measuring AI data size..."),
+            lambda: {"path": path, "size": dir_size_label(path)},
+            hidden=True,
+        )
+        task.succeeded.connect(self._on_dir_size_ready)
+        self._size_task = task
+        QgsApplication.taskManager().addTask(task)
+
+    def _on_dir_size_ready(self, data: dict):
+        self._size_task = None
+        size = str(data.get("size") or "-")
+        _DIR_SIZE_CACHE[str(data.get("path") or "")] = size
+        label = self._size_label
+        if label is None:
+            return
         try:
-            for root, _dirs, files in os.walk(path):
-                for name in files:
-                    try:
-                        total += os.path.getsize(os.path.join(root, name))
-                    except OSError:  # nosec B112
-                        continue
-        except OSError:
-            return "-"
-        mb = total / (1024 * 1024)
-        if mb >= 1024:
-            return f"{mb / 1024:.1f} GB"
-        return f"{mb:.0f} MB"
+            label.setText(f"{tr('On disk')}: {size}")
+        except RuntimeError:
+            # The card was rebuilt (Retry) and this label already deleted.
+            self._size_label = None
+
+    def _cancel_size_task(self):
+        """Drop an in-flight size measurement so it cannot land late."""
+        if self._size_task is None:
+            return
+        try:
+            self._size_task.succeeded.disconnect()
+        except (RuntimeError, TypeError):  # nosec B110
+            pass
+        try:
+            self._size_task.cancel()
+        except Exception:  # nosec B110
+            pass
+        self._size_task = None
 
     # -- Helpers --
 
@@ -823,6 +984,14 @@ class AccountSettingsDialog(QDialog):
         self.accept()
 
     def done(self, result):  # noqa: N802 - Qt signature
+        # A removal is under way: refuse to leave. Dismissing here would hide
+        # the only report of what could not be deleted, and the account card
+        # behind it already describes an environment that is disappearing.
+        if self._removal_running:
+            self._set_remove_status(
+                tr("Removing the downloaded AI data. This window closes when "
+                   "it is done."))
+            return
         # accept()/reject() (Sign out, OK, Esc) dismiss the dialog without a
         # closeEvent, so cancel the in-flight loader here too rather than let it
         # complete with now-stale auth into a dismissed dialog.
@@ -830,6 +999,12 @@ class AccountSettingsDialog(QDialog):
         super().done(result)
 
     def closeEvent(self, event):
+        if self._removal_running:
+            self._set_remove_status(
+                tr("Removing the downloaded AI data. This window closes when "
+                   "it is done."))
+            event.ignore()
+            return
         # The loader is a QgsTask now: no thread to wait on or terminate.
         # Disconnect + cancel so a late result can't fire into the closing
         # dialog; the task manager drains run() on its own. The old

@@ -4,14 +4,20 @@ segmentation).
 
 Key difference from AI Edit: a preset's ``prompt`` is the literal cloud-model token,
 a short English noun phrase that is sent to the model **unchanged in every
-locale** (the cloud model's open vocabulary is English-trained). Only the ``label`` is
-polyglot, so a French user reads "Bâtiment" but the box receives "building".
+locale** (the cloud model's open vocabulary is English-trained). Only the ``label``
+and the optional ``search_terms`` are polyglot, so a French user reads "Bâtiment"
+and finds it by typing "immeuble", while the box still receives "building".
 
 This module is the offline fallback catalogue. When the server catalogue is
 reachable (see ``segmentation_presets_client``) it is merged on top, but the
 shapes are identical so the gallery renders either source the same way. The
 object set + strong/weak flags are aerial-imagery object classes phrased under
 the model's "short noun phrase" rule.
+
+Two sets of strings here are frozen and must never be reworded: every ``prompt``
+(the billed, routed token) and every preset ``id`` (keys the demo images and the
+local favorites store). Category ``key`` values are frozen too: the server
+``detection_policy`` maps them to shape classes.
 """
 
 from __future__ import annotations
@@ -20,22 +26,44 @@ from qgis.PyQt.QtCore import QSettings
 
 LANGS = ("en", "fr", "es", "pt", "de", "it", "nl", "pl", "id", "ja", "zh_CN", "zh_TW")
 
+# The "Popular" tab, in display order: the objects users ask for most. Also the
+# single source of each preset's ``top_pick`` flag, so the tab and the flag can
+# never disagree.
+#
+# Popular is the first thing a new user sees, so an entry here must have a demo
+# image. Not every object has one yet, and a blank card in this tab costs more
+# than picking the next object down the demand list. Anything added here needs
+# its before/after seeded first.
+TOP_PICKS: list[str] = [
+    "building",
+    "house",
+    "tree",
+    "road",
+    "lake",
+    "river",
+    "car",
+    "parking_lot",
+    "solar_panel",
+    "swimming_pool",
+]
 
-def _p(pid: str, prompt: str, en: str, fr: str, es: str, pt: str, top_pick: bool = False, weak: bool = False) -> dict:
+
+def _p(pid: str, prompt: str, en: str, fr: str, es: str, pt: str, *, weak: bool = False) -> dict:
     """Build one preset. ``prompt`` is the English cloud-model token (lowercase)."""
     return {
         "id": pid,
         "prompt": prompt,
         "label": {"en": en, "fr": fr, "es": es, "pt": pt, **_PRESET_L10N.get(pid, {})},
-        "top_pick": top_pick,
+        "top_pick": pid in TOP_PICKS,
         "weak": weak,
+        "search_terms": _preset_search_terms(pid),
     }
 
 
-def _cat(key: str, emoji: str, en: str, fr: str, es: str, pt: str, presets: list[dict]) -> dict:
+def _cat(key: str, en: str, fr: str, es: str, pt: str, presets: list[dict]) -> dict:
     return {
         "key": key,
-        "emoji": emoji,
+        "emoji": category_emoji(key),
         "label": {"en": en, "fr": fr, "es": es, "pt": pt, **_CAT_L10N.get(key, {})},
         "presets": presets,
     }
@@ -52,69 +80,36 @@ def _l(de: str, it: str, nl: str, pl: str, id_: str, ja: str, zh_cn: str, zh_tw:
     return dict(zip(_L10N_LANGS, (de, it, nl, pl, id_, ja, zh_cn, zh_tw)))
 
 
+# Category labels spell out "and" instead of "&": Qt eats a single ampersand in
+# a button label as the mnemonic marker, and the sidebar entries are buttons.
 _CAT_L10N: dict[str, dict] = {
-    "buildings": _l(
-        "Gebäude & Strukturen",
-        "Edifici e strutture",
-        "Gebouwen & structuren",
-        "Budynki i struktury",
-        "Bangunan & struktur",
-        "建物・構造物",
-        "建筑与结构",
-        "建築與結構",
-    ),
-    "vehicles_transport": _l(
-        "Fahrzeuge & Transport",
-        "Veicoli e trasporti",
-        "Voertuigen & transport",
-        "Pojazdy i transport",
-        "Kendaraan & transportasi",
-        "車両・輸送",
-        "车辆与运输",
-        "車輛與運輸",
-    ),
-    "aircraft_vessels": _l(
-        "Luftfahrzeuge & Schiffe",
-        "Aeromobili e navi",
-        "Vliegtuigen & vaartuigen",
-        "Samoloty i statki",
-        "Pesawat & kapal",
-        "航空機・船舶",
-        "飞行器与船舶",
-        "飛行器與船隻",
-    ),
-    "energy_industrial": _l(
-        "Energie & Industrie",
-        "Energia e industria",
-        "Energie & industrie",
-        "Energia i przemysł",
-        "Energi & industri",
-        "エネルギー・産業",
-        "能源与工业",
-        "能源與工業",
-    ),
-    "sport_recreation": _l(
-        "Sport & Freizeit",
-        "Sport e ricreazione",
-        "Sport & recreatie",
-        "Sport i rekreacja",
-        "Olahraga & rekreasi",
-        "スポーツ・レクリエーション",
-        "运动与娱乐",
-        "運動與休閒",
-    ),
-    "land_water": _l(
-        "Land & Wasser",
-        "Terreno e acqua",
-        "Land & water",
-        "Ląd i woda",
-        "Lahan & air",
-        "土地・水域",
-        "土地与水体",
-        "陸地與水體",
-    ),
+    "buildings": _l("Gebäude und Dächer", "Edifici e tetti", "Gebouwen en daken", "Budynki i dachy",
+                    "Bangunan dan atap", "建物・屋根", "建筑与屋顶", "建築與屋頂"),
+    "vegetation": _l("Bäume und Vegetation", "Alberi e vegetazione", "Bomen en begroeiing",
+                     "Drzewa i roślinność", "Pohon dan vegetasi", "樹木・植生", "树木与植被", "樹木與植被"),
+    "transport": _l("Straßen und Infrastruktur", "Strade e infrastrutture", "Wegen en infrastructuur",
+                    "Drogi i infrastruktura", "Jalan dan infrastruktur", "道路・インフラ",
+                    "道路与基础设施", "道路與基礎設施"),
+    "land_water": _l("Wasser und Boden", "Acqua e suolo", "Water en bodem", "Woda i grunt",
+                     "Air dan lahan", "水域・地面", "水体与地面", "水體與地面"),
+    "vehicles_transport": _l("Fahrzeuge", "Veicoli", "Voertuigen", "Pojazdy",
+                             "Kendaraan", "車両", "车辆", "車輛"),
+    "agriculture": _l("Felder und Kulturen", "Parcelle e colture", "Percelen en gewassen",
+                      "Działki i uprawy", "Lahan dan tanaman", "農地・作物", "地块与作物", "地塊與作物"),
+    "energy": _l("Solar- und Windenergie", "Energia solare ed eolica", "Zonne- en windenergie",
+                 "Energia słoneczna i wiatrowa", "Energi surya dan angin", "太陽光・風力",
+                 "太阳能与风能", "太陽能與風能"),
+    "sport_recreation": _l("Sport und Freizeit", "Sport e tempo libero", "Sport en recreatie",
+                           "Sport i rekreacja", "Olahraga dan rekreasi", "スポーツ・レジャー",
+                           "运动与休闲", "運動與休閒"),
+    "aircraft_vessels": _l("Flugzeuge und Boote", "Aerei e barche", "Vliegtuigen en boten",
+                           "Samoloty i łodzie", "Pesawat dan kapal", "航空機・船舶", "飞机与船只", "飛機與船隻"),
+    "industry": _l("Industrie und Baustellen", "Industria e cantieri", "Industrie en werken",
+                   "Przemysł i budowy", "Industri dan konstruksi", "工業・工事", "工业与施工", "工業與施工"),
 }
 
+# Keyed lookup, so the order of this table is free and does not track the
+# catalogue order below.
 _PRESET_L10N: dict[str, dict] = {
     "building": _l("Gebäude", "Edificio", "Gebouw", "Budynek", "Bangunan", "建物", "建筑", "建築"),
     "house": _l("Haus", "Casa", "Huis", "Dom", "Rumah", "住宅", "房屋", "房屋"),
@@ -129,8 +124,6 @@ _PRESET_L10N: dict[str, dict] = {
     "road": _l("Straße", "Strada", "Weg", "Droga", "Jalan", "道路", "道路", "道路"),
     "car": _l("Auto", "Auto", "Auto", "Samochód", "Mobil", "車", "汽车", "汽車"),
     "truck": _l("Lastwagen", "Camion", "Vrachtwagen", "Ciężarówka", "Truk", "トラック", "卡车", "卡車"),
-    "bus": _l("Bus", "Autobus", "Bus", "Autobus", "Bus", "バス", "公交车", "公車"),
-    "trailer": _l("Anhänger", "Rimorchio", "Aanhangwagen", "Przyczepa", "Trailer", "トレーラー", "拖车", "拖車"),
     "train": _l("Zug", "Treno", "Trein", "Pociąg", "Kereta", "列車", "火车", "火車"),
     "parking_lot": _l(
         "Parkplatz", "Parcheggio", "Parkeerplaats", "Parking", "Tempat parkir", "駐車場", "停车场", "停車場"
@@ -142,9 +135,6 @@ _PRESET_L10N: dict[str, dict] = {
         "Eisenbahnstrecke", "Binario", "Spoorweg", "Tor kolejowy", "Rel kereta", "線路", "铁轨", "鐵軌"
     ),
     "airplane": _l("Flugzeug", "Aereo", "Vliegtuig", "Samolot", "Pesawat", "飛行機", "飞机", "飛機"),
-    "helicopter": _l(
-        "Hubschrauber", "Elicottero", "Helikopter", "Helikopter", "Helikopter", "ヘリコプター", "直升机", "直升機"
-    ),
     "ship": _l("Schiff", "Nave", "Schip", "Statek", "Kapal", "船舶", "船舶", "船舶"),
     "boat": _l("Boot", "Barca", "Boot", "Łódź", "Perahu", "ボート", "小船", "小船"),
     "shipping_container": _l(
@@ -201,16 +191,6 @@ _PRESET_L10N: dict[str, dict] = {
         "网球场",
         "網球場",
     ),
-    "basketball_court": _l(
-        "Basketballplatz",
-        "Campo da basket",
-        "Basketbalveld",
-        "Boisko koszykówki",
-        "Lapangan basket",
-        "バスケットボールコート",
-        "篮球场",
-        "籃球場",
-    ),
     "soccer_field": _l(
         "Fußballplatz",
         "Campo da calcio",
@@ -231,42 +211,181 @@ _PRESET_L10N: dict[str, dict] = {
     "vineyard": _l("Weinberg", "Vigneto", "Wijngaard", "Winnica", "Kebun anggur", "ぶどう畑", "葡萄园", "葡萄園"),
     "orchard": _l("Obstgarten", "Frutteto", "Boomgaard", "Sad", "Kebun buah", "果樹園", "果园", "果園"),
     "farm_field": _l("Acker", "Campo agricolo", "Akker", "Pole uprawne", "Lahan pertanian", "農地", "农田", "農田"),
-    "center_pivot": _l(
-        "Bewässerungsanlage",
-        "Irrigazione pivot",
-        "Beregeningsinstallatie",
-        "System nawodnień",
-        "Pusat pivot",
-        "センターピボット",
-        "中心支轴灌溉",
-        "圓形噴灌機",
-    ),
-    "hay_bale": _l(
-        "Heuballen", "Balla di fieno", "Hooibaal", "Bała siana", "Bal jerami", "牧草ロール", "干草捆", "草捆"
-    ),
     "lake": _l("See", "Lago", "Meer", "Jezioro", "Danau", "湖", "湖泊", "湖泊"),
     "river": _l("Fluss", "Fiume", "Rivier", "Rzeka", "Sungai", "河川", "河流", "河川"),
     "dam": _l("Damm", "Diga", "Dam", "Zapora", "Bendungan", "ダム", "大坝", "水壩"),
 }
 
+# Extra words the search box should also match, per preset id, as
+# ``(en, fr, es, pt)`` space-separated lists. They cover what a user types when
+# it is not the label: a synonym, a plural, a regional word, or the same word
+# without its accents (the search compares raw text, so both spellings earn
+# their place). Optional by design: a preset with no entry gets an empty dict,
+# and a catalogue payload without the field still searches on label + prompt.
+_SEARCH_TERMS: dict[str, tuple[str, str, str, str]] = {
+    "building": ("structure footprint block outline", "immeuble construction emprise batiment bati",
+                 "inmueble construccion edificacion huella", "imovel construcao edificacao"),
+    "rooftop": ("roof roofs tiles roof outline", "toit toits toiture couverture",
+                "techo techos cubierta azotea", "telhado telhados cobertura laje"),
+    "house": ("home dwelling residential villa", "maison pavillon habitation villa",
+              "vivienda chalet casas residencial", "moradia residencia casas"),
+    "warehouse": ("depot logistics hangar industrial building", "entrepot hangar logistique depot",
+                  "nave industrial bodega deposito almacen", "armazem galpao deposito logistica"),
+    "greenhouse": ("glasshouse polytunnel nursery", "serre serres tunnel horticulture",
+                   "invernaderos umbraculo vivero", "estufa estufas viveiro"),
+    "shed": ("outbuilding hut barn garage", "abri remise grange garage",
+             "caseta cobertizo granero garaje", "barracao abrigo celeiro garagem"),
+    "silo": ("grain silo granary farm silo", "silos grenier", "silos granero", "silos celeiro"),
+    "storage_tank": ("tank oil tank fuel tank cistern", "cuve citerne reservoir",
+                     "tanque cisterna deposito", "tanque cisterna reservatorio"),
+    "tree": ("trees canopy crown forest woodland", "arbres houppier canopee foret forêt",
+             "arboles copa dosel bosque", "arvores copa dossel floresta"),
+    "forest": ("woodland woods forestry timber tree stand canopy", "foret bois boisement massif forestier canopee",
+               "bosques arbolado selva masa forestal dosel", "florestas mata bosque arvoredo dossel"),
+    "hedge": ("hedgerow windbreak shrub row", "haies bocage brise-vent",
+              "setos seto vivo", "sebe cerca viva"),
+    "bush": ("shrub scrub brush bushes", "arbuste broussaille fourre",
+             "matorral arbustos maleza", "arbustos moita mato"),
+    "grass": ("lawn turf meadow pasture grassland green space", "pelouse gazon prairie paturage espace vert",
+              "cesped pasto pradera prado zona verde", "gramado relva pasto pastagem area verde"),
+    "vegetation": ("vegetated green cover greenery plants undergrowth scrub",
+                   "vegetal couvert vegetal verdure plantes broussaille",
+                   "cubierta vegetal verde plantas maleza", "cobertura vegetal verde plantas mato"),
+    "road": ("street highway motorway asphalt pavement", "rue chaussee autoroute voirie bitume",
+             "calle via autopista pavimento asfalto", "rua via rodovia asfalto pavimento"),
+    "parking_lot": ("car park parking parking space", "stationnement aire de stationnement places",
+                    "aparcamiento playa de estacionamiento", "estacionamento vaga patio"),
+    "bridge": ("viaduct overpass flyover footbridge", "viaduc passerelle ouvrage d'art",
+               "viaducto paso elevado pasarela", "viaduto passarela"),
+    "roundabout": ("traffic circle rotary junction", "giratoire carrefour rond point",
+                   "glorieta redondel", "rotula retorno"),
+    "railway_track": ("railway railroad rail tracks train line", "rail chemin de fer voies",
+                      "ferrocarril vias del tren riel", "trilhos linha ferrea ferroviaria"),
+    "runway": ("airstrip taxiway apron airport", "aerodrome aeroport taxiway",
+               "pista de aterrizaje aeropuerto", "pista de pouso aeroporto"),
+    "dock": ("quay wharf pier jetty marina port harbour harbor", "quai ponton jetee port marina",
+             "muelle embarcadero dique puerto", "cais pier atracadouro porto"),
+    "water": ("water body waterbody surface water pond basin wetland flood",
+              "eau plan d'eau etendue d'eau mare bassin zone humide",
+              "agua cuerpo de agua masa de agua estanque humedal",
+              "agua corpo dagua massa de agua lagoa acude"),
+    "lake": ("pond reservoir water body water", "etang plan d'eau reservoir eau",
+             "laguna embalse agua", "lagoa represa agua"),
+    "river": ("stream creek canal watercourse water", "fleuve ruisseau cours d'eau canal",
+              "arroyo cauce canal", "riacho corrego canal"),
+    "dam": ("weir reservoir hydro dyke", "digue retenue ecluse",
+            "represa dique embalse", "represa dique acude"),
+    "bare_ground": ("bare soil dirt sand cleared land earth", "terre nue sable terrain nu remblai",
+                    "tierra desnuda arena terreno despejado", "solo nu areia terreno limpo"),
+    "rock": ("rocks stone boulder outcrop bedrock rocky", "roches pierre rocher affleurement rocheux",
+             "rocas piedra canto rodado afloramiento rocoso", "rochas pedra pedregulho afloramento rochoso"),
+    "quarry": ("mine pit gravel pit open pit extraction", "mine graviere carriere extraction",
+               "mina gravera cantera", "mina cascalheira mineracao"),
+    "car": ("vehicle auto automobile cars van", "vehicule voitures automobile camionnette",
+            "vehiculo automovil autos furgoneta", "veiculo automovel carros van"),
+    "truck": ("lorry semi hgv freight van", "poids lourd semi-remorque fourgon",
+              "camiones trailer furgon", "caminhoes carreta furgao"),
+    "train": ("railcar wagon locomotive rolling stock", "wagon locomotive rame",
+              "vagon locomotora tren", "vagao locomotiva composicao"),
+    "farm_field": ("field cropland farmland parcel crop agriculture", "champ parcelle culture terre agricole",
+                   "campo cultivo parcela agricultura", "campo lavoura cultura agricultura"),
+    "field": ("fields cropland farmland parcel plot paddock crop", "champs parcelle culture terrain lopin",
+              "campos parcela cultivo terreno lote", "campos talhao parcela cultivo terreno lote"),
+    "vineyard": ("vines grapes wine", "vignoble vignes parcelle viticole",
+                 "vina vinedo parras", "vinha parreiral uva"),
+    "orchard": ("fruit trees plantation grove olive grove", "plantation oliveraie arbres fruitiers",
+                "plantacion frutales olivar", "plantacao olival frutas"),
+    "solar_panel": ("pv photovoltaic solar module rooftop solar", "photovoltaique pv module solaire",
+                    "fotovoltaico pv placa solar modulo", "fotovoltaico pv placa solar modulo"),
+    "solar_farm": ("pv plant solar park photovoltaic plant solar array", "centrale solaire parc photovoltaique",
+                   "parque solar planta fotovoltaica huerto solar", "usina fotovoltaica parque solar"),
+    "wind_turbine": ("windmill wind farm turbine wind power", "aerogenerateur parc eolien moulin",
+                     "eolico molino parque eolico", "eolica cata-vento parque eolico"),
+    "swimming_pool": ("pool pools swimming water", "piscines bassin eau",
+                      "alberca pileta piscinas", "piscinas tanque"),
+    "tennis_court": ("tennis court padel", "tennis terrain padel", "tenis cancha padel", "tenis quadra padel"),
+    "soccer_field": ("football pitch sports field", "football terrain de sport foot",
+                     "futbol cancha campo deportivo", "futebol campo quadra"),
+    "running_track": ("athletics track oval", "athletisme piste stade",
+                      "atletismo pista tartan", "atletismo pista tartan"),
+    "stadium": ("arena sports ground grandstand", "arene enceinte sportive tribune",
+                "arena gradas coliseo", "arena arquibancada"),
+    "airplane": ("plane aircraft jet aviation", "avions aeronef jet aviation",
+                 "aviones aeronave jet", "avioes aeronave jato"),
+    "ship": ("vessel cargo ship tanker freighter", "cargo petrolier navires bateau",
+             "buque carguero nave", "navios cargueiro embarcacao"),
+    "boat": ("vessel yacht dinghy sailboat canoe", "barque voilier yacht embarcation",
+             "barca velero lancha yate", "lancha veleiro canoa"),
+    "construction_site": ("building site works excavation earthworks", "chantiers travaux terrassement",
+                          "obras construccion movimiento de tierras", "obras canteiro terraplenagem"),
+    "crane": ("tower crane gantry port crane", "grues portique", "gruas portico", "guindastes portico"),
+    "shipping_container": ("container containers freight intermodal", "conteneurs container caisse",
+                           "contenedores contenedor maritimo", "conteineres container"),
+    "chimney": ("smokestack stack flue cooling tower", "cheminees fumee tour de refroidissement",
+                "chimeneas torre de enfriamiento", "chamines torre de resfriamento"),
+}
 
-# Catalogue grouped by OBJECT FAMILY (what the object is), the convention used by
-# aerial-imagery object datasets. Discrete countable objects are browsed by
+_SEARCH_TERM_LANGS = ("en", "fr", "es", "pt")
+
+
+def _preset_search_terms(pid: str) -> dict[str, str]:
+    """The extra search words for one preset, empty when it has none."""
+    row = _SEARCH_TERMS.get(pid)
+    return dict(zip(_SEARCH_TERM_LANGS, row)) if row else {}
+
+
+# Sidebar emoji by category key. Covers BOTH the offline taxonomy keys below
+# and the richer server taxonomy (different keys) so the gallery sidebar always
+# shows an icon, even when the server catalogue omits the emoji field (it
+# currently sends emoji: null). Keep the server keys in sync with
+# /api/ai-segmentation/presets.
+_CATEGORY_EMOJI: dict[str, str] = {
+    # offline taxonomy
+    "buildings": "\U0001f3e2",  # building
+    "vegetation": "\U0001f333",  # deciduous tree
+    "transport": "\U0001f6e3️",  # motorway
+    "land_water": "\U0001f4a7",  # droplet
+    "vehicles_transport": "\U0001f697",  # car
+    "agriculture": "\U0001f33e",  # sheaf of rice
+    "energy": "⚡",  # high voltage
+    "sport_recreation": "\U0001f3df️",  # stadium
+    "aircraft_vessels": "✈️",  # airplane
+    "industry": "\U0001f3ed",  # factory
+    # server taxonomy, plus keys this catalogue used before
+    "energy_industrial": "⚡",  # high voltage
+    "vehicles": "\U0001f697",  # car
+    "aircraft_maritime": "✈️",  # airplane
+    "water": "\U0001f4a7",  # droplet
+    "sports": "\U0001f3df️",  # stadium
+    "land": "\U0001f3d4️",  # snow-capped mountain
+}
+_CATEGORY_EMOJI_DEFAULT = "\U0001f4c2"  # open folder: generic category icon
+
+
+def category_emoji(key: str) -> str:
+    """Sidebar emoji for a category key, falling back to a generic folder glyph
+    so an unknown/new server key still renders an icon."""
+    return _CATEGORY_EMOJI.get(key, _CATEGORY_EMOJI_DEFAULT)
+
+
+# Catalogue grouped by OBJECT FAMILY (what the object is), the convention used
+# by aerial-imagery object datasets. Discrete countable objects are browsed by
 # family, not by GIS use-domain (that taxonomy fits continuous land cover, not
-# objects). All 50 prompts are kept; the few weak/continuous classes carry
-# weak=True so the UI can flag them. Each category leads with one top_pick.
+# objects). Categories run most-asked-for first, and so do the presets inside
+# each one. An object earns a card by being asked for, so this list is curated
+# rather than exhaustive; the few weak/continuous classes carry weak=True so
+# the UI can flag them.
 _CATEGORIES: list[dict] = [
     _cat(
         "buildings",
-        "\U0001f3e2",
-        "Buildings & structures",
-        "Bâtiments et structures",
-        "Edificios y estructuras",
-        "Edifícios e estruturas",
+        "Buildings and rooftops",
+        "Bâtiments et toitures",
+        "Edificios y tejados",
+        "Edifícios e telhados",
         [
-            _p("building", "building", "Building", "Bâtiment", "Edificio", "Edifício", top_pick=True),
-            _p("house", "house", "House", "Maison", "Casa", "Casa"),
+            _p("building", "building", "Building", "Bâtiment", "Edificio", "Edifício"),
             _p("rooftop", "rooftop", "Rooftop", "Toiture", "Tejado", "Telhado"),
+            _p("house", "house", "House", "Maison", "Casa", "Casa"),
             _p("warehouse", "warehouse", "Warehouse", "Entrepôt", "Almacén", "Galpão"),
             _p("greenhouse", "greenhouse", "Greenhouse", "Serre", "Invernadero", "Estufa"),
             _p("shed", "shed", "Shed", "Cabanon", "Cobertizo", "Galpão pequeno"),
@@ -282,88 +401,106 @@ _CATEGORIES: list[dict] = [
         ],
     ),
     _cat(
-        "vehicles_transport",
-        "\U0001f697",
-        "Vehicles & transport",
-        "Véhicules et transport",
-        "Vehículos y transporte",
-        "Veículos e transporte",
+        "vegetation",
+        "Trees and vegetation",
+        "Arbres et végétation",
+        "Árboles y vegetación",
+        "Árvores e vegetação",
         [
-            _p("road", "road", "Road", "Route", "Carretera", "Estrada", top_pick=True),
-            _p("car", "car", "Car", "Voiture", "Coche", "Carro", top_pick=True),
-            _p("truck", "truck", "Truck", "Camion", "Camión", "Caminhão"),
-            _p("bus", "bus", "Bus", "Bus", "Autobús", "Ônibus"),
-            _p("trailer", "trailer", "Trailer", "Remorque", "Remolque", "Reboque"),
-            _p("train", "train", "Train", "Train", "Tren", "Trem"),
-            _p("parking_lot", "parking lot", "Parking lot", "Parking", "Estacionamiento", "Estacionamento"),
-            _p("bridge", "bridge", "Bridge", "Pont", "Puente", "Ponte"),
-            _p("roundabout", "roundabout", "Roundabout", "Rond-point", "Rotonda", "Rotatória"),
-            _p("runway", "runway", "Runway", "Piste", "Pista", "Pista"),
-            _p("railway_track", "railway track", "Railway track", "Voie ferrée", "Vía férrea", "Ferrovia"),
+            _p("tree", "tree", "Tree", "Arbre", "Árbol", "Árvore"),
+            _p("forest", "forest", "Forest", "Forêt", "Bosque", "Floresta", weak=True),
+            _p("hedge", "hedge", "Hedge", "Haie", "Seto", "Cerca viva"),
+            _p("bush", "bush", "Bush", "Buisson", "Arbusto", "Arbusto"),
+            _p("grass", "grass", "Grass", "Herbe", "Hierba", "Grama", weak=True),
+            _p("vegetation", "vegetation", "Vegetation", "Végétation", "Vegetación", "Vegetação", weak=True),
         ],
     ),
     _cat(
-        "aircraft_vessels",
-        "✈️",
-        "Aircraft & vessels",
-        "Aérien et maritime",
-        "Aéreo y marítimo",
-        "Aéreo e marítimo",
+        "transport",
+        "Roads and infrastructure",
+        "Routes et infrastructures",
+        "Carreteras e infraestructuras",
+        "Estradas e infraestrutura",
         [
-            _p("airplane", "airplane", "Airplane", "Avion", "Avión", "Avião", top_pick=True),
-            _p("helicopter", "helicopter", "Helicopter", "Hélicoptère", "Helicóptero", "Helicóptero"),
-            _p("ship", "ship", "Ship", "Navire", "Barco", "Navio", top_pick=True),
-            _p("boat", "boat", "Boat", "Bateau", "Bote", "Barco"),
-            _p(
-                "shipping_container", "shipping container", "Shipping container", "Conteneur", "Contenedor", "Contêiner"
-            ),
+            _p("road", "road", "Road", "Route", "Carretera", "Estrada"),
+            _p("parking_lot", "parking lot", "Parking lot", "Parking", "Estacionamiento", "Estacionamento"),
+            _p("bridge", "bridge", "Bridge", "Pont", "Puente", "Ponte"),
+            _p("roundabout", "roundabout", "Roundabout", "Rond-point", "Rotonda", "Rotatória"),
+            _p("railway_track", "railway track", "Railway track", "Voie ferrée", "Vía férrea", "Ferrovia"),
+            _p("runway", "runway", "Runway", "Piste", "Pista", "Pista"),
             _p("dock", "dock", "Dock", "Quai", "Muelle", "Doca"),
         ],
     ),
     _cat(
-        "energy_industrial",
-        "⚡",
-        "Energy & industrial",
-        "Énergie et industrie",
-        "Energía e industria",
-        "Energia e indústria",
+        "land_water",
+        "Water and land",
+        "Eau et sols",
+        "Agua y suelo",
+        "Água e solo",
+        [
+            _p("water", "water", "Water", "Eau", "Agua", "Água", weak=True),
+            _p("lake", "lake", "Lake", "Lac", "Lago", "Lago"),
+            _p("river", "river", "River", "Rivière", "Río", "Rio", weak=True),
+            _p("dam", "dam", "Dam", "Barrage", "Presa", "Barragem"),
+            _p("bare_ground", "bare ground", "Bare ground", "Sol nu", "Suelo desnudo", "Solo exposto", weak=True),
+            _p("rock", "rock", "Rock", "Roche", "Roca", "Rocha"),
+            _p("quarry", "quarry", "Quarry", "Carrière", "Cantera", "Pedreira"),
+        ],
+    ),
+    _cat(
+        "vehicles_transport",
+        "Vehicles",
+        "Véhicules",
+        "Vehículos",
+        "Veículos",
+        [
+            _p("car", "car", "Car", "Voiture", "Coche", "Carro"),
+            _p("truck", "truck", "Truck", "Camion", "Camión", "Caminhão"),
+            _p("train", "train", "Train", "Train", "Tren", "Trem"),
+        ],
+    ),
+    _cat(
+        "agriculture",
+        "Fields and crops",
+        "Parcelles et cultures",
+        "Parcelas y cultivos",
+        "Talhões e culturas",
         [
             _p(
-                "solar_panel",
-                "solar panel",
-                "Solar panel",
-                "Panneau solaire",
-                "Panel solar",
-                "Painel solar",
-                top_pick=True,
+                "farm_field",
+                "farm field",
+                "Farm field",
+                "Parcelle agricole",
+                "Parcela agrícola",
+                "Talhão agrícola",
+                weak=True,
             ),
+            _p("field", "field", "Field", "Champ", "Campo", "Campo", weak=True),
+            _p("vineyard", "vineyard", "Vineyard", "Vigne", "Viñedo", "Vinhedo"),
+            _p("orchard", "orchard", "Orchard", "Verger", "Huerto", "Pomar"),
+        ],
+    ),
+    _cat(
+        "energy",
+        "Solar and wind energy",
+        "Énergie solaire et éolienne",
+        "Energía solar y eólica",
+        "Energia solar e eólica",
+        [
+            _p("solar_panel", "solar panel", "Solar panel", "Panneau solaire", "Panel solar", "Painel solar"),
             _p("solar_farm", "solar farm", "Solar farm", "Ferme solaire", "Planta solar", "Usina solar"),
             _p("wind_turbine", "wind turbine", "Wind turbine", "Éolienne", "Aerogenerador", "Turbina eólica"),
-            _p("chimney", "chimney", "Chimney", "Cheminée", "Chimenea", "Chaminé"),
-            _p("crane", "crane", "Crane", "Grue", "Grúa", "Guindaste"),
-            _p("quarry", "quarry", "Quarry", "Carrière", "Cantera", "Pedreira"),
-            _p("construction_site", "construction site", "Construction site", "Chantier", "Obra", "Canteiro de obras"),
-            _p("bare_ground", "bare ground", "Bare ground", "Sol nu", "Suelo desnudo", "Solo exposto", weak=True),
         ],
     ),
     _cat(
         "sport_recreation",
-        "\U0001f3df️",
-        "Sport & recreation",
+        "Sport and leisure",
         "Sport et loisirs",
-        "Deportes y recreación",
-        "Esportes e recreação",
+        "Deporte y ocio",
+        "Esporte e lazer",
         [
-            _p("swimming_pool", "swimming pool", "Swimming pool", "Piscine", "Piscina", "Piscina", top_pick=True),
+            _p("swimming_pool", "swimming pool", "Swimming pool", "Piscine", "Piscina", "Piscina"),
             _p("tennis_court", "tennis court", "Tennis court", "Court de tennis", "Pista de tenis", "Quadra de tênis"),
-            _p(
-                "basketball_court",
-                "basketball court",
-                "Basketball court",
-                "Terrain de basket",
-                "Cancha de baloncesto",
-                "Quadra de basquete",
-            ),
             _p(
                 "soccer_field", "soccer field", "Soccer field", "Terrain de foot", "Campo de fútbol", "Campo de futebol"
             ),
@@ -379,50 +516,32 @@ _CATEGORIES: list[dict] = [
         ],
     ),
     _cat(
-        "land_water",
-        "\U0001f333",
-        "Land & water",
-        "Sol et eau",
-        "Suelo y agua",
-        "Solo e água",
+        "aircraft_vessels",
+        "Aircraft and boats",
+        "Avions et bateaux",
+        "Aviones y barcos",
+        "Aviões e barcos",
         [
-            _p("tree", "tree", "Tree", "Arbre", "Árbol", "Árvore", top_pick=True),
-            _p("hedge", "hedge", "Hedge", "Haie", "Seto", "Cerca viva"),
-            _p("bush", "bush", "Bush", "Buisson", "Arbusto", "Arbusto"),
-            _p("vineyard", "vineyard", "Vineyard", "Vigne", "Viñedo", "Vinhedo"),
-            _p("orchard", "orchard", "Orchard", "Verger", "Huerto", "Pomar"),
-            _p(
-                "farm_field",
-                "farm field",
-                "Farm field",
-                "Parcelle agricole",
-                "Parcela agrícola",
-                "Talhão agrícola",
-                weak=True,
-            ),
-            _p("center_pivot", "center pivot", "Center pivot", "Pivot central", "Pivote central", "Pivô central"),
-            _p("hay_bale", "hay bale", "Hay bale", "Botte de foin", "Bala de heno", "Fardo de feno"),
-            _p("lake", "lake", "Lake", "Lac", "Lago", "Lago"),
-            _p("river", "river", "River", "Rivière", "Río", "Rio", weak=True),
-            _p("dam", "dam", "Dam", "Barrage", "Presa", "Barragem"),
+            _p("airplane", "airplane", "Airplane", "Avion", "Avión", "Avião"),
+            _p("ship", "ship", "Ship", "Navire", "Barco", "Navio"),
+            _p("boat", "boat", "Boat", "Bateau", "Bote", "Barco"),
         ],
     ),
-]
-
-# Top-pick ids in display order (the "Popular" tab). Ordered by real Pro demand:
-# buildings, vegetation, roads, water, fields, solar, then the strongest bonus
-# classes (vehicles, recreation). Land
-# cover (#2) has no single discrete preset so it is represented by the browse
-# categories, not a Popular tile.
-TOP_PICKS: list[str] = [
-    "building",
-    "tree",
-    "road",
-    "lake",
-    "farm_field",
-    "solar_panel",
-    "car",
-    "swimming_pool",
+    _cat(
+        "industry",
+        "Industry and works",
+        "Industrie et chantiers",
+        "Industria y obras",
+        "Indústria e obras",
+        [
+            _p("construction_site", "construction site", "Construction site", "Chantier", "Obra", "Canteiro de obras"),
+            _p("crane", "crane", "Crane", "Grue", "Grúa", "Guindaste"),
+            _p(
+                "shipping_container", "shipping container", "Shipping container", "Conteneur", "Contenedor", "Contêiner"
+            ),
+            _p("chimney", "chimney", "Chimney", "Cheminée", "Chimenea", "Chaminé"),
+        ],
+    ),
 ]
 
 
@@ -453,39 +572,6 @@ def pick_label(field, fallback: str = "") -> str:
     return fallback
 
 
-# Sidebar emoji by category key. Covers BOTH the offline taxonomy keys above
-# and the richer server taxonomy (10 families, different keys) so the gallery
-# sidebar always shows an icon, even when the server catalogue omits the emoji
-# field (it currently sends emoji: null). Keep the server keys in sync with
-# /api/ai-segmentation/presets.
-_CATEGORY_EMOJI: dict[str, str] = {
-    # offline taxonomy
-    "buildings": "\U0001f3e2",  # building
-    "vehicles_transport": "\U0001f697",  # car
-    "aircraft_vessels": "✈️",  # airplane
-    "energy_industrial": "⚡",  # high voltage
-    "sport_recreation": "\U0001f3df️",  # stadium
-    "land_water": "\U0001f333",  # deciduous tree
-    # server taxonomy (10 families)
-    "transport": "\U0001f6e3️",  # motorway
-    "vehicles": "\U0001f697",  # car
-    "aircraft_maritime": "✈️",  # airplane
-    "energy": "⚡",  # high voltage
-    "water": "\U0001f4a7",  # droplet
-    "vegetation": "\U0001f333",  # deciduous tree
-    "agriculture": "\U0001f33e",  # sheaf of rice
-    "sports": "\U0001f3df️",  # stadium
-    "land": "\U0001f3d4️",  # snow-capped mountain
-}
-_CATEGORY_EMOJI_DEFAULT = "\U0001f4c2"  # open folder: generic category icon
-
-
-def category_emoji(key: str) -> str:
-    """Sidebar emoji for a category key, falling back to a generic folder glyph
-    so an unknown/new server key still renders an icon."""
-    return _CATEGORY_EMOJI.get(key, _CATEGORY_EMOJI_DEFAULT)
-
-
 def fallback_categories() -> list[dict]:
     """The offline catalogue (ordered domains, each with its presets)."""
     return _CATEGORIES
@@ -504,11 +590,65 @@ def known_tokens() -> list[str]:
     return list(seen.keys())
 
 
-def _fold_label(text) -> str:
-    """Accent-fold a label to lowercase ASCII ('Bâtiment' -> 'batiment')."""
+def fold_search_text(text) -> str:
+    """Accent-fold a label or a query to lowercase ASCII ('Bâtiment' ->
+    'batiment'), so a user who skips the accents still finds the object."""
     import unicodedata
 
     return unicodedata.normalize("NFKD", str(text or "")).encode("ascii", "ignore").decode("ascii").lower().strip()
+
+
+def search_terms_of(preset) -> list[str]:
+    """Every extra search word a preset carries, in every language it carries.
+
+    Reads the OPTIONAL ``search_terms`` field, which the server catalogue may
+    omit or send in another shape (a dict of strings, a flat list, or one
+    string). Anything unreadable yields an empty list, never an exception.
+    """
+    if not isinstance(preset, dict):
+        return []
+    terms = preset.get("search_terms")
+    if isinstance(terms, dict):
+        values = terms.values()
+    elif isinstance(terms, (list, tuple)):
+        values = terms
+    elif terms:
+        values = [terms]
+    else:
+        return []
+    out: list[str] = []
+    for value in values:
+        if isinstance(value, (list, tuple)):
+            out.extend(str(v) for v in value if v)
+        elif value:
+            out.append(str(value))
+    return out
+
+
+def preset_search_haystack(preset, category_label: str = "") -> str:
+    """One accent-folded string to substring-match a search query against: the
+    prompt token, the label in EVERY shipped language, the category, and the
+    extra terms.
+
+    Every language, not just the interface one: people mix languages in a
+    search box, and a French user on an English QGIS still types "eolienne".
+    Same reasoning as the prompt box's silent translation.
+    """
+    labels = (preset or {}).get("label")
+    parts = [str((preset or {}).get("prompt", "")), category_label]
+    if isinstance(labels, dict):
+        parts.extend(str(v) for v in labels.values())
+    else:
+        parts.append(pick_label(labels, ""))
+    parts.extend(search_terms_of(preset))
+    return fold_search_text(" ".join(p for p in parts if p))
+
+
+def preset_matches_query(preset, query: str, category_label: str = "") -> bool:
+    """Does this preset answer what the user typed? Folded substring match, so
+    'batiment', 'Bâtiment' and 'immeuble' all reach the building card."""
+    folded = fold_search_text(query)
+    return bool(folded) and folded in preset_search_haystack(preset, category_label)
 
 
 def token_by_localized_label() -> dict[str, str]:
@@ -539,7 +679,7 @@ def token_by_localized_label() -> dict[str, str]:
             label = p.get("label")
             values = list(label.values()) if isinstance(label, dict) else [label]
             for value in values:
-                folded = _fold_label(value)
+                folded = fold_search_text(value)
                 if folded:
                     index.setdefault(folded, token)
     return index

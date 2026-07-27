@@ -6,6 +6,8 @@ are plain mixin members: widgets/signals live on the dock instance.
 """
 from __future__ import annotations
 
+import html
+
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
     QHBoxLayout,
@@ -17,28 +19,42 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-
-from ..credit_ring import CreditRing
-
 from ...core.activation_manager import (
+    TUTORIAL_URL_FALLBACK,
     get_tutorial_url,
 )
 from ...core.i18n import tr
+from ..credit_ring import CreditRing
 from .styles import (
-    BRAND_BLUE,
-    BRAND_BLUE_HOVER,
     _BTN_BLUE,
     _BTN_GREEN,
     _FOOTER_CTA_BTN_STYLE,
     _FOOTER_ICON_BTN_STYLE,
     _FOOTER_MENU_STYLE,
     _HELP_ICON_BTN_STYLE,
+    BRAND_BLUE,
+    BRAND_BLUE_HOVER,
     _msg_card_qss,
     _msg_label_qss,
 )
 from .widgets import (
     _FooterIconButton,
 )
+
+
+def _web_url_or(candidate: object, fallback: str) -> str:
+    """Return ``candidate`` only when it is a usable https web address.
+
+    A URL that comes from the server (or from any other value we do not
+    control) must never reach the desktop URL handler unchecked: another scheme
+    would hand the string to a local application instead of the browser. The
+    check itself lives in ``core.server_dials.safe_web_url``, shared with the
+    rich-text label that shows the same address, so both places accept exactly
+    the same strings.
+    """
+    from ...core.server_dials import safe_web_url
+
+    return safe_web_url(candidate, fallback)
 
 
 class DockAboutMixin:
@@ -71,8 +87,11 @@ class DockAboutMixin:
             from pyplugin_installer.installer_data import plugins
             plugin_data = plugins.all().get("AI_Segmentation")
             if plugin_data and plugin_data.get("status") == "upgradeable":
-                available_version = plugin_data.get(
-                    "version_available", "?")
+                # The version string comes from the plugin repository's XML and
+                # lands in a rich-text label, so it is escaped like any other
+                # remote value shown as markup.
+                available_version = html.escape(
+                    str(plugin_data.get("version_available") or "?"))
                 message = tr("Version {version} is available.").format(
                     version=available_version)
                 link_text = tr("Update now")
@@ -84,6 +103,9 @@ class DockAboutMixin:
                 self.update_notification_widget.setVisible(True)
         except Exception:
             pass  # nosec B110  No repo data yet, dev install, etc.
+        # Two update banners at once would be noise. This one carries a real
+        # version number, so it wins and the server-driven one steps aside.
+        self.refresh_update_recommendation()
 
     def _on_open_plugin_manager(self, _link=None):
         """Open the QGIS Plugin Manager on the Upgradeable tab (index 3)."""
@@ -122,6 +144,14 @@ class DockAboutMixin:
 
         self.batch_info_widget.setVisible(False)
         self.main_layout.addWidget(self.batch_info_widget)
+
+        # Review "View detections as" block, pinned here so it sits directly
+        # above the footer credits row: a way to look at the results, always
+        # available during a review, never the first item of the flow. Built
+        # by DockAutoReviewBuildMixin (auto_review_build.py); it is a
+        # main_layout sibling, so its show/hide travels with the review state,
+        # not with the Automatic page.
+        self._setup_auto_review_view_block(self.main_layout)
 
         # Footer icon row - mirrors AI Edit. Gear opens Account Settings
         # (visible only when activated), help opens a popup with Tutorial /
@@ -234,13 +264,22 @@ class DockAboutMixin:
         self.main_layout.addWidget(footer_widget)
 
     def _on_open_tutorial(self):
-        """Open the tutorial URL in the system browser."""
+        """Open the tutorial URL in the system browser.
+
+        The address is server-supplied, so it goes through the https guard and
+        falls back to the built-in one when it is anything else.
+        """
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
-        QDesktopServices.openUrl(QUrl(get_tutorial_url()))
+        QDesktopServices.openUrl(
+            QUrl(_web_url_or(get_tutorial_url(), TUTORIAL_URL_FALLBACK)))
 
     def _on_open_guide_footer(self):
-        """Footer book button: open the step-by-step written guide."""
+        """Footer book button: open the step-by-step written guide.
+
+        No guard needed here: guidance.guide_url() builds the address from a
+        constant base, nothing server-supplied reaches the URL handler.
+        """
         from .guidance import open_guide
         open_guide("footer_tutorial")
 
@@ -256,9 +295,23 @@ class DockAboutMixin:
         )
 
     def _on_show_shortcuts(self):
-        """Keyboard shortcuts dialog: the full plugin keyboard map (K4)."""
+        """Keyboard shortcuts dialog: the plugin keyboard map, grouped by the
+        context where each key is actually live (K4).
+
+        One group per context, in the order a user meets them: General, then
+        Manual, then the Automatic steps (zone, detect, review, merge), then
+        map navigation. Only keys a user can press in normal use are listed.
+        The keys the native QGIS edit tools own during a Correct-step hand
+        edit stay out: their banner buttons and tooltips carry them.
+        """
         from qgis.PyQt.QtGui import QKeySequence
-        from qgis.PyQt.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout
+        from qgis.PyQt.QtWidgets import (
+            QDialog,
+            QFrame,
+            QPushButton,
+            QTextBrowser,
+            QVBoxLayout,
+        )
 
         def native(seq) -> str:
             """Platform-native rendering of a key sequence (mirrors AI Edit):
@@ -271,68 +324,124 @@ class DockAboutMixin:
         backspace_key = native("Backspace")
         enter_key = native("Return")
         esc_key = native("Esc")
+        del_key = native("Del")
         # Delete the active object: Delete, or Ctrl/Cmd+Backspace (the big
         # key on Mac keyboards); matches shortcut_filter.py.
-        delete_key = f"{native('Del')} / {native('Ctrl+Backspace')}"
+        ctrl_backspace_key = native("Ctrl+Backspace")
 
         key_style = (
             "background-color: rgba(128,128,128,0.18);"
             "border: 1px solid rgba(128,128,128,0.35);"
             "border-radius: 3px;"
             "padding: 1px 5px;"
-            "font-family: monospace;"
+            # Named faces before the generic: Qt resolves the bare "monospace"
+            # only where the font database aliases it, so Windows fell back to
+            # a proportional face. Matches _KEY_BADGE_STYLE in dock/widgets.py.
+            "font-family: Consolas, 'DejaVu Sans Mono', Menlo, monospace;"
         )
-        k = f"<span style='{key_style}'>{{}}</span>"
+
+        def keys(*labels: str) -> str:
+            """One key cap per label, joined by a slash when a context accepts
+            several keys for the same action. Every label is a literal or a
+            Qt-rendered key name, so there is no user text to escape here."""
+            return " / ".join(
+                f"<span style='{key_style}'>{label}</span>" for label in labels)
 
         def _row(key_html: str, action: str) -> str:
             return ("<tr><td style='padding-right:12px;'>"
                     f"{key_html}</td><td>{action}</td></tr>")
 
         def _section(title: str) -> str:
-            return ("<tr><td colspan='2' style='padding-top:8px;"
-                    f"padding-bottom:1px;'><b>{title}</b></td></tr>")
+            return ("<tr><td colspan='2' style='padding-top:9px;"
+                    f"padding-bottom:2px;'><b>{title}</b></td></tr>")
 
         rows = [
             "<table cellspacing='0' cellpadding='1'>",
+
             _section(tr("General")),
-            _row(k.format("G"), tr("Start (the visible mode's Start button)")),
-            _section(tr("Automatic - draw your zone")),
-            _row(k.format(tr("Click")), tr("Add a point")),
-            _row(k.format(tr("Double-click") + f" / {enter_key}"),
-                 tr("Finish the zone")),
-            _row(k.format(f"{backspace_key} / {undo_key}"), tr("Undo the last point")),
-            _row(k.format(esc_key), tr("Cancel the drawing")),
-            _section(tr("Automatic - detect and review")),
-            _row(k.format(enter_key),
-                 tr("Detect objects, or export the reviewed polygons")),
-            _row(k.format(esc_key),
-                 tr("Cancel the running detection, or exit the review")),
-            _section(tr("Manual session")),
-            _row(k.format(tr("Left-click")), tr("Add area")),
-            _row(k.format(tr("Right-click")), tr("Remove area")),
-            _row(k.format("S"), tr("Save polygon")),
-            _row(k.format(f"{undo_key} / {backspace_key}"), tr("Undo last point")),
-            _row(k.format(enter_key), tr("Export polygon to a layer")),
-            _row(k.format(esc_key), tr("Stop segmentation")),
-            _row(k.format(delete_key), tr("Delete the active object")),
-            _section(tr("Navigation")),
-            _row(k.format(tr("Space")), tr("Hold and move to pan the map")),
-            _row(k.format(tr("Arrow keys")), tr("Pan the map")),
-            _row(k.format(tr("Middle mouse button")),
-                 tr("Click and drag to pan the map")),
+            _row(keys("G"), tr("Start (the visible mode's Start button)")),
+
+            _section(tr("Manual")),
+            _row(keys(tr("Left-click")), tr("Add area")),
+            _row(keys(tr("Right-click")), tr("Remove area")),
+            _row(keys(undo_key, backspace_key), tr("Undo last point")),
+            _row(keys("S"), tr("Save polygon")),
+            _row(keys("E"),
+                 tr("Open the selected saved polygon for AI editing")),
+            _row(keys(del_key, ctrl_backspace_key),
+                 tr("Delete the active object")),
+            _row(keys(enter_key), tr("Export polygon to a layer")),
+            _row(keys(esc_key),
+                 tr("Clear the selection, or stop the segmentation")),
+
+            _section(tr("Automatic: draw the zone")),
+            _row(keys(tr("Click")), tr("Add a point")),
+            _row(keys(tr("Double-click")), tr("Finish the zone")),
+            _row(keys(undo_key, backspace_key), tr("Undo the last point")),
+            _row(keys(esc_key), tr("Clear the points, then exit Automatic")),
+
+            _section(tr("Automatic: detect")),
+            _row(keys(enter_key), tr("Run the detection")),
+            _row(keys(esc_key),
+                 tr("Cancel the example box, the detection, "
+                    "or exit Automatic")),
+
+            _section(tr("Automatic: review and Correct")),
+            _row(keys(enter_key), tr("Export the polygons to a layer")),
+            _row(keys(del_key, ctrl_backspace_key),
+                 tr("Remove the selected detection")),
+            _row(keys(undo_key), tr("Undo the last correction")),
+            _row(keys("S"), tr("Save the fix and go back to the review")),
+            _row(keys(esc_key),
+                 tr("Close the fix, clear the selection, "
+                    "or exit the review")),
+
+            _section(tr("Automatic: merge with neighbours")),
+            _row(keys(tr("Click")), tr("Pick or un-pick an object")),
+            _row(keys(enter_key), tr("Confirm the merge")),
+            _row(keys(esc_key), tr("Cancel the merge")),
+
+            _section(tr("Navigation (while a tool is armed)")),
+            _row(keys(tr("Space")), tr("Hold and move to pan the map")),
+            _row(keys(tr("Arrow keys")), tr("Pan the map")),
+
             "</table>",
         ]
         shortcuts_html = "".join(rows)
 
         dlg = QDialog(self)
         dlg.setWindowTitle(tr("Keyboard shortcuts"))
-        dlg.setMaximumWidth(460)
+        # Same width as before; fixed, so the two columns keep their rhythm
+        # whatever the platform key names are.
+        dlg.setFixedWidth(460)
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(16, 14, 16, 12)
         layout.setSpacing(10)
-        label = QLabel(shortcuts_html)
-        label.setTextFormat(Qt.TextFormat.RichText)
-        layout.addWidget(label)
+
+        # The map is long, so the rows scroll and the OK button stays on
+        # screen. A read-only rich-text view, not a label in a scroll area:
+        # it lays the table out at its real width, so a row that wraps can
+        # never end up clipped at the bottom of the list.
+        view = QTextBrowser(dlg)
+        view.setHtml(shortcuts_html)
+        view.setFrameShape(QFrame.Shape.NoFrame)
+        view.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        view.setOpenExternalLinks(False)
+        # Without this the viewport paints its own base color and the list
+        # reads as a pale block dropped on the dialog, in both themes.
+        view.setStyleSheet(
+            "QTextBrowser { background: transparent; border: none;"
+            " font-size: 12px; color: palette(text); }")
+        list_height = 420
+        try:
+            available = dlg.screen().availableGeometry().height()
+            list_height = max(240, min(list_height, available - 180))
+        except (AttributeError, RuntimeError):
+            pass
+        view.setFixedHeight(list_height)
+        layout.addWidget(view)
+
         ok_btn = QPushButton(tr("OK"))
         ok_btn.setStyleSheet(_BTN_BLUE)
         ok_btn.setFixedWidth(80)

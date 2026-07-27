@@ -10,6 +10,7 @@ import calendar
 import html
 import time
 
+from qgis.PyQt.QtCore import QLocale
 from qgis.PyQt.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 from ....core import qt_compat as QtC
@@ -52,9 +53,17 @@ _CARD_NORMAL = (
     "QFrame#card { border: 1px solid rgba(128,128,128,0.30);"
     " border-radius: 6px; background: rgba(128,128,128,0.05); }"
 )
+# Hover is an active tint, so it belongs to the lime family. The CTA green is
+# reserved for advance/commit and must not stand in for it.
 _CARD_HOVER = (
-    "QFrame#card { border: 1px solid rgba(67,160,71,0.75);"
-    " border-radius: 6px; background: rgba(67,160,71,0.09); }"
+    "QFrame#card { border: 1px solid rgba(139,172,39,0.75);"
+    " border-radius: 6px; background: rgba(139,172,39,0.09); }"
+)
+# Count pill painted over the preview image, so the footer keeps the prompt and
+# the date to itself. Dark scrim, because it sits on unpredictable imagery.
+_OVERLAY_BADGE_QSS = (
+    "QLabel { background: rgba(0,0,0,0.62); color: #ffffff; font-size: 10px;"
+    " font-weight: 700; border: none; border-radius: 9px; padding: 2px 8px; }"
 )
 # Right-aligned click affordance on every card footer: a faint chevron at rest
 # that becomes a green "Use ->" on hover. Swapped by each card's enter/leave.
@@ -70,7 +79,16 @@ _META_QSS = (
     "font-size: 11px; color: rgba(128,128,128,0.85);"
     " background: transparent; border: none;"
 )
-_EMPTY_MSG = "color: palette(text); padding: 24px;"
+# Empty states are hero-only: one glyph, one sentence, centered. The padding
+# lives on the layout, not here, so the two parts stay a fixed distance apart.
+_EMPTY_GLYPH = (
+    "color: rgba(128,128,128,0.45); font-size: 34px;"
+    " background: transparent; border: none;"
+)
+_EMPTY_MSG = (
+    "color: rgba(128,128,128,0.95); font-size: 13px;"
+    " background: transparent; border: none;"
+)
 
 _BLUE_BTN_QSS = (
     f"QPushButton {{ background-color: {BRAND_BLUE}; color: #ffffff; border: none;"
@@ -315,7 +333,11 @@ def _demo_url(base: str, preset: dict, which: str, preview: bool = False) -> str
 
 
 def _relative_when(ts: str) -> str:
-    """Coarse 'today / yesterday / N days ago' from a UTC ISO timestamp."""
+    """Relative age of a UTC ISO timestamp, coarsening as it gets older.
+
+    Past a week, counting days stops helping ("412 days ago" tells nobody
+    anything), so the unit grows with the distance.
+    """
     try:
         parsed = time.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
         secs = time.time() - calendar.timegm(parsed)
@@ -326,14 +348,58 @@ def _relative_when(ts: str) -> str:
         return tr("today")
     if days == 1:
         return tr("yesterday")
-    return tr("{n} days ago").format(n=days)
+    if days < 7:
+        return tr("{n} days ago").format(n=days)
+    if days < 31:
+        weeks = days // 7
+        return tr("a week ago") if weeks == 1 else tr("{n} weeks ago").format(n=weeks)
+    if days < 365:
+        months = max(1, days // 30)
+        return tr("a month ago") if months == 1 else tr("{n} months ago").format(n=months)
+    years = days // 365
+    return tr("a year ago") if years == 1 else tr("{n} years ago").format(n=years)
 
 
 def _iso_norm(ts) -> str:
-    """Normalize a server ISO timestamp (offset / fractional seconds tolerated)
-    to the plain '%Y-%m-%dT%H:%M:%SZ' shape _relative_when parses."""
-    ts = str(ts or "")
-    return ts[:19] + "Z" if len(ts) >= 19 else ""
+    """Normalize a server ISO timestamp to the '%Y-%m-%dT%H:%M:%SZ' shape
+    _relative_when parses.
+
+    The offset is read, not discarded: chopping at 19 characters would turn a
+    '+02:00' stamp into a UTC one and shift the age by the offset.
+    """
+    ts = str(ts or "").strip()
+    if len(ts) < 19:
+        return ""
+    body, tail = ts[:19], ts[19:]
+    # Drop fractional seconds, then look at what is left for an offset.
+    if tail.startswith("."):
+        idx = 1
+        while idx < len(tail) and tail[idx].isdigit():
+            idx += 1
+        tail = tail[idx:]
+    if not tail or tail in ("Z", "z", "+00:00", "-00:00", "+0000", "-0000"):
+        return body + "Z"
+    sign = tail[0]
+    if sign not in ("+", "-"):
+        return body + "Z"
+    digits = tail[1:].replace(":", "")
+    if len(digits) < 4 or not digits[:4].isdigit():
+        return body + "Z"
+    try:
+        parsed = time.strptime(body, "%Y-%m-%dT%H:%M:%S")
+    except ValueError:
+        return body + "Z"
+    shift = (int(digits[:2]) * 3600 + int(digits[2:4]) * 60) * (-1 if sign == "+" else 1)
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                         time.gmtime(calendar.timegm(parsed) + shift))
+
+
+def _fmt_count(value) -> str:
+    """Group a count's thousands so 125549 reads as a magnitude, not a serial."""
+    try:
+        return QLocale().toString(int(value or 0))
+    except (TypeError, ValueError):
+        return "0"
 
 
 def _run_key(run: dict) -> str:

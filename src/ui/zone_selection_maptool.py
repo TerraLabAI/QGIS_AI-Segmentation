@@ -8,7 +8,6 @@ rectangle-drawing tool that used to live here was removed as dead code.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from qgis.core import QgsPointXY
 from qgis.gui import QgsMapCanvasItem
@@ -45,7 +44,7 @@ class ZoneDeleteBadge(QgsMapCanvasItem):
 
     def __init__(self, canvas):
         super().__init__(canvas)
-        self._anchor: Optional[QgsPointXY] = None
+        self._anchor: QgsPointXY | None = None
         self._enabled = True
         self._hovered = False
         self.setZValue(10000)
@@ -159,9 +158,8 @@ class ZoneBadgeClickFilter(QObject):
             if inside and self._badge.is_enabled():
                 self._on_clicked()
             return True
-        if et == QEvent.Type.MouseButtonDblClick and self._badge.hit_test(event_pos(event)):
-            return True  # never let a double-click on the badge finish a polygon
-        return False
+        # Never let a double-click on the badge finish a polygon.
+        return et == QEvent.Type.MouseButtonDblClick and self._badge.hit_test(event_pos(event))
 
 
 class ZoneEscapeFilter(QObject):
