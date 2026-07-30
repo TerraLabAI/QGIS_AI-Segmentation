@@ -466,6 +466,13 @@ _CATEGORIES: list[dict] = [
         "Parcelas y cultivos",
         "Talhões e culturas",
         [
+            # No weak flag on the two parcel presets. `weak` does two unrelated
+            # jobs: it shows a "fuzzy edges" note in the library, and it routes
+            # the prompt to MAP merging in _default_merge_separate. A parcel
+            # has its own boundary and is counted one by one, so the MAP route
+            # is wrong here, and it is what shipped a whole farm as a single
+            # object. Losing the note on these two costs a hint line; keeping
+            # the flag cost the layer.
             _p(
                 "farm_field",
                 "farm field",
@@ -473,9 +480,8 @@ _CATEGORIES: list[dict] = [
                 "Parcelle agricole",
                 "Parcela agrícola",
                 "Talhão agrícola",
-                weak=True,
             ),
-            _p("field", "field", "Field", "Champ", "Campo", "Campo", weak=True),
+            _p("field", "field", "Field", "Champ", "Campo", "Campo"),
             _p("vineyard", "vineyard", "Vineyard", "Vigne", "Viñedo", "Vinhedo"),
             _p("orchard", "orchard", "Orchard", "Verger", "Huerto", "Pomar"),
         ],

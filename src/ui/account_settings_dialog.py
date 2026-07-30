@@ -8,8 +8,9 @@ it is intentionally not shown here.
 from __future__ import annotations
 
 import os
+from typing import NamedTuple
 
-from qgis.PyQt.QtCore import Qt, QTimer, QUrl, pyqtSignal
+from qgis.PyQt.QtCore import QRect, Qt, QTimer, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QDesktopServices
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
@@ -19,6 +20,7 @@ from qgis.PyQt.QtWidgets import (
     QLabel,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -31,6 +33,7 @@ from ..core.activation_manager import (
     get_upgrade_url,
 )
 from ..core.i18n import tr
+from ..core.qt_compat import safe_disconnect
 from ..workers.generic_request_task import GenericRequestTask
 from .ai_segmentation_dockwidget import (
     BRAND_BLUE,
@@ -39,6 +42,7 @@ from .ai_segmentation_dockwidget import (
     BRAND_GREEN_TEXT,
     BRAND_RED,
 )
+from .dock.font_scale import scale_px_length
 
 PRODUCT_NAME = "AI Segmentation"
 
@@ -52,6 +56,11 @@ _DIR_SIZE_CACHE: dict[str, str] = {}
 # lost with the plugin) leaves a modal dialog that only killing QGIS can shut.
 # Far above any plausible delete, so a slow disk always wins the race.
 _REMOVAL_WATCHDOG_MS = 600_000
+
+# Height left free around the window when the cards are taller than the screen.
+# The title bar is measured on its own, so this covers the taskbar and a strip
+# of desktop, and keeps the window from looking wedged between the two edges.
+_SCREEN_MARGIN_PX = 48
 
 _STATUS_DISPLAY = {
     "active": (tr("Active"), BRAND_GREEN_TEXT),
@@ -113,6 +122,77 @@ _CARD_STYLE = (
     "QLabel { background: transparent; border: none; }"
     "QPushButton { background: transparent; }"
 )
+
+
+# Last-resort denominator for a paid plan when neither the usage response nor
+# the account row carries one. Never used to grant or spend anything.
+_PRO_MONTHLY_CREDITS_FALLBACK = 10000
+
+
+class PlanCredits(NamedTuple):
+    """What the plan card draws: who the user is, and what is left to spend."""
+
+    is_subscriber: bool
+    remaining: int | None
+    total: int | None
+    reset_date: str | None
+
+
+def _as_int(value) -> int | None:
+    """The value as an int, or None when the server sent null or a word."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_is_subscriber(usage: dict, sub: dict) -> bool:
+    """Paid plan or free plan, from whichever signal the server sent.
+
+    ``usage["plan"]`` is deliberately not read: the server hardcodes it to
+    "pro" for every caller, so it says nothing about this account.
+    """
+    if "is_subscriber" in usage:
+        return bool(usage["is_subscriber"])
+    if "is_free_tier" in usage:
+        return not bool(usage["is_free_tier"])
+    return str(sub.get("plan", "")).lower() == "pro"
+
+
+# Two server spellings reach this dialog and both stay live: older responses
+# count images (images_used / images_limit / is_free_tier / period_end), newer
+# ones count credits (remaining_credits / total_credits / is_subscriber /
+# reset_date). Read the newer names first, derive them from the older ones when
+# they are absent, and fall back to the account's own subscription row so the
+# card still fills in when the usage call came back empty.
+def resolve_plan_credits(usage: dict, sub: dict) -> PlanCredits:
+    is_subscriber = _resolve_is_subscriber(usage, sub)
+    remaining = _as_int(usage.get("remaining_credits"))
+    total = _as_int(usage.get("total_credits"))
+    if remaining is None or total is None:
+        for limit, used in (
+            (usage.get("images_limit"), usage.get("images_used")),
+            (sub.get("quota_limit"), sub.get("usage_this_month")),
+        ):
+            limit_int = _as_int(limit)
+            if limit_int is None:
+                continue
+            if total is None:
+                total = limit_int
+            if remaining is None:
+                remaining = max(0, limit_int - (_as_int(used) or 0))
+            break
+    if total is None:
+        # The free-tier total is a server dial, so read the getter instead of
+        # restating the number here: a fleet-wide change must move the gauge.
+        from ..core.detection_policy import free_monthly_allowance
+
+        total = _PRO_MONTHLY_CREDITS_FALLBACK if is_subscriber else free_monthly_allowance()
+    reset_date = (usage.get("reset_date") or usage.get("period_end")
+                  or sub.get("current_period_end"))
+    return PlanCredits(is_subscriber, remaining, total, reset_date)
 
 
 def _load_account_and_usage(client, auth) -> dict:
@@ -187,6 +267,12 @@ class AccountSettingsDialog(QDialog):
         self._worker = None
         self._size_task = None
         self._size_label = None
+        # The account picture: the badge currently on screen, the one loader
+        # allowed per dialog open, and whether it has already been started (a
+        # Retry rebuilds the card but must not buy a second request).
+        self._avatar_label = None
+        self._avatar_loader = None
+        self._avatar_requested = False
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(16, 16, 16, 12)
@@ -219,12 +305,14 @@ class AccountSettingsDialog(QDialog):
         self._error_manage_btn.setMinimumHeight(36)
         self._error_manage_btn.setToolTip(
             tr("Opens your terra-lab.ai account in the browser."))
-        self._error_manage_btn.clicked.connect(self._open_dashboard)
+        self._error_manage_btn.clicked.connect(
+            lambda: self._open_dashboard("error_card"))
         self._error_manage_btn.setVisible(False)
         self._error_sign_out_btn = QPushButton(tr("Sign out"))
         self._error_sign_out_btn.setStyleSheet(_LINK_BTN)
         self._error_sign_out_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._error_sign_out_btn.clicked.connect(self._on_sign_out)
+        self._error_sign_out_btn.clicked.connect(
+            lambda: self._on_sign_out("error_card"))
         retry_row = QHBoxLayout()
         retry_row.addStretch()
         retry_row.addWidget(self._retry_btn)
@@ -243,10 +331,28 @@ class AccountSettingsDialog(QDialog):
         self._content_layout = QVBoxLayout(self._content_widget)
         self._content_layout.setContentsMargins(0, 0, 0, 0)
         self._content_layout.setSpacing(10)
-        self._content_widget.setVisible(False)
-        self._layout.addWidget(self._content_widget)
-
-        self._layout.addStretch()
+        # The cards go in a scroll area so the window can always be made
+        # shorter than the screen. Without it the layout minimum is the only
+        # height there is, and on a laptop at 150% text scaling the Privacy
+        # card and both footer links sit below the bottom edge, where no
+        # scrollbar and no window drag can reach them.
+        self._content_scroll = QScrollArea()
+        self._content_scroll.setWidgetResizable(True)
+        self._content_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._content_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._content_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollArea > QWidget > QWidget { background: transparent; }")
+        self._content_scroll.setWidget(self._content_widget)
+        self._content_scroll.setVisible(False)
+        # The scroll area holds the only stretch factor in the window, so every
+        # pixel the dialog has past its margins goes to the cards. A trailing
+        # addStretch() used to hold that factor, and a box layout hands spare
+        # height to the items carrying one first: the cards stayed at the scroll
+        # area's own hint (capped at 24 text lines) behind a scrollbar while the
+        # empty spacer took the rest of the window.
+        self._layout.addWidget(self._content_scroll, 1)
 
         self._client = client
         self._auth = auth
@@ -255,7 +361,7 @@ class AccountSettingsDialog(QDialog):
     def _fetch_account(self):
         self._loading_label.setVisible(True)
         self._error_widget.setVisible(False)
-        self._content_widget.setVisible(False)
+        self._content_scroll.setVisible(False)
 
         from qgis.core import QgsApplication
 
@@ -281,11 +387,10 @@ class AccountSettingsDialog(QDialog):
         self._cancel_size_task()
         if self._worker is None:
             return
-        try:
-            self._worker.succeeded.disconnect()
-            self._worker.failed.disconnect()
-        except (RuntimeError, TypeError):  # nosec B110
-            pass
+        # One guard per signal: batched, a raise on `succeeded` left `failed`
+        # connected and a late failure still fired into the closed dialog.
+        safe_disconnect(self._worker, "succeeded")
+        safe_disconnect(self._worker, "failed")
         try:
             self._worker.cancel()
         except Exception:  # nosec B110
@@ -348,8 +453,86 @@ class AccountSettingsDialog(QDialog):
         footer_layout.addStretch()
         self._content_layout.addWidget(footer)
 
-        self._content_widget.setVisible(True)
+        self._content_scroll.setVisible(True)
+        from .dock.font_scale import apply_font_scale_to_tree
+
+        apply_font_scale_to_tree(self)
         self.adjustSize()
+        self._fit_to_screen()
+
+    def _fit_to_screen(self) -> None:
+        """Open at the height the cards need, capped by the screen, centred.
+
+        The account arrives after the window is already up, so the layout
+        grows downward from where an almost empty box was centred. Asking the
+        window to adjust is not enough: a scroll area asks for a height of its
+        own, capped at 24 text lines, which has nothing to do with how many
+        cards it holds, and the user reads the first two behind a scrollbar.
+        So measure the cards and open on them. How many there are moves with
+        the account (Pro, free, an install on disk or not), hence a measure
+        rather than a number.
+
+        Clamped against the screen the window is actually on, not the main
+        one: on a two-monitor desk those differ, and clamping to the wrong one
+        either does nothing or shrinks a window that had room. Past the cap
+        the scroll area takes over, as before.
+        """
+        available = self._available_screen_rect()
+        if available is None:
+            return
+        width = min(self.width(), available.width())
+        # resize() sets the client area, so the title bar and the borders come
+        # off the cap; without that the bottom card lands under the taskbar.
+        frame_extra = max(0, self.frameGeometry().height() - self.height())
+        cap = available.height() - frame_extra - _SCREEN_MARGIN_PX
+        height = max(self.minimumSizeHint().height(),
+                     min(self._height_for_cards(width), cap))
+        if height != self.height() or width != self.width():
+            self.resize(width, height)
+        frame = self.frameGeometry()
+        frame.moveCenter(available.center())
+        self.move(max(available.left(), frame.left()),
+                  max(available.top(), frame.top()))
+
+    def _available_screen_rect(self) -> QRect | None:
+        """Work area of the screen this window sits on, None when Qt has none.
+
+        A window Qt has not placed yet reports no screen, and an offscreen
+        platform reports an empty rectangle. Either way there is no ruler to
+        size against, and the caller leaves the window alone.
+        """
+        try:
+            screen = self.screen()
+        except (AttributeError, RuntimeError):
+            screen = None
+        if screen is None:
+            from qgis.PyQt.QtGui import QGuiApplication
+
+            screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return None
+        available = screen.availableGeometry()
+        if available.isEmpty():
+            return None
+        return available
+
+    def _height_for_cards(self, width: int) -> int:
+        """Client height that shows every card at once, margins included.
+
+        A wrapped label only knows its height once it knows its width, so the
+        cards are measured at the width the viewport will have, not at the one
+        they would pick for themselves.
+        """
+        self._layout.activate()
+        margins = self._layout.contentsMargins()
+        border = self._content_scroll.frameWidth() * 2
+        viewport_width = max(
+            1, width - margins.left() - margins.right() - border)
+        inner = self._content_widget
+        needed = inner.sizeHint().height()
+        if inner.hasHeightForWidth():
+            needed = max(needed, inner.heightForWidth(viewport_width))
+        return needed + margins.top() + margins.bottom() + border
 
     def _on_failed(self, message: str, code: str = ""):
         self._loading_label.setVisible(False)
@@ -372,7 +555,7 @@ class AccountSettingsDialog(QDialog):
             self._retry_btn.setVisible(True)
             self._error_manage_btn.setVisible(False)
         self._error_widget.setVisible(True)
-        self._content_widget.setVisible(False)
+        self._content_scroll.setVisible(False)
 
     @staticmethod
     def _find_subscription(data: dict) -> dict | None:
@@ -406,14 +589,18 @@ class AccountSettingsDialog(QDialog):
         chip_row.setContentsMargins(12, 10, 12, 10)
         chip_row.setSpacing(11)
 
+        diameter = scale_px_length(38)
         avatar = QLabel(email[:1].upper() if email and email != "-" else "?")
-        avatar.setFixedSize(38, 38)
+        avatar.setFixedSize(diameter, diameter)
         avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         avatar.setStyleSheet(
-            f"background: {BRAND_GREEN}; color: #14210A; border-radius: 19px;"
+            f"background: {BRAND_GREEN}; color: #14210A;"
+            f" border-radius: {diameter // 2}px;"
             " font-size: 17px; font-weight: 700;"
         )
         chip_row.addWidget(avatar)
+        self._avatar_label = avatar
+        self._show_account_picture(data.get("avatar_url"), diameter)
 
         id_col = QVBoxLayout()
         id_col.setSpacing(2)
@@ -435,13 +622,73 @@ class AccountSettingsDialog(QDialog):
         sign_out_btn = QPushButton(tr("Sign out"))
         sign_out_btn.setStyleSheet(_SIGNOUT_LINK)
         sign_out_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        sign_out_btn.clicked.connect(self._on_sign_out)
+        sign_out_btn.clicked.connect(lambda: self._on_sign_out("account_card"))
         chip_row.addWidget(sign_out_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         layout.addWidget(chip)
         return card
 
-    def _open_dashboard(self):
+    def _show_account_picture(self, url, diameter: int) -> None:
+        """Swap the letter badge for the account's own picture, when there is one.
+
+        A copy already on disk costs no request. Otherwise one request per
+        dialog open, off the UI thread. No picture, no https, a failed read or
+        bytes that do not decode: the letter badge stays.
+        """
+        from .account_avatar import (
+            AccountAvatarLoader,
+            cached_avatar_pixmap,
+            is_avatar_url_usable,
+        )
+
+        if not is_avatar_url_usable(url):
+            return
+        pixmap = cached_avatar_pixmap(url, diameter)
+        if pixmap is not None:
+            self._paint_account_picture(pixmap)
+            return
+        if self._avatar_requested:
+            return
+        self._avatar_requested = True
+        # Parented to the dialog: a window closed before the reply lands takes
+        # the loader and its connection with it.
+        self._avatar_loader = AccountAvatarLoader(self)
+        self._avatar_loader.loaded.connect(self._paint_account_picture)
+        self._avatar_loader.fetch(url, diameter)
+
+    def _paint_account_picture(self, pixmap) -> None:
+        """Draw the picture on the badge the card is showing right now."""
+        label = self._avatar_label
+        if label is None or pixmap is None or pixmap.isNull():
+            return
+        try:
+            label.setText("")
+            label.setStyleSheet("background: transparent; border: none;")
+            label.setPixmap(pixmap)
+        except RuntimeError:
+            self._avatar_label = None  # the card was rebuilt
+
+    def _cancel_avatar_load(self) -> None:
+        """Drop an in-flight picture read so it cannot land in a closed dialog."""
+        loader = self._avatar_loader
+        self._avatar_loader = None
+        if loader is None:
+            return
+        safe_disconnect(loader, "loaded")
+        try:
+            loader.abort()
+        except RuntimeError:
+            pass  # already gone with its parent
+
+    def _open_dashboard(self, source: str = "account_card"):
+        """Hand the user off to the web dashboard, where checkout lives. Both
+        callers pass their card name through a lambda, because a bare
+        clicked.connect would feed Qt's checked bool in as the source."""
+        try:
+            from ..core import telemetry_session_events
+            telemetry_session_events.track_account_dashboard_opened(source)
+        except Exception:
+            pass  # nosec B110 -- telemetry never blocks the handoff
         QDesktopServices.openUrl(QUrl(get_dashboard_url()))
 
     def _build_subscription_card(self, sub: dict, usage: dict | None = None) -> QFrame:
@@ -469,7 +716,7 @@ class AccountSettingsDialog(QDialog):
         manage_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         manage_btn.setToolTip(
             tr("Opens your terra-lab.ai dashboard in the browser."))
-        manage_btn.clicked.connect(self._open_dashboard)
+        manage_btn.clicked.connect(lambda: self._open_dashboard("account_card"))
         header.addWidget(manage_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         card_layout.addLayout(header)
 
@@ -478,25 +725,11 @@ class AccountSettingsDialog(QDialog):
             status, (status.title(), BRAND_RED)
         )
 
-        # Determine subscriber status from usage data; fall back to the
-        # subscription plan field from the account endpoint.
-        is_subscriber = usage.get("is_subscriber", False)
-        if not is_subscriber:
-            # The account endpoint uses plan="pro" / "free"; the usage endpoint
-            # uses is_free_tier. Use both sources for maximum compatibility.
-            sub_plan = sub.get("plan", "free")
-            is_subscriber = sub_plan == "pro" and sub.get("free_detections_remaining") is not True
-            is_free_tier = usage.get("is_free_tier", True)
-            if not is_free_tier:
-                is_subscriber = True
-
-        remaining = usage.get("remaining_credits")
-        # The free-tier total is a server dial, so read the getter instead of
-        # restating the number here: a fleet-wide change must move the gauge.
-        from ..core.detection_policy import free_monthly_allowance
-        total = usage.get(
-            "total_credits", 10000 if is_subscriber else free_monthly_allowance())
-        reset_date = usage.get("reset_date") or usage.get("period_end")
+        plan = resolve_plan_credits(usage, sub)
+        is_subscriber = plan.is_subscriber
+        remaining = plan.remaining
+        total = plan.total
+        reset_date = plan.reset_date
         free_left = usage.get("free_detections_remaining") or sub.get("free_detections_remaining")
 
         # One quiet status line under the header (the old two-row labeled grid
@@ -523,7 +756,19 @@ class AccountSettingsDialog(QDialog):
             credits_text = tr("{remaining} / {total} credits").format(
                 remaining=f"{remaining:,}", total=f"{total:,}"
             )
-            credits_lbl = QLabel(credits_text)
+            # The count is also the way out to the website: the user who cannot
+            # find their credits here is the same one who cannot find the
+            # dashboard, so the line they came to read carries the link.
+            credits_lbl = QLabel(
+                f'<a href="{get_dashboard_url()}" style="text-decoration: none;">'
+                f'<span style="color: {text_color};">{credits_text}</span>'
+                f' <span style="color: {BRAND_BLUE};">↗</span></a>'
+            )
+            credits_lbl.setOpenExternalLinks(True)
+            credits_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+            credits_lbl.setToolTip(tr(
+                "Opens your terra-lab.ai dashboard: your plan, your credits and "
+                "your payment details."))
             credits_lbl.setStyleSheet(f"font-size: 12px; color: {text_color};")
             card_layout.addWidget(credits_lbl)
             bar = self._credits_bar(remaining, total, fill)
@@ -571,9 +816,7 @@ class AccountSettingsDialog(QDialog):
             upgrade_btn.setMinimumHeight(36)
             upgrade_btn.setToolTip(
                 tr("Opens terra-lab.ai in your browser."))
-            upgrade_btn.clicked.connect(
-                lambda: QDesktopServices.openUrl(QUrl(get_upgrade_url()))
-            )
+            upgrade_btn.clicked.connect(self._on_upgrade_clicked)
             card_layout.addWidget(upgrade_btn)
             benefit = QLabel(tr("10,000 credits every month. Cancel anytime."))
             benefit.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -591,6 +834,17 @@ class AccountSettingsDialog(QDialog):
         card_layout.addWidget(contact)
 
         return card
+
+    def _on_upgrade_clicked(self):
+        """The account dialog's Upgrade CTA. Reports through the same event as
+        every other upsell surface, so the card can be compared with the pill
+        and the cards inside the dock."""
+        try:
+            from ..core import telemetry_session_events
+            telemetry_session_events.track_pro_upsell_clicked(source="account_dialog")
+        except Exception:
+            pass  # nosec B110
+        QDesktopServices.openUrl(QUrl(get_upgrade_url()))
 
     def _build_dependencies_card(self) -> QFrame:
         """Local AI dependencies: where they live, how big, and an Open button.
@@ -823,14 +1077,19 @@ class AccountSettingsDialog(QDialog):
             self._remove_btn = None  # the card was rebuilt
 
     def _build_privacy_card(self) -> QFrame:
-        """Anonymous usage telemetry with a clear, ON-by-default opt-out.
+        """Usage telemetry with a clear, ON-by-default opt-out.
 
         Flips the shared TerraLab/telemetry_enabled flag (telemetry.py), so
-        turning it off here also silences the sibling AI Edit plugin. Metrics
-        are anonymous and carry no imagery, prompts, coordinates, layers, or
-        project content.
+        turning it off here also silences the sibling AI Edit plugin.
+
+        The copy below says "linked to your account" and names the typed object
+        because both are true: every event carries a device hash that outlives
+        the session, the batch is posted under the account's key, and the
+        Automatic prompt travels verbatim. It used to say "anonymous", which
+        none of that supports. Keep this card, telemetry.py's module docstring
+        and the public privacy FAQ saying the same thing.
         """
-        from ..core.telemetry import is_telemetry_enabled, set_telemetry_enabled
+        from ..core.telemetry import is_telemetry_enabled
 
         card = QFrame()
         card.setStyleSheet(_CARD_STYLE)
@@ -842,17 +1101,19 @@ class AccountSettingsDialog(QDialog):
         title.setStyleSheet("font-size: 13px; color: palette(text);")
         layout.addWidget(title)
 
-        self._telemetry_checkbox = QCheckBox(tr("Share anonymous usage statistics"))
+        self._telemetry_checkbox = QCheckBox(
+            tr("Share usage statistics with TerraLab"))
+        self._telemetry_checkbox.setToolTip(tr("Helps us fix bugs faster."))
         self._telemetry_checkbox.setChecked(is_telemetry_enabled())
         self._telemetry_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
         self._telemetry_checkbox.setStyleSheet("font-size: 12px; color: palette(text);")
-        self._telemetry_checkbox.toggled.connect(set_telemetry_enabled)
+        self._telemetry_checkbox.toggled.connect(self._on_telemetry_toggled)
         layout.addWidget(self._telemetry_checkbox)
 
         caption = QLabel(
             tr(
-                "Helps us fix bugs faster. Never includes your data, layers or "
-                "coordinates."
+                "Errors, versions and the words you type, linked to your "
+                "account. Never your imagery, layers or coordinates."
             )
         )
         caption.setWordWrap(True)
@@ -873,6 +1134,27 @@ class AccountSettingsDialog(QDialog):
         layout.addLayout(guidance_row)
 
         return card
+
+    def _on_telemetry_toggled(self, enabled: bool):
+        """Record the move, then apply it. Order matters on an opt-out: track()
+        short-circuits the moment the flag is false, so the event has to leave
+        first. It is a FLUSH_NOW event, so it ships rather than sitting in a
+        batch the opt-out would silence. Turning telemetry back on reports
+        after the flag, for the same reason."""
+        from ..core.telemetry import set_telemetry_enabled
+        from ..core.telemetry_session_events import track_telemetry_opt_changed
+
+        if not enabled:
+            try:
+                track_telemetry_opt_changed(False)
+            except Exception:
+                pass  # nosec B110
+        set_telemetry_enabled(enabled)
+        if enabled:
+            try:
+                track_telemetry_opt_changed(True)
+            except Exception:
+                pass  # nosec B110
 
     def _on_reset_hints(self):
         from .dock.guidance import reset_hints
@@ -966,7 +1248,7 @@ class AccountSettingsDialog(QDialog):
         )
         return bar
 
-    def _on_sign_out(self):
+    def _on_sign_out(self, source: str = "account_card"):
         from qgis.PyQt.QtWidgets import QMessageBox
 
         box = QMessageBox(self)
@@ -980,6 +1262,14 @@ class AccountSettingsDialog(QDialog):
         box.setDefaultButton(QMessageBox.StandardButton.No)
         if box.exec() != QMessageBox.StandardButton.Yes:
             return
+        # Track the confirmed sign-out, not the button: a cancelled dialog is
+        # not churn. This is the last event this install sends until it signs
+        # back in, so it goes out before the key is cleared.
+        try:
+            from ..core import telemetry_session_events
+            telemetry_session_events.track_account_signed_out(source)
+        except Exception:
+            pass  # nosec B110
         self.sign_out_requested.emit()
         self.accept()
 
@@ -996,6 +1286,7 @@ class AccountSettingsDialog(QDialog):
         # closeEvent, so cancel the in-flight loader here too rather than let it
         # complete with now-stale auth into a dismissed dialog.
         self._cancel_worker()
+        self._cancel_avatar_load()
         super().done(result)
 
     def closeEvent(self, event):
@@ -1010,4 +1301,5 @@ class AccountSettingsDialog(QDialog):
         # dialog; the task manager drains run() on its own. The old
         # wait(6000)+terminate() path crashed QGIS when the network was wedged.
         self._cancel_worker()
+        self._cancel_avatar_load()
         super().closeEvent(event)

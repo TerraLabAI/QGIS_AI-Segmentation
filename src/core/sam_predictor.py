@@ -506,17 +506,36 @@ class SamPredictor:
         self.original_size = None
         self.input_size = None
 
+    def _send_request_early(self, request: dict) -> bool:
+        """Hand a request to a worker that is still loading its model.
+
+        The worker reads its stdin from the moment it starts, so a crop sent
+        here is in its hands while it loads, and it drops its own throwaway
+        warm-up encode in favour of this one. Waiting for ready first, which is
+        what set_image used to do, meant a user who clicked during the load
+        paid that throwaway encode in full before their own.
+
+        False when there is nothing to send it to, or the pipe refused. The
+        caller then goes the ordinary way round, which reports the real reason
+        the worker is not there.
+        """
+        if self.process is None or not self._warming_up:
+            return False
+        try:
+            if self.process.poll() is not None:
+                return False
+            self.process.stdin.write(json.dumps(request) + "\n")
+            self.process.stdin.flush()
+        except (BrokenPipeError, OSError, ValueError, AttributeError):
+            return False
+        return True
+
     def set_image(self, image_np: np.ndarray) -> None:
         """Send a raw image crop (H,W,3 uint8) to the worker for encoding.
 
         The worker calls SAM2ImagePredictor.set_image() which computes
         image embeddings for subsequent predict() calls.
         """
-        if not self._start_worker():
-            error = self._last_worker_error or "Failed to start prediction worker"
-            self._last_worker_error = None
-            raise RuntimeError(error)
-
         # Validate the crop before shipping it to the worker. A malformed array
         # (wrong rank, zero-size, non-uint8) otherwise reaches SAM and throws an
         # opaque tensor-shape traceback that surfaces as a bare encoding_error.
@@ -532,19 +551,26 @@ class SamPredictor:
             image_np = np.clip(image_np, 0, 255).astype(np.uint8)
         image_np = np.ascontiguousarray(image_np)
 
+        request = {
+            "action": "set_image",
+            "image": base64.b64encode(image_np.tobytes()).decode("utf-8"),
+            "image_shape": list(image_np.shape),
+            "image_dtype": str(image_np.dtype),
+        }
+        # Overlap the crop with the model load when the two can overlap: send
+        # first, THEN wait for ready. The worker answers in order, so the ready
+        # line still arrives before the image_set line read below.
+        sent_while_loading = self._send_request_early(request)
+
+        if not self._start_worker():
+            error = self._last_worker_error or "Failed to start prediction worker"
+            self._last_worker_error = None
+            raise RuntimeError(error)
+
         try:
-            image_b64 = base64.b64encode(
-                image_np.tobytes()).decode("utf-8")
-
-            request = {
-                "action": "set_image",
-                "image": image_b64,
-                "image_shape": list(image_np.shape),
-                "image_dtype": str(image_np.dtype),
-            }
-
-            self.process.stdin.write(json.dumps(request) + "\n")
-            self.process.stdin.flush()
+            if not sent_while_loading:
+                self.process.stdin.write(json.dumps(request) + "\n")
+                self.process.stdin.flush()
 
             response = self._read_typed_response(
                 self._TIMEOUT_SET_IMAGE, ("image_set",), "encoded image",

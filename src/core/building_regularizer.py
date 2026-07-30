@@ -4,8 +4,14 @@ The per-polygon geometry core here is adapted from Building-Regulariser by
 DPIRD-DMA (https://github.com/DPIRD-DMA/Building-Regulariser), used under the
 MIT License reproduced below. Only the single-polygon math is vendored: the
 upstream geopandas / pandas / multiprocessing driver is dropped, so the sole
-runtime dependency is shapely + numpy (both already present in the isolated
-env used for mask post-processing). No geopandas, no pandas.
+runtime dependency is shapely + numpy. No geopandas, no pandas.
+
+Neither is installed by the plugin. numpy comes with QGIS and with the
+isolated env used for mask post-processing; shapely comes with QGIS ALONE, and
+only when the install carries it (OSGeo4W ships it with the qgis-full meta
+package and the standalone installer, not with the bare qgis package). So this
+module can be unusable on a healthy install, which is what
+dependencies_available() exists to report.
 
 What it does: find a polygon's dominant edge orientation, snap every edge to
 parallel or perpendicular (and optional 45-degree diagonals) to that
@@ -78,6 +84,17 @@ _DEFAULT_CIRCLE_THRESHOLD = 0.90
 # Below this symmetric-difference share the output is treated as identical to
 # the input, so a run that changed nothing is reported as not regularized.
 _CHANGED_MIN_FRACTION = 1.0e-3
+# ONE generic client fallback for the per-ring revert. A regularized ring
+# that overlaps its original this little is not the same shape, so the
+# original is kept. The tuned value is server policy.
+_RING_MIN_IOU = 0.1
+# Under this much difference from 1, a unit aspect is treated as square ground
+# (see _regularize_geometry_isotropic) and no frame change runs at all. A
+# correction this small moves a corner by well under a degree, which no outline
+# shows, and the dead band keeps a projected run's shapes untouched: the
+# ellipsoidal measure answers a hair off 1 there, and a hair is not a reason to
+# put every object through a frame change.
+_ASPECT_IDENTITY_EPSILON = 0.01
 
 # Multi-direction path defaults. Off by default, so a caller that passes nothing
 # gets exactly the single dominant-direction behaviour. When on, edges are
@@ -164,6 +181,29 @@ def _ensure_deps() -> bool:
     _unary_union = _uu
     _affine_transform = _affine
     return True
+
+
+def dependencies_available() -> bool:
+    """True when this module can actually regularize anything.
+
+    Every public entry point here returns its input unchanged when
+    ``_ensure_deps`` fails, and the callers keep that input: the user ticks
+    "Right angles", waits for the slowest control in the panel, and gets an
+    outline nothing squared, with nothing to tell it apart from the
+    anti-distortion guard declining one shape. A UI can ask this first and
+    refuse the control out loud instead.
+
+    The test is the import itself, which is the only one that catches a shapely
+    whose native GEOS library will not load. numpy ships with QGIS and with the
+    plugin's own env; shapely ships with QGIS ALONE (it is not in
+    venv_manager.REQUIRED_PACKAGES), so a QGIS build without it leaves this
+    False and no plugin install fixes it.
+
+    Not cached: a False can become True later in the session, when the plugin's
+    env lands on sys.path. Call it when the control is reached, never at plugin
+    load, or the lazy binding this module exists for is defeated.
+    """
+    return _ensure_deps()
 
 
 # --------------------------------------------------------------------------
@@ -941,6 +981,28 @@ def _enforce_angles_multi(
     return adjusted_points
 
 
+def _ring_min_iou() -> float:
+    """IoU under which one regularized RING is thrown away and the original
+    kept, resolved from the cached server policy when present.
+
+    Not the same guard as ``min_keep_iou``, which is applied later and to the
+    whole geometry. This one reverts per ring, silently: if it sits too high
+    the regularizer declines every complex footprint and the user sees Right
+    angles do nothing, with no message saying why. That is the failure this
+    dial exists to be able to correct without a release.
+
+    Cache-only, never raises, so a failure keeps the built-in value and the
+    geometry is unchanged.
+    """
+    try:
+        from .detection_policy import regularize_settings
+
+        value = float(regularize_settings()["ring_min_iou"])
+        return value if 0.0 < value < 1.0 else _RING_MIN_IOU
+    except Exception:  # noqa: BLE001 - policy is optional, never break geometry
+        return _RING_MIN_IOU
+
+
 def _multi_clustering_dials() -> tuple[float, float]:
     """(parallel angle epsilon, minimum group weight) for the multi-direction
     clustering, resolved from the cached server policy when present, else the
@@ -1082,6 +1144,29 @@ def flatten_to_polygons(geometries) -> list[Any]:
     return flat
 
 
+def iou_and_symmetric_fraction(shape_a: Any, shape_b: Any) -> tuple[float, float]:
+    """IoU of two polygons, and their symmetric-difference area as a fraction
+    of ``shape_a``, from ONE overlay instead of three.
+
+    Areas obey |A or B| = |A| + |B| - |A and B| and |A xor B| = |A| + |B| -
+    2|A and B|, so the intersection answers both questions. The union and
+    symmetric_difference calls a reader expects here each build a whole
+    geometry that the caller only ever measures, and on a review-sized set
+    that is the single biggest avoidable cost in the shape refine.
+
+    Returns (0.0, 0.0) when either shape has no area to compare.
+    """
+    area_a = shape_a.area
+    area_b = shape_b.area
+    intersection_area = shape_a.intersection(shape_b).area
+    union_area = area_a + area_b - intersection_area
+    iou = intersection_area / union_area if union_area > 0 else 0.0
+    symmetric_fraction = (
+        (area_a + area_b - 2.0 * intersection_area) / area_a
+        if area_a > 0 else 0.0)
+    return iou, symmetric_fraction
+
+
 def regularize_single_polygon(
     polygon: Any,
     parallel_threshold: float,
@@ -1165,13 +1250,11 @@ def regularize_single_polygon(
     if allow_circles and polygon.area > 0:
         radius = math.sqrt(polygon.area / math.pi)
         perfect_circle = polygon.centroid.buffer(radius, quad_segs=42)
-        union_area = perfect_circle.union(polygon).area
-        if union_area > 0:
-            circle_iou = perfect_circle.intersection(polygon).area / union_area
-            if circle_iou > circle_threshold:
-                regularized_exterior = np.array(
-                    perfect_circle.exterior.coords, dtype=float
-                )
+        circle_iou, _ = iou_and_symmetric_fraction(perfect_circle, polygon)
+        if circle_iou > circle_threshold:
+            regularized_exterior = np.array(
+                perfect_circle.exterior.coords, dtype=float
+            )
 
     regularized_interiors: list[Any] = []
     for interior in simple_polygon.interiors:
@@ -1191,11 +1274,8 @@ def regularize_single_polygon(
         exterior_ring = LinearRing(regularized_exterior)
         interior_rings = [LinearRing(r) for r in regularized_interiors]
         regularized_polygon = Polygon(exterior_ring, interior_rings).buffer(0)
-        union_area = regularized_polygon.union(polygon).area
-        if union_area <= 0:
-            return [polygon]
-        final_iou = regularized_polygon.intersection(polygon).area / union_area
-        if final_iou < 0.1:
+        final_iou, _ = iou_and_symmetric_fraction(regularized_polygon, polygon)
+        if final_iou < _ring_min_iou():
             return [polygon]
         pieces = flatten_to_polygons([regularized_polygon])
         return pieces or [polygon]
@@ -1529,24 +1609,13 @@ def _regularize_geometry(
     # Anti-distortion guard: keep the original when the snapped shape drifts
     # too far from it (IoU below the floor).
     try:
-        orig_area = original.area
-        union_area = regularized.union(original).area
-        iou = (
-            regularized.intersection(original).area / union_area
-            if union_area > 0
-            else 0.0
-        )
+        iou, sym_frac = iou_and_symmetric_fraction(original, regularized)
         if iou < min_keep_iou:
             if multi_direction:
                 destaired = _destaircase_geometry(original, tolerance_m)
                 if destaired is not None:
                     return destaired, False, True
             return geometry, False, True
-        sym_frac = (
-            original.symmetric_difference(regularized).area / orig_area
-            if orig_area > 0
-            else 0.0
-        )
         changed = sym_frac > _CHANGED_MIN_FRACTION
     except Exception:  # noqa: BLE001 -- best-effort  # nosec B110
         return geometry, False, False
@@ -1566,6 +1635,72 @@ def _regularize_geometry(
     return regularized, changed, False
 
 
+def _regularize_geometry_isotropic(
+    geometry: Any,
+    tolerance_m: float,
+    allow_diagonal: bool,
+    allow_circles: bool,
+    min_keep_iou: float,
+    diagonal_reduction: float = _DEFAULT_DIAGONAL_REDUCTION,
+    circle_threshold: float = _DEFAULT_CIRCLE_THRESHOLD,
+    multi_direction: bool = _DEFAULT_MULTI_DIRECTION,
+    multi_max_groups: int = _DEFAULT_MULTI_MAX_GROUPS,
+    multi_min_separation_deg: float = _DEFAULT_MULTI_MIN_SEPARATION_DEG,
+    policy: RegularizePolicy | None = None,
+    unit_aspect: float = 1.0,
+) -> tuple[Any, bool, bool]:
+    """_regularize_geometry, run in a frame where one x unit and one y unit
+    cover the same distance on the ground.
+
+    ``unit_aspect`` is ground metres per y unit divided by ground metres per x
+    unit of the geometry's own CRS: 1.0 for a projected CRS, and well above 1
+    in a geographic one away from the equator, where a degree of longitude is
+    much shorter than a degree of latitude.
+
+    Every step below reads raw coordinates: the snap builds its perpendicular
+    from them, the sliver cleanup buffers by a distance, the envelope guard
+    measures a boundary displacement. In a stretched frame a perpendicular is
+    not a right angle on the ground, so a squared building reaches the map as a
+    parallelogram, tilted by an amount that grows with latitude. Stretching y
+    into the caller's x unit makes all of them mean one distance again, and the
+    result is mapped straight back, so the caller still gets its own CRS.
+
+    A unit_aspect of 1 costs nothing: the whole frame change is skipped.
+    """
+    if not (unit_aspect and math.isfinite(unit_aspect) and unit_aspect > 0.0):
+        unit_aspect = 1.0
+    plain = (
+        geometry, tolerance_m, allow_diagonal, allow_circles, min_keep_iou,
+        diagonal_reduction, circle_threshold,
+        multi_direction, multi_max_groups, multi_min_separation_deg,
+    )
+    if abs(unit_aspect - 1.0) < _ASPECT_IDENTITY_EPSILON or not _ensure_deps():
+        return _regularize_geometry(*plain, policy=policy)
+    try:
+        stretched = _affine_transform(
+            geometry, (1.0, 0.0, 0.0, unit_aspect, 0.0, 0.0))
+    except Exception:  # noqa: BLE001 -- fall back to the caller's frame  # nosec B110
+        return _regularize_geometry(*plain, policy=policy)
+    result, regularized, reverted = _regularize_geometry(
+        stretched, tolerance_m, allow_diagonal, allow_circles, min_keep_iou,
+        diagonal_reduction, circle_threshold,
+        multi_direction, multi_max_groups, multi_min_separation_deg,
+        policy=policy,
+    )
+    if result is stretched:
+        # Untouched: hand back the caller's own object rather than a shape that
+        # made a needless round trip through the stretch.
+        return geometry, regularized, reverted
+    try:
+        return (
+            _affine_transform(result, (1.0, 0.0, 0.0, 1.0 / unit_aspect, 0.0, 0.0)),
+            regularized,
+            reverted,
+        )
+    except Exception:  # noqa: BLE001 -- never ship a shape stuck in the frame  # nosec B110
+        return geometry, False, reverted
+
+
 def regularize_polygon(
     geometry: Any,
     *,
@@ -1579,19 +1714,23 @@ def regularize_polygon(
     multi_max_groups: int = _DEFAULT_MULTI_MAX_GROUPS,
     multi_min_separation_deg: float = _DEFAULT_MULTI_MIN_SEPARATION_DEG,
     policy: RegularizePolicy | None = None,
+    unit_aspect: float = 1.0,
 ) -> Any:
     """Regularize a shapely Polygon/MultiPolygon. Pure shapely, no QGIS, so it
     is unit-testable outside QGIS. Returns the input unchanged on any failure,
     empty input, or when the anti-distortion guard reverts (with multi_direction
     on, a revert returns the de-staircased outline instead). ``policy`` layers
-    the eligibility/rectangle/envelope guards; OFF by default."""
+    the eligibility/rectangle/envelope guards; OFF by default. ``unit_aspect``
+    squares against ground distance rather than raw coordinates: see
+    _regularize_geometry_isotropic. It defaults to 1.0, which is exact for a
+    projected CRS and leaves an old caller unchanged."""
     if not _ensure_deps():
         return geometry
-    result, _regularized, _reverted = _regularize_geometry(
+    result, _regularized, _reverted = _regularize_geometry_isotropic(
         geometry, tolerance_m, allow_diagonal, allow_circles, min_keep_iou,
         diagonal_reduction, circle_threshold,
         multi_direction, multi_max_groups, multi_min_separation_deg,
-        policy=policy,
+        policy=policy, unit_aspect=unit_aspect,
     )
     return result
 
@@ -1609,12 +1748,17 @@ def regularize_qgs_geometry_ex(
     multi_max_groups: int = _DEFAULT_MULTI_MAX_GROUPS,
     multi_min_separation_deg: float = _DEFAULT_MULTI_MIN_SEPARATION_DEG,
     policy: RegularizePolicy | None = None,
+    unit_aspect: float = 1.0,
 ) -> RegularizeResult:
     """Regularize a QgsGeometry and report the guard outcome.
 
     Converts via WKB (QgsGeometry -> shapely -> QgsGeometry). Best-effort:
     returns the input geometry with regularized=False on any failure and never
     raises. Callers wanting only the geometry can use regularize_qgs_geometry.
+
+    ``unit_aspect`` squares against ground distance rather than raw coordinates
+    (see _regularize_geometry_isotropic). A caller working in a geographic CRS
+    MUST pass it, or the square corners it asked for arrive tilted.
     """
     if geom is None:
         return RegularizeResult(geom, False, False)
@@ -1635,11 +1779,11 @@ def regularize_qgs_geometry_ex(
         shp = shapely_wkb.loads(bytes(geom.asWkb()))
     except Exception:  # noqa: BLE001 -- best-effort  # nosec B110
         return RegularizeResult(geom, False, False)
-    result_shp, regularized, reverted = _regularize_geometry(
+    result_shp, regularized, reverted = _regularize_geometry_isotropic(
         shp, tolerance_m, allow_diagonal, allow_circles, min_keep_iou,
         diagonal_reduction, circle_threshold,
         multi_direction, multi_max_groups, multi_min_separation_deg,
-        policy=policy,
+        policy=policy, unit_aspect=unit_aspect,
     )
     if not regularized:
         # Nothing kept (guard reverted, or no change): return the input as-is so
@@ -1680,10 +1824,11 @@ def regularize_qgs_geometry(
     multi_max_groups: int = _DEFAULT_MULTI_MAX_GROUPS,
     multi_min_separation_deg: float = _DEFAULT_MULTI_MIN_SEPARATION_DEG,
     policy: RegularizePolicy | None = None,
+    unit_aspect: float = 1.0,
 ):
     """Regularize a QgsGeometry, returning the geometry only (simple happy
-    path). See regularize_qgs_geometry_ex for the guard outcome. Returns the
-    input unchanged on any failure; never raises."""
+    path). See regularize_qgs_geometry_ex for the guard outcome and for
+    ``unit_aspect``. Returns the input unchanged on any failure; never raises."""
     return regularize_qgs_geometry_ex(
         geom,
         tolerance_m=tolerance_m,
@@ -1696,4 +1841,5 @@ def regularize_qgs_geometry(
         multi_max_groups=multi_max_groups,
         multi_min_separation_deg=multi_min_separation_deg,
         policy=policy,
+        unit_aspect=unit_aspect,
     ).geometry

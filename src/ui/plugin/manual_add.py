@@ -40,10 +40,9 @@ class ManualAddMixin:
         all apply) but opens NO existing detection; the first click on empty
         ground starts a normal prediction.
 
-        When the local AI is not installed a one-time install runs in the
-        BACKGROUND while the review stays usable, exactly like the reshape
-        handoff; the Add lane arms itself once the model is ready (see
-        _on_predictor_loaded)."""
+        When the local AI is not installed, a one-time setup runs first and
+        holds the review still while it does (local_ai_install_lock); the Add
+        lane arms itself once the model is ready (see _on_predictor_loaded)."""
         review = self._auto_review
         if not review or not self.dock_widget:
             return
@@ -72,19 +71,25 @@ class ManualAddMixin:
         layer = self._resolve_auto_source_layer()
         if layer is None:
             return
-        # Env gate: without the local AI the predictor never arrives. Offer to
-        # install it in the background; the review stays on screen and the Add
-        # lane arms itself when the predictor is ready.
+        # Env gate: without the local AI the predictor never arrives. Offer the
+        # one-time setup, which takes the review until it ends and then arms the
+        # lane itself.
         if not self._manual_env_ready():
-            if getattr(self, "_ai_add_install_pending", False):
-                return  # a background install is already running for this Add
+            if self._local_ai_install_pending():
+                return  # a setup is already running for this review
+            # A setup already ran this session and the model still would not
+            # load: say it once instead of reopening the same modal on every
+            # Add click. With no attempt behind it the offer still stands.
+            if (getattr(self, "_local_ai_load_failed", False)
+                    and getattr(self, "_local_ai_install_attempted", False)):
+                self._warn_local_ai_unavailable_once()
+                return
             box = QMessageBox(self.iface.mainWindow())
             box.setWindowTitle(tr("Adding needs a one-time setup"))
             box.setText(tr(
                 "Adding an object uses the free on-device AI, which is not "
-                "installed yet. Install it now (a few minutes, in the "
-                "background)? You can keep reviewing, and Add will arm "
-                "automatically when it is ready."))
+                "installed yet. Install it now? It runs once and takes a few "
+                "minutes. The review waits for it, then arms Add for you."))
             install_btn = box.addButton(
                 tr("Install now"), QMessageBox.ButtonRole.AcceptRole)
             box.addButton(tr("Cancel"), QMessageBox.ButtonRole.RejectRole)
@@ -92,12 +97,7 @@ class ManualAddMixin:
             box.exec()
             if box.clickedButton() is not install_btn:
                 return  # review untouched
-            self._ai_add_install_pending = True
-            try:
-                self.dock_widget.set_auto_review_installing(True)
-            except (RuntimeError, AttributeError):
-                pass
-            self._on_install_requested()
+            self._begin_local_ai_install("add")
             return
         self._enter_ai_add_mode(layer)
 
@@ -250,8 +250,10 @@ class ManualAddMixin:
             pass
 
     def _clear_ai_add_install_pending(self) -> None:
-        """Drop the pending background-install-then-Add intent and hide its
-        inline review banner. Idempotent; safe from any review teardown."""
+        """Drop the pending install-then-Add intent and hide its review banner.
+
+        Idempotent, and never called on its own: `_release_local_ai_install`
+        is the one door out of an install, and it clears both lanes."""
         if not getattr(self, "_ai_add_install_pending", False):
             return
         self._ai_add_install_pending = False
@@ -260,11 +262,6 @@ class ManualAddMixin:
                 self.dock_widget.set_auto_review_installing(False)
             except (RuntimeError, AttributeError):
                 pass
-
-    def _abort_ai_add_install(self) -> None:
-        """A background install started for Add failed: clear the pending intent
-        (the install's own error report already told the user what went wrong)."""
-        self._clear_ai_add_install_pending()
 
     # ------------------------------------------------------------------
     # Escape while Add is armed

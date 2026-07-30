@@ -97,6 +97,7 @@ class IncrementalMerger:
         gsd: float = 0.0,
         seam_span_tol: float = 0.85,
         jitter_area_frac: float = 0.02,
+        jitter_erode_px: float = 1.0,
         score_floor_frac: float = 0.5,
         restore_partitions: bool = False,
         part_inside: float = 0.90,
@@ -108,11 +109,15 @@ class IncrementalMerger:
         self._merge_ios = merge_ios
         self._dedup_ios = dedup_ios
         self._seam_min_dim = seam_min_dim
-        # Ground units per detection pixel. Sizes the one-pixel erosion that
-        # separates jitter duplicates from real seam complements in the
-        # additive-union select branch (see add()). 0.0 (unknown gsd) falls
-        # back to a relative added-area floor instead of the erosion test.
+        # Ground units per detection pixel. Sizes the erosion that separates
+        # jitter duplicates from real seam complements in the additive-union
+        # select branch (see add()). 0.0 (unknown gsd) falls back to a
+        # relative added-area floor instead of the erosion test.
         self._gsd = float(gsd)
+        # Detection pixels of erosion that test applies. One pixel is the
+        # width jitter can move an outline by, so it is the smallest test
+        # that still tells the two apart.
+        self._jitter_erode_px = float(jitter_erode_px)
         # SEPARATE/count mode: a matched group is EITHER redundant readings of
         # one footprint (cross-tile jitter duplicate, parent vs child
         # hypothesis) OR the pieces of one object cut by a tile seam. The
@@ -425,7 +430,7 @@ class IncrementalMerger:
                 if diff is None or diff.isEmpty():
                     continue
                 if self._gsd > 0.0:
-                    eroded = diff.buffer(-self._gsd, 5)
+                    eroded = diff.buffer(-self._gsd * self._jitter_erode_px, 5)
                     if eroded is None or eroded.isEmpty() or eroded.area() <= 0.0:
                         continue
                 elif diff.area() < self._jitter_area_frac * largest_area:

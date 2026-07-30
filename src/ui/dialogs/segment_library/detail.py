@@ -34,6 +34,7 @@ from ....core import qt_compat as QtC
 from ....core.i18n import tr
 from ....core.presets.segmentation_presets import pick_label
 from ...before_after_slider import BeforeAfterSlider
+from ...dock.font_scale import scale_px_length
 from ...dock.styles import _PROGRESS_THIN_QSS
 from ...template_demo_loader import TemplateDemoLoader
 from .common import (
@@ -114,7 +115,7 @@ class _DetailDialogBase(QDialog):
         self._fs_btn.setToolTip(tr("Fullscreen"))
         self._fs_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._fs_btn.setStyleSheet(_FS_BTN)
-        self._fs_btn.setFixedSize(30, 30)
+        self._fs_btn.setFixedSize(scale_px_length(30), scale_px_length(30))
         self._fs_btn.clicked.connect(self._toggle_fullscreen)
         self._aspect_box.set_overlay(self._fs_btn)
         root.addWidget(self._aspect_box, 1)
@@ -174,6 +175,9 @@ class _DetailDialogBase(QDialog):
         right_col.addWidget(footer, 0)
 
         root.addWidget(right, 1)
+        from ...dock.font_scale import apply_font_scale_to_tree
+
+        apply_font_scale_to_tree(self)
         self._apply_image_size(1.0)
 
     # -- subclass hooks -------------------------------------------------------
@@ -212,7 +216,25 @@ class _DetailDialogBase(QDialog):
         if disp_h < 380.0:
             disp_h = 380.0
             disp_w = min(disp_h * ratio, max_w)
-        self.resize(int(disp_w) + info_w + 12 + 24, int(disp_h) + 24)
+        chrome_w = info_w + 12 + 24
+        chrome_h = 24
+        # Clamp to the screen this dialog is on, the rule _apply_open_size uses
+        # in dialog.py. An unclamped wide preview can ask for more than the
+        # desktop is wide on a scaled laptop panel, and this runs again after
+        # show() when the image loads, so the window would jump to that size
+        # with the footer buttons under the bottom edge.
+        try:
+            avail = self.screen().availableGeometry()
+        except (AttributeError, RuntimeError):
+            avail = None
+        if avail is not None:
+            budget_w = avail.width() * 0.96 - chrome_w
+            budget_h = avail.height() * 0.92 - chrome_h
+            if budget_w > 0 and budget_h > 0:
+                shrink = min(budget_w / disp_w, budget_h / disp_h, 1.0)
+                disp_w *= shrink
+                disp_h *= shrink
+        self.resize(int(disp_w) + chrome_w, int(disp_h) + chrome_h)
 
     # -- fullscreen -------------------------------------------------------------
 
@@ -476,7 +498,7 @@ class _RunDetailDialog(_DetailDialogBase):
         primary.setSpacing(8)
         self.star_btn = QToolButton(self)
         self.star_btn.setCheckable(True)
-        self.star_btn.setFixedSize(38, 38)
+        self.star_btn.setFixedSize(scale_px_length(38), scale_px_length(38))
         self.star_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.star_btn.setStyleSheet(_DETAIL_STAR_BTN)
         self.set_favorite(bool(self._run.get("is_favorite")))

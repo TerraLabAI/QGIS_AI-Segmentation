@@ -54,6 +54,10 @@ _LOCK_BASENAME = "install.lock"
 # treated as transient and fails CLOSED.
 _CANNOT_EVER_LOCK_ERRNOS = frozenset({errno.EACCES, errno.EPERM, errno.EROFS})
 
+# GetExitCodeProcess reports this while the process is still running. Any other
+# value is its real exit code, so the process is gone.
+_STILL_ACTIVE = 259
+
 
 class InstallBusyError(RuntimeError):
     """Raised when another live process already holds the install lock."""
@@ -94,16 +98,33 @@ def _pid_is_alive(pid: int) -> bool | None:
 
 
 def _pid_is_alive_windows(pid: int) -> bool | None:
-    """Windows liveness probe via OpenProcess; None when ambiguous."""
+    """Windows liveness probe via OpenProcess; None when ambiguous.
+
+    Opening the process is not proof it is running. Windows keeps the process
+    object alive as long as anything holds a handle to it, so a QGIS that
+    crashed while a parent or a debugger still referenced it opens fine and
+    would read as alive, stranding the lock for its whole stale age. The exit
+    code is the actual answer.
+    """
     try:
         import ctypes
 
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # A HANDLE is pointer-sized. ctypes defaults the return to c_int, which
+        # truncates it on 64-bit, and CloseHandle would then leak the real one.
+        kernel32.OpenProcess.restype = ctypes.c_void_p
         # PROCESS_QUERY_LIMITED_INFORMATION (Vista+): enough to prove existence.
         handle = kernel32.OpenProcess(0x1000, False, pid)
         if handle:
-            kernel32.CloseHandle(handle)
-            return True
+            try:
+                code = ctypes.c_ulong(0)
+                ok = kernel32.GetExitCodeProcess(
+                    ctypes.c_void_p(handle), ctypes.byref(code))
+            finally:
+                kernel32.CloseHandle(ctypes.c_void_p(handle))
+            if not ok:
+                return None
+            return code.value == _STILL_ACTIVE
         err = ctypes.get_last_error()
         if err == 87:  # ERROR_INVALID_PARAMETER: no such process
             return False
@@ -141,6 +162,9 @@ def _process_start_stamp_windows(pid: int) -> str | None:
         import ctypes.wintypes as wintypes
 
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # Pointer-sized return, as in the liveness probe: the ctypes default
+        # truncates a HANDLE on 64-bit and the CloseHandle below would miss it.
+        kernel32.OpenProcess.restype = ctypes.c_void_p
         # PROCESS_QUERY_LIMITED_INFORMATION (Vista+), as in the liveness probe.
         handle = kernel32.OpenProcess(0x1000, False, pid)
         if not handle:
@@ -151,11 +175,11 @@ def _process_start_stamp_windows(pid: int) -> str | None:
             in_kernel = wintypes.FILETIME()
             in_user = wintypes.FILETIME()
             ok = kernel32.GetProcessTimes(
-                handle,
+                ctypes.c_void_p(handle),
                 ctypes.byref(created), ctypes.byref(exited),
                 ctypes.byref(in_kernel), ctypes.byref(in_user))
         finally:
-            kernel32.CloseHandle(handle)
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
         if not ok:
             return None
         return str((created.dwHighDateTime << 32) | created.dwLowDateTime)

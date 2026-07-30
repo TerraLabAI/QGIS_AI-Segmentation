@@ -84,8 +84,9 @@ class ManualWorkflowMixin:
         self._current_layer = layer
         self._current_layer_name = layer_name
 
-        # Detect online layer (WMS, XYZ, WMTS, WCS, ArcGIS)
-        self._is_online_layer = self._is_online_provider(layer)
+        # Rendered rather than read from a file: the online services, plus the
+        # local providers that hold no file (PostGIS raster, virtual raster).
+        self._is_online_layer = self._needs_canvas_render(layer)
 
         # Detect if layer is non-georeferenced (pixel coordinate mode)
         self._is_non_georeferenced_mode = (
@@ -111,7 +112,7 @@ class ManualWorkflowMixin:
 
         if self._is_online_layer:
             QgsMessageLog.logMessage(
-                f"Online layer detected ({layer.dataProvider().name()})",
+                f"Layer read through the QGIS renderer ({layer.dataProvider().name()})",
                 "AI Segmentation", level=Qgis.MessageLevel.Info
             )
 
@@ -321,8 +322,8 @@ class ManualWorkflowMixin:
                     self.dock_widget.layer_combo.blockSignals(False)
                     return
                 try:
-                    from ...core import telemetry
-                    telemetry.track_manual_abandoned(
+                    from ...core import telemetry_session_events
+                    telemetry_session_events.track_manual_abandoned(
                         context="change_layer", polygon_count=polygon_count)
                 except Exception:
                     pass  # nosec B110
@@ -445,7 +446,7 @@ class ManualWorkflowMixin:
             try:
                 import time as _time
 
-                from ...core.telemetry import track_segmentation_run
+                from ...core.telemetry_session_events import track_segmentation_run
                 start_ts = getattr(self, "_segmentation_start_ts", None)
                 duration_ms = int((_time.time() - start_ts) * 1000) if start_ts else None
                 track_segmentation_run(success=True, duration_ms=duration_ms)
@@ -817,7 +818,7 @@ class ManualWorkflowMixin:
         )
 
         try:
-            from ...core import telemetry
+            from ...core import telemetry_session_events
             from ...core.review_defaults import (
                 REFINE_POINTS_PCT_DEFAULT,
                 REFINE_SIMPLIFY_DEFAULT,
@@ -832,12 +833,12 @@ class ManualWorkflowMixin:
             refine_fill_or_ortho_changed = (
                 not self._refine_fill_holes or self._refine_ortho)
             refine_used = bool(refine_shape_changed or refine_fill_or_ortho_changed)
-            telemetry.track_manual_export_done(
+            telemetry_session_events.track_manual_export_done(
                 polygon_count=len(features_to_add),
                 refine_used=refine_used,
                 destination="new",
             )
-            telemetry.track_first_generation_milestone(mode="manual")
+            telemetry_session_events.track_first_generation_milestone(mode="manual")
         except Exception:
             pass  # nosec B110
 
@@ -855,7 +856,9 @@ class ManualWorkflowMixin:
                     for f in features_to_add)
                 self.dock_widget.set_manual_last_run_recap(
                     count=len(features_to_add),
-                    area_km2=total_m2 / 1e6,
+                    area_m2=total_m2,
+                    layer_name=layer_name,
+                    layer_id=result_layer.id(),
                 )
         except Exception:  # nosec B110 -- never break export on the recap
             pass
@@ -932,8 +935,8 @@ class ManualWorkflowMixin:
             if reply != QMessageBox.StandardButton.Yes:
                 return
             try:
-                from ...core import telemetry
-                telemetry.track_manual_abandoned(
+                from ...core import telemetry_session_events
+                telemetry_session_events.track_manual_abandoned(
                     context="stop", polygon_count=polygon_count)
             except Exception:
                 pass  # nosec B110

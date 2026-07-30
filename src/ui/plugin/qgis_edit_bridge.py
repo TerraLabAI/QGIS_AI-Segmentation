@@ -377,6 +377,7 @@ class QgisEditBridgeMixin:
         except (RuntimeError, AttributeError, TypeError):
             pass
         self._connect_bridge_feedback(layer)
+        self._connect_bridge_tool_messages()
         self._start_bridge_gesture_poll()
         self._track_bridge("opened")
 
@@ -532,6 +533,14 @@ class QgisEditBridgeMixin:
             action.trigger()
         except (RuntimeError, AttributeError):
             return
+        # QGIS keeps ONE instance of each capture tool for the whole session,
+        # and neither deactivate() nor a fresh trigger() empties its point
+        # buffer. A line the user abandoned by picking another tool button is
+        # still in there, so the next line is APPENDED to it: the two strokes
+        # cross, GEOS refuses a split line that is not simple and a reshape line
+        # that meets the outline four times, and both tools report that nothing
+        # happened for the rest of the QGIS session. Arm on an empty buffer.
+        self._bridge_cancel_capture()
         try:
             self.dock_widget.set_qgis_bridge_tool(tool)
         except (RuntimeError, AttributeError):
@@ -714,6 +723,10 @@ class QgisEditBridgeMixin:
             self._qgis_bridge_born_det_ids = set()
             self._qgis_bridge_id_write_marks = set()
             self._qgis_bridge_id_edit = False
+            try:
+                self._end_correct_focus()
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
 
     def _on_qgis_bridge_editing_stopped(self) -> None:
         """The user ended editing directly in QGIS (its own toggle already
@@ -779,15 +792,12 @@ class QgisEditBridgeMixin:
         self._qgis_bridge_finishing = True
         layer = self._qgis_bridge_layer
         committed = external or commit
-        # Read the target identity NOW: the finally below clears the bridge
-        # state unconditionally (so a raising teardown cannot leak a stale
-        # target into the next session), while the re-select runs after it.
-        target_det_id = self._qgis_bridge_target_det_id
         try:
             # Drop editingStopped FIRST so the commit/rollback below cannot
             # re-enter this teardown.
             self._disconnect_bridge_editing_signal(layer)
             self._disconnect_bridge_feedback(layer)
+            self._disconnect_bridge_tool_messages()
             self._stop_bridge_gesture_poll()
             if (not external and layer is not None and self._is_layer_valid(layer)):
                 try:
@@ -851,43 +861,22 @@ class QgisEditBridgeMixin:
             self._qgis_bridge_born_det_ids = set()
             self._qgis_bridge_id_write_marks = set()
             self._qgis_bridge_id_edit = False
-        # After the review is back on Correct, re-select the object the user was
-        # editing (if it survived), so they land on the same object instead of an
-        # empty selection. Outside the finally: a fold-back rebuild must be done.
-        if committed:
-            self._reselect_bridge_target(target_det_id)
-
-    def _reselect_bridge_target(self, det_id) -> None:
-        """Re-select the edited detection on Correct by its stable det_id, since
-        a fold-back may have reordered the canonical objects. No-op if the object
-        was deleted/absorbed, if the review moved off Correct, or if a hand tool
-        is already armed on something else. Best-effort."""
-        if det_id is None:
-            return
-        if getattr(self, "_auto_review_step", 1) != 1:
-            return
-        if getattr(self, "_shape_edit_mode", None) not in (None, "select"):
-            return
+        # Give every polygon its colour back. After the finally, so the flag it
+        # reads is already down; the repaint is a no-op when the review layer
+        # went with the teardown.
         try:
-            objects = getattr(self, "_auto_objects", None) or []
-            ids = getattr(self, "_auto_object_fids", None) or []
-            # Match against the id list DIRECTLY, never via _object_fid_for: that
-            # helper falls back to returning the index itself when the id list is
-            # missing or short, and a bare index can collide with a real det_id
-            # and re-select the wrong polygon. No usable id list means no
-            # re-selection, which is the safe outcome.
-            new_idx = None
-            for i in range(min(len(objects), len(ids))):
-                if ids[i] == det_id:
-                    new_idx = i
-                    break
-            if new_idx is None or new_idx in self._review_removed_fids():
-                return
-            setter = getattr(self, "_set_correct_selection", None)
-            if callable(setter):
-                setter(new_idx)
-        except (RuntimeError, AttributeError, TypeError):
+            self._end_correct_focus()
+        except (RuntimeError, AttributeError):
             pass
+        # A finished Manual edit ends at REST, with no polygon selected, exactly
+        # where a finished AI refine ends. The session used to re-select the
+        # polygon it had just saved, which reopened the per-polygon panel; in
+        # Manual that panel has no shape controls, so the only thing left on it
+        # was the line pointing at the other method, with no way on to another
+        # edit or to Add. leave_qgis_bridge_state has already brought the two
+        # branch cards back and _restore_review_step_after_bridge re-armed the
+        # pick tool, so the next click on a polygon opens the next edit. Do not
+        # re-add a re-selection here.
 
     def _disconnect_bridge_editing_signal(self, layer) -> None:
         if not self._qgis_bridge_editing_conn or layer is None:
@@ -1527,6 +1516,76 @@ class QgisEditBridgeMixin:
         except (RuntimeError, AttributeError, TypeError):
             pass
 
+    def _apply_shape_only_to_session(self, det_idx: int) -> bool:
+        """Push this polygon's own shape dials onto the LIVE bridge geometry.
+
+        Returns True when a session took the change, so the caller knows not to
+        rebuild the review layer for it. During a session the editable copy is
+        what the user sees; an override written only to the review moves a
+        number and nothing on screen follows it, which is exactly where the
+        user reaches for these dials (thin a dense outline, then drag it).
+
+        Mirrors _on_bridge_points_changed: rewrite from the pre-edit snapshot
+        in ONE QGIS edit command so native undo steps over it cleanly, and
+        leave a shape the user has already hand-edited alone, because
+        rewriting it would undo their work under them.
+        """
+        if not getattr(self, "_qgis_bridge_active", False):
+            return False
+        if getattr(self, "_qgis_bridge_hand_edited", False):
+            return False
+        layer = self._qgis_bridge_layer
+        det_id = getattr(self, "_qgis_bridge_target_det_id", None)
+        if layer is None or det_id is None or not self._is_layer_valid(layer):
+            return False
+        if self._det_id_for_object_index(det_idx) != det_id:
+            return False
+        base_wkb = (getattr(self, "_qgis_bridge_snapshot", None) or {}).get(det_id)
+        if not base_wkb:
+            return False
+        from qgis.core import QgsGeometry
+        base = QgsGeometry()
+        try:
+            base.fromWkb(base_wkb)
+        except (RuntimeError, AttributeError, TypeError):
+            return False
+        if base.isEmpty():
+            return False
+        review = self._auto_review or {}
+        try:
+            params = self._shape_params_for_object(
+                int(det_idx), dict(review.get("params") or {}))
+            geom = self._refine_geom_for_review(
+                base, params, float(review.get("pixel_size", 1.0) or 1.0))
+        except Exception:  # noqa: BLE001 -- a bad refine never breaks a session
+            return False
+        if geom is None or geom.isEmpty():
+            return False
+        feature = self._bridge_feature_for_det_id(layer, det_id)
+        if feature is None:
+            return False
+        self._qgis_bridge_dial_edit = True
+        try:
+            layer.beginEditCommand(tr("Outline settings"))
+            layer.changeGeometry(feature.id(), geom)
+            layer.endEditCommand()
+            layer.triggerRepaint()
+        except (RuntimeError, AttributeError, TypeError):
+            try:
+                layer.destroyEditCommand()
+            except (RuntimeError, AttributeError):
+                pass
+            return False
+        finally:
+            self._qgis_bridge_dial_edit = False
+        try:
+            count = self._bridge_ring_vertex_count(geom)
+            if count:
+                self._bridge_feedback(tr("Points: {n}").format(n=count))
+        except (RuntimeError, AttributeError, TypeError):
+            pass
+        return True
+
     def _bridge_thin_geometry(self, base, pct: int):
         """Thin one polygon with the review's Points engine at the given share.
 
@@ -1624,12 +1683,15 @@ class QgisEditBridgeMixin:
         self._qgis_bridge_gesture_undo_count = None
 
     def _bridge_undo_depth(self):
-        """How many commands the layer's undo stack holds, or None."""
+        """Position in the layer's undo stack, or None. index(), not count():
+        a command pushed after an Undo truncates the redo tail, so the count
+        can stay put or drop on a gesture that worked, and the caller would
+        call it a failure."""
         stack = getattr(self, "_qgis_bridge_undo_stack", None)
         if stack is None:
             return None
         try:
-            return int(stack.count())
+            return int(stack.index())
         except (RuntimeError, AttributeError, TypeError):
             return None
 
@@ -2243,8 +2305,8 @@ class QgisEditBridgeMixin:
         identifies the machine. Never raises: every caller is already on a
         failure path where a second failure must stay invisible."""
         try:
-            from ...core import telemetry
-            telemetry.report_exception(
+            from ...core import telemetry_errors
+            telemetry_errors.report_exception(
                 exc, stage=stage, module="qgis_edit_bridge")
         except Exception:  # noqa: BLE001 - a second failure stays invisible
             pass  # nosec B110
@@ -2292,8 +2354,8 @@ class QgisEditBridgeMixin:
                 # count it in telemetry) so this failure is diagnosable, then
                 # still finish teardown.
                 try:
-                    from ...core import telemetry
-                    telemetry.report_exception(
+                    from ...core import telemetry_errors
+                    telemetry_errors.report_exception(
                         exc, stage="qgis_bridge_fold_back",
                         module="qgis_edit_bridge")
                 except Exception:  # noqa: BLE001 - a second failure stays invisible
@@ -2332,8 +2394,8 @@ class QgisEditBridgeMixin:
     def _track_bridge(self, outcome: str, duration_ms: int | None = None,
                       features: int | None = None) -> None:
         try:
-            from ...core import telemetry
-            telemetry.track_qgis_edit_bridge(
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_qgis_edit_bridge(
                 run_id=getattr(self, "_auto_run_id", "") or "",
                 outcome=outcome, duration_ms=duration_ms, features=features)
         except Exception:  # noqa: BLE001

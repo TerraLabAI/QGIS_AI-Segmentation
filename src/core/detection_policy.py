@@ -25,6 +25,7 @@ from .prompt_taxonomy import (
     first_entry_match,
     iter_keywords,
     keyword_matches,
+    longest_keyword_match,
     normalize_prompt,
 )
 from .tile_manager import (
@@ -90,6 +91,17 @@ def review_policy(policy: dict | None = None) -> dict:
     policy = get_detection_policy() if policy is None else policy
     review = policy.get("review") if isinstance(policy, dict) else None
     return review if isinstance(review, dict) else {}
+
+
+def review_correct_default_method(policy: dict | None = None) -> str:
+    """Which fix method the Correct step opens on: ``"ai"`` or ``"manual"``.
+
+    Read from the review sub-policy, beside its siblings, NOT from the top
+    level: the blob carries no root ``review`` section, so a reader pointed
+    there can never be moved by a deploy however the server is edited.
+    """
+    val = review_policy(policy).get("correct_default_method")
+    return val if val in ("ai", "manual") else "ai"
 
 
 def review_noise_floor(policy: dict | None = None) -> float:
@@ -407,6 +419,19 @@ _MERGE_SCALAR_DEFAULTS: dict[str, float] = {
     # stitched member counts as outline jitter (used when no pixel size is
     # known to erode by).
     "jitter_area_frac": 0.02,
+    # Detection pixels of erosion the added area must survive for a stitched
+    # member to count as a real seam complement rather than outline jitter.
+    # The sibling above is the fallback when no pixel size is known; this is
+    # the test a real run takes. Too small and cross-tile jitter unions in and
+    # dilates every outline; too large and genuine complements are dropped, so
+    # a building comes back cut flat along the tile grid.
+    "jitter_erode_px": 1.0,
+    # Share of its own area an object must have painted over by LARGER objects
+    # before the end-of-run sweep drops it as a leftover partial reading. It
+    # outscoring every coverer still saves it. Too low and a real small object
+    # squeezed between two sloppy big masks leaves the count; too high and
+    # strip debris survives on top of big roofs.
+    "cover_threshold": 0.40,
     # Area share of the largest member above which a member counts as a
     # co-extensive reading and may carry the group's score.
     "score_floor_frac": 0.5,
@@ -442,7 +467,13 @@ def merge_scalar(key: str, fallback: float | None = None, policy: dict | None = 
     if fallback is None:
         fallback = _MERGE_SCALAR_DEFAULTS.get(key, 0.0)
     val = merge_policy(policy).get(key)
-    resolved = float(val) if _is_finite_policy_value(val) else float(fallback)
+    # A negative is treated as absent. Every one of these is a ratio, a count
+    # or a pixel width, so no served negative is meaningful, and one of them
+    # reverses a shape operation rather than just mistuning it: a negative
+    # jitter_erode_px turns the merger's erosion into a dilation, which swells
+    # every outline fleet-wide with nothing to say why.
+    ok = _is_finite_policy_value(val) and float(val) >= 0.0
+    resolved = float(val) if ok else float(fallback)
     return int(resolved) if key in _MERGE_INT_SCALARS else resolved
 
 
@@ -929,7 +960,8 @@ def network_policy(policy: dict | None = None) -> dict:
 
 
 def _net_float(
-    key: str, fallback: float, policy: dict | None, high: float | None = None
+    key: str, fallback: float, policy: dict | None, high: float | None = None,
+    low: float | None = None,
 ) -> float:
     """A served network dial, or the shipped constant.
 
@@ -940,10 +972,17 @@ def _net_float(
     bounds every equivalent through dial_in_range; this is the same rule for
     the network block. A reader with no ceiling has no plausible way to be too
     large (a count of retries, a worker count).
+
+    ``low`` is the same refusal at the other end, and it exists because on a
+    few of these small is the harmful direction: a budget that decides how
+    long we wait for an answer we have ALREADY BILLED throws that tile away
+    when it is near zero. A ceiling alone would not have caught that.
     """
     val = network_policy(policy).get(key)
     if _is_finite_policy_value(val) and val > 0:
         if high is not None and val > high:
+            return fallback
+        if low is not None and val < low:
             return fallback
         return float(val)
     return fallback
@@ -1018,6 +1057,26 @@ def prefetch_holdoff_s(fallback: float, policy: dict | None = None) -> float:
     return _net_float("prefetch_holdoff_s", fallback, policy, high=300.0)
 
 
+def slow_notice_s(fallback: float, policy: dict | None = None) -> float:
+    """Seconds of zero run progress after which the progress card tells the user
+    the connection is slow rather than showing a bar that stopped moving. Below
+    stall_timeout_s, which ENDS the run. Fallback: client constant."""
+    return _net_float("slow_notice_s", fallback, policy, high=3600.0)
+
+
+def render_slow_s(fallback: float, policy: dict | None = None) -> float:
+    """Seconds a tile may wait on its imagery before the run narrows how many
+    basemap fetches it keeps in flight. Fallback: client constant."""
+    return _net_float("render_slow_s", fallback, policy, high=300.0)
+
+
+def tile_render_timeout_ms(fallback: int, policy: dict | None = None) -> int:
+    """Deadline (ms) on one tile's basemap render. Past it the tile has no
+    imagery and is retried, then dropped uncharged. Fallback: client constant."""
+    return int(_net_float(
+        "tile_render_timeout_ms", float(fallback), policy, high=600_000.0))
+
+
 def aimd_start(fallback: int, policy: dict | None = None) -> int:
     """In-flight tile width a run OPENS at before the adaptive controller grows
     it. Fallback: client constant."""
@@ -1046,6 +1105,66 @@ def gate_scan_render_tries(fallback: int, policy: dict | None = None) -> int:
     """Render attempts for a scan-phase tile before it falls open to the normal
     detect path. Fallback: client constant."""
     return int(_net_float("gate_scan_render_tries", float(fallback), policy))
+
+
+def poll_interval_s(fallback: float, policy: dict | None = None) -> float:
+    """Wait (s) between status polls when the answer names none. Fallback:
+    client constant."""
+    return _net_float("poll_interval_s", fallback, policy, high=60.0)
+
+
+def poll_max_wait_s(fallback: float, policy: dict | None = None) -> float:
+    """How long (s) one tile may stay pending before the poll gives up.
+    Fallback: client constant."""
+    return _net_float("poll_max_wait_s", fallback, policy, high=1800.0, low=5.0)
+
+
+def min_poll_backoff_s(fallback: float, policy: dict | None = None) -> float:
+    """Floor (s) under the coalesced poll back-off, so a tiny or zero server
+    hint cannot turn the poll loop into a tight request storm. Fallback: client
+    constant."""
+    return _net_float("min_poll_backoff_s", fallback, policy, high=30.0)
+
+
+def aimd_min(fallback: int, policy: dict | None = None) -> int:
+    """Narrowest in-flight width the adaptive controller may fall back to.
+    Fallback: client constant."""
+    return int(_net_float("aimd_min", float(fallback), policy, high=32.0))
+
+
+def convert_workers_ceiling(fallback: int, policy: dict | None = None) -> int:
+    """Hard cap on the converter thread count, whatever the machine or the
+    served worker count asks for. Every worker is a thread that touches the
+    geometry library. Fallback: client constant."""
+    return int(_net_float("convert_workers_ceiling", float(fallback), policy, high=64.0))
+
+
+def convert_backlog_per_worker(fallback: int, policy: dict | None = None) -> int:
+    """Finished-but-unconverted tiles allowed to queue per converter thread
+    before the run loop spends its cycle draining instead of firing new tiles.
+    Fallback: client constant."""
+    return int(_net_float("convert_backlog_per_worker", float(fallback), policy, high=64.0))
+
+
+def convert_drain_budget_s(fallback: float, policy: dict | None = None) -> float:
+    """Ceiling (s) on the end-of-run wait for the last conversions. They carry
+    billed geometry, so a normal end waits; this only stops a wedged converter
+    from holding the terminal open for good. Fallback: client constant."""
+    return _net_float("convert_drain_budget_s", fallback, policy, high=600.0, low=5.0)
+
+
+def stop_drain_budget_s(fallback: float, policy: dict | None = None) -> float:
+    """Ceiling (s) on the wait, after a user cancel, for tiles already in
+    flight to land so their billed masks are kept. Fallback: client
+    constant."""
+    return _net_float("stop_drain_budget_s", fallback, policy, high=60.0, low=0.5)
+
+
+def gate_render_cache_max(fallback: int, policy: dict | None = None) -> int:
+    """Full-resolution scan renders held for the detect phase, so a kept tile
+    renders once. Bounded to keep run memory flat at any tile count. Fallback:
+    client constant."""
+    return int(_net_float("gate_render_cache_max", float(fallback), policy, high=4096.0))
 
 
 # Floor on the submit timeout. A window shorter than this would expire on
@@ -1095,6 +1214,23 @@ def hard_tile_coverage(fallback: float, policy: dict | None = None) -> float:
     """Tile-coverage fraction above which a SEPARATE-mode mask is dropped as a
     fill-everything failure regardless of shape. Fallback: client constant."""
     return _sat_float("hard_tile_coverage", fallback, policy)
+
+
+def map_cover_score_floor(fallback: float, policy: dict | None = None) -> float:
+    """Confidence a MAP-mode mask covering most of its tile must reach to be
+    kept. 0 or less disables it, which is the behaviour that shipped.
+
+    MAP takes coverage as the union of every hypothesis, so it has no guard
+    against a tile answering "all of this is the thing" over ground that is not:
+    the merger unions that mask with the correct outlines around it and the run
+    comes back as one shape. A coverage cut cannot decide it, because the same
+    mask is a real lake filling a tile. Confidence can: the bigger the claim,
+    the surer it has to be. Nothing here is class-specific, so one value covers
+    every continuous prompt.
+
+    Fallback: caller-passed; only a value in (0, 1] arms it."""
+    val = _sat_float("map_cover_score_floor", fallback, policy)
+    return val if 0.0 < val <= 1.0 else fallback
 
 
 def compact_min_fill(fallback: float, policy: dict | None = None) -> float:
@@ -1286,6 +1422,11 @@ def regularize_settings(policy: dict | None = None) -> dict:
         "allow_circles": _flag("allow_circles", False),
         "circle_threshold": circle,
         "min_keep_iou": _num("min_keep_iou", 0.7),
+        # Per-RING revert, applied before min_keep_iou and to one ring rather
+        # than the whole geometry. Too high and the regularizer declines every
+        # complex footprint, silently, which reads as Right angles doing
+        # nothing.
+        "ring_min_iou": _num("ring_min_iou", 0.1),
         "multi_direction": _flag(
             "multi_direction", _REGULARIZE_FALLBACK_MULTI_DIRECTION),
         "multi_max_groups": max_groups,
@@ -1615,14 +1756,45 @@ def gate_prefilter_enabled(policy: dict | None = None) -> bool:
 
 
 def gate_prefilter_nodata_frac(policy: dict | None = None) -> float:
-    """Transparent (no-data) fraction at/above which a rendered tile settles
-    as empty without a model pass. The generic client default is 1.0 (only a
-    FULLY no-data tile, the provably-safe point); the server may loosen it.
-    Only fractions in (0, 1] are honoured."""
+    """No-data fraction at/above which a rendered tile settles as empty
+    without a model pass. The generic client default is 1.0 (only a FULLY
+    no-data tile, the provably-safe point). Only fractions in (0, 1] are
+    honoured.
+
+    The server may loosen it, but the benchmark corpus says not to yet: over
+    727 archived tiles the most no-data tile that returned real objects is
+    94.1% no-data and the emptiest that returned none is 90.6%, so no fraction
+    below 1.0 drops a barren tile without also dropping a productive one."""
     val = gate_prefilter_policy(policy).get("nodata_frac")
     if _is_finite_policy_value(val) and 0.0 < val <= 1.0:
         return float(val)
     return 1.0
+
+
+def gate_prefilter_nodata_rgb_eps(fallback: int, policy: dict | None = None) -> int:
+    """Max channel value at which a pixel counts as no-data by COLOUR. The
+    tile render paints an opaque black background, so ground the layer does not
+    cover arrives black at full alpha and an alpha-only test never fires at
+    all; this is what makes ``nodata_frac`` a live dial. Fallback: the client
+    constant (exact black). Negative disables the colour half; values above 24
+    are refused, because a wider tolerance starts eating deep shadow and dark
+    water, which carry sensor noise a background fill does not."""
+    val = gate_prefilter_policy(policy).get("nodata_rgb_eps")
+    if _is_finite_policy_value(val) and -1 <= val <= 24:
+        return int(val)
+    return int(fallback)
+
+
+def gate_prefilter_min_valid_px(fallback: float, policy: dict | None = None) -> float:
+    """Valid (non-no-data) pixel count under which a rendered tile settles as
+    empty. Fallback: the client constant, the pipeline's own noise floor
+    squared, which is the provable bound and fires on nothing in the benchmark
+    corpus (smallest archived valid region: 392600 px). Capped well under a
+    tile so a bad policy cannot turn a provable rule into a lossy skip."""
+    val = gate_prefilter_policy(policy).get("min_valid_px")
+    if _is_finite_policy_value(val) and 0.0 <= val <= 4096.0:
+        return float(val)
+    return float(fallback)
 
 
 def gate_prefilter_band_eps(policy: dict | None = None) -> float:
@@ -1642,9 +1814,17 @@ def gate_prefilter_config(policy: dict | None = None) -> dict | None:
     the thresholds stay constant for the whole run."""
     if not gate_prefilter_enabled(policy):
         return None
+    from .cloud_detection import (  # noqa: PLC0415 - avoids an import cycle
+        _PREFILTER_MIN_VALID_PX,
+        _PREFILTER_NODATA_RGB_EPS,
+    )
     return {
         "nodata_frac": gate_prefilter_nodata_frac(policy),
         "band_eps": gate_prefilter_band_eps(policy),
+        "nodata_rgb_eps": gate_prefilter_nodata_rgb_eps(
+            _PREFILTER_NODATA_RGB_EPS, policy),
+        "min_valid_px": gate_prefilter_min_valid_px(
+            _PREFILTER_MIN_VALID_PX, policy),
     }
 
 
@@ -1684,6 +1864,47 @@ def blank_sample_px(fallback: int, policy: dict | None = None) -> int:
     val = gate_blank_policy(policy).get("sample_px")
     if _is_finite_policy_value(val) and val > 0:
         return int(val)
+    return fallback
+
+
+def gate_unavailable_policy(policy: dict | None = None) -> dict:
+    """The ``gate.unavailable`` sub-policy: how a tile rendered from an ONLINE
+    source is recognised as that source's "no image here" placeholder card
+    instead of ground. A sibling of ``gate.blank``, independent of
+    ``gate.enabled``. Empty dict when absent (the generic client defaults
+    apply). Placeholder cards differ per provider, so this is exactly the kind
+    of dial that has to be retunable without a plugin release."""
+    val = gate_policy(policy).get("unavailable")
+    return val if isinstance(val, dict) else {}
+
+
+def unavailable_neutral_eps(fallback: int, policy: dict | None = None) -> int:
+    """Max spread between a pixel's three channels for it to count as neutral
+    grey. Fallback: client constant; must stay non-negative."""
+    val = gate_unavailable_policy(policy).get("neutral_eps")
+    if _is_finite_policy_value(val) and val >= 0:
+        return int(val)
+    return fallback
+
+
+def unavailable_neutral_frac(fallback: float, policy: dict | None = None) -> float:
+    """Share of a sampled tile that must be neutral grey before the tile can be
+    read as a placeholder card. Fallback: client constant; only a fraction in
+    (0, 1] is honoured."""
+    val = gate_unavailable_policy(policy).get("neutral_frac")
+    if _is_finite_policy_value(val) and 0.0 < val <= 1.0:
+        return float(val)
+    return fallback
+
+
+def unavailable_dominant_frac(fallback: float, policy: dict | None = None) -> float:
+    """Share one quantized colour bucket must cover for a neutral tile to be
+    read as a placeholder card. Looser than the blank test's own fraction,
+    because the card carries a line of text. Fallback: client constant; only a
+    fraction in (0, 1] is honoured."""
+    val = gate_unavailable_policy(policy).get("dominant_frac")
+    if _is_finite_policy_value(val) and 0.0 < val <= 1.0:
+        return float(val)
     return fallback
 
 
@@ -1796,11 +2017,15 @@ def exemplar_policy(policy: dict | None = None) -> dict:
 
 
 def exemplar_context_pad(policy: dict | None = None) -> float:
-    """Fractional margin around a drawn example crop (0.10 = 10%)."""
+    """Fractional margin around a drawn example crop (0.05 = 5%). Thin on
+    purpose: the example is traced as a polygon and cropped from its bounding
+    box, so an irregular shape already brings its surroundings along, and a
+    wider ring hands the model the neighbours instead of the object. Never 0:
+    the boundary needs some outside pixels to sit against."""
     val = exemplar_policy(policy).get("context_pad")
     if _is_finite_policy_value(val):
         return float(val)
-    return 0.10
+    return 0.05
 
 
 def exemplar_context_pad_px_cap(policy: dict | None = None) -> float:
@@ -1811,7 +2036,7 @@ def exemplar_context_pad_px_cap(policy: dict | None = None) -> float:
     val = exemplar_policy(policy).get("context_pad_px")
     if _is_finite_policy_value(val) and val > 0:
         return float(val)
-    return 24.0
+    return 12.0
 
 
 def exemplar_min_paste_scale(policy: dict | None = None) -> float:
@@ -1934,3 +2159,42 @@ def prompt_policy(policy: dict | None = None) -> dict:
     policy = get_detection_policy() if policy is None else policy
     prompt = policy.get("prompt") if isinstance(policy, dict) else None
     return prompt if isinstance(prompt, dict) else {}
+
+
+def prompt_hint_for(
+    prompt: str, policy: dict | None = None
+) -> tuple[str, str] | None:
+    """Server advisory for one prompt, as ``(hint_id, sentence)``, or None.
+
+    ``prompt.hints`` is a list of ``{"keywords": [...], "hint": "..."}``. The
+    LONGEST matching keyword wins, so a phrase beats another entry's component
+    word and table order never decides a tie.
+
+    The id is derived from the entry's first keyword rather than shared by every
+    served hint, so a user dismissing the road advisory does not also dismiss a
+    future one about dams, and the server can suppress a single hint through
+    ``guidance.suppressed``. An id this build has never seen is exactly what
+    ``guidance.extra`` is for.
+
+    Served copy arrives already in the user's language, so it carries no
+    ``tr()``. There is no shipped fallback table: with no policy the prompt box
+    simply shows nothing, which is what it did before this existed.
+    """
+    text = normalize_prompt(prompt)
+    if not text:
+        return None
+    hints = prompt_policy(policy).get("hints")
+    if not isinstance(hints, list):
+        return None
+    usable = [
+        h for h in hints
+        if isinstance(h, dict)
+        and isinstance(h.get("hint"), str) and h["hint"].strip()
+        and next(iter_keywords(h), None) is not None
+    ]
+    entry = longest_keyword_match(text, usable)
+    if entry is None:
+        return None
+    first = next(iter_keywords(entry))
+    slug = "".join(c if c.isalnum() else "_" for c in first.lower()).strip("_")
+    return f"prompt_hint_{slug}", entry["hint"].strip()

@@ -34,8 +34,8 @@ from ...core.review_defaults import (
 )
 from .auto_review_build import _BTN_LINK_CONFIRM, _export_btn_label
 from .styles import (
-    _BTN_GREEN,
-    _BTN_LINK_MUTED,
+    _BTN_GREEN_STEP,
+    _BTN_LINK_STRONG,
     BRAND_GREEN,
     _snap_review_conf,
 )
@@ -45,24 +45,8 @@ class DockAutoReviewPanelMixin:
     """The post-run review panel: its own on/off, the confidence and shape
     filters, the count readout, the three-step ladder and the display mode."""
 
-    def set_auto_review_installing(self, active: bool) -> None:
-        """Reflect a background local-AI install kicked off by Refine with AI.
-
-        Clicking Reshape without the on-device AI installed starts the setup in
-        the BACKGROUND while this review stays fully usable. The inline banner
-        in the reshape block shows progress (fed by set_install_progress); the
-        reshape opens automatically once the AI is ready.
-        """
-        self._auto_review_installing = bool(active)
-        try:
-            self.auto_review_install_banner.setVisible(active)
-            if active:
-                self.auto_review_install_progress.setValue(0)
-                self.auto_review_install_label.setText(tr(
-                    "Setting up the on-device AI in the background. You can keep "
-                    "reviewing; reshaping opens automatically when it is ready."))
-        except (RuntimeError, AttributeError):
-            pass
+    # set_auto_review_installing lives in dock/install_lock.py: the banner now
+    # holds the review still while it runs, which is a concern of its own.
 
     def set_auto_review_active(self, active: bool, count: int = 0,
                                reset_controls: bool = True,
@@ -272,7 +256,10 @@ class DockAutoReviewPanelMixin:
             self._auto_review_count_label.setText(
                 self._format_auto_review_count(visible, total, pct, size_bound))
             self.auto_export_btn.setText(_export_btn_label(visible))
-            self.auto_export_btn.setEnabled(visible > 0)
+            # A local-AI install holds the review still, Export included: a
+            # count refresh must not hand back a button the lock just took.
+            self.auto_export_btn.setEnabled(
+                visible > 0 and not self.review_install_locked())
             if visible == 0:
                 tip = (tr("Lower the Min size filter to show objects first.")
                        if size_bound else
@@ -313,9 +300,7 @@ class DockAutoReviewPanelMixin:
             self.auto_review_confidence_spin.blockSignals(True)
             self.auto_review_confidence_spin.setValue(snapped)
             self.auto_review_confidence_spin.blockSignals(False)
-        # A user-initiated move retires the auto-lowered note and moves the
-        # histogram's dimmed/kept boundary.
-        self.auto_conf_lowered_note.setVisible(False)
+        # A user-initiated move moves the histogram's dimmed/kept boundary.
         if getattr(self, "auto_conf_histogram", None) is not None:
             self.auto_conf_histogram.set_cutoff(snapped / 100.0)
         # Live feedback as the handle moves: a fast, cheap preview re-filter on a
@@ -403,30 +388,6 @@ class DockAutoReviewPanelMixin:
         # mirrored that into the spinbox, so this stays correct for both paths.
         self.auto_review_confidence_changed.emit(self.auto_review_confidence_spin.value())
 
-    def set_review_conf_lowered_note(self, lowered: bool, pct: int,
-                                     adaptive: bool = False,
-                                     tuned: bool = False) -> None:
-        """Show/hide the starting-cutoff explainer note under the slider.
-
-        Three distinct reasons, three texts: ``tuned`` means the start IS the
-        default, just an object-specific one (transparency, not a lowering);
-        ``adaptive`` means the run's score distribution lowered the start to
-        show more of one coherent population (objects DO score above);
-        otherwise nothing scored above the default."""
-        if lowered:
-            if tuned:
-                self.auto_conf_lowered_note.setText(
-                    tr("Started at {pct}% - the usual sweet spot for this "
-                       "object type.").format(pct=pct))
-            elif adaptive:
-                self.auto_conf_lowered_note.setText(
-                    tr("Started at {pct}% to fit this run's scores - raise "
-                       "to tighten.").format(pct=pct))
-            else:
-                self.auto_conf_lowered_note.setText(
-                    tr("Started at {pct}% - nothing scored above.").format(pct=pct))
-        self.auto_conf_lowered_note.setVisible(bool(lowered))
-
     def _on_shape_control_changed(self, control: str, value) -> None:
         """A review shape-refine control changed: re-derive the visible set (via
         the debounced auto_refine_changed) and track the adjustment once per
@@ -439,8 +400,12 @@ class DockAutoReviewPanelMixin:
                 self._review_shape_tracked = tracked
             if control not in tracked:
                 tracked.add(control)
-                from ...core import telemetry
-                telemetry.track_review_shape_adjusted(control=control, value=value)
+                from ...core import telemetry, telemetry_run_events
+                # The dock does not hold the run id; the telemetry breadcrumb
+                # does, and it is the run this review belongs to.
+                telemetry_run_events.track_review_shape_adjusted(
+                    control=control, value=value,
+                    run_id=telemetry.get_last_run_id() or "")
         except Exception:
             pass  # nosec B110
 
@@ -451,8 +416,18 @@ class DockAutoReviewPanelMixin:
         cleanup can erase narrow building parts, while corner rounding reverses
         the requested result. The same rule is also enforced by the value
         getter, so a disabled widget can never leave an old value active.
+
+        Right angles itself is refused here when the geometry library behind it
+        is missing, so a run that could only return the outline unchanged says
+        so instead (right_angles_support). Only a TICKED box is checked, which
+        is what keeps the shapely import off plugin load: the seeded default is
+        off, so the build-time call below costs nothing.
         """
         ortho = getattr(self, "auto_ortho_check", None)
+        if ortho is not None and ortho.isChecked():
+            from .right_angles_support import gate_right_angles
+
+            gate_right_angles(ortho, getattr(self, "auto_ortho_label", None))
         enabled = not bool(ortho is not None and ortho.isChecked())
         blocked_tip = tr(
             "Unavailable while Right angles is on. Turn it off to adjust this "
@@ -521,7 +496,11 @@ class DockAutoReviewPanelMixin:
         zero-detection entry right after when it applies."""
         try:
             self._qgis_bridge_active_ui = False
-            self.set_correct_method("ai")
+            # Re-read, never hardcode: the dock is built before the first
+            # configuration fetch lands, so opening a review is the moment the
+            # served choice can actually take effect.
+            from .auto_correct_build import correct_default_method
+            self.set_correct_method(correct_default_method())
             self.set_correct_selection(0)
             self.set_correct_session_active(False)
             self.set_correct_armed(None)
@@ -554,10 +533,11 @@ class DockAutoReviewPanelMixin:
                 else:
                     state = "todo"
                 self._set_review_dial(i, state)
-            # Dials never lock any more: the Manual lock that dimmed them
+            # Dials lock for one reason only: a local-AI install that owns the
+            # review until it ends. The old Manual lock that dimmed them
             # guarded a paid re-detect batch that no longer exists (removed
             # 5706f2c); hand edits are protected by geometry, not by a lock.
-            self._set_review_dials_locked(False, step)
+            self._set_review_dials_locked(self.review_install_locked(), step)
             # The block is on every step, but only while a review is live: it
             # is a main_layout sibling now, so a step setter fired on a torn
             # down review would otherwise leave it alone above the footer.
@@ -567,26 +547,50 @@ class DockAutoReviewPanelMixin:
             # On a zero-detection run there is nothing to advance to, so the
             # green primary stays hidden on every step (not only on first
             # entry): re-clicking the Keep dial must not resurrect it.
-            # The button names the step it opens, in the words that step's own
-            # dial and heading use. "Next: ..." named the position in a queue,
-            # which is the one thing the dials above already show.
+            # "Next:" then what the NEXT step lets the user do, in that step's
+            # own words. The bare verb phrase was dropped once because the dials
+            # above already number the steps, and it came straight back: read on
+            # its own, "Fix what looks wrong" is a task, not a way forward, and
+            # users took the re-run link instead of moving one step on.
             if step == 0:
-                btn.setText(tr("Correct the polygons"))
-                btn.setStyleSheet(_BTN_GREEN)
-                btn.setVisible(not self._auto_zero_entry)
+                btn.setText(tr("Next: fix what looks wrong"))
+                btn.setStyleSheet(_BTN_GREEN_STEP)
             elif step == 1:
-                btn.setText(tr("Clean up the outlines"))
-                btn.setStyleSheet(_BTN_GREEN)
-                btn.setVisible(not self._auto_zero_entry)
-            else:
-                # Shapes is the last step: its primary is Export (hidden on the
-                # zero-detection entry, where there is nothing to commit).
-                btn.setVisible(False)
+                btn.setText(tr("Next: clean up the outlines"))
+                btn.setStyleSheet(_BTN_GREEN_STEP)
+            # Shapes is the last step: its primary is Export, so the step
+            # primary goes away there (and on a zero-detection run there is
+            # nothing to advance to on any step).
+            self._apply_step_next_visibility()
             self.auto_export_btn.setVisible(
                 step == 2 and not self._auto_zero_entry)
             self._apply_review_links(step)
             self._refresh_correct_panels()
             self._keep_review_primary_in_view()
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _apply_step_next_visibility(self) -> None:
+        """Whether the green step primary is on screen. One place, because two
+        different things decide it.
+
+        Steps 0 and 1 carry it (Shapes ends on Export instead), and a
+        zero-detection run has nothing to advance to on any step.
+
+        On top of that it is HIDDEN while a fix session runs. Save is the only
+        way out of an edit, so it has to be the loudest button on screen; a
+        green Next beside it invited the user to leave the polygon mid-edit,
+        and it read as the primary because it is bigger and further down. The
+        Correct page announces the session through set_correct_session_active,
+        which calls back here.
+        """
+        try:
+            step = int(getattr(self, "_auto_review_step", 0))
+            visible = step in (0, 1)
+            visible = visible and not bool(getattr(self, "_auto_zero_entry", False))
+            visible = visible and not bool(
+                getattr(self, "_auto_correct_session_active", False))
+            self.auto_step_next_btn.setVisible(visible)
         except (RuntimeError, AttributeError):
             pass
 
@@ -642,7 +646,7 @@ class DockAutoReviewPanelMixin:
                 btn.setStyleSheet(_BTN_LINK_CONFIRM)
             else:
                 btn.setText("↻  " + tr("Re-run the whole zone"))
-                btn.setStyleSheet(_BTN_LINK_MUTED)
+                btn.setStyleSheet(_BTN_LINK_STRONG)
         except (RuntimeError, AttributeError):
             pass
 

@@ -10,6 +10,8 @@ from qgis.core import QgsLayerTree, QgsProject, QgsRasterLayer
 from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import QComboBox, QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
+from ..core.qt_compat import safe_disconnect
+
 
 class _IndentDelegate(QStyledItemDelegate):
     """Delegate that shifts icon+text to the right based on a depth role."""
@@ -128,22 +130,28 @@ class LayerTreeComboBox(QComboBox):
             self._refresh()
 
     def cleanup(self):
-        """Disconnect project signals."""
-        try:
-            proj = QgsProject.instance()
-            proj.layersAdded.disconnect(self._schedule_refresh)
-            proj.layersRemoved.disconnect(self._schedule_refresh)
-            root = proj.layerTreeRoot()
-            root.visibilityChanged.disconnect(self._schedule_refresh)
-            root.addedChildren.disconnect(self._schedule_refresh)
-            root.removedChildren.disconnect(self._schedule_refresh)
-            root.nameChanged.disconnect(self._schedule_refresh)
-        except (TypeError, RuntimeError):
-            pass
-        try:
-            self.currentIndexChanged.disconnect(self._on_index_changed)
-        except (TypeError, RuntimeError):
-            pass
+        """Disconnect the project signals this combo hooked in __init__.
+
+        One guard per signal, never one around the batch. All six used to share
+        a single try block, so the first failure skipped every disconnect after
+        it: one slot that was never connected (a second cleanup() call, or a
+        project reload that swapped the layer tree root out from under us) left
+        the four root signals wired to _schedule_refresh. Nothing else cleans
+        this widget up, so those connections then fired the refresh timer into
+        a destroyed combo box every time the user touched the Layers panel.
+        """
+        proj = QgsProject.instance()
+        safe_disconnect(proj, "layersAdded", self._schedule_refresh)
+        safe_disconnect(proj, "layersRemoved", self._schedule_refresh)
+        # Re-read the root here: the connect side took it from the same call,
+        # and fetching it inside the old try block meant a raise above skipped
+        # the lookup entirely.
+        root = proj.layerTreeRoot()
+        for signal_name in (
+            "visibilityChanged", "addedChildren", "removedChildren", "nameChanged"
+        ):
+            safe_disconnect(root, signal_name, self._schedule_refresh)
+        safe_disconnect(self, "currentIndexChanged", self._on_index_changed)
         try:
             self._refresh_timer.stop()
         except RuntimeError:

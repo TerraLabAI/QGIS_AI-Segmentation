@@ -3339,8 +3339,8 @@ Tente abri-lo no QGIS para confirmar que ele é exibido, ou converta-o para GeoT
         <translation>Mudar para a IA para remodelar este polígono sozinha.</translation>
     </message>
     <message>
-        <source>That area does not touch the object you are editing, so nothing was added. Refining works on one object at a time.</source>
-        <translation>Essa área não toca o objeto que você está editando, então nada foi adicionado. Refinar funciona um objeto por vez.</translation>
+        <source>That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.</source>
+        <translation>Essa área não toca o objeto que você está editando, então nada foi adicionado. Remodelar funciona um objeto por vez.</translation>
     </message>
     <message>
         <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
@@ -3473,6 +3473,390 @@ Tente abri-lo no QGIS para confirmar que ele é exibido, ou converta-o para GeoT
     <message>
         <source>{tiles} tiles</source>
         <translation>{tiles} tiles</translation>
+    </message>
+    <!-- Correct step rework, install and precision wording (2026-07-30) -->
+    <message>
+        <source>1 credit ~ 0.17 km² at default precision.</source>
+        <translation>1 crédito ~ 0.17 km² na precisão padrão.</translation>
+    </message>
+    <message>
+        <source>10,000 credits a month.</source>
+        <translation>10.000 créditos por mês.</translation>
+    </message>
+    <message>
+        <source>A free run covers up to {cap} credits. This one costs more.</source>
+        <translation>Uma execução gratuita cobre até {cap} créditos. Esta custa mais.</translation>
+    </message>
+    <message>
+        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then arms Add for you.</source>
+        <translation>Adicionar um objeto usa a IA local gratuita, que ainda não está instalada. Instalar agora? Ela roda uma vez e leva alguns minutos. A revisão espera por ela, depois ativa o Adicionar para você.</translation>
+    </message>
+    <message>
+        <source>At this precision {obj} is too small to spot - raise the precision.</source>
+        <translation>Nesta precisão, {obj} é pequeno demais para ser percebido - aumente a precisão.</translation>
+    </message>
+    <message>
+        <source>Automatic mode is ready. The on-device AI could not be installed, so Manual mode and the AI fix are off until it is. Everything else works.</source>
+        <translation>O modo Automático está pronto. A IA local não pôde ser instalada, então o modo Manual e a correção por IA ficam desativados até que ela seja instalada. Tudo o mais funciona.</translation>
+    </message>
+    <message>
+        <source>Automatic mode needs the AI environment, and it is missing or incomplete. Install the dependencies from the plugin panel, then run Detect again.</source>
+        <translation>O modo Automático precisa do ambiente de IA, que está ausente ou incompleto. Instale as dependências pelo painel do plugin e execute Detectar novamente.</translation>
+    </message>
+    <message>
+        <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More precision splits the zone into more tiles, which costs more credits.</source>
+        <translation>O modo Automático analisa sua zona tile por tile. 1 tile = 1 crédito, então esta detecção custa cerca de {n} créditos. Mais precisão divide a zona em mais tiles, o que custa mais créditos.</translation>
+    </message>
+    <message>
+        <source>Cancel setup</source>
+        <translation>Cancelar a instalação</translation>
+    </message>
+    <message>
+        <source>Clean up this outline</source>
+        <translation>Limpar este contorno</translation>
+    </message>
+    <message>
+        <source>Click an object and the AI outlines it. You check and save each polygon yourself, one at a time. Use Automatic mode to get every object in a zone at once.</source>
+        <translation>Clique em um objeto e a IA o contorna. Você revisa e salva cada polígono, um de cada vez. Use o modo Automático para obter todos os objetos de uma zona de uma vez.</translation>
+    </message>
+    <message>
+        <source>Click points around one look-alike, then double-click to close.</source>
+        <translation>Clique em pontos ao redor de um semelhante, depois clique duas vezes para fechar.</translation>
+    </message>
+    <message>
+        <source>Click points around one object, then double-click to close.</source>
+        <translation>Clique em pontos ao redor de um objeto, depois clique duas vezes para fechar.</translation>
+    </message>
+    <message>
+        <source>Click the layer name to see it on the map</source>
+        <translation>Clique no nome da camada para vê-la no mapa</translation>
+    </message>
+    <message>
+        <source>Click to open your dashboard</source>
+        <translation>Clique para abrir seu painel</translation>
+    </message>
+    <message>
+        <source>Connection is slow - still working, tiles already found are kept...</source>
+        <translation>Conexão lenta - ainda funcionando, os tiles já encontrados são mantidos...</translation>
+    </message>
+    <message>
+        <source>Could not save your detections to a file.</source>
+        <translation>Não foi possível salvar suas detecções em um arquivo.</translation>
+    </message>
+    <message>
+        <source>Downloads Blocked by Your Network</source>
+        <translation>Downloads bloqueados pela sua rede</translation>
+    </message>
+    <message>
+        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to segment areas of any size.</source>
+        <translation>Desenhe uma zona menor, ou &lt;a href=&quot;{url}&quot;&gt;Fazer upgrade para Pro&lt;/a&gt; para segmentar áreas de qualquer tamanho.</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Manual mode to work one object at a time.</source>
+        <translation>Desenhe uma zona, nomeie um tipo de objeto, e obtenha todos eles em uma execução. Use o modo Manual para trabalhar um objeto de cada vez.</translation>
+    </message>
+    <message>
+        <source>Draw another example</source>
+        <translation>Desenhe outro exemplo</translation>
+    </message>
+    <message>
+        <source>Drawing (click to stop)</source>
+        <translation>Desenhando (clique para parar)</translation>
+    </message>
+    <message>
+        <source>Errors, versions and the words you type, linked to your account. Never your imagery, layers or coordinates.</source>
+        <translation>Erros, versões e as palavras que você digita, vinculados à sua conta. Nunca sua imagem, camadas ou coordenadas.</translation>
+    </message>
+    <message>
+        <source>Fixing a polygon uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then opens this polygon for you.</source>
+        <translation>Corrigir um polígono usa a IA local gratuita, que ainda não está instalada. Instalar agora? Ela roda uma vez e leva alguns minutos. A revisão espera por ela, depois abre este polígono para você.</translation>
+    </message>
+    <message>
+        <source>Fixing needs a one-time setup</source>
+        <translation>Corrigir exige uma instalação única</translation>
+    </message>
+    <message>
+        <source>Helps us fix bugs faster.</source>
+        <translation>Ajuda a corrigir bugs mais rápido.</translation>
+    </message>
+    <message>
+        <source>Higher precision splits the zone into more tiles. Each tile costs 1 credit and captures smaller objects.</source>
+        <translation>Mais precisão divide a zona em mais tiles. Cada tile custa 1 crédito e captura objetos menores.</translation>
+    </message>
+    <message>
+        <source>Keep detecting without limits:</source>
+        <translation>Continue detectando sem limites:</translation>
+    </message>
+    <message>
+        <source>Keep installing</source>
+        <translation>Continuar instalando</translation>
+    </message>
+    <message>
+        <source>Keep this shape. The polygon stays picked, so you can still adjust, merge or delete it.</source>
+        <translation>Manter esta forma. O polígono permanece selecionado, então você ainda pode ajustá-lo, mesclá-lo ou excluí-lo.</translation>
+    </message>
+    <message>
+        <source>Last run: {n} {object}</source>
+        <translation>Última execução: {n} {object}</translation>
+    </message>
+    <message>
+        <source>Last run: {n} {object} in {layer}</source>
+        <translation>Última execução: {n} {object} em {layer}</translation>
+    </message>
+    <message>
+        <source>Loading the imagery...</source>
+        <translation>Carregando a imagem...</translation>
+    </message>
+    <message>
+        <source>Loading the imagery... {n}s</source>
+        <translation>Carregando a imagem... {n}s</translation>
+    </message>
+    <message>
+        <source>Max precision for this zone - draw a larger zone to go finer.</source>
+        <translation>Precisão máxima para esta zona - desenhe uma zona maior para mais precisão.</translation>
+    </message>
+    <message>
+        <source>More precision cuts the zone into more tiles and costs more credits.</source>
+        <translation>Mais precisão divide a zona em mais tiles e custa mais créditos.</translation>
+    </message>
+    <message>
+        <source>More precision finds smaller objects.</source>
+        <translation>Mais precisão encontra objetos menores.</translation>
+    </message>
+    <message>
+        <source>More precision keeps helping {obj} in this zone.</source>
+        <translation>Mais precisão continua ajudando {obj} nesta zona.</translation>
+    </message>
+    <message>
+        <source>Name the object (or draw an example) first - Precision then tunes itself to it.</source>
+        <translation>Nomeie o objeto primeiro (ou desenhe um exemplo) - a Precisão se ajusta automaticamente depois.</translation>
+    </message>
+    <message>
+        <source>Next: clean up the outlines</source>
+        <translation>A seguir: limpar os contornos</translation>
+    </message>
+    <message>
+        <source>Next: fix what looks wrong</source>
+        <translation>A seguir: corrigir o que parece errado</translation>
+    </message>
+    <message>
+        <source>No detection in this zone. Try a more specific object word, or more precision.</source>
+        <translation>Nenhuma detecção nesta zona. Tente uma palavra mais específica, ou mais precisão.</translation>
+    </message>
+    <message>
+        <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
+        <translation>Nenhuma imagem sobre esta zona nesta precisão, então nada foi analisado (sem cobrança). Reduza a Precisão, ou escolha uma camada que cubra esta área.</translation>
+    </message>
+    <message>
+        <source>Not enough credits: {n} tiles, only {left} left. Lower the precision or the zone.</source>
+        <translation>Créditos insuficientes: {n} tiles, restam apenas {left}. Reduza a precisão ou a zona.</translation>
+    </message>
+    <message>
+        <source>Opens your terra-lab.ai dashboard: your plan, your credits and your payment details.</source>
+        <translation>Abre seu painel terra-lab.ai: seu plano, seus créditos e os detalhes de pagamento.</translation>
+    </message>
+    <message>
+        <source>Outline settings</source>
+        <translation>Configurações do contorno</translation>
+    </message>
+    <message>
+        <source>Precision</source>
+        <translation>Precisão</translation>
+    </message>
+    <message>
+        <source>Ready for Automatic mode</source>
+        <translation>Pronto para o modo Automático</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Acabando: {n} detecções gratuitas restantes, de volta em {date}. &lt;a href=&quot;{url}&quot;&gt;Fazer upgrade para Pro&lt;/a&gt; para continuar.</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Acabando: {n} detecções gratuitas restantes. &lt;a href=&quot;{url}&quot;&gt;Fazer upgrade para Pro&lt;/a&gt; para continuar.</translation>
+    </message>
+    <message>
+        <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
+        <translation>Mesma configuração da sua última execução, o resultado será igual. Adicione um exemplo ou mude a precisão para um resultado diferente.</translation>
+    </message>
+    <message>
+        <source>Saved to {layer}</source>
+        <translation>Salvo em {layer}</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI. This runs once and takes a few minutes. The review waits here until it is done.</source>
+        <translation>Instalando a IA local. Isso roda uma vez e leva alguns minutos. A revisão espera aqui até terminar.</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI...</source>
+        <translation>Instalando a IA local...</translation>
+    </message>
+    <message>
+        <source>Shadows getting detected instead of trees? Use 'Exclude a look-alike' on one shadow - the AI drops similar false positives.</source>
+        <translation>Sombras sendo detectadas em vez de árvores? Use 'Excluir um semelhante' em uma sombra - a IA descarta os falsos positivos semelhantes.</translation>
+    </message>
+    <message>
+        <source>Share of each outline's points to keep. 100% is the class default.
+Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
+        <translation>Que parte dos pontos de cada contorno manter. 100% é o padrão da classe.
+Menos afina primeiro o menor detalhe, mantém os cantos, e dá a Ângulos retos paredes retas para esquadrar.</translation>
+    </message>
+    <message>
+        <source>Share of the outline's points to keep. 100% is the standard density.
+Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
+        <translation>Que parte dos pontos do contorno manter. 100% é a densidade padrão.
+Menos afina primeiro o menor detalhe, mantém os cantos, e dá a Ângulos retos paredes retas para esquadrar.</translation>
+    </message>
+    <message>
+        <source>Share usage statistics with TerraLab</source>
+        <translation>Compartilhar estatísticas de uso com a TerraLab</translation>
+    </message>
+    <message>
+        <source>Simplify this outline first</source>
+        <translation>Simplificar este contorno primeiro</translation>
+    </message>
+    <message>
+        <source>Stop the setup</source>
+        <translation>Parar a instalação</translation>
+    </message>
+    <message>
+        <source>Stop the setup and go back to the review. The AI fix stays unavailable until you install it.</source>
+        <translation>Parar a instalação e voltar para a revisão. A correção por IA fica indisponível até você instalá-la.</translation>
+    </message>
+    <message>
+        <source>Stop the setup?</source>
+        <translation>Parar a instalação?</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding before any tile came back. Check your connection, then run Detect again (nothing was charged).</source>
+        <translation>A detecção parou de responder antes que qualquer tile voltasse. Verifique sua conexão e execute Detectar novamente (nada foi cobrado).</translation>
+    </message>
+    <message>
+        <source>The file may be open in QGIS or in another program. Close it and try Finish again.</source>
+        <translation>O arquivo pode estar aberto no QGIS ou em outro programa. Feche-o e tente Concluir novamente.</translation>
+    </message>
+    <message>
+        <source>The imagery is loading slowly... {n}s</source>
+        <translation>A imagem está carregando lentamente... {n}s</translation>
+    </message>
+    <message>
+        <source>The on-device AI could not start, so the AI fix is off. Your detections are safe: switch the fix method to Manual to keep correcting, or save them as they are.</source>
+        <translation>A IA local não pôde iniciar, então a correção por IA está desativada. Suas detecções estão seguras: mude o método de correção para Manual para continuar corrigindo, ou salve-as como estão.</translation>
+    </message>
+    <message>
+        <source>The on-device AI is unavailable, so the AI fix is off. Switch the fix method to Manual to keep correcting.</source>
+        <translation>A IA local está indisponível, então a correção por IA está desativada. Mude o método de correção para Manual para continuar corrigindo.</translation>
+    </message>
+    <message>
+        <source>The on-device AI will not be installed, so fixing a polygon with it stays unavailable. What is already downloaded is kept, so starting again resumes from there.</source>
+        <translation>A IA local não será instalada, então corrigir um polígono com ela continua indisponível. O que já foi baixado é mantido, então começar de novo retoma de onde parou.</translation>
+    </message>
+    <message>
+        <source>The package index refused the download (error 403).
+
+This is usually a company or campus network filtering downloads. Ask your IT administrator to allow pypi.org and files.pythonhosted.org, or run the install from another network.
+
+Automatic (cloud) mode does not need this download.</source>
+        <translation>O índice de pacotes recusou o download (erro 403).
+
+Isso costuma ser uma rede corporativa ou de campus filtrando downloads. Peça ao administrador de TI para liberar pypi.org e files.pythonhosted.org, ou execute a instalação em outra rede.
+
+O modo Automático (nuvem) não precisa deste download.</translation>
+    </message>
+    <message>
+        <source>The raster file could not be found:
+{path}
+
+It may have been moved or renamed, or the drive or network share it is on may be disconnected. Reload the layer from where the file is now, then start again.</source>
+        <translation>O arquivo raster não pôde ser encontrado:
+{path}
+
+Ele pode ter sido movido ou renomeado, ou a unidade ou o compartilhamento de rede onde ele está pode estar desconectado. Recarregue a camada de onde o arquivo está agora, depois comece de novo.</translation>
+    </message>
+    <message>
+        <source>Thin this outline before you drag its corners, without moving the dials that drive the whole layer.</source>
+        <translation>Afine este contorno antes de arrastar os cantos, sem mexer nos controles que regem a camada inteira.</translation>
+    </message>
+    <message>
+        <source>This area is large for this precision. Raise the precision or zoom in for sharper detections.</source>
+        <translation>Esta área é grande para esta precisão. Aumente a precisão ou aproxime o zoom para detecções mais nítidas.</translation>
+    </message>
+    <message>
+        <source>This example is very small at this precision. Raise the precision or draw a larger object.</source>
+        <translation>Este exemplo é muito pequeno nesta precisão. Aumente a precisão ou desenhe um objeto maior.</translation>
+    </message>
+    <message>
+        <source>This example is very small even at full precision. Draw a larger object, or it may be too small to detect.</source>
+        <translation>Este exemplo é muito pequeno mesmo na precisão máxima. Desenhe um objeto maior, ou ele pode ser pequeno demais para detectar.</translation>
+    </message>
+    <message>
+        <source>This layer has no image over your zone at this precision. The map source answered with an empty tile, so there is nothing to detect on. Lower Precision, zoom the layer out until the imagery shows, or pick a layer that covers this area.</source>
+        <translation>Esta camada não tem imagem sobre a sua zona nesta precisão. A fonte do mapa respondeu com um tile vazio, então não há nada para detectar. Reduza a Precisão, afaste o zoom da camada até a imagem aparecer, ou escolha uma camada que cubra esta área.</translation>
+    </message>
+    <message>
+        <source>This polygon only. Every other one follows the Shapes step.</source>
+        <translation>Apenas este polígono. Todos os outros seguem a etapa Formas.</translation>
+    </message>
+    <message>
+        <source>This polygon only. Fewer points means fewer corners to drag.</source>
+        <translation>Apenas este polígono. Menos pontos significa menos cantos para arrastar.</translation>
+    </message>
+    <message>
+        <source>This run costs more credits than a free run covers.</source>
+        <translation>Esta execução custa mais créditos do que uma execução gratuita cobre.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs a subscription. Lower the precision or the zone to stay free.</source>
+        <translation>Esta zona nesta precisão exige uma assinatura. Reduza a precisão ou a zona para continuar grátis.</translation>
+    </message>
+    <message>
+        <source>This zone is too large for sharp detections, even at full precision. Draw a smaller zone for the best results.</source>
+        <translation>Esta zona é grande demais para detecções nítidas, mesmo na precisão máxima. Desenhe uma zona menor para obter os melhores resultados.</translation>
+    </message>
+    <message>
+        <source>Tiles your layer has no image for are dropped before they are sent, so a run can cost less than this, never more.</source>
+        <translation>Os tiles sem imagem na sua camada são descartados antes de serem enviados, então uma execução pode custar menos do que isto, nunca mais.</translation>
+    </message>
+    <message>
+        <source>Type a word for the object, or draw an example.</source>
+        <translation>Digite uma palavra para o objeto, ou desenhe um exemplo.</translation>
+    </message>
+    <message>
+        <source>Upgrade to Pro to finish this zone: 10,000 credits/month.</source>
+        <translation>Fazer upgrade para Pro para terminar esta zona: 10.000 créditos/mês.</translation>
+    </message>
+    <message>
+        <source>Wait for the on-device AI to finish installing.</source>
+        <translation>Aguarde a IA local terminar de instalar.</translation>
+    </message>
+    <message>
+        <source>{count} polygon(s) exported</source>
+        <translation>{count} polígono(s) exportado(s)</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved</source>
+        <translation>{n} {object} salvo(s)</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved to {layer}</source>
+        <translation>{n} {object} salvo(s) em {layer}</translation>
+    </message>
+    <message>
+        <source>{used} credits</source>
+        <translation>{used} créditos</translation>
+    </message>
+    <!-- Correct-step on-device AI setup, free-run cap wording, missing raster (2026-07-30) -->
+    <message>
+        <source>or lower the detail to stay free.</source>
+        <translation>ou reduza o detalhe para continuar gratuito.</translation>
+    </message>
+    <message>
+        <source>This zone at this detail needs a subscription.</source>
+        <translation>Esta zona neste detalhe exige uma assinatura.</translation>
+    </message>
+    <message>
+        <source>Subscribe</source>
+        <translation>Assinar</translation>
     </message>
 </context>
 </TS>

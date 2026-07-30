@@ -260,7 +260,11 @@ def _table_exists(gpkg_path: str, table: str, tables: set[str] | None) -> bool:
 
 def snake_table_name(prompt: str, gpkg_path: str) -> str:
     """GeoPackage table name for a run: "buildings_20260703", deduped "_2"."""
-    base = re.sub(r"[^a-z0-9]+", "_", (prompt or "").strip().lower()).strip("_")
+    # \w, not [a-z0-9]: an ASCII-only class erases a non-Latin prompt entirely,
+    # so every such run would collapse to the fallback name and the user could
+    # not tell two runs apart in the file. The fallback stem below already uses
+    # \w for the same reason.
+    base = re.sub(r"[^\w]+", "_", (prompt or "").strip().lower()).strip("_")
     base = base[:40].strip("_") or "segmentation"
     date_str = QDate.currentDate().toString("yyyyMMdd")
     tables = _existing_tables(gpkg_path)
@@ -304,18 +308,41 @@ def _source_layer_dir(source_layer) -> str:
     return ""
 
 
-def _output_directory(source_layer) -> str:
-    """Writable output directory: project folder, raster folder, then home."""
+def output_directory_candidates(source_layer) -> list[str]:
+    """Every writable output directory, best first: project, raster, home.
+
+    A list and not a single answer, because "a file can be created here" is not
+    the same question as "a GeoPackage can be written here". A folder on a
+    network share, a WSL mount or a synced drive accepts the probe file and
+    then refuses the SQLite lock the writer needs, which only shows up as
+    "database is locked" once the write runs. The fallback in write_run_table
+    walks this list, so a run that cannot be written next to the project still
+    lands in the home folder instead of failing twice in the same place.
+    """
     project = QgsProject.instance()
-    candidates = [
+    home = str(Path.home())
+    ordered = [
         project.homePath() or project.absolutePath(),
         _source_layer_dir(source_layer),
-        str(Path.home()),
+        home,
     ]
-    for candidate in candidates:
-        if candidate and os.path.isdir(candidate) and _probe_writable(candidate):
-            return candidate
-    return str(Path.home())
+    seen: set[str] = set()
+    writable: list[str] = []
+    for candidate in ordered:
+        if not candidate or not os.path.isdir(candidate):
+            continue
+        key = os.path.normcase(os.path.abspath(candidate))
+        if key in seen:
+            continue
+        seen.add(key)
+        if _probe_writable(candidate):
+            writable.append(candidate)
+    return writable or [home]
+
+
+def _output_directory(source_layer) -> str:
+    """Writable output directory: project folder, raster folder, then home."""
+    return output_directory_candidates(source_layer)[0]
 
 
 def project_gpkg_path(source_layer) -> str:
@@ -408,18 +435,26 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
     stem = re.sub(r"[^\w\- ]", "", fallback_stem or "").strip().replace(" ", "_")
     stem = stem[:40] or "detection"
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    fallback_path = os.path.join(
-        _output_directory(source_layer), f"{stem}_{timestamp}.gpkg"
-    )
-    fallback_error = _write_gpkg(
-        memory_layer, fallback_path, table, overwrite_file=True, transform=transform)
-    if not fallback_error:
-        layer = _load_table(fallback_path, table, friendly)
-        if layer is not None:
-            return WriteResult(fallback_path, table, layer, True, error_message)
-        fallback_error = "saved file could not be reloaded"
+    # Walk the directories rather than only renaming the file. When the shared
+    # write failed on the folder itself (a locked SQLite on a share or a WSL
+    # mount), a new name in that same folder fails for the same reason, and the
+    # run is lost with a writable home folder one step away.
+    fallback_error = "no writable output directory"
+    for directory in output_directory_candidates(source_layer):
+        fallback_path = os.path.join(directory, f"{stem}_{timestamp}.gpkg")
+        fallback_error = _write_gpkg(
+            memory_layer, fallback_path, table, overwrite_file=True, transform=transform)
+        if not fallback_error:
+            layer = _load_table(fallback_path, table, friendly)
+            if layer is not None:
+                return WriteResult(fallback_path, table, layer, True, error_message)
+            fallback_error = "saved file could not be reloaded"
+        QgsMessageLog.logMessage(
+            f"Fallback export failed in this folder ({fallback_error}), trying the next one",
+            _LOG_TAG, level=Qgis.MessageLevel.Warning,
+        )
     QgsMessageLog.logMessage(
-        f"Fallback export failed too: {fallback_error}",
+        f"Fallback export failed everywhere: {fallback_error}",
         _LOG_TAG, level=Qgis.MessageLevel.Critical,
     )
     return None
@@ -493,6 +528,86 @@ def add_committed_layer(layer, source_name: str | None = None) -> None:
         group.setExpanded(True)
     top.setItemVisibilityChecked(True)
     top.setExpanded(True)
+    # A committed run holds thousands of dense outlines, and the layer has just
+    # landed on the canvas. Do this LAST, so a layer the registry refused never
+    # gets it, and so it is on before the first frame is drawn.
+    apply_fast_canvas_render(layer)
+
+
+#: Vertex-drop tolerance for render-time simplification, in SCREEN PIXELS. It
+#: bounds how far a drawn outline may sit from the true one at any zoom, and it
+#: never reaches stored geometry. Above 1.0 QGIS also takes its
+#: antialiasing shortcut for the parts that come out sub-pixel.
+RENDER_SIMPLIFY_PX = 1.5
+
+
+def render_simplify_px() -> float:
+    """The render-time simplify tolerance in screen pixels, server-tunable.
+
+    Bounded on both sides: at or below 1.0 QGIS drops the antialiasing shortcut
+    along with it, and a large value buys nothing back while drawing outlines
+    the user can see are wrong. Cache-only and never raises, so it is safe on
+    the layer-add path and offline.
+    """
+    try:
+        from .server_dials import dial_in_range
+
+        return float(dial_in_range(
+            "ui.render_simplify_px", RENDER_SIMPLIFY_PX, 1.0, 5.0))
+    except Exception:  # noqa: BLE001 -- the tolerance is best-effort  # nosec B110
+        return RENDER_SIMPLIFY_PX
+
+
+def apply_fast_canvas_render(layer) -> None:
+    """Make a dense result layer cheap to pan and zoom. DISPLAY ONLY: not one
+    stored coordinate changes, so an exported file is byte for byte what it
+    would have been without this call.
+
+    Two levers, and both have to be set together or QGIS silently ignores the
+    simplification:
+
+    - Render-time geometry simplification. QGIS drops sub-pixel vertices as it
+      draws, so a zoomed-out canvas paints a fraction of the points a segmented
+      outline carries. Full detail is back as soon as you zoom in.
+      ``setForceLocalOptimization(True)`` is load-bearing, not a nicety: left
+      False, a provider that cannot simplify server-side (memory, OGR, which is
+      every layer this plugin makes) simplifies nowhere at all.
+    - A provider spatial index, so a pan or a zoom fetches the features in view
+      instead of scanning the whole set.
+
+    Two things this deliberately does NOT do. It does not raise the tolerance
+    with the object count: past about one screen pixel the extra tolerance stops
+    buying frame time and starts showing, because what is left to draw is the
+    outline itself. And it cannot help while the layer sits in a QGIS edit
+    session: QGIS skips simplification whenever a layer has an edit buffer, so
+    the Correct step pays full detail for whatever is in view.
+
+    Best-effort and version-defensive; never raises into the caller.
+    """
+    try:
+        from qgis.core import QgsVectorSimplifyMethod
+
+        from .qt_compat import (
+            SimplifyDistanceAlgorithm,
+            SimplifyFullHint,
+            SimplifyGeometryHint,
+        )
+
+        method = QgsVectorSimplifyMethod()
+        hint = SimplifyFullHint if SimplifyFullHint is not None else SimplifyGeometryHint
+        if hint is not None:
+            method.setSimplifyHints(hint)
+        if SimplifyDistanceAlgorithm is not None:
+            method.setSimplifyAlgorithm(SimplifyDistanceAlgorithm)
+        method.setThreshold(render_simplify_px())
+        method.setForceLocalOptimization(True)
+        layer.setSimplifyMethod(method)
+    except Exception:  # noqa: BLE001 - display nicety, never break a run on it  # nosec B110
+        pass
+    try:
+        layer.dataProvider().createSpatialIndex()
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
 
 
 def mark_temp_layer(layer) -> None:

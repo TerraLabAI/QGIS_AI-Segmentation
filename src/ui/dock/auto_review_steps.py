@@ -43,6 +43,7 @@ from ...core.review_defaults import (
     AUTO_REVIEW_SMOOTH_DEFAULT as _AUTO_REVIEW_SMOOTH_DEFAULT,
 )
 from .auto_correct_build import _review_step_heading
+from .font_scale import scale_px_length
 from .styles import _settings_zone
 
 
@@ -89,12 +90,12 @@ def build_shapes_page(dock) -> QWidget:
     _points_hdr = QHBoxLayout()
     _points_lbl = QLabel(tr("Points"))
     _points_lbl.setStyleSheet("font-size: 11px;")
+    # Two lines, split on the newline: one long line stretched the tooltip
+    # across the whole screen and nobody read to the end of it.
     _points_lbl.setToolTip(tr(
-        "How many of each outline's points to keep, as a share. 100% keeps the "
-        "class default; lower thins further, dropping the smallest detail "
-        "first and keeping the corners and the surface. With Right angles on "
-        "it runs first, so lowering it gives the squaring straight walls to "
-        "work from."))
+        "Share of each outline's points to keep. 100% is the class default.\n"
+        "Lower thins the smallest detail first, keeps the corners, and gives "
+        "Right angles straight walls to square."))
     _points_hdr.addWidget(_points_lbl)
     _points_hdr.addStretch()
     dock.auto_points_spin = QSpinBox()
@@ -106,7 +107,7 @@ def build_shapes_page(dock) -> QWidget:
     dock.auto_points_spin.setValue(_AUTO_REVIEW_POINTS_PCT_DEFAULT)
     dock.auto_points_spin.setSuffix(" %")
     dock.auto_points_spin.setMinimumWidth(62)
-    dock.auto_points_spin.setMaximumWidth(78)
+    dock.auto_points_spin.setMaximumWidth(scale_px_length(78))
     dock.auto_points_spin.setToolTip(_points_lbl.toolTip())
     _points_hdr.addWidget(dock.auto_points_spin)
 
@@ -131,7 +132,7 @@ def build_shapes_page(dock) -> QWidget:
     dock.auto_simplify_spin.setValue(_AUTO_REVIEW_SIMPLIFY_DEFAULT)
     dock.auto_simplify_spin.setSuffix(" px")
     dock.auto_simplify_spin.setMinimumWidth(62)
-    dock.auto_simplify_spin.setMaximumWidth(78)
+    dock.auto_simplify_spin.setMaximumWidth(scale_px_length(78))
     dock.auto_simplify_spin.setToolTip(_simplify_lbl.toolTip())
     _simplify_hdr.addWidget(dock.auto_simplify_spin)
 
@@ -155,7 +156,7 @@ def build_shapes_page(dock) -> QWidget:
     dock.auto_clean_spin.setValue(_AUTO_REVIEW_CLEAN_DEFAULT)
     dock.auto_clean_spin.setSuffix(" px")
     dock.auto_clean_spin.setMinimumWidth(62)
-    dock.auto_clean_spin.setMaximumWidth(78)
+    dock.auto_clean_spin.setMaximumWidth(scale_px_length(78))
     dock.auto_clean_spin.setToolTip(_clean_lbl.toolTip())
     _clean_hdr.addWidget(dock.auto_clean_spin)
 
@@ -187,6 +188,9 @@ def build_shapes_page(dock) -> QWidget:
     dock.auto_ortho_check = QCheckBox()
     dock.auto_ortho_check.setChecked(_AUTO_REVIEW_ORTHO_DEFAULT)
     dock.auto_ortho_check.setToolTip(_ortho_lbl.toolTip())
+    # Kept on the dock so the availability gate can grey the label with the box
+    # and put the reason on both (_sync_auto_right_angle_controls).
+    dock.auto_ortho_label = _ortho_lbl
     _ortho_row.addWidget(_ortho_lbl)
     _ortho_row.addStretch()
     _ortho_row.addWidget(dock.auto_ortho_check)
@@ -216,7 +220,7 @@ def build_shapes_page(dock) -> QWidget:
     dock.auto_expand_spin.setValue(_AUTO_REVIEW_EXPAND_DEFAULT)
     dock.auto_expand_spin.setSuffix(" px")
     dock.auto_expand_spin.setMinimumWidth(62)
-    dock.auto_expand_spin.setMaximumWidth(78)
+    dock.auto_expand_spin.setMaximumWidth(scale_px_length(78))
     _expand_row.addWidget(_expand_lbl)
     _expand_row.addStretch()
     _expand_row.addWidget(dock.auto_expand_spin)
@@ -257,7 +261,7 @@ def build_shapes_page(dock) -> QWidget:
     dock.auto_fill_max_spin.setSpecialValueText(tr("No limit"))
     dock.auto_fill_max_spin.setToolTip(_fill_max_lbl.toolTip())
     dock.auto_fill_max_spin.setMinimumWidth(78)
-    dock.auto_fill_max_spin.setMaximumWidth(110)
+    dock.auto_fill_max_spin.setMaximumWidth(scale_px_length(110))
     _fill_max_row.addWidget(_fill_max_lbl)
     _fill_max_row.addStretch()
     _fill_max_row.addWidget(dock.auto_fill_max_spin)

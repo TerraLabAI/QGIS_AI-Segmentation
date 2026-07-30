@@ -19,6 +19,20 @@ from qgis.PyQt.QtCore import (
 
 logger = logging.getLogger(__name__)
 
+# What start_tile_render_job allows a tile render when nothing is served.
+_TILE_RENDER_TIMEOUT_MS = 60_000
+
+
+def _resolve_render_timeout_ms() -> int:
+    """The served per-tile render deadline, or the shipped one. Cache-only, so
+    it never networks and is safe on any thread; falls back on any failure so a
+    missing configuration renders exactly as it does today."""
+    try:
+        from ..core.detection_policy import tile_render_timeout_ms
+        return tile_render_timeout_ms(_TILE_RENDER_TIMEOUT_MS)
+    except Exception:  # noqa: BLE001 - a bad dial must never block a render
+        return _TILE_RENDER_TIMEOUT_MS
+
 
 class TileRenderBridge(QObject):
     """Main-thread render bridge for the per-tile JIT path.
@@ -48,6 +62,22 @@ class TileRenderBridge(QObject):
         self._done: set[int] = set()
         self._seq = 0
         self._cancelled = False
+        # Resampling clone of a local raster, built once per run on the main
+        # thread and reused by every tile. Building one reopens the GDAL
+        # dataset on the thread that also paints, so it must not happen per
+        # tile. None until the first render, and it stays None for an online
+        # provider, which needs no clone.
+        self._render_clone = None
+        self._render_clone_built = False
+        # Resolved once from geo_transform["crs"], wrapped in a tuple so a
+        # resolved None is told apart from "not looked up yet".
+        self._run_crs_cache: tuple | None = None
+        # Deadline on one tile's render. Past it the tile has no imagery and is
+        # retried, then dropped uncharged, so on a slow link this decides how
+        # much of a zone comes back. Served, because the value that suits a
+        # 4G user is not the one that suits an office line, and a plugin
+        # release is days away. Resolved once per run (cache-only read).
+        self._render_timeout_ms = _resolve_render_timeout_ms()
         # The bridge's slot must run on the bridge's (main) thread even when the
         # signal is emitted from the worker thread: a queued connection marshals
         # the call onto the bridge's event loop. AutoConnection already does this
@@ -56,9 +86,42 @@ class TileRenderBridge(QObject):
         self._render_requested.connect(
             self._on_render_requested, _Qt.ConnectionType.QueuedConnection)
 
+    def _run_crs(self):
+        """The CRS the run's bbox is in, so the render targets the same one.
+
+        None only when the run named no CRS at all, and the render then uses the
+        layer's own, which is what it always did.
+
+        Raises when the run DID name a CRS that this install cannot build. That
+        is not a case to render through: every tile extent is in that CRS, so
+        rendering in the layer's instead would send the model a picture of
+        somewhere else and bill it. Failing the tile is the honest outcome.
+
+        Built once and kept: a QgsCoordinateReferenceSystem costs a database
+        lookup and this is asked once per tile."""
+        cached = self._run_crs_cache
+        if cached is not None:
+            return cached[0]
+        from qgis.core import QgsCoordinateReferenceSystem
+
+        authid = ""
+        try:
+            authid = self._geo_transform.get("crs") or ""
+        except (RuntimeError, AttributeError, TypeError):
+            authid = ""
+        crs = None
+        if authid:
+            candidate = QgsCoordinateReferenceSystem(authid)
+            if not candidate.isValid():
+                raise ValueError(
+                    "the run's CRS cannot be built on this install: " + str(authid))
+            crs = candidate
+        self._run_crs_cache = (crs,)
+        return crs
+
     def _tile_extent(self, tx: int, ty: int, tw: int, th: int):
-        """Build the tile's bbox_native as a QgsRectangle in the layer CRS,
-        from the global geo_transform. Identical math to
+        """Build the tile's bbox_native as a QgsRectangle in the run CRS, from
+        the global geo_transform. Identical math to
         AutoDetectionWorker._make_tile_transform (bbox_native), so the two never
         diverge."""
         from qgis.core import QgsRectangle
@@ -90,14 +153,42 @@ class TileRenderBridge(QObject):
         (out_w, out_h) is the OUTPUT pixel size; when it differs from (tw, th)
         the same ground extent renders at a finer scale (the saturated-tile
         re-split path). 0 means "same as the rect"."""
-        from ..core.cloud_detection import start_tile_render_job
+        from ..core.cloud_detection import (
+            _local_raster_render_clone,
+            start_tile_render_job,
+        )
+
+        if self._cancelled:
+            # request_render drops the mutex before it emits, so a request can
+            # still land here after the run was torn down. Building anything
+            # now would reopen the raster for a run that is over.
+            self._store_result(seq, None)
+            return
 
         started = False
         try:
             extent = self._tile_extent(tx, ty, tw, th)
+            if not self._render_clone_built:
+                # Main thread here, which is where a QgsRasterLayer must be
+                # built and later destroyed. Once per run, not once per tile.
+                try:
+                    self._render_clone = _local_raster_render_clone(self._layer)
+                    # Latch on SUCCESS only. Latching before the call would
+                    # turn one failed clone into a whole run rendered through
+                    # the raw layer, decimated nearest, which is the aliasing
+                    # the clone exists to avoid. Retrying is nearly free.
+                    self._render_clone_built = True
+                except Exception as exc:  # noqa: BLE001 - falls back to the layer
+                    self._render_clone = None
+                    logger.warning(
+                        "TileRenderBridge: render clone unavailable, this tile "
+                        "renders through the layer itself: %s", exc)
             started = start_tile_render_job(
                 self._layer, extent, out_w or tw, out_h or th,
                 lambda img, s=seq: self._store_result(s, img),
+                timeout_ms=self._render_timeout_ms,
+                render_clone=self._render_clone,
+                render_crs=self._run_crs(),
             )
         except Exception as exc:  # noqa: BLE001 - never break the handshake
             logger.warning("TileRenderBridge: render failed at (%d,%d): %s", tx, ty, exc)
@@ -129,6 +220,24 @@ class TileRenderBridge(QObject):
         finally:
             self._mutex.unlock()
 
+    def release_render_clone(self) -> None:
+        """Drop the cached render clone. MAIN THREAD ONLY.
+
+        Deliberately not done in cancel(), which runs on the worker thread: a
+        QgsRasterLayer has to be destroyed on the thread that built it, and
+        dropping the last reference from the worker would be a cross-thread
+        delete. Also releases the file handle the clone holds on the user's
+        raster, which Windows needs before that file can be moved or deleted.
+
+        The latch stays SET. Clearing it would re-arm the lazy build in
+        _on_render_requested, and a request already past request_render's
+        unlock can still arrive after this: the bridge would reopen the raster
+        for a finished run, and nothing would ever release it again because the
+        controller has already dropped its reference to this bridge.
+        """
+        self._render_clone = None
+        self._render_clone_built = True
+
     def request_render(self, tx: int, ty: int, tw: int, th: int,
                        out_w: int = 0, out_h: int = 0) -> int | None:
         """Called FROM THE WORKER THREAD. Post a render request WITHOUT
@@ -157,8 +266,9 @@ class TileRenderBridge(QObject):
         try:
             while seq not in self._done and not self._cancelled:
                 # Block until the main thread stores this render OR cancel()
-                # wakes us. The timeout is only a safety net (a render job
-                # itself times out at 60s); cancel() wakes immediately.
+                # wakes us. The wait is only a safety net and re-arms, so a
+                # render deadline longer than it still resolves here; cancel()
+                # wakes immediately.
                 self._cond.wait(self._mutex, 30000)
             img = self._results.pop(seq, None)
             self._done.discard(seq)

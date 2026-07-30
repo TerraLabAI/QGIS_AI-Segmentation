@@ -3,11 +3,25 @@
 Pure functions that classify pip/uv stderr/stdout output into actionable
 error categories. Reusable across any QGIS plugin that installs Python
 packages via pip or uv.
+
+Each keyword table below is the SHIPPED base of a server-extensible vocabulary
+(``install_config.classifier_markers``, one ``install.classifier.*`` key per
+classifier). The union is additive, so a deploy can teach the fleet a phrase a
+newer installer or a system language started printing, and can never drop a
+shipped phrase. Reading the configuration is cache-only and never raises, so an
+offline machine classifies exactly on what shipped.
+
+Two things stay out of that: the numeric OS-code tables, whose regexes carry
+word-boundary anchoring a served string list could not express, and the order
+the classifiers run in, which is written into the call sites and carries
+meaning of its own.
 """
 from __future__ import annotations
 
 import re
 import sys
+
+from .install_config import classifier_markers
 
 # ---------------------------------------------------------------------------
 # SSL / certificate errors
@@ -35,7 +49,7 @@ _SSL_ERROR_PATTERNS = [
 def is_ssl_error(stderr: str) -> bool:
     """Detect SSL/certificate errors in pip output."""
     stderr_lower = stderr.lower()
-    return any(pattern.lower() in stderr_lower for pattern in _SSL_ERROR_PATTERNS)
+    return any(p in stderr_lower for p in classifier_markers("ssl", _SSL_ERROR_PATTERNS))
 
 
 def is_hash_mismatch(output: str) -> bool:
@@ -185,7 +199,8 @@ def is_network_error(output: str) -> bool:
     # Exclude SSL errors - they have their own retry path
     if is_ssl_error(output):
         return False
-    return any(p in output_lower for p in _NETWORK_ERROR_PATTERNS)
+    return any(
+        p in output_lower for p in classifier_markers("network", _NETWORK_ERROR_PATTERNS))
 
 
 def is_proxy_auth_error(output: str) -> bool:
@@ -206,7 +221,34 @@ def is_proxy_auth_error(output: str) -> bool:
         "proxy authorization required",
         "tunnel error",
     ]
-    return any(p in output_lower for p in patterns)
+    return any(p in output_lower for p in classifier_markers("proxy_auth", patterns))
+
+
+# ---------------------------------------------------------------------------
+# Package index refusing the download outright (HTTP 403)
+# ---------------------------------------------------------------------------
+
+_INDEX_FORBIDDEN_PATTERNS = [
+    "403 forbidden",
+    "client error (403",
+    "403 client error",
+    "status client error (403",
+]
+
+
+def is_index_forbidden_error(output: str) -> bool:
+    """Detect a package index or mirror answering the download with HTTP 403.
+
+    Different from 407, where the proxy asks for credentials, and from a
+    transient network fault: the request reaches a host that is entitled to
+    answer and refuses. A filtering gateway or a locked-down internal mirror
+    does that. Retrying never clears it, so the advice has to be "get the
+    package index allowed", not "check your connection".
+    """
+    return any(
+        p in output.lower()
+        for p in classifier_markers("index_forbidden", _INDEX_FORBIDDEN_PATTERNS)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +284,7 @@ def is_disk_full(output: str) -> bool:
     lower = output.lower()
     if _DISK_FULL_CODE_RE.search(lower):
         return True
-    return any(p in lower for p in _DISK_FULL_PATTERNS)
+    return any(p in lower for p in classifier_markers("disk_full", _DISK_FULL_PATTERNS))
 
 
 def get_disk_full_help(cache_dir: str = "") -> str:
@@ -275,21 +317,20 @@ def is_glibc_too_old(output: str) -> bool:
     if re.search(r"glibc_2\.\d+'? not found", lower):
         return True
     has_manylinux = "manylinux" in lower
-    has_no_match = any(
-        phrase in lower
-        for phrase in (
-            # pip vocabulary
-            "no matching distribution",
-            "could not find a version",
-            "is not a supported wheel",
-            # uv (rustls) vocabulary: it names the platform tag instead
-            "no wheels",
-            "none of the wheels",
-            "matching platform tag",
-            "compatible with your platform",
-            "compatible with the current platform",
-        )
+    no_match_phrases = (
+        # pip vocabulary
+        "no matching distribution",
+        "could not find a version",
+        "is not a supported wheel",
+        # uv (rustls) vocabulary: it names the platform tag instead
+        "no wheels",
+        "none of the wheels",
+        "matching platform tag",
+        "compatible with your platform",
+        "compatible with the current platform",
     )
+    has_no_match = any(
+        phrase in lower for phrase in classifier_markers("glibc", no_match_phrases))
     if has_manylinux and has_no_match:
         return True
     return bool("requires a newer" in lower and "glibc" in lower)
@@ -445,7 +486,7 @@ def is_app_control_error(output: str) -> bool:
     centrally managed policy.
     """
     lower = output.lower()
-    return any(p in lower for p in _APP_CONTROL_PATTERNS)
+    return any(p in lower for p in classifier_markers("app_control", _APP_CONTROL_PATTERNS))
 
 
 def get_app_control_help(install_dir: str = "") -> str:
@@ -520,10 +561,10 @@ def is_antivirus_error(stderr: str) -> bool:
     if _BLOCKED_ERROR_CODE_RE.search(stderr_lower):
         return True
     patterns = [
-        *_ACCESS_DENIED_LOCALIZED,
+        *classifier_markers("access_denied", _ACCESS_DENIED_LOCALIZED),
         # Application-control policy blocks are a subset: is_app_control_error
         # narrows them down for the targeted IT allow-rule guidance.
-        *_APP_CONTROL_PATTERNS,
+        *classifier_markers("app_control", _APP_CONTROL_PATTERNS),
         # Windows text for ERROR_OPEN_FAILED; seen during install of fresh
         # wheels (e.g. tqdm) when Defender holds the file during real-time
         # scan. HRESULT 0x8007006E shows up as signed "os error -2147024786".
@@ -564,7 +605,7 @@ def is_file_locked_error(output: str) -> bool:
     has_binary_ext = any(ext in lower for ext in _BINARY_MODULE_EXTENSIONS)
     if not has_binary_ext:
         return False
-    if any(p in lower for p in _ACCESS_DENIED_LOCALIZED):
+    if any(p in lower for p in classifier_markers("access_denied", _ACCESS_DENIED_LOCALIZED)):
         return True
     # Anchored, for the same reason as _BLOCKED_ERROR_CODE_RE above: the bare
     # substring "os error 5" is a prefix of the whole 50-to-59 network block,
@@ -740,7 +781,8 @@ def is_broken_python_runtime(output: str) -> bool:
     Every later package build then fails with the same wall of text.
     """
     lower = output.lower()
-    return any(p in lower for p in _BROKEN_RUNTIME_PATTERNS)
+    return any(
+        p in lower for p in classifier_markers("broken_runtime", _BROKEN_RUNTIME_PATTERNS))
 
 
 def get_broken_python_runtime_help(cache_dir: str = "") -> str:
@@ -778,7 +820,7 @@ def is_corrupt_venv(output: str) -> bool:
     bundled pip is gone: cleanup tools, quarantine, or a kill mid-build.
     """
     lower = output.lower()
-    return any(p in lower for p in _CORRUPT_VENV_PATTERNS)
+    return any(p in lower for p in classifier_markers("corrupt_venv", _CORRUPT_VENV_PATTERNS))
 
 
 def get_corrupt_venv_help() -> str:
@@ -805,7 +847,9 @@ _DEPENDENCY_CONFLICT_PATTERNS = [
 def is_dependency_conflict(output: str) -> bool:
     """Detect a package-resolver conflict (no installable version set)."""
     lower = output.lower()
-    return any(p in lower for p in _DEPENDENCY_CONFLICT_PATTERNS)
+    return any(
+        p in lower
+        for p in classifier_markers("dependency_conflict", _DEPENDENCY_CONFLICT_PATTERNS))
 
 
 def get_dependency_conflict_help() -> str:

@@ -3,7 +3,9 @@ import base64
 import hashlib
 import json
 import os
+import queue
 import sys
+import threading
 from collections import OrderedDict
 
 # Plugin is CPU-only on NVIDIA; hide devices before torch imports (#31).
@@ -286,10 +288,68 @@ def decode_numpy_array(b64_string, shape, dtype):
 
 MAX_LINE_LENGTH = 50 * 1024 * 1024  # 50 MB max JSON line
 
+# One daemon thread owns stdin and every read goes through its queue, the init
+# request included, so no line can be lost between two readers. What that buys
+# is the question `_stdin_request_waiting` answers: is somebody already waiting
+# on this worker, asked without blocking on a read that may never come.
+#
+# The queue is bounded because the length limit above is a memory guard. The
+# parent keeps one request in flight, so a queue this short only fills when
+# something upstream misbehaves, and then the extra lines wait in the pipe
+# rather than in this process.
+STDIN_QUEUE_MAX = 4
+_stdin_lines = queue.Queue(maxsize=STDIN_QUEUE_MAX)
+_stdin_reader_started = False
+_stdin_at_eof = False
+
+
+def _pump_stdin_lines():
+    """Move stdin into the queue, line by line, until the input ends.
+
+    The empty string is the end marker, which is what a plain readline returns
+    at EOF, so the consumer sees the same thing either way. A read that fails
+    ends the input the same way rather than leaving the consumer waiting."""
+    while True:
+        try:
+            line = sys.stdin.readline()
+        except Exception:  # noqa: BLE001 - a broken pipe is the end of input
+            line = ""
+        _stdin_lines.put(line)
+        if not line:
+            return
+
+
+def _start_stdin_reader():
+    """Start the one stdin reader, before the model load, so a request sent
+    during that load is already in hand when it ends."""
+    global _stdin_reader_started
+    thread = threading.Thread(
+        target=_pump_stdin_lines, name="stdin-reader", daemon=True)
+    thread.start()
+    _stdin_reader_started = True
+    return thread
+
+
+def _stdin_request_waiting():
+    """Is a request already queued, i.e. is somebody waiting on this worker?"""
+    return not _stdin_lines.empty()
+
 
 def _safe_readline():
-    """Read a line from stdin with size limit to prevent memory exhaustion."""
-    line = sys.stdin.readline()
+    """Next line of stdin, taken from the reader thread.
+
+    Same contract as the plain readline it replaces: it blocks until a line
+    arrives, returns "" once the input has ended, and refuses a line over
+    MAX_LINE_LENGTH so one send cannot exhaust memory. With no reader running
+    it reads stdin itself, so a thread that never started costs the skip
+    decision, not the protocol."""
+    global _stdin_at_eof
+    if _stdin_at_eof:
+        return ""
+    line = _stdin_lines.get() if _stdin_reader_started else sys.stdin.readline()
+    if not line:
+        _stdin_at_eof = True
+        return ""
     if len(line) > MAX_LINE_LENGTH:
         raise ValueError(
             f"Input line exceeds maximum length ({MAX_LINE_LENGTH} bytes)")
@@ -298,6 +358,10 @@ def _safe_readline():
 
 def main():
     try:
+        # Read stdin from here on, so a request sent while the model loads lands
+        # in the queue instead of sitting unseen in the pipe.
+        _start_stdin_reader()
+
         init_request = json.loads(_safe_readline())
 
         if init_request.get("action") != "init":
@@ -339,13 +403,25 @@ def main():
         # spawn (warm_up returns as soon as init is sent), so the seconds spent
         # here are seconds nobody is waiting on. Announcing first would let a
         # real crop queue up behind the throwaway one.
-        import time as _time
-        _t_warm = _time.monotonic()
-        if warm_up_kernels(predictor, device):
+        #
+        # Unless somebody is already waiting. A request that arrived during the
+        # model load means a caller is blocked on this process right now, and a
+        # throwaway encode ahead of it would be added to that wait. Their own
+        # first encode pays for the kernel compilation instead: this warm-up
+        # moves that cost, it never removes it.
+        if _stdin_request_waiting():
             sys.stderr.write(
-                "[prediction_worker] warmed in "
-                f"{(_time.monotonic() - _t_warm) * 1000:.0f} ms\n")
+                "[prediction_worker] warm-up skipped: a request is already "
+                "waiting\n")
             sys.stderr.flush()
+        else:
+            import time as _time
+            _t_warm = _time.monotonic()
+            if warm_up_kernels(predictor, device):
+                sys.stderr.write(
+                    "[prediction_worker] warmed in "
+                    f"{(_time.monotonic() - _t_warm) * 1000:.0f} ms\n")
+                sys.stderr.flush()
 
         send_ready()
 

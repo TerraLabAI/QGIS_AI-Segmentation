@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ...core.i18n import tr
 from ...core.qt_compat import DistanceMeters
-from ...core.telemetry import slot_guard
+from ...core.telemetry_errors import slot_guard
 from .shared import (
     _WEBMERC_MUPP_Z0,
     _debounce_timer,
@@ -52,14 +52,11 @@ class AutoFlowMixin:
         self._reset_manual_flow_to_start()
         if mode == Mode.AUTOMATIC and self.dock_widget:
             self._refresh_auto_credits()
-            # A run autosave a previous session never exported: offer it back
-            # (no-op when nothing is pending or the offer already showed).
-            self._offer_pending_run_autosave()
         elif mode == Mode.INTERACTIVE and self.dock_widget:
             self._ensure_interactive_setup()
         try:
-            from ...core import telemetry
-            telemetry.track_mode_switched(
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_mode_switched(
                 to_mode=to_mode,
                 had_unsaved_manual=had_unsaved_manual,
                 auto_step=auto_step,
@@ -181,8 +178,8 @@ class AutoFlowMixin:
         free_left = usage.get("free_detections_remaining")
         if is_free and prev_free is not None and free_left is not None and free_left < prev_free:
             try:
-                from ...core import telemetry
-                telemetry.track_free_taste_consumed(
+                from ...core import telemetry_session_events
+                telemetry_session_events.track_free_taste_consumed(
                     remaining=free_left,
                     # Best effort: the refresh follows the run that consumed it.
                     run_id=self._auto_run_id or "",
@@ -250,58 +247,16 @@ class AutoFlowMixin:
     @staticmethod
     def _classify_auto_error(msg: str) -> str:
         """Map an auto-detection error message to a telemetry error_class enum:
-        NETWORK / AUTH / CREDITS_EXHAUSTED / SERVER / CANCELLED / TIMEOUT / UNKNOWN."""
-        low = (msg or "").lower()
-        # "Our backend is down" is decided FIRST, ahead of every keyword below,
-        # because the service names two of its outage codes after the thing
-        # they could not reach: an unreachable key-checking backend is
-        # AUTH_BACKEND_UNAVAILABLE and an unreachable quota store is
-        # QUOTA_CHECK_FAILED, both 503s. The worker puts the raw code in the
-        # message, so keyword order alone decided what the user was told: the
-        # first sent people to re-authenticate against a service that was
-        # merely down, the second told them their credits had run out. Both
-        # were the same outage. An explicit unavailability marker states whose
-        # fault it is, so it outranks substrings that merely appear inside a
-        # code. A genuine exhaustion cannot be swallowed here: the worker
-        # routes _EXHAUSTED_CODES to the credits_exhausted signal and never
-        # through this classifier.
-        server_fault = "backend_unavailable" in low or "quota_check_failed" in low
-        server_fault = server_fault or "service temporarily unavailable" in low or "503" in low
-        if server_fault:
-            return "SERVER"
-        # A fault on our own side (a destroyed Qt object, a bug in the worker's
-        # pipeline) is decided before any keyword scan below. Qt exception text
-        # names the class it failed on, and "QNetworkReply" contains "network",
-        # so the connectivity scan used to match it and tell a user with a
-        # perfectly good link to check their connection. UNKNOWN is the right
-        # class: reportable, quotable support code, no blame. The marker comes
-        # from the worker's last-resort net (auto_detection_worker.run).
-        if "internal error" in low:
-            return "UNKNOWN"
-        # "exhausted" is in the list because the free-tier code says nothing
-        # else: FREE_DETECTIONS_EXHAUSTED carries neither "credit" nor "quota",
-        # so a free user who ran out was classed UNKNOWN and got the generic
-        # failure banner plus a bug-report prompt for working as designed.
-        if ("credit" in low or "quota" in low or "402" in low or "exhausted" in low):
-            return "CREDITS_EXHAUSTED"
-        # Transient service-side rejections (cold instance, model still
-        # loading) carry AUTH in their code but are not authentication
-        # failures: the session is valid and signing in again changes
-        # nothing, so they must never reach the AUTH banner.
-        if "backend_unavailable" in low or "warming" in low:
-            return "SERVER"
-        if "auth" in low or "401" in low or "403" in low or "sign in" in low:
-            return "AUTH"
-        if "timeout" in low or "timed out" in low:
-            return "TIMEOUT"
-        if "cancel" in low:
-            return "CANCELLED"
-        if any(t in low for t in ("network", "connection", "connect", "ssl", "dns",
-                                  "unreachable", "offline")):
-            return "NETWORK"
-        if any(t in low for t in ("server", "500", "502", "503", "504", "bad gateway")):
-            return "SERVER"
-        return "UNKNOWN"
+        NETWORK / AUTH / CREDITS_EXHAUSTED / SERVER / CANCELLED / TIMEOUT / UNKNOWN.
+
+        The ladder itself lives in core/error_policy.py, where the server can
+        put a rule in front of it: a code the backend starts sending tomorrow
+        reaches the right banner on the day it ships instead of at the next
+        release. Read there for why the order is what it is.
+        """
+        from ...core.error_policy import classify_run_error
+
+        return classify_run_error(msg)
 
     def _open_auto_error_report(
         self, title: str, message: str, error_code: str, *, track: bool,
@@ -328,10 +283,10 @@ class AutoFlowMixin:
         try:
             import time as _time
 
-            from ...core import telemetry
+            from ...core import telemetry_session_events
             start_ts = getattr(self, "_segmentation_start_ts", None)
             duration_ms = int((_time.time() - start_ts) * 1000) if start_ts else None
-            telemetry.track_segmentation_run(success=False, duration_ms=duration_ms)
+            telemetry_session_events.track_segmentation_run(success=False, duration_ms=duration_ms)
         except Exception:
             pass  # nosec B110
 
@@ -406,14 +361,6 @@ class AutoFlowMixin:
         dock = self.dock_widget
         if dock is not None and not dock.confirm_prompt_for_detect():
             return
-        # Second commit-time gate: steer toward the accurate default setup
-        # (prompt PLUS at least one example). A half-setup is intercepted once
-        # with an explanation and an explicit "detect anyway" escape; the
-        # escape re-emits the detect request with the override set, which
-        # passes here. Headless/MCP runs never enter this handler, so the
-        # stable programmatic contract is untouched.
-        if dock is not None and not dock.confirm_meta_for_detect():
-            return
         # First committed Detect seals Terms + Privacy consent (the checkbox
         # sits right above the button; Detect stays disabled until it is
         # ticked, so reaching this line means consent was given).
@@ -463,8 +410,8 @@ class AutoFlowMixin:
         if getattr(self, "_rerun_guard_emitted_sig", None) != cur:
             self._rerun_guard_emitted_sig = cur
             try:
-                from ...core import telemetry
-                telemetry.track_auto_prompt_hint_shown(
+                from ...core import telemetry_run_events
+                telemetry_run_events.track_auto_prompt_hint_shown(
                     kind="identical_rerun", prompt=cur[0])
             except Exception:
                 pass  # nosec B110 -- guard telemetry is best-effort
@@ -547,9 +494,9 @@ class AutoFlowMixin:
 
     def _emit_detail_telemetry(self) -> None:
         try:
-            from ...core import telemetry
+            from ...core import telemetry_run_events
             tiles = getattr(self, "_auto_est_tiles", -1)
-            telemetry.track_detail_changed(
+            telemetry_run_events.track_detail_changed(
                 detail=self._get_auto_detail_level(),
                 tiles=tiles if tiles is not None else -1,
                 source=getattr(self, "_detail_tel_source", "user"),
@@ -701,6 +648,39 @@ class AutoFlowMixin:
         except (ValueError, TypeError):
             return 0.0
 
+    def _layer_units_to_run_units(self, layer, zone_in_run) -> tuple[float, float]:
+        """How many run-CRS units one layer-CRS unit spans, along x and along y.
+
+        (1.0, 1.0) whenever the run stayed in the layer's own CRS, and on any
+        failure. A source reports its native resolution in layer units while
+        the grid counts run units, so the two have to be brought to one unit
+        before they can be compared at all.
+        """
+        from qgis.core import QgsCoordinateTransform, QgsProject
+
+        from ...core.layer_conventions import ground_unit_metres
+
+        run_crs = self._run_crs_now(layer)
+        try:
+            layer_crs = layer.crs()
+            if run_crs is None or run_crs == layer_crs:
+                return 1.0, 1.0
+            centre_run = zone_in_run.center()
+            run_mx, run_my = ground_unit_metres(
+                run_crs, centre_run.x(), centre_run.y())
+            if run_mx <= 0 or run_my <= 0:
+                return 1.0, 1.0
+            centre_layer = QgsCoordinateTransform(
+                run_crs, layer_crs, QgsProject.instance()).transform(centre_run)
+            layer_mx, layer_my = ground_unit_metres(
+                layer_crs, centre_layer.x(), centre_layer.y())
+            # Each axis against its own, so the y factor stays right even if a
+            # run CRS is ever allowed whose two axes do not agree.
+            return layer_mx / run_mx, layer_my / run_my
+        except (RuntimeError, AttributeError, TypeError, ValueError,
+                ZeroDivisionError):
+            return 1.0, 1.0
+
     def _grid_for_detail(self, layer, zone_in_layer, detail_n: int):
         """Pixel grid for one detail level. Single source of truth for the
         detail-slider math, shared by `_compute_auto_grid` (the real run),
@@ -714,10 +694,10 @@ class AutoFlowMixin:
         means a finer grid still enlarges small objects in model space, but
         never further (pure interpolation, credits for nothing).
 
-        ``zone_in_layer`` is the zone already reprojected to the layer CRS.
+        ``zone_in_layer`` is the zone already reprojected to the run CRS.
 
         Returns ``(pixel_w, pixel_h, mupp, tile_count)`` where ``mupp`` is the
-        rendered ground resolution in layer-CRS units per pixel (identical on
+        rendered ground resolution in run-CRS units per pixel (identical on
         both axes) and ``tile_count`` is the credit cost (``-1`` when the grid
         exceeds MAX_TILES). Returns None when the zone has no extent or the
         layer cannot be read.
@@ -738,7 +718,7 @@ class AutoFlowMixin:
         except (RuntimeError, AttributeError):
             return None
 
-        use_online = layer_w <= 0 or layer_h <= 0 or self._is_online_provider(layer)
+        use_online = layer_w <= 0 or layer_h <= 0 or self._needs_canvas_render(layer)
         # Same integer stride as TileManager. compute_grid() emits one tile at
         # offset 0 then one per full stride, so a span of TILE_SIZE + k * stride
         # pixels yields exactly k + 1 tiles per axis.
@@ -750,8 +730,16 @@ class AutoFlowMixin:
         # enlarges small objects in the cloud model's fixed processing window,
         # so trees/cars on a coarse source gain real recall. Past 2x it is pure
         # interpolation, so the clamp holds there.
+        # Both clamps read the source, which reports in layer units, while mupp
+        # counts run units. The two are the same unit unless the run moved, so
+        # a run that did not move keeps exactly the arithmetic it always had.
+        # Where they differ, the coarser of the source's two axes sets the
+        # clamp: the render is one resolution on both axes now, and billing
+        # tiles to interpolate the coarse axis is what the clamp exists to stop.
+        to_run_x, to_run_y = self._layer_units_to_run_units(layer, zone_in_layer)
         if not use_online and ext.width() > 0 and ext.height() > 0:
-            native_mupp = max(ext.width() / layer_w, ext.height() / layer_h)
+            native_mupp = max(ext.width() / layer_w * to_run_x,
+                              ext.height() / layer_h * to_run_y)
             mupp = max(mupp, native_mupp / NATIVE_OVERSAMPLE_MAX)
         elif use_online:
             # Online XYZ basemap: clamp near its deepest-zoom native resolution
@@ -759,7 +747,8 @@ class AutoFlowMixin:
             # blurrier upsamples. No-op for WMS / non-Mercator.
             online_mupp = self._online_native_mupp(layer)
             if online_mupp > 0:
-                mupp = max(mupp, online_mupp / NATIVE_OVERSAMPLE_MAX)
+                native_mupp = online_mupp * max(to_run_x, to_run_y)
+                mupp = max(mupp, native_mupp / NATIVE_OVERSAMPLE_MAX)
 
         pixel_w = max(1, int(zone_in_layer.width() / mupp))
         pixel_h = max(1, int(zone_in_layer.height() / mupp))
@@ -1050,7 +1039,7 @@ class AutoFlowMixin:
         if layer is None:
             return
         try:
-            zone_in_layer = self._reproject_zone_to_layer_crs(zone_rect, layer)
+            zone_in_layer = self._reproject_zone_to_run_crs(zone_rect, layer)
             object_class = self._resolved_auto_object_class()
             if object_class:
                 detail = self._auto_detail_for_object(
@@ -1121,7 +1110,7 @@ class AutoFlowMixin:
         if layer is None:
             return
         try:
-            zone_in_layer = self._reproject_zone_to_layer_crs(self._auto_zone, layer)
+            zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
             detail = self._auto_detail_for_object(layer, zone_in_layer, object_class)
             self.dock_widget.set_auto_detail_value(detail)
             self._update_credit_estimate()
@@ -1205,7 +1194,7 @@ class AutoFlowMixin:
         zone_in_layer = None
         if self._auto_zone is not None:
             try:
-                zone_in_layer = self._reproject_zone_to_layer_crs(self._auto_zone, layer)
+                zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
             except (RuntimeError, AttributeError):
                 zone_in_layer = None
         if zone_in_layer is not None:
@@ -1213,7 +1202,10 @@ class AutoFlowMixin:
                 from qgis.core import QgsGeometry
 
                 from ...core.layer_conventions import make_area_measurer
-                da = make_area_measurer(layer.crs())
+                # The rectangle is in the run CRS, so the measurer has to be
+                # too. Measuring run coordinates through the layer's CRS reads
+                # an easting as a longitude and returns an area of nowhere.
+                da = make_area_measurer(self._run_crs_now(layer) or layer.crs())
                 area = da.measureArea(QgsGeometry.fromRect(zone_in_layer))
                 if area and area > 0:
                     zone_area_m2 = float(area)
@@ -1223,14 +1215,20 @@ class AutoFlowMixin:
             layer_w = layer.width()
             layer_h = layer.height()
             ext = layer.extent()
-            if self._is_online_provider(layer) or layer_w <= 0 or layer_h <= 0:
-                native_units = self._online_native_mupp(layer)
+            # A source reports its native resolution in layer units, and
+            # _mupp_to_meters measures in run units, so the two are brought
+            # together the same way the grid math does it. Both factors are
+            # 1.0 for a run that stayed in the layer's own CRS.
+            ref = zone_in_layer if zone_in_layer is not None else ext
+            to_run_x, to_run_y = self._layer_units_to_run_units(layer, ref)
+            if self._needs_canvas_render(layer) or layer_w <= 0 or layer_h <= 0:
+                native_units = self._online_native_mupp(layer) * max(to_run_x, to_run_y)
             elif ext.width() > 0 and ext.height() > 0:
-                native_units = max(ext.width() / layer_w, ext.height() / layer_h)
+                native_units = max(ext.width() / layer_w * to_run_x,
+                                   ext.height() / layer_h * to_run_y)
             else:
                 native_units = 0.0
             if native_units and native_units > 0:
-                ref = zone_in_layer if zone_in_layer is not None else ext
                 meters = self._mupp_to_meters(layer, ref, native_units)
                 if meters and meters > 0:
                     native_mupp = float(meters)
@@ -1271,8 +1269,8 @@ class AutoFlowMixin:
             if hint:
                 try:
                     if self.dock_widget.show_auto_prompt_hint(hint):
-                        from ...core import telemetry
-                        telemetry.track_auto_prompt_hint_shown(
+                        from ...core import telemetry_run_events
+                        telemetry_run_events.track_auto_prompt_hint_shown(
                             kind="plan_hint", prompt=prompt)
                 except Exception:  # noqa: BLE001 -- guidance is best-effort
                     pass  # nosec B110
@@ -1414,7 +1412,7 @@ class AutoFlowMixin:
         if layer is None:
             return
         try:
-            zone_in_layer = self._reproject_zone_to_layer_crs(self._auto_zone, layer)
+            zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
             detail = self._auto_detail_for_target(
                 layer, zone_in_layer, obj_m, float(target_mupp))
             self.dock_widget.set_auto_detail_value(detail)
@@ -1558,7 +1556,7 @@ class AutoFlowMixin:
         return self._default_detail_for_zone(layer, zone_in_layer)
 
     def _mupp_to_meters(self, layer, zone_in_layer, mupp: float) -> float:
-        """Convert a layer-CRS resolution (CRS units per pixel) to meters per
+        """Convert a run-CRS resolution (CRS units per pixel) to meters per
         pixel, measured at the zone center.
 
         An ellipsoidal measurement (WGS84) handles every CRS uniformly:
@@ -1573,8 +1571,9 @@ class AutoFlowMixin:
                 QgsProject,
             )
 
+            measure_crs = self._run_crs_now(layer) or layer.crs()
             da = QgsDistanceArea()
-            da.setSourceCrs(layer.crs(), QgsProject.instance().transformContext())
+            da.setSourceCrs(measure_crs, QgsProject.instance().transformContext())
             da.setEllipsoid("WGS84")
             cx = (zone_in_layer.xMinimum() + zone_in_layer.xMaximum()) / 2.0
             cy = (zone_in_layer.yMinimum() + zone_in_layer.yMaximum()) / 2.0
@@ -1600,7 +1599,9 @@ class AutoFlowMixin:
             pixel_h  (int)  -- total image height in pixels
             zone_x   (int)  -- always 0 (bbox carries the extent for both paths)
             zone_y   (int)  -- always 0
-            bbox     (tuple) -- (minx, miny, maxx, maxy) in layer CRS
+            bbox     (tuple) -- (minx, miny, maxx, maxy) in the run CRS
+            crs      (str)  -- authid of the run CRS, the one the bbox, the
+                               render, the tiles and every detection use
             online   (bool) -- True when the map renderer path must be used
                                (always True once a zone is drawn, regardless of
                                layer type; False only for the no-zone local path)
@@ -1629,14 +1630,14 @@ class AutoFlowMixin:
         except (RuntimeError, AttributeError):
             return None
 
-        use_online = layer_w <= 0 or layer_h <= 0 or self._is_online_provider(layer)
+        use_online = layer_w <= 0 or layer_h <= 0 or self._needs_canvas_render(layer)
 
         if self._auto_zone is not None:
             # Slider-driven path for EVERY layer once a zone is drawn: the user
             # picks the grid subdivision n (zone's longer side = n tiles), and
             # therefore the credit cost. The actual sizing lives in
             # _grid_for_detail so the slider cap and the m/px hint share it.
-            zone_in_layer = self._reproject_zone_to_layer_crs(self._auto_zone, layer)
+            zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
             detail_n = self._get_auto_detail_level()
             sized = self._grid_for_detail(layer, zone_in_layer, detail_n)
             if sized is None:
@@ -1658,12 +1659,15 @@ class AutoFlowMixin:
             maxx = minx + pixel_w * mupp
             miny = maxy - pixel_h * mupp
 
+            run_crs = self._run_crs_now(layer)
             return {
                 "pixel_w": pixel_w,
                 "pixel_h": pixel_h,
                 "zone_x": 0,
                 "zone_y": 0,
                 "bbox": (minx, miny, maxx, maxy),
+                "crs": (run_crs.authid() if run_crs is not None
+                        else layer.crs().authid()),
                 "online": True,
             }
 
@@ -1676,8 +1680,10 @@ class AutoFlowMixin:
         pixel_w, pixel_h = layer_w, layer_h
         zone_x, zone_y = 0, 0
         bbox = (ext.xMinimum(), ext.yMinimum(), ext.xMaximum(), ext.yMaximum())
+        # No zone: the grid IS the raster's own pixel grid, read straight off
+        # the layer, so this path stays in the layer's CRS whatever it is.
         return {
             "pixel_w": pixel_w, "pixel_h": pixel_h,
             "zone_x": zone_x, "zone_y": zone_y,
-            "bbox": bbox, "online": False,
+            "bbox": bbox, "crs": layer.crs().authid(), "online": False,
         }

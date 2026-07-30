@@ -102,20 +102,25 @@ class DockAutoRunStatusMixin:
         self.auto_progress_card.setVisible(visible)
 
     def _paint_auto_finalize_card(self) -> None:
-        """Put the run card in its hand-over state: full bar, same line the
-        last tiles were already showing. Called when the run ends and the
-        results start being turned into the review (see set_auto_finalizing),
-        so the screen the user is looking at does not change until the review
-        replaces it."""
+        """Put the run card in its hand-over state: same card, same line the
+        last tiles were already showing, on the animated busy bar. Called when
+        the run ends and the results start being turned into the review (see
+        set_auto_finalizing), so the screen the user is looking at does not
+        change until the review replaces it.
+
+        The bar is indeterminate rather than parked full, for the reason
+        _start_auto_warming_anim already gives: a bar that sits at 100% while
+        work continues reads as a hang, and this stretch is the long one on a
+        run whose objects are few but huge. Qt animates an indeterminate range
+        on its own, so it keeps moving without a timer. The counters stay at
+        full so anything that restores a determinate range finds them sane."""
         self.auto_status_banner.setVisible(False)
         self._set_auto_progress_visible(True)
         self._stop_auto_warming_anim()
         self._stop_auto_progress_ease()
-        if self.auto_tile_progress.maximum() != _PROGRESS_SCALE:
-            self.auto_tile_progress.setRange(0, _PROGRESS_SCALE)
         self._auto_progress_target = _PROGRESS_SCALE
         self._auto_progress_shown = _PROGRESS_SCALE
-        self.auto_tile_progress.setValue(_PROGRESS_SCALE)
+        self.auto_tile_progress.setRange(0, 0)
         self._auto_progress_dirty = False
         self._refresh_auto_progress_readout()
         self._render_auto_wait_label()
@@ -351,13 +356,34 @@ class DockAutoRunStatusMixin:
             self.auto_tile_progress.setRange(0, 0)
         self._render_auto_wait_label()
 
+    def set_auto_wait_phase(self, phase: str) -> None:
+        """Which work the pre-first-tile wait belongs to, from the worker:
+        "imagery" while the basemap is still being fetched, "detecting" from the
+        first tile on. Only the wording changes; the bar is untouched."""
+        if getattr(self, "_auto_wait_phase", "") == phase:
+            return
+        self._auto_wait_phase = phase
+        self._render_auto_wait_label()
+
+    def set_auto_link_slow(self, slow: bool) -> None:
+        """Whether the run has gone quiet long enough to say so on the card.
+
+        A mid-run silence and a hang look the same on a progress bar, and the
+        run that is merely slow is the common one. Saying it keeps the user
+        waiting instead of cancelling work they have already paid for."""
+        if bool(slow) == getattr(self, "_auto_link_slow", False):
+            return
+        self._auto_link_slow = bool(slow)
+        self._render_auto_wait_label()
+
     def _render_auto_wait_label(self) -> None:
         """Single source of truth for the Row-3 status line. Priority: the
         hand-over to the review, then the cancel note, then the post-last-tile
-        note, then a real place in the server queue, then the generic 'waking
-        up' copy. Hidden while tiles simply flow, INCLUDING through the free
-        re-scan pass: that pass names and counts itself in Row 1, so a standing
-        sentence under it only repeated what the row already said."""
+        note, then a mid-run silence, then a real place in the server queue,
+        then the pre-first-tile copy. Hidden while tiles flow normally,
+        INCLUDING through the free re-scan pass: that pass names and counts
+        itself in Row 1, so a standing sentence under it only repeated what the
+        row already said."""
         current, total = getattr(self, "_auto_progress_pair", (0, 0))
         if getattr(self, "_auto_finalizing", False):
             # The run is over and the results are being turned into the review.
@@ -373,8 +399,14 @@ class DockAutoRunStatusMixin:
             # arrive the longer this stretch lasts.
             text = tr("Almost done - building the shapes...")
         elif current > 0:
-            self.auto_progress_label.setVisible(False)
-            return
+            if not getattr(self, "_auto_link_slow", False):
+                self.auto_progress_label.setVisible(False)
+                return
+            # Tiles landed and then stopped. The bar alone reads as a hang, and
+            # the work already billed is lost if that reading makes the user
+            # cancel, so name the cause and say the run is still on.
+            text = tr("Connection is slow - still working, tiles already found "
+                      "are kept...")
         else:
             pos = getattr(self, "_auto_queue_position", 0)
             eta_s = getattr(self, "_auto_queue_eta", 0)
@@ -394,9 +426,20 @@ class DockAutoRunStatusMixin:
 
     def _warming_message(self) -> str:
         """Evolving pre-first-tile copy with a live elapsed count, so the wait
-        is visibly moving even before the first tile answers."""
+        is visibly moving even before the first tile answers.
+
+        A run opens by downloading the imagery it is about to read, and on a
+        slow link that is most of the wait. Naming the AI through it points at
+        the wrong component: the user checks a service that is not busy yet
+        instead of their connection."""
         since = self._auto_warming_since
         elapsed = int(time.monotonic() - since) if since is not None else 0
+        if getattr(self, "_auto_wait_phase", "") == "imagery":
+            if elapsed < 6:
+                return tr("Loading the imagery...")
+            if elapsed < 22:
+                return tr("Loading the imagery... {n}s").format(n=elapsed)
+            return tr("The imagery is loading slowly... {n}s").format(n=elapsed)
         if elapsed < 6:
             return tr("Sending to the AI...")
         if elapsed < 22:

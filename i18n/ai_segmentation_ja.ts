@@ -2947,8 +2947,8 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>AIに切り替えると、このポリゴンの形状を自動で整えます。</translation>
     </message>
     <message>
-        <source>That area does not touch the object you are editing, so nothing was added. Refining works on one object at a time.</source>
-        <translation>その範囲は編集中のオブジェクトに接していないため、何も追加されませんでした。調整は一度に1つのオブジェクトに対してのみ行えます。</translation>
+        <source>That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.</source>
+        <translation>その範囲は編集中のオブジェクトに接していないため、何も追加されませんでした。形状変更は一度に1つのオブジェクトに対してのみ行えます。</translation>
     </message>
     <message>
         <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
@@ -3217,6 +3217,390 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>{tiles} tiles</source>
         <translation>{tiles} タイル</translation>
+    </message>
+    <!-- Correct step rework, install and precision wording (2026-07-30) -->
+    <message>
+        <source>1 credit ~ 0.17 km² at default precision.</source>
+        <translation>デフォルトの詳細度では 1クレジット ~ 0.17km² です。</translation>
+    </message>
+    <message>
+        <source>10,000 credits a month.</source>
+        <translation>月10,000クレジット。</translation>
+    </message>
+    <message>
+        <source>A free run covers up to {cap} credits. This one costs more.</source>
+        <translation>無料の実行は最大{cap}クレジットまでです。この実行はそれより多くかかります。</translation>
+    </message>
+    <message>
+        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then arms Add for you.</source>
+        <translation>オブジェクトの追加には無料のローカルAIを使用しますが、まだインストールされていません。今すぐインストールしますか?初回のみ実行され、数分かかります。レビューはそれが終わるまで待ち、完了すると追加が有効になります。</translation>
+    </message>
+    <message>
+        <source>At this precision {obj} is too small to spot - raise the precision.</source>
+        <translation>この詳細度では{obj}が小さすぎて見つけられません - 詳細度を上げてください。</translation>
+    </message>
+    <message>
+        <source>Automatic mode is ready. The on-device AI could not be installed, so Manual mode and the AI fix are off until it is. Everything else works.</source>
+        <translation>自動モードの準備ができました。ローカルAIをインストールできなかったため、インストールされるまで手動モードとAI修正は使用できません。それ以外はすべて使用できます。</translation>
+    </message>
+    <message>
+        <source>Automatic mode needs the AI environment, and it is missing or incomplete. Install the dependencies from the plugin panel, then run Detect again.</source>
+        <translation>自動モードにはAI環境が必要ですが、見つからないか不完全です。プラグインパネルから依存関係をインストールし、再度検出を実行してください。</translation>
+    </message>
+    <message>
+        <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More precision splits the zone into more tiles, which costs more credits.</source>
+        <translation>自動モードはゾーンをタイルごとにスキャンします。1タイル = 1クレジットのため、この実行には約 {n} クレジットかかります。詳細度を上げるとゾーンがより多くのタイルに分割され、クレジット消費も増えます。</translation>
+    </message>
+    <message>
+        <source>Cancel setup</source>
+        <translation>セットアップをキャンセル</translation>
+    </message>
+    <message>
+        <source>Clean up this outline</source>
+        <translation>この輪郭をクリーンに</translation>
+    </message>
+    <message>
+        <source>Click an object and the AI outlines it. You check and save each polygon yourself, one at a time. Use Automatic mode to get every object in a zone at once.</source>
+        <translation>オブジェクトをクリックすると、AIがその輪郭を描きます。ポリゴンは1つずつ自分で確認して保存します。ゾーン内のすべてのオブジェクトを一度に取得するには、自動モードを使用してください。</translation>
+    </message>
+    <message>
+        <source>Click points around one look-alike, then double-click to close.</source>
+        <translation>似ているものの周りに点をクリックしていき、最後にダブルクリックして閉じてください。</translation>
+    </message>
+    <message>
+        <source>Click points around one object, then double-click to close.</source>
+        <translation>オブジェクトの周りに点をクリックしていき、最後にダブルクリックして閉じてください。</translation>
+    </message>
+    <message>
+        <source>Click the layer name to see it on the map</source>
+        <translation>レイヤ名をクリックすると地図上に表示されます</translation>
+    </message>
+    <message>
+        <source>Click to open your dashboard</source>
+        <translation>クリックしてダッシュボードを開く</translation>
+    </message>
+    <message>
+        <source>Connection is slow - still working, tiles already found are kept...</source>
+        <translation>接続が遅くなっています - 処理は続行中です。既に見つかったタイルは保持されます...</translation>
+    </message>
+    <message>
+        <source>Could not save your detections to a file.</source>
+        <translation>検出結果をファイルに保存できませんでした。</translation>
+    </message>
+    <message>
+        <source>Downloads Blocked by Your Network</source>
+        <translation>ネットワークによってダウンロードがブロックされています</translation>
+    </message>
+    <message>
+        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to segment areas of any size.</source>
+        <translation>より小さいゾーンを描くか、&lt;a href=&quot;{url}&quot;&gt;Proにアップグレード&lt;/a&gt;してどんな大きさの範囲もセグメント化してください。</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Manual mode to work one object at a time.</source>
+        <translation>ゾーンを描き、オブジェクトの種類を1つ指定すると、1回の実行ですべて取得できます。1つずつ作業するには、手動モードを使用してください。</translation>
+    </message>
+    <message>
+        <source>Draw another example</source>
+        <translation>もう1つ例を描く</translation>
+    </message>
+    <message>
+        <source>Drawing (click to stop)</source>
+        <translation>描画中(クリックで停止)</translation>
+    </message>
+    <message>
+        <source>Errors, versions and the words you type, linked to your account. Never your imagery, layers or coordinates.</source>
+        <translation>エラー、バージョン、入力した単語がアカウントに紐づけられます。画像、レイヤ、座標は一切含まれません。</translation>
+    </message>
+    <message>
+        <source>Fixing a polygon uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then opens this polygon for you.</source>
+        <translation>ポリゴンの修正には無料のローカルAIを使用しますが、まだインストールされていません。今すぐインストールしますか?初回のみ実行され、数分かかります。レビューはそれが終わるまで待ち、完了するとこのポリゴンが開きます。</translation>
+    </message>
+    <message>
+        <source>Fixing needs a one-time setup</source>
+        <translation>修正には初回のみセットアップが必要です</translation>
+    </message>
+    <message>
+        <source>Helps us fix bugs faster.</source>
+        <translation>バグ修正の高速化に役立ちます。</translation>
+    </message>
+    <message>
+        <source>Higher precision splits the zone into more tiles. Each tile costs 1 credit and captures smaller objects.</source>
+        <translation>詳細度を上げるとゾーンがより多くのタイルに分割されます。タイルごとに1クレジットかかり、より小さなオブジェクトを捉えられます。</translation>
+    </message>
+    <message>
+        <source>Keep detecting without limits:</source>
+        <translation>制限なく検出を続ける:</translation>
+    </message>
+    <message>
+        <source>Keep installing</source>
+        <translation>インストールを続ける</translation>
+    </message>
+    <message>
+        <source>Keep this shape. The polygon stays picked, so you can still adjust, merge or delete it.</source>
+        <translation>この形状を保持します。ポリゴンは選択されたままなので、引き続き調整、結合、削除ができます。</translation>
+    </message>
+    <message>
+        <source>Last run: {n} {object}</source>
+        <translation>前回の実行: {n}件の{object}</translation>
+    </message>
+    <message>
+        <source>Last run: {n} {object} in {layer}</source>
+        <translation>前回の実行: {layer}に{n}件の{object}</translation>
+    </message>
+    <message>
+        <source>Loading the imagery...</source>
+        <translation>画像を読み込み中...</translation>
+    </message>
+    <message>
+        <source>Loading the imagery... {n}s</source>
+        <translation>画像を読み込み中... {n}秒</translation>
+    </message>
+    <message>
+        <source>Max precision for this zone - draw a larger zone to go finer.</source>
+        <translation>このゾーンでの詳細度は上限です - より細かくするには、より大きなゾーンを描いてください。</translation>
+    </message>
+    <message>
+        <source>More precision cuts the zone into more tiles and costs more credits.</source>
+        <translation>詳細度を上げるとゾーンがより多くのタイルに分割され、クレジット消費も増えます。</translation>
+    </message>
+    <message>
+        <source>More precision finds smaller objects.</source>
+        <translation>詳細度を上げると、より小さいオブジェクトも検出できます。</translation>
+    </message>
+    <message>
+        <source>More precision keeps helping {obj} in this zone.</source>
+        <translation>このゾーンでは{obj}に対して詳細度を上げるとさらに効果があります。</translation>
+    </message>
+    <message>
+        <source>Name the object (or draw an example) first - Precision then tunes itself to it.</source>
+        <translation>まずオブジェクトの名前を入力する(または例を描く)と、詳細度が自動的に調整されます。</translation>
+    </message>
+    <message>
+        <source>Next: clean up the outlines</source>
+        <translation>次: 輪郭をクリーンに</translation>
+    </message>
+    <message>
+        <source>Next: fix what looks wrong</source>
+        <translation>次: おかしいところを修正</translation>
+    </message>
+    <message>
+        <source>No detection in this zone. Try a more specific object word, or more precision.</source>
+        <translation>このゾーンに検出結果がありません。より具体的なオブジェクト名を試すか、詳細度を上げてください。</translation>
+    </message>
+    <message>
+        <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
+        <translation>この詳細度ではこのゾーンに画像がないため、解析されませんでした(課金なし)。詳細度を下げるか、この範囲をカバーするレイヤを選んでください。</translation>
+    </message>
+    <message>
+        <source>Not enough credits: {n} tiles, only {left} left. Lower the precision or the zone.</source>
+        <translation>クレジットが不足しています: {n} タイルに対して残り {left} のみです。詳細度またはゾーンを縮小してください。</translation>
+    </message>
+    <message>
+        <source>Opens your terra-lab.ai dashboard: your plan, your credits and your payment details.</source>
+        <translation>terra-lab.aiダッシュボードを開きます: プラン、クレジット、お支払い情報を確認できます。</translation>
+    </message>
+    <message>
+        <source>Outline settings</source>
+        <translation>輪郭の設定</translation>
+    </message>
+    <message>
+        <source>Precision</source>
+        <translation>詳細度</translation>
+    </message>
+    <message>
+        <source>Ready for Automatic mode</source>
+        <translation>自動モードの準備ができました</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>残りわずか: 無料検出 {n} 件、{date}に復活します。続けるには&lt;a href=&quot;{url}&quot;&gt;Proにアップグレード&lt;/a&gt;してください。</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>残りわずか: 無料検出 {n} 件。続けるには&lt;a href=&quot;{url}&quot;&gt;Proにアップグレード&lt;/a&gt;してください。</translation>
+    </message>
+    <message>
+        <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
+        <translation>前回の実行と同じ設定です - 結果も同じになります。異なる結果を得るには、例を追加するか詳細度を変更してください。</translation>
+    </message>
+    <message>
+        <source>Saved to {layer}</source>
+        <translation>{layer}に保存しました</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI. This runs once and takes a few minutes. The review waits here until it is done.</source>
+        <translation>ローカルAIをセットアップしています。初回のみ実行され、数分かかります。完了するまでレビューはここで待機します。</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI...</source>
+        <translation>ローカルAIをセットアップ中...</translation>
+    </message>
+    <message>
+        <source>Shadows getting detected instead of trees? Use 'Exclude a look-alike' on one shadow - the AI drops similar false positives.</source>
+        <translation>木の代わりに影が検出されていますか?影の1つで「似ているものを除外」を使うと、AIが似たような誤検出を除外します。</translation>
+    </message>
+    <message>
+        <source>Share of each outline's points to keep. 100% is the class default.
+Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
+        <translation>各輪郭で保持する点の割合です。100%はクラスの既定値です。
+下げると最も細かいディテールから間引かれ、角は保たれ、「直角化」に使うまっすぐな壁ができます。</translation>
+    </message>
+    <message>
+        <source>Share of the outline's points to keep. 100% is the standard density.
+Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
+        <translation>輪郭で保持する点の割合です。100%は標準の密度です。
+下げると最も細かいディテールから間引かれ、角は保たれ、「直角化」に使うまっすぐな壁ができます。</translation>
+    </message>
+    <message>
+        <source>Share usage statistics with TerraLab</source>
+        <translation>TerraLabと利用統計を共有</translation>
+    </message>
+    <message>
+        <source>Simplify this outline first</source>
+        <translation>まずこの輪郭を単純化</translation>
+    </message>
+    <message>
+        <source>Stop the setup</source>
+        <translation>セットアップを停止</translation>
+    </message>
+    <message>
+        <source>Stop the setup and go back to the review. The AI fix stays unavailable until you install it.</source>
+        <translation>セットアップを停止してレビューに戻ります。インストールするまでAI修正は使用できません。</translation>
+    </message>
+    <message>
+        <source>Stop the setup?</source>
+        <translation>セットアップを停止しますか?</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding before any tile came back. Check your connection, then run Detect again (nothing was charged).</source>
+        <translation>検出は、1件のタイルも返ってくる前に応答しなくなりました。接続を確認してから、再度検出を実行してください(課金なし)。</translation>
+    </message>
+    <message>
+        <source>The file may be open in QGIS or in another program. Close it and try Finish again.</source>
+        <translation>ファイルがQGISまたは他のプログラムで開かれている可能性があります。閉じてから、もう一度「完了」を実行してください。</translation>
+    </message>
+    <message>
+        <source>The imagery is loading slowly... {n}s</source>
+        <translation>画像の読み込みに時間がかかっています... {n}秒</translation>
+    </message>
+    <message>
+        <source>The on-device AI could not start, so the AI fix is off. Your detections are safe: switch the fix method to Manual to keep correcting, or save them as they are.</source>
+        <translation>ローカルAIを起動できなかったため、AI修正は使用できません。検出結果は失われていません: 修正方法を手動に切り替えて修正を続けるか、そのまま保存してください。</translation>
+    </message>
+    <message>
+        <source>The on-device AI is unavailable, so the AI fix is off. Switch the fix method to Manual to keep correcting.</source>
+        <translation>ローカルAIが利用できないため、AI修正は使用できません。修正を続けるには、修正方法を手動に切り替えてください。</translation>
+    </message>
+    <message>
+        <source>The on-device AI will not be installed, so fixing a polygon with it stays unavailable. What is already downloaded is kept, so starting again resumes from there.</source>
+        <translation>ローカルAIはインストールされないため、それを使ったポリゴンの修正は引き続き利用できません。ダウンロード済みの分は保持されるため、再開すればその続きから始まります。</translation>
+    </message>
+    <message>
+        <source>The package index refused the download (error 403).
+
+This is usually a company or campus network filtering downloads. Ask your IT administrator to allow pypi.org and files.pythonhosted.org, or run the install from another network.
+
+Automatic (cloud) mode does not need this download.</source>
+        <translation>パッケージインデックスがダウンロードを拒否しました(エラー403)。
+
+これは通常、会社や学校のネットワークがダウンロードをフィルタリングしていることが原因です。IT管理者にpypi.orgとfiles.pythonhosted.orgへのアクセスを許可してもらうか、別のネットワークからインストールを実行してください。
+
+自動(クラウド)モードではこのダウンロードは不要です。</translation>
+    </message>
+    <message>
+        <source>The raster file could not be found:
+{path}
+
+It may have been moved or renamed, or the drive or network share it is on may be disconnected. Reload the layer from where the file is now, then start again.</source>
+        <translation>ラスタファイルが見つかりませんでした:
+{path}
+
+移動または名前が変更されたか、保存されているドライブやネットワーク共有が切断されている可能性があります。ファイルの現在の場所からレイヤを再読み込みし、もう一度やり直してください。</translation>
+    </message>
+    <message>
+        <source>Thin this outline before you drag its corners, without moving the dials that drive the whole layer.</source>
+        <translation>レイヤ全体に影響する設定はそのままに、角をドラッグする前にこの輪郭を間引きます。</translation>
+    </message>
+    <message>
+        <source>This area is large for this precision. Raise the precision or zoom in for sharper detections.</source>
+        <translation>この詳細度に対して範囲が広すぎます。詳細度を上げるか、より鮮明な検出のためにズームインしてください。</translation>
+    </message>
+    <message>
+        <source>This example is very small at this precision. Raise the precision or draw a larger object.</source>
+        <translation>この詳細度では、この例は非常に小さいです。詳細度を上げるか、より大きなオブジェクトを描いてください。</translation>
+    </message>
+    <message>
+        <source>This example is very small even at full precision. Draw a larger object, or it may be too small to detect.</source>
+        <translation>この例は最大の詳細度でも非常に小さいです。より大きなオブジェクトを描いてください。小さすぎると検出できない場合があります。</translation>
+    </message>
+    <message>
+        <source>This layer has no image over your zone at this precision. The map source answered with an empty tile, so there is nothing to detect on. Lower Precision, zoom the layer out until the imagery shows, or pick a layer that covers this area.</source>
+        <translation>この詳細度では、このレイヤにゾーン上の画像がありません。地図ソースが空のタイルを返したため、検出対象がありません。詳細度を下げるか、画像が表示されるまでレイヤをズームアウトするか、この範囲をカバーするレイヤを選んでください。</translation>
+    </message>
+    <message>
+        <source>This polygon only. Every other one follows the Shapes step.</source>
+        <translation>このポリゴンのみです。他はすべて「形状」ステップの設定に従います。</translation>
+    </message>
+    <message>
+        <source>This polygon only. Fewer points means fewer corners to drag.</source>
+        <translation>このポリゴンのみです。点が少ないほど、ドラッグする角も少なくなります。</translation>
+    </message>
+    <message>
+        <source>This run costs more credits than a free run covers.</source>
+        <translation>この実行に必要なクレジットは、無料の実行でカバーできる範囲を超えています。</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs a subscription. Lower the precision or the zone to stay free.</source>
+        <translation>この詳細度でこのゾーンを処理するにはサブスクリプションが必要です。無料のままにするには、詳細度またはゾーンを縮小してください。</translation>
+    </message>
+    <message>
+        <source>This zone is too large for sharp detections, even at full precision. Draw a smaller zone for the best results.</source>
+        <translation>このゾーンは最大の詳細度でも検出精度が上がらないほど大きすぎます。最良の結果を得るには、より小さいゾーンを描いてください。</translation>
+    </message>
+    <message>
+        <source>Tiles your layer has no image for are dropped before they are sent, so a run can cost less than this, never more.</source>
+        <translation>レイヤに画像がないタイルは送信前に除外されるため、実行コストはこれより低くなることはあっても、高くなることはありません。</translation>
+    </message>
+    <message>
+        <source>Type a word for the object, or draw an example.</source>
+        <translation>オブジェクトの単語を入力するか、例を描いてください。</translation>
+    </message>
+    <message>
+        <source>Upgrade to Pro to finish this zone: 10,000 credits/month.</source>
+        <translation>このゾーンを完了するにはProにアップグレードしてください: 月10,000クレジット。</translation>
+    </message>
+    <message>
+        <source>Wait for the on-device AI to finish installing.</source>
+        <translation>ローカルAIのインストールが完了するのを待ってください。</translation>
+    </message>
+    <message>
+        <source>{count} polygon(s) exported</source>
+        <translation>{count} 件のポリゴンをExportしました</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved</source>
+        <translation>{n} 件の{object}を保存しました</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved to {layer}</source>
+        <translation>{n} 件の{object}を{layer}に保存しました</translation>
+    </message>
+    <message>
+        <source>{used} credits</source>
+        <translation>{used} クレジット</translation>
+    </message>
+    <!-- Correct-step on-device AI setup, free-run cap wording, missing raster (2026-07-30) -->
+    <message>
+        <source>or lower the detail to stay free.</source>
+        <translation>または詳細度を下げると無料のままです。</translation>
+    </message>
+    <message>
+        <source>This zone at this detail needs a subscription.</source>
+        <translation>この詳細度でこのゾーンを処理するにはサブスクリプションが必要です。</translation>
+    </message>
+    <message>
+        <source>Subscribe</source>
+        <translation>サブスクライブ</translation>
     </message>
 </context>
 </TS>

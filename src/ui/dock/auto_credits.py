@@ -12,9 +12,8 @@ from qgis.PyQt.QtCore import Qt
 from ...core.credit_gate import insufficient as _credit_insufficient
 from ...core.credit_gate import low_credit_threshold as _low_credit_threshold
 from ...core.i18n import tr
+from .font_scale import scale_qss_font_px
 from .styles import (
-    _PREMIUM_STAR,
-    BRAND_BLUE,
     ERROR_TEXT,
     _msg_label_qss,
     _msg_text,
@@ -32,15 +31,17 @@ class DockAutoCreditsMixin:
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
         try:
-            from ...core import telemetry
+            from ...core import telemetry_session_events
             sender = self.sender()
             if sender is getattr(self, "_subscribe_pill", None):
                 source = "subscribe_pill"
             elif sender is getattr(self, "auto_exhausted_subscribe_link", None):
                 source = "exhausted_status"
+            elif sender is getattr(self, "auto_credit_block_upgrade", None):
+                source = "credit_block"
             else:
                 source = "upsell_card"
-            telemetry.track_pro_upsell_clicked(source=source)
+            telemetry_session_events.track_pro_upsell_clicked(source=source)
         except Exception:
             pass  # nosec B110
         url = self._build_upgrade_url()
@@ -87,18 +88,33 @@ class DockAutoCreditsMixin:
             self.set_auto_credit_estimate(self._auto_est_credits)
         self._update_full_ui()
 
+    def _auto_zone_too_large_text(self) -> str:
+        """The cost row's refusal, read from the served ``zone.too_large`` id.
+
+        Same id as the log line and the MCP answer, so one deploy fixes every
+        surface. The shipped fallback stays this row's own short wording: the
+        row sits in the Detail header, where a longer sentence cannot wrap and
+        widens the dock. Never raises: a slider move calls it.
+        """
+        fallback = tr("Zone too large - reduce the selection area")
+        try:
+            from ..plugin.shared import max_tiles_per_run_cap, zone_too_large_message
+            return zone_too_large_message(max_tiles_per_run_cap(), fallback)
+        except Exception:  # noqa: BLE001 -- served copy is best-effort
+            return fallback
+
     def set_auto_credit_estimate(self, credits: int) -> None:
         # Remember the estimate so a later balance change (e.g. after a run
         # consumes credits) can re-run the gate against it, see set_auto_credits.
         self._auto_est_credits = credits
         if credits < 0:
-            self.auto_credit_cost_label.setText(
-                tr("Zone too large - reduce the selection area"))
-            self.auto_credit_cost_label.setStyleSheet(
-                f"color: {ERROR_TEXT}; font-size: 11px;")
+            self.auto_credit_cost_label.setText(self._auto_zone_too_large_text())
+            self.auto_credit_cost_label.setStyleSheet(scale_qss_font_px(
+                f"color: {ERROR_TEXT}; font-size: 11px;"))
             self.auto_credit_cost_label.setToolTip("")
             self._auto_zone_too_large = True
             self._auto_insufficient_credits = False
+            self.set_auto_credit_block(None)
             self._set_auto_premium_gated(False)
         else:
             # Make the per-tile billing explicit right before Detect: the run
@@ -112,12 +128,12 @@ class DockAutoCreditsMixin:
                 text = tr("≈ {n} tiles = {n} credits").format(n=credits)
             remaining = (self._auto_credits if self._auto_is_subscriber
                          else self._auto_free_left)
-            # Hard credit gate: a run may never launch
-            # under-funded. When the estimate exceeds the known balance, block
-            # Detect and turn the cost line red with a fix-it instruction, the
-            # same in-context pattern as the "Zone too large" block. This
-            # replaces the old amber "will stop after N" partial-run allowance,
-            # which let a run burn straight down to 0 and stop mid-zone.
+            # Hard credit gate: a run may never launch under-funded. When the
+            # estimate exceeds the known balance, block Detect, turn the cost
+            # line red and raise the callout above Detect that carries the
+            # fix-it instruction. This replaces the old amber "will stop after
+            # N" partial-run allowance, which let a run burn straight down to 0
+            # and stop mid-zone.
             # credit_gate.insufficient owns the boundary: block only when the
             # estimate STRICTLY exceeds the balance (== is allowed), the same
             # rule as the auto_run pre-submit re-gate.
@@ -130,45 +146,83 @@ class DockAutoCreditsMixin:
             cap = self._auto_free_run_cap
             self._set_auto_premium_gated(
                 not insufficient and not self._auto_is_subscriber and cap is not None and credits > cap)
+            # The sentence and the upgrade link live in the callout above
+            # Detect, never on this row.
+            self.set_auto_credit_block(
+                credits if insufficient else None,
+                int(remaining) if remaining is not None else 0)
             if insufficient:
-                # A subscriber is already paying, so point them at the levers they
-                # can pull now (detail/zone); only free users get the subscribe CTA.
-                if self._auto_is_subscriber:
-                    text = tr(
-                        "Not enough credits: {n} tiles, only {left} left. "
-                        "Reduce the detail or zone.").format(
-                            n=credits, left=int(remaining))
-                else:
-                    text = tr(
-                        "Not enough credits: {n} tiles, only {left} left. "
-                        "Reduce the detail or zone, or subscribe.").format(
-                            n=credits, left=int(remaining))
-                self.auto_credit_cost_label.setStyleSheet(
-                    f"color: {ERROR_TEXT}; font-weight: bold; font-size: 11px;")
+                # The cost line keeps the SHORT equation and only turns red.
+                # It sits on the Detail header row, where a full sentence
+                # cannot wrap: it dragged the panel's minimum width past a
+                # normal dock and the page scrolled sideways.
+                self.auto_credit_cost_label.setStyleSheet(scale_qss_font_px(
+                    f"color: {ERROR_TEXT}; font-weight: bold; font-size: 11px;"))
             elif self._auto_premium_gated:
-                # Premium taxonomy (blue + star), never the error red: this is
-                # a paid-capability gate, not a failure. The cost line stays
-                # the SHORT equation (it sits on the Detail header row, a long
-                # sentence would widen the dock); the premium hint box under
-                # the slider carries the explanation and the upgrade link.
-                text = _PREMIUM_STAR + " " + (
-                    tr("≈ 1 tile = 1 credit") if credits == 1
-                    else tr("≈ {n} tiles = {n} credits").format(n=credits))
-                self.auto_credit_cost_label.setStyleSheet(
-                    f"color: {BRAND_BLUE}; font-size: 11px; font-weight: bold;")
+                # Red and starless, exactly like the not-enough-credits case:
+                # both block Detect, so both have to look blocked. The blue star
+                # read as an offer and the refusal went unnoticed. The line
+                # keeps the SHORT equation (it sits on the Detail header row, a
+                # long sentence would widen the dock); the box under the slider
+                # carries the explanation and the upgrade link.
+                self.auto_credit_cost_label.setStyleSheet(scale_qss_font_px(
+                    f"color: {ERROR_TEXT}; font-weight: bold; font-size: 11px;"))
             else:
-                self.auto_credit_cost_label.setStyleSheet(
-                    "color: palette(text); font-size: 11px;")
+                self.auto_credit_cost_label.setStyleSheet(scale_qss_font_px(
+                    "color: palette(text); font-size: 11px;"))
             self.auto_credit_cost_label.setText(text)
             _base_tip = tr(
                 "Automatic mode scans your zone tile by tile. 1 tile = 1 credit, "
-                "so this run costs about {n} credits. More detail splits the zone "
-                "into more tiles, which costs more credits.").format(n=credits)
-            _extra_tip = tr("1 credit ~ 0.17 km² at default detail.")
-            self.auto_credit_cost_label.setToolTip(_base_tip + " " + _extra_tip)
+                "so this run costs about {n} credits. More precision splits the "
+                "zone into more tiles, which costs more credits.").format(n=credits)
+            _extra_tip = tr("1 credit ~ 0.17 km² at default precision.")
+            # Say which way the estimate can be wrong. It counts every tile of
+            # the grid, and tiles the layer holds no image for are dropped
+            # before they are sent, so the run can cost less than this and never
+            # more. Without the sentence a run quoted 40 and billed 32 looks
+            # like a billing bug rather than the guard doing its job.
+            _skip_tip = tr(
+                "Tiles your layer has no image for are dropped before they are "
+                "sent, so a run can cost less than this, never more.")
+            self.auto_credit_cost_label.setToolTip(
+                _base_tip + " " + _extra_tip + " " + _skip_tip)
             self._auto_zone_too_large = False
         self.auto_credit_cost_label.setVisible(True)
         self._update_auto_detect_enabled()
+
+    def set_auto_credit_block(self, tiles: int | None, left: int = 0) -> None:
+        """Show (``tiles`` set) or hide (``tiles`` None) the red callout that
+        sits under the detail slider, right above Detect, when the run costs
+        more credits than the balance covers.
+
+        It is a card, not a line on the Detail header row: the sentence wraps
+        over as many lines as the dock is narrow, so a small dock never widens
+        the panel. The upgrade link shows for a free user only; a subscriber is
+        already paying and can only pull the detail and zone levers.
+        """
+        card = getattr(self, "auto_credit_block", None)
+        if card is None:
+            return
+        try:
+            if tiles is None:
+                card.setVisible(False)
+                return
+            self.auto_credit_block_label.setText(tr(
+                "Not enough credits: {n} tiles, only {left} left. "
+                "Lower the precision or the zone.").format(n=int(tiles), left=int(left)))
+            free_user = not self._auto_is_subscriber
+            self.auto_credit_block_upgrade.setVisible(free_user)
+            card.setVisible(True)
+        except (RuntimeError, AttributeError):
+            return
+        if free_user:
+            # Same gap the other upsell surfaces closed: track the impression
+            # so the click has a denominator. Deduped per trigger by telemetry.
+            try:
+                from ...core import telemetry_session_events
+                telemetry_session_events.track_pro_upsell_viewed(trigger="credit_block")
+            except Exception:
+                pass  # nosec B110
 
     def set_auto_zone_rejected(self, area_km2: float | None) -> None:
         """Show (or hide with None) the free-trial zone-cap message in the
@@ -202,23 +256,20 @@ class DockAutoCreditsMixin:
             except (RuntimeError, AttributeError):
                 return
             self._auto_zone_cap_label = label
-        from ..plugin.shared import free_zone_cap_km2
-        line1 = tr(
-            "This zone is {area} km² - free trial zones go up to {max} km²."
-        ).format(area=f"{area_km2:.1f}",
-                 max=f"{free_zone_cap_km2():g}")
-        line2 = tr(
-            'Draw a smaller zone, or <a href="{url}">subscribe</a> to '
-            "segment areas of any size."
-        ).format(url=self._build_upgrade_url())
+        # Both lines come from the served ``zone.free_cap`` id, the same one the
+        # MCP and headless answers read, so a confusing refusal is one deploy
+        # away from fixed on every surface at once.
+        from ..plugin.shared import zone_over_free_cap_lines
+        line1, line2 = zone_over_free_cap_lines(
+            area_km2, self._build_upgrade_url())
         label.setText("{}<br/>{}".format(_msg_text("warning", line1), line2))
         label.setVisible(True)
         # Same gap as the pill and the exhausted link: this card had a click
         # event and no impression, so its refusal-to-subscribe rate was not
         # measurable. Deduped per trigger, so once per session.
         try:
-            from ...core import telemetry
-            telemetry.track_pro_upsell_viewed(trigger="zone_too_large")
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_pro_upsell_viewed(trigger="zone_too_large")
         except Exception:
             pass  # nosec B110
 
@@ -228,8 +279,8 @@ class DockAutoCreditsMixin:
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
         try:
-            from ...core import telemetry
-            telemetry.track_pro_upsell_clicked(source="zone_too_large")
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_pro_upsell_clicked(source="zone_too_large")
         except Exception:
             pass  # nosec B110
         QDesktopServices.openUrl(QUrl(url))
@@ -270,13 +321,13 @@ class DockAutoCreditsMixin:
         if reset_day:
             line.setText(tr(
                 'Running low: {n} free detections left, back on {date}. '
-                '<a href="{url}">Subscribe</a> to keep going.'
+                '<a href="{url}">Upgrade to Pro</a> to keep going.'
             ).format(n=remaining, date=reset_day,
                      url=self._build_upgrade_url()))
         else:
             line.setText(tr(
                 'Running low: {n} free detections left. '
-                '<a href="{url}">Subscribe</a> to keep going.'
+                '<a href="{url}">Upgrade to Pro</a> to keep going.'
             ).format(n=remaining, url=self._build_upgrade_url()))
         line.setVisible(True)
         # Track the banner view once per session (the click was already
@@ -284,8 +335,8 @@ class DockAutoCreditsMixin:
         if not getattr(self, "_low_credit_note_seen", False):
             self._low_credit_note_seen = True
             try:
-                from ...core import telemetry
-                telemetry.track_low_credit_banner_viewed(int(remaining), int(total))
+                from ...core import telemetry_session_events
+                telemetry_session_events.track_low_credit_banner_viewed(int(remaining), int(total))
             except Exception:  # nosec B110
                 pass
 
@@ -324,8 +375,8 @@ class DockAutoCreditsMixin:
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
         try:
-            from ...core import telemetry
-            telemetry.track_pro_upsell_clicked(source="low_credit")
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_pro_upsell_clicked(source="low_credit")
         except Exception:
             pass  # nosec B110
         QDesktopServices.openUrl(QUrl(url))
@@ -342,7 +393,7 @@ class DockAutoCreditsMixin:
             return
         if visible:
             try:
-                from ...core import telemetry
-                telemetry.track_pro_upsell_viewed(trigger="exhausted_status")
+                from ...core import telemetry_session_events
+                telemetry_session_events.track_pro_upsell_viewed(trigger="exhausted_status")
             except Exception:
                 pass  # nosec B110

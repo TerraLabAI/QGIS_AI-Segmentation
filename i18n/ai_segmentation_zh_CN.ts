@@ -3202,8 +3202,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>切换到 AI 模式，让其自动为此多边形塑形。</translation>
     </message>
     <message>
-        <source>That area does not touch the object you are editing, so nothing was added. Refining works on one object at a time.</source>
-        <translation>该区域未与您正在编辑的对象相接触，因此未添加任何内容。细化每次只能处理一个对象。</translation>
+        <source>That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.</source>
+        <translation>该区域未与您正在编辑的对象相接触，因此未添加任何内容。重塑每次只能处理一个对象。</translation>
     </message>
     <message>
         <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
@@ -3472,6 +3472,390 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>{tiles} tiles</source>
         <translation>{tiles} 个瓦片</translation>
+    </message>
+    <!-- Correct step rework, install and precision wording (2026-07-30) -->
+    <message>
+        <source>1 credit ~ 0.17 km² at default precision.</source>
+        <translation>默认精度下，1 积分约对应 0.17 平方公里。</translation>
+    </message>
+    <message>
+        <source>10,000 credits a month.</source>
+        <translation>每月 10,000 积分。</translation>
+    </message>
+    <message>
+        <source>A free run covers up to {cap} credits. This one costs more.</source>
+        <translation>免费运行最多可覆盖 {cap} 积分。本次运行消耗更多积分。</translation>
+    </message>
+    <message>
+        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then arms Add for you.</source>
+        <translation>添加对象使用免费的本地 AI，但尚未安装。现在安装吗？只需运行一次，需要几分钟。复核会等待安装完成，然后自动为您启用“添加”。</translation>
+    </message>
+    <message>
+        <source>At this precision {obj} is too small to spot - raise the precision.</source>
+        <translation>在当前精度下，{obj}太小，难以发现，请提高精度。</translation>
+    </message>
+    <message>
+        <source>Automatic mode is ready. The on-device AI could not be installed, so Manual mode and the AI fix are off until it is. Everything else works.</source>
+        <translation>自动模式已就绪。本地 AI 未能安装，因此手动模式和 AI 修正在安装完成前不可用。其余功能均可正常使用。</translation>
+    </message>
+    <message>
+        <source>Automatic mode needs the AI environment, and it is missing or incomplete. Install the dependencies from the plugin panel, then run Detect again.</source>
+        <translation>自动模式需要 AI 环境，但该环境缺失或不完整。请在插件面板中安装依赖项，然后重新运行检测。</translation>
+    </message>
+    <message>
+        <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More precision splits the zone into more tiles, which costs more credits.</source>
+        <translation>自动模式会逐个瓦片扫描您的区域。1 个瓦片 = 1 积分，因此本次运行大约消耗 {n} 积分。精度越高，区域被划分的瓦片越多，消耗的积分也越多。</translation>
+    </message>
+    <message>
+        <source>Cancel setup</source>
+        <translation>取消安装</translation>
+    </message>
+    <message>
+        <source>Clean up this outline</source>
+        <translation>清理此轮廓</translation>
+    </message>
+    <message>
+        <source>Click an object and the AI outlines it. You check and save each polygon yourself, one at a time. Use Automatic mode to get every object in a zone at once.</source>
+        <translation>点击一个对象，AI 即可为其勾出轮廓。您可以逐一亲自检查并保存每个多边形。使用自动模式可一次性获取区域内的所有对象。</translation>
+    </message>
+    <message>
+        <source>Click points around one look-alike, then double-click to close.</source>
+        <translation>在一个相似对象周围逐点点击，然后双击以闭合。</translation>
+    </message>
+    <message>
+        <source>Click points around one object, then double-click to close.</source>
+        <translation>在一个对象周围逐点点击，然后双击以闭合。</translation>
+    </message>
+    <message>
+        <source>Click the layer name to see it on the map</source>
+        <translation>点击图层名称即可在地图上查看</translation>
+    </message>
+    <message>
+        <source>Click to open your dashboard</source>
+        <translation>点击打开您的控制面板</translation>
+    </message>
+    <message>
+        <source>Connection is slow - still working, tiles already found are kept...</source>
+        <translation>连接较慢，仍在处理中，已发现的瓦片将被保留...</translation>
+    </message>
+    <message>
+        <source>Could not save your detections to a file.</source>
+        <translation>无法将您的检测结果保存到文件。</translation>
+    </message>
+    <message>
+        <source>Downloads Blocked by Your Network</source>
+        <translation>下载被您的网络阻止</translation>
+    </message>
+    <message>
+        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to segment areas of any size.</source>
+        <translation>请绘制更小的区域，或&lt;a href=&quot;{url}&quot;&gt;升级到 Pro&lt;/a&gt;以分割任意大小的区域。</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Manual mode to work one object at a time.</source>
+        <translation>绘制一个区域，命名一种对象，即可在一次运行中获取全部结果。使用手动模式可逐一处理对象。</translation>
+    </message>
+    <message>
+        <source>Draw another example</source>
+        <translation>再绘制一个示例</translation>
+    </message>
+    <message>
+        <source>Drawing (click to stop)</source>
+        <translation>正在绘制（点击以停止）</translation>
+    </message>
+    <message>
+        <source>Errors, versions and the words you type, linked to your account. Never your imagery, layers or coordinates.</source>
+        <translation>错误信息、版本号和您输入的文字，均与您的账户关联。绝不包含您的影像、图层或坐标信息。</translation>
+    </message>
+    <message>
+        <source>Fixing a polygon uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then opens this polygon for you.</source>
+        <translation>修正多边形使用免费的本地 AI，但尚未安装。现在安装吗？只需运行一次，需要几分钟。复核会等待安装完成，然后自动为您打开此多边形。</translation>
+    </message>
+    <message>
+        <source>Fixing needs a one-time setup</source>
+        <translation>修正功能需要进行一次性安装</translation>
+    </message>
+    <message>
+        <source>Helps us fix bugs faster.</source>
+        <translation>帮助我们更快地修复问题。</translation>
+    </message>
+    <message>
+        <source>Higher precision splits the zone into more tiles. Each tile costs 1 credit and captures smaller objects.</source>
+        <translation>更高的精度会将区域划分为更多瓦片。每个瓦片消耗 1 积分，并能捕捉更小的对象。</translation>
+    </message>
+    <message>
+        <source>Keep detecting without limits:</source>
+        <translation>不受限制地持续检测：</translation>
+    </message>
+    <message>
+        <source>Keep installing</source>
+        <translation>继续安装</translation>
+    </message>
+    <message>
+        <source>Keep this shape. The polygon stays picked, so you can still adjust, merge or delete it.</source>
+        <translation>保留此形状。该多边形将保持选中，您仍可以调整、合并或删除它。</translation>
+    </message>
+    <message>
+        <source>Last run: {n} {object}</source>
+        <translation>上次运行：{n} 个{object}</translation>
+    </message>
+    <message>
+        <source>Last run: {n} {object} in {layer}</source>
+        <translation>上次运行：{n} 个{object}，位于{layer}</translation>
+    </message>
+    <message>
+        <source>Loading the imagery...</source>
+        <translation>正在加载影像...</translation>
+    </message>
+    <message>
+        <source>Loading the imagery... {n}s</source>
+        <translation>正在加载影像... {n}s</translation>
+    </message>
+    <message>
+        <source>Max precision for this zone - draw a larger zone to go finer.</source>
+        <translation>该区域已达到最高精度，绘制更大的区域可获得更精细的结果。</translation>
+    </message>
+    <message>
+        <source>More precision cuts the zone into more tiles and costs more credits.</source>
+        <translation>精度越高，区域被划分的瓦片越多，消耗的积分也越多。</translation>
+    </message>
+    <message>
+        <source>More precision finds smaller objects.</source>
+        <translation>精度越高，能发现的对象越小。</translation>
+    </message>
+    <message>
+        <source>More precision keeps helping {obj} in this zone.</source>
+        <translation>在此区域中，提高精度仍能持续改善{obj}的检测效果。</translation>
+    </message>
+    <message>
+        <source>Name the object (or draw an example) first - Precision then tunes itself to it.</source>
+        <translation>请先命名对象（或绘制示例），精度会随之自动调整。</translation>
+    </message>
+    <message>
+        <source>Next: clean up the outlines</source>
+        <translation>下一步：清理轮廓</translation>
+    </message>
+    <message>
+        <source>Next: fix what looks wrong</source>
+        <translation>下一步：修正看起来不对的地方</translation>
+    </message>
+    <message>
+        <source>No detection in this zone. Try a more specific object word, or more precision.</source>
+        <translation>该区域内无检测结果，请尝试更具体的对象名称，或提高精度。</translation>
+    </message>
+    <message>
+        <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
+        <translation>在当前精度下，该区域没有影像覆盖，因此未进行分析（不计费）。请降低精度，或选择一个覆盖此区域的图层。</translation>
+    </message>
+    <message>
+        <source>Not enough credits: {n} tiles, only {left} left. Lower the precision or the zone.</source>
+        <translation>积分不足：需要 {n} 个瓦片，仅剩 {left} 个。请降低精度或缩小区域。</translation>
+    </message>
+    <message>
+        <source>Opens your terra-lab.ai dashboard: your plan, your credits and your payment details.</source>
+        <translation>打开您的 terra-lab.ai 控制面板：您的套餐、积分和付款信息。</translation>
+    </message>
+    <message>
+        <source>Outline settings</source>
+        <translation>轮廓设置</translation>
+    </message>
+    <message>
+        <source>Precision</source>
+        <translation>精度</translation>
+    </message>
+    <message>
+        <source>Ready for Automatic mode</source>
+        <translation>自动模式已就绪</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>即将用完：还剩 {n} 次免费检测，将于 {date} 恢复。&lt;a href=&quot;{url}&quot;&gt;升级到 Pro&lt;/a&gt;以继续使用。</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>免费次数即将用完：剩余 {n} 次免费检测。&lt;a href=&quot;{url}&quot;&gt;升级到 Pro&lt;/a&gt;以继续使用。</translation>
+    </message>
+    <message>
+        <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
+        <translation>与上次运行的设置相同，结果也会相同。添加示例或更改精度以获得不同的结果。</translation>
+    </message>
+    <message>
+        <source>Saved to {layer}</source>
+        <translation>已保存到 {layer}</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI. This runs once and takes a few minutes. The review waits here until it is done.</source>
+        <translation>正在设置本地 AI。此过程只需运行一次，需要几分钟。复核将在此等待，直到设置完成。</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI...</source>
+        <translation>正在设置本地 AI...</translation>
+    </message>
+    <message>
+        <source>Shadows getting detected instead of trees? Use 'Exclude a look-alike' on one shadow - the AI drops similar false positives.</source>
+        <translation>检测到的是阴影而不是树木？在一处阴影上使用“排除相似对象”，AI 会剔除类似的误检结果。</translation>
+    </message>
+    <message>
+        <source>Share of each outline's points to keep. 100% is the class default.
+Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
+        <translation>保留每条轮廓节点的比例。100% 为该类别的默认值。
+调低时优先去除最细小的细节，同时保留转角，并为“直角化”提供可拉直的墙面。</translation>
+    </message>
+    <message>
+        <source>Share of the outline's points to keep. 100% is the standard density.
+Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
+        <translation>保留轮廓节点的比例。100% 为标准密度。
+调低时优先去除最细小的细节，同时保留转角，并为“直角化”提供可拉直的墙面。</translation>
+    </message>
+    <message>
+        <source>Share usage statistics with TerraLab</source>
+        <translation>与 TerraLab 分享使用统计信息</translation>
+    </message>
+    <message>
+        <source>Simplify this outline first</source>
+        <translation>先简化此轮廓</translation>
+    </message>
+    <message>
+        <source>Stop the setup</source>
+        <translation>停止安装</translation>
+    </message>
+    <message>
+        <source>Stop the setup and go back to the review. The AI fix stays unavailable until you install it.</source>
+        <translation>停止安装并返回复核。在您完成安装前，AI 修正将保持不可用。</translation>
+    </message>
+    <message>
+        <source>Stop the setup?</source>
+        <translation>停止安装？</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding before any tile came back. Check your connection, then run Detect again (nothing was charged).</source>
+        <translation>检测服务已无响应，尚未返回任何瓦片。请检查您的网络连接，然后重新运行检测（未产生任何费用）。</translation>
+    </message>
+    <message>
+        <source>The file may be open in QGIS or in another program. Close it and try Finish again.</source>
+        <translation>该文件可能已在 QGIS 或其他程序中打开。请将其关闭后重新点击“完成”。</translation>
+    </message>
+    <message>
+        <source>The imagery is loading slowly... {n}s</source>
+        <translation>影像加载较慢... {n}s</translation>
+    </message>
+    <message>
+        <source>The on-device AI could not start, so the AI fix is off. Your detections are safe: switch the fix method to Manual to keep correcting, or save them as they are.</source>
+        <translation>本地 AI 无法启动，因此 AI 修正不可用。您的检测结果是安全的：将修正方式切换为手动即可继续修正，或按原样保存。</translation>
+    </message>
+    <message>
+        <source>The on-device AI is unavailable, so the AI fix is off. Switch the fix method to Manual to keep correcting.</source>
+        <translation>本地 AI 不可用，因此 AI 修正不可用。请将修正方式切换为手动以继续修正。</translation>
+    </message>
+    <message>
+        <source>The on-device AI will not be installed, so fixing a polygon with it stays unavailable. What is already downloaded is kept, so starting again resumes from there.</source>
+        <translation>本地 AI 将不会被安装，因此使用它修正多边形的功能仍不可用。已下载的内容会被保留，因此重新开始时将从该处继续。</translation>
+    </message>
+    <message>
+        <source>The package index refused the download (error 403).
+
+This is usually a company or campus network filtering downloads. Ask your IT administrator to allow pypi.org and files.pythonhosted.org, or run the install from another network.
+
+Automatic (cloud) mode does not need this download.</source>
+        <translation>软件包索引拒绝了此次下载（错误 403）。
+
+这通常是公司或校园网络在过滤下载内容。请让您的 IT 管理员允许访问 pypi.org 和 files.pythonhosted.org，或改用其他网络进行安装。
+
+自动（云端）模式不需要此下载。</translation>
+    </message>
+    <message>
+        <source>The raster file could not be found:
+{path}
+
+It may have been moved or renamed, or the drive or network share it is on may be disconnected. Reload the layer from where the file is now, then start again.</source>
+        <translation>找不到栅格文件：
+{path}
+
+该文件可能已被移动或重命名，或其所在的磁盘或网络共享已断开连接。请从文件当前所在位置重新加载图层，然后重新开始。</translation>
+    </message>
+    <message>
+        <source>Thin this outline before you drag its corners, without moving the dials that drive the whole layer.</source>
+        <translation>在拖动节点之前先细化此轮廓，不会影响驱动整个图层的调节项。</translation>
+    </message>
+    <message>
+        <source>This area is large for this precision. Raise the precision or zoom in for sharper detections.</source>
+        <translation>该区域相对于当前精度偏大。请提高精度或放大地图以获得更精确的检测结果。</translation>
+    </message>
+    <message>
+        <source>This example is very small at this precision. Raise the precision or draw a larger object.</source>
+        <translation>此示例在当前精度下非常小。请提高精度，或绘制更大的对象。</translation>
+    </message>
+    <message>
+        <source>This example is very small even at full precision. Draw a larger object, or it may be too small to detect.</source>
+        <translation>即使在最高精度下，此示例也非常小。请绘制更大的对象，否则可能太小而无法检测。</translation>
+    </message>
+    <message>
+        <source>This layer has no image over your zone at this precision. The map source answered with an empty tile, so there is nothing to detect on. Lower Precision, zoom the layer out until the imagery shows, or pick a layer that covers this area.</source>
+        <translation>在当前精度下，该图层在您的区域内没有影像。地图源返回的是空白瓦片，因此没有可检测的内容。请降低精度、缩小地图直到影像显示，或选择一个覆盖此区域的图层。</translation>
+    </message>
+    <message>
+        <source>This polygon only. Every other one follows the Shapes step.</source>
+        <translation>仅此多边形；其他多边形仍遵循“形状”步骤的设置。</translation>
+    </message>
+    <message>
+        <source>This polygon only. Fewer points means fewer corners to drag.</source>
+        <translation>仅此多边形；减少节点数即可减少需要拖动的节点。</translation>
+    </message>
+    <message>
+        <source>This run costs more credits than a free run covers.</source>
+        <translation>本次运行所需积分超出免费额度。</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs a subscription. Lower the precision or the zone to stay free.</source>
+        <translation>在当前精度下，该区域需要订阅。请降低精度或缩小区域以保持免费。</translation>
+    </message>
+    <message>
+        <source>This zone is too large for sharp detections, even at full precision. Draw a smaller zone for the best results.</source>
+        <translation>即使在最高精度下，该区域也过大，难以获得精确的检测结果。请绘制更小的区域以获得最佳效果。</translation>
+    </message>
+    <message>
+        <source>Tiles your layer has no image for are dropped before they are sent, so a run can cost less than this, never more.</source>
+        <translation>图层中没有影像的瓦片会在发送前被剔除，因此本次运行消耗的积分可能低于此数，但绝不会更多。</translation>
+    </message>
+    <message>
+        <source>Type a word for the object, or draw an example.</source>
+        <translation>为对象输入一个词，或绘制一个示例。</translation>
+    </message>
+    <message>
+        <source>Upgrade to Pro to finish this zone: 10,000 credits/month.</source>
+        <translation>升级到 Pro 以完成该区域的检测：每月 10,000 积分。</translation>
+    </message>
+    <message>
+        <source>Wait for the on-device AI to finish installing.</source>
+        <translation>等待本地 AI 完成安装。</translation>
+    </message>
+    <message>
+        <source>{count} polygon(s) exported</source>
+        <translation>已 Export {count} 个多边形</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved</source>
+        <translation>已保存 {n} 个{object}</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved to {layer}</source>
+        <translation>已将 {n} 个{object}保存到 {layer}</translation>
+    </message>
+    <message>
+        <source>{used} credits</source>
+        <translation>{used} 积分</translation>
+    </message>
+    <!-- Correct-step on-device AI setup, free-run cap wording, missing raster (2026-07-30) -->
+    <message>
+        <source>or lower the detail to stay free.</source>
+        <translation>或降低细节以保持免费。</translation>
+    </message>
+    <message>
+        <source>This zone at this detail needs a subscription.</source>
+        <translation>在此细节下处理该区域需要订阅。</translation>
+    </message>
+    <message>
+        <source>Subscribe</source>
+        <translation>订阅</translation>
     </message>
 </context>
 </TS>

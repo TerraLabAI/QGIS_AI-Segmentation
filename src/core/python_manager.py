@@ -29,7 +29,10 @@ from .archive_utils import safe_extract_zip as _safe_extract_zip
 from .cache_paths import PLUGIN_CACHE_DIR, plugin_cache_tmp_dir
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
-from .subprocess_utils import get_subprocess_kwargs  # nosec B404 - our helper, name merely starts with "subprocess"
+from .subprocess_utils import (  # nosec B404 - our helper, name merely starts with "subprocess"
+    get_clean_env_for_venv,
+    get_subprocess_kwargs,
+)
 from .uv_manager import (
     DOWNLOAD_TIMEOUT_MS,
     DownloadStallGuard,
@@ -321,9 +324,10 @@ def standalone_python_is_current() -> bool:
         return False
 
     try:
-        env = os.environ.copy()
-        env.pop("PYTHONPATH", None)
-        env.pop("PYTHONHOME", None)
+        # The shared helper, so the downloaded interpreter is also shielded
+        # from an inherited LD_LIBRARY_PATH: a launcher that points it at
+        # QGIS's lib dir makes this probe fail on a missing GLIBCXX.
+        env = get_clean_env_for_venv()
         env["PYTHONIOENCODING"] = "utf-8"
 
         result = subprocess.run(  # nosec B603
@@ -716,10 +720,9 @@ def verify_standalone_python() -> tuple[bool, str]:
             pass
 
     try:
-        # Test basic execution
-        env = os.environ.copy()
-        env.pop("PYTHONPATH", None)
-        env.pop("PYTHONHOME", None)
+        # Test basic execution, through the shared helper for the reason given
+        # in standalone_python_is_current above.
+        env = get_clean_env_for_venv()
         env["PYTHONIOENCODING"] = "utf-8"
 
         # Probe BOTH the version AND that `import subprocess` works: a broken

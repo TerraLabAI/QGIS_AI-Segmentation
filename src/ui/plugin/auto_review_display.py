@@ -22,6 +22,23 @@ RANDOM_MODE_LIGHTNESS = 0.55
 RANDOM_MODE_HUE_STEP = 360.0 / RANDOM_MODE_BUCKETS
 
 
+def random_mode_fill_expression() -> str:
+    """The Distinct-mode fill colour as one QGIS expression, for every layer
+    that paints it.
+
+    The review layer and the handoff seed layers show the SAME objects one
+    after the other. A second formula over the same det_id repaints the whole
+    map the moment the user opens a polygon to edit it, which reads as the
+    colours being reshuffled. So there is one expression, and it lands on the
+    same bucket wheel as the categorized renderer.
+    """
+    bucket = ('(to_int(abs(coalesce("det_id", $id))) * 67)'
+              f" % {RANDOM_MODE_BUCKETS}")
+    return (f"color_hsla(floor(({bucket}) * {RANDOM_MODE_HUE_STEP}),"
+            f" {round(RANDOM_MODE_SATURATION * 100)},"
+            f" {round(RANDOM_MODE_LIGHTNESS * 100)}, 205)")
+
+
 class AutoReviewDisplayMixin:
     """The Normal / Outline / Confidence / Distinct renderers and the switch between them."""
 
@@ -164,13 +181,9 @@ class AutoReviewDisplayMixin:
             "outline_color": "20,20,20,200",
             "outline_width": "0.2",
         })
-        bucket = ('(to_int(abs(coalesce("det_id", $id))) * 67)'
-                  f" % {RANDOM_MODE_BUCKETS}")
-        expr = (f"color_hsla(floor(({bucket}) * {RANDOM_MODE_HUE_STEP}),"
-                f" {round(RANDOM_MODE_SATURATION * 100)},"
-                f" {round(RANDOM_MODE_LIGHTNESS * 100)}, 205)")
         symbol.symbolLayer(0).setDataDefinedProperty(
-            symbol_fill_color_property(), QgsProperty.fromExpression(expr))
+            symbol_fill_color_property(),
+            QgsProperty.fromExpression(random_mode_fill_expression()))
         symbol.setOpacity(0.75)
         layer.setRenderer(QgsSingleSymbolRenderer(symbol))
 
@@ -298,6 +311,32 @@ class AutoReviewDisplayMixin:
                 layer.triggerRepaint()
             except (RuntimeError, AttributeError, ImportError):
                 pass
+        # One polygon at a time: while a fix session is open on one of them,
+        # every other polygon greys out. Applied LAST and here only, because
+        # this method is the single funnel the review layer's renderer goes
+        # through, so a reslice or an edit-state swap keeps the dim for free.
+        self._apply_correct_focus_dim(layer)
+
+    def _apply_review_display_to_session(self) -> None:
+        """Push the current display mode onto what a fix session put on the
+        canvas: the two handoff seed layers and the active mask band.
+
+        The review's own selection layer is out of the project for as long as an
+        AI fix or an Add lane runs, so a mode switch that only reached that
+        layer would do nothing while the user is correcting. The native QGIS
+        bridge needs nothing here: it edits the selection layer itself, which
+        keeps its renderer, and QGIS paints the one selected feature over it."""
+        try:
+            self._refresh_handoff_display_renderers()
+        except (RuntimeError, AttributeError):
+            pass
+        try:
+            self._apply_mask_band_style()
+            band = getattr(self, "mask_rubber_band", None)
+            if band is not None:
+                band.update()
+        except (RuntimeError, AttributeError):
+            pass
 
     def _display_legend_text(self, mode: str) -> str:
         """Legend line for a display mode: swatch dots in the real renderer
@@ -324,13 +363,16 @@ class AutoReviewDisplayMixin:
 
     def _on_auto_display_mode_changed(self, mode: str) -> None:
         """Review display colour mode changed (Normal / Outline / Confidence /
-        Random): store it and re-render the selection layer. Visual only, no
-        re-detection."""
+        Random): store it and re-render whatever is drawing the detections right
+        now. Visual only, no re-detection. The switch works at ANY moment,
+        including in the middle of a correction, so it also reaches the layers a
+        fix session put on the canvas in the review layer's place."""
         self._auto_display_mode = (
             mode if mode in ("normal", "outline", "confidence", "random")
             else "normal")
         if self._auto_selection_layer is not None:
             self._apply_review_display_mode(self._auto_selection_layer)
+        self._apply_review_display_to_session()
         # Muted legend line under the combo: what the colours MEAN for this mode.
         if self.dock_widget is not None:
             try:
@@ -339,7 +381,9 @@ class AutoReviewDisplayMixin:
             except (RuntimeError, AttributeError):
                 pass
         try:
-            from ...core import telemetry
-            telemetry.track_review_display_mode(mode=self._auto_display_mode)
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_review_display_mode(
+                mode=self._auto_display_mode,
+                run_id=getattr(self, "_auto_run_id", "") or "")
         except Exception:
             pass  # nosec B110

@@ -18,6 +18,7 @@ from qgis.core import (
     QgsVectorLayer,
 )
 
+from ...core.error_policy import REPORTABLE_ERROR_CLASSES
 from ...core.i18n import tr
 from .shared import (
     _FIELD_TYPE_DOUBLE,
@@ -31,7 +32,8 @@ from .shared import (
 # banner carries a "Report this problem" link and, when nothing was salvaged
 # into a review, the report dialog auto-opens. AUTH/CREDITS_EXHAUSTED/CANCELLED
 # are excluded (they have their own next step: sign in, subscribe, or nothing).
-_AUTO_REPORTABLE_CLASSES = frozenset({"NETWORK", "SERVER", "TIMEOUT", "UNKNOWN"})
+# The set is shipped in core/error_policy.py, where the server may add a class
+# to it without a plugin release.
 
 # Stand-in object name for a run driven by examples only (no typed prompt). It
 # is a machine value: it lands in the `class` column, in the table name and in
@@ -113,11 +115,18 @@ class AutoLifecycleMixin:
         self._auto_finalize_state = None
         self._remove_auto_selection_layer()
         self._auto_manual_removed = set()
-        # Orphan any background install started from the review (D1): a late
-        # predictor load must not open a handoff or the Add lane on a review
-        # that is gone.
-        self._clear_refine_install_pending()
-        self._clear_ai_add_install_pending()
+        # Orphan any install started from the review: a late predictor load
+        # must not open a fix session or the Add lane on a review that is gone,
+        # and the lock it put on the panel has to lift with it.
+        self._release_local_ai_install()
+        # The review is gone, so nothing is under correction any more: give the
+        # canvas its colours back and drop the busy cursor. Last resort for the
+        # exits that leave with an AI fix session still flagged live, since that
+        # cursor is application-global and would outlive the plugin's own UI.
+        try:
+            self._end_correct_focus()
+        except (RuntimeError, AttributeError):
+            pass
         if self.dock_widget:
             try:
                 self.dock_widget.set_auto_review_active(False)
@@ -171,67 +180,11 @@ class AutoLifecycleMixin:
             except Exception:  # nosec B110
                 pass
 
-    def _offer_pending_run_autosave(self) -> None:
-        """Offer back a run autosave that was never exported (QGIS closed or
-        died between finalize and Finish). Checked on plugin start and on
-        entering Automatic; shows one message-bar offer per session. The offer
-        loads the already-written GeoPackage table, so recovery reuses the
-        normal committed-layer path end to end. Never raises."""
-        try:
-            if getattr(self, "_run_autosave_offer_shown", False):
-                return
-            if self._auto_worker is not None or self._auto_review is not None:
-                return
-            from ...core import run_autosave
-            pending = run_autosave.read_pending()
-            if not pending:
-                return
-            run_id = str(pending.get("run_id") or "")
-            if run_id and run_id == (self._auto_run_id or ""):
-                return  # the run that wrote it is still alive in this session
-            self._run_autosave_offer_shown = True
-            from qgis.PyQt.QtWidgets import QPushButton
-            bar = self.iface.messageBar()
-            count = int(pending.get("count", 0) or 0)
-            widget = bar.createMessage(
-                "AI Segmentation",
-                tr("A detection run was interrupted before its results were "
-                   "exported. {n} detection(s) were saved.").format(n=count))
-            button = QPushButton(tr("Add them to the project"), widget)
-            button.clicked.connect(
-                lambda: self._recover_pending_run_autosave(pending))
-            widget.layout().addWidget(button)
-            self._run_autosave_offer_widget = widget
-            bar.pushWidget(widget, Qgis.MessageLevel.Info, 0)
-        except Exception:  # nosec B110 -- the offer is best-effort
-            pass
-
-    def _recover_pending_run_autosave(self, pending: dict) -> None:
-        """Load the pending autosave into the project and clear the pointer.
-        On a failed load the pointer stays armed so a later start can retry."""
-        try:
-            widget = getattr(self, "_run_autosave_offer_widget", None)
-            self._run_autosave_offer_widget = None
-            if widget is not None:
-                try:
-                    self.iface.messageBar().popWidget(widget)
-                except (RuntimeError, AttributeError):
-                    pass
-            from ...core import run_autosave
-            name = run_autosave.load_pending_layer(pending)
-            if name:
-                run_autosave.clear_pending()
-                self.iface.messageBar().pushInfo(
-                    "AI Segmentation",
-                    tr("Recovered {n} detection(s) to the layer {name}.").format(
-                        n=int(pending.get("count", 0) or 0), name=name))
-            else:
-                self.iface.messageBar().pushWarning(
-                    "AI Segmentation",
-                    tr("Could not load the saved run. The file may have "
-                       "been moved or deleted."))
-        except Exception:  # nosec B110 -- recovery is best-effort
-            pass
+    # No cross-session recovery offer (removed 2026-07-30, Yvann's call): the
+    # message bar asked about a run the user had already walked away from, and
+    # it only ever fired after QGIS died with a review open. The autosave table
+    # itself still goes to disk, and the SAME-session error path in
+    # auto_finalize_steps still loads it back without asking.
 
     def _on_auto_progress(self, completed: int, total: int) -> None:
         """Slot: update progress bar in dock."""
@@ -346,7 +299,7 @@ class AutoLifecycleMixin:
         # Reportable failures make the banner actionable (persistent report link)
         # and, when zero-success, auto-open the report dialog below.
         report_payload = None
-        if error_class in _AUTO_REPORTABLE_CLASSES:
+        if error_class in REPORTABLE_ERROR_CLASSES:
             report_payload = (
                 tr("Automatic detection failed"), msg,
                 "auto_detect_" + error_class.lower())
@@ -361,8 +314,8 @@ class AutoLifecycleMixin:
         self._last_auto_result = {"status": "error", "message": msg}
         self._auto_tel_stop_reason = "error"
         try:
-            from ...core import telemetry
-            telemetry.track_auto_detect_failed(
+            from ...core import telemetry_errors, telemetry_run_events
+            telemetry_run_events.track_auto_detect_failed(
                 run_id=self._auto_run_id or "",
                 error_class=error_class,
                 tiles_done=getattr(self._auto_worker, "tiles_succeeded", 0),
@@ -374,7 +327,7 @@ class AutoLifecycleMixin:
             # existing server-side error spike/persistent detectors cover the
             # paid path, not just the Manual segmentation_run event.
             if error_class in ("SERVER", "TIMEOUT", "UNKNOWN"):
-                telemetry.track_plugin_error(
+                telemetry_errors.track_plugin_error(
                     stage="segment",
                     error_code="auto_detect_" + error_class.lower(),
                     message=msg,
@@ -479,8 +432,8 @@ class AutoLifecycleMixin:
             except (RuntimeError, AttributeError):
                 pass
         try:
-            from ...core import telemetry
-            telemetry.track_credits_exhausted(
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_credits_exhausted(
                 run_id=self._auto_run_id or "",
                 tiles_done=tiles_succeeded,
                 tiles_total=tiles_total,
@@ -555,12 +508,12 @@ class AutoLifecycleMixin:
             except (RuntimeError, AttributeError):
                 pass
         try:
-            from ...core import telemetry
+            from ...core import telemetry_run_events
             if stalled:
                 # ONE terminal event for a stalled run: a TIMEOUT failure, not a
                 # cancel (keeps the terminal-event invariant, and the hang is
                 # visible in analytics instead of reading as a user cancel).
-                telemetry.track_auto_detect_failed(
+                telemetry_run_events.track_auto_detect_failed(
                     run_id=self._auto_run_id or "",
                     error_class="TIMEOUT",
                     tiles_done=tiles_succeeded,
@@ -568,7 +521,7 @@ class AutoLifecycleMixin:
                     warming_ms=warming_ms,
                 )
             else:
-                telemetry.track_auto_detect_cancelled(
+                telemetry_run_events.track_auto_detect_cancelled(
                     run_id=self._auto_run_id or "",
                     tiles_done=tiles_succeeded,
                     tiles_total=tiles_total,
@@ -584,12 +537,20 @@ class AutoLifecycleMixin:
         # A stalled run stopped responding: say so on the message bar before the
         # review opens (opening it swaps the dock status to idle). A user cancel
         # needs no such line.
-        if stalled and tiles_succeeded > 0:
+        if stalled:
+            # Zero tiles is the case that most needs a line: the run ends on an
+            # empty review, which reads as "the plugin found nothing here" when
+            # what happened is that it never got an answer.
+            msg = (
+                tr("The detection stopped responding. Keeping the {n} "
+                   "tiles already found.").format(n=tiles_succeeded)
+                if tiles_succeeded > 0 else
+                tr("The detection stopped responding before any tile came "
+                   "back. Check your connection, then run Detect again "
+                   "(nothing was charged).")
+            )
             try:
-                self.iface.messageBar().pushWarning(
-                    "AI Segmentation",
-                    tr("The detection stopped responding. Keeping the {n} "
-                       "tiles already found.").format(n=tiles_succeeded))
+                self.iface.messageBar().pushWarning("AI Segmentation", msg)
             except (RuntimeError, AttributeError):
                 pass
         # Record the stop for MCP/headless callers BEFORE finalize: a headless
@@ -726,6 +687,9 @@ class AutoLifecycleMixin:
             to_multipolygon,
         )
 
+        # Cleared up front so a failed write can never leave the Start page
+        # linking to the PREVIOUS run's layer.
+        self._auto_export_layer_id = ""
         if not deduped_geoms:
             return None
 
@@ -855,6 +819,10 @@ class AutoLifecycleMixin:
         # the redraw the add schedules on its own. Same reason the review push
         # dropped its refresh (see _push_review_geoms).
         output_store.add_committed_layer(result_layer, source_name=source_layer_name)
+        # The id, not the layer: the Start page's two recap lines link to the
+        # result, and the user may remove it before clicking, so the link is
+        # resolved against the project at click time.
+        self._auto_export_layer_id = result_layer.id()
 
         # Local run history for the library's Recent tab: prompt + zone extent
         # + layer name + thumbnail, so a recent card can bring the user back.
@@ -904,8 +872,22 @@ class AutoLifecycleMixin:
                 rect = clip.boundingBox()  # zone polygon, already in run CRS
             if rect is None or rect.isEmpty():
                 # Rectangle/MCP zones carry no clip polygon: the exported
-                # layer's extent covers the same footprint.
+                # layer's extent covers the same footprint. It is in the
+                # OUTPUT CRS though, and the entry is labelled with the run
+                # CRS, so bring it across or "Run again here" rebuilds the
+                # zone on the wrong ground and bills it.
                 rect = result_layer.extent()
+                try:
+                    from qgis.core import QgsCoordinateTransform
+
+                    out_crs = result_layer.crs()
+                    if (crs is not None and crs.isValid()
+                            and out_crs.isValid() and out_crs != crs):
+                        rect = QgsCoordinateTransform(
+                            out_crs, crs, QgsProject.instance()
+                        ).transformBoundingBox(rect)
+                except Exception:  # noqa: BLE001 -- keep the untransformed box
+                    pass  # nosec B110
             extent = None
             if rect is not None and not rect.isEmpty():
                 extent = (rect.xMinimum(), rect.yMinimum(),

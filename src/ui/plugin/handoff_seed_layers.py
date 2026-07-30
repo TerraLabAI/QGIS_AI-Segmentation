@@ -17,7 +17,7 @@ from qgis.core import (
 
 from ...core.i18n import tr
 from ...core.qt_compat import symbol_fill_color_property
-from ..canvas_palette import KEPT_STROKE
+from ..canvas_palette import KEPT_STROKE, OUTLINE_MODE_STROKE_STR
 from .shared import (
     _FIELD_TYPE_DOUBLE,
     _FIELD_TYPE_INT,
@@ -80,10 +80,12 @@ class HandoffSeedLayersMixin:
     def _apply_handoff_display_renderer(self, layer, kept: bool) -> None:
         """Colour a handoff seed layer to MATCH the review's current display
         mode, so opening an object to edit with the AI keeps the Normal /
-        Confidence / Distinct look the user picked instead of always forcing
-        Distinct. Only the fill follows the mode; the kept layer keeps its bold
-        green validated ring, the pending layer its dark hairline. Best-effort:
-        a render failure must never break the handoff."""
+        Outline / Confidence / Distinct look the user picked instead of always
+        forcing Distinct. The kept layer keeps its bold green validated ring
+        through every mode; the pending layer keeps its dark hairline in the
+        three filled modes and turns red in Outline, which is the review's own
+        colour for a detection with nothing painted inside it. Best-effort: a
+        render failure must never break the handoff."""
         try:
             from qgis.core import (
                 QgsFillSymbol,
@@ -92,6 +94,13 @@ class HandoffSeedLayersMixin:
                 QgsStyle,
             )
             stroke = KEPT_STROKE if kept else None
+            mode = getattr(self, "_auto_display_mode", "random")
+            if mode == "outline":
+                # No data-defined fill to build: outline mode paints nothing
+                # inside a seed, so it takes its own renderer.
+                self._apply_handoff_outline_renderer(layer, stroke)
+                self._apply_correct_focus_dim(layer)
+                return
             symbol = QgsFillSymbol.createSimple({
                 "color": "120,120,120,120",
                 "outline_color": (
@@ -100,7 +109,6 @@ class HandoffSeedLayersMixin:
                 "outline_width": "0.6" if kept else "0.2",
             })
             sl = symbol.symbolLayer(0)
-            mode = getattr(self, "_auto_display_mode", "random")
             if mode == "confidence":
                 ramp = ("Viridis"
                         if QgsStyle.defaultStyle().colorRamp("Viridis")
@@ -114,16 +122,63 @@ class HandoffSeedLayersMixin:
                 c = committed_color_for_prompt(prompt)
                 expr = f"color_rgba({c.red()}, {c.green()}, {c.blue()}, 205)"
             else:
-                # Distinct (random) and outline keep the per-object stable hue,
-                # so an object holds its colour across the whole handoff.
-                expr = 'color_hsla((coalesce("det_id", $id) * 67) % 360, 78, 55, 205)'
+                # Distinct keeps the per-object stable hue, so an object holds
+                # its colour across the whole handoff. The expression comes from
+                # the review, never a copy of it: two formulas over the same
+                # det_id repaint every polygon the moment the user opens one to
+                # edit.
+                from .auto_review_display import random_mode_fill_expression
+                expr = random_mode_fill_expression()
             prop_key = symbol_fill_color_property()
             sl.setDataDefinedProperty(prop_key, QgsProperty.fromExpression(expr))
             symbol.setOpacity(0.75)
             layer.setRenderer(QgsSingleSymbolRenderer(symbol))
             layer.triggerRepaint()
+            # These layers ARE "the others" while a fix session runs: the
+            # polygon under edit is popped out of them and drawn as the active
+            # band. Greying them is what leaves one thing on the map.
+            self._apply_correct_focus_dim(layer)
         except (RuntimeError, AttributeError, ImportError):
             pass
+
+    def _apply_handoff_outline_renderer(self, layer, stroke) -> None:
+        """Outline display mode on a handoff seed layer: stroke only, no fill
+        brush, so the imagery inside every seed stays visible while a fix
+        session owns the canvas. ``stroke`` is the kept layer's green validated
+        ring, or None for the pending seeds, which take the review's outline
+        red. Best-effort, like every renderer on this path."""
+        try:
+            from qgis.core import QgsFillSymbol, QgsSingleSymbolRenderer
+            symbol = QgsFillSymbol.createSimple({
+                "style": "no",                       # no fill brush = see through
+                "outline_color": (
+                    f"{stroke.red()},{stroke.green()},{stroke.blue()},255"
+                    if stroke is not None else OUTLINE_MODE_STROKE_STR),
+                "outline_width": "0.6" if stroke is not None else "0.5",
+                "outline_style": "solid",
+            })
+            layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+            layer.triggerRepaint()
+        except (RuntimeError, AttributeError, ImportError):
+            pass
+
+    def _refresh_handoff_display_renderers(self) -> None:
+        """Re-colour both seed layers for the CURRENT display mode.
+
+        The review's own layer is out of the project while a fix session runs,
+        so without this the View-detections-as combo would look dead exactly
+        when the user is correcting polygons. No-op when no session is open."""
+        for attr, kept in (("_handoff_pending_layer", False),
+                           ("_handoff_kept_layer", True)):
+            layer = getattr(self, attr, None)
+            if layer is None:
+                continue
+            try:
+                if not layer.isValid():
+                    continue
+            except (RuntimeError, AttributeError):
+                continue
+            self._apply_handoff_display_renderer(layer, kept=kept)
 
     def _push_geoms_to_layer(self, layer, rows: list) -> None:
         """Replace a handoff seed layer's features with `rows` of

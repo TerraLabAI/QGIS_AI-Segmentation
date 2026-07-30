@@ -12,16 +12,63 @@ from qgis.PyQt.QtCore import QThread, pyqtSignal
 from ..core.i18n import tr
 
 
+# Worker threads have no dock to talk to, so anything they need to explain goes
+# to the QGIS log. Imported inside the call: this module loads at plugin start.
+def _log_worker_warning(message: str) -> None:
+    from qgis.core import Qgis, QgsMessageLog
+    QgsMessageLog.logMessage(message, "AI Segmentation",
+                             level=Qgis.MessageLevel.Warning)
+
+
 class DepsInstallWorker(QThread):
     progress = pyqtSignal(int, str)
     done = pyqtSignal(bool, str)
 
-    def __init__(self, parent=None):
+    def __init__(self, predictor=None, parent=None):
         super().__init__(parent)
         self._cancelled = False
+        self._predictor = predictor
 
     def cancel(self):
         self._cancelled = True
+
+    def _shutdown_predictor(self) -> bool:
+        """Stop the loaded model before the install touches its environment.
+
+        Same reason RemoveAiDataWorker does it, and the same shape: the
+        predictor subprocess runs the venv's python.exe with native libraries
+        mapped, and Windows refuses to delete a running executable or a loaded
+        DLL. A rebuild reaches _cleanup_partial_venv, whose rmtree is
+        ignore_errors, so without this the pure-Python files go, the binaries
+        stay, and the install writes new code over stale libraries. Broken
+        until QGIS restarts. On the worker thread, so the UI never freezes on
+        a slow shutdown; a stuck cleanup must not block the install.
+        """
+        predictor = self._predictor
+        self._predictor = None
+        if predictor is None:
+            return True
+        self.progress.emit(0, tr("Stopping the local AI..."))
+        try:
+            import threading
+            thread = threading.Thread(target=predictor.cleanup, daemon=True)
+            thread.start()
+            thread.join(timeout=8)
+            if thread.is_alive():
+                # Proceeding here would delete the environment while that
+                # thread is still killing a process inside it, which is the
+                # exact half-deleted tree this shutdown exists to prevent.
+                _log_worker_warning(
+                    "Model shutdown did not finish in time; the install was "
+                    "stopped rather than delete files still held open")
+                return False
+        except Exception as err:  # noqa: BLE001
+            # Never silent: the install is about to delete this environment,
+            # and a shutdown that did not happen is the reason a later delete
+            # comes back partial.
+            _log_worker_warning(f"Model shutdown failed: {type(err).__name__}")
+            return False
+        return True
 
     def run(self):
         from ..core.power_inhibit import begin_keep_awake, end_keep_awake
@@ -30,6 +77,11 @@ class DepsInstallWorker(QThread):
         # the whole install. Best-effort, always released.
         activity = begin_keep_awake("AI Segmentation dependency install")
         try:
+            if not self._shutdown_predictor():
+                self.done.emit(False, (
+                    "The local AI did not stop in time, so the install was "
+                    "not started. Close and reopen QGIS, then try again."))
+                return
             from ..core.venv_manager import create_venv_and_install
             success, message = create_venv_and_install(
                 progress_callback=lambda percent, msg: self.progress.emit(percent, msg),
@@ -141,7 +193,7 @@ class StartupCheckWorker(QThread):
             # (no telemetry), so capture it: a startup-check failure blocks the
             # whole Manual path. Off the GUI thread; the next flush ships it.
             try:
-                from ..core.telemetry import report_exception
+                from ..core.telemetry_errors import report_exception
                 report_exception(e, stage="install", module="background_workers")
             except Exception:  # noqa: BLE001
                 pass  # nosec B110

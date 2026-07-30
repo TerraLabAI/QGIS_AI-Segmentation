@@ -13,13 +13,14 @@ from qgis.core import (
     QgsPointXY,
 )
 from qgis.gui import QgsRubberBand
+from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import (
     QMessageBox,
 )
 
 from ...core.i18n import tr
 from ...core.prompt_manager import FrozenCropSession
-from ...core.qt_compat import PolygonGeometry
+from ...core.qt_compat import DashLine, PolygonGeometry, SolidLine
 from ...core.review_defaults import (
     REFINE_CLEAN_DEFAULT,
     REFINE_EXPAND_DEFAULT,
@@ -131,6 +132,7 @@ class ManualPredictMixin:
         # never start a second encode (PERF-01).
         if self._encoding_in_progress:
             self._remember_pending_manual_click("positive", point)
+            self._wear_busy_cursor_for_crop()
             return
 
         # Refine-in-Manual, while editing: a left-click INSIDE another saved
@@ -219,7 +221,17 @@ class ManualPredictMixin:
         self._last_click_point = (raster_pt.x(), raster_pt.y())
         self._last_click_polarity = "positive"
 
-        if not self._run_prediction():
+        # The predict blocks this thread, so the busy cursor and the dashed
+        # outline go up before it and come down whatever it returns. Only when
+        # this call started them: a predict running under a read the session
+        # already announced must not take that read's cursor down with it.
+        waiting = self._begin_correct_wait()
+        try:
+            predicted = self._run_prediction()
+        finally:
+            if waiting:
+                self._end_correct_wait()
+        if not predicted:
             self._rollback_failed_click("positive")
             return
 
@@ -233,7 +245,7 @@ class ManualPredictMixin:
         elif self._last_click_took_from_another_object():
             undo_note = tr("That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.")  # noqa: E501
         elif self._last_click_stood_clear_of_shape():
-            undo_note = tr("That area does not touch the object you are editing, so nothing was added. Refining works on one object at a time.")  # noqa: E501
+            undo_note = tr("That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.")  # noqa: E501
         if undo_note and self._mask_state_history:
             self.prompts.undo()
             if self._active_crop_points_positive:
@@ -298,6 +310,7 @@ class ManualPredictMixin:
         # remembered, never routed into a second encode.
         if self._encoding_in_progress:
             self._remember_pending_manual_click("negative", point)
+            self._wear_busy_cursor_for_crop()
             return
 
         # Refine edit session: right-click removes area from the open object
@@ -384,7 +397,15 @@ class ManualPredictMixin:
         self._last_click_point = (raster_pt.x(), raster_pt.y())
         self._last_click_polarity = "negative"
 
-        if not self._run_prediction():
+        # Same wait treatment as the keep click above: the predict blocks, so
+        # say so on the polygon and on the cursor for as long as it runs.
+        waiting = self._begin_correct_wait()
+        try:
+            predicted = self._run_prediction()
+        finally:
+            if waiting:
+                self._end_correct_wait()
+        if not predicted:
             self._rollback_failed_click("negative")
             return
 
@@ -561,12 +582,12 @@ class ManualPredictMixin:
             else:
                 code = "predict_runtime_error"
             try:
-                from ...core import telemetry
+                from ...core import telemetry_errors
                 # A non-headless DLL error reports through show_error_report
                 # below, which fires its own telemetry with the same code;
                 # skip here so the same occurrence is not counted twice.
                 if not (is_dll_error and not self._headless):
-                    telemetry.track_plugin_error(
+                    telemetry_errors.track_plugin_error(
                         stage="segment", error_code=code, message=error_str)
             except Exception:
                 pass  # nosec B110
@@ -601,8 +622,8 @@ class ManualPredictMixin:
             )
             self._track_manual_run_failed()
             try:
-                from ...core import telemetry
-                telemetry.track_plugin_error(
+                from ...core import telemetry_errors
+                telemetry_errors.track_plugin_error(
                     stage="segment",
                     error_code=type(e).__name__ or "predict_unexpected_error",
                     message=str(e))
@@ -658,6 +679,17 @@ class ManualPredictMixin:
         # on this, never on a mask that already carries the shape.
         raw_answer = self.current_mask
 
+        # The newest click as mask pixel row/col, in the SAME img_clip_transform
+        # used for the point arrays above. Both locality rules below need it.
+        click_rc = None
+        try:
+            if getattr(self, "_last_click_point", None) is not None:
+                cx, cy = self._last_click_point
+                crow, ccol = rio_transform.rowcol(img_clip_transform, cx, cy)
+                click_rc = (int(crow), int(ccol))
+        except Exception:  # noqa: BLE001 -- click path is best-effort  # nosec B110
+            click_rc = None
+
         # Progressive Merge (FocalClick): bound this click to the region it
         # changed so it cannot reshape a part the user already accepted. Off when
         # the dial is unset or unreachable, which fails open to a full-mask
@@ -666,17 +698,13 @@ class ManualPredictMixin:
         try:
             from ...core.detection_policy import progressive_merge_enabled
             may_merge = prev_mask_for_merge is not None and progressive_merge_enabled()
-            if may_merge and getattr(self, "_last_click_point", None) is not None:
+            if may_merge and click_rc is not None:
                 from ...core.progressive_merge import progressive_merge_masks
-                # Convert the newest click (raster CRS) to mask pixel row/col in
-                # the SAME img_clip_transform used for the point arrays above.
-                cx, cy = self._last_click_point
-                crow, ccol = rio_transform.rowcol(img_clip_transform, cx, cy)
                 # Crop the previous mask the same way as the new one so shapes
                 # match; a mismatch is handled inside progressive_merge_masks.
                 prev_c = prev_mask_for_merge[:img_height, :img_width]
                 self.current_mask = progressive_merge_masks(
-                    prev_c, self.current_mask, int(crow), int(ccol))
+                    prev_c, self.current_mask, click_rc[0], click_rc[1])
         except Exception:  # noqa: BLE001 -- click path is best-effort  # nosec B110
             pass
 
@@ -704,6 +732,20 @@ class ManualPredictMixin:
             else:
                 self.current_mask = self._grown_by_shape_so_far(
                     self.current_mask, prev_mask_for_merge, img_height, img_width)
+        elif prev_mask_for_merge is not None and click_rc is not None:
+            # A trim click says "not this bit", so it may only TAKE ground, and
+            # only the piece under the cursor. Its answer is a fresh reading of
+            # the whole object rather than an edit of it, and on a long shape
+            # the model returns one short section, so applied whole it deleted
+            # the road the user was trimming a car off. Unconditional, like the
+            # keep rule above: this is the shape of the edit, not a tuning.
+            try:
+                from ...core.progressive_merge import subtract_click_region
+                self.current_mask = subtract_click_region(
+                    prev_mask_for_merge[:img_height, :img_width],
+                    self.current_mask, click_rc[0], click_rc[1])
+            except Exception:  # noqa: BLE001 -- click path is best-effort  # nosec B110
+                pass
 
         # The prediction supersedes the display-only polygon INSIDE this crop.
         # Whatever lay outside it cannot be represented in a mask, so it is kept
@@ -936,29 +978,65 @@ class ManualPredictMixin:
         yet saved), green = validated. So the object OPEN for editing stays the
         same pending-blue as every other unsaved seed; it only reads as "the one
         I'm editing" through a thicker outline, never a third hue (the old amber
-        active-state broke the blue -> green story)."""
+        active-state broke the blue -> green story).
+
+        One exception, and it is the review's, not Manual's: a fix session
+        opened from the Automatic review under the Outline display mode drops
+        the fill. Outline mode is a promise that the imagery stays visible, and
+        the polygon being edited is the one the user is comparing against the
+        ground. The bolder blue stroke still says which object is open."""
         if self.mask_rubber_band is None:
             return
-        self.mask_rubber_band.setColor(PENDING_FILL)
+        fill = PENDING_FILL
+        if (getattr(self, "_refine_handoff_active", False)
+                and getattr(self, "_auto_display_mode", "") == "outline"):
+            fill = QColor(PENDING_FILL)
+            fill.setAlpha(0)
+        self.mask_rubber_band.setColor(fill)
         self.mask_rubber_band.setStrokeColor(PENDING_STROKE)
         # A bolder outline while an object is open for editing in a
         # refine/handoff, so it stands apart from the flat pending seeds
         # without introducing a non-blue colour.
         editing = self._refine_handoff_active or self._is_refining_saved_object
         self.mask_rubber_band.setWidth(3 if editing else 2)
+        # Waiting on the model: the outline goes dashed, so the polygon says on
+        # its own that it is busy instead of leaving the cursor to carry it
+        # alone. Every path that ends the wait comes back through here, so the
+        # dash cannot outlive the work (see correct_focus.py).
+        try:
+            self.mask_rubber_band.setLineStyle(
+                DashLine if self._correct_wait_showing() else SolidLine)
+        except (RuntimeError, AttributeError):
+            pass
 
     def _crop_pixel_size_units(self, transform_info) -> float:
-        """Ground size of one mask pixel in the crop, in CRS units (bbox width
-        over pixel width). 0 when it cannot be measured."""
+        """Ground size of one mask pixel in the crop, in CRS units. 0 when it
+        cannot be measured.
+
+        The crop covers a square region of GROUND, so on a raster whose two
+        axes measure differently a pixel is not the same size in CRS units
+        across as down. Every consumer of this number feeds it to a
+        direction-agnostic buffer or simplify, so it reports the FINER of the
+        two: the coarser one would erode or erase real geometry along the fine
+        axis, while the finer one only leaves a few extra vertices along the
+        coarse one. The two axes agree on a projected raster, so the answer
+        there is unchanged.
+        """
         if not transform_info:
             return 0.0
         bbox = transform_info.get("bbox", [0, 1, 0, 1])
         img_shape = transform_info.get("img_shape", (1024, 1024))
+        # bbox is (minx, maxx, miny, maxy), not the usual corner pair order.
         width_pixels = max(int(img_shape[1]), 1)
         bbox_width = float(bbox[1]) - float(bbox[0])
         if bbox_width == 0:
             return 0.0
-        return bbox_width / width_pixels
+        pixel_size = bbox_width / width_pixels
+        height_pixels = max(int(img_shape[0]), 1)
+        bbox_height = float(bbox[3]) - float(bbox[2])
+        if bbox_height != 0:
+            pixel_size = min(pixel_size, bbox_height / height_pixels)
+        return pixel_size
 
     def _manual_metres_per_unit(self, ref_x: float, ref_y: float) -> float:
         """Ground metres per unit of the current layer CRS near (ref_x, ref_y).
@@ -983,6 +1061,20 @@ class ManualPredictMixin:
             metres = float(make_area_measurer(crs).measureLine(
                 QgsPointXY(ref_x, ref_y), QgsPointXY(ref_x + step, ref_y)))
             return metres / step if metres > 0 else 1.0
+        except Exception:  # noqa: BLE001 -- never block a refine on a measure
+            return 1.0
+
+    def _manual_unit_aspect(self, ref_x: float, ref_y: float) -> float:
+        """How much longer one y unit of the current layer CRS is than one x
+        unit near (ref_x, ref_y). 1.0 in a projected CRS, above 1 in a
+        geographic one, where squaring a footprint on raw coordinates leaves
+        every corner tilted. See core.layer_conventions.ground_unit_aspect."""
+        layer = getattr(self, "_current_layer", None)
+        if layer is None:
+            return 1.0
+        try:
+            from ...core.layer_conventions import ground_unit_aspect
+            return ground_unit_aspect(layer.crs(), ref_x, ref_y)
         except Exception:  # noqa: BLE001 -- never block a refine on a measure
             return 1.0
 
@@ -1037,13 +1129,17 @@ class ManualPredictMixin:
                 multi_direction=bool(s["multi_direction"]),
                 multi_max_groups=int(s["multi_max_groups"]),
                 multi_min_separation_deg=float(s["multi_min_separation_deg"]),
+                unit_aspect=self._manual_unit_aspect(
+                    bbox.center().x(), bbox.center().y()),
                 envelope=_envelope)
         except Exception:  # noqa: BLE001 -- fall back to the pixel-anchored path
             destair3 = self._compute_simplification_tolerance(transform_info, 1.5)
+            centre = combined.boundingBox().center()
             return apply_right_angles(
                 combined,
                 destair_tol=max(0.0, destair3 - tolerance),
                 tolerance_m=destair3,
+                unit_aspect=self._manual_unit_aspect(centre.x(), centre.y()),
                 envelope=_envelope)
 
     def _manual_despike_distance(self, combined, transform_info) -> float:
@@ -1355,23 +1451,52 @@ class ManualPredictMixin:
             return
 
         try:
+            from ...core.detection_policy import manual_simplify_multiple_of_px
             from ...core.polygon_exporter import (
                 apply_mask_refinement,
                 count_significant_regions,
                 mask_to_polygons,
             )
 
-            # Apply refinement to preview in both modes (refine affects current mask only)
-            mask_to_display = self.current_mask
-            # Apply mask-level refinements (fill holes, expand/contract, min region)
-            if self._refine_fill_holes or self._refine_expand != 0 or self._refine_min_area > 0:
-                mask_to_display = apply_mask_refinement(
-                    self.current_mask,
-                    expand_value=self._refine_expand,
-                    fill_holes=self._refine_fill_holes,
-                    min_area=self._refine_min_area,
-                    max_hole_px=self._fill_holes_pixel_cap(),
-                )
+            # Mask-level simplify tolerance: same OFF-by-default server dial as
+            # the save/export path, so the preview equals what a save keeps.
+            _mult = manual_simplify_multiple_of_px()
+            _tol = (_mult * self._crop_pixel_size_units(self.current_transform_info)
+                    if _mult > 0 else 0.0)
+
+            # Everything the mask stage reads. Six of the ten refine controls
+            # (Points, Simplify, Trim spikes, Round corners, Right angles,
+            # Min/Max size) change NONE of it, yet a move on any of them used to
+            # re-clean and re-polygonize the whole mask: tens of ms of scipy and
+            # rasterio per settled slider tick, on the GUI thread.
+            mask_key = (self._refine_expand, self._refine_fill_holes,
+                        self._refine_min_area, self._fill_holes_pixel_cap(),
+                        _tol)
+            memo = getattr(self, "_mask_preview_memo", None)
+            memo_hit = memo is not None
+            memo_hit = memo_hit and memo[0] is self.current_mask
+            memo_hit = memo_hit and memo[1] is self.current_transform_info
+            memo_hit = memo_hit and memo[2] == mask_key
+            if memo_hit:
+                mask_to_display, geometries = memo[3], memo[4]
+            else:
+                # Apply refinement to preview in both modes (refine affects current mask only)
+                mask_to_display = self.current_mask
+                # Apply mask-level refinements (fill holes, expand/contract, min region)
+                if self._refine_fill_holes or self._refine_expand != 0 or self._refine_min_area > 0:
+                    mask_to_display = apply_mask_refinement(
+                        self.current_mask,
+                        expand_value=self._refine_expand,
+                        fill_holes=self._refine_fill_holes,
+                        min_area=self._refine_min_area,
+                        max_hole_px=self._fill_holes_pixel_cap(),
+                    )
+                geometries = mask_to_polygons(
+                    mask_to_display, self.current_transform_info, _tol)
+                # Holding the mask keeps the `is` check above honest: a live
+                # reference cannot have its id reused by a later array.
+                self._mask_preview_memo = (
+                    self.current_mask, mask_key, mask_to_display, geometries)
 
             # Detect disjoint regions and show message bar warning. The region
             # count dilates and labels the whole mask, so it is asked for only
@@ -1386,14 +1511,6 @@ class ManualPredictMixin:
                     duration=6
                 )
                 self._disjoint_warning_shown = True
-
-            # Mask-level simplify tolerance: same OFF-by-default server dial as
-            # the save/export path, so the preview equals what a save keeps.
-            from ...core.detection_policy import manual_simplify_multiple_of_px
-            _mult = manual_simplify_multiple_of_px()
-            _tol = (_mult * self._crop_pixel_size_units(self.current_transform_info)
-                    if _mult > 0 else 0.0)
-            geometries = mask_to_polygons(mask_to_display, self.current_transform_info, _tol)
 
             # Build composite: frozen polygons + active mask polygons
             all_geoms = [s.polygon for s in self._frozen_sessions]
@@ -1770,9 +1887,9 @@ class ManualPredictMixin:
             if saves >= 1 and not self._refine_handoff_active:
                 import time as _time
 
-                from ...core import telemetry
+                from ...core import telemetry_session_events
                 t0 = getattr(self, "_manual_session_t0", None)
-                telemetry.track_manual_session_summary(
+                telemetry_session_events.track_manual_session_summary(
                     saves=saves,
                     undos=getattr(self, "_manual_undos_session", 0),
                     duration_ms=int((_time.time() - t0) * 1000) if t0 else None,

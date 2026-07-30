@@ -22,7 +22,7 @@ from qgis.core import (  # noqa: E402
 )
 
 from .merger import IncrementalMerger  # noqa: E402,F401
-from .polygon_packing import PACK_MAX_SIDE, pack_disjoint_crops  # noqa: E402
+from .polygon_packing import pack_disjoint_crops  # noqa: E402
 from .qt_compat import field_type_double, field_type_string  # noqa: E402
 
 
@@ -103,7 +103,7 @@ def masks_to_polygons_packed(
     transform_info: dict,
     full_shape: tuple[int, int],
     simplify_tolerance: float = 0.0,
-    max_side: int = PACK_MAX_SIDE,
+    max_side: int | None = None,
 ) -> list[list[QgsGeometry]]:
     """Polygonize many crops of ONE tile grid, batching the rasterio calls.
 
@@ -122,7 +122,8 @@ def masks_to_polygons_packed(
     Batching is not free: shapes() walks the whole grid it is handed, and a
     pack's grid is the bounding box of the crops in it, so spread-out crops
     drag in background nobody needs. What keeps that bounded is max_side, which
-    caps how big one pack can get however far apart its crops are.
+    caps how big one pack can get however far apart its crops are. Left None it
+    is the cap in force, resolved by the packer on every call.
 
     Output matches calling mask_to_polygons per crop: same pixels, same pixel
     scale, same validity ladder. The two build their affine from different
@@ -947,6 +948,23 @@ def _keep_largest_part(g: QgsGeometry) -> QgsGeometry | None:
         return None
 
 
+# Ceiling on how much a notch closing may grow an object before the result is
+# refused. Bridging an object's own bites adds a little area; welding it to a
+# neighbour adds a lot, and there is no shape reason for the second.
+_CLOSE_MAX_AREA_GROWTH = 1.25
+
+
+def _geometry_part_count(geom: QgsGeometry) -> int:
+    """Parts in a geometry, 1 for a single polygon. Used to refuse a step that
+    silently welded two objects into one."""
+    try:
+        if not geom.isMultipart():
+            return 1
+        return int(geom.constGet().numGeometries())
+    except Exception:  # noqa: BLE001 -- a guard must never raise
+        return 1
+
+
 def despike_thin_necks(
     g: QgsGeometry,
     despike_m: float,
@@ -985,8 +1003,34 @@ def despike_thin_necks(
         return g
 
 
+# Share of its own area a geometry must keep through a smoothing step for that
+# step to be accepted. A corner round trims a little; anything that eats half an
+# object is the engine failing, not a shape decision.
+_SMOOTH_AREA_KEEP = 0.5
+# The post-smooth diet runs at this share of the simplify tolerance. At the full
+# tolerance Douglas-Peucker removes exactly the points the round just added.
+_SMOOTH_DIET_FRACTION = 0.5
+
+
+def _mean_segment_length(g: QgsGeometry) -> float:
+    """Mean length of the exterior-ring segments, in the geometry's own units.
+
+    Tells corner rounding whether the outline is denser than the scale it works
+    at. 0.0 when there is nothing measurable, which reads as "do not thin".
+    """
+    try:
+        length = float(g.length())
+        count = int(g.constGet().nCoordinates()) if g.constGet() else 0
+    except (AttributeError, TypeError, ValueError):
+        return 0.0
+    if length <= 0.0 or count < 2:
+        return 0.0
+    return length / float(count)
+
+
 def rounded_corner_outline(
     g: QgsGeometry, simplify_tol: float = 0.0,
+    settings: dict | None = None,
 ) -> QgsGeometry:
     """One "Round corners" pass plus the vertex diet that pays for it.
 
@@ -1009,29 +1053,57 @@ def rounded_corner_outline(
     tolerance strips the sub-tolerance points the rounding added while keeping
     every curve big enough to see.
 
+    ``settings`` is an already-resolved ``review.smooth`` block. A caller that
+    rounds thousands of objects under one set of dials (the Automatic review's
+    LiveRefiner) resolves it once and passes it; None reads the policy here, as
+    a single-object caller does.
+
     Best-effort: returns the geometry so far on any failure.
     """
     if g is None or g.isEmpty():
         return g
     passes, offset, max_angle = 1, 0.25, 120.0
     try:
-        from .detection_policy import smooth_pass_settings
+        served = settings
+        if served is None:
+            from .detection_policy import smooth_pass_settings
 
-        served = smooth_pass_settings()
+            served = smooth_pass_settings()
         passes = int(served["iterations"])
         offset = float(served["offset"])
         max_angle = float(served["max_angle_deg"])
     except Exception:  # noqa: BLE001 -- policy is best-effort  # nosec B110
         pass
     try:
-        min_dist = simplify_tol if simplify_tol and simplify_tol > 0.0 else -1.0
-        r = g.smooth(passes, offset, min_dist, max_angle)
-        if r is None or r.isEmpty():
-            return g
+        src = g
+        tol = float(simplify_tol) if simplify_tol and simplify_tol > 0.0 else 0.0
+        # Thin FIRST when the outline is denser than the tolerance. Chaikin cuts
+        # each corner by a fraction of its adjacent edges, so on an outline whose
+        # segments are already sub-tolerance the cut lands under the visible
+        # scale and the tick reads as dead however many points the object has.
+        # Thinning to the tolerance gives the corner an edge long enough to bite.
+        if tol > 0.0 and _mean_segment_length(src) < tol:
+            thinned = src.simplify(tol)
+            if (thinned is not None and not thinned.isEmpty()
+                    and thinned.area() >= _SMOOTH_AREA_KEEP * src.area()):
+                src = thinned
+        # minimumDistance is NOT a tolerance here: hand QgsGeometry.smooth a ring
+        # whose segments sit under it and it returns a degenerate zero-area ring
+        # instead of skipping those segments. -1 disables the knob, which is the
+        # only safe value; the thinning above already sets the working scale.
+        r = src.smooth(passes, offset, -1.0, max_angle)
+        # isEmpty() does NOT catch that degenerate ring (it has points, just no
+        # area), so the guard is on area, against the geometry actually smoothed.
+        if r is None or r.isEmpty() or r.area() < _SMOOTH_AREA_KEEP * src.area():
+            return src
         g = r
-        if simplify_tol and simplify_tol > 0.0:
-            r2 = g.simplify(simplify_tol)
-            if r2 is not None and not r2.isEmpty():
+        if tol > 0.0:
+            # Half tolerance, not the full one: at the full tolerance
+            # Douglas-Peucker strips the curve the pass just added and the
+            # object comes back with the corners it started with.
+            r2 = g.simplify(tol * _SMOOTH_DIET_FRACTION)
+            if (r2 is not None and not r2.isEmpty()
+                    and r2.area() >= _SMOOTH_AREA_KEEP * g.area()):
                 g = r2
     except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
         pass
@@ -1072,12 +1144,14 @@ def _regularize_shape_kwargs(
 def apply_geometry_refinement(
     geom: QgsGeometry,
     *,
+    smooth_settings: dict | None = None,
     simplify_tol: float = 0.0,
     smooth: bool = False,
     expand_dist: float = 0.0,
     fill_holes: bool = False,
     fill_holes_max_area: float = 0.0,
     open_dist: float = 0.0,
+    close_dist: float = 0.0,
     despike_m: float = 0.0,
     vertex_spacing: float = 0.0,
     vertex_min: int = 8,
@@ -1098,6 +1172,7 @@ def apply_geometry_refinement(
     multi_max_groups: int | None = None,
     multi_min_separation_deg: float | None = None,
     envelope: Any = None,
+    unit_aspect: float = 1.0,
 ) -> QgsGeometry:
     """Geometry-level refine for Automatic-review WHOLE objects (no mask here).
 
@@ -1150,6 +1225,12 @@ def apply_geometry_refinement(
         a blob must be first; regularize_min_iou reverts to the input when the
         snapped shape drifts too far. Which classes get this and the tuning
         come from the server policy; an unset dial keeps the engine default.
+      - unit_aspect: ground metres per y unit over ground metres per x unit of
+        the geometry's CRS, so the squaring lands on the ground rather than on
+        raw coordinates. 1.0, the default, is exact for a projected CRS. A
+        caller working in a geographic one (a local image is often supplied in
+        degrees) MUST measure and pass it, or every square corner arrives
+        tilted, the more so the further the data sits from the equator.
       - expand_dist: buffer out (positive) or shrink in (negative), ground units.
       - smooth: Chaikin round the corners (native QgsGeometry.smooth).
 
@@ -1198,6 +1279,34 @@ def apply_geometry_refinement(
     # Cut the thin spikes and necks the raw mask carries (a tile-seam join, an
     # uncertain point) BEFORE squaring. Shared with the Manual tail.
     g = despike_thin_necks(g, despike_m, preserve_parts=preserve_input_parts)
+    if close_dist and close_dist > 0.0:
+        # Morphological closing: grow by close_dist then shrink back, so a bite
+        # taken out of the outline from OUTSIDE is bridged while the object
+        # keeps its true size. Fill holes cannot reach one of these: it is not
+        # an interior ring, it opens onto the boundary. Runs AFTER the despike
+        # so it does not bridge a neck that step just cut, and BEFORE the
+        # opening so any fringe it leaves is trimmed again.
+        #
+        # Two reverts, because a closing that reaches too far is not a fix. It
+        # must not weld separate objects together (the part count would drop),
+        # and it must not inflate the object past what bridging its own bites
+        # can explain.
+        try:
+            before_parts = _geometry_part_count(g)
+            before_area = g.area()
+            # Mitre joins, like the despike: a round join rounds off the very
+            # corners the closing just bridged, so the bite comes back as a
+            # dent. Square corners are also what a kerb actually looks like.
+            grown = _buffer_square_corners(g, close_dist)
+            r = (None if grown is None or grown.isEmpty()
+                 else _buffer_square_corners(grown, -close_dist))
+            if (r is not None and not r.isEmpty()
+                    and _geometry_part_count(r) >= before_parts
+                    and (before_area <= 0.0
+                         or r.area() <= before_area * _CLOSE_MAX_AREA_GROWTH)):
+                g = r
+        except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
+            pass
     if open_dist and open_dist > 0.0:
         # Morphological opening: shrink by open_dist then grow back. Thin fringe
         # / tendrils narrower than 2*open_dist vanish while the main shape keeps
@@ -1260,6 +1369,7 @@ def apply_geometry_refinement(
                     allow_circles=allow_circles,
                     min_keep_iou=regularize_min_iou,
                     policy=envelope,
+                    unit_aspect=unit_aspect,
                     **_regularize_shape_kwargs(
                         diagonal_reduction, circle_threshold,
                         multi_direction, multi_max_groups,
@@ -1302,7 +1412,7 @@ def apply_geometry_refinement(
             pass
     if smooth:
         # Round corners plus its vertex diet, shared with the Manual tail.
-        g = rounded_corner_outline(g, simplify_tol)
+        g = rounded_corner_outline(g, simplify_tol, smooth_settings)
     return g
 
 
@@ -1320,14 +1430,19 @@ def apply_right_angles(
     multi_max_groups: int | None = None,
     multi_min_separation_deg: float | None = None,
     envelope: Any = None,
+    unit_aspect: float = 1.0,
 ) -> QgsGeometry:
     """"Right angles" for the Manual pipeline and the Refine-in-Manual handoff.
 
     Uses the diagonals-aware footprint regularizer (building_regularizer), the
     SAME engine the Automatic review uses, so both modes behave the same: a
     45-degree wall snaps clean, not just edges already within 15 degrees of
-    0/90. Falls back to the native QgsGeometry.orthogonalize when the
-    regularizer is unavailable or leaves the shape empty.
+    0/90. When that engine is unavailable or leaves the shape empty the
+    fallback is a de-staircased outline, NOT the native
+    QgsGeometry.orthogonalize (see the paragraph on the guard below); an
+    unavailable engine also means no squaring happened at all, which is why the
+    UI asks building_regularizer.dependencies_available() before offering the
+    control.
 
     A raw mask outline is ALREADY all right-angle stair steps, so it is
     de-staircased first: when ``destair_tol`` is given the outline is simplified
@@ -1339,6 +1454,9 @@ def apply_right_angles(
     are the server shape dials (core.detection_policy.regularize_settings), so
     Manual and the Refine-in-Manual handoff square exactly like the Automatic
     review; each defaults to the engine default, so an old caller is unchanged.
+    ``unit_aspect`` squares against ground distance rather than raw coordinates
+    and MUST be passed when the geometry sits in a geographic CRS, or the
+    corners come out tilted (see apply_geometry_refinement).
     ``multi_direction`` off is the single-direction engine, today's behaviour:
     with it on, a building whose wing sits at an angle to the main block keeps
     each wing on its own grid instead of staircasing off one global axis.
@@ -1372,6 +1490,7 @@ def apply_right_angles(
                 allow_circles=allow_circles,
                 min_keep_iou=min_keep_iou,
                 policy=envelope,
+                unit_aspect=unit_aspect,
                 **_regularize_shape_kwargs(
                     diagonal_reduction, circle_threshold,
                     multi_direction, multi_max_groups,
@@ -1425,6 +1544,7 @@ def shape_polygon_geometry(
     multi_max_groups: int | None = None,
     multi_min_separation_deg: float | None = None,
     envelope: Any = None,
+    unit_aspect: float = 1.0,
 ) -> QgsGeometry:
     """Apply the Manual refine controls to an EXISTING polygon geometry.
 
@@ -1472,6 +1592,10 @@ def shape_polygon_geometry(
     that passes none is unchanged. ``multi_direction`` off is the
     single-direction engine, so a building whose wings sit at an angle to each
     other is snapped to one grid; the dial is what lets each wing keep its own.
+
+    ``unit_aspect`` makes the squaring land on the ground rather than on raw
+    coordinates, and MUST be passed when the geometry sits in a geographic CRS
+    (see apply_geometry_refinement).
     """
     if geom is None or geom.isEmpty() or not mupp or mupp <= 0:
         return geom
@@ -1540,6 +1664,7 @@ def shape_polygon_geometry(
                 multi_direction=multi_direction,
                 multi_max_groups=multi_max_groups,
                 multi_min_separation_deg=multi_min_separation_deg,
+                unit_aspect=unit_aspect,
                 envelope=envelope)
         if expand_px:
             # After the squaring, never before: with Right angles on, a
@@ -1635,9 +1760,16 @@ def suppress_redundant_hypotheses(
     return kept
 
 
+# ONE generic client fallback for the end-of-run redundancy sweep. It is the
+# share of its own area an object must have painted over by LARGER objects
+# before it is read as a leftover partial. The tuned value is server policy
+# (review.merge.cover_threshold); this is what a run uses with none.
+COVER_THRESHOLD_DEFAULT = 0.40
+
+
 def drop_covered_objects(
     items: list[tuple[int, QgsGeometry, float]],
-    cover_threshold: float = 0.40,
+    cover_threshold: float | None = None,
 ) -> list[tuple[int, QgsGeometry, float]]:
     """End-of-run redundancy sweep on the merger's WHOLE objects.
 
@@ -1651,6 +1783,15 @@ def drop_covered_objects(
     neighbour (a genuinely better reading of a small building squeezed
     between sloppy big masks must survive: an overpainted partial reading
     scores below its covering host).
+
+    Only SURVIVING neighbours can drop an object, which is why candidates are
+    walked largest first: the largest object has nothing above it and is
+    decided first, so every larger neighbour's fate is settled by the time an
+    object is judged. Walking them in arrival order instead let a dropped
+    partial take a real object down with it, and the chain compounded: on a
+    dense scene a big garbage mask removed a building, and the building removed
+    a garage that nothing surviving painted over. Losing a real object costs
+    the user a new paid run; keeping a double-painted one costs them a click.
 
     items are (stable_id, geometry, score) triples as produced by
     IncrementalMerger.result_scored_ided(); order is preserved.
@@ -1676,10 +1817,22 @@ class CoverSweep:
     def __init__(
         self,
         items: list[tuple[int, QgsGeometry, float]],
-        cover_threshold: float = 0.40,
+        cover_threshold: float | None = None,
     ) -> None:
         self._items = items
-        self._threshold = cover_threshold
+        # None resolves the server value here rather than at each call site,
+        # so the interactive sweep and the headless one cannot drift apart.
+        self._threshold = (
+            COVER_THRESHOLD_DEFAULT if cover_threshold is None
+            else float(cover_threshold)
+        )
+        if cover_threshold is None:
+            try:
+                from .detection_policy import merge_scalar
+
+                self._threshold = merge_scalar("cover_threshold", COVER_THRESHOLD_DEFAULT)
+            except Exception:  # noqa: BLE001 -- policy is best-effort  # nosec B110
+                pass
         self._n = len(items)
         self._i = 0
         self._keep = [True] * self._n
@@ -1687,6 +1840,7 @@ class CoverSweep:
         self._metas: list = []
         self._index = QgsSpatialIndex()
         if self._done:
+            self._order: list[int] = []
             return
         for pos, (_sid, geom, _score) in enumerate(items):
             try:
@@ -1701,6 +1855,11 @@ class CoverSweep:
             # covering candidate (a degenerate box), and the sweep only ever
             # drops an object, so a missing candidate keeps more, never less.
             self._index.addFeature(feat)
+        # Largest first, so a candidate is only ever judged against neighbours
+        # whose own fate is already settled (see drop_covered_objects). Ties keep
+        # their arrival order, and an object of equal area never covers another.
+        self._order = sorted(
+            range(self._n), key=lambda pos: -self._metas[pos][1])
 
     def step(self, max_items: int) -> bool:
         """Process up to ``max_items`` candidates; return True when finished."""
@@ -1710,7 +1869,7 @@ class CoverSweep:
         threshold = self._threshold
         processed = 0
         while self._i < self._n and processed < max_items:
-            i = self._i
+            i = self._order[self._i]
             self._i += 1
             processed += 1
             bb, area = metas[i]
@@ -1718,18 +1877,35 @@ class CoverSweep:
                 continue
             covers = []
             best_cover_score = None
+            # Prepared geometry for THIS candidate, built once and only when a
+            # neighbour survives the box test. The bbox pre-filter below is an
+            # upper bound on the shared area, and it prunes well for compact
+            # objects but not at all for a long diagonal ribbon, whose box
+            # covers most of the zone while its area stays small. Without the
+            # prepared engine those runs pay a full GEOS overlay per pair.
+            # prepareGeometry indexes the candidate's segments once, so each
+            # neighbour costs a cheap predicate and the overlay runs only on a
+            # real intersection.
+            engine = None
             for j in index.intersects(bb):
                 if j == i:
                     continue
                 jbb, jarea = metas[j]
-                if jbb is None or jarea <= area:
+                if jbb is None or jarea <= area or not keep[j]:
                     continue
                 iw = min(bb.xMaximum(), jbb.xMaximum()) - max(bb.xMinimum(), jbb.xMinimum())
                 ih = min(bb.yMaximum(), jbb.yMaximum()) - max(bb.yMinimum(), jbb.yMinimum())
                 if iw <= 0.0 or ih <= 0.0 or (iw * ih) / area < threshold * 0.5:
                     continue
                 try:
-                    inter = items[i][1].intersection(items[j][1])
+                    if engine is None:
+                        engine = QgsGeometry.createGeometryEngine(items[i][1].constGet())
+                        engine.prepareGeometry()
+                    jg = items[j][1].constGet()
+                    if not engine.intersects(jg):
+                        continue
+                    raw = engine.intersection(jg)
+                    inter = None if raw is None else QgsGeometry(raw)
                 except Exception:  # nosec B112
                     continue
                 if inter is None or inter.isEmpty():
@@ -1786,6 +1962,37 @@ _DRIVER_EXTENSIONS = {
 def driver_extension(driver: str) -> str:
     """File extension (with dot) for a supported export driver."""
     return _DRIVER_EXTENSIONS.get(driver, ".gpkg")
+
+
+def _release_project_layers_at(path: str) -> int:
+    """Drop project layers reading this exact file. Returns how many went.
+
+    Main thread only, and best effort: a failure to read one layer skips it
+    rather than stopping the export. normcase before comparing, because the
+    same Windows file has many spellings and one that does not match leaves
+    the handle in place, which is the whole point of the call.
+    """
+    import os
+
+    from qgis.core import QgsProject
+
+    try:
+        target = os.path.normcase(os.path.abspath(path))
+    except (OSError, ValueError):
+        return 0
+    doomed = []
+    for layer_id, layer in QgsProject.instance().mapLayers().items():
+        try:
+            # A provider URI can carry "|layername=..." and friends; the file
+            # is everything before the first pipe.
+            source = (layer.source() or "").split("|")[0]
+            if source and os.path.normcase(os.path.abspath(source)) == target:
+                doomed.append(layer_id)
+        except (AttributeError, RuntimeError, OSError, ValueError):
+            continue
+    if doomed:
+        QgsProject.instance().removeMapLayers(doomed)
+    return len(doomed)
 
 
 def export_geometries_to_file(
@@ -1932,6 +2139,21 @@ def export_geometries_to_file(
         if driver == "GPKG" and os.path.exists(output_path)
         else QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile
     )
+    if driver != "GPKG" and os.path.exists(output_path):
+        # Those drivers all take CreateOrOverwriteFile, which unlinks the
+        # target first, and the comment above applies to them too: the OGR
+        # provider holds a handle for every loaded layer. Exporting a second
+        # time over a name the user already has open fails on Windows, and a
+        # Shapefile unlinks its sidecars one by one, so it can leave a .shp
+        # with no .dbf. The caller reloads the file right after the write, so
+        # dropping the stale layer here is the same layer coming back current.
+        released = _release_project_layers_at(output_path)
+        if released:
+            QgsMessageLog.logMessage(
+                f"Export: released {released} project layer(s) holding the "
+                f"target file open before overwriting it",
+                "AI Segmentation", level=Qgis.MessageLevel.Info,
+            )
     if driver == "KML":
         # KML is defined on WGS84 only; write reprojected coordinates.
         target = QgsCoordinateReferenceSystem("EPSG:4326")

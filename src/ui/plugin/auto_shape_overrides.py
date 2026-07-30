@@ -111,13 +111,17 @@ class AutoShapeOverridesMixin:
         if not stored:
             return
         overrides[int(idx)] = stored
-        # These controls only exist in the AI method, so moving one is the user
-        # asking for this outline to be shaped. That thaws a hand-made outline
-        # the Manual method had frozen; there is no other way back except Undo.
-        frozen_ids = getattr(self, "_auto_shape_frozen_ids", None)
-        if frozen_ids:
-            frozen_ids.discard(self._object_fid_for(int(idx)))
-        self._after_shape_edit(changed=(int(idx),))
+        # A live Manual session shows its own editable copy, not the review
+        # layer, so the override has to reach that copy or the dial changes
+        # nothing the user can see. The session path repaints itself; the
+        # review layer is rebuilt when the session folds back on Save.
+        applied = False
+        try:
+            applied = bool(self._apply_shape_only_to_session(int(idx)))
+        except (RuntimeError, AttributeError):
+            applied = False
+        if not applied:
+            self._after_shape_edit(changed=(int(idx),))
         self._push_shape_only_state()
 
     def _on_shape_only_reset(self) -> None:

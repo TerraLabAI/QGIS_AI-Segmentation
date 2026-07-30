@@ -1,11 +1,10 @@
 """Pure decision logic for when an Automatic detection may run.
 
-Reference-image (exemplar) detection is materially better with two or more
-positive examples than with a single one, so the pure example-driven path
-(no text prompt) requires at least two positives before a run is allowed. A
-text prompt stands on its own and lifts that requirement (examples are then a
-bonus on top of the prompt). The exclude (negative) example is a refinement
-offered only once the positive set is strong enough.
+A run needs a non-empty query and nothing more: a text prompt, one positive
+example, or both. Each of the three is something the model can ground on, and
+a reference image narrows the search as often as it sharpens it, so neither
+input is required alongside the other. The exclude (negative) example is a
+refinement offered only once the positive set is strong enough.
 
 The two minimums below are client fallbacks for the server's exemplar block,
 read through the resolvers here so the gate and the example store always agree.
@@ -16,11 +15,10 @@ tested directly.
 """
 from __future__ import annotations
 
-# Two references detect far better than one: this threshold drives the
-# second-example NUDGE and the exclude-button unlock. It no longer blocks a
-# run (the floor below is any non-empty query; the single-example path runs
-# through the explicit escape link). Product decision, not a tuned value, and
-# the client fallback for `exemplar.min_example_positives`.
+# Two references detect better than one: this threshold drives the
+# second-example NUDGE and the exclude-button unlock. It does not block a run
+# (the floor below is any non-empty query). Product decision, not a tuned
+# value, and the client fallback for `exemplar.min_example_positives`.
 MIN_EXAMPLE_POSITIVES = 2
 
 # The recommended default combination is a text prompt PLUS at least this many
@@ -53,13 +51,16 @@ def min_meta_positives() -> int:
     return _policy_min("exemplar_min_meta_positives", MIN_META_POSITIVES)
 
 
+# UNREACHABLE (2026-07-30): nothing in src/ calls this any more. It gated the
+# green Detect button until the button moved to the plain can_detect floor, and
+# it is kept because the same combination is still the model's most accurate
+# mode, so a future nudge (never a gate) would ask exactly this question.
 def meta_satisfied(has_text: bool, positives: int) -> bool:
-    """True when the run uses the recommended prompt-plus-example combination.
+    """True when the run uses the most accurate prompt-plus-example
+    combination: text AND at least min_meta_positives() positive examples.
 
-    This is the DEFAULT path the UI steers toward (text AND at least
-    min_meta_positives() positive examples). It is deliberately stricter than
-    ``can_detect``: a run that passes the floor but not this check is allowed
-    only through the explicit "detect anyway" escape, never as the default.
+    Stricter than ``can_detect``, which is what decides whether a run may
+    start. This one only describes quality, and gates nothing.
     """
     return has_text and positives >= min_meta_positives()
 
@@ -67,11 +68,10 @@ def meta_satisfied(has_text: bool, positives: int) -> bool:
 def can_detect(has_text: bool, positives: int, excludes: int = 0) -> bool:
     """True when a detection may start: the query is NON-EMPTY.
 
-    The floor is deliberately permissive: a text prompt, or at least one
-    positive example, each form a complete query the model can run. Quality
-    steering lives ABOVE this floor (meta_satisfied gates the default green
-    button; the single-example and text-only paths run only through the
-    explicit escape link, and the UI nudges toward a second example).
+    This is the whole gate on the green Detect button: a text prompt, or at
+    least one positive example, each form a complete query the model can run.
+    Quality steering above it is advice only (the UI nudges toward a second
+    example and toward pairing text with an example), never a block.
 
     ``excludes`` never affects the decision (an exclude is a refinement, never a
     query on its own); it is accepted for a complete, self-documenting signature.

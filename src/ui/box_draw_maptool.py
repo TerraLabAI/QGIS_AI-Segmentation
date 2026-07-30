@@ -1,11 +1,14 @@
 """Drag-rectangle map tool for object-designating gestures.
 
-Every gesture that points at an OBJECT in the Automatic flow (an example to
-find more of, a look-alike to exclude, and later the review correction
-gestures) is a drag rectangle: press, drag, release. The free-form polygon
-stays reserved for the search zone. This is a leaf tool with no plugin or
-dock imports, so the exemplar path and the future review mixin can both use
-it.
+UNREACHABLE (2026-07-30): no caller in `src/`. The example and exclude draws
+were its last ones and now trace the object point by point with
+`PolygonZoneMapTool`, because users asked to outline the object itself rather
+than a box around it. Kept because it is the ready-made rectangle gesture, it
+is covered by tests, and nothing about it is wrong.
+
+A drag rectangle is press, drag, release. The free-form polygon stays the
+gesture for the search zone. This is a leaf tool with no plugin or dock
+imports, so any caller can use it.
 
 Press starts a rubber-band rectangle in the caller's colour; dragging resizes
 it; releasing on a real (non-degenerate) rectangle emits ``box_selected`` with

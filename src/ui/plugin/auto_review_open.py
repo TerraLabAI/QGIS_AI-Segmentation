@@ -142,6 +142,11 @@ class AutoReviewOpenMixin:
                 self._set_zone_band_fill_visible(False)
             except (RuntimeError, AttributeError):
                 pass
+        # The review is open on the AI fix method until the user says otherwise,
+        # so start the local model here. The load then runs while the user reads
+        # the Keep step, instead of under the first pick on Correct. Silent, and
+        # it stops itself on a machine with no local environment.
+        self._warm_local_ai_for_review()
         # Swap the live-run blue outline for the review's default Random colours
         # (one colour per object, seeded fresh for every NEW review; the combo
         # follows signal-free so control and renderer agree).
@@ -153,14 +158,14 @@ class AutoReviewOpenMixin:
         # Telemetry: the run's terminal event (completed only; cancel/exhaust
         # already emitted theirs) plus the review-opened funnel step.
         try:
-            from ...core import telemetry
+            from ...core import telemetry_run_events
             ctx = self._auto_run_ctx or {}
             total = ctx.get("total", tiles_succeeded)
             instances_found = len(self._auto_objects)
             visible_n = len(visible)
             start_pct = int(round((self._auto_confidence or 0.0) * 100))
             if self._auto_tel_stop_reason in (None, "completed"):
-                telemetry.track_auto_detect_completed(
+                telemetry_run_events.track_auto_detect_completed(
                     run_id=self._auto_run_id or "",
                     duration_ms=self._auto_duration_ms(),
                     tiles_done=tiles_succeeded,
@@ -172,7 +177,7 @@ class AutoReviewOpenMixin:
                     warming_ms=self._auto_warming_wait_ms(),
                     merge_mode_final="separate" if self._auto_merge_separate else "map",
                 )
-            telemetry.track_review_opened(
+            telemetry_run_events.track_review_opened(
                 run_id=self._auto_run_id or "",
                 instances_found=instances_found,
                 visible_at_start=visible_n,

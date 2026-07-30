@@ -91,12 +91,15 @@ class DockAutoReviewCorrectMixin:
         method = getattr(self, "_correct_method", "ai")
         if not getattr(self, "_auto_add_lane_armed", False):
             try:
+                # The tile wears its METHOD's glyph, the same pair the edit
+                # branch uses, so one mark means one method across the page.
+                # The card head keeps the "+" that names the branch.
                 if method == "manual":
                     self.auto_add_lane_btn.setText(
-                        "＋  " + tr("Draw its corners"))
+                        "◇  " + tr("Draw its corners"))
                 else:
                     self.auto_add_lane_btn.setText(
-                        "＋  " + tr("Point at it on the map"))
+                        "◎  " + tr("Point at it on the map"))
             except (RuntimeError, AttributeError):
                 pass
         try:
@@ -106,8 +109,7 @@ class DockAutoReviewCorrectMixin:
                 tr("The AI outlines it, free, on your computer."))
         except (RuntimeError, AttributeError):
             pass
-        # The per-polygon shape fold belongs to the AI method only.
-        self.set_shape_only_visible(method != "manual")
+        self._apply_shape_only_mode(method)
         self._apply_correct_hero_mode()
 
     def _default_correct_armed_line(self) -> str:
@@ -140,19 +142,33 @@ class DockAutoReviewCorrectMixin:
             pass
 
     def set_correct_session_active(self, active: bool) -> None:
-        """Morph the panel between its two halves: Save + Undo while a fix
-        session runs, the rested half (per-polygon settings, Merge) and the
-        journal summary otherwise. One thing per state: while the user edits a
-        polygon, only the editing controls are on screen."""
+        """Add Save + Undo while a fix session runs, and take them away when it
+        ends. The per-polygon dials ride along INSIDE the session.
+
+        A map click goes straight into the edit, so the dials have to live
+        there or nowhere: an intermediate menu was tried and cost a click on
+        the one gesture this step exists for. The fold state carries the
+        difference between the methods (_apply_shape_only_mode): Manual opens
+        it, because thinning a dense outline is what makes its corners
+        draggable and it is the FIRST thing the user does; AI leaves it shut,
+        where the model already drew the shape and the dials are the exception.
+
+        Merge is the one control that still steps aside for the session: it
+        asks the user to click the OTHER polygons, and a session freezes them.
+        """
         self._auto_correct_session_active = bool(active)
         try:
             self.auto_correct_session_row.setVisible(bool(active))
         except (RuntimeError, AttributeError):
             pass
         try:
-            self.auto_correct_rest_box.setVisible(not active)
+            self.auto_correct_rest_box.setVisible(True)
         except (RuntimeError, AttributeError):
             pass
+        self._apply_merge_tile()
+        # Save is the only way out of an edit, so it must be the loudest button
+        # on screen. The green step primary steps aside until the session ends.
+        self._apply_step_next_visibility()
         if not active:
             self.set_correct_armed_line("")
         self._refresh_correct_summary_row()
@@ -289,11 +305,21 @@ class DockAutoReviewCorrectMixin:
             self.auto_ai_add_requested.emit()
 
     def set_merge_available(self, available: bool) -> None:
-        """Show the Merge tile only when the selected polygon has an overlapping
-        or touching neighbour to join. With nothing to merge it into, the tile
-        is hidden and Refine takes the whole top row."""
+        """Record whether the selected polygon has an overlapping or touching
+        neighbour to join, and re-render the tile.
+
+        Two conditions, not one: a neighbour to merge with, AND no live fix
+        session. Merge asks the user to click the OTHER polygons on the map,
+        and a session freezes every polygon but its own, so offering it mid
+        session offers a click the canvas will refuse."""
+        self._auto_merge_available = bool(available)
+        self._apply_merge_tile()
+
+    def _apply_merge_tile(self) -> None:
         try:
-            self.auto_shape_merge_btn.setVisible(bool(available))
+            self.auto_shape_merge_btn.setVisible(
+                bool(getattr(self, "_auto_merge_available", False))
+                and not bool(getattr(self, "_auto_correct_session_active", False)))
         except (RuntimeError, AttributeError):
             pass
 
@@ -353,6 +379,20 @@ class DockAutoReviewCorrectMixin:
         finally:
             for w in widgets.values():
                 w.blockSignals(False)
+        self._sync_shape_only_right_angles()
+
+    def _sync_shape_only_right_angles(self) -> None:
+        """Refuse this polygon's Right angles when the geometry library behind
+        it is missing, so a per-object exception cannot silently return the
+        outline unchanged either (right_angles_support). Only a TICKED box is
+        tested, so an untouched control never imports shapely."""
+        ortho = getattr(self, "auto_shape_only_ortho", None)
+        if ortho is None or not ortho.isChecked():
+            return
+        from .right_angles_support import gate_right_angles
+
+        gate_right_angles(
+            ortho, getattr(self, "auto_shape_only_ortho_label", None))
 
     def get_shape_only_values(self) -> dict:
         """Current per-shape control values, keyed by review param name."""
@@ -386,28 +426,37 @@ class DockAutoReviewCorrectMixin:
                 self._review_shape_tracked = tracked
             if control not in tracked:
                 tracked.add(control)
-                from ...core import telemetry
-                telemetry.track_review_shape_adjusted(
+                from ...core import telemetry, telemetry_run_events
+                telemetry_run_events.track_review_shape_adjusted(
                     control=control,
-                    value=int(values.get("points_pct", 0) or 0))
+                    value=int(values.get("points_pct", 0) or 0),
+                    run_id=telemetry.get_last_run_id() or "")
         except Exception:
             pass  # nosec B110
 
-    def set_shape_only_visible(self, visible: bool) -> None:
-        """Show the per-polygon shape settings, or take them off the page.
+    def _apply_shape_only_mode(self, method: str) -> None:
+        """The per-polygon dials exist in BOTH methods, and open differently.
 
-        Hidden, never grayed: in the Manual method the user places the corners
-        themselves, so a dial that rewrites the outline they just traced is not
-        a disabled option, it is the wrong offer."""
-        visible = bool(visible)
+        They used to be an AI-only offer, on the reading that a control which
+        rewrites a hand-traced outline undoes the user's work. What that missed
+        is WHEN the user reaches for them in Manual: before dragging anything,
+        to thin a 96-point outline into one with corners you can actually grab.
+        So Manual rests OPEN with Points at the top, and AI rests shut, where
+        the dials are the exception to a shape the model already drew.
+        """
+        manual = str(method) == "manual"
+        if manual is not getattr(self, "_auto_shape_only_manual", None):
+            self._auto_shape_only_manual = manual
+            self._auto_shape_only_expanded = manual
         try:
-            self.auto_shape_only_toggle.setVisible(visible)
-            self.auto_shape_only_box.setVisible(
-                visible and bool(
-                    getattr(self, "_auto_shape_only_expanded", False)))
-            self.auto_shape_only_manual_note.setVisible(not visible)
+            self.auto_shape_only_toggle.setVisible(True)
+            self.auto_shape_only_scope_line.setText(
+                tr("This polygon only. Fewer points means fewer corners to drag.")
+                if manual else
+                tr("This polygon only. Every other one follows the Shapes step."))
         except (RuntimeError, AttributeError):
             pass
+        self._apply_shape_only_toggle()
 
     def _on_shape_only_toggle_clicked(self) -> None:
         """Fold the per-polygon settings open or shut."""
@@ -416,16 +465,28 @@ class DockAutoReviewCorrectMixin:
         self._apply_shape_only_toggle()
 
     def _apply_shape_only_toggle(self) -> None:
-        """Render the fold: the head carries the chevron and the body follows."""
+        """Render the fold: the head carries the chevron and the body follows.
+
+        The head names what the dials DO in the current method, because that is
+        what tells the two pages apart. "Settings for this polygon" named the
+        scope and not the job, and read the same on both."""
         expanded = bool(getattr(self, "_auto_shape_only_expanded", False))
+        manual = bool(getattr(self, "_auto_shape_only_manual", False))
         try:
             self.auto_shape_only_toggle.setText(
-                ("▾  " if expanded else "▸  ") + tr("Settings for this polygon"))
-            self.auto_shape_only_toggle.setToolTip(tr(
-                "Give this one polygon its own shape settings, without moving "
-                "the dials that drive the whole layer."))
-            self.auto_shape_only_box.setVisible(
-                expanded and self.auto_shape_only_toggle.isVisible())
+                ("▾  " if expanded else "▸  ") + (
+                    tr("Simplify this outline first") if manual
+                    else tr("Clean up this outline")))
+            self.auto_shape_only_toggle.setToolTip(
+                tr("Thin this outline before you drag its corners, without "
+                   "moving the dials that drive the whole layer.") if manual
+                else tr("Give this one polygon its own shape settings, without "
+                        "moving the dials that drive the whole layer."))
+            # `expanded` alone. Gating on the head's isVisible() read the
+            # PARENT's state (Qt reports a child of a hidden card as invisible),
+            # so the body stayed shut behind a chevron that said open, and it
+            # never reopened when the review card came up.
+            self.auto_shape_only_box.setVisible(expanded)
         except (RuntimeError, AttributeError):
             pass
 
@@ -461,12 +522,15 @@ class DockAutoReviewCorrectMixin:
         """Drive the edit branch card: its glyph, and the one line that says
         what this method is waiting for.
 
-        The glyph and the line are the only two things that separate AI from
-        Manual on a resting page, so they are what the user reads to know which
-        one is live. The two methods do different work on the same polygon, and
-        the page used to describe only one of them, in words that fitted
-        neither."""
+        The gesture plate above the line carries the real difference; the glyph
+        and the line follow it. The two methods do different work on the same
+        polygon, and the page used to describe only one of them, in words that
+        fitted neither."""
         method = getattr(self, "_correct_method", "ai")
+        try:
+            self.auto_correct_gesture_art.set_method(method)
+        except (RuntimeError, AttributeError):
+            pass
         try:
             if method == "manual":
                 self.auto_correct_pick_glyph.setText("◇")

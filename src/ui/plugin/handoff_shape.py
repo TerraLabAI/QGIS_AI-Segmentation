@@ -157,9 +157,13 @@ class HandoffShapeMixin:
                 regularize_settings,
                 regularize_tolerance_m,
             )
-            from ...core.layer_conventions import make_area_measurer
+            from ...core.layer_conventions import (
+                ground_unit_aspect,
+                make_area_measurer,
+            )
             layer = (getattr(self, "_handoff_source_layer", None) or getattr(self, "_current_layer", None))
             factor = 1.0
+            aspect = 1.0
             if layer is not None and layer.crs().isValid():
                 crs = layer.crs()
                 geographic = bool(crs.isGeographic())
@@ -170,6 +174,7 @@ class HandoffShapeMixin:
                     QgsPointXY(centre.x() + step, centre.y())))
                 if metres > 0:
                     factor = metres / step
+                aspect = ground_unit_aspect(crs, centre.x(), centre.y())
             bbox = geom.boundingBox()
             span_units = min(bbox.width(), bbox.height())
             pixel_units = float(mupp)
@@ -191,6 +196,10 @@ class HandoffShapeMixin:
                 "multi_max_groups": int(s["multi_max_groups"]),
                 "multi_min_separation_deg": float(
                     s["multi_min_separation_deg"]),
+                # Square against ground distance, not raw coordinates: in a
+                # geographic CRS the two axes cover different distances, and
+                # every corner would come back tilted.
+                "unit_aspect": aspect,
             }
         except Exception:  # noqa: BLE001 -- fall back to the pixel-anchored path
             return {}

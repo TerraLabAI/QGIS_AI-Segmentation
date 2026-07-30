@@ -133,6 +133,10 @@ def _build_prompt_tables(policy: dict) -> dict:
         # Words never singularized even when their singular is a known object
         # (empty fallback, so the bare-plural rewrite is off without a policy).
         "plural_keep": _as_set("plural_keep"),
+        # Words singularized even when a guard would otherwise hold them back
+        # ("villas" is blocked by the same ending that protects "canvas").
+        # Empty fallback, never a shipped list; plural_keep still wins.
+        "plural_strip": _as_set("plural_strip"),
         # Concept phrase -> concrete object word the cloud model can ground
         # ("wheat" -> "crop field"). Empty fallback, never a shipped table.
         "aliases": _as_map("aliases"),
@@ -299,7 +303,7 @@ def resolve_object_token(text: str) -> str:
     Builds on ``english_token_for``: resolves a localized word to its English
     token (else the prompt itself), then applies the same two silent rewrites
     the run uses so every policy lookup keys on the token that will actually be
-    sent, a bare plural of a known object collapses to its singular
+    sent, a bare plural collapses to its singular
     ("buildings" -> "building") and a server-aliased concept maps to its
     concrete object ("wheat" -> "crop field"). Synchronous and cheap, so it is
     safe on the debounced prompt commit; the async server fallback lives at the
@@ -457,40 +461,103 @@ def _steer_suggestion(words: list[str]) -> str | None:
 # token while the box keeps the user's own words.
 # ---------------------------------------------------------------------------
 
-def _singular_candidates(word: str) -> list[str]:
-    """Candidate singular spellings for a bare plural, in priority order. A
-    word ending in 'ss' is left alone (so 'grass'/'glass' are never stripped)."""
+# Endings whose final 's' is not a plural marker in English ('grass', 'canvas',
+# 'campus', 'iris'). Stripping one produces a non-word the cloud model cannot
+# ground, so these keep their 's' unless the server ``plural_strip`` list names
+# the word: the same endings also catch real plurals ('villas', 'antennas'), and
+# that list is how a deploy frees one without loosening the rule for the rest.
+_SINGULAR_KEEP_ENDINGS = ("ss", "as", "is", "us")
+
+# Shortest singular the rewrite may produce. Below it a strip is mangling a
+# short word rather than singularizing it.
+_SINGULAR_MIN_LEN = 3
+
+
+def _singular_candidates(word: str, forced: bool = False) -> list[str]:
+    """Candidate singular spellings for a bare plural, most likely first.
+
+    Covers the common English plural shapes: -ies, -ves, -sses, -xes/-ches/
+    -shes, -es, and the plain -s. Empty for a word under 4 letters or one whose
+    ending is in ``_SINGULAR_KEEP_ENDINGS``, so 'grass', 'canvas' and 'campus'
+    are never stripped. This is one generic mechanism, never a word list: a true
+    irregular ('people', 'geese') is a server ``plural_keep`` entry.
+
+    ``forced`` is the server ``plural_strip`` escape hatch: the two entry guards
+    are skipped for a word the server named, so a real plural the endings rule
+    holds back ('villas') can still be collapsed. The minimum-length floor on
+    the RESULT still applies, so a forced word can never produce a stub."""
+    if not word.endswith("s"):
+        return []
+    if not forced and (len(word) < 4 or word.endswith(_SINGULAR_KEEP_ENDINGS)):
+        return []
     cands: list[str] = []
-    if len(word) < 4:
-        return cands
-    if word.endswith("s") and not word.endswith("ss"):
-        cands.append(word[:-1])
-    if word.endswith("es"):
-        cands.append(word[:-2])
+    stem = word[:-3]
     if word.endswith("ies"):
-        cands.append(word[:-3] + "y")
-    return cands
+        # 'factories' -> 'factory', but a 4-letter 'ties' -> 'tie'.
+        if len(word) >= 5:
+            cands.append(stem + "y")
+        cands.append(stem + "ie")
+    elif word.endswith("ves"):
+        # 'shelves' -> 'shelf' and 'leaves' -> 'leaf' respell the stem, while
+        # every other -ves word is a plain -ve noun ('groves', 'valves', 'hives').
+        # So the -f reading only leads where it is close to certain.
+        f_first = word.endswith("lves") or word.endswith(("eaves", "oaves"))
+        ve_reading = [stem + "ve"]
+        f_reading = [stem + "f", stem + "fe"]
+        cands += f_reading + ve_reading if f_first else ve_reading + f_reading
+    elif word.endswith("sses"):
+        cands.append(word[:-2])   # 'glasses' -> 'glass'
+    elif word.endswith(("xes", "ches", "shes")):
+        cands.append(word[:-2])   # 'boxes' -> 'box', 'churches' -> 'church'
+        cands.append(word[:-1])   # 'niches' -> 'niche'
+    elif word.endswith("es"):
+        cands.append(word[:-1])   # 'houses' -> 'house', 'trees' -> 'tree'
+        cands.append(word[:-2])   # 'potatoes' -> 'potato'
+    else:
+        cands.append(word[:-1])   # 'buildings' -> 'building'
+    out: list[str] = []
+    for cand in cands:
+        if len(cand) >= _SINGULAR_MIN_LEN and cand != word and cand not in out:
+            out.append(cand)
+    return out
 
 
 def _bare_plural_of(word: str, vocab: set[str] | None = None) -> str | None:
-    """The singular of ``word`` when it is a bare plural whose singular is a
-    known object word, else None. A word already recognized as-is is kept (so a
-    known object that happens to end in 's' is not stripped), and the server
-    ``plural_keep`` list is honored."""
+    """The singular of ``word`` when it reads as a bare plural, else None.
+
+    Most users type the object in the plural ('buildings'), while the cloud
+    model was trained on singular noun phrases, so the rewrite applies to any
+    word, known or not. A known singular still wins when one of the candidates
+    matches it ('leaves' -> 'leaf' rather than 'leave'); otherwise the most
+    likely spelling is taken. A word already recognized as-is is kept, so a
+    known object that happens to end in 's' is not stripped.
+
+    Two server lists steer the outcome, and ``plural_keep`` wins when a word is
+    on both: it is the list that protects, and a wrong strip produces a non-word
+    the cloud model cannot ground, while a plural left alone still runs.
+    ``plural_strip`` is the opposite hatch, for a real plural one of the guards
+    holds back; it overrides the vocabulary check too, since being a recognized
+    word is itself one of the reasons a plural stays put.
+    """
     if vocab is None:
         vocab = _known_vocabulary()
-    if word in vocab or word in _prompt_tables()["plural_keep"]:
+    tables = _prompt_tables()
+    if word in tables["plural_keep"]:
         return None
-    for cand in _singular_candidates(word):
+    forced = word in tables["plural_strip"]
+    if not forced and word in vocab:
+        return None
+    cands = _singular_candidates(word, forced=forced)
+    for cand in cands:
         if cand in vocab:
             return cand
-    return None
+    return cands[0] if cands else None
 
 
 def _singular_token(token: str) -> str:
-    """Collapse a token whose LAST word is a bare plural of a known object to
-    its singular ('solar panels' -> 'solar panel'). Unknown or already-singular
-    tokens pass through unchanged."""
+    """Collapse a token whose LAST word is a bare plural to its singular
+    ('solar panels' -> 'solar panel'). Already-singular tokens pass through
+    unchanged."""
     words = token.split(" ")
     if not words:
         return token
@@ -501,10 +568,10 @@ def _singular_token(token: str) -> str:
 
 
 def _singularize_bare_plural(words: list[str]) -> str | None:
-    """Rewrite a committed prompt whose LAST core word is a bare plural of a
-    known object into its singular ('buildings' -> 'building'), or None. Earlier
-    core words must already be recognized object words; the last is validated by
-    its singular. The vocab gate is what keeps this safe with no client table."""
+    """Rewrite a committed prompt whose LAST core word is a bare plural into its
+    singular ('buildings' -> 'building'), or None. Only that last word changes,
+    so a modifier the guard does not recognize ('rooftop panels') rides along
+    untouched."""
     strip = _prompt_tables()["strip"]
     vocab = _known_vocabulary()
     core = [w for w in words if w not in strip] or words
@@ -512,8 +579,6 @@ def _singularize_bare_plural(words: list[str]) -> str | None:
         return None
     sing = _bare_plural_of(core[-1], vocab)
     if sing is None:
-        return None
-    if not all(_word_is_known(w, vocab) for w in core[:-1]):
         return None
     return " ".join(core[:-1] + [sing])
 
@@ -590,8 +655,8 @@ def validate_prompt(text: str) -> tuple[bool, str | None, str | None]:
     Silent-swap reasons ``{"translated", "plural", "alias"}`` all mean the same
     thing to the dock: run ``suggestion`` instead of the typed text, and tell
     the user. ``"translated"`` covers a KNOWN object typed in another supported
-    language and near-miss typo repair; ``"plural"`` a bare plural of a known
-    object collapsed to its singular ('buildings' -> 'building'); ``"alias"`` a
+    language and near-miss typo repair; ``"plural"`` a bare plural collapsed to
+    its singular ('buildings' -> 'building'); ``"alias"`` a
     concept word the server maps to a concrete object ('wheat' -> 'crop field',
     applied on top of a translation/typo/plural so it resolves in one step).
 
@@ -683,9 +748,9 @@ def validate_prompt(text: str) -> tuple[bool, str | None, str | None]:
     correction = _typo_correction(folded_words)
     if correction and correction != norm:
         return _swap_result(correction, "translated")
-    # A committed, all-known prompt whose last word is a bare plural runs on the
-    # singular ('buildings' -> 'building'), which the cloud model grounds far
-    # more reliably. Skipped when the singular is itself a weak, steered word
+    # A committed prompt whose last word is a bare plural runs on the singular
+    # ('buildings' -> 'building'), which the cloud model grounds far more
+    # reliably. Skipped when the singular is itself a weak, steered word
     # (the steer nudge below wins, e.g. 'walls' -> steer 'building').
     steer = _steer_suggestion(words)
     plural = _singularize_bare_plural(words)

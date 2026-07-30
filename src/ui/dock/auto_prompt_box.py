@@ -10,6 +10,7 @@ from __future__ import annotations
 from qgis.PyQt.QtCore import Qt
 
 from ...core.i18n import tr
+from ...core.server_dials import ServerDialSet, dial_copy
 from .guidance import (
     BLUE_TINT,
     HINT_PROMPT_EXAMPLES_DRIVE,
@@ -26,6 +27,13 @@ from .styles import (
     BRAND_BLUE,
     _msg_label_qss,
 )
+
+# Prompts that name one thing but usually mean a continuous cover. Union-only,
+# so a deploy adds a word (a language's own "tree", "bush", "vine") and the
+# shipped pair can never be dropped. The sentence names the two words it
+# offers, so it moves with the list: retune both keys in the same deploy.
+COUNT_VS_MAP_WORDS = ServerDialSet(
+    "prompt.count_vs_map_words", ("tree", "trees"), normalize=str.lower)
 
 
 class DockAutoPromptBoxMixin:
@@ -55,9 +63,6 @@ class DockAutoPromptBoxMixin:
         # quote the old word); the synonym prefill lands here too and cleans
         # itself up the same way.
         self.hide_auto_zero_assist()
-        # A prompt edit changes the setup: the meta intercept (and its one-run
-        # override) must be re-earned against the new state.
-        self._reset_meta_intercept()
         self._apply_prompt_hint_on_edit()
         self._update_auto_detect_enabled()
         # Re-seed the object-aware detail default once the typed object settles.
@@ -125,13 +130,15 @@ class DockAutoPromptBoxMixin:
             # user pick, instead of ranking one above the other.
             try:
                 ok, reason, suggestion = validate_prompt(text)
-                if ok and text.strip().lower() in ("tree", "trees"):
+                if ok and text.strip().lower() in COUNT_VS_MAP_WORDS:
                     # Count-vs-map heads-up, minimal on purpose: dense forest
                     # reads better as one continuous block.
                     self._set_prompt_info(
-                        tr('Dense forest? "Forest" takes it as one block; '
-                           '"Tree" picks individual trees.'), tip=True,
-                        hint_id=HINT_PROMPT_TREE_OR_FOREST)
+                        dial_copy(
+                            "prompt_guard.count_vs_map",
+                            tr('Dense forest? "Forest" takes it as one block; '
+                               '"Tree" picks individual trees.')),
+                        tip=True, hint_id=HINT_PROMPT_TREE_OR_FOREST)
                 elif ok and reason == "multi_first" and suggestion:
                     # Early heads-up for a several-objects prompt: the box is
                     # left as typed (the swap happens at Detect), the hint
@@ -141,16 +148,25 @@ class DockAutoPromptBoxMixin:
                            'first.').format(first=suggestion), tip=True,
                         hint_id=HINT_PROMPT_ONE_OBJECT_PER_RUN)
                 elif ok and reason is None:
-                    # Clean prompt: if it is a curated object that text alone
-                    # rarely finds and no example is drawn, nudge (once) toward
-                    # drawing one. Non-blocking, and only when nothing more
-                    # specific claimed the line above.
-                    self._maybe_show_exemplar_boost_nudge(text)
+                    # A served advisory for this prompt family goes first: it is
+                    # authored per keyword, so it is the most specific thing we
+                    # can say, and it stays retunable without a plugin release.
+                    # Falls through when the user closed it or the server
+                    # suppressed it, rather than leaving the line blank.
+                    from ...core.detection_policy import prompt_hint_for
+                    served = prompt_hint_for(text)
+                    if served is None or not self._set_prompt_info(
+                            served[1], tip=True, hint_id=served[0]):
+                        # Clean prompt: if it is a curated object that text
+                        # alone rarely finds and no example is drawn, nudge
+                        # (once) toward drawing one. Non-blocking, and only when
+                        # nothing more specific claimed the line above.
+                        self._maybe_show_exemplar_boost_nudge(text)
             except Exception:  # noqa: BLE001
                 pass  # nosec B110
             try:
-                from ...core import telemetry
-                telemetry.track_auto_prompt_committed(
+                from ...core import telemetry_run_events
+                telemetry_run_events.track_auto_prompt_committed(
                     prompt=text,
                     from_library=getattr(self, "_prompt_from_library", False),
                 )
@@ -279,8 +295,8 @@ class DockAutoPromptBoxMixin:
         if getattr(self, "_boost_nudge_tracked", None) != key:
             self._boost_nudge_tracked = key
             try:
-                from ...core import telemetry
-                telemetry.track_auto_prompt_hint_shown(
+                from ...core import telemetry_run_events
+                telemetry_run_events.track_auto_prompt_hint_shown(
                     kind=kind, prompt=token)
             except Exception:
                 pass  # nosec B110
@@ -327,8 +343,8 @@ class DockAutoPromptBoxMixin:
                 word=typed, token=token), info=True, kind="swap",
             hint_id=HINT_PROMPT_SILENT_SWAP)
         try:
-            from ...core import telemetry
-            telemetry.track_auto_prompt_rewritten(kind=reason, prompt=token)
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_auto_prompt_rewritten(kind=reason, prompt=token)
         except Exception:  # noqa: BLE001 -- telemetry is best-effort
             pass  # nosec B110
         return True
@@ -356,9 +372,8 @@ class DockAutoPromptBoxMixin:
         draws examples. A non-empty prompt clears any stale guard message (the
         guard only fires on commit). With no prompt and examples drawn the note
         is count-aware: one positive nudges toward a second (reference-image
-        detection is far better with a pair; the single-example run stays
-        available through the escape link); two or more say the examples now
-        drive the run.
+        detection is better with a pair, and the single-example run is allowed
+        either way); two or more say the examples now drive the run.
 
         This writes the prompt-info line, a DIFFERENT widget from the example
         card's armed instruction and size warning, so the two never fight one
@@ -382,9 +397,9 @@ class DockAutoPromptBoxMixin:
             # stays quiet here rather than saying the same thing twice.
             self._set_prompt_info()
             return
-        # Two or more positives: the example-only run is possible, but the
-        # accurate default still pairs the examples with a word (informative
-        # note; committing without one triggers the meta intercept).
+        # Two or more positives: the example-only run is ready to go, and
+        # pairing the examples with a word is still the most accurate setup.
+        # Advice, not a gate: Detect is already green.
         self._set_prompt_info(
             tr("Your examples drive the search - naming the object makes it "
                "even more accurate."), info=True,

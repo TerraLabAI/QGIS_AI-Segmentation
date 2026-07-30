@@ -44,6 +44,7 @@ from .plugin.auto_correct import AutoCorrectMixin
 from .plugin.auto_exemplar_grouping import AutoExemplarGroupingMixin
 from .plugin.auto_finalize_steps import AutoFinalizeStepsMixin
 from .plugin.auto_flow import AutoFlowMixin
+from .plugin.auto_imagery_guard import AutoImageryGuardMixin
 from .plugin.auto_lifecycle import AutoLifecycleMixin
 from .plugin.auto_object_build import AutoObjectBuildMixin
 from .plugin.auto_results import AutoResultsMixin
@@ -57,11 +58,13 @@ from .plugin.auto_run_terminal import AutoRunTerminalMixin
 from .plugin.auto_shape_edit import AutoShapeEditMixin
 from .plugin.auto_shape_overrides import AutoShapeOverridesMixin
 from .plugin.auto_zone import AutoZoneMixin
+from .plugin.correct_focus import CorrectFocusMixin
 from .plugin.demo_scene import DemoSceneMixin
 from .plugin.env_setup import EnvSetupMixin
 from .plugin.exemplars import ExemplarsMixin
 from .plugin.handoff_seed_layers import HandoffSeedLayersMixin
 from .plugin.handoff_shape import HandoffShapeMixin
+from .plugin.local_ai_install_lock import LocalAiInstallLockMixin
 from .plugin.local_ai_warm import LocalAiWarmMixin
 from .plugin.manual_add import ManualAddMixin
 from .plugin.manual_crops import ManualCropsMixin
@@ -69,6 +72,7 @@ from .plugin.manual_handoff import ManualHandoffMixin
 from .plugin.manual_predict import ManualPredictMixin
 from .plugin.manual_workflow import ManualWorkflowMixin
 from .plugin.qgis_edit_bridge import QgisEditBridgeMixin
+from .plugin.qgis_edit_tool_messages import QgisEditToolMessagesMixin
 from .plugin.shared import park_orphaned_worker
 
 
@@ -76,10 +80,14 @@ class AISegmentationPlugin(
     AutoFlowMixin,
     AutoCorrectMixin,
     LocalAiWarmMixin,
+    LocalAiInstallLockMixin,
     AutoShapeEditMixin,
     AutoShapeOverridesMixin,
+    CorrectFocusMixin,
     QgisEditBridgeMixin,
+    QgisEditToolMessagesMixin,
     AutoRunMixin,
+    AutoImageryGuardMixin,
     AutoResultsMixin,
     AutoReviewDisplayMixin,
     HandoffSeedLayersMixin,
@@ -124,6 +132,13 @@ class AISegmentationPlugin(
         self.current_mask = None
         self.current_score = 0.0
         self.current_transform_info = None
+        # Manual preview memo: the mask-stage output (cleaned mask + its
+        # polygons) for one (mask object, mask-stage settings) pair. A refine
+        # slider that only moves a GEOMETRY dial reads it instead of
+        # re-cleaning and re-polygonizing the whole mask. Keyed on the mask
+        # OBJECT, which every writer rebinds rather than mutates, so a new
+        # prediction misses it with no explicit invalidation.
+        self._mask_preview_memo = None
         self.current_low_res_mask = None  # For iterative refinement with negative points
         self.saved_polygons = []
         # Refine-in-Manual handoff: while True, a Manual session is refining the
@@ -256,6 +271,10 @@ class AISegmentationPlugin(
         # QThread.terminate which crashes QGIS when the socket is wedged).
         self._key_revalidate_task = None  # GenericRequestTask | None
         self._config_prefetch_task = None  # GenericRequestTask | None
+        # Repeats that fetch for the rest of the session, so a server dial
+        # reaches a user who leaves QGIS open rather than waiting for their
+        # next start (see _arm_config_refresh).
+        self._config_refresh_timer = None  # QTimer | None
         # Warms the segment-library catalogue cache off the GUI thread so the
         # library opens instantly (the dialog reads cache-only, never network).
         self._catalog_prefetch_task = None  # GenericRequestTask | None
@@ -398,10 +417,6 @@ class AISegmentationPlugin(
         # every NEW review (_seed_review_display_mode).
         self._auto_display_mode = "random"
         self._auto_run_id: str | None = None
-        # Crash-net run autosave: one recovery offer per session (the message
-        # bar widget is kept so the Recover click can dismiss it).
-        self._run_autosave_offer_shown: bool = False
-        self._run_autosave_offer_widget = None
         # run_id of the last run whose auto-default export was archived at
         # review-open, so that background upload fires at most once per run
         # (Finish still uploads the reviewed set later; same run_id, latest wins).
@@ -567,16 +582,22 @@ class AISegmentationPlugin(
         return is_layer_georeferenced(layer)
 
     @staticmethod
-    def _is_online_provider(layer) -> bool:
-        """Check if a raster layer uses an online data provider."""
+    def _needs_canvas_render(layer) -> bool:
+        """Whether this raster is rendered through QGIS instead of read as a file.
+
+        True for the online services and for the local providers that hold no
+        file (PostGIS raster, virtual raster). Every caller, Manual and
+        Automatic alike, branches on exactly this: read the pixels from disk,
+        or ask QGIS to draw them.
+        """
         if layer is None:
             return False
         try:
             provider = layer.dataProvider()
             if provider is None:
                 return False
-            from ..core.feature_encoder import ONLINE_PROVIDERS
-            return provider.name() in ONLINE_PROVIDERS
+            from ..core.feature_encoder import CANVAS_RENDERED_PROVIDERS
+            return provider.name() in CANVAS_RENDERED_PROVIDERS
         except (RuntimeError, AttributeError):
             return False
 
@@ -612,6 +633,17 @@ class AISegmentationPlugin(
         if bbox_width == 0:
             return 0
         pixel_size = bbox_width / width_pixels
+        # The crop covers a square GROUND region (core.layer_conventions.
+        # ground_unit_aspect), so on a geographic raster the x and y axes
+        # resolve at a different CRS-unit-per-pixel size. This value feeds a
+        # direction-agnostic simplify, so use the finer of the two axes: the
+        # coarser one would erase real geometry on its axis, the finer one
+        # only leaves a few extra vertices on the other. On a projected
+        # raster the two axes already agree, so this is exactly pixel_size.
+        height_pixels = max(img_shape[0], 1)
+        bbox_height = bbox[3] - bbox[2]
+        if bbox_height != 0:
+            pixel_size = min(pixel_size, bbox_height / height_pixels)
         # One crop pixel per unit, the same scale the Automatic review's
         # Simplify uses (shape_polygon_geometry keeps the twin of this line).
         return pixel_size * simplify_value
@@ -752,12 +784,13 @@ class AISegmentationPlugin(
         # costs nothing.
         self._ensure_dock_widget()
 
-        # A previous session's run autosave that was never exported (QGIS
-        # closed or died between finalize and Finish): offer it back. One
-        # event-loop turn later so startup finishes laying out the message bar
-        # first; the offer itself is fully guarded and best-effort.
-        from qgis.PyQt.QtCore import QTimer
-        QTimer.singleShot(0, self._offer_pending_run_autosave)
+        # A pointer left by a session that died with a review open: log where
+        # the table sits and drop it. Nothing is shown and nothing is loaded.
+        try:
+            from ..core.run_autosave import log_and_clear_stale_pending
+            log_and_clear_stale_pending(self._auto_run_id)
+        except Exception:  # nosec B110
+            pass
 
         # Auto-open the panel on first install and after every upgrade (new
         # version), but never on a routine launch. Same-version launches let
@@ -845,6 +878,12 @@ class AISegmentationPlugin(
         # the user's project never keeps our snapping / topology / avoid-overlap
         # forced on after the plugin is gone (idempotent, never raises).
         self._abort_qgis_edit_bridge_if_active()
+        # The waiting cursor is application-global, so it has to come off before
+        # the flags below make the session look already gone.
+        try:
+            self._end_correct_wait()
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
         # Data-loss guard: if a Refine-in-Manual handoff is live with hand edits,
         # fold them into the held review BEFORE clearing the flag, so the autosave
         # later in unload writes the MERGED set (not just the original detections).
@@ -955,6 +994,8 @@ class AISegmentationPlugin(
                     (self.dock_widget.auto_correct_method_changed, self._on_correct_method_changed),
                     (self.dock_widget.auto_ai_add_requested, self._on_ai_add_requested),
                     (self.dock_widget.auto_ai_add_keep_requested, self._route_save_add_mode),
+                    (self.dock_widget.auto_review_install_cancel_requested,
+                     self._on_review_install_cancel_requested),
                     (self.dock_widget.auto_exit_requested, self._on_auto_exit_clicked),
                     (self.dock_widget.auto_add_exemplar_requested, self._on_add_exemplar_requested),
                     (self.dock_widget.auto_exemplar_remove_requested, self._on_exemplar_remove_requested),
@@ -1051,6 +1092,14 @@ class AISegmentationPlugin(
         self._cancel_pairing_worker()
         self._pairing_worker = None
         self._pairing_cancel_task = None
+        # Stopped before the tasks: a tick landing during teardown would queue
+        # a fetch on a controller that is already coming apart.
+        if self._config_refresh_timer is not None:
+            try:
+                self._config_refresh_timer.stop()
+            except RuntimeError:
+                pass  # the dock took its children with it
+            self._config_refresh_timer = None
         self._cancel_task("_key_revalidate_task")
         self._cancel_task("_config_prefetch_task")
         self._cancel_task("_catalog_prefetch_task")
@@ -1295,6 +1344,10 @@ class AISegmentationPlugin(
         self.dock_widget.auto_ai_add_requested.connect(self._on_ai_add_requested)
         self.dock_widget.auto_ai_add_keep_requested.connect(
             self._route_save_add_mode)
+        # The setup banner's Cancel: the way out while an install holds the
+        # review (see plugin/local_ai_install_lock.py).
+        self.dock_widget.auto_review_install_cancel_requested.connect(
+            self._on_review_install_cancel_requested)
         self.dock_widget.auto_exit_requested.connect(self._on_auto_exit_clicked)
         # Visual exemplar controls (+ Example / + Exclude / chip remove).
         self.dock_widget.auto_add_exemplar_requested.connect(self._on_add_exemplar_requested)
@@ -1471,6 +1524,7 @@ class AISegmentationPlugin(
         """The configuration is already published; only the dock needs telling."""
         self._config_prefetch_task = None
         self._reapply_server_switches()
+        self._arm_config_refresh()
 
     def _on_config_prefetch_failed(self, message: str, code: str) -> None:
         self._config_prefetch_task = None
@@ -1478,6 +1532,67 @@ class AISegmentationPlugin(
         # earlier session left on disk, so the dock is nudged either way.
         self._reapply_server_switches()
         self._notify_connection_issue(code, message)
+        # Armed on failure too: a user who opened QGIS offline is exactly the
+        # one who should pick the configuration up once the link comes back,
+        # instead of running the whole session on no configuration at all.
+        self._arm_config_refresh()
+
+    def _arm_config_refresh(self) -> None:
+        """Re-fetch the configuration on a slow repeat for the rest of the session.
+
+        Without this the configuration is read once, when the dock first
+        opens, and every server dial in the plugin then reaches a user only
+        when they next start QGIS. A session left open for days would ride out
+        an incident on the values it woke up with, which is the thing the dials
+        exist to avoid.
+
+        Safe to repeat because the grid geometry is client-side by design (see
+        the OVERLAP_FRACTION note in the placement rules): the credit estimate
+        and the run compute the same tile count from shipped constants, so a
+        configuration arriving between the two cannot bill a grid the preview
+        never showed. The one served value the estimate reads is the tile cap,
+        and a cap can only refuse a run, never enlarge its bill.
+
+        Idempotent: the timer is created once and left running.
+        """
+        if self._config_refresh_timer is not None or self.dock_widget is None:
+            return
+        from qgis.PyQt.QtCore import QTimer
+
+        # Parented to the dock, never to the controller: the controller is not
+        # a QObject, and an unparented timer outlives the plugin.
+        timer = QTimer(self.dock_widget)
+        timer.setInterval(self._config_refresh_interval_ms())
+        timer.timeout.connect(self._refresh_config_if_idle)
+        timer.start()
+        self._config_refresh_timer = timer
+
+    @staticmethod
+    def _config_refresh_interval_ms() -> int:
+        """How often the configuration is re-read, in ms.
+
+        A dial on itself, so the interval can be shortened during an incident
+        and lengthened if it ever costs more than it is worth. Bounded at five
+        minutes so no served value can turn this into a polling loop.
+        """
+        from ..core.server_dials import dial_in_range
+
+        minutes = dial_in_range("config_refresh_minutes", 30, 5, 720)
+        return int(minutes) * 60 * 1000
+
+    def _refresh_config_if_idle(self) -> None:
+        """One repeat fetch, skipped while a run or a review is on screen.
+
+        A run resolves its own dials once at construction, so it is already
+        immune, but the review reads them live and a shape changing under a
+        user mid-review would read as a bug. Nothing is lost by waiting: the
+        timer comes back.
+        """
+        if getattr(self, "_auto_worker", None) is not None:
+            return
+        if getattr(self, "_auto_review", None):
+            return
+        self._prefetch_server_config()
 
     def _reapply_server_switches(self) -> None:
         """Have the dock re-read the configuration in force. GUI thread only."""

@@ -22,7 +22,7 @@ from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QColor
 
 from ...core.i18n import tr
-from ...core.qt_compat import PolygonGeometry
+from ...core.qt_compat import PolygonGeometry, safe_disconnect
 from ..canvas_palette import GRID_LINE, ZONE_FILL, ZONE_STROKE
 from ..shortcut_filter import ShortcutFilter
 from .shared import (
@@ -108,23 +108,24 @@ class AutoZoneMixin:
                 self.iface.mapCanvas().unsetMapTool(self._zone_selection_tool)
             except (RuntimeError, AttributeError):
                 pass
-            try:
-                self._zone_selection_tool.zone_selected.disconnect(self._on_zone_polygon_drawn)
-                self._zone_selection_tool.zone_cleared.disconnect(self._on_zone_cleared)
-                self._zone_selection_tool.vertices_changed.disconnect(
-                    self._on_zone_vertices_changed)
-                self._zone_selection_tool.back_requested.disconnect(self._on_auto_exit_clicked)
-            except (TypeError, RuntimeError):
-                pass
+            # One guard per signal: batched, a tool whose C++ half was already
+            # deleted made the first disconnect raise and left the other three
+            # handlers live on it.
+            tool = self._zone_selection_tool
+            safe_disconnect(tool, "zone_selected", self._on_zone_polygon_drawn)
+            safe_disconnect(tool, "zone_cleared", self._on_zone_cleared)
+            safe_disconnect(tool, "vertices_changed", self._on_zone_vertices_changed)
+            safe_disconnect(tool, "back_requested", self._on_auto_exit_clicked)
             self._zone_selection_tool = None
 
         self._clear_auto_canvas()
 
-        try:
-            QgsProject.instance().cleared.disconnect(self._on_project_cleared_auto)
-            QgsProject.instance().readProject.disconnect(self._on_project_cleared_auto)
-        except TypeError:
-            pass  # nosec B110 -- not connected is fine
+        # Was one try catching TypeError only, so a RuntimeError from a project
+        # torn down before us escaped _teardown_auto_mode entirely and skipped
+        # everything below.
+        proj = QgsProject.instance()
+        safe_disconnect(proj, "cleared", self._on_project_cleared_auto)
+        safe_disconnect(proj, "readProject", self._on_project_cleared_auto)
 
         self._auto_zone = None
         self._auto_zone_polygon = None
@@ -261,7 +262,7 @@ class AutoZoneMixin:
             return
         try:
             slider = dock.auto_detail_slider
-            zone_in_layer = self._reproject_zone_to_layer_crs(self._auto_zone, layer)
+            zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
             best, best_gap = None, None
             for level in range(slider.minimum(), slider.maximum() + 1):
                 grid = self._grid_for_detail(layer, zone_in_layer, level)
@@ -376,9 +377,8 @@ class AutoZoneMixin:
     def _track_history_rerun(self, kind: str) -> None:
         """Additive telemetry: kind = 'same_zone' | 'new_zone'. No coordinates."""
         try:
-            from ...core import telemetry
-            from ...core import telemetry_events as tev
-            telemetry.track(tev.HISTORY_RERUN, {"kind": kind})
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_history_rerun(kind)
         except Exception:
             pass  # nosec B110
 
@@ -432,12 +432,12 @@ class AutoZoneMixin:
         if self.dock_widget:
             self.dock_widget.set_auto_zone_state("zone_set")
         try:
-            from ...core import telemetry
+            from ...core import telemetry_run_events
             try:
                 vtx = int(geom.constGet().vertexCount())
             except Exception:
                 vtx = 0
-            telemetry.track_zone_drawn(
+            telemetry_run_events.track_zone_drawn(
                 vertices=vtx,
                 area_km2=self._zone_geodesic_area_km2(geom),
             )
@@ -474,7 +474,7 @@ class AutoZoneMixin:
         if layer is None:
             return "ok"
         try:
-            if self._is_online_provider(layer):
+            if self._needs_canvas_render(layer):
                 return "ok"
             extent = layer.extent()
             if extent.isEmpty() or extent.width() <= 0 or extent.height() <= 0:
@@ -572,8 +572,8 @@ class AutoZoneMixin:
             except (RuntimeError, AttributeError):
                 pass
         try:
-            from ...core import telemetry
-            telemetry.track_auto_zone_too_large(area_km2=area_km2)
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_auto_zone_too_large(area_km2=area_km2)
         except Exception:
             pass  # nosec B110
 
@@ -684,7 +684,7 @@ class AutoZoneMixin:
             # exceeds the cap (see set_auto_credit_estimate), so the locked
             # range is seen, not hidden.
             if self._auto_zone is not None:
-                zone_in_layer = self._reproject_zone_to_layer_crs(self._auto_zone, layer)
+                zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
                 self.dock_widget.set_auto_detail_max(
                     self._max_useful_detail(layer, zone_in_layer))
                 self.dock_widget.set_auto_free_run_cap(self._free_run_tile_cap())
@@ -730,7 +730,7 @@ class AutoZoneMixin:
             # GSD guard: warn when the chosen detail leaves the imagery coarser
             # than the detection quality threshold (0.5 m/px ground resolution).
             try:
-                zone_in_layer = self._reproject_zone_to_layer_crs(self._auto_zone, layer)
+                zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
                 sized = self._grid_for_detail(
                     layer, zone_in_layer, self._get_auto_detail_level())
                 if sized is not None:
@@ -771,11 +771,13 @@ class AutoZoneMixin:
 
     def _hide_auto_cost_label(self) -> None:
         """Blank the 'N tile(s) = N credit(s)' label when there is nothing to
-        estimate (layer removed, zone dropped); it used to go stale."""
+        estimate (layer removed, zone dropped); it used to go stale. The
+        credit-block callout prices the same estimate, so it goes too."""
         if not self.dock_widget:
             return
         try:
             self.dock_widget.auto_credit_cost_label.setVisible(False)
+            self.dock_widget.set_auto_credit_block(None)
         except (RuntimeError, AttributeError):
             pass
 
@@ -810,7 +812,11 @@ class AutoZoneMixin:
             if cols < 1 or rows < 1:
                 return
 
-            poly = self._polygon_in_layer_crs(layer)  # None for rectangle/MCP path
+            # The cells below are built from grid["bbox"], so the preview and
+            # the clip have to speak the CRS that bbox is in.
+            grid_crs = QgsCoordinateReferenceSystem(grid.get("crs") or "") \
+                if grid.get("crs") else layer.crs()
+            poly = self._polygon_in_run_crs(layer)  # None for rectangle/MCP path
             # Same zone at the same grid gives the same picture. The Detail
             # slider is quantised, so a drag crosses several positions that map
             # to one grid, and every settle used to re-clip every cell against
@@ -829,7 +835,7 @@ class AutoZoneMixin:
                 cached = cache.get(cache_key)
                 if cached is not None:
                     self._zone_grid_rubber_band = self._new_zone_grid_band(
-                        cached, layer)
+                        cached, grid_crs)
                     return
             # Rectangle zones (or the MCP path with no poly) never need a
             # per-cell clip: the grid already sits flush inside the bbox, so
@@ -883,12 +889,14 @@ class AutoZoneMixin:
                 if len(cache) >= _ZONE_GRID_CACHE_SIZE:
                     cache.pop(next(iter(cache)))
                 cache[cache_key] = collected
-            self._zone_grid_rubber_band = self._new_zone_grid_band(collected, layer)
+            self._zone_grid_rubber_band = self._new_zone_grid_band(collected, grid_crs)
         except (RuntimeError, AttributeError, ZeroDivisionError):
             pass
 
-    def _new_zone_grid_band(self, geom, layer):
-        """A styled rubber band showing one already-clipped grid geometry."""
+    def _new_zone_grid_band(self, geom, crs):
+        """A styled rubber band showing one already-clipped grid geometry.
+
+        ``crs`` is the CRS ``geom`` is expressed in, which is the run CRS."""
         rb = QgsRubberBand(self.iface.mapCanvas(), PolygonGeometry)
         # Lines only, no cell fill: the grid must NOT tint the zone interior
         # (a coloured fill doubled the blue and read as a background change).
@@ -908,9 +916,9 @@ class AutoZoneMixin:
         rb.setWidth(2)
         # CRS overload, NOT the layer: setToGeometry has no QgsMapLayer
         # overload (unlike addGeometry), so passing the raster layer is a
-        # TypeError on every QGIS build. The CRS reprojects layer -> canvas
+        # TypeError on every QGIS build. The CRS reprojects run -> canvas
         # exactly like the per-cell addGeometry(cell, layer) did.
-        rb.setToGeometry(geom, layer.crs())
+        rb.setToGeometry(geom, crs)
         return rb
 
     def _clear_zone_tile_grid(self) -> None:
@@ -919,7 +927,7 @@ class AutoZoneMixin:
             self._safe_remove_rubber_band(self._zone_grid_rubber_band)
             self._zone_grid_rubber_band = None
 
-    def _reproject_zone_to_layer_crs(
+    def _zone_in_layer_crs(
         self, zone: QgsRectangle, layer: QgsRasterLayer
     ) -> QgsRectangle:
         """Reproject a zone rectangle from canvas CRS to layer CRS.
@@ -947,6 +955,131 @@ class AutoZoneMixin:
 
         return result
 
+    def _run_crs_for_layer(self, layer: QgsRasterLayer, zone_in_layer: QgsRectangle):
+        """The CRS this run renders, tiles and measures in, over ``zone_in_layer``.
+
+        Usually the layer's own CRS. It differs only where the layer's two axes
+        cover different ground distances, which is a geographic CRS: there the
+        run moves to ground metres so a rendered pixel is square on the ground
+        and every length the run compares means the same thing on both axes.
+
+        One entry of cache, keyed on the layer and the exact zone, because the
+        detail slider asks for the same zone once per level in a tight loop.
+        """
+        from ...core.layer_conventions import pick_run_crs
+
+        try:
+            layer_crs = layer.crs()
+            key = self._run_crs_memo_key(layer_crs, zone_in_layer)
+        except (RuntimeError, AttributeError):
+            return None
+        cached = getattr(self, "_auto_run_crs_memo", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        try:
+            run_crs = pick_run_crs(layer_crs, zone_in_layer)
+            # Prove the move before committing to it. Everything downstream
+            # reads the CRS back rather than the rectangle that produced it, so
+            # a CRS accepted here and a transform that fails later would leave
+            # the run naming one CRS while its extents sit in another, and every
+            # tile of it would render the wrong ground and still be billed.
+            if run_crs is not None and run_crs != layer_crs:
+                moved = QgsCoordinateTransform(
+                    layer_crs, run_crs, QgsProject.instance()
+                ).transformBoundingBox(zone_in_layer)
+                if moved.width() <= 0 or moved.height() <= 0:
+                    run_crs = layer_crs
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            run_crs = layer_crs
+        except Exception:  # noqa: BLE001 -- antimeridian, unusable CRS  # nosec B110
+            run_crs = layer_crs
+        self._auto_run_crs_memo = (key, run_crs)
+        return run_crs
+
+    @staticmethod
+    def _run_crs_memo_key(layer_crs, zone_in_layer):
+        """Everything the run CRS depends on, so a change to any of it re-asks.
+
+        The project CRS is in here because a metric project CRS is preferred
+        over a zone's own UTM zone, so changing it between drawing and running
+        would otherwise keep the answer from before the change."""
+        try:
+            project_authid = QgsProject.instance().crs().authid()
+        except (RuntimeError, AttributeError):
+            project_authid = ""
+        return (layer_crs.authid(), project_authid,
+                zone_in_layer.xMinimum(), zone_in_layer.yMinimum(),
+                zone_in_layer.xMaximum(), zone_in_layer.yMaximum())
+
+    def _run_crs_now(self, layer: QgsRasterLayer):
+        """The run CRS resolved by the most recent zone reprojection for ``layer``.
+
+        Every grid computation reprojects its zone first, so the answer is that
+        zone's. Falls back to the layer CRS when no zone has been reprojected
+        yet or the memo belongs to another layer, which is what the grid math
+        assumed before there was a run CRS at all.
+        """
+        try:
+            layer_crs = layer.crs()
+            memo = getattr(self, "_auto_run_crs_memo", None)
+            if memo is None:
+                return layer_crs
+            project_authid = QgsProject.instance().crs().authid()
+            if memo[0][0] == layer_crs.authid() and memo[0][1] == project_authid:
+                return memo[1]
+            return layer_crs
+        except (RuntimeError, AttributeError, IndexError, TypeError):
+            return None
+
+    def _reproject_zone_to_run_crs(
+        self, zone: QgsRectangle, layer: QgsRasterLayer
+    ) -> QgsRectangle:
+        """Any canvas-CRS rectangle into the run CRS.
+
+        Identical to the layer CRS for every layer whose axes already agree on
+        the ground, so those runs are unchanged.
+
+        The CRS is resolved from the DRAWN ZONE, never from ``zone``, so an
+        exemplar box near the edge of a wide zone cannot land in a different
+        projected zone from the run it belongs to, nor answer for the run when
+        something later asks which CRS it is in.
+
+        On any failure the run falls back to the layer CRS, and the resolved
+        CRS falls back with it: half a run in one CRS and half in another is the
+        one outcome nothing downstream would notice.
+        """
+        anchor = self._auto_zone if self._auto_zone is not None else zone
+        anchor_in_layer = self._zone_in_layer_crs(anchor, layer)
+        zone_in_layer = (anchor_in_layer if anchor is zone
+                         else self._zone_in_layer_crs(zone, layer))
+        run_crs = self._run_crs_for_layer(layer, anchor_in_layer)
+        try:
+            if run_crs is None or run_crs == layer.crs():
+                return zone_in_layer
+            canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+            source_crs = canvas_crs if canvas_crs.isValid() else layer.crs()
+            xform = QgsCoordinateTransform(source_crs, run_crs, QgsProject.instance())
+            source_zone = zone if canvas_crs.isValid() else zone_in_layer
+            result = xform.transformBoundingBox(source_zone)
+            if result.width() <= 0 or result.height() <= 0:
+                raise ValueError("degenerate rectangle in the run CRS")
+        except Exception:  # noqa: BLE001 -- antimeridian, invalid CRS, etc.
+            self._forget_run_crs(layer, anchor_in_layer)
+            return zone_in_layer
+        return result
+
+    def _forget_run_crs(self, layer: QgsRasterLayer, zone_in_layer: QgsRectangle) -> None:
+        """Pin the run back to the layer's own CRS after a failed reprojection.
+
+        Whoever asks next reads the layer CRS, which is the CRS the rectangle
+        just handed back is in, so the run stays in one piece."""
+        try:
+            layer_crs = layer.crs()
+            self._auto_run_crs_memo = (
+                self._run_crs_memo_key(layer_crs, zone_in_layer), layer_crs)
+        except (RuntimeError, AttributeError):
+            self._auto_run_crs_memo = None
+
     @staticmethod
     def _prepare_clip_engine(clip_geom):
         """Build a prepared GEOS engine for the zone clip polygon.
@@ -965,21 +1098,28 @@ class AutoZoneMixin:
         except Exception:  # noqa: BLE001 - optimisation only; fall back on failure
             return None
 
-    def _polygon_in_layer_crs(self, layer):
-        """The drawn polygon zone reprojected to the layer CRS, or None when no
-        polygon was drawn (e.g. the MCP/headless path sets only the bbox)."""
+    def _polygon_in_run_crs(self, layer):
+        """The drawn polygon zone reprojected to the run CRS, or None when no
+        polygon was drawn (e.g. the MCP/headless path sets only the bbox).
+
+        Every detection is clipped against this polygon, and the detections are
+        in the run CRS, so the polygon has to be too: a clip tested in a CRS the
+        detections do not use throws every one of them away."""
         if self._auto_zone_polygon is None:
             return None
         geom = QgsGeometry(self._auto_zone_polygon)  # canvas CRS copy
         try:
             canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
-            layer_crs = layer.crs()
+            target_crs = self._run_crs_for_layer(
+                layer, self._zone_in_layer_crs(geom.boundingBox(), layer))
+            if target_crs is None:
+                target_crs = layer.crs()
         except (RuntimeError, AttributeError):
             return None
-        if canvas_crs == layer_crs or not canvas_crs.isValid() or not layer_crs.isValid():
+        if canvas_crs == target_crs or not canvas_crs.isValid() or not target_crs.isValid():
             return geom
         try:
-            xform = QgsCoordinateTransform(canvas_crs, layer_crs, QgsProject.instance())
+            xform = QgsCoordinateTransform(canvas_crs, target_crs, QgsProject.instance())
             geom.transform(xform)
         except Exception:  # nosec B110 -- antimeridian, invalid CRS, etc.
             return None
@@ -990,11 +1130,11 @@ class AutoZoneMixin:
         polygon, so ground outside the shape is never rendered or billed.
 
         tiles: list of (tx, ty, tw, th) pixel rects in the rendered image space.
-        bbox:  (minx, miny, maxx, maxy) of that image in LAYER CRS (image row 0
-               maps to maxy; pixel Y grows downward).
+        bbox:  (minx, miny, maxx, maxy) of that image in the RUN CRS (image row
+               0 maps to maxy; pixel Y grows downward).
         Returns tiles unchanged when no polygon was drawn (rectangle/MCP path)
         or on any error, and never culls to an empty list (safety fallback)."""
-        poly = self._polygon_in_layer_crs(layer)
+        poly = self._polygon_in_run_crs(layer)
         if poly is None or poly.isEmpty() or not tiles:
             return tiles
         if pixel_w <= 0 or pixel_h <= 0:
@@ -1204,14 +1344,6 @@ class AutoZoneMixin:
             if dock.auto_detect_btn.isVisible() and dock.auto_detect_btn.isEnabled():
                 self._on_auto_detect_requested()
                 return True
-            # Half-setup (prompt only / examples only): the green button is
-            # gated but the floor passes, shown by the visible escape link.
-            # Enter must not be a dead keystroke: route it into the commit
-            # guard, which shows the "Almost there" line naming the missing
-            # half (it will not run without the explicit escape click).
-            if (dock.auto_detect_btn.isVisible() and dock.auto_detect_anyway_btn.isVisible()):
-                self._on_auto_detect_requested()
-                return True
         except (RuntimeError, AttributeError):
             pass
         return False
@@ -1270,12 +1402,16 @@ class AutoZoneMixin:
             self._zone_rubber_band = None
 
     def _set_auto_zone_overlays_visible(self, visible: bool) -> None:
-        """Show/hide the zone outline band, its x badge and the tile grid
-        WITHOUT removing them (their state survives). The Refine-in-Manual
-        handoff hides them (they belong to the Automatic review and only
-        distract while hand-editing); Back to review restores them."""
-        for attr in ("_zone_rubber_band", "_zone_grid_rubber_band",
-                     "_zone_delete_badge"):
+        """Show/hide the tile grid and the zone's delete badge WITHOUT removing
+        them (their state survives). A fix session or an AI add hides them: the
+        grid is noise over the one shape being worked on, and the badge would
+        delete the zone from under a live edit. Back to review restores both.
+
+        The zone OUTLINE is deliberately NOT in this list. It is how the user
+        knows which ground they are correcting, and taking it down left them
+        adding polygons on a canvas with no boundary at all.
+        """
+        for attr in ("_zone_grid_rubber_band", "_zone_delete_badge"):
             item = getattr(self, attr, None)
             if item is None:
                 continue

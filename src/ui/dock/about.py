@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import html
 
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import QSize, Qt
 from qgis.PyQt.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -25,6 +25,13 @@ from ...core.activation_manager import (
 )
 from ...core.i18n import tr
 from ..credit_ring import CreditRing
+from .font_scale import apply_font_scale_to_tree, scale_px_length
+from .footer_bar import (
+    FOOTER_GLYPH_PX,
+    _ElidingFooterButton,
+    footer_book_icon,
+    footer_gear_icon,
+)
 from .styles import (
     _BTN_BLUE,
     _BTN_GREEN,
@@ -38,6 +45,7 @@ from .styles import (
     _msg_label_qss,
 )
 from .widgets import (
+    _ClickableFooterArea,
     _FooterIconButton,
 )
 
@@ -159,16 +167,29 @@ class DockAboutMixin:
         # previously sat as blue underlined labels but moved into the help
         # menu so the bar matches AI Edit's compact look.
         footer_widget = QWidget()
+        # One row: the promo link, the credit gauge, the Subscribe pill and the
+        # icon buttons. The link elides when the dock is genuinely too narrow
+        # for all of it, and only then (see _ElidingFooterButton).
         footer_row = QHBoxLayout(footer_widget)
         footer_row.setContentsMargins(0, 4, 0, 4)
         footer_row.setSpacing(6)
 
         # Automatic mode only: compact credit gauge (ring + "remaining / total")
         # plus a discreet Subscribe pill, bottom-left like AI Edit. Replaces
-        # the old always-on upsell card that ate half the Automatic page.
-        self._credit_ring = CreditRing(diameter=16, parent=footer_widget)
+        # the old always-on upsell card that ate half the Automatic page. The
+        # ring and its label sit in one clickable strip: the number is the
+        # first place a user looks for their balance, so it is also the way to
+        # the dashboard that explains it.
+        self._credit_gauge = _ClickableFooterArea(footer_widget)
+        gauge_row = QHBoxLayout(self._credit_gauge)
+        gauge_row.setContentsMargins(0, 0, 0, 0)
+        gauge_row.setSpacing(6)
+        self._credit_gauge.clicked.connect(self._on_credit_gauge_clicked)
+        footer_row.addWidget(self._credit_gauge)
+
+        self._credit_ring = CreditRing(diameter=16, parent=self._credit_gauge)
         self._credit_ring.setVisible(False)
-        footer_row.addWidget(self._credit_ring)
+        gauge_row.addWidget(self._credit_ring)
 
         self._footer_credits_label = QLabel()
         self._footer_credits_label.setStyleSheet(
@@ -176,10 +197,10 @@ class DockAboutMixin:
             " background: transparent; border: none; }"
         )
         self._footer_credits_label.setVisible(False)
-        footer_row.addWidget(self._footer_credits_label)
+        gauge_row.addWidget(self._footer_credits_label)
 
-        self._subscribe_pill = QPushButton(tr("Subscribe to Pro"))
-        self._subscribe_pill.setToolTip(tr("Upgrade to Pro"))
+        self._subscribe_pill = QPushButton(tr("Upgrade to Pro"))
+        self._subscribe_pill.setToolTip(tr("10,000 credits a month."))
         self._subscribe_pill.setCursor(Qt.CursorShape.PointingHandCursor)
         # Filled brand-blue pill (stronger than the old ghost outline): white
         # text on a solid blue, lighter blue on hover. Kept small.
@@ -197,11 +218,15 @@ class DockAboutMixin:
         # beside the gear/help icons without crowding them (#30). Always opens
         # the AI Edit product page in the browser.
         from ..cross_plugin_discovery import open_ai_edit_page
-        self._ai_edit_btn = _FooterIconButton(footer_widget)
+        # Eliding, not plain: the label is the longest thing in the row, and a
+        # button that refuses to shrink sets the minimum width of the whole
+        # panel (see _ElidingFooterButton).
+        self._ai_edit_btn = _ElidingFooterButton(footer_widget)
         # Decorative glyph kept out of the translatable string. The copy sells
         # AI Edit's promise (presentation and planning visuals) and deliberately
         # stays off AI Segmentation Pro's turf (no segmentation wording).
-        self._ai_edit_btn.setText("🍌 " + tr("Make this map presentation-ready"))
+        self._ai_edit_btn.set_label(
+            "🍌 " + tr("Make this map presentation-ready"))
         self._ai_edit_btn.setToolTip(tr(
             "AI Edit: turn your imagery into presentation and planning visuals"))
         self._ai_edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -217,8 +242,13 @@ class DockAboutMixin:
         # user can reach the step-by-step guide from anywhere. Order: tutorial,
         # gear, help. Green hover groups it with the help "?" as a learn action.
         self._tutorial_btn = _FooterIconButton(footer_widget)
-        self._tutorial_btn.setText("📖")  # U+1F4D6 OPEN BOOK
+        # A painted book, not U+1F4D6: Windows draws that character as a colour
+        # emoji at the full em box, which broke the row's shared baseline and
+        # made one glyph twice the size of its neighbours.
+        self._tutorial_btn.setIcon(footer_book_icon(footer_widget))
+        self._tutorial_btn.setIconSize(QSize(FOOTER_GLYPH_PX, FOOTER_GLYPH_PX))
         self._tutorial_btn.setToolTip(tr("Open the step-by-step tutorial"))
+        self._tutorial_btn.setAccessibleName(tr("Tutorial"))
         self._tutorial_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._tutorial_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._tutorial_btn.setStyleSheet(_HELP_ICON_BTN_STYLE)
@@ -226,8 +256,10 @@ class DockAboutMixin:
         footer_row.addWidget(self._tutorial_btn)
 
         self._settings_btn = _FooterIconButton(footer_widget)
-        self._settings_btn.setText("⚙")  # U+2699 GEAR
+        self._settings_btn.setIcon(footer_gear_icon(footer_widget))
+        self._settings_btn.setIconSize(QSize(FOOTER_GLYPH_PX, FOOTER_GLYPH_PX))
         self._settings_btn.setToolTip(tr("Settings"))
+        self._settings_btn.setAccessibleName(tr("Settings"))
         self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._settings_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._settings_btn.setStyleSheet(_FOOTER_ICON_BTN_STYLE)
@@ -262,6 +294,21 @@ class DockAboutMixin:
         footer_row.addWidget(self._help_btn)
 
         self.main_layout.addWidget(footer_widget)
+
+    def _on_credit_gauge_clicked(self):
+        """Footer credit gauge: open the dashboard, where the balance, the plan
+        and the invoices live. The address is a plugin constant, so it needs no
+        https guard (that one is for server-supplied URLs)."""
+        from qgis.PyQt.QtCore import QUrl
+        from qgis.PyQt.QtGui import QDesktopServices
+
+        from ...core.activation_manager import get_dashboard_url
+        QDesktopServices.openUrl(QUrl(get_dashboard_url()))
+        try:
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_pro_upsell_clicked(source="credit_gauge")
+        except Exception:  # nosec B110 -- telemetry never blocks a click
+            pass
 
     def _on_open_tutorial(self):
         """Open the tutorial URL in the system browser.
@@ -413,7 +460,7 @@ class DockAboutMixin:
         dlg.setWindowTitle(tr("Keyboard shortcuts"))
         # Same width as before; fixed, so the two columns keep their rhythm
         # whatever the platform key names are.
-        dlg.setFixedWidth(460)
+        dlg.setFixedWidth(scale_px_length(460))
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(16, 14, 16, 12)
         layout.setSpacing(10)
@@ -444,10 +491,11 @@ class DockAboutMixin:
 
         ok_btn = QPushButton(tr("OK"))
         ok_btn.setStyleSheet(_BTN_BLUE)
-        ok_btn.setFixedWidth(80)
+        ok_btn.setFixedWidth(scale_px_length(80))
         ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         ok_btn.clicked.connect(dlg.accept)
         layout.addWidget(ok_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        apply_font_scale_to_tree(dlg)
         dlg.exec()
 
     def _on_contact_us(self, _link=None):
@@ -461,8 +509,8 @@ class DockAboutMixin:
 
         dlg = QDialog(self)
         dlg.setWindowTitle(tr("Contact us"))
-        dlg.setMinimumWidth(350)
-        dlg.setMaximumWidth(450)
+        dlg.setMinimumWidth(scale_px_length(350))
+        dlg.setMaximumWidth(scale_px_length(450))
         lay = _VBox(dlg)
         lay.setSpacing(10)
         lay.setContentsMargins(16, 16, 16, 16)
@@ -504,4 +552,5 @@ class DockAboutMixin:
         )
         lay.addWidget(call_btn)
 
+        apply_font_scale_to_tree(dlg)
         dlg.exec()

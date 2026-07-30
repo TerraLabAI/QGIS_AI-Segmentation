@@ -67,6 +67,15 @@ AUTO_REVIEW_ORTHO_DEFAULT = False
 # Expand/shrink (px): 0 by default (no buffer).
 AUTO_REVIEW_EXPAND_DEFAULT = 0
 
+# Close notches (metres): half the widest bite an object may take out of its own
+# outline from the OUTSIDE and still have it closed again. A hole is an interior
+# ring, so Fill holes cannot see a bite that opens onto the boundary: a car
+# parked against a kerb, a driveway mouth. The generic client value is 0, off,
+# because a bite is only noise for a class that has a width it should keep. The
+# per-class value is a server dial (close_notches_m in the review policy's class
+# settings), never a table here.
+AUTO_REVIEW_CLOSE_NOTCHES_M_DEFAULT = 0.0
+
 # Widest interior hole (metres across) that is mask noise rather than part of
 # the object: compression pits, staircase specks, rooftop texture. THE single
 # source for that judgement, because two code paths make it and they must agree:

@@ -82,65 +82,108 @@ class AutoRunTerminalMixin:
             QgsMessageLog.logMessage(
                 "Auto detection: run summary - render {} ms, detect {} ms, "
                 "{} tile(s) billed, {} raw detection(s), mask/render px ratio "
-                "{:.2f}, {} saturated tile(s) re-split".format(
+                "{:.2f}, {} saturated tile(s) re-split, {} tile(s) gate-skipped"
+                .format(
                     self._auto_render_ms, detect_ms, tiles_succeeded,
                     self._auto_raw_count, ratio,
-                    getattr(self, "_auto_subdiv_tiles", 0)),
+                    getattr(self, "_auto_subdiv_tiles", 0),
+                    getattr(self, "_auto_gate_skipped_tiles", 0)),
                 "AI Segmentation", level=Qgis.MessageLevel.Info,
             )
         except (RuntimeError, AttributeError):
             pass
 
-        # Pre-submit, uncharged tile drops: make them legible once per run.
-        # Blank/nodata skips saved the user credits; render/provider holes mean
-        # a slow-server run may have coverage gaps. Both are already unbilled.
-        blank_n = int(getattr(self, "_auto_skipped_blank_tiles", 0) or 0)
-        holes_n = int(getattr(self, "_auto_render_failed_tiles", 0) or 0)
-        if (blank_n or holes_n) and not self._auto_headless_run:
+        # Pre-submit, uncharged tile drops. They used to push a message bar
+        # banner the moment the review opened: it landed on top of the result
+        # the user was there to look at, wrapped onto two lines and got cut,
+        # and the Precision slider already caps at the level the source can
+        # serve, so the common case was noise over a run that worked. They stay
+        # in the log, and the one case that changes what the user sees (nothing
+        # analyzed at all) is said on the run status line instead.
+        # Masks the whole-tile blob guard dropped. Its own line, not part of the
+        # uncharged-tile one below: these were charged, the model returned them,
+        # and a client-side guard threw them away. On a large-parcel prompt that
+        # is where a tile-shaped hole in the middle of a field comes from.
+        blob_n = int(getattr(self, "_auto_blob_dropped", 0) or 0)
+        if blob_n:
+            hard_n, span_n, shape_n = getattr(
+                self, "_auto_blob_split", (0, 0, 0))
             try:
-                # When the drops dominate the run (a basemap that would not
-                # load), a soft info line reads as success: escalate to one
-                # loud warning that says the area was NOT analyzed.
-                dropped = blank_n + holes_n
-                major_hole = dropped >= 10 or dropped > tiles_succeeded
-                if major_hole:
-                    self.iface.messageBar().pushWarning(
-                        "AI Segmentation",
-                        tr("{n} tiles had no imagery and were not analyzed "
-                           "(not charged). Check the imagery layer loads over "
-                           "this area, then run Detect again.").format(n=dropped),
-                    )
-                else:
-                    if blank_n:
-                        self.iface.messageBar().pushInfo(
-                            "AI Segmentation",
-                            tr("Skipped {n} empty tiles (not charged).").format(n=blank_n),
-                        )
-                    if holes_n:
-                        self.iface.messageBar().pushWarning(
-                            "AI Segmentation",
-                            tr("{n} tiles could not be loaded from the layer server; "
-                               "results may be incomplete.").format(n=holes_n),
-                        )
+                QgsMessageLog.logMessage(
+                    f"Auto detection: whole-tile guard dropped {blob_n} mask(s) "
+                    f"({hard_n} over the hard coverage cap, {span_n} spanning "
+                    f"the tile, {shape_n} not compact enough). Count mode only; "
+                    f"these were charged.",
+                    "AI Segmentation", level=Qgis.MessageLevel.Info,
+                )
             except (RuntimeError, AttributeError):
                 pass
-        if blank_n or holes_n:
+
+        # MAP-mode counterpart: kept by design, never dropped. Logged because it
+        # is the one number that explains a run whose outlines are right and
+        # whose result is still one shape covering the whole zone.
+        kept_map_n = int(getattr(self, "_auto_blob_kept_map", 0) or 0)
+        cut_map_n = int(getattr(self, "_auto_blob_map_lowscore", 0) or 0)
+        if kept_map_n or cut_map_n:
+            try:
+                scores = sorted(getattr(self, "_auto_map_cover_scores", ()) or ())
+                if scores:
+                    def _q(p: float) -> str:
+                        return f"{scores[min(len(scores) - 1, int(len(scores) * p))]:.2f}"
+                    spread = (f"scores p10 {_q(0.10)} p50 {_q(0.50)} "
+                              f"p90 {_q(0.90)}")
+                else:
+                    spread = "no scores recorded"
+                QgsMessageLog.logMessage(
+                    f"Auto detection: whole-tile mask(s) in map mode - "
+                    f"{kept_map_n} kept, {cut_map_n} cut by the score floor. "
+                    f"{spread}",
+                    "AI Segmentation", level=Qgis.MessageLevel.Info,
+                )
+            except (RuntimeError, AttributeError, ValueError, IndexError):
+                pass
+
+        blank_n = int(getattr(self, "_auto_skipped_blank_tiles", 0) or 0)
+        holes_n = int(getattr(self, "_auto_render_failed_tiles", 0) or 0)
+        # Tiles the online source answered with a "no image here" card. Named
+        # apart from the other two because it is the only one whose fix is the
+        # user's: lower the precision or change layer. The other two are the
+        # provider having a bad moment.
+        unavail_n = int(getattr(self, "_auto_unavailable_tiles", 0) or 0)
+        # Tiles the degenerate prefilter proved objectless (all no-data, or too
+        # little ground left to hold anything). Same family as blank_n, no
+        # request and no charge, but it used to reach no user-visible surface at
+        # all: the quote counts them, the bill does not, and nothing said so.
+        prefilt_n = int(getattr(self, "_auto_prefiltered_tiles", 0) or 0)
+        if blank_n or holes_n or unavail_n or prefilt_n:
             QgsMessageLog.logMessage(
-                f"Auto detection: {blank_n} blank tile(s) skipped, {holes_n} render hole(s)",
+                f"Auto detection: {blank_n} blank tile(s) skipped, "
+                f"{prefilt_n} empty tile(s) settled without a request, "
+                f"{holes_n} render hole(s), "
+                f"{unavail_n} tile(s) with no imagery at this detail. "
+                f"None of these were charged.",
                 "AI Segmentation", level=Qgis.MessageLevel.Info,
             )
 
         # Telemetry: report degraded tiles once per run (skipped / timed out /
-        # blank-skipped / render holes).
-        if (self._auto_skipped_tiles or self._auto_timeout_tiles or blank_n or holes_n):
+        # blank-skipped / render holes). A tile the source answered with a "no
+        # image here" card rides in render_failed_tiles: same family (the run
+        # got no picture of that ground) and no new event property, so an older
+        # dashboard keeps reading the same field.
+        if (self._auto_skipped_tiles or self._auto_timeout_tiles
+                or blank_n or holes_n or unavail_n or prefilt_n):
             try:
-                from ...core import telemetry
-                telemetry.track_auto_tiles_degraded(
+                from ...core import telemetry_run_events
+                telemetry_run_events.track_auto_tiles_degraded(
                     run_id=self._auto_run_id or "",
                     skipped_tiles=self._auto_skipped_tiles,
                     timeout_tiles=self._auto_timeout_tiles,
-                    blank_tiles=blank_n,
-                    render_failed_tiles=holes_n,
+                    # Prefiltered tiles ride in blank_tiles: same family (a
+                    # render with nothing on it, dropped before submit, never
+                    # charged) and no new event property, so an older dashboard
+                    # keeps reading the same field.
+                    blank_tiles=blank_n + prefilt_n,
+                    render_failed_tiles=holes_n + unavail_n,
                 )
             except Exception:
                 pass  # nosec B110
@@ -288,7 +331,7 @@ class AutoRunTerminalMixin:
             result["credits_remaining"] = prior.get("credits_remaining", 0)
         self._last_auto_result = result
         try:
-            from ...core import telemetry
+            from ...core import telemetry_run_events
             ctx = self._auto_run_ctx or {}
             total = ctx.get("total", tiles_succeeded)
             # Terminal-event invariant: exactly ONE terminal event per run. A
@@ -304,7 +347,7 @@ class AutoRunTerminalMixin:
             # same pairing the _on_auto_error NETWORK path uses.
             completed_terminal = self._auto_tel_stop_reason in (None, "completed")
             if completed_terminal and self._auto_run_network_dead(tiles_succeeded):
-                telemetry.track_auto_detect_failed(
+                telemetry_run_events.track_auto_detect_failed(
                     run_id=self._auto_run_id or "",
                     error_class="NETWORK",
                     tiles_done=tiles_succeeded,
@@ -312,14 +355,14 @@ class AutoRunTerminalMixin:
                     warming_ms=self._auto_warming_wait_ms(),
                 )
             else:
-                telemetry.track_auto_zero_result(
+                telemetry_run_events.track_auto_zero_result(
                     run_id=self._auto_run_id or "",
                     tiles=tiles_succeeded,
                     object_class=ctx.get("prompt") or "Example match",
                     had_exemplar=self._auto_exemplar_store.count() > 0,
                 )
                 if completed_terminal:
-                    telemetry.track_auto_detect_completed(
+                    telemetry_run_events.track_auto_detect_completed(
                         run_id=self._auto_run_id or "",
                         duration_ms=self._auto_duration_ms(),
                         tiles_done=tiles_succeeded,
@@ -377,9 +420,19 @@ class AutoRunTerminalMixin:
         # cause instead. Same predicate the telemetry uses to record this run as
         # a NETWORK failure rather than a healthy empty completion.
         network_failed = self._auto_run_network_dead(tiles_billed)
+        # Nothing billed, and nothing there to bill: every tile was dropped
+        # before submit because the source had no image over the zone. "No
+        # matches in this zone" would blame the model for a run that never
+        # looked, so this one keeps its own line. It replaces the old message
+        # bar banner, which fired on every partial hole as well.
+        coverage_dead = bool(
+            not network_failed and tiles_billed <= 0
+            and (int(getattr(self, "_auto_unavailable_tiles", 0) or 0)
+                 + int(getattr(self, "_auto_render_failed_tiles", 0) or 0))
+        )
         _can_add_example = False
         _has_examples = False
-        if not network_failed:
+        if not network_failed and not coverage_dead:
             try:
                 _can_add_example = not self._auto_exemplar_store.is_full_for(1)
                 _has_examples = self._auto_exemplar_store.count() > 0
@@ -394,6 +447,11 @@ class AutoRunTerminalMixin:
             # This path emits no plugin_error of its own, so the dialog tracks.
             report_payload = (
                 tr("Automatic detection failed"), msg, "auto_detect_network_zero")
+        elif coverage_dead:
+            msg = tr("No image over this zone at this precision, so nothing was "
+                     "analyzed (not charged). Lower Precision, or pick a layer "
+                     "that covers this area.")
+            log_msg = "Auto detection: run ended with no analyzable tiles (no imagery)"
         elif _can_add_example:
             # One info per state: the banner states the fact, the rescue
             # button right below it carries the action (draw an example -
@@ -405,7 +463,7 @@ class AutoRunTerminalMixin:
             # remaining levers are the word and the detail level.
             msg = tr(
                 "No detection in this zone. Try a more specific object "
-                "word, or a finer detail level.")
+                "word, or more precision.")
             log_msg = "Auto detection: run completed with zero detections"
         if self.dock_widget and not self._auto_headless_run:
             try:
@@ -449,8 +507,8 @@ class AutoRunTerminalMixin:
         except (RuntimeError, AttributeError):
             pass
         try:
-            from ...core import telemetry
-            telemetry.track_zero_assist_clicked(kind, from_prompt, to_prompt)
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_zero_assist_clicked(kind, from_prompt, to_prompt)
         except Exception:
             pass  # nosec B110
         try:

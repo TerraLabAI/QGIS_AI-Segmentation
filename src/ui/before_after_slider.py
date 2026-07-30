@@ -14,6 +14,7 @@ from qgis.PyQt.QtWidgets import QWidget
 
 from ..core import qt_compat as QtC
 from ..core.i18n import tr
+from .dock.font_scale import scale_point_size, widget_pixel_ratio
 
 # Auto-loop period (ms): full oscillation 0 -> 100 -> 0.
 _AUTO_LOOP_PERIOD_MS = 5800
@@ -399,8 +400,16 @@ class BeforeAfterSlider(QWidget):
             offset_y = (scaled_h - rect.height()) / 2
             target = QRectF(0, -offset_y, rect.width(), scaled_h)
 
-        target_w = max(1, round(target.width()))
-        target_h = max(1, round(target.height()))
+        # Scale to the pixels the screen really has, then tell Qt what that
+        # ratio is so it draws the copy at the size asked for. Scaling to the
+        # rectangle alone hands Qt a picture with a third fewer pixels than the
+        # band it fills on a 150% display, and Qt stretches it: every preview
+        # in the library comes out soft. The ratio is part of the cache key
+        # because dragging the window to a screen with a different one has to
+        # rebuild the copy.
+        ratio = widget_pixel_ratio(self)
+        target_w = max(1, round(target.width() * ratio))
+        target_h = max(1, round(target.height() * ratio))
         # cacheKey(), not id(): CPython reuses an address once the old QPixmap is
         # collected, so a new pixmap allocated there would hit the previous
         # entry and paint the wrong thumbnail on a recycled card.
@@ -413,23 +422,27 @@ class BeforeAfterSlider(QWidget):
                 target_w, target_h,
                 Qt.AspectRatioMode.IgnoreAspectRatio,
                 Qt.TransformationMode.SmoothTransformation)
+            scaled.setDevicePixelRatio(ratio)
             self._cover_cache[slot] = (cache_key, scaled)
         painter.drawPixmap(QPointF(target.x(), target.y()), scaled)
 
     def _draw_example_badge(self, painter: QPainter, rect, text: str) -> None:
         """Small centered pill at the top marking the preview as a demo."""
         f = painter.font()
-        f.setPointSize(8)
+        f.setPointSize(scale_point_size(8))
         f.setBold(True)
         painter.setFont(f)
-        tw = painter.fontMetrics().horizontalAdvance(text)
-        bw = tw + 20
-        bh = 20
+        metrics = painter.fontMetrics()
+        bw = float(metrics.horizontalAdvance(text)) + 20.0
+        # Sized from the font metrics, for the reason _draw_badge spells out:
+        # a point size is DPI-relative, so a fixed pill height clips its own
+        # text at a higher DPI.
+        bh = max(20.0, float(metrics.height()) + 4.0)
         bx = (rect.width() - bw) / 2.0
         badge = QRectF(bx, 8, bw, bh)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(QColor(0, 0, 0, 180)))
-        painter.drawRoundedRect(badge, 10, 10)
+        painter.drawRoundedRect(badge, bh / 2.0, bh / 2.0)
         painter.setPen(QPen(_BADGE_TEXT))
         painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
 
@@ -442,7 +455,7 @@ class BeforeAfterSlider(QWidget):
         this was designed on overflows it at Windows's 96 and clips "BEFORE".
         """
         f = painter.font()
-        f.setPointSize(8)
+        f.setPointSize(scale_point_size(8))
         f.setBold(True)
         painter.setFont(f)
         metrics = painter.fontMetrics()
@@ -465,6 +478,6 @@ class BeforeAfterSlider(QWidget):
         painter.fillRect(rect, _PLACEHOLDER_BG)
         painter.setPen(QPen(_PLACEHOLDER_TEXT))
         f = painter.font()
-        f.setPointSize(9)
+        f.setPointSize(scale_point_size(9))
         painter.setFont(f)
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._placeholder_text)

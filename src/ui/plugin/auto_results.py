@@ -120,7 +120,12 @@ class AutoResultsMixin:
     def _create_auto_selection_layer(self, source_layer) -> QgsVectorLayer | None:
         """Create an in-memory vector layer to display detection results live."""
         try:
-            crs_authid = source_layer.crs().authid()
+            # Detections stream in numerically expressed in the resolved run
+            # CRS, not necessarily the raster's own CRS: a memory provider
+            # stores raw coordinates under the declared CRS with no
+            # reprojection on insert, so this must match. Fall back to the
+            # raster CRS when no run CRS has been resolved yet.
+            crs_authid = self._auto_crs_authid or source_layer.crs().authid()
             layer = QgsVectorLayer(
                 f"MultiPolygon?crs={crs_authid}",
                 tr("Auto detection (live)"),
@@ -179,9 +184,10 @@ class AutoResultsMixin:
 
         That tile's own objects are withheld until the finer read lands (worker
         _settle_converted), which leaves the busiest part of a zone bare for as
-        long as the re-read takes. Marking the ground says the run is working
-        there; without it the map reads as a run that found nothing. tile_idx
-        below zero clears every mark (the run's terminal)."""
+        long as the re-read takes. The marks are tracked whatever the display
+        flag says, so turning the flag on mid-run paints what is pending;
+        _auto_rescan_band_allowed decides whether they reach the canvas.
+        tile_idx below zero clears every mark (the run's terminal)."""
         rects = getattr(self, "_auto_rescan_rects", None)
         if rects is None:
             rects = self._auto_rescan_rects = {}
@@ -196,6 +202,19 @@ class AutoResultsMixin:
             except (TypeError, ValueError, IndexError):
                 return
         self._repaint_auto_rescan_band()
+
+    def _auto_rescan_band_allowed(self) -> bool:
+        """Whether the re-read marks may be drawn.
+
+        Off for users: overlapping tile rectangles over their own results read
+        as a broken render, not as progress, and the dock already says the run
+        is working. Same developer flag as the review's tile grid toggle."""
+        from qgis.PyQt.QtCore import QSettings
+        try:
+            return bool(QSettings().value(
+                "TerraLab/auto_debug_tiles", False, type=bool))
+        except (RuntimeError, TypeError, ValueError):
+            return False
 
     def _repaint_auto_rescan_band(self) -> None:
         """Paint every marked tile as ONE rubber band geometry.
@@ -212,7 +231,7 @@ class AutoResultsMixin:
         rects = getattr(self, "_auto_rescan_rects", None) or {}
         band = getattr(self, "_auto_rescan_band", None)
         layer = self._auto_selection_layer
-        if not rects or layer is None:
+        if not rects or layer is None or not self._auto_rescan_band_allowed():
             if band is not None:
                 self._safe_remove_rubber_band(band)
                 self._auto_rescan_band = None
@@ -260,6 +279,11 @@ class AutoResultsMixin:
             self._disarm_shape_tool()
         except (RuntimeError, AttributeError):
             pass
+        # The review's pushes repaint through the same pacer the live run uses,
+        # so the canvas connection outlives the run. Drop it with the layer it
+        # paints, or a finished review leaves a slot firing on every frame for
+        # the rest of the session. Any later repaint re-connects it.
+        self._disconnect_live_repaint_pacer()
         self._clear_auto_rescan_band()
         layer = self._auto_selection_layer
         self._auto_selection_layer = None
@@ -309,6 +333,7 @@ class AutoResultsMixin:
             pixel_size=self._auto_refine_pixel_size(),
             metres_per_unit=factor,
             crs_authid=self._auto_crs_authid or "EPSG:4326",
+            unit_aspect=self._auto_run_unit_aspect(geo_transform),
             retain_fragments=bool(getattr(self, "_auto_retain_raw", False)),
             retain_coverage=bool(self._auto_is_exemplar_only),
             tile_ground_area=float(getattr(self, "_auto_tile_ground_area", 0.0)),
@@ -320,27 +345,46 @@ class AutoResultsMixin:
         self._auto_stitcher = stitcher
         stitcher.start()
 
+    def _auto_run_centre_xy(self, geo_transform: dict | None):
+        """Run CRS coordinates of the middle of the run grid, else of the drawn
+        zone, else None. The point the run's ground measures are taken at: both
+        of them move with latitude, and neither moves across one zone."""
+        bbox = (geo_transform or {}).get("bbox")
+        if bbox and len(bbox) == 4:
+            return ((float(bbox[0]) + float(bbox[2])) / 2.0,
+                    (float(bbox[1]) + float(bbox[3])) / 2.0)
+        if self._auto_clip_polygon is not None:
+            try:
+                point = self._auto_clip_polygon.boundingBox().center()
+                return (point.x(), point.y())
+            except (RuntimeError, AttributeError):
+                return None
+        return None
+
     def _auto_run_metres_per_unit(self, geo_transform: dict | None) -> float:
         """Ground metres per unit of the run CRS, at the centre of the run grid.
 
         Falls back to the drawn zone, then to 1.0 (which reads every metre
         setting as a CRS unit, the behaviour before the conversion existed).
         """
-        centre = None
-        bbox = (geo_transform or {}).get("bbox")
-        if bbox and len(bbox) == 4:
-            centre = ((float(bbox[0]) + float(bbox[2])) / 2.0,
-                      (float(bbox[1]) + float(bbox[3])) / 2.0)
-        elif self._auto_clip_polygon is not None:
-            try:
-                point = self._auto_clip_polygon.boundingBox().center()
-                centre = (point.x(), point.y())
-            except (RuntimeError, AttributeError):
-                centre = None
+        centre = self._auto_run_centre_xy(geo_transform)
         if centre is None:
             return 1.0
         try:
             return self._auto_crs_metres_per_unit(centre[0], centre[1])
+        except (RuntimeError, AttributeError, TypeError):
+            return 1.0
+
+    def _auto_run_unit_aspect(self, geo_transform: dict | None) -> float:
+        """How much longer one y unit of the run CRS is than one x unit, at the
+        centre of the run grid. 1.0 for a projected run and on any failure,
+        which squares on raw coordinates: right there, wrong in a geographic
+        CRS (see core.layer_conventions.ground_unit_aspect)."""
+        centre = self._auto_run_centre_xy(geo_transform)
+        if centre is None:
+            return 1.0
+        try:
+            return self._auto_crs_unit_aspect(centre[0], centre[1])
         except (RuntimeError, AttributeError, TypeError):
             return 1.0
 
@@ -583,6 +627,10 @@ class AutoResultsMixin:
 
     def _repaint_live_layer(self, layer) -> None:
         """Show the objects that just landed WITHOUT killing the frame in flight.
+
+        Serves the live run AND the review's pushes (``_push_review_geoms``):
+        both write a delta to the provider faster than a dense set can be drawn,
+        and both have the same way of making that visible.
 
         ``triggerRepaint()`` makes the canvas cancel whatever it is drawing and
         start over. A zone of many thousands of objects takes longer to draw
@@ -853,5 +901,12 @@ class AutoResultsMixin:
         if bridge is not None:
             try:
                 bridge.cancel()
+            except (RuntimeError, AttributeError):
+                pass
+            # Main thread here, unlike cancel(), so this is where the cached
+            # render clone can be dropped: it is a QgsRasterLayer and it holds
+            # a handle on the user's raster until it goes.
+            try:
+                bridge.release_render_clone()
             except (RuntimeError, AttributeError):
                 pass

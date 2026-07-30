@@ -22,10 +22,11 @@ from __future__ import annotations
 
 from qgis.core import QgsPointXY
 from qgis.gui import QgsMapTool
-from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
+from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtGui import QCursor
 
 from ..core.qt_compat import event_pos
+from .canvas_slide_pan import CanvasSlidePan
 
 
 class PickObjectMapTool(QgsMapTool):
@@ -54,25 +55,16 @@ class PickObjectMapTool(QgsMapTool):
     # user grabbed the map), not a pick: ignored, so panning never picks.
     MAX_CLICK_DRIFT_PX: int = 4
 
-    # Full canvas re-renders during a pan are throttled to at most one per
-    # this many ms; the pan extent itself still updates on every move, so the
-    # gesture tracks the cursor and only the expensive redraw is coalesced.
-    PAN_REFRESH_THROTTLE_MS: int = 80
-
     def __init__(self, canvas):
         super().__init__(canvas)
         self._canvas = canvas
         self._press_screen = None
-        self._pan_last_screen = None
         self._panning = False
+        self._slide_pan = CanvasSlidePan(canvas)
         # B-F2 stale-armed guard: see tool_deactivated.
         self.suppress_deactivate_signal = False
         self._in_deactivate_emit = False
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self._pan_refresh_timer = QTimer(self)
-        self._pan_refresh_timer.setSingleShot(True)
-        self._pan_refresh_timer.setInterval(self.PAN_REFRESH_THROTTLE_MS)
-        self._pan_refresh_timer.timeout.connect(self._flush_pan_refresh)
 
     # -- Mouse --
     # Contract: right-click never cancels a gesture (like the zone tool); Escape
@@ -88,7 +80,6 @@ class PickObjectMapTool(QgsMapTool):
             return
         if event.button() == Qt.MouseButton.LeftButton:
             self._press_screen = event_pos(event)
-            self._pan_last_screen = self._press_screen
             self._panning = False
             event.accept()
 
@@ -100,8 +91,12 @@ class PickObjectMapTool(QgsMapTool):
             drift_y = abs(pos.y() - press.y())
             if not self._panning and (drift_x > self.MAX_CLICK_DRIFT_PX or drift_y > self.MAX_CLICK_DRIFT_PX):
                 self._panning = True
+                # From the press point, not from here: the map has to follow
+                # the whole drag, including the first few pixels that were
+                # still ambiguous between a pick and a grab.
+                self._slide_pan.begin_at(press)
             if self._panning:
-                self._pan_canvas_to(pos)
+                self._slide_pan.slide_to(pos)
                 return
         self.cursor_moved.emit(self.toMapCoordinates(pos))
 
@@ -115,15 +110,7 @@ class PickObjectMapTool(QgsMapTool):
         event.accept()
         if self._panning:
             self._panning = False
-            self._pan_last_screen = None
-            # A throttled refresh may still be pending: flush it now so the
-            # released position is never left showing a stale render. Only
-            # when one is pending: an idle timer means the last move was
-            # already rendered, and refreshing again re-runs the whole
-            # basemap tile job for nothing.
-            if self._pan_refresh_timer.isActive():
-                self._pan_refresh_timer.stop()
-                self._flush_pan_refresh()
+            self._slide_pan.commit(event_pos(event))
             return
         pos = event_pos(event)
         drift_x = abs(pos.x() - press.x())
@@ -131,45 +118,6 @@ class PickObjectMapTool(QgsMapTool):
         if drift_x > self.MAX_CLICK_DRIFT_PX or drift_y > self.MAX_CLICK_DRIFT_PX:
             return
         self.point_clicked.emit(self.toMapCoordinates(pos))
-
-    def _pan_canvas_to(self, current) -> None:
-        """Pan from the previous screen point without leaving canvas pan state.
-
-        ``QgsMapCanvas.panActionStart`` is deliberately unavailable to PyQGIS,
-        while ``panActionEnd`` takes a QPoint rather than a mouse event.  Using
-        those internal methods from this tool could leave the canvas rendered
-        at a temporary offset after a gesture, making subsequent hit tests
-        disagree with what is on screen.  Updating the extent directly keeps
-        the rendered canvas and ``toMapCoordinates`` in the same state.
-
-        The extent updates on every move so the gesture always tracks the
-        cursor, but the full re-render this triggers is throttled: every move
-        starts the same single-shot timer, so a fast drag over a live basemap
-        does not cancel and restart a render job on each pixel of motion.
-        """
-        previous = self._pan_last_screen
-        if previous is None:
-            self._pan_last_screen = current
-            return
-        try:
-            start_map = self.toMapCoordinates(previous)
-            end_map = self.toMapCoordinates(current)
-            center = self._canvas.center()
-            self._canvas.setCenter(QgsPointXY(
-                center.x() + start_map.x() - end_map.x(),
-                center.y() + start_map.y() - end_map.y(),
-            ))
-            if not self._pan_refresh_timer.isActive():
-                self._pan_refresh_timer.start()
-        except (RuntimeError, AttributeError, TypeError):
-            pass
-        self._pan_last_screen = current
-
-    def _flush_pan_refresh(self) -> None:
-        try:
-            self._canvas.refresh()
-        except (RuntimeError, AttributeError):
-            pass
 
     def canvasDoubleClickEvent(self, event):  # noqa: N802 (Qt API)
         # Absorb the second click of a double-click. The first click already
@@ -212,9 +160,10 @@ class PickObjectMapTool(QgsMapTool):
 
     def deactivate(self) -> None:  # noqa: N802 (Qt API)
         self._press_screen = None
-        self._pan_last_screen = None
         self._panning = False
-        self._pan_refresh_timer.stop()
+        # A tool swap mid-drag is the end of that drag too: keep the map where
+        # the user dragged it to rather than snapping it back.
+        self._slide_pan.commit()
         # No rubber band on this tool, so nothing to remove from the scene.
         super().deactivate()
         self._emit_deactivated()

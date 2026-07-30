@@ -32,6 +32,7 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ...core.i18n import tr
+from .font_scale import scale_px_length
 from .styles import _SUBCARD_MARGINS, _btn_hint_action_qss, _msg_text
 
 _SETTINGS_PREFIX = "AISegmentation/hints/"
@@ -79,8 +80,13 @@ HINT_PROMPT_EXAMPLES_DRIVE = "prompt_examples_drive"
 HINT_PROMPT_RUN_PLAN = "prompt_run_plan"
 # The two armed example-draw instructions, on the example card's message line.
 # The amber too-small warning shares that line and stays non-dismissible.
-HINT_EXEMPLAR_DRAW_BOX = "exemplar_draw_box"
-HINT_EXEMPLAR_EXCLUDE_BOX = "exemplar_exclude_box"
+# The stored id carries the GESTURE, not the card: the draw went from dragging a
+# box to tracing a polygon, so a user who dismissed the box wording had never
+# been told the new one. Changing the id shows the new instruction once, which
+# is the whole point of the line. Do not recycle these two ids for a later
+# rewording that leaves the gesture alone.
+HINT_EXEMPLAR_DRAW_BOX = "exemplar_draw_polygon"
+HINT_EXEMPLAR_EXCLUDE_BOX = "exemplar_exclude_polygon"
 ALL_HINTS = [
     HINT_START_MANUAL,
     HINT_START_AUTO,
@@ -177,8 +183,8 @@ def open_guide(content: str) -> None:
 
     QDesktopServices.openUrl(QUrl(guide_url(content)))
     try:
-        from ...core import telemetry
-        telemetry.track_tutorial_opened(content)
+        from ...core import telemetry_run_events
+        telemetry_run_events.track_tutorial_opened(content)
     except Exception:
         pass  # nosec B110  Telemetry is best-effort, never blocks the open.
 
@@ -238,12 +244,15 @@ def _card_qss(tint: tuple[int, int, int], dense: bool = False) -> str:
     )
 
 
+# 12px, the same body size AI Edit's callouts use. At 11px the sentence read
+# noticeably thinner than the card next to it on Windows, where the default UI
+# font is drawn lighter than on macOS.
 _BODY_STYLE = (
-    "color: palette(text); font-size: 11px; background: transparent; border: none;"
+    "color: palette(text); font-size: 12px; background: transparent; border: none;"
 )
 _CLOSE_STYLE = (
     "QToolButton { background: transparent; color: rgba(128,128,128,0.95);"
-    " border: none; font-size: 14px; font-weight: 700; }"
+    " border: none; font-size: 16px; font-weight: 700; }"
     "QToolButton:hover { color: palette(text); }"
 )
 
@@ -307,7 +316,7 @@ class DismissibleHint(QWidget):
         close_btn.setToolTip(tr("Got it - hide this tip"))
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.setStyleSheet(_CLOSE_STYLE)
-        close_btn.setFixedSize(20, 20)
+        close_btn.setFixedSize(scale_px_length(24), scale_px_length(24))
         close_btn.clicked.connect(self._on_close)
 
         # Tip prefix from the taxonomy (the lightbulb, the one emoji kind).

@@ -30,6 +30,16 @@ _LIVE_REFINER_MEMO_MAX = 8
 _RESLICE_PARKED_KEYS_MAX = 2
 _RESLICE_PARKED_GEOMS_MAX = 40000
 
+# How long the safety-net export may spend shaping objects the Confidence
+# cutoff was hiding. Those were never refined, so a dense review can owe
+# thousands of GEOS passes at the exact moment the user is closing QGIS, on a
+# path with no event loop to yield to. Windows calls a window that stops
+# answering for a few seconds "not responding", and a user who force-quits
+# there loses the whole rescue, so past this budget the remaining objects are
+# saved with their traced outline instead. Losing the polish beats losing the
+# detection.
+_RESCUE_REFINE_BUDGET_S = 3.0
+
 
 def _geom_centre_xy(geom) -> tuple[float, float]:
     """Where a per-CRS ground measure is taken for ONE object: the centre of
@@ -108,6 +118,33 @@ class AutoReviewGeometryMixin:
         self._auto_crs_mpu = (key, factor)
         return factor
 
+    def _auto_crs_unit_aspect(self, ref_x: float, ref_y: float) -> float:
+        """How much longer one y unit of the RUN CRS is than one x unit, near
+        (ref_x, ref_y). See core.layer_conventions.ground_unit_aspect: 1.0 in a
+        projected CRS, above 1 in a geographic one, where squaring a footprint
+        on raw coordinates leaves every corner tilted. Memoized like the ground
+        measure above, and on the same coarse position."""
+        authid = self._auto_crs_authid or "EPSG:4326"
+        try:
+            crs = QgsCoordinateReferenceSystem(authid)
+            if not crs.isValid():
+                return 1.0
+            geographic = bool(crs.isGeographic())
+        except Exception:  # noqa: BLE001 -- an unusable CRS means no correction
+            return 1.0
+        bucket = round(ref_y, 2) if geographic else round(ref_y / 10000.0)
+        key = (authid, bucket)
+        cached = getattr(self, "_auto_crs_aspect", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        try:
+            from ...core.layer_conventions import ground_unit_aspect
+            aspect = ground_unit_aspect(crs, ref_x, ref_y)
+        except Exception:  # noqa: BLE001 -- never block a refine on a measure
+            aspect = 1.0
+        self._auto_crs_aspect = (key, aspect)
+        return aspect
+
     def _refine_geom_for_review(self, base, params: dict, pixel_size: float):
         """Apply the review shape-refine controls to a base object geometry.
         simplify/expand are px in the UI, converted to ground units by the run's
@@ -142,7 +179,8 @@ class AutoReviewGeometryMixin:
             ref_x, ref_y = _geom_centre_xy(base)
             refiner = LiveRefiner(
                 params, pixel_size,
-                self._auto_crs_metres_per_unit(ref_x, ref_y))
+                self._auto_crs_metres_per_unit(ref_x, ref_y),
+                self._auto_crs_unit_aspect(ref_x, ref_y))
             refiners[key] = refiner
         return refiner.refine(base)
 
@@ -364,14 +402,39 @@ class AutoReviewGeometryMixin:
         cache["key"] = key
         cache["geoms"] = revived if revived is not None else {}
 
+    @staticmethod
+    def _plain_outline_geom(base):
+        """``base`` repaired and coerced to MultiPolygon, with no shape control
+        applied: the object exactly as the run traced it.
+
+        The same normalize the refine cache applies at fill time, so an object
+        that takes this path is byte-comparable with a refined one everywhere
+        downstream. Used where a shaped outline is wanted but cannot be had:
+        the budgeted rescue export, and a refine that failed or emptied
+        (_review_refined_geom). Returns None when the repair empties it."""
+        from ...core.layer_conventions import repair_polygon, to_multipolygon
+        try:
+            g = to_multipolygon(repair_polygon(base) or QgsGeometry(base))
+        except Exception:  # noqa: BLE001 -- keep the outline as traced
+            g = QgsGeometry(base)
+        return g if (g is not None and not g.isEmpty()) else None
+
     def _review_refined_geom(self, det_idx: int, base, params: dict,
                              pixel_size: float):
         """Refined + normalized (repaired, MultiPolygon-coerced) geometry for
         one canonical object, memoized in _auto_reslice_cache. A cache hit is a
         dict lookup, so filter-only reslices (Confidence / Min / Max size) never
         re-run the GEOS refine on objects whose shape params did not change.
-        Returns None when the refine emptied the geometry. Callers must not
-        mutate the returned geometry (copy first)."""
+
+        A refine that fails or empties falls back to the object as the run
+        traced it, and only a base that will not repair returns None. Shaping is
+        cosmetic (right angles, simplify, fill holes) and the live preview drew
+        the raw outline, so dropping the object instead made a paid detection
+        disappear at the end of the run over a step that was never load-bearing.
+        Right angles are on by default for built classes, which is exactly where
+        the regularizer is most likely to empty a shape.
+
+        Callers must not mutate the returned geometry (copy first)."""
         cache = self._auto_reslice_cache
         key = self._review_shape_key(params, pixel_size)
         if cache.get("key") != key:
@@ -379,21 +442,11 @@ class AutoReviewGeometryMixin:
         geoms = cache["geoms"]
         if det_idx in geoms:
             return geoms[det_idx]
-        # An outline the user drew or edited by hand ships exactly as they left
-        # it: no simplify, no squaring, no opening. Checked BEFORE the per-shape
-        # merge, because the point is that no setting reaches this object at
-        # all. It still gets the normalize below, which repairs and coerces but
-        # never moves a corner.
-        _frozen = getattr(self, "_object_shape_is_frozen", None)
-        if _frozen is not None and _frozen(det_idx):
-            try:
-                from ...core.layer_conventions import repair_polygon, to_multipolygon
-                g = to_multipolygon(repair_polygon(base) or QgsGeometry(base))
-            except Exception:  # noqa: BLE001 -- keep the hand-made outline as is
-                g = QgsGeometry(base)
-            result = g if (g is not None and not g.isEmpty()) else None
-            geoms[det_idx] = result
-            return result
+        # No provenance check here, on purpose. Every edit the Correct step
+        # makes (AI reshape, native vertex work, a hand-drawn add, a merge, a
+        # split) becomes the object's canonical base, and the Shapes step reads
+        # those bases. So one outline can never sit outside the settings the
+        # user is moving, whatever produced it.
         # One object may carry its own Simplify / Right angles (the Correct
         # step's per-shape settings). Merged HERE so every consumer of the
         # visible set, the export included, sees the same shape; a change to an
@@ -404,8 +457,8 @@ class AutoReviewGeometryMixin:
             params = _per_shape(det_idx, params)
         # Guarded: one pathological geometry (self-intersecting, NaN coords)
         # raising out of the GEOS refine/repair must cost only ITSELF, never
-        # the finalize/reslice chain. The None result is cached, so a retried
-        # pass does not repeat the failure.
+        # the finalize/reslice chain. The result is cached either way, so a
+        # retried pass does not repeat the failure.
         try:
             g = self._refine_geom_for_review(base, params, pixel_size)
             if g is not None and not g.isEmpty():
@@ -413,15 +466,17 @@ class AutoReviewGeometryMixin:
                 # coerce), so every later push of this geometry skips both.
                 from ...core.layer_conventions import repair_polygon, to_multipolygon
                 g = to_multipolygon(repair_polygon(g) or g)
-        except Exception as exc:  # noqa: BLE001 -- drop this object only
+        except Exception as exc:  # noqa: BLE001 -- this object keeps its outline
             try:
                 QgsMessageLog.logMessage(
                     f"Auto review: refine failed on object {det_idx}, "
-                    f"dropped ({exc})",
+                    f"kept as traced ({exc})",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
             except Exception:  # nosec B110
                 pass
             g = None
+        if g is None or g.isEmpty():
+            g = self._plain_outline_geom(base)
         result = g if (g is not None and not g.isEmpty()) else None
         geoms[det_idx] = result
         return result
@@ -487,7 +542,6 @@ class AutoReviewGeometryMixin:
         if cache.get("key") != key:
             self._adopt_reslice_shape_key(cache, key)
         geoms = cache["geoms"]
-        frozen = getattr(self, "_object_shape_is_frozen", None)
         per_shape = getattr(self, "_shape_params_for_object", None)
         seeded = 0
         for det_idx, fid in enumerate(object_fids):
@@ -496,11 +550,9 @@ class AutoReviewGeometryMixin:
             shape = shapes.get(fid)
             if shape is None:
                 continue
-            # An outline the user froze, or one carrying its own Shape settings,
-            # is not what the run-wide preset produced. Neither exists on a fresh
-            # finalize; both do on the reslice that reuses this method.
-            if frozen is not None and frozen(det_idx):
-                continue
+            # An outline carrying its own Shape settings is not what the run-wide
+            # preset produced. It cannot exist on a fresh finalize, which is the
+            # only caller today, so this is a guard for a future one.
             if per_shape is not None and per_shape(det_idx, params) is not params:
                 continue
             try:
@@ -519,14 +571,34 @@ class AutoReviewGeometryMixin:
 
     def _compute_visible_objects(
         self, params: dict, pixel_size: float, with_scores: bool = False,
+        refine_budget_s: float = 0.0,
     ) -> list | tuple[list, list]:
         """Synchronous filter+refine of _auto_objects into the visible geom set:
         whole-object confidence + size filter, then the shape refine. Used by the
         headless path; the interactive path does the same cooperatively.
         ``with_scores`` also returns the parallel per-object score list, so the
         headless export can fill the layer's `score` field like the review path
-        does (it silently exported NULL scores before)."""
+        does (it silently exported NULL scores before).
+
+        ``refine_budget_s`` bounds the time spent shaping objects that are NOT
+        already in the reslice cache (see _RESCUE_REFINE_BUDGET_S). A cache hit
+        is a dict lookup and never touches the budget, so the set the user was
+        actually looking at always comes out fully shaped; only the cohort the
+        Confidence cutoff had hidden can fall back to its traced outline. 0
+        means no bound, which is what the headless path wants."""
+        import time as _t
+
         removed = self._review_removed_fids()
+        # Settle the cache's shape key BEFORE the loop so the peek below reads
+        # the dict that _review_refined_geom will fill, not one it is about to
+        # swap out.
+        cache = self._auto_reslice_cache
+        shape_key = self._review_shape_key(params, pixel_size)
+        if cache.get("key") != shape_key:
+            self._adopt_reslice_shape_key(cache, shape_key)
+        cached_geoms = cache["geoms"]
+        deadline = (_t.monotonic() + refine_budget_s) if refine_budget_s > 0 else None
+        unshaped = 0
         out = []
         out_scores = []
         for det_idx, (base, score, area) in enumerate(self._auto_objects):
@@ -534,10 +606,19 @@ class AutoReviewGeometryMixin:
                 continue
             if not (self._object_is_manual(det_idx) or self._passes_review_filters(score, area, params)):
                 continue
-            g = self._review_refined_geom(det_idx, base, params, pixel_size)
+            if deadline is not None and det_idx not in cached_geoms and _t.monotonic() >= deadline:
+                g = self._plain_outline_geom(base)
+                unshaped += 1
+            else:
+                g = self._review_refined_geom(det_idx, base, params, pixel_size)
             if g is not None:
                 out.append(g)
                 out_scores.append(float(score))
+        if unshaped:
+            QgsMessageLog.logMessage(
+                f"Auto review: rescue export ran out of its {_RESCUE_REFINE_BUDGET_S:.0f}s "
+                f"shaping budget; {unshaped} hidden object(s) saved with their "
+                f"traced outline", "AI Segmentation", level=Qgis.MessageLevel.Info)
         # The set is complete here, which is the only point a whole-set
         # operation can run: shared borders needs every neighbour at once.
         out = self._apply_boundary_snap(out, params)

@@ -14,6 +14,8 @@ from qgis.core import (
 )
 
 from ...core.i18n import tr
+from ...core.qt_compat import safe_disconnect
+from ...core.window_focus import bring_qgis_window_to_front
 from ..background_workers import DepsInstallWorker, DownloadWorker, VerifyWorker
 from ..error_report_dialog import show_error_report
 from .shared import (
@@ -34,6 +36,42 @@ def _notify_ui(callback, *args) -> None:
         callback(*args)
     except RuntimeError:
         pass  # nosec B110 - the receiving widget was destroyed
+
+
+_INSTALL_ATTEMPT_KEY = "TerraLab/ai_seg_install_attempts"
+
+# How many 1.5s turns the install waits for the SAM pipe to go idle before it
+# starts anyway. A crop encode round trip is seconds, so this covers a normal
+# one without letting a wedged worker postpone an install for good.
+_INSTALL_PIPE_WAIT_MAX = 8
+
+
+def _bump_install_attempt() -> int:
+    """Count this install attempt and return its 1-based index.
+
+    Persisted rather than held in memory: a user who fails, restarts QGIS and
+    tries again is on their second attempt, and an in-session counter would
+    call it their first. Without it install_started/completed/failed cannot be
+    read per user at all, because one person retrying four times is
+    indistinguishable from four people failing once.
+    """
+    try:
+        from qgis.PyQt.QtCore import QSettings
+        s = QSettings()
+        n = int(s.value(_INSTALL_ATTEMPT_KEY, 0, type=int)) + 1
+        s.setValue(_INSTALL_ATTEMPT_KEY, n)
+        return n
+    except Exception:  # nosec B110 - a counter must never block an install
+        return 0
+
+
+def _clear_install_attempts() -> None:
+    """Start the count over once an install has actually succeeded."""
+    try:
+        from qgis.PyQt.QtCore import QSettings
+        QSettings().setValue(_INSTALL_ATTEMPT_KEY, 0)
+    except Exception:  # nosec B110
+        pass
 
 
 def _drop_untagged_account_history() -> None:
@@ -205,6 +243,76 @@ class EnvSetupMixin:
         self._predictor_worker.done.connect(self._on_predictor_loaded)
         self._predictor_worker.start()
 
+    def _abandon_local_ai_session(self, err_msg: str, from_install: bool = False) -> None:
+        """Give the Automatic review back after the on-device model refused to
+        load, and say so.
+
+        Without this the review stays in an armed AI fix session: the other
+        polygons are dimmed and unclickable, the help line still invites keep
+        points, and every click is swallowed because there is no predictor. The
+        run is paid for, so the session is torn down and the resting select
+        tool re-armed, which is what makes the Manual fix method usable.
+
+        ``from_install`` covers the lane that has no session yet: the user
+        accepted the one-time setup, waited it out, and it failed. The caller
+        reads it BEFORE releasing the lock, because the release clears the
+        pending flags this would otherwise test. Never raises.
+        """
+        in_session = bool(getattr(self, "_refine_handoff_active", False)
+                          or getattr(self, "_pending_refine_import", False))
+        if not (in_session or from_install):
+            return
+        if in_session:
+            # Same order as the healthy exit (_on_reshape_done), because the
+            # steps are not commutative: the harvest has to read the session
+            # flags, the restore clears them, and the re-arm refuses to run
+            # while _refine_handoff_active is still up.
+            if getattr(self, "_refine_add_mode_active", False):
+                try:
+                    self._exit_ai_add_mode()
+                except (RuntimeError, AttributeError):
+                    pass
+            try:
+                self.dock_widget.set_refine_handoff_preparing(False)
+            except (RuntimeError, AttributeError):
+                pass
+            # Harvest first, and do NOT clear _pending_refine_import here: that
+            # flag is how the harvest tells an edited session from one the user
+            # never got into, and clearing it would drop real hand edits.
+            for step in (self._collect_manual_refine_into_review,
+                         self._restore_auto_review_after_handoff):
+                try:
+                    step()
+                except (RuntimeError, AttributeError):
+                    pass
+            try:
+                self.dock_widget.leave_ai_reshape_state()
+            except (RuntimeError, AttributeError):
+                pass
+            try:
+                self._arm_correct_select()
+            except (RuntimeError, AttributeError):
+                pass
+        try:
+            self.iface.messageBar().pushWarning(
+                "AI Segmentation",
+                tr("The on-device AI could not start, so the AI fix is off. "
+                   "Your detections are safe: switch the fix method to Manual "
+                   "to keep correcting, or save them as they are."),
+            )
+        except (RuntimeError, AttributeError):
+            pass
+        QgsMessageLog.logMessage(
+            f"Local AI unavailable for this session: {err_msg}",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        try:
+            from ...core.telemetry_errors import report_exception
+            report_exception(
+                RuntimeError(err_msg or "predictor load failed"),
+                stage="local_ai_load", module="env_setup")
+        except Exception:  # noqa: BLE001 -- reporting must never re-raise here
+            pass  # nosec B110
+
     def _on_predictor_loaded(self, predictor, err_msg: str):
         if predictor is None:
             QgsMessageLog.logMessage(
@@ -215,11 +323,21 @@ class EnvSetupMixin:
             if self.dock_widget:
                 self.dock_widget.set_checkpoint_status(
                     False, tr("Model load failed"))
-            # A background install started from the Automatic review can no longer
-            # complete: drop the pending refine/add and re-enable the entry.
-            self._abort_refine_install()
-            self._abort_ai_add_install()
+            # The on-device model is out for this session. Remembering it stops
+            # the Correct step offering the AI method again on every click.
+            self._local_ai_load_failed = True
+            # Read the lane BEFORE the release: _release_local_ai_install
+            # clears both pending flags, and an install that failed with no
+            # session open is exactly the case that would otherwise end in
+            # silence (the status line it writes lives in the Manual section,
+            # which is hidden in Automatic mode).
+            was_install = self._local_ai_install_pending()
+            # An install started from the Automatic review can no longer
+            # complete: drop both pending lanes and give the review back.
+            self._release_local_ai_install()
+            self._abandon_local_ai_session(err_msg, from_install=was_install)
             return
+        self._local_ai_load_failed = False
         self.predictor = predictor
         QgsMessageLog.logMessage(
             "SAM predictor initialized (subprocess mode)",
@@ -254,33 +372,20 @@ class EnvSetupMixin:
                     )
         except Exception:  # noqa: BLE001 - prediction of intent must never break load
             pass  # nosec B110
-        # D1: a background install kicked off from the Automatic review (the user
-        # clicked Refine with no local AI) has finished. Clear the inline banner
-        # and, since the user already asked to refine, open the handoff now on the
-        # still-intact review. If they left the review meanwhile, just release the
-        # flag (the AI is now ready for next time).
-        if getattr(self, "_refine_install_pending", False):
-            self._refine_install_pending = False
-            if self.dock_widget:
-                try:
-                    self.dock_widget.set_auto_review_installing(False)
-                except (RuntimeError, AttributeError):
-                    pass
+        # An install kicked off from the Automatic review has finished. Give the
+        # review back, then open the very thing the user asked for on the
+        # still-intact review: the fix on the polygon they picked, or the Add
+        # lane. If they left the review meanwhile, the release is the whole
+        # answer (the AI is ready for next time). Which lane is read BEFORE the
+        # release, which clears both flags.
+        if self._local_ai_install_pending():
+            resume_add = bool(getattr(self, "_ai_add_install_pending", False))
+            self._release_local_ai_install()
             if self._auto_review:
-                self._on_reshape_ai_requested()
-            return
-        # D1 twin for the Add lane: a background install kicked off from the Add
-        # button has finished. Clear the banner and arm the lane now on the
-        # still-intact review (or just release the flag if the user left it).
-        if getattr(self, "_ai_add_install_pending", False):
-            self._ai_add_install_pending = False
-            if self.dock_widget:
-                try:
-                    self.dock_widget.set_auto_review_installing(False)
-                except (RuntimeError, AttributeError):
-                    pass
-            if self._auto_review:
-                self._on_ai_add_requested()
+                if resume_add:
+                    self._on_ai_add_requested()
+                else:
+                    self._on_reshape_ai_requested()
             return
         # Complete a Refine-in-Manual handoff that arrived before the model was
         # loaded: now that the predictor is up, start the Manual session and
@@ -312,6 +417,11 @@ class EnvSetupMixin:
                 # Now the detections are loaded, open the one the user selected
                 # for reshape (deferred until the predictor was ready).
                 self._open_reshape_target()
+            return
+        # Nothing was waiting on this load, so the cursor gets the last word: a
+        # hover made while the model was still coming up was recorded and not
+        # acted on, and the crop under it is the one the next click will want.
+        self._replay_hover_warm_when_ready()
 
     def _manual_used_recently(self, days: int = 14) -> bool:
         """True when this machine ran a Manual session within ``days``.
@@ -375,7 +485,46 @@ class EnvSetupMixin:
                 level=Qgis.MessageLevel.Warning
             )
 
+    def _sam_pipe_busy(self) -> bool:
+        """Whether a worker currently owns the SAM subprocess pipe.
+
+        Narrower than is_local_ai_busy() on purpose. That helper also lists
+        _startup_check_worker, which is still isRunning() inside its own done
+        slot, and that slot is one of the callers that asks for an install, so
+        using it here would refuse every automatic update install.
+        """
+        for attr in ("_manual_encode_worker", "_predictor_worker"):
+            worker = getattr(self, attr, None)
+            if worker is None:
+                continue
+            try:
+                if worker.isRunning():
+                    return True
+            except (RuntimeError, AttributeError):
+                continue
+        return False
+
     def _on_install_requested(self):
+        # The install deletes the environment the SAM subprocess runs in, and
+        # this method now hands that subprocess to the worker to be shut down.
+        # Doing either while a crop encode owns the pipe kills it mid round
+        # trip, and set_image then relaunches the process into the tree that
+        # is about to be deleted, which is the half-deleted venv this hand-off
+        # exists to prevent. Wait for the pipe instead, bounded so a wedged
+        # worker cannot postpone the install forever.
+        if self._sam_pipe_busy():
+            waited = getattr(self, "_install_pipe_waits", 0)
+            if waited < _INSTALL_PIPE_WAIT_MAX:
+                from qgis.PyQt.QtCore import QTimer as _QTimer
+                self._install_pipe_waits = waited + 1
+                _QTimer.singleShot(1500, self._on_install_requested)
+                return
+            QgsMessageLog.logMessage(
+                "Starting the install with the local AI pipe still busy: "
+                "waited out the retry budget",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        self._install_pipe_waits = 0
+
         # Manual (local) install needs to download/execute a standalone
         # Python and build a multi-GB venv, both unreliable or blocked under
         # Flatpak/Snap confinement. Fail fast with a clear message instead of
@@ -481,16 +630,35 @@ class EnvSetupMixin:
 
         import time as _time
         self._install_t0 = _time.monotonic()
+        self._install_attempt = _bump_install_attempt()
         try:
-            from ...core import telemetry
-            telemetry.track_install_started()
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_install_started()
         except Exception:
             pass  # nosec B110
 
-        self.deps_install_worker = DepsInstallWorker()
+        # Hand the loaded model to the worker so it is shut down BEFORE the
+        # install touches the venv, the way _remove_ai_data does it. Its
+        # subprocess runs the venv's python.exe with native libraries mapped,
+        # and Windows will not delete a running exe or a loaded DLL, so a
+        # rebuild would half-delete the tree and write new code over stale
+        # binaries. Cleared here on the main thread so nothing else uses it.
+        predictor = getattr(self, "predictor", None)
+        self.predictor = None
+        self.deps_install_worker = DepsInstallWorker(predictor)
         self.deps_install_worker.progress.connect(self._on_deps_install_progress)
         self.deps_install_worker.done.connect(self._on_deps_install_finished)
         self.deps_install_worker.start()
+        if not (self.deps_install_worker.isRunning() or self.deps_install_worker.isFinished()):
+            # start() only warns when the OS refuses the thread: run() never
+            # executes, so `done` never fires and the dock would sit on
+            # "Preparing installation..." for the rest of the session. Give the
+            # predictor back and route this through the normal failure path, so
+            # the user is told and the install funnel closes.
+            self.predictor = predictor
+            self._on_deps_install_finished(
+                False, "the installation thread did not start")
+            return
 
         # Surface the sign-in section 2 seconds after install starts
         from qgis.PyQt.QtCore import QTimer
@@ -563,8 +731,8 @@ class EnvSetupMixin:
             # A forced sign-out is a churn-grade moment (device limit hit,
             # subscription lapsed, key revoked): make it visible post-hoc.
             try:
-                from ...core import telemetry
-                telemetry.track_plugin_error(
+                from ...core import telemetry_errors
+                telemetry_errors.track_plugin_error(
                     stage="activate",
                     error_code=(code or "key_rejected").lower(),
                     message="stored key rejected on revalidation",
@@ -659,8 +827,8 @@ class EnvSetupMixin:
         import time as _time
         self._pairing_t0 = _time.monotonic()
         try:
-            from ...core import telemetry
-            telemetry.track_pairing_started()
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_pairing_started()
         except Exception:
             pass  # nosec B110
         QgsMessageLog.logMessage(
@@ -689,17 +857,14 @@ class EnvSetupMixin:
             # away, so the upsell card is hidden immediately for a Pro account
             # instead of waiting for the next mode toggle.
             self._refresh_auto_credits()
-        # Bring QGIS back to front so the user sees the activated dock.
+        # Bring QGIS back to front so the user sees the activated dock. Windows
+        # needs more than activateWindow(), hence the helper.
         try:
-            mw = self.iface.mainWindow()
-            mw.activateWindow()
-            mw.raise_()
-            if self.dock_widget:
-                self.dock_widget.raise_()
+            bring_qgis_window_to_front(self.iface.mainWindow(), self.dock_widget)
         except Exception:  # nosec B110
             pass
         try:
-            from ...core.telemetry import track_plugin_activated
+            from ...core.telemetry_session_events import track_plugin_activated
             track_plugin_activated(duration_ms=self._pairing_elapsed_ms())
         except Exception:  # nosec B110
             pass
@@ -711,8 +876,8 @@ class EnvSetupMixin:
             self.dock_widget.show_pairing_idle()
             self.dock_widget.set_activation_message(message, is_error=True)
         try:
-            from ...core import telemetry
-            telemetry.track_pairing_failed(
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_pairing_failed(
                 error_code=code or "unknown",
                 duration_ms=self._pairing_elapsed_ms(),
             )
@@ -745,8 +910,8 @@ class EnvSetupMixin:
                 is_error=True,
             )
         try:
-            from ...core import telemetry
-            telemetry.track_pairing_failed(
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_pairing_failed(
                 error_code="timeout",
                 duration_ms=self._pairing_elapsed_ms(),
             )
@@ -774,11 +939,11 @@ class EnvSetupMixin:
         task = getattr(self, attr, None)
         if task is None:
             return
-        try:
-            task.succeeded.disconnect()
-            task.failed.disconnect()
-        except (RuntimeError, TypeError):  # nosec B110
-            pass
+        # One guard per signal: batched, a task the manager had already disposed
+        # of raised on the first and left `failed` connected, so a late failure
+        # still landed on torn-down UI.
+        safe_disconnect(task, "succeeded")
+        safe_disconnect(task, "failed")
         try:
             if task.is_active():
                 task.cancel()
@@ -820,8 +985,8 @@ class EnvSetupMixin:
     def _on_cancel_pairing(self, code: str = ""):
         self._cancel_pairing_worker()
         try:
-            from ...core import telemetry
-            telemetry.track_pairing_cancelled(duration_ms=self._pairing_elapsed_ms())
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_pairing_cancelled(duration_ms=self._pairing_elapsed_ms())
         except Exception:
             pass  # nosec B110
         if code:
@@ -1122,14 +1287,20 @@ class EnvSetupMixin:
                 self.dock_widget.set_install_progress(100, "Cancelled")
                 self.dock_widget.set_dependency_status(
                     False, tr("Installation cancelled"))
-                self._abort_refine_install()
+                self._release_local_ai_install()
+                # The model was shut down before the install started, and a
+                # cancel leaves the environment untouched, so bring it back.
+                # Without this a cancelled update install kills a working
+                # Manual mode for the rest of the session: nothing else
+                # reloads it while the venv still reads as needing an update.
+                self._load_predictor()
                 return
 
             self.dock_widget.set_install_progress(100, "Failed")
             error_msg = message[:300] if message else tr("Unknown error")
             self.dock_widget.set_dependency_status(False, tr("Installation failed"))
-            # A background install from the Automatic review can no longer finish.
-            self._abort_refine_install()
+            # An install from the Automatic review can no longer finish.
+            self._release_local_ai_install()
 
             error_title = tr("Installation Failed")
             error_code = "installation_failed"
@@ -1154,6 +1325,7 @@ class EnvSetupMixin:
                 get_invalid_path_help,
                 get_macos_intel_help,
                 get_pip_antivirus_help,
+                get_ssl_error_help,
                 get_vcpp_help,
                 is_antivirus_error,
                 is_app_control_error,
@@ -1164,6 +1336,7 @@ class EnvSetupMixin:
                 is_dll_init_error,
                 is_file_locked_error,
                 is_glibc_too_old,
+                is_index_forbidden_error,
                 is_invalid_path_error,
                 is_macos_intel_no_wheel,
                 is_proxy_auth_error,
@@ -1227,7 +1400,10 @@ class EnvSetupMixin:
                 # uv (rustls) wording, no "ssl" substring anywhere
                 "invalid peer certificate", "unknownissuer",
             ]):
+                # The written guidance already exists and only reached the log;
+                # without this the dialog body stayed the raw installer string.
                 error_title = tr("SSL Certificate Error")
+                error_msg = get_ssl_error_help(msg_lower, PLUGIN_CACHE_DIR)
                 error_code = "ssl_certificate_error"
             elif "file in use by qgis" in msg_lower or is_file_locked_error(msg_lower):
                 # Native module (.pyd/.dll) locked by the running QGIS process
@@ -1236,6 +1412,20 @@ class EnvSetupMixin:
                 error_title = tr("Restart QGIS Required")
                 error_msg = get_file_locked_help()
                 error_code = "restart_qgis_required"
+            elif is_index_forbidden_error(msg_lower):
+                # HTTP 403 from the package index. Its own branch because the
+                # generic bucket buries it as an unclassified failure, and the
+                # fix belongs to whoever runs the network, not to the user.
+                error_title = tr("Downloads Blocked by Your Network")
+                error_msg = tr(
+                    "The package index refused the download (error 403).\n\n"
+                    "This is usually a company or campus network filtering "
+                    "downloads. Ask your IT administrator to allow "
+                    "pypi.org and files.pythonhosted.org, or run the install "
+                    "from another network.\n\n"
+                    "Automatic (cloud) mode does not need this download."
+                )
+                error_code = "index_forbidden"
             elif is_app_control_error(msg_lower):
                 # AppLocker/WDAC style managed policy: checked BEFORE the
                 # generic "blocked" branch below, whose change-path advice is
@@ -1325,6 +1515,35 @@ class EnvSetupMixin:
                 error_title = tr("Unsupported Mac and Python Combination")
                 error_msg = get_macos_intel_help()
                 error_code = "macos_intel_no_wheel"
+            # The three branches below read venv_manager's own failure wording
+            # rather than a pip or uv stderr pattern. They are the families that
+            # reach here with a message no stderr classifier above can match, so
+            # without them every one of these lands in the generic bucket and
+            # the telemetry says only that the install failed.
+            elif "process crashed" in msg_lower:
+                # Windows access violation mid-install, which is nearly always
+                # antivirus killing pip rather than a broken package.
+                error_msg = get_crash_help(PLUGIN_CACHE_DIR)
+                error_code = "process_crash"
+            elif any(marker in msg_lower for marker in (
+                "failed to create venv",
+                "failed to bootstrap pip",
+                "virtual environment does not exist",
+                "virtual environment not found",
+            )):
+                # The environment could not be built at all, so no package ever
+                # got a chance. A plain retry reuses the same half-made venv.
+                error_title = tr("AI Environment Damaged")
+                error_msg = get_corrupt_venv_help()
+                error_code = "venv_create_failed"
+                mark_venv_for_rebuild()
+            elif "is broken" in msg_lower:
+                # Installed but unimportable: the post-install verification
+                # caught it, and only a rebuild clears it.
+                error_title = tr("AI Environment Damaged")
+                error_msg = get_corrupt_venv_help()
+                error_code = "package_broken"
+                mark_venv_for_rebuild()
 
             show_error_report(
                 self.iface.mainWindow(),
@@ -1335,12 +1554,14 @@ class EnvSetupMixin:
             try:
                 import time as _time
 
-                from ...core import telemetry
+                from ...core import telemetry_session_events
                 t0 = getattr(self, "_install_t0", 0.0)
-                telemetry.track_install_failed(
+                telemetry_session_events.track_install_failed(
                     error_class=error_code,
                     duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None,
                     python_minor=sys.version_info.minor,
+                    retry_count=getattr(self, "_install_attempt", 0),
+                    detail=message,
                 )
             except Exception:
                 pass  # nosec B110
@@ -1362,17 +1583,44 @@ class EnvSetupMixin:
             try:
                 import time as _time
 
-                from ...core import telemetry
+                from ...core import telemetry_session_events
                 t0 = getattr(self, "_install_t0", 0.0)
                 if t0:
-                    telemetry.track_install_completed(
+                    telemetry_session_events.track_install_completed(
                         duration_ms=int((_time.monotonic() - t0) * 1000),
                         python_minor=sys.version_info.minor,
+                        retry_count=getattr(self, "_install_attempt", 0),
                     )
                     self._install_t0 = 0.0
+                _clear_install_attempts()
             except Exception:
                 pass  # nosec B110
-            self.dock_widget.set_dependency_status(True, "✓ " + tr("Dependencies ready"))
+            # An install is allowed to finish without the local model packages
+            # (a blocked index, a download that will not complete), because
+            # Automatic is a cloud mode and runs without them. Saying
+            # "Dependencies ready" there would promise a Manual mode that
+            # cannot start, so name what is short instead.
+            model_ok = True
+            try:
+                from ...core.venv_manager import local_model_ready
+                model_ok, _why = local_model_ready()
+            except Exception:  # noqa: BLE001 -- never block on the probe
+                pass  # nosec B110
+            if model_ok:
+                self.dock_widget.set_dependency_status(
+                    True, "✓ " + tr("Dependencies ready"))
+            else:
+                self.dock_widget.set_dependency_status(
+                    True, "✓ " + tr("Ready for Automatic mode"))
+                try:
+                    self.iface.messageBar().pushWarning(
+                        "AI Segmentation",
+                        tr("Automatic mode is ready. The on-device AI could "
+                           "not be installed, so Manual mode and the AI fix "
+                           "are off until it is. Everything else works."),
+                    )
+                except (RuntimeError, AttributeError):
+                    pass
             if message and not message.startswith("device_error"):
                 QgsMessageLog.logMessage(
                     f"Device info: {message}",
@@ -1391,12 +1639,12 @@ class EnvSetupMixin:
                 self.dock_widget.set_install_progress(100, "Failed")
                 self.dock_widget.set_dependency_status(
                     True, tr("Dependencies ready, model download failed"))
-                self._abort_refine_install()
+                self._release_local_ai_install()
         else:
             self.dock_widget.set_install_progress(100, "Failed")
             self.dock_widget.set_dependency_status(
                 False, "{} {}".format(tr("Verification failed:"), message))
-            self._abort_refine_install()
+            self._release_local_ai_install()
             # A broken native module (torch DLL blocked by a missing VC++
             # runtime) is the dominant verify failure: route it to the
             # actionable fix-it steps instead of a dead-end generic dialog.
@@ -1432,12 +1680,14 @@ class EnvSetupMixin:
             try:
                 import time as _time
 
-                from ...core import telemetry
+                from ...core import telemetry_session_events
                 t0 = getattr(self, "_install_t0", 0.0)
-                telemetry.track_install_failed(
+                telemetry_session_events.track_install_failed(
                     error_class=error_code,
                     duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None,
                     python_minor=sys.version_info.minor,
+                    retry_count=getattr(self, "_install_attempt", 0),
+                    detail=message,
                 )
             except Exception:
                 pass  # nosec B110
@@ -1463,9 +1713,9 @@ class EnvSetupMixin:
             try:
                 import time as _time
 
-                from ...core import telemetry
+                from ...core import telemetry_session_events
                 t0 = getattr(self, "_install_t0", 0.0)
-                telemetry.track_install_cancelled(
+                telemetry_session_events.track_install_cancelled(
                     duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None)
             except Exception:
                 pass  # nosec B110
@@ -1513,7 +1763,7 @@ class EnvSetupMixin:
             self.dock_widget.set_install_progress(100, "Failed")
             self.dock_widget.set_dependency_status(
                 True, tr("Dependencies ready, model download failed"))
-            self._abort_refine_install()
+            self._release_local_ai_install()
 
     def _on_download_progress(self, percent: int, message: str):
         if not self.dock_widget:
@@ -1529,10 +1779,10 @@ class EnvSetupMixin:
             try:
                 import time as _time
 
-                from ...core import telemetry
+                from ...core import telemetry_session_events
                 from ...core.model_config import USE_SAM2
                 t0 = getattr(self, "_model_download_t0", 0.0)
-                telemetry.track_model_download_completed(
+                telemetry_session_events.track_model_download_completed(
                     model="sam2" if USE_SAM2 else "sam1",
                     duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None)
             except Exception:
@@ -1549,13 +1799,13 @@ class EnvSetupMixin:
                 self.dock_widget.set_install_progress(100, tr("Cancelled"))
                 self.dock_widget.set_dependency_status(
                     True, tr("Dependencies ready, model not downloaded"))
-                self._abort_refine_install()
+                self._release_local_ai_install()
                 return
 
             self.dock_widget.set_install_progress(100, "Failed")
             self.dock_widget.set_dependency_status(
                 True, tr("Dependencies ready, model download failed"))
-            self._abort_refine_install()
+            self._release_local_ai_install()
 
             show_error_report(
                 self.iface.mainWindow(),

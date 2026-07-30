@@ -103,6 +103,7 @@ class AutoReviewParamsMixin:
                 "fill_holes_max_m2": _fill_holes_max_m2_with_floor(
                     review.get("fill_holes"), review.get("fill_holes_max_m2")),
                 "clean_px": float(review.get("clean_px", _AUTO_REVIEW_CLEAN_DEFAULT)),
+                "close_notches_m": float(review.get("close_notches_m", 0.0) or 0.0),
                 "ortho": bool(review.get("ortho", _AUTO_REVIEW_ORTHO_DEFAULT)),
                 "min_size_m2": round(max(object_floor, noise), 1),
                 "vertex_spacing_m": _plan_vertex_spacing_m(review),
@@ -111,18 +112,19 @@ class AutoReviewParamsMixin:
         except (TypeError, ValueError):
             return None
 
-    def _effective_confidence_default(self) -> float:
-        """The review's starting confidence default: the run plan's value when
-        it matches this run's prompt, else the exemplar-only default for an
-        exemplar-only run, else the prompt's shape-class value from the server
-        policy, else the generic default. Object classes (and an exemplar-only
-        run's lack of a text prior) score differently on the same true object,
-        so the start adapts instead of one flat cutoff. The live seed uses the
-        SAME resolver (review_start_confidence_default) so the live preview and
-        the review open at the same cutoff. The auto_lowered comparisons all
-        read this so they compare against the SAME default the review seeds
-        from."""
-        prompt = str((self._auto_run_ctx or {}).get("prompt") or "")
+    def _confidence_default_for(self, prompt: str, is_exemplar_only: bool) -> float:
+        """The starting confidence cutoff for one run, from its prompt alone.
+
+        The run plan's value when the plan was fetched for this prompt, else the
+        shared resolver (exemplar-only default, the prompt's shape-class value
+        from the server policy, or the generic one). Object classes, and an
+        exemplar-only run's lack of a text prior, score differently on the same
+        true object, so the start adapts instead of one flat cutoff.
+
+        Takes its two inputs as ARGUMENTS rather than reading run state, because
+        the run start has to resolve the cutoff before ``_auto_run_ctx`` and
+        ``_auto_is_exemplar_only`` exist. That is what lets the live preview and
+        the review share one decision instead of each making its own."""
         plan = self._active_run_plan(prompt)
         if plan is not None:
             c = plan.get("confidence_default")
@@ -130,8 +132,18 @@ class AutoReviewParamsMixin:
                 return float(c)
         from ...core.review_presets import review_start_confidence_default
 
-        return review_start_confidence_default(
-            prompt, bool(getattr(self, "_auto_is_exemplar_only", False)))
+        return review_start_confidence_default(prompt, is_exemplar_only)
+
+    def _effective_confidence_default(self) -> float:
+        """The review's starting confidence default: the run's own cutoff, read
+        back off the finished run's state. The live seed resolves the same value
+        through _confidence_default_for at run start, so the live preview and
+        the review open at the same cutoff. The auto_lowered comparisons all
+        read this so they compare against the SAME default the review seeds
+        from."""
+        return self._confidence_default_for(
+            str((self._auto_run_ctx or {}).get("prompt") or ""),
+            bool(getattr(self, "_auto_is_exemplar_only", False)))
 
     def _fresh_review_params(self) -> dict:
         """Review filter/refine params for a fresh result: the pre-run
@@ -156,6 +168,10 @@ class AutoReviewParamsMixin:
             "fill_holes": bool(preset["fill_holes"]),
             "fill_max_m2": float(preset.get("fill_holes_max_m2", 0.0) or 0.0),
             "open_px": float(preset["clean_px"]),
+            # Not a widget either: closing an outside bite is a class decision,
+            # not something the user dials, so it rides the preset like the
+            # point budget does and survives every reslice snapshot.
+            "close_notches_m": float(preset.get("close_notches_m", 0.0) or 0.0),
             "ortho": bool(preset["ortho"]),
             # Not a widget: the point budget travels with the run's preset so
             # every reslice snapshot carries it, like Min size does.
@@ -200,20 +216,6 @@ class AutoReviewParamsMixin:
         if not manual:
             return False
         return self._object_fid_for(det_idx) in manual
-
-    def _object_shape_is_frozen(self, det_idx: int) -> bool:
-        """Whether this object's outline was drawn or edited by hand in the
-        Manual method, in which case the shared shape refine must not touch it.
-        Keyed by det_id, like the gate exemption, so it holds across a reslice.
-
-        Not the same question as _object_is_manual: that one exempts an object
-        from the confidence and size FILTERS, and an AI-assisted add sets it
-        too. This one exempts the GEOMETRY from the shape pipeline, and only a
-        hand-made outline earns it."""
-        frozen = getattr(self, "_auto_shape_frozen_ids", None)
-        if not frozen:
-            return False
-        return self._object_fid_for(det_idx) in frozen
 
     def _passes_review_filters(self, score: float, area: float, params: dict) -> bool:
         """Whole-object confidence + min/max-size gate (the VISIBLE-set filter).

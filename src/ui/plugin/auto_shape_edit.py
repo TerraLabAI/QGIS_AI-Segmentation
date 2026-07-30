@@ -46,6 +46,12 @@ from ..canvas_palette import (
 # never both own the canvas tool. UI-only, so it lives here, not in shape_edits.
 KIND_SELECT = "select"
 
+# How far apart, in IMAGE pixels of the run, two shapes may sit and still count
+# as touching for the Merge offer. A tile seam parts two halves of one object by
+# well under a pixel; anything wider is two objects. Deliberately not a screen
+# measure: that one grows every time the user zooms out.
+_MERGE_SEAM_TOLERANCE_PX = 2.0
+
 
 class AutoShapeEditMixin:
     """The review's Correct-step map tools: select a detection, or merge
@@ -332,6 +338,12 @@ class AutoShapeEditMixin:
         re-select, the bridge return) leaves it False so it stays a pure state
         setter. Keyword-only so the positional signature the MCP path relies on
         never changes."""
+        # A local-AI setup is running for the polygon already picked: a click
+        # on the map must not move the selection out from under it, or the
+        # install would finish and open a polygon the user picked by accident
+        # while waiting.
+        if self._local_ai_install_pending():
+            return
         if idx is not None and (
                 idx < 0 or idx >= len(self._auto_objects) or idx in self._review_removed_fids()):
             idx = None
@@ -373,13 +385,24 @@ class AutoShapeEditMixin:
                 self, "_qgis_bridge_active", False):
             return
         method = getattr(self, "_correct_method", "ai")
-        if method == "manual":
-            # The bridge reads _correct_selected_idx as its target; it keeps its
-            # own banner rather than the panel (kept treatment, see report).
-            self.enter_qgis_edit_bridge()
-        else:
-            # _on_reshape_ai_requested reads _correct_selected_idx too.
-            self._on_reshape_ai_requested()
+        # The canvas half of "one polygon at a time": every other polygon greys
+        # out and stops answering clicks for as long as this session runs. Set
+        # BEFORE the session opens, because the AI path finds its own target
+        # through the very hit test the gate sits on, and dropped again below
+        # when nothing opened (no local AI, no editable layer, a stray call).
+        self._begin_correct_focus(self._det_id_for_object_index(idx))
+        try:
+            if method == "manual":
+                # The bridge reads _correct_selected_idx as its target; it keeps
+                # its own banner rather than the panel (kept treatment).
+                self.enter_qgis_edit_bridge()
+            else:
+                # _on_reshape_ai_requested reads _correct_selected_idx too.
+                self._on_reshape_ai_requested()
+        finally:
+            if not (getattr(self, "_refine_handoff_active", False)
+                    or getattr(self, "_qgis_bridge_active", False)):
+                self._end_correct_focus()
 
     def _selected_has_mergeable_neighbor(self, det_idx) -> bool:
         """True when another VISIBLE detection overlaps or touches the object at
@@ -393,17 +416,19 @@ class AutoShapeEditMixin:
             sel = self._auto_objects[det_idx][0]
         if sel is None or sel.isEmpty():
             return False
-        # Carry a few screen pixels into the run CRS, the same way _hit_object_at
-        # does, so "touching" tolerates a hairline gap between seam halves.
+        # The gap Merge exists to close is a TILE SEAM, so the tolerance is a
+        # property of the run's imagery and not of the current zoom. It used to
+        # be a few SCREEN pixels carried into the run CRS, which grows with
+        # every zoom-out: at 5 m per screen pixel two polygons 40 m apart read
+        # as touching and the tile was offered on shapes nowhere near each
+        # other. Two image pixels covers a seam half parted by a hairline and
+        # nothing else. No pixel size (an older or restored review) means no
+        # tolerance, so only a real intersection counts.
         tol = 0.0
         try:
-            mupp = self.iface.mapCanvas().mapSettings().mapUnitsPerPixel()
-            centre = sel.boundingBox().center()
-            off = QgsPointXY(centre.x() + mupp * self._PICK_TOLERANCE_PX, centre.y())
-            run_pts = self._points_in_run_crs([QgsPointXY(centre), off])
-            if len(run_pts) == 2:
-                tol = float(run_pts[0].distance(run_pts[1]))
-        except (RuntimeError, AttributeError, TypeError):
+            px = float((self._auto_review or {}).get("pixel_size", 0.0) or 0.0)
+            tol = max(0.0, px) * _MERGE_SEAM_TOLERANCE_PX
+        except (TypeError, ValueError, AttributeError):
             tol = 0.0
         bbox = sel.boundingBox()
         rect = QgsRectangle(bbox.xMinimum() - tol, bbox.yMinimum() - tol,
@@ -571,8 +596,18 @@ class AutoShapeEditMixin:
         if self._shape_edit_mode == KIND_SELECT:
             # A genuine map pick opens the current method's fix session on the
             # polygon under the cursor; empty ground clears the selection.
-            self._set_correct_selection(
-                self._hit_object_at(point), enter_session=True)
+            det_idx = self._hit_object_at(point)
+            # A session already owns one polygon: the others are greyed out and
+            # answer nothing, so a stray click cannot move the edit onto a
+            # shape the user was not working on.
+            if self._correct_focus_blocks_det_id(
+                    self._det_id_for_object_index(det_idx)):
+                return
+            # A click goes straight into the fix session. An intermediate menu
+            # was tried on 2026-07-30 and removed the same day: it cost a click
+            # on the one gesture the step exists for. The polygon's own dials
+            # ride along INSIDE the session instead (set_correct_session_active).
+            self._set_correct_selection(det_idx, enter_session=True)
             return
         if self._shape_edit_mode != KIND_MERGE:
             return
@@ -782,14 +817,6 @@ class AutoShapeEditMixin:
             manual_ids = getattr(self, "_auto_manual_object_ids", None)
             if manual_ids is not None:
                 manual_ids.difference_update(int(i) for i in exempted)
-        # Same rule for the shape freeze: undoing the fold that froze an
-        # outline hands it back to the shared settings, while an outline an
-        # earlier fold froze stays frozen.
-        froze = getattr(edit, "frozen", ()) or ()
-        if froze:
-            frozen_ids = getattr(self, "_auto_shape_frozen_ids", None)
-            if frozen_ids is not None:
-                frozen_ids.difference_update(int(i) for i in froze)
         # The AI-refine fold records deletions in _auto_manual_removed wholesale,
         # so its undo restores the pre-fold snapshot rather than a per-index diff.
         snap = self._fold_manual_removed_undo.pop(id(entry), None)
@@ -839,8 +866,8 @@ class AutoShapeEditMixin:
 
     def _track_shape_edit(self, kind: str, outcome: str, objects: int) -> None:
         try:
-            from ...core import telemetry
-            telemetry.track_review_correct_box(
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_review_correct_box(
                 run_id=self._auto_run_id or "", label=1, outcome=outcome,
                 objects=int(objects), gesture=kind)
         except Exception:
@@ -1026,11 +1053,21 @@ class AutoShapeEditMixin:
         whatever renderer the review uses, so the highlight reads the same in
         every display mode."""
         try:
+            from qgis.core import QgsCoordinateReferenceSystem
             from qgis.gui import QgsRubberBand
 
             from ...core.qt_compat import PolygonGeometry
             band = QgsRubberBand(self.iface.mapCanvas(), PolygonGeometry)
-            band.setToGeometry(QgsGeometry(geom), None)
+            # The detections are in the RUN CRS, which stopped being the canvas
+            # CRS once a run can be moved to ground metres. Passing None means
+            # "already in canvas coordinates", so the outline would be drawn at
+            # an easting read as a longitude and land off the map. Same CRS
+            # overload, and same reason, as the tile-grid band in auto_zone.
+            authid = getattr(self, "_auto_crs_authid", None)
+            band_crs = QgsCoordinateReferenceSystem(authid) if authid else None
+            if band_crs is not None and not band_crs.isValid():
+                band_crs = None
+            band.setToGeometry(QgsGeometry(geom), band_crs)
             band.setStrokeColor(color)
             band.setWidth(width)
             fill = type(color)(color)

@@ -75,7 +75,7 @@ class AutoFinalizeStepsMixin:
         except Exception:  # nosec B110
             pass
         try:
-            from ...core.telemetry import report_exception
+            from ...core.telemetry_errors import report_exception
             report_exception(exc, stage="segment", module="auto_results")
         except Exception:  # nosec B110
             pass
@@ -350,18 +350,6 @@ class AutoFinalizeStepsMixin:
             self._auto_confidence = start_conf
             state["params"]["conf"] = start_conf
             if not self._auto_headless_run and self.dock_widget is not None:
-                default_conf = self._effective_confidence_default()
-                auto_lowered = raw_start_conf < default_conf - 1e-9
-                # "adaptive" = lowered while objects DO score above the default
-                # (distribution fit); the other reason is "nothing scored above".
-                adaptive_note = auto_lowered and any(
-                    s >= default_conf for (_g, s, _a) in objects)
-                # "tuned" = the start IS the default, but an object-specific
-                # one (differs from the generic cutoff): explain it so a
-                # non-30% opening value never looks arbitrary.
-                from ...core.detection_policy import confidence_default
-                tuned_note = (not auto_lowered) and abs(
-                    default_conf - confidence_default()) > 1e-9
                 try:
                     spin = self.dock_widget.auto_confidence_spin
                     spin.blockSignals(True)
@@ -374,9 +362,6 @@ class AutoFinalizeStepsMixin:
                     # the visible handle rested at another.
                     self.dock_widget.seed_review_confidence(
                         int(round(start_conf * 100)))
-                    self.dock_widget.set_review_conf_lowered_note(
-                        auto_lowered or tuned_note, int(round(start_conf * 100)),
-                        adaptive=adaptive_note, tuned=tuned_note)
                     # Clamp the confidence controls so neither the slider nor the
                     # spinbox can dial below the noise floor (sub-floor detections
                     # were already dropped, so a cutoff under it is meaningless).

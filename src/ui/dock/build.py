@@ -57,6 +57,7 @@ from .styles import (
     _RECAP_CARD_QSS,
     BRAND_BLUE,
     BTN_GREEN,
+    _btn_start_qss,
     _msg_card_qss,
 )
 from .widgets import (
@@ -123,17 +124,16 @@ class DockBuildMixin:
         self._setup_activation_section()
         self._setup_segmentation_section()
         self._setup_automatic_page()
-        # The Manual Try-Automatic nudge sits directly under the Manual content
-        # (BEFORE the stretch) so it clusters with the Start view instead of
-        # leaving a void above it. It stays a main_layout item (NOT moved into
-        # start_container) so its show/hide keeps running through
-        # _update_try_automatic_hint_visibility; only its position differs,
-        # above the stretch rather than below it.
-        self.main_layout.addWidget(self.try_automatic_hint)
         self.main_layout.addStretch()
-        # The Automatic first-steps guide band stays pinned to the dock bottom,
-        # just above the footer CTAs, on the Automatic Start step
-        # (_update_auto_tutorial_banner_visibility).
+        # Both nudges sit AFTER the stretch, pinned to the dock bottom just
+        # above the footer icons: the Manual Try-Automatic band and the
+        # Automatic first-steps guide. Stacking them under the Start content
+        # crowded the top of the panel, and a promo belongs at the end of the
+        # page, not in the middle of the flow. They stay main_layout items (NOT
+        # inside start_container), so their show/hide keeps running through
+        # _update_try_automatic_hint_visibility and
+        # _update_auto_tutorial_banner_visibility.
+        self.main_layout.addWidget(self.try_automatic_hint)
         self.main_layout.addWidget(self.auto_tutorial_banner)
         self._setup_update_notification()
         self._setup_update_recommendation()
@@ -565,7 +565,8 @@ class DockBuildMixin:
         self.instructions_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.instructions_label.setStyleSheet(_INSTRUCTIONS_CARD_QSS)
-        self._instructions_compact = False
+        # Memo read by _set_instructions_style: the label starts on the card.
+        self._instructions_style = "card"
         self.instructions_label.setVisible(False)
         layout.addWidget(self.instructions_label)
 
@@ -627,8 +628,8 @@ class DockBuildMixin:
         self.start_button.clicked.connect(self._on_start_clicked)
         self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
         # Same prominence as AI Edit's "Launch AI Edit" button.
-        self.start_button.setMinimumHeight(36)
-        self.start_button.setStyleSheet(_BTN_GREEN)
+        self.start_button.setMinimumHeight(40)
+        self.start_button.setStyleSheet(_btn_start_qss(_BTN_GREEN))
         self.start_button.setToolTip(
             tr("Accept the Terms and Privacy Policy to enable segmentation.")
         )
@@ -642,9 +643,9 @@ class DockBuildMixin:
         # session starts.
         self.manual_start_caption = DismissibleHint(
             HINT_START_MANUAL,
-            tr("Click an object on the map and the AI outlines it. "
-               "You go one object at a time, checking and saving each "
-               "polygon yourself."),
+            tr("Click an object and the AI outlines it. You check and save "
+               "each polygon yourself, one at a time. Use Automatic mode to "
+               "get every object in a zone at once."),
             tint=GREEN_TINT,
             show_glyph=False,  # a mode description, not a tip
         )
@@ -659,7 +660,14 @@ class DockBuildMixin:
         # set_manual_last_run_recap().
         self.manual_last_run_recap = QLabel()
         self.manual_last_run_recap.setWordWrap(True)
-        self.manual_last_run_recap.setTextFormat(Qt.TextFormat.PlainText)
+        # Rich text: the layer name is a link back to the layer. It is not a
+        # web address, so external opening stays off and the dock resolves the
+        # href itself (_on_manual_recap_link). Everything from the project is
+        # escaped where the text is built (manual_recap.py).
+        self.manual_last_run_recap.setTextFormat(Qt.TextFormat.RichText)
+        self.manual_last_run_recap.setOpenExternalLinks(False)
+        self.manual_last_run_recap.linkActivated.connect(
+            self._on_manual_recap_link)
         self.manual_last_run_recap.setStyleSheet(_RECAP_CARD_QSS)
         self.manual_last_run_recap.setVisible(False)
         start_layout.addWidget(self.manual_last_run_recap)

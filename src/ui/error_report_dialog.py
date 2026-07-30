@@ -347,6 +347,10 @@ class ErrorReportDialog(QDialog):
         self._email_btn.clicked.connect(self._on_open_email)
         layout.addWidget(self._email_btn)
 
+        from .dock.font_scale import apply_font_scale_to_tree
+
+        apply_font_scale_to_tree(self)
+
     def _on_copy(self):
         """Copy diagnostic info to clipboard."""
         clipboard = QApplication.clipboard()
@@ -387,7 +391,7 @@ def show_error_report(
     """
     if track:
         try:
-            from ..core.telemetry import track_plugin_error
+            from ..core.telemetry_errors import track_plugin_error
             stage = _infer_stage(error_title, error_message)
             first_line = (error_message or "").splitlines()[0] if error_message else ""
             code = error_code or _short_code(error_title)

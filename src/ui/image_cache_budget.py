@@ -4,7 +4,7 @@
 artifacts) to a per-user cache dir and never deleted anything, so the dir grew
 forever on the user's disk. This module is the other half: one deferred sweep
 per QGIS session walks that dir and unlinks least-recently-used files until the
-total fits ``IMAGE_CACHE_BUDGET_BYTES``.
+total fits the budget :func:`image_cache_budget_bytes` reports.
 
 Recency is ``st_mtime``: writing an entry sets it, and ``touch_for_lru`` bumps
 it on a cache hit so "least recently used" means used, not downloaded.
@@ -23,16 +23,35 @@ from qgis.core import Qgis
 
 from ..core.logging_utils import log
 
-# Disk budget for the whole image cache. An archived run tile weighs about
-# 1.5 MB and a full template demo set about 5 MB, so 200 MB holds well over a
-# hundred past runs plus every demo: enough that a returning user never
-# refetches, small enough to stay unnoticed next to the tile and WMS caches
-# QGIS itself keeps in the same place. Past it, the least recently used go.
+# Shipped disk budget for the whole image cache, and the fallback the getter
+# below returns whenever the server says nothing usable. Big enough that a
+# returning user never refetches, small enough to stay unnoticed next to the
+# tile and WMS caches QGIS itself keeps in the same place. Past it, the least
+# recently used go.
 IMAGE_CACHE_BUDGET_BYTES = 200 * 1024 * 1024
+
+_BYTES_PER_MB = 1024 * 1024
 
 # One sweep per QGIS session. The cache only grows by what this session
 # downloads, so re-walking it on every dialog open would buy nothing.
 _SWEEP_DONE = False
+
+
+def image_cache_budget_bytes() -> int:
+    """Disk budget for the whole image cache, in bytes.
+
+    Served in megabytes, since that is the unit the budget is reasoned in. The
+    floor keeps room for one full demo set, so the sweep can never evict faster
+    than the loader writes; the ceiling keeps a bad value from parking
+    gigabytes on a user's disk. Cache-only, so it is safe wherever the sweep is.
+    """
+    try:
+        from ..core.server_dials import dial_in_range
+
+        shipped_mb = IMAGE_CACHE_BUDGET_BYTES // _BYTES_PER_MB
+        return int(dial_in_range("ui.image_cache_mb", shipped_mb, 16, 4096)) * _BYTES_PER_MB
+    except Exception:  # noqa: BLE001 -- the budget is best-effort  # nosec B110
+        return IMAGE_CACHE_BUDGET_BYTES
 
 
 def touch_for_lru(path: Path) -> None:
@@ -87,13 +106,18 @@ def _collect_entries(root: Path) -> tuple[list[tuple[float, int, Path]], int]:
 
 
 def sweep_image_cache(root: Path, expected_dir_name: str,
-                      budget_bytes: int = IMAGE_CACHE_BUDGET_BYTES) -> int:
+                      budget_bytes: int | None = None) -> int:
     """Evict least-recently-used images under ``root`` until they fit the budget.
 
     ``expected_dir_name`` is the cache dir's own folder name, checked against
     the resolved root before a single unlink: this function must never be able
     to delete anything outside the plugin's own cache. Returns the bytes freed.
+
+    ``budget_bytes`` defaults to the budget in force, read here rather than at
+    import time so a configuration refresh moves it.
     """
+    if budget_bytes is None:
+        budget_bytes = image_cache_budget_bytes()
     try:
         root = root.resolve()
     except OSError:

@@ -16,7 +16,8 @@ keeps the shared root. Nothing is copied between them, so signing in to another
 account on the same machine never surfaces the previous account's runs.
 
 Fail-safe by design: reads return [] on any problem, and the store is capped
-at :data:`MAX_ENTRIES` with orphaned thumbnails garbage-collected on write.
+at :func:`history_max_entries` with orphaned thumbnails garbage-collected on
+write.
 """
 from __future__ import annotations
 
@@ -32,13 +33,30 @@ _HISTORY_DIR = os.path.join(
 _HISTORY_FILE = "history.json"
 _ACCOUNT_DIR_PREFIX = "account_"
 
-# Last N runs kept locally. This is the user's own segmentation history and we
-# keep all of it (there is no in-app delete): the server is the true unbounded
-# archive for signed-in users, and this local store is the offline / pre-deploy
-# feed for the library's Recent tab. 500 keeps every practical run while staying
-# safely bounded on disk (a 256px PNG thumb + a tiny JSON row per entry, so a
-# full store is a few tens of MB at most). Oldest beyond the cap roll off.
+# Shipped cap on the runs kept locally, and the fallback the getter below
+# returns whenever the server says nothing usable. This is the user's own
+# segmentation history and we keep all of it (there is no in-app delete): the
+# server is the true unbounded archive for signed-in users, and this local
+# store is the offline feed for the library's Recent tab. Each entry costs a
+# 256px PNG thumb plus a tiny JSON row, so the cap is what keeps the store
+# bounded on disk. Oldest beyond it roll off.
 MAX_ENTRIES = 500
+
+
+def history_max_entries() -> int:
+    """How many committed runs the local store keeps.
+
+    Bounded on both sides: below the floor the Recent tab stops being a
+    history, above the ceiling the thumbnails outgrow what a cache dir should
+    hold. Cache-only and never raises, so it stays safe in this fail-safe
+    module and on a machine with no configuration at all.
+    """
+    try:
+        from .server_dials import dial_in_range
+
+        return int(dial_in_range("library.history_max_entries", MAX_ENTRIES, 20, 5000))
+    except Exception:  # noqa: BLE001 -- the cap is best-effort  # nosec B110
+        return MAX_ENTRIES
 
 
 def account_history_dir() -> str:
@@ -141,7 +159,7 @@ def add_entry(
     if thumb:
         entry["thumb"] = os.path.basename(thumb)
     entries.insert(0, entry)
-    entries = entries[:MAX_ENTRIES]
+    entries = entries[:history_max_entries()]
     _write_entries(entries)
     _gc_thumbs(entries)
 
@@ -161,14 +179,24 @@ def _gc_thumbs(entries: list[dict]) -> None:
     Scoped to the current account's directory, and to thumbnail file names, so
     the per-account subdirectories under the signed-out root are never touched.
     """
-    keep = {e.get("thumb") for e in entries if e.get("thumb")}
+    # normcase both sides: this decides what gets deleted, and Windows file
+    # names are case-insensitive, so a plain `not in` would read a live
+    # thumbnail spelled with different case as an orphan and remove it.
+    keep = set()
+    for entry in entries:
+        thumb = entry.get("thumb")
+        # isinstance, because this set decides what gets deleted and the
+        # entries come from a JSON file on disk: a non-string there would
+        # raise out of normcase, and the caller catches nothing.
+        if isinstance(thumb, str) and thumb:
+            keep.add(os.path.normcase(thumb))
     directory = account_history_dir()
     try:
         names = os.listdir(directory)
     except OSError:
         return
     for name in names:
-        if name.startswith("thumb_") and name.endswith(".png") and name not in keep:
+        if name.startswith("thumb_") and name.endswith(".png") and os.path.normcase(name) not in keep:
             try:
                 os.remove(os.path.join(directory, name))
             except OSError:

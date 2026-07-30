@@ -27,7 +27,7 @@ import logging
 
 from qgis.core import QgsGeometry, QgsPointXY
 from qgis.gui import QgsMapTool, QgsRubberBand, QgsVertexMarker
-from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
+from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QCursor
 
 from ..core.qt_compat import LineGeometry, PolygonGeometry, VertexIconCircle, event_pos
@@ -38,6 +38,7 @@ from .canvas_palette import (
     ZONE_DRAW_FILL,
     ZONE_DRAW_LINE,
 )
+from .canvas_slide_pan import CanvasSlidePan
 
 logger = logging.getLogger("AISegmentation")
 
@@ -61,6 +62,12 @@ class PolygonZoneMapTool(QgsMapTool):
     zone_selected = pyqtSignal(QgsGeometry)
     zone_cleared = pyqtSignal()
     vertices_changed = pyqtSignal(int)
+    # The canvas dropped this tool without its owner asking (the user picked
+    # another QGIS map tool while it was armed). An owner that arms the tool
+    # one shot at a time wires this to reset its armed UI; the long-lived zone
+    # tool ignores it. Guarded so an owner-driven disarm
+    # (``suppress_deactivate_signal``) does not re-enter.
+    tool_deactivated = pyqtSignal()
     # Ctrl+Z / Backspace / Escape on an EMPTY canvas (no points yet) means
     # "go back" a step, not "undo a point" or "clear". The owner turns this
     # into leaving the draw step (zone) or disarming (exemplar).
@@ -72,12 +79,6 @@ class PolygonZoneMapTool(QgsMapTool):
     MIN_STEP_PX: int = 6
     # Cursor within this many pixels of the first point closes the polygon.
     CLOSE_PX: int = 14
-
-    # Full canvas re-renders during a pan are throttled to at most one per
-    # this many ms; the pan extent itself still updates on every move, so the
-    # gesture tracks the cursor and only the expensive redraw is coalesced.
-    # Same value in every map tool that pans, so all of them feel identical.
-    PAN_REFRESH_THROTTLE_MS: int = 80
 
     def __init__(self, canvas, color: QColor | None = None):
         super().__init__(canvas)
@@ -112,29 +113,21 @@ class PolygonZoneMapTool(QgsMapTool):
         self._markers: list[QgsVertexMarker] = []
         self._can_close = False
         self._space_panning = False
-        self._pan_last = None
-        self._pan_refresh_timer = QTimer(self)
-        self._pan_refresh_timer.setSingleShot(True)
-        self._pan_refresh_timer.setInterval(self.PAN_REFRESH_THROTTLE_MS)
-        self._pan_refresh_timer.timeout.connect(self._flush_pan_refresh)
+        # Stale-armed guard: see tool_deactivated.
+        self.suppress_deactivate_signal = False
+        self._in_deactivate_emit = False
+        self._slide_pan = CanvasSlidePan(canvas)
         self.setCursor(QCursor(Qt.CursorShape.CrossCursor))
 
     # -- ShortcutFilter space-pan hooks (compatible with the old tool) --
     def start_space_pan(self) -> None:
         self._space_panning = True
-        self._pan_last = self._canvas.mapFromGlobal(QCursor.pos())
+        self._slide_pan.begin_at(self._canvas.mapFromGlobal(QCursor.pos()))
         self._canvas.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
 
     def stop_space_pan(self) -> None:
         self._space_panning = False
-        self._pan_last = None
-        # A throttled refresh may still be pending: flush it now so releasing
-        # Space never leaves the map showing a stale render. Only when one is
-        # pending: nothing queued means nothing moved, and a Space tap that
-        # panned nothing would otherwise restart the whole basemap tile job.
-        if self._pan_refresh_timer.isActive():
-            self._pan_refresh_timer.stop()
-            self._flush_pan_refresh()
+        self._slide_pan.commit()
         self._canvas.setCursor(QCursor(Qt.CursorShape.CrossCursor))
 
     def set_snap_context(self, *args, **kwargs) -> None:
@@ -144,7 +137,9 @@ class PolygonZoneMapTool(QgsMapTool):
     # -- Mouse --
     def canvasMoveEvent(self, event):  # noqa: N802 (Qt API)
         if self._space_panning:
-            self._do_pan(event_pos(event))
+            # Slide the drawn picture under the cursor and leave the extent
+            # alone until Space is released: see canvas_slide_pan.
+            self._slide_pan.slide_to(event_pos(event))
             return
         if not self._points:
             return
@@ -355,34 +350,6 @@ class PolygonZoneMapTool(QgsMapTool):
         dy_close = abs(screen_pt.y() - first_screen.y()) <= self.CLOSE_PX
         return dx_close and dy_close
 
-    def _do_pan(self, pos) -> None:
-        """Pan from the previous screen point.
-
-        The extent updates on every move so the gesture always tracks the
-        cursor, but the full re-render this triggers is throttled: every move
-        starts the same single-shot timer, so a fast drag over a live basemap
-        does not cancel and restart a render job on each pixel of motion.
-        """
-        if self._pan_last is None:
-            self._pan_last = pos
-            return
-        start = self.toMapCoordinates(self._pan_last)
-        end = self.toMapCoordinates(pos)
-        center = self._canvas.center()
-        self._canvas.setCenter(QgsPointXY(
-            center.x() + (start.x() - end.x()),
-            center.y() + (start.y() - end.y()),
-        ))
-        if not self._pan_refresh_timer.isActive():
-            self._pan_refresh_timer.start()
-        self._pan_last = pos
-
-    def _flush_pan_refresh(self) -> None:
-        try:
-            self._canvas.refresh()
-        except (RuntimeError, AttributeError):
-            pass
-
     def _reset_visuals(self) -> None:
         self._edges_band.reset(LineGeometry)
         self._fill_band.reset(PolygonGeometry)
@@ -395,15 +362,38 @@ class PolygonZoneMapTool(QgsMapTool):
         self._markers = []
         self._can_close = False
 
+    def remove_bands_from_canvas(self) -> None:
+        """Take the three rubber bands off the canvas scene for good.
+
+        ``reset()`` empties a band but leaves the item on the scene. The zone
+        tool is built once and re-activated, so it keeps its bands; an owner
+        that builds a FRESH tool per draw (the example / exclude sketch) calls
+        this when it drops the tool, or empty bands pile up on the canvas.
+        """
+        for band in (self._edges_band, self._fill_band, self._preview_band):
+            try:
+                self._canvas.scene().removeItem(band)
+            except (RuntimeError, AttributeError):
+                pass
+
+    def _emit_deactivated(self) -> None:
+        # Tell the owner the canvas dropped us. Suppressed during an
+        # owner-driven disarm, and re-entrancy-guarded so a slot that triggers
+        # another deactivate cannot loop.
+        if self.suppress_deactivate_signal or self._in_deactivate_emit:
+            return
+        self._in_deactivate_emit = True
+        try:
+            self.tool_deactivated.emit()
+        finally:
+            self._in_deactivate_emit = False
+
     def deactivate(self) -> None:
         self._reset_visuals()
         self._points = []
         self._space_panning = False
-        self._pan_last = None
-        # A tool swap inside the throttle window is the end of the gesture
-        # too: without the flush the canvas keeps the pre-pan render at the
-        # new extent, and nothing else will repaint it.
-        if self._pan_refresh_timer.isActive():
-            self._pan_refresh_timer.stop()
-            self._flush_pan_refresh()
+        # A tool swap mid-pan is the end of that pan too: keep the map where
+        # the user moved it to rather than snapping it back.
+        self._slide_pan.commit()
         super().deactivate()
+        self._emit_deactivated()

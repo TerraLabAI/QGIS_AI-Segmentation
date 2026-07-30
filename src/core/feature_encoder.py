@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 
 import numpy as np
@@ -17,8 +18,23 @@ _GDAL_ONLY_FORMATS = {
     ".pdf",
 }
 
-# Online/remote raster providers that need rendering before encoding
+# Online/remote raster providers that need rendering before encoding. QGIS
+# serves WMTS and XYZ through the "wms" provider, so those two names never
+# come back from provider.name(); they are kept because a build or a future
+# QGIS could report them, and an extra name here costs nothing.
 ONLINE_PROVIDERS = frozenset(["wms", "wmts", "xyz", "arcgismapserver", "wcs"])
+
+# Local providers that serve pixels but have no file behind them, so the
+# windowed file read has nothing to open. A PostGIS raster lives in a
+# database, a virtual raster is an expression over other layers. Both are
+# valid QgsRasterLayers, both are offered in the layer picker, and both used
+# to reach the file reader and fail there.
+FILELESS_LOCAL_PROVIDERS = frozenset(["postgresraster", "virtualraster"])
+
+# The real question every caller asks: must this layer be rendered through
+# QGIS instead of read from its own file? Online or fileless, the answer and
+# the code path are the same.
+CANVAS_RENDERED_PROVIDERS = ONLINE_PROVIDERS | FILELESS_LOCAL_PROVIDERS
 
 
 def _normalize_to_uint8(bands, nodata_value=None):
@@ -50,11 +66,13 @@ def _normalize_to_uint8(bands, nodata_value=None):
     else:
         valid_mask = None
 
-    # Also mask NaN for float types
+    # Also mask NaN AND the infinities for float types. An inf survives
+    # np.isnan, so it used to reach np.percentile, where it drags p2/p98 to
+    # inf and turns the whole stretch below into NaN.
     if is_float:
         for b in sorted(set(band_order)):
-            nan_free = ~np.isnan(bands[b])
-            valid_mask = nan_free if valid_mask is None else (valid_mask & nan_free)
+            finite = np.isfinite(bands[b])
+            valid_mask = finite if valid_mask is None else (valid_mask & finite)
 
     is_uint8 = (bands.dtype == np.uint8)
     result = np.zeros((3, bands.shape[1], bands.shape[2]), dtype=np.uint8)
@@ -100,6 +118,15 @@ def _normalize_to_uint8(bands, nodata_value=None):
                 stretched = np.clip(
                     band if is_float else band.astype(np.float64), p2, p98)
                 stretched = (stretched - p2) / (p98 - p2) * 255
+                if is_float:
+                    # np.clip propagates NaN, so a nodata pixel excluded from
+                    # the percentiles is still NaN here, and NaN -> uint8 is
+                    # undefined ("invalid value encountered in cast", which a
+                    # numpy error state turns into a hard read failure). The
+                    # nodata zeroing below only runs after this cast, so the
+                    # scrub has to happen first.
+                    stretched = np.nan_to_num(
+                        stretched, nan=0.0, posinf=255.0, neginf=0.0)
                 result[b] = stretched.astype(np.uint8)
             # else: stays zeros
 
@@ -365,6 +392,42 @@ def _needs_gdal_conversion(raster_path):
     return ext in _GDAL_ONLY_FORMATS
 
 
+# A GDAL driver prefix: two or more letters then a colon, which rules out a
+# Windows drive letter (always one). GPKG:, NETCDF:, PDF:, JPEG:, HDF5: ...
+_DRIVER_PREFIX_RE = re.compile(r"^[A-Za-z]{2,}:")
+
+
+def vsi_normalized_path(raster_path):
+    """A source both readers can open: a bare http(s) URL gains /vsicurl/.
+
+    QGIS normally stores a remote COG already prefixed, but a layer built from
+    a plain URL (a hand-written project file, a script, an MCP call) keeps the
+    bare form, which rasterio and GDAL both reject as a missing filename.
+    Anything else is returned untouched.
+    """
+    path = (raster_path or "").strip()
+    if path.lower().startswith(("http://", "https://")):
+        return "/vsicurl/" + path
+    return raster_path
+
+
+def source_file_is_missing(raster_path):
+    """True only when the source is a plain path with nothing at the end of it.
+
+    Answered for plain filesystem paths and nothing else. A GDAL URI
+    (``/vsizip/``, ``GPKG:...:layer``, ``NETCDF:"...":var``, an http source)
+    names a dataset inside a container, so os.path.exists says nothing useful
+    about it and those go straight to the normal reader, which reports its own
+    error. A False answer here only means the usual path runs.
+    """
+    path = (raster_path or "").strip()
+    if not path:
+        return False
+    if path.startswith("/vsi") or "://" in path or _DRIVER_PREFIX_RE.match(path):
+        return False
+    return not os.path.exists(path.split("|")[0])
+
+
 def _gdal_has_thread_local_config(gdal):
     """True when this GDAL binding can scope a config option to one thread.
 
@@ -396,12 +459,58 @@ def crop_read_is_thread_safe(raster_path):
     return _gdal_has_thread_local_config(gdal)
 
 
+def _ground_square_row_ratio(ground_aspect: float, pixel_size_x: float,
+                             pixel_size_y: float) -> float:
+    """Rows per column that make a read window square on the GROUND.
+
+    ``ground_aspect`` is the ground distance one y unit of the raster CRS
+    covers divided by the ground distance one x unit covers, at the crop
+    centre. It is above 1 in a geographic CRS, where a degree of longitude
+    covers less ground than a degree of latitude, so a ground-square window
+    there needs more columns than rows and this comes back below 1.
+
+    Exactly 1.0 whenever nothing needs correcting: on an aspect of 1.0 (every
+    projected CRS), on an unusable aspect, and on a pixel size that cannot be
+    divided. A window built on 1.0 is the square-in-coordinates window this
+    reader has always used.
+    """
+    try:
+        aspect = float(ground_aspect)
+    except (TypeError, ValueError):
+        return 1.0
+    if aspect == 1.0 or not (aspect > 0.0):
+        return 1.0
+    if not (pixel_size_x > 0.0 and pixel_size_y > 0.0):
+        return 1.0
+    ratio = (pixel_size_x / pixel_size_y) / aspect
+    if not (0.0 < ratio < 1e6):
+        return 1.0
+    return ratio
+
+
+def _ground_matched_out_rows(out_w: int, actual_width: int, actual_height: int,
+                             row_ratio: float, crop_size: int) -> int:
+    """Output rows whose proportions match the ground the window covers.
+
+    Measured on the pixels actually read rather than on the pixels requested,
+    so a crop clipped at the raster edge still reaches the model in the
+    proportions of the ground behind it.
+    """
+    if actual_width <= 0 or actual_height <= 0 or not (row_ratio > 0.0):
+        return max(1, int(out_w))
+    ground_ratio = (float(actual_height) / float(actual_width)) / row_ratio
+    return max(1, min(int(crop_size), int(round(out_w * ground_ratio))))
+
+
 def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
-                         scale_factor, layer_extent):
+                         scale_factor, layer_extent, ground_aspect=1.0):
     """Read a windowed crop directly from a GDAL-supported raster (JP2, ECW, etc.).
 
     Instead of converting the entire file to GeoTIFF, reads only the needed
     pixels using GDAL windowed access.
+
+    ``ground_aspect`` is measured by the caller (see extract_crop_from_raster);
+    1.0 reads the window exactly as this function always has.
 
     Returns (image_np, crop_info, error_msg, error_code). On success, error_msg
     and error_code are both None. On failure error_code is a stable English
@@ -485,13 +594,20 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
         col_center = (center_x - bounds_left) / pixel_size_x
         row_center = (bounds_top - center_y) / pixel_size_y
 
-        read_size = int(crop_size * scale_factor)
-        half = read_size // 2
-        col_off = max(0, int(round(col_center - half)))
-        row_off = max(0, int(round(row_center - half)))
+        # Square on the ground, not square in coordinates. read_rows equals
+        # read_cols on every CRS whose two axes cover the same ground distance,
+        # and drops below it on one where a y unit covers more ground than an
+        # x unit.
+        row_ratio = _ground_square_row_ratio(
+            ground_aspect, pixel_size_x, pixel_size_y)
+        read_cols = int(crop_size * scale_factor)
+        read_rows = (read_cols if row_ratio == 1.0
+                     else max(1, int(round(read_cols * row_ratio))))
+        col_off = max(0, int(round(col_center - read_cols // 2)))
+        row_off = max(0, int(round(row_center - read_rows // 2)))
 
-        actual_width = min(read_size, raster_width - col_off)
-        actual_height = min(read_size, raster_height - row_off)
+        actual_width = min(read_cols, raster_width - col_off)
+        actual_height = min(read_rows, raster_height - row_off)
 
         if actual_width <= 0 or actual_height <= 0:
             return None, None, "Click is outside the raster bounds", "crop_error_outside_bounds"
@@ -510,6 +626,13 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
             out_h = actual_height
             out_w = actual_width
 
+        # The image the model sees carries the proportions of the ground under
+        # it. Only the rows move: every column the file holds is kept, and the
+        # rows it never held are spread, not invented.
+        if row_ratio != 1.0:
+            out_h = _ground_matched_out_rows(
+                out_w, actual_width, actual_height, row_ratio, crop_size)
+
         # Paletted (colour-table) raster: expand class indices to their true
         # colours instead of stretching raw indices to grey.
         palette_rgb = _read_palette_rgb_gdal(
@@ -518,12 +641,24 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
             image_np = palette_rgb
             ds = None
         else:
+            # A buffer smaller than the read window (the geographic-CRS ground
+            # square, see ground_aspect above) makes GDAL resample on read.
+            # With no resample_alg that resample is nearest neighbour, blocky
+            # on the stretched axis. Bilinear matches the rasterio path above.
+            # Resolved defensively (not a bare attribute access) and only
+            # passed when the buffer actually differs from the window, so a
+            # projected raster's 1:1 read stays byte-identical to before.
+            read_kwargs = {}
+            if out_w != actual_width or out_h != actual_height:
+                bilinear = getattr(gdal, "GRIORA_Bilinear", None)
+                if bilinear is not None:
+                    read_kwargs["resample_alg"] = bilinear
             bands = []
             for b_idx in range(1, num_bands + 1):
                 band = ds.GetRasterBand(b_idx)
                 data = band.ReadAsArray(
                     col_off, row_off, actual_width, actual_height,
-                    buf_xsize=out_w, buf_ysize=out_h
+                    buf_xsize=out_w, buf_ysize=out_h, **read_kwargs
                 )
                 # GDAL returns None (not an exception) when the block cannot be
                 # decoded: corrupt tile, missing codec (JPEG-in-TIFF), broken
@@ -540,6 +675,11 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
                 bands.append(data)
 
             nodata = ds.GetRasterBand(1).GetNoDataValue()
+            # Release the Band before the Dataset. A live Band holds its parent
+            # Dataset open, so `ds = None` on its own left the user's raster
+            # open through the stack and normalise below, and Windows refuses
+            # to overwrite or delete a file it still has a handle on.
+            band = None
             ds = None
 
             tile_data = np.stack(bands, axis=0)
@@ -587,7 +727,7 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
 
 def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
                              layer_crs_wkt=None, layer_extent=None,
-                             scale_factor=1.0):
+                             scale_factor=1.0, ground_aspect=1.0):
     """Extract a crop_size x crop_size RGB crop centered on (center_x, center_y).
 
     Args:
@@ -600,6 +740,12 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
             When > 1.0, reads more native pixels and downsamples to crop_size.
             When < 1.0, reads fewer native pixels and upsamples to crop_size.
             Clamped to [0.25, 8.0] by the caller.
+        ground_aspect: Ground distance one y unit of the raster CRS covers,
+            divided by the ground distance one x unit covers, at the crop
+            centre. 1.0 (the default) means the two axes agree and the crop is
+            read exactly as it always was. The CALLER measures it, with
+            layer_conventions.ground_unit_aspect: that measurement is
+            main-thread only and this read is not.
 
     Returns:
         (image_np, crop_info, error) where:
@@ -607,28 +753,57 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
         - crop_info: dict with 'bounds' (minx, miny, maxx, maxy) and 'img_shape' (H, W)
         - error: error string or None on success
     """
+    raster_path = vsi_normalized_path(raster_path)
+
+    # A file that is not there is not a format problem. Both readers below end
+    # on "convert your raster to GeoTIFF", which is useless advice for a .tif
+    # whose drive or network share went away, and it sent users converting a
+    # file they could no longer open.
+    if source_file_is_missing(raster_path):
+        return (None, None, tr(
+            "The raster file could not be found:\n{path}\n\n"
+            "It may have been moved or renamed, or the drive or network "
+            "share it is on may be disconnected. Reload the layer from "
+            "where the file is now, then start again."
+        ).format(path=raster_path), "crop_error_file_missing")
+
     # Handle GDAL-only formats (JP2, ECW, etc.) with direct windowed read.
     # Checked BEFORE the rasterio import: this path reads through QGIS's own
     # GDAL, so it must keep working when the venv rasterio is broken/missing.
     if _needs_gdal_conversion(raster_path):
         return _read_crop_with_gdal(
             raster_path, center_x, center_y, crop_size,
-            scale_factor, layer_extent
+            scale_factor, layer_extent, ground_aspect
         )
 
     try:
         import rasterio
         from rasterio.enums import Resampling
         from rasterio.windows import Window
-    except ImportError as err:
-        # Keep the real reason. A missing package and a package whose native
-        # extension will not load both land here, and only the second one
-        # says why (a dlopen failure, an ABI mismatch against the host numpy).
-        # The caller's automatic repair only helps the first, so discarding
-        # the text left every one of these undiagnosable. Telemetry scrubs
-        # paths out of the message before it leaves the machine.
-        return (None, None, f"rasterio is not available: {err}",
-                "crop_error_rasterio_unavailable")
+    except ImportError:
+        # Nothing on this path puts the venv on sys.path. The calls that do it
+        # live in the startup diagnostics workers, so a session where those
+        # never ran, or ran after the first click, reaches this import with
+        # rasterio installed and still unimportable ("No module named
+        # 'rasterio'"). Add the path and retry before calling it missing.
+        try:
+            from .venv_manager import ensure_venv_packages_available
+            ensure_venv_packages_available()
+        except Exception:  # noqa: BLE001 - the retry below reports the real cause
+            pass  # nosec B110
+        try:
+            import rasterio
+            from rasterio.enums import Resampling
+            from rasterio.windows import Window
+        except ImportError as err:
+            # Keep the real reason. A missing package and a package whose native
+            # extension will not load both land here, and only the second one
+            # says why (a dlopen failure, an ABI mismatch against the host numpy).
+            # The caller's automatic repair only helps the first, so discarding
+            # the text left every one of these undiagnosable. Telemetry scrubs
+            # paths out of the message before it leaves the machine.
+            return (None, None, f"rasterio is not available: {err}",
+                    "crop_error_rasterio_unavailable")
 
     try:
         with rasterio.open(raster_path) as src:
@@ -667,14 +842,21 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
             col_center = (center_x - bounds_left) / pixel_size_x
             row_center = (bounds_top - center_y) / pixel_size_y
 
-            # When scale_factor > 1, read a larger native window
-            read_size = int(crop_size * scale_factor)
-            half = read_size // 2
-            col_off = max(0, int(round(col_center - half)))
-            row_off = max(0, int(round(row_center - half)))
+            # When scale_factor > 1, read a larger native window. Square on the
+            # ground, not square in coordinates: read_rows equals read_cols on
+            # every CRS whose two axes cover the same ground distance, and
+            # drops below it on one where a y unit covers more ground than an
+            # x unit.
+            row_ratio = _ground_square_row_ratio(
+                ground_aspect, pixel_size_x, pixel_size_y)
+            read_cols = int(crop_size * scale_factor)
+            read_rows = (read_cols if row_ratio == 1.0
+                         else max(1, int(round(read_cols * row_ratio))))
+            col_off = max(0, int(round(col_center - read_cols // 2)))
+            row_off = max(0, int(round(row_center - read_rows // 2)))
 
-            actual_width = min(read_size, raster_width - col_off)
-            actual_height = min(read_size, raster_height - row_off)
+            actual_width = min(read_cols, raster_width - col_off)
+            actual_height = min(read_rows, raster_height - row_off)
 
             if actual_width <= 0 or actual_height <= 0:
                 return None, None, "Click is outside the raster bounds", "crop_error_outside_bounds"
@@ -693,25 +875,30 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
                 out_w = min(crop_size, int(actual_width / scale_factor))
                 out_h = max(1, out_h)
                 out_w = max(1, out_w)
-                tile_data = src.read(
-                    indexes=read_bands,
-                    window=window,
-                    out_shape=(n_read, out_h, out_w),
-                    resampling=Resampling.bilinear
-                )
             elif scale_factor < 1.0:
                 out_h = min(crop_size, max(1, int(actual_height / scale_factor)))
                 out_w = min(crop_size, max(1, int(actual_width / scale_factor)))
+            else:
+                out_h = actual_height
+                out_w = actual_width
+
+            # The image the model sees carries the proportions of the ground
+            # under it. Only the rows move: every column the file holds is
+            # kept, and the rows it never held are spread, not invented.
+            if row_ratio != 1.0:
+                out_h = _ground_matched_out_rows(
+                    out_w, actual_width, actual_height, row_ratio, crop_size)
+
+            if (scale_factor == 1.0 and out_h == actual_height
+                    and out_w == actual_width):
+                tile_data = src.read(indexes=read_bands, window=window)
+            else:
                 tile_data = src.read(
                     indexes=read_bands,
                     window=window,
                     out_shape=(n_read, out_h, out_w),
                     resampling=Resampling.bilinear
                 )
-            else:
-                tile_data = src.read(indexes=read_bands, window=window)
-                out_h = actual_height
-                out_w = actual_width
 
             nodata = src.nodata
             # Paletted (colour-table) raster: expand class indices to their true
@@ -757,7 +944,7 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
         )
         return _read_crop_with_gdal(
             raster_path, center_x, center_y, crop_size,
-            scale_factor, layer_extent
+            scale_factor, layer_extent, ground_aspect
         )
 
 
@@ -793,6 +980,8 @@ class OnlineCropFetcher:
     def __init__(self, layer, center_x, center_y, canvas_mupp, crop_size=1024):
         from qgis.core import QgsRectangle
 
+        from .layer_conventions import ground_unit_aspect
+
         self._layer = layer
         self._crop_size = crop_size
         self.error = None
@@ -813,10 +1002,18 @@ class OnlineCropFetcher:
             self.error_code = "crop_error_online_provider_unavailable"
             return
 
-        half_size = crop_size * canvas_mupp / 2.0
+        # The crop covers a square piece of GROUND, then fills a square pixel
+        # image, so the two agree. canvas_mupp is measured along x, and one y
+        # unit of a geographic CRS covers more ground than one x unit, so the
+        # rectangle is shorter in y by exactly that factor. On a CRS whose axes
+        # already agree the factor is 1.0 and the rectangle is the square it
+        # has always been. Main-thread only, like the rest of this class
+        # (finish() renders through the map job).
+        half_x = crop_size * canvas_mupp / 2.0
+        half_y = half_x / ground_unit_aspect(layer.crs(), center_x, center_y)
         self._extent = QgsRectangle(
-            center_x - half_size, center_y - half_size,
-            center_x + half_size, center_y + half_size
+            center_x - half_x, center_y - half_y,
+            center_x + half_x, center_y + half_y
         )
         QgsMessageLog.logMessage(
             f"Online crop request: center=({center_x:.6f}, {center_y:.6f}), "

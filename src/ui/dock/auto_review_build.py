@@ -31,14 +31,16 @@ from qgis.PyQt.QtWidgets import (
 
 from ...core.i18n import tr
 from .auto_correct_build import _REVIEW_HEADING_NOTE_QSS, _REVIEW_HEADING_QSS
+from .font_scale import scale_qss_font_px
 from .guidance import (
     BLUE_TINT,
     HINT_REVIEW_CONFIDENCE,
     DismissibleHint,
 )
 from .styles import (
-    _BTN_GREEN,
+    _BTN_GREEN_STEP,
     _BTN_LINK_MUTED,
+    _BTN_LINK_STRONG,
     _CARD_MARGINS,
     _CARD_QSS,
     _COMBO_THEME_QSS,
@@ -173,10 +175,11 @@ def _dial_label_qss(active: bool) -> str:
     """10px label under a step dial: the active step's label is bolder and in
     the full text colour, the others stay muted."""
     if active:
-        return ("font-size: 10px; font-weight: 600; color: palette(text);"
-                " background: transparent; border: none;")
-    return ("font-size: 10px; color: rgba(128,128,128,0.95);"
+        return scale_qss_font_px(
+            "font-size: 10px; font-weight: 600; color: palette(text);"
             " background: transparent; border: none;")
+    return scale_qss_font_px("font-size: 10px; color: rgba(128,128,128,0.95);"
+                             " background: transparent; border: none;")
 
 
 class _StepDialColumn(QWidget):
@@ -301,8 +304,8 @@ class DockAutoReviewBuildMixin:
         # step (Export is that step's primary) and on the zero-detection empty
         # state, where there is nothing to advance to.
         self.auto_step_next_btn = QPushButton("")
-        self.auto_step_next_btn.setStyleSheet(_BTN_GREEN)
-        self.auto_step_next_btn.setMinimumHeight(40)
+        self.auto_step_next_btn.setStyleSheet(_BTN_GREEN_STEP)
+        self.auto_step_next_btn.setMinimumHeight(48)
         self.auto_step_next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_step_next_btn.clicked.connect(
             self._on_auto_step_next_clicked)
@@ -312,19 +315,22 @@ class DockAutoReviewBuildMixin:
         # (a saved layer) instead of the vague "Finish"; taller than every
         # other control so the finish line is unmistakable.
         self.auto_export_btn = QPushButton(_export_btn_label(0))
-        self.auto_export_btn.setStyleSheet(_BTN_GREEN)
-        self.auto_export_btn.setMinimumHeight(44)
+        self.auto_export_btn.setStyleSheet(_BTN_GREEN_STEP)
+        self.auto_export_btn.setMinimumHeight(52)
         self.auto_export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_export_btn.clicked.connect(self.auto_export_requested.emit)
         self.auto_export_btn.setVisible(False)
         _review_layout.addWidget(self.auto_export_btn)
 
-        # Quiet links row: "Re-run the whole zone" + Exit on every step. Retry
-        # keeps the zone, references and settings (non-destructive re-run, new
-        # credits); Exit discards. The dials handle back-navigation, so there
-        # is no back-link.
+        # Links row: "Re-run the whole zone" + Exit on every step. Retry keeps
+        # the zone, references and settings (non-destructive re-run, new
+        # credits); Exit discards. The dials handle back-navigation, so there is
+        # no back-link. Retry wears the louder link (_BTN_LINK_STRONG): in muted
+        # grey it read as a subtitle and users missed it. It stays a link with
+        # no fill, so the green primary above is still the one loud action, and
+        # Exit beside it stays quieter still.
         self.auto_retry_btn = QPushButton("↻  " + tr("Re-run the whole zone"))
-        self.auto_retry_btn.setStyleSheet(_BTN_LINK_MUTED)
+        self.auto_retry_btn.setStyleSheet(_BTN_LINK_STRONG)
         self.auto_retry_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_retry_btn.setToolTip(tr(
             "Go back to your zone, references and settings, then detect the "
@@ -495,16 +501,6 @@ class DockAutoReviewBuildMixin:
             tint=BLUE_TINT,
         )
         lay.addWidget(self.auto_confidence_hint)
-
-        # Note shown when the review auto-lowered its starting cutoff because
-        # nothing scored above 30%. Hidden by default; cleared on the first
-        # user-initiated slider move.
-        self.auto_conf_lowered_note = QLabel("")
-        self.auto_conf_lowered_note.setWordWrap(True)
-        self.auto_conf_lowered_note.setStyleSheet(
-            "font-size: 10px; color: rgba(128,128,128,0.95);")
-        self.auto_conf_lowered_note.setVisible(False)
-        lay.addWidget(self.auto_conf_lowered_note)
 
         lay.addWidget(self._build_size_filter_block())
         lay.addWidget(self._build_boundary_snap_block())

@@ -213,6 +213,21 @@ def _classify_network_error(blocker: QgsBlockingNetworkRequest) -> tuple[str, st
     )
 
 
+# -- what the server may change about a network failure ---------------------
+# Every sentence below is a served key under copy.network.<id>. Only the
+# wording moves: the code returned beside it stays client-side, because
+# consumers act on it (the offline fast-fail ends a run on a streak of
+# hard-connectivity codes) and served text must never change what a run does.
+#
+# The wording is what points a user at the right fix, and it is release-blocked
+# today. A sentence that sends people to the wrong place, or that reads badly
+# in one language, has to be replaceable on the day it is reported.
+#
+# One key per distinct sentence, so two codes saying the same thing move
+# together. An absent entry means the shipped sentence, which is what a user
+# sees today.
+
+
 def _classify_qt_error(
     qt_error,
     error_string: str,
@@ -250,11 +265,24 @@ def _classify_qt_error(
         f"Network error: qt_error={qt_error_num}, http_status={http_status}, "
         f"detail={detail[:500]}"
     )
+    # Served copy for the sentences below. Imported here like the scrubber
+    # above, so plugin startup never pays for it. The read is cache-only and
+    # fails open, and a module that cannot be imported at all leaves every
+    # sentence exactly as it shipped.
+    try:
+        from ..core.server_dials import dial_copy
+    except Exception:  # noqa: BLE001 -- served copy is best-effort  # nosec B110
+        def dial_copy(_string_id: str, fallback: str) -> str:
+            return fallback
 
     if qt_error == _HostNotFound:
-        return "DNS_ERROR", tr("Cannot reach the server. Check your internet connection.")
+        return "DNS_ERROR", dial_copy(
+            "network.server_unreachable",
+            tr("Cannot reach the server. Check your internet connection."),
+        )
     if qt_error == _ConnRefused:
-        return "CONNECTION_REFUSED", tr("Server refused the connection.")
+        return "CONNECTION_REFUSED", dial_copy(
+            "network.connection_refused", tr("Server refused the connection."))
     if qt_error == _Timeout or (_OpCanceled is not None and qt_error == _OpCanceled):
         # No HTTP status means the socket never got an answer within the
         # deadline. Two very different things end that way: a cold-starting /
@@ -267,19 +295,34 @@ def _classify_qt_error(
         # waiting room that can never end.
         if http_status is None:
             if service_reachable:
-                return "SERVICE_WARMING", tr("The AI service is waking up. Holding your spot…")
+                return "SERVICE_WARMING", dial_copy(
+                    "network.service_waking_up",
+                    tr("The AI service is waking up. Holding your spot…"),
+                )
             # Nothing has answered for longer than any legitimate wait, and this
             # request got nothing either. That is the NO_INTERNET contract: the
             # request never reached a server. A hard-connectivity code, so a
             # streak of them ends a run instead of grinding every tile's retries.
-            return "NO_INTERNET", tr("Network error. Check your internet connection.")
-        return "TIMEOUT", tr("Request timed out. Check your connection or try again.")
+            return "NO_INTERNET", dial_copy(
+                "network.no_connection",
+                tr("Network error. Check your internet connection."),
+            )
+        return "TIMEOUT", dial_copy(
+            "network.request_timed_out",
+            tr("Request timed out. Check your connection or try again."),
+        )
     if qt_error == _SslFailed:
-        return "SSL_ERROR", tr("SSL certificate error. Your network may be blocking secure connections.")
+        return "SSL_ERROR", dial_copy(
+            "network.secure_connection_blocked",
+            tr("SSL certificate error. Your network may be blocking secure connections."),
+        )
     if qt_error in _PROXY_ERRORS:
-        return "PROXY_ERROR", tr(
-            "Proxy connection failed. "
-            "Check QGIS proxy settings (Settings > Options > Network)."
+        return "PROXY_ERROR", dial_copy(
+            "network.proxy_failed",
+            tr(
+                "Proxy connection failed. "
+                "Check QGIS proxy settings (Settings > Options > Network)."
+            ),
         )
     if qt_error in (_ContentDenied, _AuthRequired) and http_status == 401:
         # 401 only. Qt raises ContentAccessDenied for any 403, and on a blocked
@@ -288,16 +331,20 @@ def _classify_qt_error(
         # them at the wrong fix. A 401 or 403 that really is ours carries our
         # JSON error body, and both callers return that body before ever
         # reaching this classifier.
-        return "AUTH_ERROR", tr("Authentication failed. Please sign in again.")
+        return "AUTH_ERROR", dial_copy(
+            "network.sign_in_again", tr("Authentication failed. Please sign in again."))
     # The server DID answer, with a failure status whose body was not
     # parseable JSON (typically an infrastructure incident page). The user's
     # connection worked, so "check your internet" points them at the wrong
     # side. SERVER_ERROR is already transient for every consumer: the tile
     # worker retries it and the revalidation path never signs out on it.
     if http_status is not None and http_status >= 500:
-        return "SERVER_ERROR", tr(
-            "The service is temporarily unavailable (server error). "
-            "Your connection is fine - please try again in a few minutes."
+        return "SERVER_ERROR", dial_copy(
+            "network.service_unavailable",
+            tr(
+                "The service is temporarily unavailable (server error). "
+                "Your connection is fine - please try again in a few minutes."
+            ),
         )
     # Any other HTTP status (400, 404, 409, 429...) whose body was not parseable
     # JSON: the request still completed a full round trip, so the link is fine
@@ -305,8 +352,9 @@ def _classify_qt_error(
     # every consumer already treats as transient and none counts as a
     # connectivity failure.
     if http_status is not None:
-        return "SERVER_ERROR", tr(
-            "The server returned an unexpected response. Please try again."
+        return "SERVER_ERROR", dial_copy(
+            "network.unexpected_response",
+            tr("The server returned an unexpected response. Please try again."),
         )
     # No HTTP status: the link is the only thing that can be blamed, and only
     # for the errors that mean the request never reached a server. NO_INTERNET
@@ -314,13 +362,17 @@ def _classify_qt_error(
     # them ends a run early: it must never be returned for a condition the
     # server itself produced.
     if qt_error in _CONNECT_FAILURE_ERRORS:
-        return "NO_INTERNET", tr("Network error. Check your internet connection.")
+        return "NO_INTERNET", dial_copy(
+            "network.no_connection",
+            tr("Network error. Check your internet connection."),
+        )
     # Fallthrough: a peer accepted the connection and then broke the exchange
     # (remote host closed, malformed reply), or Qt could not name the failure.
     # Reported as a service-side failure so a live server is never announced as
     # "no internet" and a streak of them cannot end a paid run.
-    return "SERVER_ERROR", tr(
-        "The connection to the server was interrupted. Please try again."
+    return "SERVER_ERROR", dial_copy(
+        "network.connection_interrupted",
+        tr("The connection to the server was interrupted. Please try again."),
     )
 
 
@@ -1113,11 +1165,26 @@ class TerraLabClient:
 
         results = []
         for spec, reply in zip(specs, replies):
-            results.append(
-                self._parse_reply(reply, require_body=bool(spec.get("require_body"))))
-            if not reply.isFinished():
-                reply.abort()  # release a still-pending socket on the timeout path
-            reply.deleteLater()
+            # A reply whose C++ side is already gone raises RuntimeError on
+            # every call below. It happens when the manager is torn down while
+            # the loop above is spinning, on plugin unload or on a project
+            # close, and one dead reply used to take the whole batch with it.
+            # Its outcome is unknown, so report it as the transient the caller
+            # already re-polls on and keep reading the others.
+            try:
+                results.append(self._parse_reply(
+                    reply, require_body=bool(spec.get("require_body"))))
+            except RuntimeError:
+                results.append({
+                    "error": tr("Request timed out. Check your connection or try again."),
+                    "code": "TIMEOUT"})
+                continue
+            try:
+                if not reply.isFinished():
+                    reply.abort()  # release a still-pending socket on the timeout path
+                reply.deleteLater()
+            except RuntimeError:
+                pass  # nosec B110 - already destroyed, nothing left to release
         return results
 
     def _predict_nam(self):
@@ -1181,8 +1248,11 @@ class TerraLabClient:
         nam = QNetworkAccessManager()
         try:
             nam.setProxy(self._qgis_effective_proxy())
-        except (RuntimeError, AttributeError):
-            pass
+        except (RuntimeError, AttributeError) as err:
+            # Silence here reads as "no proxy needed". On a network that drops
+            # direct egress it means every request fails with nothing in the
+            # log pointing at the proxy that was never applied.
+            _log_warning(f"Proxy mirror failed, continuing direct: {type(err).__name__}")
         # Honour QGIS-configured SSL exceptions on this private manager so it
         # trusts exactly what the blocking QGIS path trusts (corporate CA /
         # self-signed). Custom CAs added to QGIS land in the process-global
@@ -1192,7 +1262,46 @@ class TerraLabClient:
             nam.sslErrors.connect(self._on_predict_ssl_errors)
         except (RuntimeError, AttributeError):
             pass
+        # A proxy that answers 407 asks the MANAGER for credentials. The QGIS
+        # one answers from its own settings or prompts; a private manager is on
+        # its own, so without this every request behind an authenticating
+        # corporate proxy fails and the user is told to check a link that works.
+        try:
+            nam.proxyAuthenticationRequired.connect(self._on_proxy_auth_required)
+        except (RuntimeError, AttributeError):
+            pass
         return nam
+
+    def _on_proxy_auth_required(self, proxy, authenticator) -> None:
+        """Answer a proxy's credential challenge from the QGIS proxy settings.
+
+        Answered at most once per challenge: Qt leaves the rejected user on the
+        authenticator when it re-asks, and replaying a refused pair makes it
+        loop instead of failing. Leaving the authenticator empty ends the
+        request with Qt's proxy error code, which the classifier already turns
+        into "check your proxy settings" rather than "check your connection".
+        Nothing here reaches a log: a proxy user name identifies the person.
+        """
+        try:
+            if authenticator is None or authenticator.user():
+                return
+            from ..core.proxy_credentials import qgis_proxy_credentials
+
+            user, password = qgis_proxy_credentials()
+            if not user:
+                # Once. A run works through hundreds of tiles and every one of
+                # them would write this same line into the QGIS log.
+                if not getattr(self, "_proxy_credentials_warned", False):
+                    self._proxy_credentials_warned = True
+                    _log_warning(
+                        "The proxy asked for a user name and QGIS has none stored. "
+                        "Set it in Settings > Options > Network."
+                    )
+                return
+            authenticator.setUser(user)
+            authenticator.setPassword(password)
+        except Exception as err:  # noqa: BLE001 - a failed answer must not kill the reply
+            _log_warning(f"Proxy credential lookup failed: {type(err).__name__}")
 
     def release_thread_nam(self) -> None:
         """Destroy the calling thread's cached private manager ON this thread.
@@ -1230,6 +1339,13 @@ class TerraLabClient:
         from qgis.core import QgsNetworkAccessManager
         from qgis.PyQt.QtNetwork import QNetworkProxy
 
+        # Never call setupDefaultProxyAndCache here. instance() already runs it
+        # once per thread, and the body is not idempotent: it holds thirteen
+        # connects with no uniqueness flag, so a second run doubles every
+        # signal QGIS relays from a worker manager to the main one, each on a
+        # blocking connection. On the main thread it would go further and
+        # replace the handlers QGIS installs for the certificate and
+        # credentials prompts, for the whole session.
         gnam = QgsNetworkAccessManager.instance()
         fallback = getattr(gnam, "fallbackProxy", None)
         if callable(fallback):
@@ -1240,8 +1356,9 @@ class TerraLabClient:
                     QNetworkProxy.ProxyType.DefaultProxy,
                 ):
                     return proxy
-            except Exception:  # noqa: BLE001 - proxy mirror is best-effort
-                pass  # nosec B110
+            except Exception as err:  # noqa: BLE001 - proxy mirror is best-effort
+                _log_warning(
+                    f"Reading the QGIS fallback proxy failed: {type(err).__name__}")
         return gnam.proxy()
 
     def _on_predict_ssl_errors(self, reply, errors) -> None:

@@ -107,6 +107,7 @@ class LiveStitchThread(QThread):
         pixel_size: float,
         metres_per_unit: float,
         crs_authid: str,
+        unit_aspect: float = 1.0,
         retain_fragments: bool = False,
         retain_coverage: bool = False,
         tile_ground_area: float = 0.0,
@@ -118,6 +119,10 @@ class LiveStitchThread(QThread):
         self._params = dict(params or {})
         self._pixel_size = float(pixel_size or 0.0)
         self._metres_per_unit = float(metres_per_unit or 1.0)
+        # Measured by the GUI, for the same reason as the area measurer below:
+        # it reads the project. 1.0 is right for a projected run and leaves the
+        # squaring reading raw coordinates, which is wrong in a geographic one.
+        self._unit_aspect = float(unit_aspect or 1.0)
         self._crs_authid = crs_authid or "EPSG:4326"
         self._retain_fragments = bool(retain_fragments)
         self._retain_coverage = bool(retain_coverage)
@@ -274,7 +279,8 @@ class LiveStitchThread(QThread):
         if self._measurer is None:
             self._measurer = _build_area_measurer(self._crs_authid)
         self._refiner = LiveRefiner(
-            self._params, self._pixel_size, self._metres_per_unit)
+            self._params, self._pixel_size, self._metres_per_unit,
+            self._unit_aspect)
 
     def _wants_rescale(self, pixel_size: float) -> bool:
         """Whether this pixel size is worth rebuilding the shown shapes for.
@@ -310,7 +316,8 @@ class LiveStitchThread(QThread):
         # it is there is nothing here worth handing on.
         self.shaped_geoms.clear()
         self._refiner = LiveRefiner(
-            self._params, self._pixel_size, self._metres_per_unit)
+            self._params, self._pixel_size, self._metres_per_unit,
+            self._unit_aspect)
         self._merger.mark_changed(list(self._shown))
 
     def _fold_tile(self, detections: list, pixel_size: float) -> None:

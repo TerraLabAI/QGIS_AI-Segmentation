@@ -2947,8 +2947,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Schakel over naar AI om deze polygoon zelfstandig te vormen.</translation>
     </message>
     <message>
-        <source>That area does not touch the object you are editing, so nothing was added. Refining works on one object at a time.</source>
-        <translation>Dat gebied raakt het object dat je bewerkt niet, dus er is niets toegevoegd. Verfijnen werkt op één object tegelijk.</translation>
+        <source>That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.</source>
+        <translation>Dat gebied raakt het object dat je bewerkt niet, dus er is niets toegevoegd. Vormaanpassing werkt op één object tegelijk.</translation>
     </message>
     <message>
         <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
@@ -3217,6 +3217,390 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>{tiles} tiles</source>
         <translation>{tiles} tegels</translation>
+    </message>
+    <!-- Correct step rework, install and precision wording (2026-07-30) -->
+    <message>
+        <source>1 credit ~ 0.17 km² at default precision.</source>
+        <translation>1 credit ~ 0,17 km² bij standaard precisie.</translation>
+    </message>
+    <message>
+        <source>10,000 credits a month.</source>
+        <translation>10.000 credits per maand.</translation>
+    </message>
+    <message>
+        <source>A free run covers up to {cap} credits. This one costs more.</source>
+        <translation>Een gratis run dekt tot {cap} credits. Deze kost meer.</translation>
+    </message>
+    <message>
+        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then arms Add for you.</source>
+        <translation>Een object toevoegen gebruikt de gratis lokale AI, die nog niet is geïnstalleerd. Nu installeren? Dit gebeurt eenmalig en duurt een paar minuten. De beoordeling wacht erop, en zet daarna Toevoegen voor je klaar.</translation>
+    </message>
+    <message>
+        <source>At this precision {obj} is too small to spot - raise the precision.</source>
+        <translation>Bij deze precisie is {obj} te klein om te herkennen - verhoog de precisie.</translation>
+    </message>
+    <message>
+        <source>Automatic mode is ready. The on-device AI could not be installed, so Manual mode and the AI fix are off until it is. Everything else works.</source>
+        <translation>De Automatische modus is gereed. De lokale AI kon niet worden geïnstalleerd, dus de Handmatige modus en de AI-correctie zijn uitgeschakeld totdat dit is gebeurd. Al het andere werkt.</translation>
+    </message>
+    <message>
+        <source>Automatic mode needs the AI environment, and it is missing or incomplete. Install the dependencies from the plugin panel, then run Detect again.</source>
+        <translation>De Automatische modus heeft de AI-omgeving nodig, en die ontbreekt of is onvolledig. Installeer de afhankelijkheden vanuit het pluginpaneel en voer Detecteren daarna opnieuw uit.</translation>
+    </message>
+    <message>
+        <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More precision splits the zone into more tiles, which costs more credits.</source>
+        <translation>De Automatische modus scant je zone tegel voor tegel. 1 tegel = 1 credit, dus deze uitvoering kost ongeveer {n} credits. Meer precisie verdeelt de zone in meer tegels, wat meer credits kost.</translation>
+    </message>
+    <message>
+        <source>Cancel setup</source>
+        <translation>Installatie annuleren</translation>
+    </message>
+    <message>
+        <source>Clean up this outline</source>
+        <translation>Deze contour opschonen</translation>
+    </message>
+    <message>
+        <source>Click an object and the AI outlines it. You check and save each polygon yourself, one at a time. Use Automatic mode to get every object in a zone at once.</source>
+        <translation>Klik op een object en de AI omlijnt het. Je controleert en bewaart elke polygoon zelf, één voor één. Gebruik de Automatische modus om alle objecten in een zone in één keer te krijgen.</translation>
+    </message>
+    <message>
+        <source>Click points around one look-alike, then double-click to close.</source>
+        <translation>Klik punten rond één gelijkend object, dubbelklik daarna om te sluiten.</translation>
+    </message>
+    <message>
+        <source>Click points around one object, then double-click to close.</source>
+        <translation>Klik punten rond één object, dubbelklik daarna om te sluiten.</translation>
+    </message>
+    <message>
+        <source>Click the layer name to see it on the map</source>
+        <translation>Klik op de laagnaam om deze op de kaart te zien</translation>
+    </message>
+    <message>
+        <source>Click to open your dashboard</source>
+        <translation>Klik om je dashboard te openen</translation>
+    </message>
+    <message>
+        <source>Connection is slow - still working, tiles already found are kept...</source>
+        <translation>Verbinding is traag - nog steeds bezig, de al gevonden tegels worden bewaard...</translation>
+    </message>
+    <message>
+        <source>Could not save your detections to a file.</source>
+        <translation>Kon je detecties niet opslaan naar een bestand.</translation>
+    </message>
+    <message>
+        <source>Downloads Blocked by Your Network</source>
+        <translation>Downloads geblokkeerd door je netwerk</translation>
+    </message>
+    <message>
+        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to segment areas of any size.</source>
+        <translation>Teken een kleinere zone, of &lt;a href=&quot;{url}&quot;&gt;Upgraden naar Pro&lt;/a&gt; om gebieden van elke omvang te segmenteren.</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Manual mode to work one object at a time.</source>
+        <translation>Teken een zone, benoem één soort object, en krijg ze allemaal in één run. Gebruik de Handmatige modus om object voor object te werken.</translation>
+    </message>
+    <message>
+        <source>Draw another example</source>
+        <translation>Teken nog een voorbeeld</translation>
+    </message>
+    <message>
+        <source>Drawing (click to stop)</source>
+        <translation>Tekenen (klik om te stoppen)</translation>
+    </message>
+    <message>
+        <source>Errors, versions and the words you type, linked to your account. Never your imagery, layers or coordinates.</source>
+        <translation>Fouten, versies en de woorden die je typt, gekoppeld aan je account. Nooit je beeldmateriaal, lagen of coördinaten.</translation>
+    </message>
+    <message>
+        <source>Fixing a polygon uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then opens this polygon for you.</source>
+        <translation>Een polygoon corrigeren gebruikt de gratis lokale AI, die nog niet is geïnstalleerd. Nu installeren? Dit gebeurt eenmalig en duurt een paar minuten. De beoordeling wacht erop en opent daarna deze polygoon voor je.</translation>
+    </message>
+    <message>
+        <source>Fixing needs a one-time setup</source>
+        <translation>Corrigeren heeft een eenmalige installatie nodig</translation>
+    </message>
+    <message>
+        <source>Helps us fix bugs faster.</source>
+        <translation>Helpt ons bugs sneller op te lossen.</translation>
+    </message>
+    <message>
+        <source>Higher precision splits the zone into more tiles. Each tile costs 1 credit and captures smaller objects.</source>
+        <translation>Meer precisie verdeelt de zone in meer tegels. Elke tegel kost 1 credit en legt kleinere objecten vast.</translation>
+    </message>
+    <message>
+        <source>Keep detecting without limits:</source>
+        <translation>Zonder limieten blijven detecteren:</translation>
+    </message>
+    <message>
+        <source>Keep installing</source>
+        <translation>Blijven installeren</translation>
+    </message>
+    <message>
+        <source>Keep this shape. The polygon stays picked, so you can still adjust, merge or delete it.</source>
+        <translation>Behoud deze vorm. De polygoon blijft gekozen, zodat je hem nog kunt aanpassen, samenvoegen of verwijderen.</translation>
+    </message>
+    <message>
+        <source>Last run: {n} {object}</source>
+        <translation>Laatste run: {n} {object}</translation>
+    </message>
+    <message>
+        <source>Last run: {n} {object} in {layer}</source>
+        <translation>Laatste run: {n} {object} in {layer}</translation>
+    </message>
+    <message>
+        <source>Loading the imagery...</source>
+        <translation>Beeldmateriaal laden...</translation>
+    </message>
+    <message>
+        <source>Loading the imagery... {n}s</source>
+        <translation>Beeldmateriaal laden... {n}s</translation>
+    </message>
+    <message>
+        <source>Max precision for this zone - draw a larger zone to go finer.</source>
+        <translation>Maximale precisie voor deze zone - teken een grotere zone voor meer precisie.</translation>
+    </message>
+    <message>
+        <source>More precision cuts the zone into more tiles and costs more credits.</source>
+        <translation>Meer precisie verdeelt de zone in meer tegels en kost meer credits.</translation>
+    </message>
+    <message>
+        <source>More precision finds smaller objects.</source>
+        <translation>Meer precisie vindt kleinere objecten.</translation>
+    </message>
+    <message>
+        <source>More precision keeps helping {obj} in this zone.</source>
+        <translation>Meer precisie blijft helpen voor {obj} in deze zone.</translation>
+    </message>
+    <message>
+        <source>Name the object (or draw an example) first - Precision then tunes itself to it.</source>
+        <translation>Benoem eerst het object (of teken een voorbeeld) - Precisie stemt zich er daarna op af.</translation>
+    </message>
+    <message>
+        <source>Next: clean up the outlines</source>
+        <translation>Volgende: contouren opschonen</translation>
+    </message>
+    <message>
+        <source>Next: fix what looks wrong</source>
+        <translation>Volgende: corrigeren wat er niet goed uitziet</translation>
+    </message>
+    <message>
+        <source>No detection in this zone. Try a more specific object word, or more precision.</source>
+        <translation>Geen detectie in deze zone. Probeer een specifieker objectwoord, of meer precisie.</translation>
+    </message>
+    <message>
+        <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
+        <translation>Geen beeld over deze zone bij deze precisie, dus er is niets geanalyseerd (niet in rekening gebracht). Verlaag Precisie, of kies een laag die dit gebied dekt.</translation>
+    </message>
+    <message>
+        <source>Not enough credits: {n} tiles, only {left} left. Lower the precision or the zone.</source>
+        <translation>Niet genoeg credits: {n} tegels, nog maar {left} over. Verlaag de precisie of verklein de zone.</translation>
+    </message>
+    <message>
+        <source>Opens your terra-lab.ai dashboard: your plan, your credits and your payment details.</source>
+        <translation>Opent je terra-lab.ai-dashboard: je abonnement, je credits en je betaalgegevens.</translation>
+    </message>
+    <message>
+        <source>Outline settings</source>
+        <translation>Contourinstellingen</translation>
+    </message>
+    <message>
+        <source>Precision</source>
+        <translation>Precisie</translation>
+    </message>
+    <message>
+        <source>Ready for Automatic mode</source>
+        <translation>Gereed voor Automatische modus</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: nog {n} gratis detecties over, terug op {date}. &lt;a href=&quot;{url}&quot;&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: nog {n} gratis detecties over. &lt;a href=&quot;{url}&quot;&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
+        <translation>Dezelfde instellingen als je laatste run - het resultaat komt overeen. Voeg een voorbeeld toe of wijzig de precisie voor een ander resultaat.</translation>
+    </message>
+    <message>
+        <source>Saved to {layer}</source>
+        <translation>Opgeslagen in {layer}</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI. This runs once and takes a few minutes. The review waits here until it is done.</source>
+        <translation>De lokale AI wordt ingesteld. Dit gebeurt eenmalig en duurt een paar minuten. De beoordeling wacht hier totdat het klaar is.</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI...</source>
+        <translation>De lokale AI wordt ingesteld...</translation>
+    </message>
+    <message>
+        <source>Shadows getting detected instead of trees? Use 'Exclude a look-alike' on one shadow - the AI drops similar false positives.</source>
+        <translation>Worden schaduwen gedetecteerd in plaats van bomen? Gebruik 'Gelijkende uitsluiten' op één schaduw - de AI laat vergelijkbare fout-positieven vallen.</translation>
+    </message>
+    <message>
+        <source>Share of each outline's points to keep. 100% is the class default.
+Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
+        <translation>Aandeel van de punten van elke contour dat behouden blijft. 100% is de klassestandaard.
+Lager dunt eerst het kleinste detail uit, behoudt de hoekpunten, en geeft Rechte hoeken rechte muren om vanuit te werken.</translation>
+    </message>
+    <message>
+        <source>Share of the outline's points to keep. 100% is the standard density.
+Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
+        <translation>Aandeel van de punten van de contour dat behouden blijft. 100% is de standaarddichtheid.
+Lager dunt eerst het kleinste detail uit, behoudt de hoekpunten, en geeft Rechte hoeken rechte muren om vanuit te werken.</translation>
+    </message>
+    <message>
+        <source>Share usage statistics with TerraLab</source>
+        <translation>Gebruiksstatistieken delen met TerraLab</translation>
+    </message>
+    <message>
+        <source>Simplify this outline first</source>
+        <translation>Vereenvoudig eerst deze contour</translation>
+    </message>
+    <message>
+        <source>Stop the setup</source>
+        <translation>Installatie stoppen</translation>
+    </message>
+    <message>
+        <source>Stop the setup and go back to the review. The AI fix stays unavailable until you install it.</source>
+        <translation>Stop de installatie en ga terug naar de beoordeling. De AI-correctie blijft onbeschikbaar totdat je deze installeert.</translation>
+    </message>
+    <message>
+        <source>Stop the setup?</source>
+        <translation>Installatie stoppen?</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding before any tile came back. Check your connection, then run Detect again (nothing was charged).</source>
+        <translation>De detectie reageerde niet meer voordat er een tegel terugkwam. Controleer je verbinding en voer Detecteren daarna opnieuw uit (er is niets in rekening gebracht).</translation>
+    </message>
+    <message>
+        <source>The file may be open in QGIS or in another program. Close it and try Finish again.</source>
+        <translation>Het bestand is mogelijk geopend in QGIS of in een ander programma. Sluit het en probeer opnieuw af te ronden.</translation>
+    </message>
+    <message>
+        <source>The imagery is loading slowly... {n}s</source>
+        <translation>Het beeldmateriaal laadt traag... {n}s</translation>
+    </message>
+    <message>
+        <source>The on-device AI could not start, so the AI fix is off. Your detections are safe: switch the fix method to Manual to keep correcting, or save them as they are.</source>
+        <translation>De lokale AI kon niet starten, dus de AI-correctie is uitgeschakeld. Je detecties zijn veilig: zet de correctiemethode op Handmatig om te blijven corrigeren, of sla ze op zoals ze zijn.</translation>
+    </message>
+    <message>
+        <source>The on-device AI is unavailable, so the AI fix is off. Switch the fix method to Manual to keep correcting.</source>
+        <translation>De lokale AI is niet beschikbaar, dus de AI-correctie is uitgeschakeld. Zet de correctiemethode op Handmatig om te blijven corrigeren.</translation>
+    </message>
+    <message>
+        <source>The on-device AI will not be installed, so fixing a polygon with it stays unavailable. What is already downloaded is kept, so starting again resumes from there.</source>
+        <translation>De lokale AI wordt niet geïnstalleerd, dus een polygoon corrigeren daarmee blijft onbeschikbaar. Wat al is gedownload, blijft bewaard, dus opnieuw beginnen gaat daar verder.</translation>
+    </message>
+    <message>
+        <source>The package index refused the download (error 403).
+
+This is usually a company or campus network filtering downloads. Ask your IT administrator to allow pypi.org and files.pythonhosted.org, or run the install from another network.
+
+Automatic (cloud) mode does not need this download.</source>
+        <translation>De pakketindex weigerde de download (fout 403).
+
+Dit komt meestal doordat een bedrijfs- of campusnetwerk downloads filtert. Vraag je IT-beheerder om pypi.org en files.pythonhosted.org toe te staan, of voer de installatie uit vanaf een ander netwerk.
+
+De Automatische (cloud) modus heeft deze download niet nodig.</translation>
+    </message>
+    <message>
+        <source>The raster file could not be found:
+{path}
+
+It may have been moved or renamed, or the drive or network share it is on may be disconnected. Reload the layer from where the file is now, then start again.</source>
+        <translation>Het rasterbestand kon niet worden gevonden:
+{path}
+
+Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het staat is mogelijk niet verbonden. Laad de laag opnieuw vanaf de huidige locatie van het bestand en begin daarna opnieuw.</translation>
+    </message>
+    <message>
+        <source>Thin this outline before you drag its corners, without moving the dials that drive the whole layer.</source>
+        <translation>Dun deze contour uit voordat je de hoekpunten ervan sleept, zonder de regelaars te verplaatsen die de hele laag sturen.</translation>
+    </message>
+    <message>
+        <source>This area is large for this precision. Raise the precision or zoom in for sharper detections.</source>
+        <translation>Dit gebied is groot voor deze precisie. Verhoog de precisie of zoom in voor scherpere detecties.</translation>
+    </message>
+    <message>
+        <source>This example is very small at this precision. Raise the precision or draw a larger object.</source>
+        <translation>Dit voorbeeld is erg klein bij deze precisie. Verhoog de precisie of teken een groter object.</translation>
+    </message>
+    <message>
+        <source>This example is very small even at full precision. Draw a larger object, or it may be too small to detect.</source>
+        <translation>Dit voorbeeld is zelfs bij volledige precisie erg klein. Teken een groter object, anders is het mogelijk te klein om te detecteren.</translation>
+    </message>
+    <message>
+        <source>This layer has no image over your zone at this precision. The map source answered with an empty tile, so there is nothing to detect on. Lower Precision, zoom the layer out until the imagery shows, or pick a layer that covers this area.</source>
+        <translation>Deze laag heeft geen beeld over je zone bij deze precisie. De kaartbron antwoordde met een lege tegel, dus er is niets om te detecteren. Verlaag Precisie, zoom de laag uit totdat het beeld verschijnt, of kies een laag die dit gebied dekt.</translation>
+    </message>
+    <message>
+        <source>This polygon only. Every other one follows the Shapes step.</source>
+        <translation>Alleen deze polygoon. Elke andere volgt de stap Vormen.</translation>
+    </message>
+    <message>
+        <source>This polygon only. Fewer points means fewer corners to drag.</source>
+        <translation>Alleen deze polygoon. Minder punten betekent minder hoekpunten om te slepen.</translation>
+    </message>
+    <message>
+        <source>This run costs more credits than a free run covers.</source>
+        <translation>Deze run kost meer credits dan een gratis run dekt.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs a subscription. Lower the precision or the zone to stay free.</source>
+        <translation>Deze zone heeft bij deze precisie een abonnement nodig. Verlaag de precisie of verklein de zone om gratis te blijven.</translation>
+    </message>
+    <message>
+        <source>This zone is too large for sharp detections, even at full precision. Draw a smaller zone for the best results.</source>
+        <translation>Deze zone is te groot voor scherpe detecties, zelfs bij volledige precisie. Teken een kleinere zone voor de beste resultaten.</translation>
+    </message>
+    <message>
+        <source>Tiles your layer has no image for are dropped before they are sent, so a run can cost less than this, never more.</source>
+        <translation>Tegels waarvoor je laag geen beeld heeft, worden overgeslagen voordat ze worden verzonden, dus een run kan minder kosten dan dit, nooit meer.</translation>
+    </message>
+    <message>
+        <source>Type a word for the object, or draw an example.</source>
+        <translation>Typ een woord voor het object, of teken een voorbeeld.</translation>
+    </message>
+    <message>
+        <source>Upgrade to Pro to finish this zone: 10,000 credits/month.</source>
+        <translation>Upgrade naar Pro om deze zone af te ronden: 10.000 credits/maand.</translation>
+    </message>
+    <message>
+        <source>Wait for the on-device AI to finish installing.</source>
+        <translation>Wacht tot de lokale AI klaar is met installeren.</translation>
+    </message>
+    <message>
+        <source>{count} polygon(s) exported</source>
+        <translation>{count} polygoon(en) geëxporteerd</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved</source>
+        <translation>{n} {object} opgeslagen</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved to {layer}</source>
+        <translation>{n} {object} opgeslagen in {layer}</translation>
+    </message>
+    <message>
+        <source>{used} credits</source>
+        <translation>{used} credits</translation>
+    </message>
+    <!-- Correct-step on-device AI setup, free-run cap wording, missing raster (2026-07-30) -->
+    <message>
+        <source>or lower the detail to stay free.</source>
+        <translation>of verlaag het detail om gratis te blijven.</translation>
+    </message>
+    <message>
+        <source>This zone at this detail needs a subscription.</source>
+        <translation>Deze zone met dit detail vereist een abonnement.</translation>
+    </message>
+    <message>
+        <source>Subscribe</source>
+        <translation>Abonneren</translation>
     </message>
 </context>
 </TS>

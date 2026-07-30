@@ -22,6 +22,7 @@ from .detection_policy import review_policy
 from .prompt_taxonomy import keyword_matches, normalize_prompt
 from .review_defaults import (
     AUTO_REVIEW_CLEAN_DEFAULT,
+    AUTO_REVIEW_CLOSE_NOTCHES_M_DEFAULT,
     AUTO_REVIEW_EXPAND_DEFAULT,
     AUTO_REVIEW_FILL_HOLES_DEFAULT,
     AUTO_REVIEW_FILL_HOLES_MAX_M2_DEFAULT,
@@ -162,6 +163,7 @@ def review_preset_for(
         "fill_holes": AUTO_REVIEW_FILL_HOLES_DEFAULT,
         "fill_holes_max_m2": _fill_holes_max_m2(settings),
         "clean_px": float(settings.get("clean_px", AUTO_REVIEW_CLEAN_DEFAULT)),
+        "close_notches_m": _close_notches_m(settings),
         "ortho": _ortho_default_for(prompt, cls, settings, policy),
         "min_size_m2": min_size_m2_for(prompt, mask_gsd_m, policy),
         "vertex_spacing_m": _vertex_spacing_for(settings, policy),
@@ -184,6 +186,23 @@ def _vertex_spacing_for(settings: dict, policy: dict | None) -> float:
     if isinstance(val, (int, float)) and not isinstance(val, bool) and val >= 0:
         return float(val)
     return float(vertex_budget_settings(policy)["spacing_m"])
+
+
+def _close_notches_m(settings: dict) -> float:
+    """Close bites this wide (ground metres) taken out of the outline from the
+    OUTSIDE; 0 = leave them.
+
+    Fill holes only sees interior rings, so a bite that opens onto the boundary
+    survives it whatever the hole ceiling says. Which classes want theirs closed
+    is a per-class server dial (``close_notches_m``): a road wants a constant
+    width and its parked cars closed over, a building wants its courtyard entry
+    left exactly where the model traced it. A missing or unusable entry falls
+    back to the one generic client default (off), never to a per-class copy.
+    """
+    val = settings.get("close_notches_m")
+    if isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0:
+        return float(val)
+    return AUTO_REVIEW_CLOSE_NOTCHES_M_DEFAULT
 
 
 def _fill_holes_max_m2(settings: dict) -> float:

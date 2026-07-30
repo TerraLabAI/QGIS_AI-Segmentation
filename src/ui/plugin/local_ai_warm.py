@@ -9,8 +9,12 @@ the model load, the imagery read around the click, and the encode of it. All
 three can be paid earlier, on time the user is spending anyway, because the user
 announces where they are about to click by moving the cursor there:
 
+- Opening the review with the AI fix method armed says a polygon may well be
+  picked in a moment. That is when the model starts loading, so the reading
+  the user does on the Keep step pays for the load.
 - Arriving on the Correct step with AI armed says a polygon is about to be
-  picked. That is when the model starts loading.
+  picked. That is when the model starts loading, for anyone who got there
+  without a load already running.
 - Switching to Manual says the same thing more plainly: it is the only mode
   that runs on the local model. That is when the subprocess is pre-started.
 - Resting the cursor on a polygon, in the review or on the map in Manual, says
@@ -49,22 +53,77 @@ from .shared import _debounce_timer
 # How long the cursor must rest on one polygon before its crop is read. Long
 # enough that sweeping the mouse across a dense review reads nothing, short
 # enough that a deliberate move onto a polygon is warm by the time it is
-# clicked.
+# clicked. Shipped value, and the fallback the getter below returns.
 CORRECT_HOVER_WARM_MS = 200
 
 # Same idea on the Manual map, a little longer: there is no object under the
 # cursor to aim at, so a moving mouse crosses many candidate crops.
 MANUAL_HOVER_WARM_MS = 300
 
+# Ceiling on either delay. Past a few seconds the cursor has moved on and the
+# warm-up prepares a crop nobody is aiming at any more.
+_MAX_HOVER_WARM_MS = 5_000
+
+
+def local_ai_warmup_enabled() -> bool:
+    """Whether any speculative warm-up may start.
+
+    The delay dials cannot answer this: zero means warm on the next pass of the
+    event loop, not never. Off, nothing is loaded, read or encoded before a
+    click, and every gesture pays for its own crop. Fail-open, so an absent or
+    damaged configuration warms exactly as shipped.
+    """
+    try:
+        from ...core.server_dials import feature_enabled
+
+        return feature_enabled("local_ai_warmup")
+    except Exception:  # noqa: BLE001 -- a kill switch is best-effort  # nosec B110
+        return True
+
+
+# Shortest rest a served value may ask for. Below this the debounce fires on the
+# next pass of the event loop, so a mouse crossing the map reads and encodes a
+# crop per polygon it passes instead of only where the user stops. Still
+# immediate to a human, and it keeps one JSON edit from freezing the fleet.
+_MIN_HOVER_WARM_MS = 50
+
+
+def correct_hover_warm_ms() -> int:
+    """Rest time before the hovered polygon's crop is read, in milliseconds.
+
+    Floored, not zeroable: see _MIN_HOVER_WARM_MS. Cache-only and never raises,
+    so it is safe on the hover path it is read from.
+    """
+    try:
+        from ...core.server_dials import dial_in_range
+
+        return int(dial_in_range("ui.warm_hover_ms.correct", CORRECT_HOVER_WARM_MS,
+                                 _MIN_HOVER_WARM_MS, _MAX_HOVER_WARM_MS))
+    except Exception:  # noqa: BLE001 -- a warm-up delay is best-effort  # nosec B110
+        return CORRECT_HOVER_WARM_MS
+
+
+def manual_hover_warm_ms() -> int:
+    """Same rest time on the Manual map, in milliseconds. Same floor."""
+    try:
+        from ...core.server_dials import dial_in_range
+
+        return int(dial_in_range("ui.warm_hover_ms.manual", MANUAL_HOVER_WARM_MS,
+                                 _MIN_HOVER_WARM_MS, _MAX_HOVER_WARM_MS))
+    except Exception:  # noqa: BLE001 -- a warm-up delay is best-effort  # nosec B110
+        return MANUAL_HOVER_WARM_MS
+
 
 class LocalAiWarmMixin:
-    """Model load and crop warm-up for the Correct step's AI method."""
+    """Model load and crop warm-up for the review's AI method and for Manual."""
 
     def _correct_ai_warm_allowed(self) -> bool:
         """Is a speculative warm-up appropriate right now?
 
         Everything here is re-checked at fire time, because a debounced timer
         outlives the state that armed it."""
+        if not local_ai_warmup_enabled():
+            return False
         if getattr(self, "_headless", False):
             return False
         if getattr(self, "_correct_method", "ai") != "ai":
@@ -78,20 +137,43 @@ class LocalAiWarmMixin:
             return False
         return getattr(self, "_auto_worker", None) is None
 
-    def _warm_local_ai_for_correct(self) -> None:
-        """Entering Correct with the AI method armed: get the local model up NOW.
+    def _review_ai_warm_allowed(self) -> bool:
+        """Same question for the review as a whole, one step earlier.
 
-        Two levels, because the model can be up in two different senses. With no
-        predictor object the subprocess cannot even be started, and that load is
-        the longest part of a first pick, so it is kicked off in the background
-        here. With one already in hand, the subprocess itself is pre-started, and
-        it warms its own kernels before reporting ready.
+        Everything the Correct-step guard asks except the step itself: the
+        review is open and its fix method is AI, wherever the user is standing.
+        The step is what this one drops on purpose. Keep is where the user
+        reads the result, and that reading is the last free time the session
+        has, so the model load starts there rather than on arrival at Correct.
+        Re-checked at fire time like the other guard."""
+        if not local_ai_warmup_enabled():
+            return False
+        if getattr(self, "_headless", False):
+            return False
+        if getattr(self, "_correct_method", "ai") != "ai":
+            return False
+        if self._auto_review is None:
+            return False
+        # A live fix session runs its own crop, and a live run owns the machine.
+        if getattr(self, "_refine_handoff_active", False):
+            return False
+        if getattr(self, "_qgis_bridge_active", False):
+            return False
+        return getattr(self, "_auto_worker", None) is None
+
+    def _start_or_warm_local_ai(self) -> None:
+        """Get the local model up, at whichever of its two levels applies.
+
+        The model can be up in two different senses. With no predictor object
+        the subprocess cannot even be started, and that load is the longest part
+        of a first pick, so it is kicked off in the background here. With one
+        already in hand, the subprocess itself is pre-started, and it warms its
+        own kernels before reporting ready.
 
         Silent and RAM-conscious: it never installs anything and never touches a
         machine whose environment is not already complete, so an Automatic-only
-        user who will never open a polygon pays nothing."""
-        if not self._correct_ai_warm_allowed():
-            return
+        user who will never open a polygon pays nothing. Callers own the guard,
+        so nothing here decides whether the moment is right."""
         predictor = getattr(self, "predictor", None)
         if predictor is None:
             self._start_local_ai_load_for_correct()
@@ -102,6 +184,25 @@ class LocalAiWarmMixin:
             predictor.warm_up()
         except Exception:  # noqa: BLE001 - a prewarm must never break navigation
             pass  # nosec B110
+
+    def _warm_local_ai_for_review(self) -> None:
+        """The review just opened: start the local model now.
+
+        The user is about to read the Keep step, and reading takes seconds the
+        model load can hide behind. Waiting for the Correct step spends those
+        seconds and starts the same load with the user already aiming at a
+        polygon."""
+        if self._review_ai_warm_allowed():
+            self._start_or_warm_local_ai()
+
+    def _warm_local_ai_for_correct(self) -> None:
+        """Entering Correct with the AI method armed: get the local model up NOW.
+
+        Usually the review opening already started this, and the second call
+        costs nothing. It still matters for the user who armed AI after the
+        review opened, or who came back to Correct with the load abandoned."""
+        if self._correct_ai_warm_allowed():
+            self._start_or_warm_local_ai()
 
     def _start_local_ai_load_for_correct(self) -> None:
         """Begin loading the local model in the background, if and only if this
@@ -134,7 +235,8 @@ class LocalAiWarmMixin:
         except Exception:  # noqa: BLE001 - a warm-up never diagnoses anything
             return
         QgsMessageLog.logMessage(
-            "Correct step armed on AI: loading the local model ahead of the pick",
+            "Review armed on the AI fix method: loading the local model "
+            "ahead of the pick",
             "AI Segmentation", level=Qgis.MessageLevel.Info)
         self._warm_predictor_on_ready = True
         self._load_predictor()
@@ -179,11 +281,16 @@ class LocalAiWarmMixin:
             return
         if self.dock_widget is None:
             return
-        if getattr(self, "predictor", None) is None:
-            return  # nothing to encode with yet; the model load is under way
+        # Recorded even with no predictor yet. Hovering while the model loads is
+        # the commonest thing a user does on a first visit, and dropping that
+        # hover meant the click that followed still paid a full read and encode
+        # on imagery the cursor had been sitting on for half a minute.
+        # _replay_hover_warm_when_ready picks it up when the model arrives.
         self._correct_hover_warm_idx = idx
+        if getattr(self, "predictor", None) is None:
+            return
         _debounce_timer(self, "_correct_hover_warm_timer", self.dock_widget,
-                        CORRECT_HOVER_WARM_MS, self._warm_hovered_correct_crop)
+                        correct_hover_warm_ms(), self._warm_hovered_correct_crop)
 
     def _warm_hovered_correct_crop(self) -> None:
         """Read and encode the crop of the polygon the cursor is resting on.
@@ -242,6 +349,8 @@ class LocalAiWarmMixin:
         last saved polygon, undo a delete) are covered the other way round, by
         _abandon_speculative_manual_crop at the gesture itself.
         """
+        if not local_ai_warmup_enabled():
+            return False  # off means nothing is read or encoded before a click
         if getattr(self, "_headless", False):
             return False
         if getattr(self, "_refine_handoff_active", False):
@@ -336,11 +445,33 @@ class LocalAiWarmMixin:
     def _schedule_manual_hover_warm(self, canvas_point) -> None:
         """The cursor moved over the map during a Manual session: arm the warm-up
         for where it is resting. Called on every move, so it stays cheap."""
-        if self.dock_widget is None or not self._manual_warm_allowed():
+        if self.dock_widget is None:
             return
+        # Kept even when the guard refuses, for the same reason as the Correct
+        # step: the commonest refusal is a model still loading, and the point
+        # the cursor rested on during that load is exactly the crop the first
+        # click will want (_replay_hover_warm_when_ready).
         self._manual_warm_canvas_point = canvas_point
+        if not self._manual_warm_allowed():
+            return
         _debounce_timer(self, "_manual_hover_warm_timer", self.dock_widget,
-                        MANUAL_HOVER_WARM_MS, self._warm_hovered_manual_crop)
+                        manual_hover_warm_ms(), self._warm_hovered_manual_crop)
+
+    def _replay_hover_warm_when_ready(self) -> None:
+        """The model just arrived: warm the crop the cursor has been resting on.
+
+        Called from the predictor-loaded slot. Both lanes are tried and both
+        re-check their own guards, so at most one of them has anything to do
+        and neither can fire in a state that does not want it. Nothing rests
+        under the cursor means nothing happens, which is the common case."""
+        if getattr(self, "_headless", False):
+            return
+        if getattr(self, "predictor", None) is None:
+            return
+        if getattr(self, "_correct_hover_warm_idx", None) is not None:
+            self._warm_hovered_correct_crop()
+        if getattr(self, "_manual_warm_canvas_point", None) is not None:
+            self._warm_hovered_manual_crop()
 
     def _warm_hovered_manual_crop(self) -> None:
         """Read and encode the crop around the resting cursor, if a click there
@@ -396,7 +527,7 @@ class LocalAiWarmMixin:
         try:
             if not self._is_layer_valid(layer):
                 return False
-            if self._is_online_provider(layer):
+            if self._needs_canvas_render(layer):
                 return False
             source = layer.source()
         except (RuntimeError, AttributeError):

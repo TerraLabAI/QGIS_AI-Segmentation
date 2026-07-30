@@ -1,5 +1,5 @@
-"""Commit-time gates in front of Detect: the prompt guard rail, the
-prompt-plus-example intercept, and the off-thread server name lookup.
+"""Commit-time gates in front of Detect: the prompt guard rail and the
+off-thread server name lookup.
 
 Part of AISegmentationDockWidget (see ai_segmentation_dockwidget.py);
 split out so agents and humans work on one concern per file. Methods
@@ -10,7 +10,7 @@ from __future__ import annotations
 from qgis.PyQt.QtCore import QTimer
 
 from ...core.i18n import tr
-from ...core.telemetry import slot_guard
+from ...core.telemetry_errors import slot_guard
 from .prompt_guard import is_known_object, validate_prompt
 
 # Reasons that mean "run a cleaner phrase instead of the typed text" (swap the
@@ -24,13 +24,46 @@ _SILENT_SWAP_REASONS = frozenset(
 # Last resort for the commit-time prompt lookup: if the task never reports back
 # (no scheduler slot, a torn-down task manager), answer "no token" after this
 # and run the word as typed. Comfortably above the request's own timeout, so a
-# normal slow reply always wins the race.
+# normal slow reply always wins the race. Shipped value and the fallback the
+# getter below returns.
 _PROMPT_LOOKUP_TIMEOUT_MS = 12_000
+
+# How far the served timeout may travel. Under a second no reply could land;
+# past half a minute the click has been held long enough to read as a freeze.
+_MIN_LOOKUP_TIMEOUT_MS = 1_000
+_MAX_LOOKUP_TIMEOUT_MS = 30_000
+
+
+def prompt_server_lookup_enabled() -> bool:
+    """Whether an unknown word may be sent to the server on the first Detect.
+
+    Off, the lookup never runs: the typed word goes to the model as it stands,
+    Detect stays synchronous, and the click costs no network. Fail-open, so an
+    absent or damaged configuration looks words up exactly as shipped.
+    """
+    try:
+        from ...core.server_dials import feature_enabled
+
+        return feature_enabled("prompt_server_lookup")
+    except Exception:  # noqa: BLE001 -- a kill switch is best-effort
+        return True
+
+
+def prompt_lookup_timeout_ms() -> int:
+    """How long the lookup may hold the Detect click, in milliseconds."""
+    try:
+        from ...core.server_dials import dial_in_range
+
+        return int(dial_in_range("prompt.lookup_timeout_ms",
+                                 _PROMPT_LOOKUP_TIMEOUT_MS,
+                                 _MIN_LOOKUP_TIMEOUT_MS, _MAX_LOOKUP_TIMEOUT_MS))
+    except Exception:  # noqa: BLE001 -- a timeout is best-effort
+        return _PROMPT_LOOKUP_TIMEOUT_MS
 
 
 class DockAutoPromptGateMixin:
-    """Commit-time gates in front of Detect: the prompt guard rail, the
-    prompt-plus-example intercept, and the off-thread server name lookup."""
+    """Commit-time gates in front of Detect: the prompt guard rail and the
+    off-thread server name lookup."""
 
     def confirm_prompt_for_detect(self) -> bool:
         """Commit-time guard rail: called by the plugin when a detection is
@@ -105,10 +138,10 @@ class DockAutoPromptGateMixin:
                        'Run the other objects as separate detections.').format(
                         first=suggestion), tip=True)
                 try:
-                    from ...core import telemetry
+                    from ...core import telemetry_run_events
                     # prompt = the 1-2 word object that actually runs;
                     # "multi_first" marks the guided-multi case for analytics.
-                    telemetry.track_auto_prompt_steered(
+                    telemetry_run_events.track_auto_prompt_steered(
                         prompt=suggestion, suggestion="multi_first")
                 except Exception:
                     pass  # nosec B110
@@ -141,148 +174,12 @@ class DockAutoPromptGateMixin:
         self.auto_prompt_input.setFocus()
         self.auto_prompt_input.selectAll()
         try:
-            from ...core import telemetry
-            telemetry.track_detect_blocked(
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_detect_blocked(
                 reason="prompt_{}".format(reason or "invalid"))
         except Exception:
             pass  # nosec B110
         return False
-
-    def _refresh_meta_escape(self, show: bool, has_text: bool,
-                             positives: int = 0) -> None:
-        """Show/hide the small "Detect with text/examples only" link under the
-        (grey) Detect button. Called from _update_auto_detect_enabled with the
-        already-computed gate outcome: the link is visible exactly when only
-        the missing half of the prompt-plus-example setup blocks the button,
-        so the escape stays one visible click away without a dead click.
-        The blue hint line above it belongs to the Enter-path intercept only
-        (confirm_meta_for_detect); this never shows it."""
-        try:
-            if show and not getattr(self, "_meta_escape_seen", False):
-                # Once per episode: how often users SEE the escape state is
-                # the launch question for the prompt-plus-example default.
-                # Same event family as the commit intercept, -1.0 sentinel.
-                self._meta_escape_seen = True
-                try:
-                    from ...core import telemetry
-                    from ...core import telemetry_events as ev
-                    telemetry.track(ev.EXEMPLAR_NUDGE_SHOWN, {
-                        "run_id": "",
-                        "object_class": (self.auto_prompt_input.text().strip()
-                                         if has_text else ""),
-                        "median_score": -1.0,
-                    })
-                except Exception:
-                    pass  # nosec B110
-            if show:
-                if has_text:
-                    label = tr("Detect with text only")
-                elif positives == 1:
-                    label = tr("Detect with example only")
-                else:
-                    label = tr("Detect with examples only")
-                self.auto_detect_anyway_btn.setText(label)
-            else:
-                self.auto_meta_hint.setVisible(False)
-            self.auto_detect_anyway_btn.setVisible(show)
-            self.auto_meta_intercept.setVisible(
-                show or self.auto_meta_hint.isVisible())
-        except (RuntimeError, AttributeError):
-            pass
-
-    def confirm_meta_for_detect(self) -> bool:
-        """Commit-time guard for the prompt-plus-example default. The green
-        Detect only enables on the full setup, so this mostly covers the
-        OTHER entry points (Enter in the prompt box, the escape link): a
-        half-setup commit without the override shows a blue line naming the
-        missing half (the link below it is already visible) and blocks; the
-        escape link sets the override and re-emits, which passes here."""
-        if not self._EXEMPLARS_ENABLED:
-            return True
-        # One-shot pending override from the escape link. Consumed HERE, not
-        # at click time: the prompt guard runs first and its translated /
-        # multi-object branches call setText, whose textChanged fires
-        # _reset_meta_intercept synchronously - a plain flag set at click
-        # time would be wiped before this guard ever saw it, silently
-        # swallowing the escape click for exactly the localized prompts.
-        if getattr(self, "_auto_meta_override_pending", False):
-            self._auto_meta_override_pending = False
-            self._auto_meta_override = True
-        if getattr(self, "_auto_meta_override", False):
-            return True
-        from ...core.detect_gate import meta_satisfied
-        has_text = bool(self.auto_prompt_input.text().strip())
-        positives = getattr(self, "_auto_positive_exemplars", 0)
-        if meta_satisfied(has_text, positives):
-            return True
-        if has_text:
-            # Name the typed object so the line reads as advice about THIS
-            # run, and point at the exact gesture (step 2's map draw) that
-            # completes it.
-            word = self.auto_prompt_input.text().strip()
-            hint = tr('Almost there: in step 2, outline one "{word}" on the '
-                      'map so the AI sees what yours look like.').format(
-                word=word)
-        else:
-            hint = tr("Almost there: in step 1, name the object your "
-                      "examples show - words plus examples detect best.")
-        try:
-            self.auto_meta_hint.setText(hint)
-            self.auto_meta_hint.setVisible(True)
-            self.auto_meta_intercept.setVisible(True)
-        except (RuntimeError, AttributeError):
-            return True
-        try:
-            from ...core import telemetry
-            from ...core import telemetry_events as ev
-            # Pre-run intercept, reusing the exemplar-nudge event; the -1.0
-            # median is the sentinel separating it from the in-review nudge
-            # (whose median is always a real 0..0.35 score).
-            telemetry.track(ev.EXEMPLAR_NUDGE_SHOWN, {
-                "run_id": "",
-                "object_class": self.auto_prompt_input.text().strip(),
-                "median_score": -1.0,
-            })
-        except Exception:
-            pass  # nosec B110
-        return False
-
-    def _on_auto_detect_anyway_clicked(self) -> None:
-        """The explicit escape from the prompt-plus-example default: run once
-        with the current half-setup. Sets the PENDING one-shot flag (consumed
-        by confirm_meta_for_detect) rather than the live override: the prompt
-        guard's translated/multi-object branches edit the prompt box on the
-        way, and that edit resets the live override synchronously."""
-        self._auto_meta_override_pending = True
-        try:
-            self.auto_meta_intercept.setVisible(False)
-        except (RuntimeError, AttributeError):
-            pass
-        try:
-            from ...core import telemetry
-            from ...core import telemetry_events as ev
-            telemetry.track(ev.EXEMPLAR_NUDGE_CLICKED, {
-                "run_id": "",
-                "object_class": self.auto_prompt_input.text().strip(),
-                "median_score": -1.0,
-            })
-        except Exception:
-            pass  # nosec B110
-        self.auto_detect_requested.emit()
-
-    def _reset_meta_intercept(self) -> None:
-        """Retire the intercept message + escape link and drop the override.
-        Runs whenever the setup changes (prompt edit, example added/removed) or
-        the flow resets; _update_auto_detect_enabled then re-shows the link
-        for the new state when it still applies."""
-        self._auto_meta_override = False
-        self._meta_escape_seen = False
-        try:
-            self.auto_meta_hint.setVisible(False)
-            self.auto_detect_anyway_btn.setVisible(False)
-            self.auto_meta_intercept.setVisible(False)
-        except (RuntimeError, AttributeError):
-            pass
 
     @staticmethod
     def _prompt_lookup_key(text: str) -> str:
@@ -318,6 +215,10 @@ class DockAutoPromptGateMixin:
 
         The token is re-vetted by the guard on the way out, so a bad server
         answer can never reach the model."""
+        if not prompt_server_lookup_enabled():
+            # Switched off fleet-wide: no network on the click, and the answer
+            # is the one that runs the word as typed.
+            return None, False
         key = self._prompt_lookup_key(text)
         if not key:
             return None, False
@@ -368,7 +269,7 @@ class DockAutoPromptGateMixin:
             return False
         try:
             QTimer.singleShot(
-                _PROMPT_LOOKUP_TIMEOUT_MS,
+                prompt_lookup_timeout_ms(),
                 lambda g=generation: self._on_prompt_lookup_done(g, None))
         except (RuntimeError, AttributeError):
             pass

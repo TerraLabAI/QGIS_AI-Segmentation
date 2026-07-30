@@ -15,9 +15,16 @@ from qgis.PyQt.QtCore import QTimer
 from ...core.i18n import tr
 from ...core.review_corrections import CorrectionJournal, JournalEntry, RetryLinkState
 from ...core.shape_edits import KIND_MERGE, KIND_REFINE, KIND_REMOVE, KIND_SPLIT, ShapeEdit
+from .auto_shape_edit import KIND_SELECT
 
 # The retry two-stage confirm disarms itself after this idle window.
 _RETRY_CONFIRM_RESET_MS = 6000
+
+# How long a method switch waits for the fold's reslice before re-opening the
+# session anyway. One frame between looks, and a ceiling so a reslice that never
+# ends cannot cost the user the re-open.
+_FOLD_RESLICE_LOOK_MS = 50
+_FOLD_RESLICE_MAX_LOOKS = 120
 
 
 class AutoCorrectMixin:
@@ -35,13 +42,6 @@ class AutoCorrectMixin:
         # and size gates, so a hand-drawn shape can never be filtered away by a
         # slider the user forgot. Keyed by det_id so it survives a reslice.
         self._auto_manual_object_ids: set[int] = set()
-        # det_ids whose outline the user drew or edited by hand in the Manual
-        # method. The shared shape refine is skipped for them, so the polygon
-        # keeps the exact corners the user placed: squaring, simplifying or
-        # opening a hand-traced outline moves it off the measurements they
-        # took, and a small one can be erased outright. The AI method keeps
-        # following the shared settings, which is what it is for.
-        self._auto_shape_frozen_ids: set[int] = set()
         self._auto_correct_journal = CorrectionJournal()
         self._auto_review_step = 0
         self._auto_review_steps_seen: set[int] = set()
@@ -56,9 +56,17 @@ class AutoCorrectMixin:
         # Cleared on every session exit so it never leaks into the next one.
         self._refine_add_mode_active = False
         self._ai_add_install_pending = False
+        # The polygon a method switch owes a re-opened session, held while the
+        # fold's reslice finishes writing the review layer. Last switch wins.
+        self._correct_reenter_det_id = None
+        self._correct_reenter_looks = 0
         # The free hand edits (merge / split) live in auto_shape_edit.py and
         # share this file's journal, so their state resets with this one.
         self._init_auto_shape_edit_state()
+        # Which polygon a fix session owns the canvas for, and whether it is
+        # waiting on the model (correct_focus.py). Reset here so a new review
+        # can never open with the previous one's grey map or busy cursor.
+        self._init_correct_focus_state()
 
     def _connect_auto_correct_signals(self) -> None:
         """Wire the dock's review signals; called once from setup."""
@@ -109,6 +117,16 @@ class AutoCorrectMixin:
         Without a live session there is nothing to fold: the dock already
         re-labelled its own controls, so this only records the choice."""
         method = "manual" if str(method) == "manual" else "ai"
+        # A local-AI setup is running FOR the AI method: switching under it
+        # would leave the install with nothing to open. The switch is disabled
+        # while it runs; this covers every other caller, and puts the widget
+        # back where the plugin still stands.
+        if self._local_ai_install_pending():
+            try:
+                self.dock_widget.set_correct_method(self._correct_method)
+            except (RuntimeError, AttributeError):
+                pass
+            return
         self._correct_method = method
         if method == "ai":
             self._warm_local_ai_for_correct()
@@ -122,10 +140,49 @@ class AutoCorrectMixin:
         folded = self._fold_active_correct_session()
         if not folded or target_det_id is None:
             return
-        idx = self._object_index_for_det_id(target_det_id)
+        # Re-select on the new method; enter_session opens the matching session.
+        # Not on this stack: the fold just started a cooperative reslice that
+        # keeps writing the review layer over the next event-loop turns.
+        self._correct_reenter_det_id = target_det_id
+        self._correct_reenter_looks = 0
+        self._reenter_correct_session_after_fold()
+
+    def _reenter_correct_session_after_fold(self) -> None:
+        """Re-open the fix session on the held polygon, once the fold's reslice
+        has finished writing the review layer.
+
+        The Manual method edits THAT layer and snapshots it on entry. Opening
+        on the fold's own stack snapshots a half-written set, so every shape the
+        reslice lands afterwards is missing from the snapshot, and the commit
+        reads it as hand-edited: it overwrites the canonical row and freezes the
+        outline, which takes the object out of the shared shape settings for the
+        rest of the review. Waiting costs a few frames."""
+        det_id = self._correct_reenter_det_id
+        if det_id is None:
+            return
+        if self._auto_review is None or self._auto_review_step != 1:
+            self._correct_reenter_det_id = None
+            return
+        # The wait is a few frames the user can act in. Anything they opened or
+        # armed meanwhile owns the canvas, and moving the selection under it
+        # would take them off the polygon they just picked.
+        # KIND_SELECT is the resting tool the fold itself re-arms, so it is not
+        # a gesture; a Merge pick is.
+        if (getattr(self, "_refine_handoff_active", False)
+                or getattr(self, "_qgis_bridge_active", False)
+                or self._shape_edit_mode not in (None, KIND_SELECT)):
+            self._correct_reenter_det_id = None
+            return
+        if (getattr(self, "_auto_finalize_state", None) is not None
+                and self._correct_reenter_looks < _FOLD_RESLICE_MAX_LOOKS):
+            self._correct_reenter_looks += 1
+            QTimer.singleShot(
+                _FOLD_RESLICE_LOOK_MS, self._reenter_correct_session_after_fold)
+            return
+        self._correct_reenter_det_id = None
+        idx = self._object_index_for_det_id(det_id)
         if idx is None:
             return
-        # Re-select on the new method; enter_session opens the matching session.
         self._set_correct_selection(idx, enter_session=True)
 
     def _active_session_target_det_id(self):
@@ -183,6 +240,11 @@ class AutoCorrectMixin:
         backward moves is gone."""
         if self._auto_review is None:
             return
+        # A local-AI setup owns the review until it ends: the dials and the
+        # step primary are already dead, and this closes the same door to a
+        # keyboard or MCP caller.
+        if self._local_ai_install_pending():
+            return
         step = max(0, min(2, int(step)))
         if step != 1:
             # Leaving Correct (step 1): fold any live fix session (so its edits
@@ -212,8 +274,8 @@ class AutoCorrectMixin:
         if step not in self._auto_review_steps_seen:
             self._auto_review_steps_seen.add(step)
             try:
-                from ...core import telemetry
-                telemetry.track_review_step(
+                from ...core import telemetry_run_events
+                telemetry_run_events.track_review_step(
                     run_id=self._auto_run_id or "", step=step)
             except Exception:
                 pass  # nosec B110
@@ -226,6 +288,24 @@ class AutoCorrectMixin:
         if edits:
             text += " · " + tr("{n} shape(s) edited this session").format(n=edits)
         return text
+
+    def _zero_review_crs(self, layer):
+        """The CRS a review opened on an empty run is expressed in.
+
+        The run's, which is the raster's for every layer whose axes agree on
+        the ground, and a ground-metre one where they do not. The raster's own
+        CRS only stands in when the run recorded none."""
+        from qgis.core import QgsCoordinateReferenceSystem
+
+        authid = getattr(self, "_auto_crs_authid", None)
+        if authid:
+            crs = QgsCoordinateReferenceSystem(authid)
+            if crs.isValid():
+                return crs
+        try:
+            return layer.crs() if layer is not None else None
+        except (RuntimeError, AttributeError):
+            return None
 
     def _enter_zero_detection_review(self, tiles_succeeded: int) -> None:
         """A run that found NOTHING still opens the review, on its own quiet
@@ -243,7 +323,10 @@ class AutoCorrectMixin:
             "geoms": [],
             "scores": [],
             "ids": [],
-            "crs": layer.crs() if layer is not None else None,
+            # The run CRS, not the raster's: a shape the user draws here is
+            # stored beside detections from a run that may have moved to
+            # another CRS, and the seed layers are declared from this value.
+            "crs": self._zero_review_crs(layer),
             "source_layer_name": layer.name() if layer is not None else "",
             "prompt": prompt_text,
             "pixel_size": self._auto_refine_pixel_size(),
@@ -264,8 +347,8 @@ class AutoCorrectMixin:
         self._arm_correct_select()
         self._warm_local_ai_for_correct()
         try:
-            from ...core import telemetry
-            telemetry.track_review_step(run_id=self._auto_run_id or "", step=1)
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_review_step(run_id=self._auto_run_id or "", step=1)
         except Exception:
             pass  # nosec B110
 
@@ -338,8 +421,8 @@ class AutoCorrectMixin:
         self._undo_entry(entry)
         self._refresh_correction_summary()
         try:
-            from ...core import telemetry
-            telemetry.track_review_correct_undo(
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_review_correct_undo(
                 run_id=self._auto_run_id or "", kind=entry.kind)
         except Exception:
             pass  # nosec B110
@@ -352,8 +435,8 @@ class AutoCorrectMixin:
             self._undo_entry(entry)
         self._refresh_correction_summary()
         try:
-            from ...core import telemetry
-            telemetry.track_review_correct_undo(
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_review_correct_undo(
                 run_id=self._auto_run_id or "", kind="clear_all")
         except Exception:
             pass  # nosec B110
@@ -473,12 +556,6 @@ class AutoCorrectMixin:
         pre_len = len(existing_objects)
         exempted: list[int] = []
         manual_ids = self._auto_manual_object_ids
-        # Every det_id this fold freezes, so one Undo can thaw exactly those.
-        froze: list[int] = []
-        frozen_ids = getattr(self, "_auto_shape_frozen_ids", None)
-        if frozen_ids is None:
-            frozen_ids = set()
-            self._auto_shape_frozen_ids = frozen_ids
 
         for (geom, score, raw_id), det_id in zip(features, final_ids):
             old_wkb = snapshot.get(raw_id) if raw_id is not None else None
@@ -497,18 +574,12 @@ class AutoCorrectMixin:
                 if det_id is not None and det_id not in manual_ids:
                     manual_ids.add(det_id)
                     exempted.append(det_id)
-                if det_id is not None and det_id not in frozen_ids:
-                    frozen_ids.add(det_id)
-                    froze.append(det_id)
             elif not unchanged:
                 restored.append((index, existing_objects[index]))
+                # The edited geometry is the object's new canonical base, so the
+                # Shapes step drives it like any detection. Nothing is frozen.
                 existing_objects[index] = (
                     geom, score, self._object_area_m2(geom, measurer))
-                # The user moved these corners themselves. Freeze the outline so
-                # the shared shape refine stops rewriting it on the next reslice.
-                if det_id is not None and det_id not in frozen_ids:
-                    frozen_ids.add(det_id)
-                    froze.append(det_id)
 
         # A feature that was visible when editing opened but is gone now was
         # explicitly deleted or absorbed by a native merge. Hidden detections
@@ -533,7 +604,6 @@ class AutoCorrectMixin:
             appended=len(existing_objects) - pre_len,
             unremoved=tuple(added_removed),
             exempted=tuple(exempted),
-            frozen=tuple(froze),
         )
         self._record_fold_edit(edit, fids=tuple(added_removed))
         # The hit snapshot describes the shapes as they were BEFORE these
@@ -554,8 +624,8 @@ class AutoCorrectMixin:
         try:
             self._start_auto_reslice()
         except Exception as exc:  # noqa: BLE001
-            from ...core import telemetry
-            telemetry.report_exception(
+            from ...core import telemetry_errors
+            telemetry_errors.report_exception(
                 exc, stage="auto_reslice_after_fold", module="auto_correct")
         try:
             self._refresh_correction_summary()

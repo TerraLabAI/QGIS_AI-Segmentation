@@ -16,6 +16,7 @@ from qgis.PyQt.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 from ....core import qt_compat as QtC
 from ....core.i18n import tr
 from ....core.presets.segmentation_presets_client import absolute_demo_url
+from ...dock.font_scale import scale_qss_font_px as _scale_qss_font_px
 from ...dock.styles import BRAND_BLUE, BRAND_BLUE_HOVER, BTN_GREEN, BTN_GREEN_HOVER
 
 _BRAND_GREEN = BTN_GREEN       # AI Segmentation primary (Detect / Use)
@@ -414,3 +415,38 @@ def _history_error(resp) -> str | None:
     if resp.get("error"):
         return str(resp.get("code") or "SERVER_ERROR")
     return None
+
+
+# The panel follows the text size the user set in QGIS (see font_scale). A
+# constant applied at build time is caught by the pass over the finished panel,
+# but the same constant re-applied on a state change is not, and the widget
+# would snap back to the base size mid-session. Growing them here, once, covers
+# both. A no-op on the default text size, and outside QGIS.
+for _qss_name in (
+    "_SIDEBAR_ITEM",
+    "_SIDEBAR_ITEM_ACTIVE",
+    "_SECTION_HEADER",
+    "_SEARCH_QSS",
+    "_OVERLAY_BADGE_QSS",
+    "_USE_HINT_REST",
+    "_USE_HINT_HOVER",
+    "_META_QSS",
+    "_EMPTY_GLYPH",
+    "_EMPTY_MSG",
+    "_BLUE_BTN_QSS",
+    "_GHOST_BTN_QSS",
+    "_STAR_BTN_QSS",
+    "_TITLE_STYLE",
+    "_SECTION_STYLE",
+    "_BADGE_STYLE",
+    "_PROMPT_STYLE",
+    "_COPY_BTN",
+    "_CHIP_CAPTION",
+    "_CHIP_VALUE",
+    "_ACTION_BTN",
+    "_PRIMARY_BTN",
+    "_FS_BTN",
+    "_DETAIL_STAR_BTN",
+):
+    globals()[_qss_name] = _scale_qss_font_px(globals()[_qss_name])
+del _qss_name

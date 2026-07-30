@@ -20,8 +20,9 @@ class AutoObjectBuildMixin:
         terminal (finished/cancelled/exhausted/error), BEFORE the worker ref is
         nulled, so the review's px<->ground refine keeps the run's true pixel.
         Keeps the previous run's value when this run saw no mask (0.0). Also
-        captures the pre-submit tile drops (blank/nodata skips and render/provider
-        holes) so _finalize_auto_results can surface them once per run."""
+        captures the pre-submit tile drops (blank/nodata skips, render/provider
+        holes, and tiles the source answered with a "no image here" card) so
+        _finalize_auto_results can surface them once per run."""
         obs = getattr(worker, "observed_mask_gsd", 0.0)
         if obs > 0:
             self._auto_mask_gsd = obs
@@ -29,6 +30,38 @@ class AutoObjectBuildMixin:
             getattr(worker, "tiles_skipped_blank", 0) or 0)
         self._auto_render_failed_tiles = int(
             getattr(worker, "tiles_render_failed", 0) or 0)
+        self._auto_unavailable_tiles = int(
+            getattr(worker, "tiles_unavailable", 0) or 0)
+        # Tiles the degenerate prefilter settled as empty with no request. They
+        # are quoted to the user before the run like every other grid tile and
+        # then never charged, so leaving them out of the run's own account was
+        # the one drop the user could not see anywhere.
+        self._auto_prefiltered_tiles = int(
+            getattr(worker, "tiles_prefiltered", 0) or 0)
+        # Tiles the scan gate settled as empty off a downsampled scan. Kept
+        # apart from every counter above because these WERE charged, so they
+        # can never join the "none of these were charged" line.
+        self._auto_gate_skipped_tiles = int(
+            getattr(worker, "tiles_gate_skipped", 0) or 0)
+        # Masks the whole-tile blob guard dropped, with the per-test split. A
+        # run whose prompt names a large-parcel class (the merge policy sends
+        # field, parcel, pasture and their family to SEPARATE) can lose real
+        # objects here, and this is the only number that says so.
+        self._auto_blob_dropped = int(
+            getattr(worker, "masks_dropped_whole_tile", 0) or 0)
+        self._auto_blob_kept_map = int(
+            getattr(worker, "masks_whole_tile_kept_map", 0) or 0)
+        self._auto_blob_map_lowscore = int(
+            getattr(worker, "masks_dropped_map_lowscore", 0) or 0)
+        # Scores of the run's whole-tile MAP masks. Quantiles only, so the log
+        # line stays a handful of numbers whatever the run size.
+        self._auto_map_cover_scores = list(
+            getattr(worker, "map_cover_scores", ()) or ())
+        self._auto_blob_split = (
+            int(getattr(worker, "masks_dropped_hard_cover", 0) or 0),
+            int(getattr(worker, "masks_dropped_tile_span", 0) or 0),
+            int(getattr(worker, "masks_dropped_not_compact", 0) or 0),
+        )
         # Keep the run summary's "raw detection(s)" meaning what the model
         # RETURNED: the worker's MAP-mode per-tile pre-merge shrinks the stream
         # the GUI folds, so the GUI-side fold counter alone would under-report.
@@ -82,6 +115,15 @@ class AutoObjectBuildMixin:
                 ext = source_layer.extent()
                 w = source_layer.width()
                 if w > 0 and ext.width() > 0:
+                    # The contract is RUN-CRS units per pixel, and the extent
+                    # is in the layer's own CRS. On a run moved to ground
+                    # metres those differ, and degrees over a pixel count is
+                    # not a length the caller can use: Simplify, Expand and
+                    # Clean edges all become silent no-ops.
+                    in_run = self._layer_extent_in_run_crs(
+                        source_layer, getattr(self, "_auto_crs_authid", "") or "")
+                    if in_run is not None and in_run.width() > 0:
+                        ext = in_run
                     return ext.width() / w
         except (RuntimeError, AttributeError):
             pass

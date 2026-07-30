@@ -97,6 +97,10 @@ def event_pos(event):
     return to_point() if to_point is not None else point
 
 
+# Qt.PenStyle
+SolidLine = resolve_qt_enum(Qt, "PenStyle", "SolidLine")
+DashLine = resolve_qt_enum(Qt, "PenStyle", "DashLine")
+
 # Qt.KeyboardModifier
 ShiftModifier = resolve_qt_enum(Qt, "KeyboardModifier", "ShiftModifier")
 
@@ -220,6 +224,42 @@ except Exception:
 if DistanceMeters is None:
     from qgis.core import QgsUnitTypes
     DistanceMeters = resolve_qt_enum(QgsUnitTypes, "DistanceUnit", "DistanceMeters")
+
+
+def _render_simplify_enum(modern_scope: str, legacy_scope: str, name: str):
+    """One render-time simplification enum member, from QGIS 3.22 to 4.
+
+    QGIS 3.30 moved these onto ``Qgis`` (``VectorRenderingSimplificationFlag``
+    for the hints, ``VectorSimplificationAlgorithm`` for the algorithm). Before
+    that they lived on ``QgsVectorSimplifyMethod``, scoped on some builds and
+    flat on others. Resolved by name through getattr, so the static Qt6 checker
+    sees no flat enum access on any branch.
+
+    Returns None when neither spelling exists, which every caller reads as
+    "leave the layer's own default alone".
+    """
+    try:
+        from qgis.core import Qgis, QgsVectorSimplifyMethod
+    except ImportError:
+        return None
+    found = getattr(getattr(Qgis, modern_scope, None), name, None)
+    if found is not None:
+        return found
+    try:
+        return resolve_qt_enum(QgsVectorSimplifyMethod, legacy_scope, name)
+    except AttributeError:
+        return None
+
+
+# Both hints and the algorithm the fast canvas render asks for. FullSimplification
+# is GeometrySimplification plus the antialiasing shortcut for sub-pixel parts;
+# the geometry-only hint is the fallback on a build that lacks it.
+SimplifyFullHint = _render_simplify_enum(
+    "VectorRenderingSimplificationFlag", "SimplifyHint", "FullSimplification")
+SimplifyGeometryHint = _render_simplify_enum(
+    "VectorRenderingSimplificationFlag", "SimplifyHint", "GeometrySimplification")
+SimplifyDistanceAlgorithm = _render_simplify_enum(
+    "VectorSimplificationAlgorithm", "SimplifyAlgorithm", "Distance")
 
 # QgsVertexMarker.IconType.ICON_CIRCLE - scoped on QGIS 4, flat also on QGIS 3.
 try:
@@ -371,3 +411,35 @@ def safe_single_shot(msec: int, owner: QObject, callback) -> QTimer:
     timer.timeout.connect(callback)
     timer.start(max(0, int(msec)))
     return timer
+
+
+# One signal per call, on purpose: this is what replaces a batch of disconnects
+# sharing a single try block. Returns whether the disconnect actually happened.
+def safe_disconnect(owner, signal_name: str, slot=None) -> bool:
+    """Disconnect one signal on ``owner``, swallowing the three teardown faults.
+
+    Batched into one try block, the first failure skipped every disconnect
+    after it, and those connections stayed live: a handler on a destroyed
+    widget kept firing from the layer tree, and the widget's C++ half was
+    already gone by the time it did.
+
+    Each of the three is normal during teardown, none is worth a raise:
+    TypeError means this slot was never connected (a second cleanup() call, or
+    a widget built while the project swapped its layer tree), RuntimeError
+    means the C++ half of ``owner`` is already deleted, and AttributeError
+    means ``owner`` is None. Reading ``owner.signal_name`` can itself raise the
+    last two, so the lookup sits inside the guard, not outside it.
+
+    ``slot=None`` drops every connection on the signal, which is only safe for
+    signals the plugin owns end to end. Never use it on a QgsTask: that would
+    also sever the task manager's own hookups from addTask() and orphan it.
+    """
+    try:
+        signal = getattr(owner, signal_name)
+        if slot is None:
+            signal.disconnect()
+        else:
+            signal.disconnect(slot)
+    except (AttributeError, RuntimeError, TypeError):
+        return False
+    return True

@@ -122,11 +122,8 @@ class ShapeEdit:
     many rows to pop off the tail, and ``unremoved`` are the indices to drop
     from the removal set. ``exempted`` are the ``det_id`` values a fold added to
     the gate-exemption set (objects the user touched), dropped on undo so an
-    object exempted twice keeps the earlier exemption. ``frozen`` are the
-    ``det_id`` values a fold added to the shape-freeze set (geometry the user
-    drew or edited by hand, which the shared shape refine must leave alone),
-    dropped on undo the same way. Merge and split leave both empty; only the
-    batch fold uses them.
+    object exempted twice keeps the earlier exemption. Merge and split leave it
+    empty; only the batch fold uses it.
     """
 
     kind: str
@@ -134,7 +131,6 @@ class ShapeEdit:
     appended: int
     unremoved: tuple[int, ...]
     exempted: tuple[int, ...] = ()
-    frozen: tuple[int, ...] = ()
 
 
 def merge_plan(

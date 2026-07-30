@@ -642,8 +642,8 @@ class SegmentationMCPAPI:
             cap_area = None
         if cap_area is not None:
             try:
-                from .core import telemetry
-                telemetry.track_auto_zone_too_large(area_km2=cap_area)
+                from .core import telemetry_run_events
+                telemetry_run_events.track_auto_zone_too_large(area_km2=cap_area)
             except Exception:
                 pass  # nosec B110
             from .ui.plugin.shared import zone_over_free_cap_message
@@ -942,7 +942,7 @@ class SegmentationMCPAPI:
 
             plugin._current_layer = target_layer
             plugin._current_layer_name = layer_name_safe
-            plugin._is_online_layer = plugin._is_online_provider(target_layer)
+            plugin._is_online_layer = plugin._needs_canvas_render(target_layer)
 
             if hasattr(plugin, "_is_layer_georeferenced"):
                 plugin._is_non_georeferenced_mode = (

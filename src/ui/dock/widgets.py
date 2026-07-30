@@ -21,6 +21,7 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ...core.i18n import tr
+from .font_scale import scale_px_length
 from .styles import (
     _BTN_BLUE_PRIMARY,
     _METHOD_SWITCH_QSS,
@@ -188,6 +189,31 @@ class _FooterIconButton(QToolButton):
     def leaveEvent(self, event):  # noqa: N802
         self.set_hovered(False)
         super().leaveEvent(event)
+
+
+class _ClickableFooterArea(QWidget):
+    """A footer strip that answers a click, for the credit gauge.
+
+    The gauge is two widgets, a painted ring and its label, and Qt gives a
+    plain container no clicked signal. Neither child accepts mouse buttons, so
+    a press on either lands here and the whole strip reads as one link to the
+    dashboard.
+    """
+
+    clicked = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802 - Qt override
+        # Release inside the strip, the same contract as a button: a press that
+        # drags away and lets go elsewhere is a cancelled click.
+        from ...core.qt_compat import event_pos
+        if (event.button() == Qt.MouseButton.LeftButton
+                and self.rect().contains(event_pos(event))):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
 
 
 class _Spinner(QWidget):
@@ -368,8 +394,10 @@ class _ModeSwitch(QFrame):
     def __init__(self, current_mode: Mode, parent=None):
         super().__init__(parent)
         self.setObjectName("modeSwitchFrame")
-        self.setFixedHeight(36)
-        self.setMinimumWidth(260)
+        # Grows with its own labels: a fixed 36 clips "Automatic" and the PRO
+        # badge as soon as the user raises the QGIS text size.
+        self.setFixedHeight(scale_px_length(36))
+        self.setMinimumWidth(scale_px_length(260))
         self.setAccessibleName(tr("Mode selection"))
         self.setAccessibleDescription(
             tr("Choose between Manual (local) and Automatic (cloud) segmentation"))
@@ -390,19 +418,10 @@ class _ModeSwitch(QFrame):
         self._automatic_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._automatic_btn.setProperty("mode", "automatic")
 
-        # PRO badge label overlaid on the Automatic button. White pill with
-        # blue text so it stays legible on BOTH the solid blue active fill
-        # and the grey inactive container.
-        self._pro_badge = QLabel("PRO", self)
-        self._pro_badge.setStyleSheet(
-            f"background-color: rgba(255,255,255,0.92); color: {BRAND_BLUE};"
-            " border-radius: 3px; padding: 0px 4px;"
-            " font-size: 9px; font-weight: bold;"
-        )
-        self._pro_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._pro_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self._pro_badge.adjustSize()
-
+        # No badge on the Automatic half. A "PRO" pill on the tab read as a
+        # locked, complicated mode before the user had seen what it does; the
+        # paid part is explained where it costs something (the credit gauge,
+        # the upsell band, Account Settings), not on the way in.
         self._btn_group = QButtonGroup(self)
         self._btn_group.setExclusive(True)
         self._btn_group.addButton(self._interactive_btn, 0)
@@ -452,27 +471,6 @@ class _ModeSwitch(QFrame):
         self._repolish(self._automatic_btn)
         self._btn_group.blockSignals(False)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
-        super().resizeEvent(event)
-        self._position_pro_badge()
-
-    def showEvent(self, event) -> None:  # noqa: N802
-        super().showEvent(event)
-        self._position_pro_badge()
-
-    def _position_pro_badge(self) -> None:
-        """Place the PRO badge in the upper-right area of the Automatic button."""
-        self._pro_badge.adjustSize()
-        btn = self._automatic_btn
-        bx = btn.x()
-        bw = btn.width()
-        bh = btn.height()
-        pw = self._pro_badge.width()
-        ph = self._pro_badge.height()
-        x = bx + bw - pw - 4
-        y = (bh - ph) // 2 - 2
-        self._pro_badge.move(x, max(2, y))
-
 
 class _MethodSwitch(QFrame):
     """Segmented AI | Manual switch for the Correct step.
@@ -488,7 +486,7 @@ class _MethodSwitch(QFrame):
     def __init__(self, current: str = "ai", parent=None):
         super().__init__(parent)
         self.setObjectName("methodSwitchFrame")
-        self.setFixedHeight(32)
+        self.setFixedHeight(scale_px_length(32))
         self.setAccessibleName(tr("Fix method"))
         self.setAccessibleDescription(
             tr("Choose how to fix the polygon: AI points or QGIS vertices"))
@@ -553,57 +551,47 @@ def checkbox_indicator_qss(dock) -> str:
 
     Qt's native indicator can render invisible when unchecked (dark themes,
     macOS), so an OFF checkbox reads as an empty row - the user cannot even
-    tell there is something to click. This paints two theme-agnostic pixmaps
+    tell there is something to click. This writes two theme-agnostic SVG files
     at runtime (off: grey rounded outline box; on: brand-blue filled box with
     a white check) into a per-dock temp dir and returns the stylesheet block
     referencing them. The dir is stored as dock._checkbox_icon_dir (reused on
-    repeat calls, deleted by the dock's unload cleanup)."""
+    repeat calls, deleted by the dock's unload cleanup).
+
+    SVG, not PNG, because Qt rasterises it at the pixel count the screen
+    really has, whatever that is and whenever it changes. A bitmap has to be
+    painted for one display ratio, and the ratio a dock reports before it is
+    on screen is 1.0, so on a 125 percent display Qt stretched an 18 pixel
+    box over 22.5 and the box came out chewed. The SVG icon engine is already
+    a dependency: every QGIS theme icon the plugin loads is one."""
     import os
     import tempfile
-
-    from qgis.PyQt.QtGui import QColor, QPainter, QPen, QPixmap
 
     sz = 18
     icon_dir = getattr(dock, "_checkbox_icon_dir", None)
     if not icon_dir:
         icon_dir = tempfile.mkdtemp(prefix="qgis_ai_seg_")
         dock._checkbox_icon_dir = icon_dir
-    path_off = os.path.join(icon_dir, "cb_off.png").replace("\\", "/")
-    path_on = os.path.join(icon_dir, "cb_on.png").replace("\\", "/")
+    path_off = os.path.join(icon_dir, "cb_off.svg").replace("\\", "/")
+    path_on = os.path.join(icon_dir, "cb_on.svg").replace("\\", "/")
     if not (os.path.exists(path_off) and os.path.exists(path_on)):
-        box = (1, 1, sz - 3, sz - 3)
+        head = (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{sz}" height="{sz}"'
+            f' viewBox="0 0 {sz} {sz}">'
+        )
+        box = f'<rect x="1" y="1" width="{sz - 3}" height="{sz - 3}" rx="4" ry="4"'
         # Unchecked: transparent fill + mid-grey outline (legible on both
         # light and dark backgrounds).
-        pm_off = QPixmap(sz, sz)
-        pm_off.fill(Qt.GlobalColor.transparent)
-        p = QPainter(pm_off)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        pen = QPen(QColor(140, 140, 140, 230))
-        pen.setWidthF(1.5)
-        p.setPen(pen)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(*box, 4, 4)
-        p.end()
+        svg_off = f'{head}{box} fill="none" stroke="#8c8c8c" stroke-opacity="0.9" stroke-width="1.5"/></svg>'
         # Checked: brand-blue filled box + white check (the darker hover
         # shade reads better than the base blue behind a white checkmark).
-        pm_on = QPixmap(sz, sz)
-        pm_on.fill(Qt.GlobalColor.transparent)
-        p = QPainter(pm_on)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        blue = QColor(BRAND_BLUE_HOVER)
-        p.setPen(QPen(blue, 1.5))
-        p.setBrush(blue)
-        p.drawRoundedRect(*box, 4, 4)
-        check = QPen(QColor(255, 255, 255))
-        check.setWidthF(2.2)
-        check.setCapStyle(Qt.PenCapStyle.RoundCap)
-        check.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        p.setPen(check)
-        p.drawLine(5, 9, 8, 12)
-        p.drawLine(8, 12, 13, 5)
-        p.end()
-        pm_off.save(path_off, "PNG")
-        pm_on.save(path_on, "PNG")
+        svg_on = (
+            f'{head}{box} fill="{BRAND_BLUE_HOVER}" stroke="{BRAND_BLUE_HOVER}" stroke-width="1.5"/>'
+            '<path d="M5 9 L8 12 L13 5" fill="none" stroke="#ffffff" stroke-width="2.2"'
+            ' stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        )
+        for path, body in ((path_off, svg_off), (path_on, svg_on)):
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(body)
     # Quoted: Qt's CSS scanner only accepts a narrow character set inside an
     # unquoted url(), so a temp path containing a space (a Windows account
     # name with a space in it) would silently drop the whole declaration.

@@ -2947,8 +2947,8 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Beralih ke AI untuk membentuk poligon ini secara otomatis.</translation>
     </message>
     <message>
-        <source>That area does not touch the object you are editing, so nothing was added. Refining works on one object at a time.</source>
-        <translation>Area ini tidak menyentuh objek yang sedang Anda edit, sehingga tidak ada yang ditambahkan. Penyempurnaan bekerja pada satu objek dalam satu waktu.</translation>
+        <source>That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.</source>
+        <translation>Area ini tidak menyentuh objek yang sedang Anda edit, sehingga tidak ada yang ditambahkan. Bentuk ulang bekerja pada satu objek dalam satu waktu.</translation>
     </message>
     <message>
         <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
@@ -3217,6 +3217,390 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     <message>
         <source>{tiles} tiles</source>
         <translation>{tiles} tile</translation>
+    </message>
+    <!-- Correct step rework, install and precision wording (2026-07-30) -->
+    <message>
+        <source>1 credit ~ 0.17 km² at default precision.</source>
+        <translation>1 kredit ~ 0,17 km² pada presisi default.</translation>
+    </message>
+    <message>
+        <source>10,000 credits a month.</source>
+        <translation>10.000 kredit per bulan.</translation>
+    </message>
+    <message>
+        <source>A free run covers up to {cap} credits. This one costs more.</source>
+        <translation>Proses gratis mencakup hingga {cap} kredit. Proses ini menggunakan lebih banyak.</translation>
+    </message>
+    <message>
+        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then arms Add for you.</source>
+        <translation>Menambahkan objek menggunakan AI di perangkat gratis, yang belum terpasang. Pasang sekarang? Prosesnya berjalan satu kali dan memakan waktu beberapa menit. Tinjauan menunggu hingga selesai, lalu mengaktifkan Tambah untuk Anda.</translation>
+    </message>
+    <message>
+        <source>At this precision {obj} is too small to spot - raise the precision.</source>
+        <translation>Pada presisi ini {obj} terlalu kecil untuk dikenali - naikkan presisi.</translation>
+    </message>
+    <message>
+        <source>Automatic mode is ready. The on-device AI could not be installed, so Manual mode and the AI fix are off until it is. Everything else works.</source>
+        <translation>Mode Otomatis siap digunakan. AI di perangkat tidak dapat dipasang, sehingga mode Manual dan perbaikan AI nonaktif sampai AI ini terpasang. Semua yang lain tetap berfungsi.</translation>
+    </message>
+    <message>
+        <source>Automatic mode needs the AI environment, and it is missing or incomplete. Install the dependencies from the plugin panel, then run Detect again.</source>
+        <translation>Mode Otomatis memerlukan lingkungan AI, yang hilang atau tidak lengkap. Pasang dependensi dari panel plugin, lalu jalankan Deteksi lagi.</translation>
+    </message>
+    <message>
+        <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More precision splits the zone into more tiles, which costs more credits.</source>
+        <translation>Mode Otomatis memindai zona Anda tile demi tile. 1 tile = 1 kredit, sehingga proses ini menggunakan sekitar {n} kredit. Presisi yang lebih tinggi membagi zona menjadi lebih banyak tile, yang menggunakan lebih banyak kredit.</translation>
+    </message>
+    <message>
+        <source>Cancel setup</source>
+        <translation>Batalkan pengaturan</translation>
+    </message>
+    <message>
+        <source>Clean up this outline</source>
+        <translation>Bersihkan garis luar ini</translation>
+    </message>
+    <message>
+        <source>Click an object and the AI outlines it. You check and save each polygon yourself, one at a time. Use Automatic mode to get every object in a zone at once.</source>
+        <translation>Klik objek dan AI akan menggambar garis di sekelilingnya. Anda memeriksa dan menyimpan setiap poligon sendiri, satu per satu. Gunakan mode Otomatis untuk mendapatkan semua objek di suatu zona sekaligus.</translation>
+    </message>
+    <message>
+        <source>Click points around one look-alike, then double-click to close.</source>
+        <translation>Klik titik-titik di sekeliling satu objek serupa, lalu klik dua kali untuk menutup.</translation>
+    </message>
+    <message>
+        <source>Click points around one object, then double-click to close.</source>
+        <translation>Klik titik-titik di sekeliling satu objek, lalu klik dua kali untuk menutup.</translation>
+    </message>
+    <message>
+        <source>Click the layer name to see it on the map</source>
+        <translation>Klik nama lapisan untuk melihatnya di peta</translation>
+    </message>
+    <message>
+        <source>Click to open your dashboard</source>
+        <translation>Klik untuk membuka dasbor Anda</translation>
+    </message>
+    <message>
+        <source>Connection is slow - still working, tiles already found are kept...</source>
+        <translation>Koneksi lambat - masih berjalan, tile yang sudah ditemukan tetap disimpan...</translation>
+    </message>
+    <message>
+        <source>Could not save your detections to a file.</source>
+        <translation>Tidak dapat menyimpan deteksi Anda ke berkas.</translation>
+    </message>
+    <message>
+        <source>Downloads Blocked by Your Network</source>
+        <translation>Unduhan Diblokir oleh Jaringan Anda</translation>
+    </message>
+    <message>
+        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to segment areas of any size.</source>
+        <translation>Gambar zona yang lebih kecil, atau &lt;a href=&quot;{url}&quot;&gt;Tingkatkan ke Pro&lt;/a&gt; untuk menyegmentasi area dengan ukuran berapa pun.</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Manual mode to work one object at a time.</source>
+        <translation>Gambar zona, sebutkan nama satu jenis objek, dan dapatkan semuanya sekaligus. Gunakan mode Manual untuk mengerjakan satu objek dalam satu waktu.</translation>
+    </message>
+    <message>
+        <source>Draw another example</source>
+        <translation>Gambar contoh lain</translation>
+    </message>
+    <message>
+        <source>Drawing (click to stop)</source>
+        <translation>Menggambar (klik untuk berhenti)</translation>
+    </message>
+    <message>
+        <source>Errors, versions and the words you type, linked to your account. Never your imagery, layers or coordinates.</source>
+        <translation>Kesalahan, versi, dan kata yang Anda ketik, tertaut ke akun Anda. Tidak pernah menyertakan imagery, lapisan, atau koordinat Anda.</translation>
+    </message>
+    <message>
+        <source>Fixing a polygon uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then opens this polygon for you.</source>
+        <translation>Memperbaiki poligon menggunakan AI di perangkat gratis, yang belum terpasang. Pasang sekarang? Prosesnya berjalan satu kali dan memakan waktu beberapa menit. Tinjauan menunggu hingga selesai, lalu membuka poligon ini untuk Anda.</translation>
+    </message>
+    <message>
+        <source>Fixing needs a one-time setup</source>
+        <translation>Perbaikan membutuhkan pengaturan satu kali</translation>
+    </message>
+    <message>
+        <source>Helps us fix bugs faster.</source>
+        <translation>Membantu kami memperbaiki bug lebih cepat.</translation>
+    </message>
+    <message>
+        <source>Higher precision splits the zone into more tiles. Each tile costs 1 credit and captures smaller objects.</source>
+        <translation>Presisi yang lebih tinggi membagi zona menjadi lebih banyak tile. Setiap tile berharga 1 kredit dan menangkap objek yang lebih kecil.</translation>
+    </message>
+    <message>
+        <source>Keep detecting without limits:</source>
+        <translation>Tetap mendeteksi tanpa batas:</translation>
+    </message>
+    <message>
+        <source>Keep installing</source>
+        <translation>Lanjutkan memasang</translation>
+    </message>
+    <message>
+        <source>Keep this shape. The polygon stays picked, so you can still adjust, merge or delete it.</source>
+        <translation>Pertahankan bentuk ini. Poligon tetap terpilih, sehingga Anda tetap dapat menyesuaikan, menggabungkan, atau menghapusnya.</translation>
+    </message>
+    <message>
+        <source>Last run: {n} {object}</source>
+        <translation>Proses terakhir: {n} {object}</translation>
+    </message>
+    <message>
+        <source>Last run: {n} {object} in {layer}</source>
+        <translation>Proses terakhir: {n} {object} di {layer}</translation>
+    </message>
+    <message>
+        <source>Loading the imagery...</source>
+        <translation>Memuat imagery...</translation>
+    </message>
+    <message>
+        <source>Loading the imagery... {n}s</source>
+        <translation>Memuat imagery... {n}s</translation>
+    </message>
+    <message>
+        <source>Max precision for this zone - draw a larger zone to go finer.</source>
+        <translation>Presisi maksimum untuk zona ini - gambar zona yang lebih besar untuk presisi yang lebih halus.</translation>
+    </message>
+    <message>
+        <source>More precision cuts the zone into more tiles and costs more credits.</source>
+        <translation>Presisi yang lebih tinggi membagi zona menjadi lebih banyak tile dan menggunakan lebih banyak kredit.</translation>
+    </message>
+    <message>
+        <source>More precision finds smaller objects.</source>
+        <translation>Presisi yang lebih tinggi menemukan objek yang lebih kecil.</translation>
+    </message>
+    <message>
+        <source>More precision keeps helping {obj} in this zone.</source>
+        <translation>Presisi tambahan tetap membantu {obj} di zona ini.</translation>
+    </message>
+    <message>
+        <source>Name the object (or draw an example) first - Precision then tunes itself to it.</source>
+        <translation>Sebutkan nama objek (atau gambar contoh) terlebih dahulu - Presisi kemudian menyesuaikan sendiri.</translation>
+    </message>
+    <message>
+        <source>Next: clean up the outlines</source>
+        <translation>Selanjutnya: bersihkan garis luar</translation>
+    </message>
+    <message>
+        <source>Next: fix what looks wrong</source>
+        <translation>Selanjutnya: perbaiki yang terlihat salah</translation>
+    </message>
+    <message>
+        <source>No detection in this zone. Try a more specific object word, or more precision.</source>
+        <translation>Tidak ada deteksi di zona ini. Coba kata objek yang lebih spesifik, atau presisi yang lebih tinggi.</translation>
+    </message>
+    <message>
+        <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
+        <translation>Tidak ada gambar di atas zona ini pada presisi ini, sehingga tidak ada yang dianalisis (tidak dikenai biaya). Turunkan Presisi, atau pilih lapisan yang mencakup area ini.</translation>
+    </message>
+    <message>
+        <source>Not enough credits: {n} tiles, only {left} left. Lower the precision or the zone.</source>
+        <translation>Kredit tidak cukup: {n} tile, hanya tersisa {left}. Turunkan presisi atau zona.</translation>
+    </message>
+    <message>
+        <source>Opens your terra-lab.ai dashboard: your plan, your credits and your payment details.</source>
+        <translation>Membuka dasbor terra-lab.ai Anda: paket Anda, kredit Anda, dan detail pembayaran Anda.</translation>
+    </message>
+    <message>
+        <source>Outline settings</source>
+        <translation>Pengaturan garis luar</translation>
+    </message>
+    <message>
+        <source>Precision</source>
+        <translation>Presisi</translation>
+    </message>
+    <message>
+        <source>Ready for Automatic mode</source>
+        <translation>Siap untuk mode Otomatis</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Hampir habis: {n} deteksi gratis tersisa, kembali pada {date}. &lt;a href=&quot;{url}&quot;&gt;Tingkatkan ke Pro&lt;/a&gt; untuk terus melanjutkan.</translation>
+    </message>
+    <message>
+        <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Hampir habis: {n} deteksi gratis tersisa. &lt;a href=&quot;{url}&quot;&gt;Tingkatkan ke Pro&lt;/a&gt; untuk terus melanjutkan.</translation>
+    </message>
+    <message>
+        <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
+        <translation>Pengaturan sama seperti proses terakhir Anda - hasilnya akan sama. Tambahkan contoh atau ubah presisi untuk hasil yang berbeda.</translation>
+    </message>
+    <message>
+        <source>Saved to {layer}</source>
+        <translation>Disimpan ke {layer}</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI. This runs once and takes a few minutes. The review waits here until it is done.</source>
+        <translation>Menyiapkan AI di perangkat. Prosesnya berjalan satu kali dan memakan waktu beberapa menit. Tinjauan menunggu di sini sampai selesai.</translation>
+    </message>
+    <message>
+        <source>Setting up the on-device AI...</source>
+        <translation>Menyiapkan AI di perangkat...</translation>
+    </message>
+    <message>
+        <source>Shadows getting detected instead of trees? Use 'Exclude a look-alike' on one shadow - the AI drops similar false positives.</source>
+        <translation>Bayangan terdeteksi alih-alih pohon? Gunakan 'Kecualikan objek serupa' pada satu bayangan - AI akan menyingkirkan deteksi salah yang serupa.</translation>
+    </message>
+    <message>
+        <source>Share of each outline's points to keep. 100% is the class default.
+Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
+        <translation>Persentase titik yang dipertahankan pada tiap garis luar. 100% adalah default kelas.
+Nilai lebih rendah menipiskan detail terkecil lebih dulu, mempertahankan sudut, dan memberi Sudut siku-siku dinding lurus untuk disikukan.</translation>
+    </message>
+    <message>
+        <source>Share of the outline's points to keep. 100% is the standard density.
+Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
+        <translation>Persentase titik yang dipertahankan pada garis luar. 100% adalah kepadatan standar.
+Nilai lebih rendah menipiskan detail terkecil lebih dulu, mempertahankan sudut, dan memberi Sudut siku-siku dinding lurus untuk disikukan.</translation>
+    </message>
+    <message>
+        <source>Share usage statistics with TerraLab</source>
+        <translation>Bagikan statistik penggunaan dengan TerraLab</translation>
+    </message>
+    <message>
+        <source>Simplify this outline first</source>
+        <translation>Sederhanakan garis luar ini terlebih dahulu</translation>
+    </message>
+    <message>
+        <source>Stop the setup</source>
+        <translation>Hentikan pengaturan</translation>
+    </message>
+    <message>
+        <source>Stop the setup and go back to the review. The AI fix stays unavailable until you install it.</source>
+        <translation>Hentikan pengaturan dan kembali ke tinjauan. Perbaikan AI tetap tidak tersedia sampai Anda memasangnya.</translation>
+    </message>
+    <message>
+        <source>Stop the setup?</source>
+        <translation>Hentikan pengaturan?</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding before any tile came back. Check your connection, then run Detect again (nothing was charged).</source>
+        <translation>Deteksi berhenti merespons sebelum ada tile yang kembali. Periksa koneksi Anda, lalu jalankan Deteksi lagi (tidak dikenai biaya).</translation>
+    </message>
+    <message>
+        <source>The file may be open in QGIS or in another program. Close it and try Finish again.</source>
+        <translation>Berkas mungkin sedang terbuka di QGIS atau di program lain. Tutup berkas tersebut dan coba Selesaikan lagi.</translation>
+    </message>
+    <message>
+        <source>The imagery is loading slowly... {n}s</source>
+        <translation>Imagery dimuat lambat... {n}s</translation>
+    </message>
+    <message>
+        <source>The on-device AI could not start, so the AI fix is off. Your detections are safe: switch the fix method to Manual to keep correcting, or save them as they are.</source>
+        <translation>AI di perangkat tidak dapat dimulai, sehingga perbaikan AI nonaktif. Deteksi Anda aman: alihkan metode perbaikan ke Manual untuk terus mengoreksi, atau simpan apa adanya.</translation>
+    </message>
+    <message>
+        <source>The on-device AI is unavailable, so the AI fix is off. Switch the fix method to Manual to keep correcting.</source>
+        <translation>AI di perangkat tidak tersedia, sehingga perbaikan AI nonaktif. Alihkan metode perbaikan ke Manual untuk terus mengoreksi.</translation>
+    </message>
+    <message>
+        <source>The on-device AI will not be installed, so fixing a polygon with it stays unavailable. What is already downloaded is kept, so starting again resumes from there.</source>
+        <translation>AI di perangkat tidak akan dipasang, sehingga memperbaiki poligon dengannya tetap tidak tersedia. Apa yang sudah diunduh tetap disimpan, sehingga memulai lagi akan melanjutkan dari sana.</translation>
+    </message>
+    <message>
+        <source>The package index refused the download (error 403).
+
+This is usually a company or campus network filtering downloads. Ask your IT administrator to allow pypi.org and files.pythonhosted.org, or run the install from another network.
+
+Automatic (cloud) mode does not need this download.</source>
+        <translation>Indeks paket menolak unduhan (kesalahan 403).
+
+Ini biasanya jaringan perusahaan atau kampus yang memfilter unduhan. Minta administrator TI Anda mengizinkan pypi.org dan files.pythonhosted.org, atau jalankan pemasangan dari jaringan lain.
+
+Mode Otomatis (cloud) tidak memerlukan unduhan ini.</translation>
+    </message>
+    <message>
+        <source>The raster file could not be found:
+{path}
+
+It may have been moved or renamed, or the drive or network share it is on may be disconnected. Reload the layer from where the file is now, then start again.</source>
+        <translation>Berkas raster tidak dapat ditemukan:
+{path}
+
+Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folder bersama jaringan tempatnya berada mungkin terputus. Muat ulang lapisan dari lokasi berkas sekarang, lalu mulai lagi.</translation>
+    </message>
+    <message>
+        <source>Thin this outline before you drag its corners, without moving the dials that drive the whole layer.</source>
+        <translation>Tipiskan garis luar ini sebelum Anda menyeret sudut-sudutnya, tanpa mengubah pengaturan yang mengatur seluruh lapisan.</translation>
+    </message>
+    <message>
+        <source>This area is large for this precision. Raise the precision or zoom in for sharper detections.</source>
+        <translation>Area ini terlalu luas untuk presisi ini. Naikkan presisi atau perbesar zoom untuk deteksi yang lebih tajam.</translation>
+    </message>
+    <message>
+        <source>This example is very small at this precision. Raise the precision or draw a larger object.</source>
+        <translation>Contoh ini sangat kecil pada presisi ini. Naikkan presisi atau gambar objek yang lebih besar.</translation>
+    </message>
+    <message>
+        <source>This example is very small even at full precision. Draw a larger object, or it may be too small to detect.</source>
+        <translation>Contoh ini sangat kecil bahkan pada presisi penuh. Gambar objek yang lebih besar, atau mungkin terlalu kecil untuk dideteksi.</translation>
+    </message>
+    <message>
+        <source>This layer has no image over your zone at this precision. The map source answered with an empty tile, so there is nothing to detect on. Lower Precision, zoom the layer out until the imagery shows, or pick a layer that covers this area.</source>
+        <translation>Lapisan ini tidak memiliki gambar di atas zona Anda pada presisi ini. Sumber peta mengembalikan tile kosong, sehingga tidak ada yang bisa dideteksi. Turunkan Presisi, perkecil zoom lapisan hingga imagery muncul, atau pilih lapisan yang mencakup area ini.</translation>
+    </message>
+    <message>
+        <source>This polygon only. Every other one follows the Shapes step.</source>
+        <translation>Hanya poligon ini. Semua yang lain mengikuti langkah Bentuk.</translation>
+    </message>
+    <message>
+        <source>This polygon only. Fewer points means fewer corners to drag.</source>
+        <translation>Hanya poligon ini. Titik yang lebih sedikit berarti sudut yang lebih sedikit untuk diseret.</translation>
+    </message>
+    <message>
+        <source>This run costs more credits than a free run covers.</source>
+        <translation>Proses ini menggunakan lebih banyak kredit daripada yang dicakup oleh proses gratis.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs a subscription. Lower the precision or the zone to stay free.</source>
+        <translation>Zona pada presisi ini memerlukan langganan. Turunkan presisi atau zona untuk tetap gratis.</translation>
+    </message>
+    <message>
+        <source>This zone is too large for sharp detections, even at full precision. Draw a smaller zone for the best results.</source>
+        <translation>Zona ini terlalu luas untuk deteksi yang tajam, bahkan pada presisi penuh. Gambar zona yang lebih kecil untuk hasil terbaik.</translation>
+    </message>
+    <message>
+        <source>Tiles your layer has no image for are dropped before they are sent, so a run can cost less than this, never more.</source>
+        <translation>Tile yang tidak memiliki gambar pada lapisan Anda dilewati sebelum dikirim, sehingga proses ini bisa berbiaya lebih rendah dari perkiraan ini, tidak pernah lebih tinggi.</translation>
+    </message>
+    <message>
+        <source>Type a word for the object, or draw an example.</source>
+        <translation>Ketik kata untuk objek, atau gambar contoh.</translation>
+    </message>
+    <message>
+        <source>Upgrade to Pro to finish this zone: 10,000 credits/month.</source>
+        <translation>Tingkatkan ke Pro untuk menyelesaikan zona ini: 10.000 kredit/bulan.</translation>
+    </message>
+    <message>
+        <source>Wait for the on-device AI to finish installing.</source>
+        <translation>Tunggu hingga AI di perangkat selesai dipasang.</translation>
+    </message>
+    <message>
+        <source>{count} polygon(s) exported</source>
+        <translation>{count} poligon diekspor</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved</source>
+        <translation>{n} {object} disimpan</translation>
+    </message>
+    <message>
+        <source>{n} {object} saved to {layer}</source>
+        <translation>{n} {object} disimpan ke {layer}</translation>
+    </message>
+    <message>
+        <source>{used} credits</source>
+        <translation>{used} kredit</translation>
+    </message>
+    <!-- Correct-step on-device AI setup, free-run cap wording, missing raster (2026-07-30) -->
+    <message>
+        <source>or lower the detail to stay free.</source>
+        <translation>atau turunkan detail agar tetap gratis.</translation>
+    </message>
+    <message>
+        <source>This zone at this detail needs a subscription.</source>
+        <translation>Zona ini dengan detail ini memerlukan langganan.</translation>
+    </message>
+    <message>
+        <source>Subscribe</source>
+        <translation>Berlangganan</translation>
     </message>
 </context>
 </TS>

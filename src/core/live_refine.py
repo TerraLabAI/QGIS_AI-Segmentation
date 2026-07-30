@@ -55,11 +55,17 @@ class LiveRefiner:
     metres per unit of the run CRS: every server dial is a ground distance, and
     a run often works in a CRS where one unit is well under a metre.
 
+    ``unit_aspect`` is how much longer one y unit is than one x unit
+    (core.layer_conventions.ground_unit_aspect). It is 1.0 in a projected CRS
+    and grows with latitude in a geographic one, where squaring a footprint on
+    raw coordinates tilts every corner. It must be measured by the caller: the
+    measure needs the project, and this class runs off the GUI thread.
+
     Instances are read-only once built, so several threads may share one.
     """
 
     def __init__(self, params: dict, pixel_size: float,
-                 metres_per_unit: float) -> None:
+                 metres_per_unit: float, unit_aspect: float = 1.0) -> None:
         from .detection_policy import (
             despike_tolerance_m,
             destair_tolerance_m,
@@ -75,11 +81,18 @@ class LiveRefiner:
                   if metres_per_unit and metres_per_unit > 0 else 1.0)
         pixel_m = px * factor
         self._metres_per_unit = factor
+        self._unit_aspect = (float(unit_aspect)
+                             if unit_aspect and unit_aspect > 0 else 1.0)
         self._regularize_pixel_floor_m = pixel_m
 
         self._simplify_tol = float(params.get("simplify_px", 0)) * px
         self._expand_dist = float(params.get("expand_px", 0)) * px
         self._open_dist = float(params.get("open_px", 0)) * px
+        # Notch closing, in CRS units. The dial is true ground metres, and one
+        # CRS unit is not one metre outside a metric projection, so it is scaled
+        # by the run factor exactly like the despike tolerance below.
+        close_m = float(params.get("close_notches_m", 0.0) or 0.0)
+        self._close_dist = close_m / factor if close_m > 0 else 0.0
         self._smooth = bool(params.get("smooth", False))
         self._fill_holes = bool(params.get("fill_holes", False))
         self._keep_fraction = points_dial_fraction(params)
@@ -88,10 +101,12 @@ class LiveRefiner:
         # The Fill-holes threshold in CRS units squared (0 = every hole). The
         # dial is true ground m2 and one CRS unit is not one metre outside a
         # metric projection, so it is scaled by the run factor, squared because
-        # it is an area.
+        # it is an area. One unit of area is x times y, so the aspect enters
+        # once, not twice: without it a geographic run fills holes well over the
+        # size the user asked for.
         hole_m2 = float(params.get("fill_max_m2", 0.0) or 0.0)
         self._hole_cutoff_units2 = (
-            hole_m2 / (factor * factor) if hole_m2 > 0 else 0.0)
+            hole_m2 / (factor * factor * self._unit_aspect) if hole_m2 > 0 else 0.0)
 
         # Right angles runs the diagonals-aware footprint regularizer for EVERY
         # object, whatever the run's words were. What the user ticks is the
@@ -195,6 +210,26 @@ class LiveRefiner:
         # reproduces today's geometry.
         self._envelope = regularize_envelope()
 
+        # Bound once per refiner rather than imported per object: QGIS wraps
+        # every import statement in its own hook, and a review pass calls
+        # refine() tens of thousands of times. Resolved here, not at module
+        # level, so importing this module still does not pull the exporter in.
+        from .polygon_exporter import apply_geometry_refinement
+
+        self._refine_entry = apply_geometry_refinement
+
+        # Round corners reads its Chaikin dials from the same server block for
+        # every object of the run, so resolve them here like every other dial.
+        # Left None when the tick is off: nothing downstream reads it then.
+        self._smooth_settings: dict | None = None
+        if self._smooth:
+            try:
+                from .detection_policy import smooth_pass_settings
+
+                self._smooth_settings = smooth_pass_settings()
+            except Exception:  # noqa: BLE001 -- the refine reads its own fallback
+                self._smooth_settings = None
+
     def regularize_tolerance_units(self, base: QgsGeometry) -> float:
         """The regularizer's snap tolerance for ONE object, in RUN CRS UNITS.
 
@@ -219,8 +254,7 @@ class LiveRefiner:
         Returns a NEW geometry; ``base`` is never mutated. No plugin state and
         no Qt, so this is safe to call from a worker thread.
         """
-        from .polygon_exporter import apply_geometry_refinement
-
+        apply_geometry_refinement = self._refine_entry
         measurable = base is not None and not base.isEmpty()
         regularize = self._regularize
         regularize_tol = 0.0
@@ -234,6 +268,7 @@ class LiveRefiner:
             self._vertex_budget if measurable else _UNMEASURABLE_VERTEX_BUDGET)
         return apply_geometry_refinement(
             QgsGeometry(base),
+            smooth_settings=self._smooth_settings,
             simplify_tol=self._simplify_tol,
             vertex_keep_fraction=self._keep_fraction,
             smooth=self._smooth,
@@ -242,6 +277,7 @@ class LiveRefiner:
             fill_holes_max_area=(
                 self._hole_cutoff_units2 if measurable else 0.0),
             open_dist=self._open_dist,
+            close_dist=self._close_dist,
             despike_m=self._despike_tol,
             vertex_spacing=vertex_spacing,
             vertex_min=vertex_min,
@@ -264,4 +300,5 @@ class LiveRefiner:
             multi_max_groups=self._multi_max_groups,
             multi_min_separation_deg=self._multi_min_separation_deg,
             envelope=self._envelope,
+            unit_aspect=self._unit_aspect,
         )

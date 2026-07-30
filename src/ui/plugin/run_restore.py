@@ -26,8 +26,8 @@ from __future__ import annotations
 from qgis.core import Qgis, QgsMessageLog
 
 from ...core.i18n import tr
+from ...core.layer_conventions import crs_measures_in_ground_metres
 from ...core.qt_compat import (
-    DistanceMeters,
     field_type_double,
     field_type_int,
     field_type_string,
@@ -449,6 +449,7 @@ def load_exported_layer(path: str, driver: str):
     from qgis.core import QgsVectorLayer
 
     from ...core.layer_conventions import make_committed_renderer
+    from ...core.output_store import apply_fast_canvas_render
 
     name = os.path.splitext(os.path.basename(path))[0] or "detections"
     layer = QgsVectorLayer(path, name, "ogr")
@@ -462,6 +463,11 @@ def load_exported_layer(path: str, driver: str):
         # Only the GeoPackage carries the style inside the file; every other
         # driver comes back bare, so the committed look is re-applied here.
         layer.setRenderer(make_committed_renderer())
+    # This layer goes straight into the project, not through add_committed_layer,
+    # so it asks for the fast render itself. A layer reopened from a file starts
+    # on QGIS's own simplification defaults whatever the saved style says, so
+    # this is a re-apply, not a first one.
+    apply_fast_canvas_render(layer)
     return layer
 
 
@@ -538,7 +544,11 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
     try:
         from qgis.core import QgsCoordinateReferenceSystem
         crs = QgsCoordinateReferenceSystem(crs_authid)
-        if crs.isValid() and crs.mapUnits() == DistanceMeters:
+        # Not mapUnits(): Pseudo-Mercator reports metres and is not one on the
+        # ground, so an archived basemap run restored through it opens the
+        # noise floor by 1/cos(latitude) and hides small objects the original
+        # review kept.
+        if crs_measures_in_ground_metres(crs):
             plugin._auto_gsd_m = gsd
     except (RuntimeError, AttributeError, TypeError):
         pass
@@ -609,7 +619,6 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
         if hist is not None:
             hist.set_scores([s for (_g, s, _a) in plugin._auto_objects])
             hist.set_cutoff(conf)
-        dock.set_review_conf_lowered_note(False, int(round(conf * 100)))
     except (RuntimeError, AttributeError):
         pass
 
@@ -632,14 +641,13 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
         pass
 
     try:
-        from ...core import telemetry
-        from ...core import telemetry_events as ev
-        telemetry.track(ev.HISTORY_RESTORED, {
-            "run_id": plugin._auto_run_id,
-            "tiles": len(tiles),
-            "objects": len(plugin._auto_objects),
-            "age_days": _run_age_days(run),
-        })
+        from ...core import telemetry_session_events
+        telemetry_session_events.track_history_restored(
+            plugin._auto_run_id,
+            len(tiles),
+            len(plugin._auto_objects),
+            age_days=_run_age_days(run),
+        )
     except Exception:
         pass  # nosec B110
 

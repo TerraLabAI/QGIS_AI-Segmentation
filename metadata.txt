@@ -3,7 +3,7 @@ name=AI Segmentation by TerraLab
 description=Segment buildings, vegetation, or any object in your raster using AI, refine & export as vector polygons
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-version=2.2.1
+version=2.3.0
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -29,6 +29,20 @@ about=
     • Multilingual: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese
 
 changelog=
+    2.3.0
+    - The panel follows the text size you set in QGIS, so every label, button and window stays readable
+    - Installs behind a company network, including a proxy that asks for a password
+    - Installation now gets past locked files, dropped connections, and a cancel in the middle
+    - Fix a polygon by drawing the gesture you want: a click opens its menu, and the AI and by-hand methods are side by side
+    - Every run is measured and drawn in real ground metres, so areas and lengths match what QGIS reports
+    - Round corners no longer destroys dense outlines, and Right angles says so when it cannot run
+    - Correcting a polygon sets up the on-device AI without freezing the review, and the first correction comes back faster
+    - A missing on-device model no longer blocks a run you paid for
+    - Detections appear sooner, dense runs draw faster, and shaping and export are quicker
+    - Segments layers that have no file behind them, and says so plainly when a raster has moved
+    - Saves the run elsewhere when the project folder cannot hold the result
+    - Clearer review: the steps say Next, the confidence slider is called Precision, and each mode says what it does
+    - Closing QGIS during a review no longer hangs
     2.2.1
     - Every button, hint and message is translated again in all 11 languages, including everything new in 2.2.0
     2.2.0

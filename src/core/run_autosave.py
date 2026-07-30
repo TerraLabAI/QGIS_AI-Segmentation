@@ -3,7 +3,10 @@
 The moment a run's merger is read at finalize, the merged scored set is
 streamed to a GeoPackage table, BEFORE the review-entry tail (sweep, build,
 filter, review) runs on it. If QGIS dies anywhere past that point, the billed
-detections are still on disk and the next plugin start offers them back.
+detections are still on disk. Nothing on screen offers them back (removed
+2026-07-30): the same-session finalize error path reloads them silently, and a
+pointer left by a dead session is written to the log with its path, then
+dropped.
 
 Storage reuses the committed-run conventions from ``output_store`` (the same
 per-project ``ai_segmentation.gpkg``, the same table/name shapes), so a
@@ -26,6 +29,7 @@ from qgis.core import (
     QgsFeature,
     QgsField,
     QgsFields,
+    QgsGeometry,
     QgsMessageLog,
     QgsProject,
     QgsVectorFileWriter,
@@ -37,6 +41,35 @@ from . import output_store
 from .qt_compat import WkbMultiPolygon, field_type_double, field_type_string
 
 _LOG_TAG = "AI Segmentation"
+
+
+def _autosave_output_crs(source_crs, merged_ided):
+    """``(crs, transform)`` the autosave should be written in.
+
+    Mirrors ``output_store._ground_metre_transform``, which reads a memory
+    layer this path never builds, so the extent is taken off the geometries
+    themselves. ``(source_crs, None)`` when the run CRS already measures in
+    ground metres, which leaves the common case untouched.
+    """
+    from qgis.core import QgsCoordinateTransform, QgsRectangle
+
+    from .layer_conventions import pick_output_crs
+
+    try:
+        extent = QgsRectangle()
+        for _fid, geom, _score in merged_ided:
+            if geom is not None and not geom.isEmpty():
+                extent.combineExtentWith(geom.boundingBox())
+        if extent.isEmpty():
+            return source_crs, None
+        target = pick_output_crs(source_crs, extent)
+        if target is None or not target.isValid() or target == source_crs:
+            return source_crs, None
+        return target, QgsCoordinateTransform(
+            source_crs, target, QgsProject.instance())
+    except (RuntimeError, AttributeError, TypeError, ValueError):
+        return source_crs, None
+
 
 # QSettings pointer to the single run autosave that was never exported.
 # JSON: {path, table, layer_name, prompt, run_id, count, ts}.
@@ -94,6 +127,12 @@ def write_autosave(merged_ided: list, crs_authid: str, prompt: str,
         if not merged_ided:
             return None
         crs = QgsCoordinateReferenceSystem(crs_authid or "EPSG:4326")
+        # A recovered run is a deliverable like any other, so it gets the same
+        # ground-metre move the two committed write paths apply. Without it a
+        # crash hands back a file in degrees or in Mercator, where the columns
+        # stay right but $area and any downstream buffer are off by
+        # 1/cos(latitude).
+        crs, ground_metre_xform = _autosave_output_crs(crs, merged_ided)
         fields = _autosave_fields()
         stem = (prompt or "").strip() or "detection"
         gpkg_path = output_store.project_gpkg_path(source_layer)
@@ -101,16 +140,21 @@ def write_autosave(merged_ided: list, crs_authid: str, prompt: str,
         writer = _open_writer(gpkg_path, table, fields, crs)
         if writer is None:
             # Shared file locked/corrupt: a standalone file still saves the run.
-            fallback = os.path.join(
-                os.path.dirname(gpkg_path),
-                f"{table}_{time.strftime('%H%M%S')}.gpkg")
-            writer = _open_writer(fallback, table, fields, crs)
+            # Walk the directories, since the folder itself can be what refuses
+            # the write (a share or a WSL mount takes the file and then denies
+            # the SQLite lock), and a new name there fails the same way.
+            for directory in output_store.output_directory_candidates(source_layer):
+                fallback = os.path.join(
+                    directory, f"{table}_{time.strftime('%H%M%S')}.gpkg")
+                writer = _open_writer(fallback, table, fields, crs)
+                if writer is not None:
+                    gpkg_path = fallback
+                    break
             if writer is None:
                 QgsMessageLog.logMessage(
                     "Run autosave: could not open a GeoPackage writer",
                     _LOG_TAG, level=Qgis.MessageLevel.Warning)
                 return None
-            gpkg_path = fallback
 
         from .layer_conventions import to_multipolygon
         object_class = (prompt or "").strip()
@@ -122,6 +166,21 @@ def write_autosave(merged_ided: list, crs_authid: str, prompt: str,
                 multi = to_multipolygon(geom)
                 if multi is None or multi.isEmpty():
                     continue
+                if ground_metre_xform is not None:
+                    # Reproject a geometry this loop OWNS, never the caller's.
+                    # to_multipolygon hands the argument straight back when it
+                    # is already multipart, and these come from the merger's
+                    # keepers, so transforming in place moved the run's own
+                    # objects into the output CRS behind its back. Everything
+                    # downstream still measures in the render CRS the run
+                    # declares, so an object that got moved read about 400x too
+                    # small and the review's min-size floor deleted it.
+                    # QgsGeometry(other) is a shallow copy and shares the same
+                    # abstract geometry: the inner clone is what detaches.
+                    inner = multi.constGet()
+                    multi = (QgsGeometry(inner.clone()) if inner is not None
+                             else QgsGeometry(multi))
+                    multi.transform(ground_metre_xform)
                 feat = QgsFeature(fields)
                 feat.setGeometry(multi)
                 feat.setAttributes(["", object_class, round(float(score), 3)])
@@ -192,6 +251,29 @@ def clear_pending(run_id: str | None = None) -> None:
                 return
         QSettings().remove(_PENDING_KEY)
     except Exception:  # nosec B110
+        pass
+
+
+def log_and_clear_stale_pending(current_run_id: str | None = None) -> None:
+    """A pointer left armed by a session that died with a review open reaches
+    nobody: write its table path to the QGIS log so the file can still be
+    opened by hand, then drop the pointer so it stops outliving its run.
+    ``current_run_id`` guards the live run's own pointer. Never raises."""
+    try:
+        info = read_pending()
+        if not info:
+            return
+        if current_run_id and str(info.get("run_id") or "") == current_run_id:
+            return
+        QgsMessageLog.logMessage(
+            "Auto detection: a previous session left {n} autosaved object(s) "
+            "at {path} (table {table}). Not loaded.".format(
+                n=int(info.get("count", 0) or 0),
+                path=str(info.get("path") or ""),
+                table=str(info.get("table") or "")),
+            _LOG_TAG, level=Qgis.MessageLevel.Info)
+        clear_pending()
+    except Exception:  # nosec B110 -- a log line never breaks a start
         pass
 
 

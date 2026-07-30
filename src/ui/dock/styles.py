@@ -2,6 +2,8 @@
 (design-system values shared with AI Edit), plus tiny style helpers."""
 from __future__ import annotations
 
+from .font_scale import scale_qss_font_px as _scale_qss_font_px
+
 # Collapsed height for refine panel title (just enough to show the arrow + label)
 _REFINE_COLLAPSED_HEIGHT = 25
 
@@ -133,7 +135,9 @@ _CARD_CHILD_BTN_RESET_QSS = "QPushButton { border: none; }"
 #              replace content instead of sitting beside it
 #   premium  = paid capability, blue family with a distinct treatment
 #              (star prefix + underlined action link), never inline in
-#              other guidance text
+#              other guidance text. For an OFFER only: a box that blocks a
+#              button is an error, red and starless, or the refusal reads as
+#              an invitation and the user keeps clicking a dead button.
 # Fill/border pairs, per kind.
 _MSG_TINTS = {
     "neutral": ("rgba(128, 128, 128, 0.12)", "rgba(128, 128, 128, 0.25)"),
@@ -198,9 +202,11 @@ def _error_banner_html(message: str, report_link_text: str) -> str:
 
 def _msg_label_qss(kind: str) -> str:
     """QSS for a single-QLabel message of the given taxonomy kind."""
+    from .font_scale import scale_qss_font_px
+
     fill, border = _MSG_TINTS[kind]
     text = ERROR_TEXT if kind.startswith("error") else "palette(text)"
-    return (
+    return scale_qss_font_px(
         f"QLabel {{ background-color: {fill}; border: 1px solid {border};"
         f" border-radius: 4px; padding: 8px; font-size: 12px;"
         f" color: {text}; }}"
@@ -238,16 +244,18 @@ def _micro_header(text: str, gloss: str | None = None):
     row = QHBoxLayout(w)
     row.setContentsMargins(0, 0, 0, 0)
     row.setSpacing(6)
+    from .font_scale import scale_qss_font_px
+
     lbl = QLabel(text)
-    lbl.setStyleSheet(
+    lbl.setStyleSheet(scale_qss_font_px(
         "font-size: 10px; font-weight: bold;"
-        " color: palette(text); background: transparent; border: none;")
+        " color: palette(text); background: transparent; border: none;"))
     row.addWidget(lbl)
     if gloss:
         gl = QLabel(gloss)
-        gl.setStyleSheet(
+        gl.setStyleSheet(scale_qss_font_px(
             "font-size: 10px; color: rgba(128, 128, 128, 0.95);"
-            " background: transparent; border: none;")
+            " background: transparent; border: none;"))
         row.addWidget(gl)
         w.gloss_label = gl
     row.addStretch(1)
@@ -305,21 +313,27 @@ def _step_dial(num: int, state: str = "todo"):
     from qgis.PyQt.QtCore import Qt
     from qgis.PyQt.QtWidgets import QLabel
 
+    from .font_scale import scale_px_length, scale_qss_font_px
+
     lbl = QLabel("✓" if state == "done" else str(num))
-    lbl.setFixedSize(20, 20)
+    # The circle grows with its own number, else a larger digit spills out of
+    # a dial that stayed 20 wide.
+    side = scale_px_length(20)
+    radius = side // 2
+    lbl.setFixedSize(side, side)
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     if state == "active":
         qss = (f"background: {BRAND_BLUE}; color: #000000; border: none;"
-               " border-radius: 10px; font-size: 11px; font-weight: 700;")
+               f" border-radius: {radius}px; font-size: 11px; font-weight: 700;")
     elif state == "done":
         qss = (f"background: transparent; color: {BRAND_GREEN};"
                " border: 1px solid rgba(139, 172, 39, 0.75);"
-               " border-radius: 10px; font-size: 11px; font-weight: 700;")
+               f" border-radius: {radius}px; font-size: 11px; font-weight: 700;")
     else:
         qss = ("background: transparent; color: rgba(128, 128, 128, 0.95);"
                " border: 1px solid rgba(128, 128, 128, 0.45);"
-               " border-radius: 10px; font-size: 11px; font-weight: 600;")
-    lbl.setStyleSheet(qss)
+               f" border-radius: {radius}px; font-size: 11px; font-weight: 600;")
+    lbl.setStyleSheet(scale_qss_font_px(qss))
     return lbl
 
 
@@ -329,13 +343,16 @@ def _sign_badge(symbol: str, color: str):
     from qgis.PyQt.QtCore import Qt
     from qgis.PyQt.QtWidgets import QLabel
 
+    from .font_scale import scale_px_length, scale_qss_font_px
+
     badge = QLabel(symbol)
-    badge.setFixedSize(16, 16)
+    side = scale_px_length(16)
+    badge.setFixedSize(side, side)
     badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    badge.setStyleSheet(
+    badge.setStyleSheet(scale_qss_font_px(
         f"background: transparent; border: 1px solid {color};"
-        f" border-radius: 8px; color: {color};"
-        " font-weight: bold; font-size: 11px;")
+        f" border-radius: {side // 2}px; color: {color};"
+        " font-weight: bold; font-size: 11px;"))
     return badge
 
 
@@ -412,9 +429,34 @@ _INSTRUCTIONS_HINT_QSS = (
 # Design-system QSS constants, identical to AI Edit (dock_widget.py).
 # border: none kills the native frame on dark themes; black text on the
 # mid-tone fills keeps AA contrast on both light and dark QGIS themes.
+
+# Weight of every button label. Windows draws the default UI font much thinner
+# than macOS does, and a regular-weight label on a filled button was the first
+# thing that stopped being readable there. One value, so the whole button
+# family moves together.
+_BTN_LABEL_WEIGHT = "font-weight: 600;"
+
 _BTN_GREEN = (
     f"QPushButton {{ background-color: {BTN_GREEN}; color: #000000;"
-    f" padding: 8px 16px; border: none; border-radius: 4px; }}"
+    f" padding: 8px 16px; border: none; border-radius: 4px;"
+    f" {_BTN_LABEL_WEIGHT} }}"
+    f"QPushButton:hover {{ background-color: {BTN_GREEN_HOVER}; color: #000000; }}"
+    f"QPushButton:disabled {{ background-color: {BTN_GREEN_DISABLED};"
+    f" color: {DISABLED_TEXT}; }}"
+)
+
+# The green primary of a numbered step in the review ladder. Same fill as
+# _BTN_GREEN, a step up: beside it sits an underlined "Re-run the whole zone"
+# link, and at the shared default size the link won the eye and users re-ran a
+# zone they only meant to move past.
+#
+# 13px, the design system's title step. It stays two points above that 11px
+# link and keeps the fill and the weight the link does not have, so the primary
+# still reads first; 15px only made the button shout across a narrow dock.
+_BTN_GREEN_STEP = (
+    f"QPushButton {{ background-color: {BTN_GREEN}; color: #000000;"
+    f" padding: 10px 16px; border: none; border-radius: 4px;"
+    f" font-size: 13px; {_BTN_LABEL_WEIGHT} }}"
     f"QPushButton:hover {{ background-color: {BTN_GREEN_HOVER}; color: #000000; }}"
     f"QPushButton:disabled {{ background-color: {BTN_GREEN_DISABLED};"
     f" color: {DISABLED_TEXT}; }}"
@@ -422,7 +464,7 @@ _BTN_GREEN = (
 
 _BTN_GREEN_AUTH = (
     f"QPushButton {{ background-color: {BTN_GREEN}; color: #000000;"
-    f" border: none; border-radius: 4px; }}"
+    f" border: none; border-radius: 4px; {_BTN_LABEL_WEIGHT} }}"
     f"QPushButton:hover {{ background-color: {BTN_GREEN_HOVER}; }}"
     f"QPushButton:disabled {{ background-color: {BRAND_DISABLED};"
     f" color: {DISABLED_TEXT}; }}"
@@ -430,7 +472,8 @@ _BTN_GREEN_AUTH = (
 
 _BTN_BLUE = (
     f"QPushButton {{ background-color: {BRAND_BLUE}; color: #000000;"
-    f" padding: 6px 12px; border: none; border-radius: 4px; }}"
+    f" padding: 6px 12px; border: none; border-radius: 4px;"
+    f" {_BTN_LABEL_WEIGHT} }}"
     f"QPushButton:hover {{ background-color: {BRAND_BLUE_HOVER}; color: #000000; }}"
     f"QPushButton:disabled {{ background-color: {BRAND_DISABLED};"
     f" color: {DISABLED_TEXT}; }}"
@@ -438,7 +481,7 @@ _BTN_BLUE = (
 
 _BTN_BLUE_AUTH = (
     f"QPushButton {{ background-color: {BRAND_BLUE}; color: #000000;"
-    f" border: none; border-radius: 4px; }}"
+    f" border: none; border-radius: 4px; {_BTN_LABEL_WEIGHT} }}"
     f"QPushButton:hover {{ background-color: {BRAND_BLUE_HOVER}; }}"
     f"QPushButton:disabled {{ background-color: {BRAND_DISABLED}; }}"
 )
@@ -448,11 +491,25 @@ _BTN_BLUE_AUTH = (
 # underline, the way the green Start echoes the green Interactive underline.
 _BTN_BLUE_PRIMARY = (
     f"QPushButton {{ background-color: {BRAND_BLUE}; color: #000000;"
-    f" padding: 8px 16px; border: none; border-radius: 4px; }}"
+    f" padding: 8px 16px; border: none; border-radius: 4px;"
+    f" {_BTN_LABEL_WEIGHT} }}"
     f"QPushButton:hover {{ background-color: {BRAND_BLUE_HOVER}; color: #000000; }}"
     f"QPushButton:disabled {{ background-color: {BRAND_DISABLED};"
     f" color: {DISABLED_TEXT}; }}"
 )
+
+
+# The one button that starts a mode. It is alone on its page and it is the only
+# thing there is to click, so its label is larger than a button sitting in a row
+# with others. A function rather than two more constants, so Manual green and
+# Automatic blue can never drift apart.
+_BTN_START_FONT_PX = 13
+
+
+def _btn_start_qss(base: str) -> str:
+    """A primary button constant, with the label size a page's Start carries."""
+    return base + f"QPushButton {{ font-size: {_BTN_START_FONT_PX}px; }}"
+
 
 # Ghost / outline button (mirrors AI Edit's _BTN_GHOST): transparent fill with
 # a faint border, for a secondary action that sits beside a filled primary
@@ -460,6 +517,7 @@ _BTN_BLUE_PRIMARY = (
 _BTN_GHOST = (
     "QPushButton { background-color: transparent; color: palette(text);"
     " padding: 8px 16px; border-radius: 4px;"
+    f" {_BTN_LABEL_WEIGHT}"
     " border: 1px solid rgba(128, 128, 128, 0.35); }"
     "QPushButton:hover { background-color: rgba(128, 128, 128, 0.15);"
     " border: 1px solid rgba(128, 128, 128, 0.5); }"
@@ -486,6 +544,7 @@ _BTN_BLUE_OUTLINE = (
 _BTN_RED_OUTLINE = (
     f"QPushButton {{ background-color: transparent; color: {BRAND_RED};"
     " border: 1px solid rgba(211, 47, 47, 0.55); border-radius: 4px;"
+    f" {_BTN_LABEL_WEIGHT}"
     " padding: 6px 12px; }"
     "QPushButton:hover { background-color: rgba(211, 47, 47, 0.12); }"
     f"QPushButton:disabled {{ color: {DISABLED_TEXT};"
@@ -505,6 +564,18 @@ _BTN_LINK_MUTED = (
     " color: rgba(128, 128, 128, 0.9); font-size: 11px; padding: 4px 8px; }"
     f"QPushButton:hover {{ color: {ERROR_TEXT}; text-decoration: underline; }}"
 )
+# One step louder than _BTN_LINK_MUTED, same shape: full-contrast text at 11px,
+# semi-bold, underlined at rest. For a secondary action that a user must be
+# able to FIND (re-run the whole zone), where the muted grey read as a
+# subtitle. Still no fill and no border, so the screen's one filled primary
+# keeps the hierarchy. It stays UNDER the step primary's size: at 12px next to
+# a default-size green button it read as the louder of the two.
+_BTN_LINK_STRONG = (
+    "QPushButton { background: transparent; border: none;"
+    " color: palette(text); font-size: 11px; font-weight: 600;"
+    " padding: 4px 8px; text-decoration: underline; }"
+    f"QPushButton:hover {{ color: {ERROR_TEXT}; }}"
+)
 
 # One-click suggestion chip (blue family): a small tinted action that fills
 # in a prompt or arms a tool, e.g. the zero-result rescue chips.
@@ -523,7 +594,8 @@ _CHIP_QSS = (
 _BTN_CHIP = (
     "QPushButton { background: rgba(128, 128, 128, 0.08);"
     " border: 1px solid rgba(128, 128, 128, 0.40); border-radius: 6px;"
-    " padding: 6px 12px; font-size: 12px; color: palette(text); }"
+    f" padding: 6px 12px; font-size: 12px; color: palette(text);"
+    f" {_BTN_LABEL_WEIGHT} }}"
     "QPushButton:hover { background: rgba(139, 172, 39, 0.18);"
     " border-color: rgba(139, 172, 39, 0.65); }"
     "QPushButton:pressed { background: rgba(139, 172, 39, 0.32);"
@@ -541,6 +613,7 @@ _BTN_TILE = (
     "QPushButton { background: rgba(128, 128, 128, 0.08);"
     " border: 1px solid rgba(128, 128, 128, 0.30); border-radius: 6px;"
     " color: palette(text); font-size: 12px; text-align: left;"
+    f" {_BTN_LABEL_WEIGHT}"
     " padding: 9px 10px; }"
     "QPushButton:hover { background: rgba(30, 136, 229, 0.12);"
     " border-color: rgba(30, 136, 229, 0.45); }"
@@ -601,11 +674,14 @@ _BTN_REMOVE_ROW = (
 )
 
 # Quiet one-line recap card (neutral grey family) for last-run summaries.
+# What the last session produced. Green, like every other "this worked" surface
+# in the panel (the Manual Start caption, the export success line), so a user
+# coming back to the Start view reads it as a result and not as a warning.
 _RECAP_CARD_QSS = (
     "QLabel { font-size: 11px; color: palette(text);"
-    " border: 1px solid rgba(128, 128, 128, 0.35);"
-    " border-radius: 6px; padding: 6px 8px;"
-    " background: rgba(128, 128, 128, 0.09); }"
+    " border: 1px solid rgba(67, 160, 71, 0.45);"
+    " border-radius: 6px; padding: 8px 10px;"
+    " background: rgba(67, 160, 71, 0.10); }"
 )
 
 
@@ -659,7 +735,9 @@ def _btn_toggle_qss(rgb: tuple[int, int, int], text: str, armed_text: str,
                      f" color: {armed_text}; border: 1px solid {solid}; }}")
     combined += "QPushButton:disabled { background: transparent;"
     combined += " color: rgba(128, 128, 128, 0.5); border-color: rgba(128, 128, 128, 0.3); }"
-    return combined
+    from .font_scale import scale_qss_font_px
+
+    return scale_qss_font_px(combined)
 
 
 # Small filled action button for a DismissibleHint's optional CTA (e.g. "Open
@@ -669,8 +747,10 @@ def _btn_toggle_qss(rgb: tuple[int, int, int], text: str, armed_text: str,
 # button-family look. A function, not a fixed constant, because the color
 # follows whichever tint the hint card uses.
 def _btn_hint_action_qss(rgb: tuple[int, int, int]) -> str:
+    from .font_scale import scale_qss_font_px
+
     r, g, b = rgb
-    return (
+    return scale_qss_font_px(
         f"QToolButton {{ background: rgb({r}, {g}, {b}); color: #000000;"
         " border: none; border-radius: 4px; padding: 3px 10px;"
         " font-size: 11px; font-weight: 700; }"
@@ -680,38 +760,42 @@ def _btn_hint_action_qss(rgb: tuple[int, int, int]) -> str:
 
 _BTN_GRAY = (
     f"QPushButton {{ background-color: {BRAND_GRAY}; color: #000000;"
-    f" padding: 4px 8px; border: none; border-radius: 4px; }}"
+    f" padding: 4px 8px; border: none; border-radius: 4px;"
+    f" {_BTN_LABEL_WEIGHT} }}"
     f"QPushButton:hover {{ background-color: {BRAND_GRAY_HOVER}; color: #000000; }}"
     f"QPushButton:disabled {{ background-color: {BRAND_DISABLED}; color: {DISABLED_TEXT}; }}"
 )
 
 _BTN_RED = (
     f"QPushButton {{ background-color: rgba(211,47,47,0.12); color: {BRAND_RED};"
-    f" padding: 6px 12px; border: none; border-radius: 4px; }}"
+    f" padding: 6px 12px; border: none; border-radius: 4px;"
+    f" {_BTN_LABEL_WEIGHT} }}"
     f"QPushButton:hover {{ background-color: rgba(211,47,47,0.22); }}"
 )
 
 _BTN_EXPORT_READY = (
     f"QPushButton {{ background-color: {BTN_GREEN}; color: #000000;"
-    f" padding: 6px 12px; border: none; border-radius: 4px; }}"
+    f" padding: 6px 12px; border: none; border-radius: 4px;"
+    f" {_BTN_LABEL_WEIGHT} }}"
     f"QPushButton:hover {{ background-color: {BTN_GREEN_HOVER}; color: #000000; }}"
 )
 
 _BTN_EXPORT_DISABLED = (
     f"QPushButton {{ background-color: {BRAND_DISABLED}; color: {DISABLED_TEXT};"
-    f" padding: 6px 12px; border: none; border-radius: 4px; }}"
+    f" padding: 6px 12px; border: none; border-radius: 4px;"
+    f" {_BTN_LABEL_WEIGHT} }}"
 )
 
 # Compact filled buttons for the browser-handoff waiting state. Both carry a
 # soft tint (never transparent): neutral for "open again", red for "cancel".
 _BTN_PAIR_NEUTRAL = (
     "QPushButton { background-color: rgba(128,128,128,0.16); color: palette(text);"
-    " border: none; border-radius: 4px; }"
+    f" border: none; border-radius: 4px; {_BTN_LABEL_WEIGHT} }}"
     "QPushButton:hover { background-color: rgba(128,128,128,0.28); }"
 )
 _BTN_PAIR_CANCEL = (
     f"QPushButton {{ background-color: rgba(211,47,47,0.12); color: {BRAND_RED};"
-    f" border: none; border-radius: 4px; }}"
+    f" border: none; border-radius: 4px; {_BTN_LABEL_WEIGHT} }}"
     f"QPushButton:hover {{ background-color: rgba(211,47,47,0.22); }}"
 )
 
@@ -760,3 +844,30 @@ _FOOTER_CTA_BTN_STYLE = (
     " color: palette(text); border-radius: 4px; }"
     'QToolButton[hover="true"] { background: rgba(128,128,128,0.15); }'
 )
+
+
+# The panel follows the text size the user set in QGIS (see font_scale). A
+# constant applied at build time is caught by the pass over the finished panel,
+# but the same constant re-applied on a state change is not, and the widget
+# would snap back to the base size mid-session. Growing them here, once, covers
+# both. A no-op on the default text size, and outside QGIS.
+for _qss_name in (
+    "_SECTION_TOGGLE_QSS",
+    "_INSTRUCTIONS_CARD_QSS",
+    "_INSTRUCTIONS_HINT_QSS",
+    "_BTN_LINK",
+    "_BTN_LINK_MUTED",
+    "_BTN_LINK_STRONG",
+    "_CHIP_QSS",
+    "_BTN_CHIP",
+    "_BTN_TILE",
+    "_BTN_TILE_ACTIVE",
+    "_METHOD_SWITCH_QSS",
+    "_BTN_REMOVE_ROW",
+    "_RECAP_CARD_QSS",
+    "_FOOTER_ICON_BTN_STYLE",
+    "_HELP_ICON_BTN_STYLE",
+    "_FOOTER_CTA_BTN_STYLE",
+):
+    globals()[_qss_name] = _scale_qss_font_px(globals()[_qss_name])
+del _qss_name

@@ -622,6 +622,33 @@ class ManualCropsMixin:
         except (RuntimeError, AttributeError):
             pass
 
+    def _wear_busy_cursor_for_crop(self) -> None:
+        """Put the busy cursor on a crop read that is ALREADY in flight.
+
+        A hover warm-up starts cursor-less on purpose: nobody asked for it, so
+        nothing should look busy. The moment the user picks that same polygon
+        the wait stops being speculative and becomes a click that takes
+        seconds, and a click that takes seconds with an arrow cursor reads as a
+        freeze. Each stage dict carries the cursor flag its own release checks,
+        so flipping it here keeps the one push paired with the one pop.
+
+        Both paths that can land on a silent crop call this: the review's AI
+        fix session when it opens on an in-flight window, and a Manual click
+        deferred behind one. Manual gets the panel note with it, so the two
+        methods answer a click the same way."""
+        self._ensure_manual_encode_state()
+        if not getattr(self, "_encoding_in_progress", False):
+            return
+        stage = self._crop_read or self._pending_encode or self._online_fetch
+        if stage is None or stage.get("cursor"):
+            return
+        stage["cursor"] = True
+        if "show_busy" in stage:
+            stage["show_busy"] = True  # carried across the read -> encode handoff
+        self._encode_cursor_set = True
+        QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
+        self._set_manual_encoding_note(True)
+
     def _drain_queued_crop_request(self) -> bool:
         """Start the crop a caller asked for while the pipe was busy.
 
@@ -725,11 +752,20 @@ class ManualCropsMixin:
             )
             return None
 
+        from ...core.layer_conventions import ground_unit_aspect
+
         layer_crs_wkt = None
         layer_extent = None
+        # How much more ground one y unit of the raster CRS covers than one x
+        # unit, at the click. 1.0 on every CRS whose axes agree, so the read is
+        # untouched there. Measured HERE because it reads the project, which is
+        # main-thread only, and the read below may run on a worker.
+        ground_aspect = 1.0
         try:
             if self._current_layer.crs().isValid():
                 layer_crs_wkt = self._current_layer.crs().toWkt()
+                ground_aspect = ground_unit_aspect(
+                    self._current_layer.crs(), center_point.x(), center_point.y())
             ext = self._current_layer.extent()
             if ext and not ext.isEmpty():
                 layer_extent = (ext.xMinimum(), ext.yMinimum(),
@@ -748,6 +784,7 @@ class ManualCropsMixin:
             "layer_crs_wkt": layer_crs_wkt,
             "layer_extent": layer_extent,
             "scale_factor": scale_factor,
+            "ground_aspect": ground_aspect,
         }
 
     def _report_crop_error(self, error, error_code_from_crop, quiet=False) -> None:
@@ -768,16 +805,6 @@ class ManualCropsMixin:
             # dead-ends the user, so purge the broken artifacts (pip would
             # otherwise consider rasterio satisfied and skip it) and route
             # to the same one-click repair as a broken runtime. (#64)
-            try:
-                from ...core.telemetry import track_plugin_error
-                track_plugin_error(
-                    stage="segment",
-                    error_code="crop_error_rasterio_unavailable",
-                    message=error,
-                    module="manual_crops",
-                )
-            except Exception:
-                pass  # nosec B110
             # Repair ONCE per session. Reinstalling only cures a damaged
             # package; an import that fails for any other reason (a native
             # extension the host process cannot load) survives every purge,
@@ -786,6 +813,21 @@ class ManualCropsMixin:
             # broke and let them report it.
             if not self._rasterio_repair_attempted:
                 self._rasterio_repair_attempted = True
+                # Counted here, so ONE broken environment sends one event per
+                # session. Counting it on every failed read let a single stuck
+                # machine emit hundreds in minutes, which reads as a broken
+                # release rather than one broken install. A user who stays
+                # stuck still reports once per launch.
+                try:
+                    from ...core.telemetry_errors import track_plugin_error
+                    track_plugin_error(
+                        stage="segment",
+                        error_code="crop_error_rasterio_unavailable",
+                        message=error,
+                        module="manual_crops",
+                    )
+                except Exception:
+                    pass  # nosec B110
                 from ...core.venv_manager import purge_package_from_venv
                 purge_package_from_venv("rasterio")
                 self._recover_broken_venv(error)
@@ -798,6 +840,15 @@ class ManualCropsMixin:
             if self._headless:
                 self._headless_error = error
                 return
+            # One dialog per session, like the generic branch below. The reader
+            # is broken for every file, so the key carries no path. The repair
+            # has already failed by the time a click reaches here, so a second
+            # dialog asks the user to fix what this dialog cannot, and they
+            # used to arrive faster than they could be closed.
+            report_key = ("", "crop_error_rasterio_unavailable")
+            if report_key in self._crop_errors_reported:
+                return
+            self._crop_errors_reported.add(report_key)
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Crop Error"),
@@ -844,6 +895,11 @@ class ManualCropsMixin:
         ~3-8s. Returns True on success / False on error. This is the pre-PERF-01
         behaviour, kept intact for these two callers.
         """
+        # Neither caller checks, and the predictor is None for the length of an
+        # install. Without this the attribute error reaches the user as a raw
+        # Python message in an error-report dialog.
+        if self.predictor is None:
+            return False
         if self._encoding_in_progress:
             return False
         self._encoding_in_progress = True
@@ -1205,16 +1261,15 @@ class ManualCropsMixin:
         if self._deliver_crop_read(result, on_encoded, quiet=quiet,
                                    show_busy=show_busy):
             return
-        # The read failed. A click that arrived while it ran was DEFERRED, not
-        # executed, and it is a separate gesture from the one that started this
-        # read: dropping it loses a real click. Worst case is the silent
-        # session-start prewarm, where the user would get no mask and no error
-        # at all. Replay it, as the invalidated branch above does; the handler
-        # re-checks the crop state and starts its own read.
-        if self._drain_queued_crop_request():
-            return
-        if self._pending_manual_click is not None:
-            self._replay_pending_manual_click()
+        # The read failed, and everything waiting behind it needs THAT read to
+        # succeed. Replaying a deferred click re-runs the read that just failed,
+        # and its failure replays the click again: a loop at machine speed, one
+        # error dialog per turn, that a user can only leave by killing QGIS. The
+        # encode-failure path already stops here for the same reason. Drop both,
+        # and let the user retry with a click, which is a retry at human pace
+        # with room for the cause to be fixed in between.
+        self._queued_crop_request = None
+        self._discard_pending_manual_click()
 
     def _deliver_crop_read(self, result, on_encoded, *, quiet: bool,
                            show_busy: bool) -> bool:

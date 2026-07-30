@@ -86,6 +86,17 @@ SHAPE_EDIT_WIDTH = 3
 # basemap under the amber outline; a named constant keeps it out of the tool.
 SHAPE_EDIT_MARKER_FILL = QColor(255, 255, 255)
 
+# The polygons a correction session is NOT working on. While one polygon is
+# open for a fix, every other one on the review layer drops to this grey and
+# stops answering clicks, so the map holds one thing to look at. Grey rather
+# than hidden: the neighbours are the context needed to judge the shape being
+# fixed, they just stop competing with it. The alphas are a floor, not a taste:
+# under about 60 the fill washes out on dark imagery and the polygon reads as
+# deleted. Renderer strings, because the layers that wear them take QGIS symbol
+# properties.
+SESSION_DIM_FILL_STR = "150,150,150,90"
+SESSION_DIM_STROKE_STR = "230,230,230,190"
+
 # Click markers (manual maptool)
 MARKER_POSITIVE = QColor(0, 200, 0)
 MARKER_NEGATIVE = QColor(220, 0, 0)

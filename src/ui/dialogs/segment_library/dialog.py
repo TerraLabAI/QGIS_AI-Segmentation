@@ -61,6 +61,8 @@ from ....core.presets.template_favorites import (
     is_favorite_template,
     toggle_favorite_template,
 )
+from ....core.qt_compat import safe_disconnect
+from ...dock.font_scale import scale_px_length
 from ...plugin.shared import park_orphaned_worker
 from ...template_demo_loader import TemplateDemoLoader
 from .cards import _PresetCard, _RecentCard, _RunCard
@@ -134,7 +136,6 @@ class SegmentLibraryDialog(QDialog):
         self.setWindowTitle(
             tr("Segment library (view only)") if self._view_only
             else tr("Segment library"))
-        self.setMinimumSize(640, 480)
         self.setSizeGripEnabled(True)
         self._apply_open_size()
         self._selected_prompt: str | None = None
@@ -209,6 +210,9 @@ class SegmentLibraryDialog(QDialog):
         self._hist_loader.failed.connect(self._on_thumb_failed)
 
         self._build_ui()
+        from ...dock.font_scale import apply_font_scale_to_tree
+
+        apply_font_scale_to_tree(self)
         self._select_tab(_TOP_KEY)
         self._track_tab_opened("detect")
 
@@ -219,12 +223,26 @@ class SegmentLibraryDialog(QDialog):
         toward the screen so the previews read big. Clamped to the available
         screen so it never spills offscreen (AI Edit's open-size rule)."""
         target_w, target_h = 1220, 880
-        screen = QGuiApplication.primaryScreen()
+        floor_w, floor_h = 640, 480
+        # This dialog's own screen, not the primary one. A Windows desk is
+        # commonly a scaled laptop panel next to an external monitor, and QGIS
+        # sits on the second as often as on the first, so the primary screen's
+        # geometry is the wrong ruler. The floor is clamped by the same read as
+        # the target: a 1366x768 laptop at 175% text scaling has about 400
+        # units of height, so a flat 480 floor was taller than the desktop and
+        # nothing could bring the window back.
+        try:
+            screen = self.screen() or QGuiApplication.primaryScreen()
+        except (AttributeError, RuntimeError):
+            screen = QGuiApplication.primaryScreen()
         if screen is not None:
             avail = screen.availableGeometry()
             target_w = min(target_w, int(avail.width() * 0.96))
             target_h = min(target_h, int(avail.height() * 0.92))
-        self.resize(max(target_w, 640), max(target_h, 480))
+            floor_w = min(floor_w, target_w)
+            floor_h = min(floor_h, target_h)
+        self.setMinimumSize(floor_w, floor_h)
+        self.resize(target_w, target_h)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -258,7 +276,7 @@ class SegmentLibraryDialog(QDialog):
         # Sidebar: the user's own detections first, curated templates below
         # (AI Edit's "Your prompts / Templates" grouping).
         sidebar_host = QWidget()
-        sidebar_host.setFixedWidth(220)
+        sidebar_host.setFixedWidth(scale_px_length(220))
         self._sidebar = QVBoxLayout(sidebar_host)
         self._sidebar.setContentsMargins(0, 0, 0, 0)
         self._sidebar.setSpacing(2)
@@ -371,9 +389,8 @@ class SegmentLibraryDialog(QDialog):
             return
         self._tabs_tracked.add(tab)
         try:
-            from ....core import telemetry
-            from ....core import telemetry_events as tev
-            telemetry.track(tev.LIBRARY_OPENED, {"tab": tab})
+            from ....core import telemetry_session_events
+            telemetry_session_events.track_library_opened(tab)
         except Exception:
             pass  # nosec B110
 
@@ -466,6 +483,12 @@ class SegmentLibraryDialog(QDialog):
         """Own the grid's contents, then lay them out at the current width."""
         self._grid_widgets = list(widgets)
         self._grid_span_all = bool(span_all)
+        # Cards are built when their tab is picked, long after the window was,
+        # so the pass the window made over itself never saw them.
+        from ...dock.font_scale import apply_font_scale_to_tree
+
+        for widget in self._grid_widgets:
+            apply_font_scale_to_tree(widget)
         self._apply_grid_positions()
         self._update_count_label(0 if span_all else len(self._grid_widgets))
 
@@ -760,9 +783,8 @@ class SegmentLibraryDialog(QDialog):
             if view == "all":
                 run_history_cache.save_runs(runs)
                 try:
-                    from ....core import telemetry
-                    from ....core import telemetry_events as tev
-                    telemetry.track(tev.HISTORY_SYNCED, {"runs": len(runs)})
+                    from ....core import telemetry_session_events
+                    telemetry_session_events.track_history_synced(len(runs))
                 except Exception:
                     pass  # nosec B110
         else:
@@ -771,10 +793,8 @@ class SegmentLibraryDialog(QDialog):
                 r for r in runs if _run_key(r) not in known)
             self._hist_pages_loaded += 1
             try:
-                from ....core import telemetry
-                from ....core import telemetry_events as tev
-                telemetry.track(tev.HISTORY_PAGE_LOADED,
-                                {"page": self._hist_pages_loaded})
+                from ....core import telemetry_session_events
+                telemetry_session_events.track_history_page_loaded(self._hist_pages_loaded)
             except Exception:
                 pass  # nosec B110
         self._hist_has_more[view] = has_more
@@ -801,16 +821,13 @@ class SegmentLibraryDialog(QDialog):
 
         The stored tile is a full 1024 px capture and the band it lands in is
         about 320 px wide, so the card would spend a megabyte and a half to
-        paint a thumbnail. Only a screen that packs more than one physical
-        pixel per logical one needs the larger step. Both values are widths the
-        image route accepts; anything else it snaps, so this cannot ask for a
-        size that does not exist.
+        paint a thumbnail. One width for every screen: a card scaled down from
+        512 reads sharp everywhere, and picking a smaller step off the device
+        pixel ratio only made the same run look softer on some displays. 512 is
+        a width the image route accepts; anything else it snaps, so this cannot
+        ask for a size that does not exist.
         """
-        try:
-            ratio = float(self.devicePixelRatioF())
-        except (AttributeError, TypeError, ValueError):
-            ratio = 1.0
-        return 512 if ratio >= 1.5 else 384
+        return 512
 
     def _artifact_url(self, request_id: str, which: str,
                       width: int | None = None) -> str:
@@ -958,10 +975,8 @@ class SegmentLibraryDialog(QDialog):
     def _on_favorite_done(self, run_id: str, is_favorite: bool, ok: bool) -> None:
         if ok:
             try:
-                from ....core import telemetry
-                from ....core import telemetry_events as tev
-                telemetry.track(tev.HISTORY_FAVORITE_TOGGLED, {
-                    "run_id": run_id, "is_favorite": is_favorite})
+                from ....core import telemetry_session_events
+                telemetry_session_events.track_history_favorite_toggled(run_id, is_favorite)
             except Exception:
                 pass  # nosec B110
             run_history_cache.save_runs(self._hist_runs.get("all") or [])
@@ -1094,11 +1109,13 @@ class SegmentLibraryDialog(QDialog):
         if worker is not None:
             try:
                 worker.requestInterruption()
-                worker.fetched.disconnect()
-                worker.failed.disconnect()
-                worker.progress.disconnect()
             except (RuntimeError, TypeError):
                 pass
+            # One guard per signal: batched with the interrupt above, a thread
+            # that had already finished raised on the first call and left all
+            # three handlers connected.
+            for signal_name in ("fetched", "failed", "progress"):
+                safe_disconnect(worker, signal_name)
         self._end_run_fetch()
 
     def _on_run_fetch_cancelled(self) -> None:
@@ -1253,13 +1270,8 @@ class SegmentLibraryDialog(QDialog):
             return
         QgsProject.instance().addMapLayer(layer)
         try:
-            from ....core import telemetry
-            from ....core import telemetry_events as tev
-            telemetry.track(tev.HISTORY_EXPORTED, {
-                "run_id": _run_key(run),
-                "format": driver,
-                "objects": count,
-            })
+            from ....core import telemetry_session_events
+            telemetry_session_events.track_history_exported(driver, count, run_id=_run_key(run))
         except Exception:
             pass  # nosec B110
         note = self._missing_tiles_note(outcome)

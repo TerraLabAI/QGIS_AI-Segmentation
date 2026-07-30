@@ -35,6 +35,7 @@ from ...core.review_defaults import (
 from ...core.review_defaults import (
     AUTO_REVIEW_SIMPLIFY_DEFAULT as _AUTO_REVIEW_SIMPLIFY_DEFAULT,
 )
+from .correct_gesture_art import CorrectGestureArt
 from .guidance import BLUE_TINT, HINT_REVIEW_CORRECT_TARGET, DismissibleHint
 from .styles import (
     _BTN_GHOST,
@@ -66,6 +67,64 @@ _REVIEW_HEADING_NOTE_QSS = (
 _MUTED_LINE_QSS = (
     "font-size: 11px; color: rgba(128,128,128,0.95);"
     " background: transparent; border: none;")
+
+
+def correct_ai_method_enabled() -> bool:
+    """Whether the review offers the AI fix method at all.
+
+    A kill switch, not a preference: picking a polygon with AI armed can start
+    the on-device install, and that holds the whole review until it finishes.
+    Off, every fix is a Manual one. Fail-open, so an absent or damaged
+    configuration leaves both methods exactly as shipped.
+    """
+    try:
+        from ...core.server_dials import feature_enabled
+
+        return feature_enabled("correct_ai_method")
+    except Exception:  # noqa: BLE001 -- a kill switch is best-effort
+        return True
+
+
+def correct_default_method() -> str:
+    """Which fix method the Correct step opens on: "ai" or "manual"."""
+    if not correct_ai_method_enabled():
+        return "manual"
+    try:
+        from ...core.detection_policy import review_correct_default_method
+
+        return review_correct_default_method()
+    except Exception:  # noqa: BLE001 -- a served default is best-effort
+        return "ai"
+
+
+class _CorrectMethodSwitch(_MethodSwitch):
+    """The AI | Manual switch with its AI half under the server kill switch.
+
+    ``set_correct_method("ai")`` is called from places that never hear about
+    the switch (every review reset opens on it), so refusing the method at the
+    widget is the one point that covers them all. A refused set lands on Manual
+    and is ANNOUNCED down the same channel a click uses, so the dock's mirror
+    of the method and the plugin's both follow it. With the feature on, this
+    class changes nothing.
+    """
+
+    def set_method(self, method: str) -> None:
+        enabled = correct_ai_method_enabled()
+        # One method left is not a choice, so the switch goes with the AI half.
+        # Re-checked here rather than at build time only: the dock is built
+        # before the first configuration fetch lands.
+        self.setVisible(enabled)
+        if enabled or method == "manual":
+            super().set_method(method)
+            return
+        super().set_method("manual")
+        if getattr(self, "_announcing_refusal", False):
+            return
+        self._announcing_refusal = True
+        try:
+            self.method_selected.emit("manual")
+        finally:
+            self._announcing_refusal = False
 
 
 def _muted_line(text: str = "") -> QLabel:
@@ -191,10 +250,13 @@ class DockAutoCorrectBuildMixin:
         lay.setSpacing(6)
 
         # AI | Manual: the switch swaps only the fix method, never the panel.
-        self.auto_correct_method_switch = _MethodSwitch(current="ai")
-        self._correct_method = "ai"
+        # Which half it opens on is served, and the AI half has a kill switch.
+        method = correct_default_method()
+        self.auto_correct_method_switch = _CorrectMethodSwitch(current=method)
+        self._correct_method = method
         self.auto_correct_method_switch.method_selected.connect(
             self._on_correct_method_toggled)
+        self.auto_correct_method_switch.setVisible(correct_ai_method_enabled())
         lay.addWidget(self.auto_correct_method_switch)
 
         # Background local-AI install banner (first AI use). Step-level so it
@@ -226,9 +288,14 @@ class DockAutoCorrectBuildMixin:
         _head, self.auto_correct_pick_glyph, self.auto_correct_pick_title = (
             self._branch_head("◎", tr("Edit an existing polygon")))
         _hero.addWidget(_head)
+        # The gesture plate: the drawn difference between the two methods.
+        # AI and Manual otherwise share every widget on this page, so the
+        # switch read as if it changed nothing. The plate shows the same
+        # outline marked the way each method really marks it on the canvas.
+        self.auto_correct_gesture_art = CorrectGestureArt(self._correct_method)
+        _hero.addWidget(self.auto_correct_gesture_art)
         # The method line: what THIS method is waiting for, in its own framed
-        # box. It is the one place the two methods read differently on a
-        # resting page, so it is the one place the user learns which is live.
+        # box. It says in words what the plate above it shows.
         self.auto_correct_pick_hint = QLabel("")
         self.auto_correct_pick_hint.setWordWrap(True)
         self.auto_correct_pick_hint.setStyleSheet(_msg_label_qss("armed"))
@@ -327,8 +394,9 @@ class DockAutoCorrectBuildMixin:
 
         # Save + Undo, shown only while a fix session runs
         # (set_correct_session_active). Save is the session's one filled
-        # primary: the green Next is hidden while a session runs, so the way
-        # out of the edit is always the most visible button on screen.
+        # primary: the green step Next hides for the duration
+        # (_apply_step_next_visibility), so the way out of the edit is always
+        # the most visible button on screen.
         self.auto_correct_session_row = QWidget()
         _sess = QHBoxLayout(self.auto_correct_session_row)
         _sess.setContentsMargins(0, 0, 0, 0)
@@ -338,7 +406,8 @@ class DockAutoCorrectBuildMixin:
         self.auto_reshape_done_btn.setMinimumHeight(36)
         self.auto_reshape_done_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_reshape_done_btn.setToolTip(tr(
-            "Save this polygon and go back to picking."))
+            "Keep this shape. The polygon stays picked, so you can still "
+            "adjust, merge or delete it."))
         self.auto_reshape_done_btn.clicked.connect(
             self.auto_reshape_done_requested.emit)
         self.auto_correct_session_undo_btn = QPushButton(tr("Undo"))
@@ -353,9 +422,10 @@ class DockAutoCorrectBuildMixin:
         self.auto_correct_session_row.setVisible(False)
         _col.addWidget(self.auto_correct_session_row)
 
-        # The RESTED half of the panel: per-polygon settings and Merge. One
-        # thing per state, so a live fix session hides this whole box and the
-        # user sees only the gesture help and Save/Undo
+        # The per-polygon half of the panel: the shape dials and Merge. It used
+        # to be the RESTED half, hidden for the whole of a fix session. Since a
+        # map click opens the session at once, that made it unreachable, so it
+        # now stays up throughout and only Merge waits for the session to end
         # (set_correct_session_active).
         self.auto_correct_rest_box = QWidget()
         _rest = QVBoxLayout(self.auto_correct_rest_box)
@@ -363,11 +433,8 @@ class DockAutoCorrectBuildMixin:
         _rest.setSpacing(8)
         _rest.addWidget(_card_divider())
 
-        # Settings for this polygon: the shape refine, routed to THIS polygon
-        # only. Folded away behind its own head, and shown in the AI method
-        # only: in Manual the user IS the shape, so a control that rewrites
-        # what they just traced has no business on the page
-        # (set_shape_only_visible).
+        # This polygon's own shape dials, folded behind a head that names the
+        # job in the current method (_apply_shape_only_mode).
         self._build_shape_only_controls(_rest)
 
         # Merge acts on the selected polygon: it is the FIRST piece, the user
@@ -409,9 +476,13 @@ class DockAutoCorrectBuildMixin:
         col.addLayout(row)
 
     def _shape_only_check_row(self, col, label: str, tooltip: str, widget,
-                              trailing=None) -> None:
+                              trailing=None):
         """One labelled switch in the per-polygon settings, with an optional
-        trailing link (the Reset-to-shared escape hatch rides the last row)."""
+        trailing link (the Reset-to-shared escape hatch rides the last row).
+
+        Returns the row's label, which a caller needs only when it has to grey
+        the text with the switch (Right angles, when its geometry library is
+        missing)."""
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
@@ -425,6 +496,7 @@ class DockAutoCorrectBuildMixin:
         if trailing is not None:
             row.addWidget(trailing)
         col.addLayout(row)
+        return lbl
 
     def _build_shape_only_controls(self, col) -> None:
         """This polygon's own copy of the Shapes step, folded behind one head.
@@ -436,9 +508,8 @@ class DockAutoCorrectBuildMixin:
         thousand. Folded shut by default: it is the rare act on this step, and
         open by default it pushed Merge and Delete off a short dock.
 
-        Shown in the AI method only (set_shape_only_visible). Manual hands the
-        outline to the user, and a control that reshapes what they just traced
-        would undo their work under them. "Reset to shared" drops the override.
+        Both methods carry it, and each opens it differently: see
+        _apply_shape_only_mode. "Reset to shared" drops the override.
         """
         self.auto_shape_only_toggle = QPushButton()
         self.auto_shape_only_toggle.setStyleSheet(_SECTION_TOGGLE_QSS)
@@ -456,9 +527,9 @@ class DockAutoCorrectBuildMixin:
 
         # What the fold is FOR, in one line. Without it the dials read as a
         # second copy of the Shapes step and the user cannot tell which one
-        # wins.
-        _box.addWidget(_muted_line(tr(
-            "Only this polygon. Every other one follows the Shapes step.")))
+        # wins. The wording follows the method (_apply_shape_only_mode).
+        self.auto_shape_only_scope_line = _muted_line("")
+        _box.addWidget(self.auto_shape_only_scope_line)
 
         _points_tip = tr(
             "How many of this polygon's points to keep. The count in the title "
@@ -529,7 +600,7 @@ class DockAutoCorrectBuildMixin:
         self.auto_shape_only_reset.setVisible(False)
         self.auto_shape_only_reset.clicked.connect(
             self.auto_shape_only_reset_requested.emit)
-        self._shape_only_check_row(
+        self.auto_shape_only_ortho_label = self._shape_only_check_row(
             _box, tr("Right angles"), tr(
                 "Square this polygon's edges, or leave them as traced while "
                 "the rest of the layer stays squared."),
@@ -537,16 +608,8 @@ class DockAutoCorrectBuildMixin:
 
         col.addWidget(self.auto_shape_only_box)
 
-        # Manual's replacement for the fold. A control that vanishes with no
-        # word looks like a bug, and the user cannot guess that the other
-        # method still has it.
-        self.auto_shape_only_manual_note = _muted_line(tr(
-            "Switch to AI to shape this polygon on its own."))
-        self.auto_shape_only_manual_note.setVisible(False)
-        col.addWidget(self.auto_shape_only_manual_note)
-
         self._auto_shape_only_expanded = False
-        self._apply_shape_only_toggle()
+        self._apply_shape_only_mode(self._correct_method)
 
         for widget, control in (
             (self.auto_shape_only_points, "shape_only_points"),
@@ -563,6 +626,10 @@ class DockAutoCorrectBuildMixin:
         ):
             widget.stateChanged.connect(
                 lambda s, c=control: self._emit_shape_only_changed(c, s))
+        # This polygon's own Right angles refuses on the same terms as the
+        # shared one: ticking it is what tests the geometry library behind it.
+        self.auto_shape_only_ortho.stateChanged.connect(
+            lambda _s: self._sync_shape_only_right_angles())
 
     def _build_add_lane(self, lay) -> None:
         """Branch 2 of 2: add a polygon the run missed. Same card shape as the
@@ -671,9 +738,13 @@ class DockAutoCorrectBuildMixin:
         lay.addWidget(self.auto_correct_summary_row)
 
     def _build_reshape_install_banner(self, lay) -> None:
-        """The background-install banner for the local AI, shown while a
-        first-time setup runs (set_auto_review_installing). It survived the
-        round-3 rework of the Correct panel: the install path still needs it."""
+        """The setup banner for the local AI, shown while a first-time install
+        runs (set_auto_review_installing).
+
+        It is the only live thing on the review while that install runs: the
+        setter locks the ladder, the method switch and the way out around it,
+        so the banner has to carry both the progress and the way to stop. Its
+        Cancel is that way out; without it a locked review would have none."""
         self._auto_review_installing = False
         self.auto_review_install_banner = QWidget()
         self.auto_review_install_banner.setObjectName("autoReviewInstallBanner")
@@ -685,7 +756,7 @@ class DockAutoCorrectBuildMixin:
         _col.setContentsMargins(10, 8, 10, 8)
         _col.setSpacing(4)
         self.auto_review_install_label = QLabel(
-            tr("Setting up the on-device AI in the background..."))
+            tr("Setting up the on-device AI..."))
         self.auto_review_install_label.setWordWrap(True)
         self.auto_review_install_label.setStyleSheet(
             "font-size: 11px; color: palette(text);")
@@ -696,5 +767,17 @@ class DockAutoCorrectBuildMixin:
         self.auto_review_install_progress.setTextVisible(False)
         self.auto_review_install_progress.setStyleSheet(_PROGRESS_THIN_QSS)
         _col.addWidget(self.auto_review_install_progress)
+        _cancel_row = QHBoxLayout()
+        _cancel_row.setContentsMargins(0, 0, 0, 0)
+        _cancel_row.addStretch(1)
+        self.auto_review_install_cancel_btn = QPushButton(tr("Cancel setup"))
+        self.auto_review_install_cancel_btn.setStyleSheet(_BTN_LINK_MUTED)
+        self.auto_review_install_cancel_btn.setToolTip(tr(
+            "Stop the setup and go back to the review. The AI fix stays "
+            "unavailable until you install it."))
+        self.auto_review_install_cancel_btn.clicked.connect(
+            self.auto_review_install_cancel_requested.emit)
+        _cancel_row.addWidget(self.auto_review_install_cancel_btn)
+        _col.addLayout(_cancel_row)
         self.auto_review_install_banner.setVisible(False)
         lay.addWidget(self.auto_review_install_banner)

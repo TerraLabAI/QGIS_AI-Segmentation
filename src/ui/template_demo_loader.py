@@ -20,14 +20,18 @@ Two kinds of image share this cache, and they age differently:
 
 The cache is bounded: a loader schedules one deferred, once-per-session sweep
 that evicts least-recently-used files back under the budget
-(``image_cache_budget``). Ported from the AI Edit plugin. Production-safe
-logging: only preset ids and local cache paths, never URLs/keys/model names.
+(``image_cache_budget``). The directory name carries a version the server can
+bump, which retires a whole cache at once when neither the TTL nor a
+revalidation can; the same deferred pass deletes what earlier versions left.
+Ported from the AI Edit plugin. Production-safe logging: only preset ids and
+local cache paths, never URLs/keys/model names.
 """
 from __future__ import annotations
 
 import os
 import time
 from pathlib import Path
+from string import ascii_letters, digits
 from typing import NamedTuple
 
 from qgis.core import Qgis, QgsNetworkAccessManager
@@ -41,6 +45,7 @@ from ..core.qt_compat import (
     RedirectPolicyAttribute,
     safe_single_shot,
 )
+from ..core.server_dials import read_value
 from .image_cache_budget import sweep_image_cache_once, touch_for_lru
 from .image_cache_validators import (
     conditional_headers,
@@ -65,23 +70,82 @@ def log_warning(message: str) -> None:
 # re-issue doomed requests (each burns a concurrency slot + 15s timeout).
 _KNOWN_MISSING: set[tuple[str, str, str]] = set()
 
-# Bump this when the server-side demo set is re-seeded in a way that must
-# invalidate every client's on-disk cache at once (the 7-day TTL is too slow).
-_CACHE_DIR_NAME = "ai-segmentation-template-demos-v1"
+# The cache directory carries a version, so a demo set re-seeded server-side
+# drops every client's stored bytes at once instead of waiting out the TTL, and
+# an entry that carries a validator (which turns the TTL off) can still be
+# flushed. The served version wins; the shipped one is the fallback, and it
+# names the directory the installed fleet already holds, so this change on its
+# own throws nothing away.
+_CACHE_DIR_BASE = "ai-segmentation-template-demos"
+_CACHE_DIR_FALLBACK_VERSION = "1"
+_CACHE_VERSION_KEY = "demo_cache_version"
+# A version only ever names a directory, so it stays short and filename-safe.
+_CACHE_VERSION_CHARS = frozenset(ascii_letters + digits + "._-")
+_CACHE_VERSION_MAX_CHARS = 24
+
+
+def _cache_dir_version() -> str:
+    """The cache version in force: the served one, else the shipped fallback.
+
+    Reads the cached product configuration only (memory, never the network), so
+    it is safe on the GUI thread. Absent, malformed, over-long, or carrying
+    anything but a filename-safe character all mean the fallback, which is also
+    what an offline start uses.
+    """
+    value = read_value(_CACHE_VERSION_KEY)
+    if isinstance(value, int) and not isinstance(value, bool):
+        value = str(value)
+    if not isinstance(value, str):
+        return _CACHE_DIR_FALLBACK_VERSION
+    token = value.strip()
+    if not token or len(token) > _CACHE_VERSION_MAX_CHARS:
+        return _CACHE_DIR_FALLBACK_VERSION
+    if not all(c in _CACHE_VERSION_CHARS for c in token):
+        return _CACHE_DIR_FALLBACK_VERSION
+    return token
+
+
+def _cache_dir_name() -> str:
+    """Name of the cache directory in force, version included."""
+    return f"{_CACHE_DIR_BASE}-v{_cache_dir_version()}"
 
 
 def _cache_root() -> Path:
     """Per-platform cache dir for image bytes, ``<cache location>/<dir name>``:
 
-        - Windows: ``%LOCALAPPDATA%/<org>/<app>/cache/<_CACHE_DIR_NAME>``
-        - macOS:   ``~/Library/Caches/<org>/<app>/<_CACHE_DIR_NAME>``
-        - Linux:   ``~/.cache/<app>/<_CACHE_DIR_NAME>``, also the fallback
+        - Windows: ``%LOCALAPPDATA%/<org>/<app>/cache/<dir name>``
+        - macOS:   ``~/Library/Caches/<org>/<app>/<dir name>``
+        - Linux:   ``~/.cache/<app>/<dir name>``, also the fallback
           when QStandardPaths returns nothing.
     """
+    name = _cache_dir_name()
     base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation)
     if base:
-        return Path(base) / _CACHE_DIR_NAME
-    return Path.home() / ".cache" / _CACHE_DIR_NAME
+        return Path(base) / name
+    return Path.home() / ".cache" / name
+
+
+def _remove_superseded_cache_dirs(active: Path) -> None:
+    """Delete the image caches other versions left beside ``active``.
+
+    The unversioned name matches too, not only ``<base>-v*``, so a directory
+    written before the version existed is collected instead of sitting there
+    forever. Reclaiming disk can never be worth an error, so every failure is
+    swallowed and a symlink is skipped rather than followed.
+    """
+    import shutil
+
+    try:
+        for child in active.parent.iterdir():
+            name = child.name
+            if name == active.name:
+                continue
+            if name != _CACHE_DIR_BASE and not name.startswith(f"{_CACHE_DIR_BASE}-"):
+                continue
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child, ignore_errors=True)
+    except OSError:
+        pass  # nosec B110  Housekeeping must never block the loader.
 
 
 # Also what stops a server-supplied key from walking out of the cache dir.
@@ -203,8 +267,14 @@ class TemplateDemoLoader(QObject):
 
     @staticmethod
     def _sweep_cache_once() -> None:
-        """Bring the on-disk cache back under budget, once per QGIS session."""
-        sweep_image_cache_once(_cache_root(), _CACHE_DIR_NAME)
+        """Bring the on-disk cache back under budget, once per QGIS session,
+        and drop what an earlier cache version left behind.
+
+        Both walk the disk, so both wait out the same delay as the sweep.
+        """
+        root = _cache_root()
+        _remove_superseded_cache_dirs(root)
+        sweep_image_cache_once(root, root.name)
 
     def request(self, template_id: str, which: str, url: str,
                 headers: dict | None = None, *, variant: str | None = None,

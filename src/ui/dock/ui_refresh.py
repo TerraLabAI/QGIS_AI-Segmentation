@@ -20,6 +20,7 @@ from ...core.activation_manager import (
     has_tos_locked,
 )
 from ...core.i18n import tr
+from .font_scale import scale_qss_font_px, widget_pixel_ratio
 from .guidance import (
     HINT_EXEMPLAR_DRAW_BOX,
     HINT_EXEMPLAR_EXCLUDE_BOX,
@@ -432,16 +433,26 @@ class DockStateMixin:
                 if self._refine_handoff:
                     self._update_button_visibility()
 
-    def _set_instructions_compact(self, compact: bool) -> None:
-        """Swap the instructions label between the framed card (normal Manual
-        guidance) and the compact muted hint used for the refine-handoff status
-        lines. No-op when already in the requested style."""
-        if getattr(self, "_instructions_compact", None) == compact:
+    def _set_instructions_style(self, style: str) -> None:
+        """Restyle the instructions label. Three looks, one label:
+
+        - "card": the framed Manual guidance, the resting look;
+        - "compact": the muted hint used for refine-handoff status lines;
+        - "waiting": the info-tinted line the plugin shows while it reads
+          imagery. Same taxonomy kind as the review's Correct step uses for
+          the same wait, so a user who learned one reads the other.
+
+        No-op when the label already wears the requested look."""
+        if getattr(self, "_instructions_style", "card") == style:
             return
-        self._instructions_compact = compact
-        self.instructions_label.setStyleSheet(
-            _INSTRUCTIONS_HINT_QSS if compact else _INSTRUCTIONS_CARD_QSS)
-        self.instructions_label.setMinimumHeight(0 if compact else 70)
+        self._instructions_style = style
+        if style == "waiting":
+            self.instructions_label.setStyleSheet(_msg_label_qss("info"))
+        else:
+            self.instructions_label.setStyleSheet(
+                _INSTRUCTIONS_HINT_QSS if style == "compact"
+                else _INSTRUCTIONS_CARD_QSS)
+        self.instructions_label.setMinimumHeight(0 if style == "compact" else 70)
 
     def set_manual_encoding(self, reading: bool) -> None:
         """Base Manual is reading the imagery around the click, or has stopped.
@@ -465,14 +476,15 @@ class DockStateMixin:
             self.instructions_label.setVisible(False)
             return
 
-        self._set_instructions_compact(False)
         if getattr(self, "_manual_encoding", False):
             # The only state where the panel says what the plugin is doing
             # rather than what to do next: the click has been taken and the
             # imagery it needs is being read.
+            self._set_instructions_style("waiting")
             self.instructions_label.setText(
-                tr("Reading the imagery around your click..."))
+                _msg_text("info", tr("Reading the imagery around your click...")))
             return
+        self._set_instructions_style("card")
         if total == 0 and self._saved_polygon_count > 0:
             # Already saved polygon(s), encourage next or export
             text = (
@@ -559,23 +571,44 @@ class DockStateMixin:
         # the saved/candidate count, e.g. right after the detections import).
         self._update_instructions()
 
-    def set_manual_last_run_recap(self, count: int, area_km2) -> None:
+    def set_manual_last_run_recap(self, count: int, area_m2,
+                                  layer_name: str | None = None,
+                                  layer_id: str | None = None) -> None:
         """Show the session-only value recap on the Manual Start view after a
-        successful export: one quiet line under the Start button/caption
-        (mirrors the Automatic set_last_run_recap, without credits: Manual is
-        local and free). Best-effort by contract (the export already
-        committed): never raises, so a recap problem can never surface as a
-        failed export."""
+        successful export: what the session produced and where it went.
+
+        The layer name is a link: clicking it selects the layer and frames it on
+        the map, so the user reaches the result without hunting through the
+        legend. Best-effort by contract (the export already committed): never
+        raises, so a recap problem can never surface as a failed export."""
         try:
             recap = getattr(self, "manual_last_run_recap", None)
             if recap is None:
                 return
-            area = self._format_recap_area(area_km2)
-            recap.setText(tr(
-                "Last session: {count} polygon(s) exported · {area} km²"
-            ).format(count=count, area=area))
+            from .manual_recap import manual_recap_html
+            self._manual_recap_layer_id = layer_id or ""
+            recap.setText(manual_recap_html(count, area_m2, layer_name))
+            recap.setToolTip(
+                tr("Click the layer name to see it on the map")
+                if layer_id else "")
             recap.setVisible(True)
         except Exception:  # nosec B110 -- recap is best-effort, never break export
+            pass
+
+    def _on_manual_recap_link(self, _href: str) -> None:
+        """Reveal the layer the last Manual session exported to: make it the
+        active layer and frame it. A layer removed since the export resolves to
+        nothing, so the click is simply ignored."""
+        try:
+            from qgis.core import QgsProject
+            from qgis.utils import iface
+            layer_id = getattr(self, "_manual_recap_layer_id", "")
+            layer = QgsProject.instance().mapLayer(layer_id) if layer_id else None
+            if layer is None or iface is None:
+                return
+            iface.setActiveLayer(layer)
+            iface.zoomToActiveLayer()
+        except Exception:  # nosec B110 -- a recap click must never raise
             pass
 
     @staticmethod
@@ -680,8 +713,8 @@ class DockStateMixin:
         self.auto_controls_section.setVisible(not exhausted)
         if exhausted:
             try:
-                from ...core import telemetry
-                telemetry.track_pro_upsell_viewed(trigger="free_exhausted")
+                from ...core import telemetry_session_events
+                telemetry_session_events.track_pro_upsell_viewed(trigger="free_exhausted")
             except Exception:
                 pass  # nosec B110
         # Land on the first incomplete step when (re)entering the page; never
@@ -708,6 +741,40 @@ class DockStateMixin:
         btn.style().unpolish(btn)
         btn.style().polish(btn)
 
+    def _refresh_exemplar_button_labels(self) -> None:
+        """Write both example buttons' text for the state they are in.
+
+        Three states have to be told apart at a glance, and the fill alone
+        cannot carry the last one:
+          - ready, nothing drawn yet: the action ("Draw on the map");
+          - drawing now: the way OUT, because a second click disarms and the
+            armed instruction line below already carries the gesture;
+          - one example already drawn: "Draw another example", so the button
+            stops reading as a step that is still waiting to be done.
+
+        Reads the armed state off ``_auto_exemplar_armed_label`` (1 example,
+        0 exclude, None not armed), so a chip refresh landing mid-draw cannot
+        overwrite the armed wording.
+        """
+        armed_label = getattr(self, "_auto_exemplar_armed_label", None)
+        drawing = tr("Drawing (click to stop)")
+        drawn = getattr(self, "_auto_positive_exemplars", 0)
+        try:
+            self.auto_ex_inc_btn.setText(
+                drawing if armed_label == 1
+                else (tr("Draw another example") if drawn
+                      else tr("Draw on the map")))
+        except (RuntimeError, AttributeError):
+            pass
+        exc = getattr(self, "auto_ex_exc_btn", None)
+        if exc is None:
+            return
+        try:
+            exc.setText(drawing if armed_label == 0
+                        else tr("Exclude a look-alike"))
+        except (RuntimeError, AttributeError):
+            pass
+
     def _auto_exemplar_line_busy(self) -> bool:
         """True while the example card's message slot actually shows something:
         the amber too-small warning or the armed draw instruction.
@@ -729,11 +796,13 @@ class DockStateMixin:
         armed, 0 = exclude armed, None = not armed. The plugin calls this when
         it arms the draw tool and again when the draw finishes or is cancelled,
         so the 'now draw on the map' feedback always clears."""
+        self._auto_exemplar_armed_label = label
         try:
             self._set_btn_armed(self.auto_ex_inc_btn, label == 1)
             exc = getattr(self, "auto_ex_exc_btn", None)
             if exc is not None:
                 self._set_btn_armed(exc, label == 0)
+            self._refresh_exemplar_button_labels()
         except (RuntimeError, AttributeError):
             return
         if label is None:
@@ -757,9 +826,11 @@ class DockStateMixin:
         shown = self.auto_exemplar_armed_tip.set_hint(
             HINT_EXEMPLAR_EXCLUDE_BOX if label == 0 else HINT_EXEMPLAR_DRAW_BOX,
             _msg_text("armed", (
-                tr("Drag a box around one look-alike to exclude.")
+                tr("Click points around one look-alike, then double-click "
+                   "to close.")
                 if label == 0 else
-                tr("Drag a box around one object."))),
+                tr("Click points around one object, then double-click "
+                   "to close."))),
             dense=True)
         self.auto_exemplar_armed_tip.setVisible(shown)
         self._refresh_auto_exemplar_explainer(armed=shown)
@@ -790,11 +861,11 @@ class DockStateMixin:
             self.auto_exemplar_size_warning.setStyleSheet(
                 _msg_label_qss("warning"))
             self.auto_exemplar_size_warning.setText(_msg_text("warning", (
-                tr("This example is very small even at the finest detail. "
+                tr("This example is very small even at full precision. "
                    "Draw a larger object, or it may be too small to detect.")
                 if at_max_detail else
-                tr("This example is very small at the current detail level. "
-                   "Zoom the detail slider finer or draw a larger object."))))
+                tr("This example is very small at this precision. "
+                   "Raise the precision or draw a larger object."))))
             self.auto_exemplar_size_warning.setVisible(True)
             self._refresh_auto_exemplar_explainer(armed=True)
             self._auto_exemplar_hint_kind = "warning"
@@ -843,12 +914,9 @@ class DockStateMixin:
         from ...core.exemplar_store import max_exclude, max_positive
         self._auto_positive_exemplars = sum(1 for it in items if it[1] == 1)
         exclude_count = sum(1 for it in items if it[1] == 0)
-        # Adding/removing an example changes the setup: the prompt-plus-example
-        # intercept (and its one-run override) must be re-earned.
-        try:
-            self._reset_meta_intercept()
-        except (RuntimeError, AttributeError):
-            pass
+        # The first example turns "Draw on the map" into "Draw another
+        # example": the step is done, the button is now an optional extra.
+        self._refresh_exemplar_button_labels()
         for idx, it in enumerate(items):
             eid, label = it[0], it[1]
             thumb = it[2] if len(it) > 2 else None
@@ -929,15 +997,15 @@ class DockStateMixin:
             if positives <= 0 or armed_showing:
                 line.setVisible(False)
             elif positives == 1:
-                line.setStyleSheet(
+                line.setStyleSheet(scale_qss_font_px(
                     "font-size: 11px; color: rgba(128, 128, 128, 0.95);"
-                    " background: transparent; border: none;")
+                    " background: transparent; border: none;"))
                 line.setText(tr("Add one more example for the best results."))
                 line.setVisible(True)
             else:
-                line.setStyleSheet(
+                line.setStyleSheet(scale_qss_font_px(
                     f"font-size: 11px; font-weight: 600; color: {SUCCESS_TEXT};"
-                    " background: transparent; border: none;")
+                    " background: transparent; border: none;"))
                 line.setText(
                     "✓  " + tr("Best quality. Two references locked in."))
                 line.setVisible(True)
@@ -972,10 +1040,16 @@ class DockStateMixin:
             try:
                 pm = QPixmap.fromImage(thumbnail)
                 if not pm.isNull():
+                    # The capture is taken at the screen's own pixel count on
+                    # purpose; scaling it back down to 50 flat threw that away
+                    # and left a soft chip on every scaled display.
+                    ratio = widget_pixel_ratio(thumb_lbl)
+                    edge = int(round((side - 2) * ratio))
                     pm = pm.scaled(
-                        side - 2, side - 2,
+                        edge, edge,
                         Qt.AspectRatioMode.KeepAspectRatio,
                         Qt.TransformationMode.SmoothTransformation)
+                    pm.setDevicePixelRatio(ratio)
                     thumb_lbl.setPixmap(pm)
                 # Click the card (anywhere but the remove x) to see the reference
                 # enlarged: it shows what the AI uses (the object with a little
@@ -1026,10 +1100,16 @@ class DockStateMixin:
             pm = QPixmap.fromImage(image)
             if pm.isNull():
                 return
+            # This window exists to be looked at closely, so it gets the
+            # screen's real pixel count rather than a 320-unit copy stretched
+            # back up.
+            ratio = widget_pixel_ratio(self)
+            edge = int(round(320 * ratio))
             pm = pm.scaled(
-                320, 320,
+                edge, edge,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation)
+            pm.setDevicePixelRatio(ratio)
             dlg = QDialog(self)
             dlg.setWindowTitle(tr("Example"))
             lay = QVBoxLayout(dlg)
@@ -1045,6 +1125,9 @@ class DockStateMixin:
             hint.setWordWrap(True)
             hint.setStyleSheet("color: rgba(128,128,128,0.9); font-size: 11px;")
             lay.addWidget(hint)
+            from .font_scale import apply_font_scale_to_tree
+
+            apply_font_scale_to_tree(dlg)
             dlg.exec()
         except Exception:  # noqa: BLE001 -- preview popup is best-effort  # nosec B110
             pass
@@ -1053,28 +1136,21 @@ class DockStateMixin:
         """Enable the Detect button based on current Automatic mode state."""
         if not self._plugin_activated or self._auto_review_active:
             self.auto_detect_btn.setEnabled(False)
-            self._reset_meta_intercept()
             return
-        from ...core.detect_gate import can_detect, meta_satisfied
+        from ...core.detect_gate import can_detect
         has_layer = self.auto_layer_combo.currentLayer() is not None
-        # The big green Detect enables ONLY on the accurate default setup:
-        # a prompt AND at least one drawn example (meta_satisfied). A
-        # half-setup that passes the permissive floor (can_detect: text
-        # alone, or two examples alone) does NOT light the button; it shows
-        # the small "Detect with text/examples only" link instead (see
-        # _refresh_meta_escape), which is the explicit, non-default escape.
+        # The big green Detect enables on the floor: a typed prompt, or one
+        # drawn example, or both. Each of the three is a query the model can
+        # run, and asking for the full prompt-plus-example combination before
+        # lighting the button hid the two single-input paths behind a link
+        # nobody read. The combination is still the most accurate mode, so the
+        # cards keep nudging toward it; it is no longer a gate.
         has_text = bool(self.auto_prompt_input.text().strip())
         positives = self._auto_positive_exemplars if self._EXEMPLARS_ENABLED else 0
         # An object CONCEPT exists once a prompt is typed or one example is
         # drawn; that is what the Detail slider gate needs (see below).
         has_object = has_text or positives > 0
-        floor_ok = can_detect(has_text, positives)
-        if self._EXEMPLARS_ENABLED:
-            meta_ok = meta_satisfied(has_text, positives)
-        else:
-            # Without the example feature the floor is the only gate.
-            meta_ok = floor_ok
-        can_run = meta_ok
+        can_run = can_detect(has_text, positives)
         # The Detail slider gates on the object CONCEPT, not on can_run: its
         # default is OBJECT-AWARE (committing a prompt re-seeds it), so a value
         # tuned BEFORE the object was named got thrown away by the re-seed and
@@ -1107,23 +1183,14 @@ class DockStateMixin:
         run_allowed = hard_ok and can_run
         self.auto_detect_btn.setEnabled(run_allowed and not self._auto_run_active)
         # A disabled button with no reason reads as broken: consent and the
-        # missing half of the prompt-plus-example setup are the two gates the
-        # user can fix right here, so say so.
+        # empty setup are the two gates the user can fix right here, so say so.
         if not tos_ok:
             tip = tr("Accept the Terms and Privacy Policy first.")
-        elif hard_ok and not meta_ok and has_object:
-            tip = (tr("Draw an example of the object first (step 2).")
-                   if has_text else
-                   tr("Type a word for the object first (step 1)."))
+        elif hard_ok and not has_object:
+            tip = tr("Type a word for the object, or draw an example.")
         else:
             tip = ""
         self.auto_detect_btn.setToolTip(tip)
-        # The escape link: visible exactly when only the meta gate blocks the
-        # button (every hard gate passes and the permissive floor is met), so
-        # the text-only / examples-only run stays one visible click away
-        # without ever being the default.
-        self._refresh_meta_escape(
-            hard_ok and floor_ok and not meta_ok and not self._auto_run_active, has_text, positives)
         # detect_blocked telemetry: once per episode, only when the run is set up
         # (layer + object) but a hard gate (credits / zone too large) blocks it.
         reason = None
@@ -1136,8 +1203,8 @@ class DockStateMixin:
                 reason = "detail_premium_cap"
         if reason and reason != getattr(self, "_detect_blocked_last", None):
             try:
-                from ...core import telemetry
-                telemetry.track_detect_blocked(reason=reason)
+                from ...core import telemetry_session_events
+                telemetry_session_events.track_detect_blocked(reason=reason)
             except Exception:
                 pass  # nosec B110
         self._detect_blocked_last = reason
@@ -1174,8 +1241,13 @@ class DockStateMixin:
             if reset_day:
                 tooltip += "\n" + tr("Credits come back on {date}").format(
                     date=reset_day)
+            # The gauge is a link, so the tooltip says where it goes.
+            tooltip += "\n" + tr("Click to open your dashboard")
             self._footer_credits_label.setToolTip(tooltip)
             self._credit_ring.setToolTip(tooltip)
+            gauge = getattr(self, "_credit_gauge", None)
+            if gauge is not None:
+                gauge.setToolTip(tooltip)
             self._footer_credits_label.setVisible(True)
         else:
             self._credit_ring.setVisible(False)
@@ -1189,8 +1261,8 @@ class DockStateMixin:
         # trigger, so calling it on every refresh reports once per session.
         if pill_shown:
             try:
-                from ...core import telemetry
-                telemetry.track_pro_upsell_viewed(trigger="subscribe_pill")
+                from ...core import telemetry_session_events
+                telemetry_session_events.track_pro_upsell_viewed(trigger="subscribe_pill")
             except Exception:
                 pass  # nosec B110
         # Free-tier low-credit nudge on the Start page (driven by the same
@@ -1345,10 +1417,7 @@ class DockStateMixin:
         if getattr(self, "_plugin_opened_emitted", False):
             return
         try:
-            from ...core.telemetry import (
-                track_plugin_first_open,
-                track_plugin_opened,
-            )
+            from ...core.telemetry_session_events import track_plugin_first_open, track_plugin_opened
             # First-ever open on this machine (self-guarded by a persistent
             # QSettings flag) precedes the per-session plugin_opened, so the
             # install -> first-open -> activation funnel has a clean entry.

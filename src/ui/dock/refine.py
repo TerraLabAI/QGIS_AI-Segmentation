@@ -32,6 +32,7 @@ from ...core.review_defaults import (
     REFINE_SMOOTH_DEFAULT,
     REFINE_SMOOTH_ITERATIONS,
 )
+from .font_scale import scale_px_length
 from .styles import (
     _CARD_QSS,
     _SECTION_TOGGLE_QSS,
@@ -123,6 +124,9 @@ class DockRefineMixin:
         self.right_angles_checkbox = QCheckBox()
         self.right_angles_checkbox.setToolTip(ortho_label.toolTip())
         self.right_angles_checkbox.setChecked(REFINE_ORTHO_DEFAULT)
+        # Kept so the availability gate can grey the label with the box
+        # (_sync_refine_right_angle_controls).
+        self.right_angles_label = ortho_label
         ortho_row = _refine_control_row(ortho_label, self.right_angles_checkbox)
 
         round_label = _refine_row_label(tr("Round corners"), tr(
@@ -163,7 +167,7 @@ class DockRefineMixin:
         self.fill_holes_max_spinbox.setSpecialValueText(tr("No limit"))
         self.fill_holes_max_spinbox.setToolTip(fill_max_label.toolTip())
         self.fill_holes_max_spinbox.setMinimumWidth(78)
-        self.fill_holes_max_spinbox.setMaximumWidth(110)
+        self.fill_holes_max_spinbox.setMaximumWidth(scale_px_length(110))
         fill_max_layout.addWidget(fill_max_label)
         fill_max_layout.addStretch()
         fill_max_layout.addWidget(self.fill_holes_max_spinbox)
@@ -177,19 +181,19 @@ class DockRefineMixin:
         # which is why it sits above Simplify.
         # Manual has no prompt, so no object class: 100% is the one generic
         # density, where the Automatic review's 100% is the class default.
+        # Two lines, split on the newline (see the same tooltip in
+        # auto_review_steps.py): one long line ran the width of the screen.
         points_label = _refine_row_label(tr("Points"), tr(
-            "How many of the outline's points to keep, as a share. 100% keeps "
-            "the standard density; lower thins further, dropping the smallest "
-            "detail first and keeping the corners and the surface. With Right "
-            "angles on it runs first, so lowering it gives the squaring "
-            "straight walls to work from."))
+            "Share of the outline's points to keep. 100% is the standard "
+            "density.\nLower thins the smallest detail first, keeps the "
+            "corners, and gives Right angles straight walls to square."))
         self.points_spinbox = QSpinBox()
         self.points_spinbox.setSingleStep(5)
         self.points_spinbox.setRange(1, 100)
         self.points_spinbox.setValue(REFINE_POINTS_PCT_DEFAULT)
         self.points_spinbox.setSuffix(" %")
         self.points_spinbox.setMinimumWidth(62)
-        self.points_spinbox.setMaximumWidth(78)
+        self.points_spinbox.setMaximumWidth(scale_px_length(78))
         self.points_spinbox.setToolTip(points_label.toolTip())
         points_row = _refine_control_row(points_label, self.points_spinbox)
 
@@ -209,7 +213,7 @@ class DockRefineMixin:
         self.simplify_spinbox.setSuffix(" px")
         self.simplify_spinbox.setSpecialValueText(tr("Off"))
         self.simplify_spinbox.setMinimumWidth(62)
-        self.simplify_spinbox.setMaximumWidth(78)
+        self.simplify_spinbox.setMaximumWidth(scale_px_length(78))
         self.simplify_spinbox.setToolTip(simplify_label.toolTip())
         simplify_row = _refine_control_row(
             simplify_label, self.simplify_spinbox)
@@ -229,7 +233,7 @@ class DockRefineMixin:
         self.clean_edges_spinbox.setSpecialValueText(tr("Off"))
         self.clean_edges_spinbox.setToolTip(clean_label.toolTip())
         self.clean_edges_spinbox.setMinimumWidth(62)
-        self.clean_edges_spinbox.setMaximumWidth(78)
+        self.clean_edges_spinbox.setMaximumWidth(scale_px_length(78))
         clean_row = _refine_control_row(clean_label, self.clean_edges_spinbox)
 
         expand_label = _refine_row_label(tr("Grow / shrink"), tr(
@@ -240,7 +244,7 @@ class DockRefineMixin:
         self.expand_spinbox.setSuffix(" px")
         self.expand_spinbox.setToolTip(expand_label.toolTip())
         self.expand_spinbox.setMinimumWidth(62)
-        self.expand_spinbox.setMaximumWidth(78)
+        self.expand_spinbox.setMaximumWidth(scale_px_length(78))
         expand_row = _refine_control_row(expand_label, self.expand_spinbox)
 
         # Right angles is a guided geometry mode: extra generic cleanup can
@@ -278,7 +282,7 @@ class DockRefineMixin:
         self.min_size_spinbox.setSpecialValueText(tr("Off"))
         self.min_size_spinbox.setToolTip(min_size_label.toolTip())
         self.min_size_spinbox.setMinimumWidth(78)
-        self.min_size_spinbox.setMaximumWidth(110)
+        self.min_size_spinbox.setMaximumWidth(scale_px_length(110))
         max_size_label = _refine_row_label(tr("Maximum"), tr(
             "Hide parts larger than this ground area. 0 = no limit."))
         self.max_size_spinbox = QDoubleSpinBox()
@@ -289,7 +293,7 @@ class DockRefineMixin:
         self.max_size_spinbox.setSpecialValueText(tr("No limit"))
         self.max_size_spinbox.setToolTip(max_size_label.toolTip())
         self.max_size_spinbox.setMinimumWidth(78)
-        self.max_size_spinbox.setMaximumWidth(110)
+        self.max_size_spinbox.setMaximumWidth(scale_px_length(110))
         size_row.addWidget(min_size_label)
         size_row.addWidget(self.min_size_spinbox)
         size_row.addStretch()
@@ -357,8 +361,17 @@ class DockRefineMixin:
         The Automatic review's rule (_sync_auto_right_angle_controls), applied
         to the Manual panel. _emit_refine_changed enforces the same thing on the
         values, so a disabled widget can never leave an old setting active.
+
+        Right angles itself is refused here when the geometry library behind it
+        is missing (right_angles_support), on the same terms as the review: only
+        a TICKED box is tested, and the seeded default is off, so the
+        build-time call never imports shapely at plugin load.
         """
         ortho = getattr(self, "right_angles_checkbox", None)
+        if ortho is not None and ortho.isChecked():
+            from .right_angles_support import gate_right_angles
+
+            gate_right_angles(ortho, getattr(self, "right_angles_label", None))
         enabled = not bool(ortho is not None and ortho.isChecked())
         blocked_tip = tr(
             "Unavailable while Right angles is on. Turn it off to adjust this "

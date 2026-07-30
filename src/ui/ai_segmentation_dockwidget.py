@@ -34,6 +34,7 @@ from .dock.auto_run_lifecycle import DockAutoRunLifecycleMixin
 from .dock.auto_run_status import DockAutoRunStatusMixin
 from .dock.build import DockBuildMixin
 from .dock.handoff import DockHandoffMixin
+from .dock.install_lock import DockInstallLockMixin
 from .dock.qgis_bridge import DockQgisBridgeMixin
 from .dock.refine import DockRefineMixin
 from .dock.server_switches import DockServerSwitchesMixin
@@ -109,12 +110,15 @@ class AISegmentationDockWidget(
     DockAutoRunStatusMixin,
     DockAutoReviewPanelMixin,
     DockAutoReviewCorrectMixin,
+    DockInstallLockMixin,
     DockStateMixin,
     QDockWidget,
 ):
 
     install_requested = pyqtSignal()
     cancel_install_requested = pyqtSignal()
+    # The review banner's own Cancel, while a local-AI install holds the panel.
+    auto_review_install_cancel_requested = pyqtSignal()
     start_segmentation_requested = pyqtSignal(object)
     undo_requested = pyqtSignal()
     save_polygon_requested = pyqtSignal()
@@ -310,6 +314,12 @@ class AISegmentationDockWidget(
         self.main_layout.setContentsMargins(8, 8, 8, 8)
 
         self._setup_ui()
+        # Once, on the finished panel: every stylesheet written next to its own
+        # widget follows the text size the user set in QGIS without each of
+        # them having to ask. A no-op on the default font.
+        from .dock.font_scale import apply_font_scale_to_tree
+
+        apply_font_scale_to_tree(self.main_widget)
 
         scroll_area = QScrollArea()
         scroll_area.setWidget(self.main_widget)

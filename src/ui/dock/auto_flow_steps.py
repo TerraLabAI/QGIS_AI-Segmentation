@@ -54,8 +54,8 @@ class DockAutoFlowStepsMixin:
         self.clear_last_run_recap()
         self.clear_auto_export_success()
         try:
-            from ...core import telemetry
-            telemetry.track_auto_start_clicked(
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_auto_start_clicked(
                 layer_kind=self._auto_layer_kind(layer),
                 has_credits_known=self._auto_credits is not None,
             )
@@ -97,14 +97,12 @@ class DockAutoFlowStepsMixin:
         # Leaving the flow retires the free-trial zone-cap message.
         self.set_auto_zone_rejected(None)
         self.set_auto_exhausted_subscribe_visible(False)
+        # No zone left to price, so the credit-block callout goes with it.
+        self.set_auto_credit_block(None)
         # Clear any leftover run status ("Saved N polygon(s) to ...") so it never
         # lingers on the Start / prompt page of the next run.
         self.set_auto_status("idle")
-        # Back at Start the footer is always usable again (covers any hard
-        # teardown that bypasses set_auto_run_active(False), e.g. a mode switch
-        # mid-run): never leave the gear/help locked once the flow is reset.
-        self.set_footer_controls_locked(False)
-        # Likewise re-enable the mode toggle, disabled during review: at Start
+        # Re-enable the mode toggle, disabled during review: at Start
         # there is no review to protect (skip while a handoff owns the toggle).
         if not self._refine_handoff:
             self.mode_switch.setEnabled(True)
@@ -123,8 +121,6 @@ class DockAutoFlowStepsMixin:
         # a late answer can never re-fire a detection on a flow that is gone.
         self._abandon_prompt_lookup()
         self._set_prompt_info()
-        # A fresh flow starts on the default prompt-plus-example path again.
-        self._reset_meta_intercept()
         # The object is gone with the prompt: drop its slider verdict too.
         self._auto_detail_feedback = None
         # The prompt was cleared with signals blocked (no textChanged), so
@@ -235,6 +231,7 @@ class DockAutoFlowStepsMixin:
             self._auto_est_credits = None
             self._auto_insufficient_credits = False
             self.auto_credit_cost_label.setVisible(False)
+            self.set_auto_credit_block(None)
         elif state == "zone_set":
             # A drawn zone completes step 2.
             self._go_to_auto_step(2)

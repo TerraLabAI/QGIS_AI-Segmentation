@@ -10,9 +10,9 @@ back in band by band.
 Parking the canvas update interval for the length of that one redraw keeps the
 polygons the user is already looking at on screen until the new layer is fully
 drawn, so the handover is a single swap. The hold is lifted the moment the
-redraw completes, the moment the user moves the map, or after HOLD_TIMEOUT_MS,
-whichever comes first: a still map is only better than a filling one for as
-long as the fill would have taken.
+redraw completes, the moment the user moves the map, or once the timeout
+:func:`hold_timeout_ms` reports has passed, whichever comes first: a still map
+is only better than a filling one for as long as the fill would have taken.
 """
 from __future__ import annotations
 
@@ -24,11 +24,28 @@ _PARKED_UPDATE_INTERVAL_MS = 3_600_000
 
 # A redraw still running after this stops being a handover and starts being a
 # frozen map, so past it the canvas goes back to filling in as it draws.
+# Shipped value, and the fallback the getter below returns.
 HOLD_TIMEOUT_MS = 8_000
 
 # One hold per canvas: a second commit while the first is still drawing must
 # not save the parked interval as if it were the real one.
 _holds: dict[int, _CanvasPictureHold] = {}
+
+
+def hold_timeout_ms() -> int:
+    """How long the map may stay held, in milliseconds.
+
+    Bounded on both sides: below the floor the hold expires inside the redraw
+    it exists to cover, above the ceiling a stuck redraw leaves the map frozen
+    for a full minute. Cache-only and never raises, so it is safe to read on
+    the commit path.
+    """
+    try:
+        from ...core.server_dials import dial_in_range
+
+        return int(dial_in_range("ui.canvas_hold_timeout_ms", HOLD_TIMEOUT_MS, 500, 60_000))
+    except Exception:  # noqa: BLE001 -- the timeout is best-effort  # nosec B110
+        return HOLD_TIMEOUT_MS
 
 
 def hold_map_picture_during_redraw(canvas) -> None:
@@ -75,7 +92,7 @@ class _CanvasPictureHold:
         self._timer = QTimer(canvas)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self.release)
-        self._timer.start(HOLD_TIMEOUT_MS)
+        self._timer.start(hold_timeout_ms())
 
     def is_live(self) -> bool:
         """True while this hold still has a canvas with a C++ side."""

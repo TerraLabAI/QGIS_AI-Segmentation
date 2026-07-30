@@ -20,7 +20,8 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ...core.i18n import tr
-from ...core.telemetry import slot_guard
+from ...core.telemetry_errors import slot_guard
+from ..error_report_dialog import show_error_report
 from .shared import (
     _add_features_fast,
     _add_features_with_ids,
@@ -165,6 +166,7 @@ class AutoReviewMixin:
             return
         self._auto_finalize_gen += 1
         self._review_push_err_logged = False  # new generation: allow one log again
+        self._review_push_editable_logged = False
         self._auto_finalize_state = {
             "mode": "reslice",
             "phase": "filter",
@@ -335,8 +337,8 @@ class AutoReviewMixin:
         if not self._auto_review:
             return
         try:
-            from ...core import telemetry
-            telemetry.track_review_confidence_final(
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_review_confidence_final(
                 run_id=self._auto_run_id or "",
                 final_pct=int(round((self._auto_confidence or 0.0) * 100)),
                 visible_count=len(self._auto_review.get("geoms", [])),
@@ -403,6 +405,21 @@ class AutoReviewMixin:
         try:
             if not layer.isValid():
                 return
+            # The Manual method puts THIS layer into a QGIS edit session. Every
+            # write below goes through the PROVIDER, which the edit buffer does
+            # not see, and the buffer is what commit and rollback act on: the
+            # write is lost, or it moves a vertex out from under the user's
+            # cursor. Nothing is owed by skipping. The way out of a Manual
+            # session commits first and reslices after, so the layer is
+            # republished on committed geometry a moment later.
+            if layer.isEditable():
+                if not getattr(self, "_review_push_editable_logged", False):
+                    self._review_push_editable_logged = True
+                    QgsMessageLog.logMessage(
+                        "Review push skipped: the review layer is in a QGIS "
+                        "edit session; it is republished when the session ends.",
+                        "AI Segmentation", level=Qgis.MessageLevel.Info)
+                return
             count = -1
             if stamp is not None and ids is not None and len(ids) == len(geoms):
                 count = self._diff_push_review_geoms(
@@ -430,7 +447,13 @@ class AutoReviewMixin:
             # triggerRepaint alone schedules the canvas update; the extra
             # mapCanvas().refresh() forced a full re-render of EVERY layer on
             # each (debounced) slider tick, which is what made review sliders lag.
-            layer.triggerRepaint()
+            # Through the live run's pacer, not straight at the layer: a bare
+            # triggerRepaint makes the canvas abandon the frame it is drawing and
+            # start again, and a slider drag pushes faster than a dense set can
+            # be drawn, so no frame ever finished and the map read as frozen for
+            # the whole drag. The pacer marks the layer dirty instead and repaints
+            # when the canvas says it finished.
+            self._repaint_live_layer(layer)
             if partial:
                 return  # header + extents settle on the final complete push
             # Keep the review count honest with the size filter (it can hide
@@ -673,8 +696,13 @@ class AutoReviewMixin:
         pixel_size = review.get("pixel_size", 1.0) or 1.0
         params = dict(self._widget_review_params())
         params["conf"] = 0.0  # drop only the confidence gate; keep size + shape
+        # Budgeted: the hidden cohort was never refined, so on a dense review
+        # this owes thousands of GEOS passes, and its callers are the exit
+        # paths, teardown and QGIS quit among them. See _RESCUE_REFINE_BUDGET_S.
+        from .auto_review_geometry import _RESCUE_REFINE_BUDGET_S
         return self._compute_visible_objects(
-            params, pixel_size, with_scores=True)
+            params, pixel_size, with_scores=True,
+            refine_budget_s=_RESCUE_REFINE_BUDGET_S)
 
     def _export_auto_review(self, include_hidden: bool = False,
                             autosave: bool = False
@@ -730,6 +758,11 @@ class AutoReviewMixin:
                 continue
             refined.append(QgsGeometry(g))
             refined_scores.append(scores[index] if scores else None)
+        # Freed BEFORE the write, not with the rest of the teardown below: it
+        # holds a simplified copy of every object the run found, and the write
+        # is where this path peaks (the staged features, the writer's own
+        # buffers and the reprojection all land on top of it).
+        self._drop_preview_geom_cache()
         name = self._export_auto_detections(
             refined, review["crs"], review["source_layer_name"], review["prompt"],
             scores=refined_scores)
@@ -767,9 +800,9 @@ class AutoReviewMixin:
         except Exception:  # noqa: BLE001  # nosec B110
             pass
         try:
-            from ...core import telemetry
+            from ...core import telemetry_run_events, telemetry_session_events
             found = len(self._auto_objects)
-            telemetry.track_auto_export_done(
+            telemetry_run_events.track_auto_export_done(
                 run_id=self._auto_run_id or "",
                 exported_count=len(refined),
                 visible_pct_of_found=int(round(len(refined) / found * 100)) if found else 0,
@@ -779,7 +812,7 @@ class AutoReviewMixin:
                 autosave=autosave,
             )
             if refined:
-                telemetry.track_first_generation_milestone(mode="auto")
+                telemetry_session_events.track_first_generation_milestone(mode="auto")
         except Exception:
             pass  # nosec B110
         self._auto_review = None
@@ -791,11 +824,10 @@ class AutoReviewMixin:
         self._auto_manual_removed = set()
         self._auto_refined_in_manual = False
         self._clear_auto_raw_fragments()
-        # A background install started from this review is now orphaned (the
-        # review is committed): drop the pending refine/add so a late predictor
-        # load does not auto-open a handoff or Add on a gone/different review.
-        self._clear_refine_install_pending()
-        self._clear_ai_add_install_pending()
+        # An install started from this review is now orphaned (the review is
+        # committed): drop the pending fix/add so a late predictor load does
+        # not auto-open one on a gone or different review.
+        self._release_local_ai_install()
         if self.dock_widget:
             try:
                 self.dock_widget.set_auto_review_active(False)
@@ -815,31 +847,45 @@ class AutoReviewMixin:
         if exported is None:
             return
         name, count = exported
-        # Capture the remaining recap facts while the run context + clip polygon
-        # still exist (reset clears the zone). credits_used = billed tiles of the
-        # run; credits_left = post-run balance snapshot (may be None if the usage
-        # refresh has not returned, in which case the recap drops the balance).
+        # A total write failure comes back as (None, count), NOT as None: every
+        # target in the fallback chain refused, and a tuple is never None, so
+        # the old check waved it through and announced "saved N objects" with a
+        # blank layer name for a run the user paid for and did not get. Report
+        # the failure instead, and leave the run context alone so nothing
+        # downstream reads it as a completed export.
+        if not name:
+            show_error_report(
+                self.iface.mainWindow(),
+                tr("Export Failed"),
+                "{}\n\n{}".format(
+                    tr("Could not save your detections to a file."),
+                    tr("The file may be open in QGIS or in another program. "
+                       "Close it and try Finish again.")),
+                error_code="export_failed",
+            )
+            return
+        # Capture the remaining recap facts while the run context still exists
+        # (the reset clears it). credits_used = billed tiles of the run; the
+        # layer id is what makes the layer name a link on both recap lines.
         try:
-            recap_area = self._auto_zone_area_km2()
             recap_used = (self._auto_run_ctx or {}).get("total")
-            recap_left, _is_free = self._auto_credit_snapshot()
+            recap_layer_id = getattr(self, "_auto_export_layer_id", "")
         except Exception:  # nosec B110 -- recap is best-effort
-            recap_area, recap_used, recap_left = None, None, None
+            recap_used, recap_layer_id = None, ""
         self._reset_auto_for_new_run()
-        # ONE message right after Finish: the success line carries the whole
-        # story (count, layer, km2, credits); the value recap is only STORED
-        # and takes over once the success line is dismissed (next Start click
-        # or mode switch), so the two never show together. Both are entirely
-        # best-effort: the export already succeeded, so nothing here may
-        # raise. Set AFTER the reset, which clears the Start page, so the
-        # success line survives the return to Start.
+        # ONE message right after Finish: the success line says how many objects
+        # were saved and where; the value recap is only STORED and takes over
+        # once the success line is dismissed (next Start click or mode switch),
+        # so the two never show together. Both are entirely best-effort: the
+        # export already succeeded, so nothing here may raise. Set AFTER the
+        # reset, which clears the Start page, so the success line survives the
+        # return to Start.
         try:
             if self.dock_widget:
                 self.dock_widget.set_auto_export_success(
                     count, name or "",
                     object_word=recap_prompt or None,
-                    area_km2=recap_area,
-                    credits_used=recap_used,
+                    layer_id=recap_layer_id,
                 )
         except Exception:  # nosec B110 -- never break Finish on the success line
             pass
@@ -848,9 +894,9 @@ class AutoReviewMixin:
                 self.dock_widget.set_last_run_recap(
                     count=count,
                     object_word=recap_prompt or tr("Example match"),
-                    area_km2=recap_area,
                     credits_used=recap_used,
-                    credits_left=recap_left,
+                    layer_name=name or "",
+                    layer_id=recap_layer_id,
                 )
         except Exception:  # nosec B110 -- never break Finish on the recap
             pass
@@ -889,8 +935,8 @@ class AutoReviewMixin:
             return
         self._review_abandon_tracked = True
         try:
-            from ...core import telemetry
-            telemetry.track_review_abandoned(
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_review_abandoned(
                 run_id=self._auto_run_id or "",
                 instances_at_exit=len((self._auto_review or {}).get("geoms", [])),
                 refined=bool(getattr(self, "_review_tel_refined", False)),
@@ -927,9 +973,8 @@ class AutoReviewMixin:
         self._auto_finalize_state = None
         self._drop_preview_geom_cache()
         self._clear_auto_raw_fragments()
-        # Orphan any background install started from this review (see above).
-        self._clear_refine_install_pending()
-        self._clear_ai_add_install_pending()
+        # Orphan any install started from this review (see above).
+        self._release_local_ai_install()
         # Turn the review UI OFF here, in the one shared discard spot: the
         # Exit path used to skip it, leaving _auto_review_active stuck True
         # so the NEXT run's prompt step re-opened on the stale review panel.
@@ -1020,8 +1065,8 @@ class AutoReviewMixin:
             box.exec()
             confirmed = box.clickedButton() is discard_btn
         try:
-            from ...core import telemetry
-            telemetry.track_auto_retry_clicked(
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_auto_retry_clicked(
                 run_id=self._auto_run_id or "",
                 discarded_count=discarded,
                 confirmed=confirmed,
@@ -1062,14 +1107,14 @@ class AutoReviewMixin:
         run or review).
         """
         try:
-            from ...core import telemetry
+            from ...core import telemetry_run_events
             from_step = None
             try:
                 from_step = int(self.dock_widget.auto_steps.currentIndex())
             except (RuntimeError, AttributeError):
                 pass
             autosaved = len((self._auto_review or {}).get("geoms", []))
-            telemetry.track_auto_exit_clicked(
+            telemetry_run_events.track_auto_exit_clicked(
                 from_step=from_step if from_step is not None else -1,
                 autosaved_count=autosaved,
             )

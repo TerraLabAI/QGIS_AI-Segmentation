@@ -36,17 +36,31 @@ def anonymize_paths(text: str) -> str:
     if not text:
         return text
 
+    # The two POSIX patterns stay case-SENSITIVE. /Users and /home are fixed
+    # case on disk and os.path.normcase is the identity there, so nothing
+    # produces another spelling, while a case-insensitive match would eat
+    # ordinary content: an API path like "/api/v1/users/me", a route, or a
+    # /vsicurl/ raster source with "users" in it.
+
     # macOS: /Users/<username>/... (with or without trailing slash)
     text = re.sub(r"/Users/[^/\s]+(?=/|$|\s)", "<USER>", text)
 
     # Linux: /home/<username>/... (with or without trailing slash)
     text = re.sub(r"/home/[^/\s]+(?=/|$|\s)", "<USER>", text)
 
+    # The two Windows patterns below are case-INSENSITIVE, because there the
+    # text really does arrive in several spellings: a package manager prints
+    # "c:\users\...", os.path.normcase lowercases a whole path, and the 8.3
+    # short form comes back uppercase. A drive-letter path cannot be confused
+    # with ordinary prose, so widening the match there costs nothing.
+
     # Windows: C:\Users\<username>\... (and other drive letters, forward/back slashes)
-    text = re.sub(r"[A-Za-z]:[/\\]Users[/\\][^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text)
+    text = re.sub(r"[A-Za-z]:[/\\]Users[/\\][^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text,
+                  flags=re.IGNORECASE)
 
     # Windows UNC paths: \\server\Users\<username>\...
-    return re.sub(r"\\\\[^\\]+\\Users\\[^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text)
+    return re.sub(r"\\\\[^\\]+\\Users\\[^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text,
+                  flags=re.IGNORECASE)
 
 
 # Generic redaction patterns. These match by SHAPE, never by literal name, so

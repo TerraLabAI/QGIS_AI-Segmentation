@@ -72,13 +72,19 @@ def max_tiles_per_run_cap() -> int:
 # a served sentence cannot raise on the draw path.
 
 
-def zone_too_large_message(max_tiles: int) -> str:
-    """Why a zone was refused for exceeding the per-run tile ceiling."""
+def zone_too_large_message(max_tiles: int, fallback: str | None = None) -> str:
+    """Why a zone was refused for exceeding the per-run tile ceiling.
+
+    ``fallback`` lets a caller keep its own shipped wording while still reading
+    the one served id: the dock's cost row sits in a header that cannot wrap,
+    so it ships a shorter sentence than the plain paths do. A served override
+    replaces both.
+    """
     from ...core.server_dials import dial_copy
 
-    text = dial_copy(
-        "zone.too_large",
-        tr("Zone too large. Reduce the area to {max} tiles or fewer."))
+    if fallback is None:
+        fallback = tr("Zone too large. Reduce the area to {max} tiles or fewer.")
+    text = dial_copy("zone.too_large", fallback)
     return text.replace("{max}", str(int(max_tiles)))
 
 
@@ -87,10 +93,9 @@ def zone_over_free_cap_message(area_km2: float) -> str:
 
     The one-sentence form, for the paths that answer with a plain string (the
     MCP API and the headless run). Those answers go to a program, not to a
-    dock label, so the shipped wording is untranslated exactly as it was. The
-    dock renders the same refusal as two rich-text lines in
-    ``auto_state.set_auto_zone_rejected``; that call site should read this dial
-    too rather than keep its own wording.
+    dock label, so the shipped wording is untranslated exactly as it was. A
+    newline is the dock's line break (see ``zone_over_free_cap_lines``), so it
+    flattens to a space here rather than reaching a program as two lines.
     """
     from ...core.server_dials import dial_copy
 
@@ -98,9 +103,46 @@ def zone_over_free_cap_message(area_km2: float) -> str:
         "zone.free_cap",
         "Zone is {area} km2; free trial zones go up to {max} km2. "
         "Use a smaller zone, or subscribe to segment areas of any size.")
+    return _fill_free_cap_text(text.replace("\n", " "), area_km2, "")
+
+
+def zone_over_free_cap_lines(area_km2: float, upgrade_url: str) -> tuple[str, str]:
+    """The same refusal as the two rich-text lines the dock draws.
+
+    Reads the same ``zone.free_cap`` id as the one-sentence form, so one deploy
+    fixes both surfaces at once. Served copy replaces the FIRST line only: the
+    action line is always the shipped one, because served text has its angle
+    brackets removed and so can never carry the subscribe link. Taking the
+    second line from the served text is what would drop that link, which is
+    the one thing on this label the user has to be able to click.
+
+    Never networks and never raises, so it is safe on the zone-draw path.
+    """
+    from ...core.server_dials import dial_copy
+
+    shipped_head = tr(
+        "This zone is {area} km² - free trial zones go up to {max} km².")
+    shipped_tail = tr(
+        'Draw a smaller zone, or <a href="{url}">Upgrade to Pro</a> to '
+        "segment areas of any size.")
+    # escape=True: the two lines go into a RichText label, where a served "&"
+    # has to be an entity. The shipped fallback comes back untouched, so its
+    # own markup survives.
+    text = dial_copy("zone.free_cap", shipped_head + "\n" + shipped_tail,
+                     escape=True)
+    head, _, _served_tail = text.partition("\n")
+    return (_fill_free_cap_text(head, area_km2, upgrade_url),
+            _fill_free_cap_text(shipped_tail, area_km2, upgrade_url))
+
+
+def _fill_free_cap_text(text: str, area_km2: float, upgrade_url: str) -> str:
+    """Fill the free-cap placeholders. str.replace, never format(): a stray
+    brace in a served sentence would raise on the draw path."""
     return (text
             .replace("{area}", f"{area_km2:.1f}")
-            .replace("{max}", f"{free_zone_cap_km2():g}"))
+            .replace("{max}", f"{free_zone_cap_km2():g}")
+            .replace("{url}", upgrade_url)
+            .strip())
 
 
 def backend_stalled_flag(tiles_done: int, warming_ms: int,
@@ -204,53 +246,17 @@ def _get_change_path_instructions():
 
 
 def _apply_fast_render(layer) -> None:
-    """Make a detection result layer cheap to pan/zoom when it holds thousands of
-    polygons. This is the fix for "QGIS lags after a big run": SAM footprints
-    carry far more vertices than matter at map scale, and redrawing them all on
-    every canvas refresh is what stutters. Two display-only levers (the stored
-    geometry is never altered):
+    """Make a detection result layer cheap to pan and zoom. The UI-side name for
+    ``core.output_store.apply_fast_canvas_render``, which holds the whole
+    implementation and the tolerance behind it; read that one.
 
-    - On-the-fly geometry simplification (QgsVectorSimplifyMethod): QGIS drops
-      sub-pixel vertices at draw time, so a zoomed-out canvas redraws a fraction
-      of the points. Full detail returns as you zoom in. This is the dominant win.
-    - A spatial index on the provider so a pan/zoom fetches only the features in
-      view instead of scanning every one.
-
-    Best-effort and version-defensive (Qt5 flat vs Qt6 scoped enums); never
-    raises into the caller.
+    The forwarder stays because half a dozen mixins already import this name,
+    and because the same settings have to reach layers created in ``src/core``
+    (the autosave recovery), which cannot import from ``src/ui``.
     """
-    try:
-        from qgis.core import QgsVectorSimplifyMethod
+    from ...core.output_store import apply_fast_canvas_render
 
-        method = QgsVectorSimplifyMethod()
-        hint_scope = getattr(QgsVectorSimplifyMethod, "SimplifyHint", QgsVectorSimplifyMethod)
-        algo_scope = getattr(QgsVectorSimplifyMethod, "SimplifyAlgorithm", QgsVectorSimplifyMethod)
-        # FullSimplification (not just GeometrySimplification) unlocks QGIS's
-        # antialiasing-disabling draw path on TOP of vertex dropping. QGIS only
-        # honours it when the threshold is > 1.0, which ours is. Fall back to
-        # GeometrySimplification on older builds that lack the flag.
-        full_hint = getattr(hint_scope, "FullSimplification",
-                            getattr(QgsVectorSimplifyMethod, "FullSimplification", None))
-        geom_hint = getattr(hint_scope, "GeometrySimplification",
-                            getattr(QgsVectorSimplifyMethod, "GeometrySimplification", None))
-        distance_algo = getattr(algo_scope, "Distance",
-                                getattr(QgsVectorSimplifyMethod, "Distance", None))
-        hint = full_hint if full_hint is not None else geom_hint
-        if hint is not None:
-            method.setSimplifyHints(hint)
-        if distance_algo is not None:
-            method.setSimplifyAlgorithm(distance_algo)
-        # Threshold in pixels: >1 both simplifies a touch more aggressively AND is
-        # the condition QGIS requires to apply FullSimplification's AA path.
-        method.setThreshold(1.5)
-        method.setForceLocalOptimization(True)
-        layer.setSimplifyMethod(method)
-    except Exception:  # noqa: BLE001 - display nicety, never break a run on it  # nosec B110
-        pass
-    try:
-        layer.dataProvider().createSpatialIndex()
-    except Exception:  # noqa: BLE001  # nosec B110
-        pass
+    apply_fast_canvas_render(layer)
 
 
 def _notify_provider_write(layer) -> None:

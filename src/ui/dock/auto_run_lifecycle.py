@@ -40,21 +40,21 @@ class DockAutoRunLifecycleMixin:
             self._auto_cancelling = False
             self.auto_cancel_btn.setEnabled(True)
             self.auto_cancel_btn.setText(tr("Cancel detection"))
-        # Lock the gear (Account Settings) and help controls while tiles are in
-        # flight: opening either fires its own network work on top of an already
-        # busy GUI thread, which compounds the freeze. They unlock the moment the
-        # run ends (review or back to Start).
-        self.set_footer_controls_locked(active or hold)
+            # A fresh run opens on imagery and on a link assumed healthy: the
+            # previous run's phase and slow-link note must not carry over.
+            self._auto_wait_phase = "imagery"
+            self._auto_link_slow = False
+        # The gear (Account Settings) and the help menu stay clickable during a
+        # run. Neither blocks the GUI thread: the account dialog fetches on a
+        # task thread, the help entries are local, and the one destructive
+        # action it offers (removing the downloaded AI data) already refuses
+        # while a run is live (is_local_ai_busy covers _auto_worker).
         # Mirror AI Edit: while tiles are in flight, clear away the non-essential
         # params (detail, confidence, cost) and the Detect/Exit row so only the
         # "Detecting X" label + progress + Cancel remain. They reappear when the
         # run ends; if the run then enters review, set_auto_review_active
         # re-hides them. The detail row honors the zone state on restore.
         self.auto_detect_row.setVisible(not (active or hold))
-        # The meta intercept belongs to the pre-run setup; a run in flight (or
-        # winding down) never shows it.
-        if active:
-            self._reset_meta_intercept()
         # The confidence box stays hidden in the prompt step (post-run only).
         self.auto_settings_box.setVisible(False)
         self.auto_detail_row.setVisible(
@@ -167,8 +167,8 @@ class DockAutoRunLifecycleMixin:
             # actionable variant (what to exclude) instead of the generic line.
             if getattr(self, "_auto_prompt_canopy", False):
                 self.auto_exemplar_explainer.set_body_text(
-                    tr("Shadows getting detected instead of trees? Draw an "
-                       "'Exclude a look-alike' box on one shadow - the AI "
+                    tr("Shadows getting detected instead of trees? Use "
+                       "'Exclude a look-alike' on one shadow - the AI "
                        "drops similar false positives."))
             else:
                 self.auto_exemplar_explainer.set_body_text(
@@ -255,41 +255,9 @@ class DockAutoRunLifecycleMixin:
             except (RuntimeError, AttributeError):
                 pass
 
-    def set_footer_controls_locked(self, locked: bool) -> None:
-        """Disable the footer gear (Account Settings) and help controls during a
-        run. Each opens a dialog/menu that does its own network work, so clicking
-        them mid-detection piles onto a busy GUI thread and worsens the freeze;
-        they grey out until the run finishes. Best-effort: the footer buttons may
-        not exist yet on an early call."""
-        busy_tip = tr("Available when detection finishes")
-        for btn, ready_tip in (
-            (getattr(self, "_settings_btn", None), tr("Settings")),
-            (getattr(self, "_help_btn", None), tr("Help / Report a problem")),
-        ):
-            if btn is None:
-                continue
-            try:
-                btn.setEnabled(not locked)
-                btn.setToolTip(busy_tip if locked else ready_tip)
-            except (RuntimeError, AttributeError):
-                pass
-
-    @staticmethod
-    def _format_recap_area(area_km2) -> str:
-        """Compact km2 for the recap line: integer at scale, else 1-2 decimals
-        so a small town-block zone never reads as a bare '0.0'."""
-        try:
-            a = float(area_km2 or 0.0)
-        except (TypeError, ValueError):
-            return "0.00"
-        if a >= 10:
-            return str(int(round(a)))
-        if a >= 1:
-            return f"{a:.1f}"
-        return f"{a:.2f}"
-
-    def set_last_run_recap(self, count: int, object_word: str, area_km2,
-                           credits_used, credits_left=None) -> None:
+    def set_last_run_recap(self, count: int, object_word: str,
+                           credits_used, layer_name: str | None = None,
+                           layer_id: str | None = None) -> None:
         """Store the session-only value recap for the Automatic Start page: one
         quiet line summarizing what the last run produced.
 
@@ -298,26 +266,19 @@ class DockAutoRunLifecycleMixin:
         text and stays hidden; dismissing the success line (next Start click or
         mode switch) reveals it as the session memory. Best-effort by contract
         (the export already committed): never raises, so a recap problem can
-        never surface as a failed Finish. Balance is dropped when unknown (the
-        post-run usage refresh has not returned yet)."""
+        never surface as a failed Finish."""
         try:
             recap = getattr(self, "auto_last_run_recap", None)
             if recap is None:
                 return
-            obj = (object_word or tr("object")).strip() or tr("object")
-            area = self._format_recap_area(area_km2)
-            if credits_left is not None:
-                text = tr(
-                    "Last run: {count} {object} exported · {area} km² "
-                    "· {used} credits used, {left} left"
-                ).format(count=count, object=obj, area=area,
-                         used=credits_used, left=credits_left)
-            else:
-                text = tr(
-                    "Last run: {count} {object} exported · {area} km² "
-                    "· {used} credits used"
-                ).format(count=count, object=obj, area=area, used=credits_used)
-            recap.setText(text)
+            from .auto_recap import auto_last_run_html
+            self._auto_recap_layer_id = layer_id or ""
+            recap.setText(auto_last_run_html(
+                count, object_word or tr("object"), layer_name or "",
+                credits_used, linked=bool(layer_id)))
+            recap.setToolTip(
+                tr("Click the layer name to see it on the map")
+                if layer_id else "")
             # isHidden (the widget's OWN flag), not isVisible: the latter is
             # False whenever an ancestor is hidden, which would wrongly show
             # both messages when this runs while the dock is not on screen.
@@ -339,29 +300,26 @@ class DockAutoRunLifecycleMixin:
             pass
 
     def set_auto_export_success(self, count: int, layer_name: str,
-                                object_word=None, area_km2=None,
-                                credits_used=None) -> None:
-        """Show the post-export success line on the Start page: what was saved,
-        where, and the run's measured value (km2 / credits) when known, so it
-        is the ONE message right after a Finish (the recap card stays hidden
-        until this line is dismissed). Set AFTER reset_auto_to_start (which
-        clears it), so it survives the return to Start; dismissed on the next
-        Start click or mode switch. Best-effort; never raises into a committed
-        export."""
+                                object_word=None, layer_id=None) -> None:
+        """Show the post-export success line on the Start page: how many objects
+        were saved and the layer they went to, as a link that frames it on the
+        map. It is the ONE message right after a Finish (the recap card stays
+        hidden until this line is dismissed). Set AFTER reset_auto_to_start
+        (which clears it), so it survives the return to Start; dismissed on the
+        next Start click or mode switch. Best-effort; never raises into a
+        committed export."""
         try:
             lbl = getattr(self, "auto_export_success", None)
             if lbl is None:
                 return
-            obj = (object_word or "").strip() or tr("polygons")
-            text = tr('{n} {object} saved to layer "{name}"').format(
-                n=count, object=obj, name=layer_name or "")
-            if area_km2 is not None:
-                text += " · " + tr("{area} km²").format(
-                    area=self._format_recap_area(area_km2))
-            if credits_used is not None:
-                text += " · " + tr("{used} credits used").format(
-                    used=credits_used)
-            lbl.setText(_msg_text("success", text))
+            from .auto_recap import auto_export_success_html
+            self._auto_recap_layer_id = layer_id or ""
+            lbl.setText(_msg_text("success", auto_export_success_html(
+                count, object_word or "", layer_name or "",
+                linked=bool(layer_id))))
+            lbl.setToolTip(
+                tr("Click the layer name to see it on the map")
+                if layer_id else "")
             lbl.setVisible(True)
             # One message per state: the recap card repeats this story, so it
             # waits behind the success line (see clear_auto_export_success).
@@ -383,4 +341,21 @@ class DockAutoRunLifecycleMixin:
             if recap is not None and bool(recap.text()):
                 recap.setVisible(True)
         except (RuntimeError, AttributeError):
+            pass
+
+    def _on_auto_recap_link(self, _href: str) -> None:
+        """Reveal the layer the last run exported to: make it the active layer
+        and frame it. Both Automatic recap lines carry the same href and the
+        same run, so one handler serves them. A layer removed since the export
+        resolves to nothing, so the click is simply ignored."""
+        try:
+            from qgis.core import QgsProject
+            from qgis.utils import iface
+            layer_id = getattr(self, "_auto_recap_layer_id", "")
+            layer = QgsProject.instance().mapLayer(layer_id) if layer_id else None
+            if layer is None or iface is None:
+                return
+            iface.setActiveLayer(layer)
+            iface.zoomToActiveLayer()
+        except Exception:  # nosec B110 -- a recap click must never raise
             pass

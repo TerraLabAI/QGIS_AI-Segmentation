@@ -156,8 +156,13 @@ def _get_qgis_proxy_settings() -> str | None:
             return None
 
         port = settings.value("proxy/proxyPort", "", type=str)
-        user = settings.value("proxy/proxyUser", "", type=str)
-        password = settings.value("proxy/proxyPassword", "", type=str)
+        # Also covers the user who stored the pair in an authentication
+        # configuration rather than in the clear, which the Network page
+        # offers and which used to leave the install with no credentials at
+        # all behind a proxy that demands them.
+        from .proxy_credentials import qgis_proxy_credentials
+
+        user, password = qgis_proxy_credentials()
 
         proxy_url = "http://"
         if user:
@@ -173,6 +178,103 @@ def _get_qgis_proxy_settings() -> str | None:
     except Exception as e:
         _log(f"Could not read QGIS proxy settings: {e}", Qgis.MessageLevel.Warning)
         return None
+
+
+_auto_config_proxy_cached: tuple[str | None] | None = None
+
+
+def _get_auto_config_proxy_settings() -> str | None:
+    """Ask Qt which proxy the machine would use for the package index.
+
+    A company that publishes its proxy through an auto-configuration script
+    (the usual corporate setup, PAC or WPAD) writes nothing in the plain
+    system setting, so ``urllib`` finds nothing and the install goes out
+    direct on a network with no direct way out. Qt runs the script and
+    answers with a real host and port. Credentials come from QGIS, since a
+    resolved script never carries any.
+
+    Never asked from the thread that draws QGIS. Running the script means a
+    name lookup and a download, which on a machine set to discover its script
+    automatically can sit there for seconds, and the whole window would be
+    frozen for all of it. Every caller that needs this is an install running
+    on its own thread; a call from the drawing thread simply reads as no
+    script, which is what happened before this existed. Asked once per
+    session either way: it is the same answer all afternoon.
+
+    Nothing to expect on macOS: Qt cannot run the script there, and says so,
+    so a Mac on a script-only network is no worse and no better than before.
+    On Linux Qt only reads it when the build has the helper library, and
+    otherwise falls back to the same environment variable the caller has
+    already tried.
+
+    None when there is no script, when it names no proxy for this address, or
+    when it names a kind pip cannot speak.
+    """
+    global _auto_config_proxy_cached
+    if _auto_config_proxy_cached is not None:
+        return _auto_config_proxy_cached[0]
+    if _on_gui_thread():
+        return None
+    try:
+        from urllib.parse import quote as url_quote
+
+        from qgis.PyQt.QtCore import QUrl
+        from qgis.PyQt.QtNetwork import (
+            QNetworkProxy,
+            QNetworkProxyFactory,
+            QNetworkProxyQuery,
+        )
+
+        from .qt_compat import resolve_qt_enum
+
+        http_type = resolve_qt_enum(QNetworkProxy, "ProxyType", "HttpProxy")
+        caching_type = resolve_qt_enum(QNetworkProxy, "ProxyType", "HttpCachingProxy")
+        query = QNetworkProxyQuery(QUrl("https://pypi.org/simple"))
+        for proxy in QNetworkProxyFactory.systemProxyForQuery(query) or []:
+            if proxy.type() not in (http_type, caching_type):
+                continue
+            host = proxy.hostName()
+            if not host:
+                continue
+            from .proxy_credentials import qgis_proxy_credentials
+
+            user, password = qgis_proxy_credentials()
+            prefix = ""
+            if user:
+                prefix = url_quote(user, safe="")
+                if password:
+                    prefix += ":" + url_quote(password, safe="")
+                prefix += "@"
+            port = proxy.port()
+            resolved = (f"http://{prefix}{host}:{port}" if port
+                        else f"http://{prefix}{host}")
+            _auto_config_proxy_cached = (resolved,)
+            _log("Using the proxy the machine's automatic configuration names",
+                 Qgis.MessageLevel.Info)
+            return resolved
+    except Exception as e:  # noqa: BLE001 - no proxy found is a normal answer
+        _log(f"Could not resolve an automatic proxy configuration: {e}",
+             Qgis.MessageLevel.Warning)
+    _auto_config_proxy_cached = (None,)
+    return None
+
+
+def _on_gui_thread() -> bool:
+    """Whether this call is on the thread that draws QGIS.
+
+    False where there is no application at all, which is the tests and any
+    headless run: there is no window to freeze, so the work the caller guards
+    with this is safe to do.
+    """
+    try:
+        from qgis.PyQt.QtCore import QCoreApplication, QThread
+
+        app = QCoreApplication.instance()
+        if app is None:
+            return False
+        return QThread.currentThread() is app.thread()
+    except Exception:  # noqa: BLE001 - no Qt, no window to freeze
+        return False
 
 
 def _get_system_proxy_settings() -> str | None:
@@ -195,9 +297,48 @@ def _get_system_proxy_settings() -> str | None:
     return None
 
 
+def _get_qgis_no_proxy_hosts() -> str:
+    """The addresses QGIS is told to reach without the proxy, comma separated.
+
+    Empty when the user listed none. Only the host part of each entry is kept,
+    which is the form pip and uv read; QGIS stores whole URLs.
+    """
+    try:
+        from urllib.parse import urlparse
+
+        from qgis.core import QgsSettings
+
+        settings = QgsSettings()
+        raw = settings.value("proxy/noProxyUrls", [])
+        if isinstance(raw, str):
+            raw = [raw]
+        hosts = []
+        for entry in raw or []:
+            text = str(entry).strip()
+            if not text:
+                continue
+            host = urlparse(text).hostname if "://" in text else text.split("/")[0]
+            host = (host or "").strip()
+            if host and host not in hosts:
+                hosts.append(host)
+        return ",".join(hosts)
+    except Exception as e:  # noqa: BLE001 - an unreadable list is an empty one
+        _log(f"Could not read the QGIS proxy exclusions: {e}", Qgis.MessageLevel.Warning)
+        return ""
+
+
 def _get_effective_proxy_url() -> str | None:
-    """QGIS-configured proxy first, then the OS system proxy."""
-    return _get_qgis_proxy_settings() or _get_system_proxy_settings()
+    """QGIS-configured proxy first, then the plain OS setting, then an
+    automatic configuration script.
+
+    The script comes LAST, not before the plain setting. On Linux the two read
+    the same environment variables, and going through Qt there would throw away
+    the credentials the variable already carries and put QGIS's in their place,
+    signing the install in as somebody else. The script is worth asking only
+    where the first two found nothing, which is the Windows machine that
+    publishes its proxy that way and writes it nowhere else.
+    """
+    return _get_qgis_proxy_settings() or _get_system_proxy_settings() or _get_auto_config_proxy_settings()
 
 
 def _get_pip_proxy_args() -> list[str]:

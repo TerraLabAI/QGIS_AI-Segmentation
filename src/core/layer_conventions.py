@@ -18,6 +18,7 @@ from qgis.core import (
     QgsDistanceArea,
     QgsFillSymbol,
     QgsGeometry,
+    QgsPointXY,
     QgsProject,
     QgsRendererCategory,
     QgsSingleSymbolRenderer,
@@ -56,6 +57,35 @@ _REVIEW_OUTLINE = "0,80,200,255"
 # already finer than the imagery any run segments.
 MEASURE_DECIMALS = 2
 
+# How far apart the two axes of a CRS may measure before ground_unit_aspect
+# reports the difference at all. A correction this small moves a corner by well
+# under a degree and a threshold by a quarter of a percent, neither of which any
+# output shows, so a projected CRS reports a flat 1.0 and its shapes stay
+# exactly as they were.
+GROUND_ASPECT_DEAD_BAND = 0.01
+
+# Bounds on the zone a run may move into a LOCAL projected CRS. A projected
+# zone is true to the ground near its central meridian and drifts away from it,
+# so a zone wider than this, or one this close to a pole, cannot use one.
+RUN_CRS_MAX_SPAN_DEG = 3.0
+RUN_CRS_MAX_LATITUDE = 80.0
+
+# The frame a geographic run falls back to when no local projected CRS holds
+# over its zone. Mercator stretches both axes by the same factor, so one of its
+# pixels covers the same ground distance each way: the render is square on the
+# ground, which is the only property the image needs. Its coordinates are NOT
+# ground metres, and nothing reads them as such - every measure the run reports
+# is taken on the ellipsoid. Without this a wide or polar geographic zone stays
+# in degrees and hands the model an image whose north-south resolution is
+# 1/cos(latitude) coarser than the user asked for.
+RUN_CRS_SQUARE_PIXEL_FALLBACK = "EPSG:3857"
+
+# How far one unit of a candidate run CRS may measure from one ground metre
+# before the candidate is rejected. This catches a project CRS that measures in
+# metres but belongs to another part of the world, which would otherwise be
+# accepted on its units alone and stretch the whole run.
+RUN_CRS_SCALE_TOLERANCE = 0.02
+
 # Column headers a reader sees in place of the raw field names. English on
 # purpose: the file travels to whoever the deliverable is for, and the layer
 # metadata written beside it is English too.
@@ -66,6 +96,125 @@ EXPORT_FIELD_ALIASES = {
     "area_m2": "Area (m²)",
     "perimeter_m": "Perimeter (m)",
 }
+
+# -- what the server may change about an export -----------------------------
+# Which CRS a run is written in is the decision behind every length and area a
+# user reads off the file, and the three bounds below are what decides it. They
+# are also the decision most likely to be wrong somewhere we have not looked:
+# one report of a stretched or squashed export in an unusual part of the world
+# is a value edit here, not a release everybody has to install. The aliases are
+# on the same footing, because a column header can break the spreadsheet or the
+# CAD import it lands in.
+#
+# Each reader is bounded, cache-only and fails to the shipped constant, so an
+# absent or damaged configuration writes exactly what the plugin writes today.
+# The bounds are not decoration: outside them the value stops describing a
+# usable CRS at all, and an export written in a wrong CRS is silently wrong
+# rather than visibly broken.
+
+# Alias overrides are NOT served copy. Copy arrives in the user's language, and
+# a header is deliberately English whatever the user's locale, because the file
+# travels to whoever the deliverable is for. So the map is read raw, per key,
+# and only for a field the plugin already writes.
+_MAX_ALIAS_CHARS = 48
+
+
+def measure_decimals() -> int:
+    """Decimals a written measure is rounded to. 0 is legal, it writes whole
+    units."""
+    try:
+        from .server_dials import dial_in_range
+
+        return int(dial_in_range("export_policy.measure_decimals", MEASURE_DECIMALS, 0, 9))
+    except Exception:  # noqa: BLE001 -- export policy is best-effort  # nosec B110
+        return MEASURE_DECIMALS
+
+
+def ground_aspect_dead_band() -> float:
+    """How far apart two axes may measure before the difference is reported."""
+    try:
+        from .server_dials import dial_in_range
+
+        return float(dial_in_range(
+            "export_policy.ground_aspect_dead_band", GROUND_ASPECT_DEAD_BAND, 0.0, 0.5))
+    except Exception:  # noqa: BLE001 -- export policy is best-effort  # nosec B110
+        return GROUND_ASPECT_DEAD_BAND
+
+
+def run_crs_enabled() -> bool:
+    """Whether a run may move off the CRS its layer came in with.
+
+    Off sends every run back to the layer's own CRS, which is what the plugin
+    did before the move existed. The three dials below only narrow the move;
+    this is the one that stops it, so a fleet-wide problem with it is a deploy
+    rather than a release.
+    """
+    try:
+        from .server_dials import feature_enabled
+
+        return feature_enabled("run_crs")
+    except Exception:  # noqa: BLE001 -- a kill switch is best-effort
+        return True
+
+
+def run_crs_max_span_deg() -> float:
+    """Widest zone, in degrees, still moved into a projected CRS."""
+    try:
+        from .server_dials import dial_in_range
+
+        return float(dial_in_range(
+            "export_policy.run_crs.max_span_deg", RUN_CRS_MAX_SPAN_DEG, 0.1, 60.0))
+    except Exception:  # noqa: BLE001 -- export policy is best-effort  # nosec B110
+        return RUN_CRS_MAX_SPAN_DEG
+
+
+def run_crs_max_latitude() -> float:
+    """Latitude past which a zone keeps the CRS it came in with."""
+    try:
+        from .server_dials import dial_in_range
+
+        return float(dial_in_range(
+            "export_policy.run_crs.max_latitude", RUN_CRS_MAX_LATITUDE, 0.0, 90.0))
+    except Exception:  # noqa: BLE001 -- export policy is best-effort  # nosec B110
+        return RUN_CRS_MAX_LATITUDE
+
+
+def run_crs_scale_tolerance() -> float:
+    """How far one unit of a candidate CRS may measure from one ground metre
+    before the candidate is refused."""
+    try:
+        from .server_dials import dial_in_range
+
+        return float(dial_in_range(
+            "export_policy.run_crs.scale_tolerance", RUN_CRS_SCALE_TOLERANCE, 0.0, 0.5))
+    except Exception:  # noqa: BLE001 -- export policy is best-effort  # nosec B110
+        return RUN_CRS_SCALE_TOLERANCE
+
+
+def export_field_alias(field_name: str) -> str | None:
+    """The column header for one field, served or shipped, None when neither.
+
+    A served entry replaces the shipped header for that field alone, so one bad
+    entry costs one column. A field the plugin does not write is ignored, which
+    keeps the served map from adding headers to a schema it cannot see.
+    """
+    key = (field_name or "").lower()
+    shipped = EXPORT_FIELD_ALIASES.get(key)
+    if shipped is None:
+        return None
+    try:
+        from .server_dials import read_value
+
+        served = read_value("export_policy.field_aliases")
+        if isinstance(served, dict):
+            value = served.get(key)
+            if isinstance(value, str):
+                value = value.strip()[:_MAX_ALIAS_CHARS].strip()
+                if value:
+                    return value
+    except Exception:  # noqa: BLE001 -- export policy is best-effort  # nosec B110
+        pass
+    return shipped
 
 
 def crs_measures_in_ground_metres(crs) -> bool:
@@ -122,6 +271,11 @@ def _utm_crs_for_extent(source_crs, extent):
             return None
         centre = QgsPointXY(extent.center())
         wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+        # Every source is transformed, geographic ones included. "Geographic"
+        # does not mean "degrees counted from Greenwich": a handful of national
+        # CRS still in use count grads, or count from Paris or Rome, and
+        # reading those numbers as if they were longitudes picks a zone a
+        # continent away.
         if source_crs is not None and source_crs.isValid() and source_crs != wgs84:
             centre = QgsCoordinateTransform(
                 source_crs, wgs84, QgsProject.instance()).transform(centre)
@@ -137,6 +291,191 @@ def _utm_crs_for_extent(source_crs, extent):
         return None
 
 
+def pick_run_crs(source_crs, extent, project_crs=None):
+    """The CRS one detection run renders, tiles and measures in.
+
+    A run held in a geographic CRS renders pixels that are square in degrees,
+    which on the ground are rectangles: a degree of longitude shrinks towards
+    the poles while a degree of latitude does not. The image handed to the
+    model is squashed by that ratio, so a square roof arrives as a rectangle,
+    and every distance the run measures is right on one axis and wrong on the
+    other. Rendering into a ground-metre CRS instead makes the pixel square on
+    the ground, which costs one reprojection QGIS already does on the fly.
+
+    Only a CRS whose two axes disagree on the ground is moved, which in
+    practice means a geographic one. Mercator is left alone on purpose: it
+    stretches both axes by the same factor, so its pixels are already square on
+    the ground and its image needs nothing. Only the meaning of its numbers is
+    off, and every ground figure the run reports is measured, not read off the
+    coordinates. Moving it would buy no image and cost a reprojection on every
+    basemap tile.
+
+    Returns ``source_crs`` unchanged when its axes already agree on the ground,
+    which is the equator and every projected CRS: there is nothing to correct,
+    so nothing moves and the grid, the tile count and the bill are what they
+    were.
+
+    A zone too wide or too polar for a local projected CRS does NOT keep its
+    degrees. No local zone stays true across it, but Mercator is square on the
+    ground everywhere it is valid, so the run moves there instead: the image is
+    what the model is judged on, and a squashed image is the one outcome worth
+    avoiding. Only a zone this cannot be proved for either - no usable bounds,
+    or ground outside Mercator's own valid band - keeps the CRS it came in with.
+
+    ``extent`` is a QgsRectangle in ``source_crs``, and should be the zone the
+    run covers rather than the whole layer: both the width test and the scale
+    test answer for the ground actually being rendered.
+
+    Switched off (``features.run_crs``), every run keeps the CRS it came in
+    with. That is the behaviour the plugin shipped for months, so the switch
+    has a known-good off state: it costs the square-pixel image back and
+    nothing else. It is read here, at the one place the decision is made, and
+    the caller memoizes the answer per zone, so a configuration refresh cannot
+    move a run that is already estimated or under way.
+    """
+    if not run_crs_enabled():
+        return source_crs
+    if crs_measures_in_ground_metres(source_crs):
+        return source_crs
+    try:
+        centre = extent.center()
+    except (RuntimeError, AttributeError):
+        return source_crs
+    if ground_unit_aspect(source_crs, centre.x(), centre.y()) == 1.0:
+        return source_crs
+    bounds = _wgs84_bounds(source_crs, extent)
+    if bounds is None:
+        # Where the zone sits is unknown, so neither candidate can be proved
+        # here. Nothing moves.
+        return source_crs
+    lon_min, lat_min, lon_max, lat_max = bounds
+    # Every branch below is a refusal of the LOCAL zone, and each one falls
+    # back to the square-pixel frame rather than to degrees. It is computed at
+    # the point of refusal so the ordinary path pays nothing for it.
+    if (lon_max - lon_min) > run_crs_max_span_deg():
+        return _square_pixel_crs(source_crs, bounds) or source_crs
+    if max(abs(lat_min), abs(lat_max)) > run_crs_max_latitude():
+        return _square_pixel_crs(source_crs, bounds) or source_crs
+    candidate = pick_output_crs(source_crs, extent, project_crs)
+    try:
+        if candidate is None or not candidate.isValid() or candidate == source_crs:
+            return _square_pixel_crs(source_crs, bounds) or source_crs
+        # The run carries its CRS to the worker and into the archive as an
+        # authority code and nothing else, so a CRS that has none cannot be
+        # rebuilt on the far side. A project CRS defined by a bare WKT is the
+        # real case. Taking it here would render the tiles in one CRS while
+        # every extent stayed in another, and every tile would still be billed.
+        if not candidate.authid():
+            return _square_pixel_crs(source_crs, bounds) or source_crs
+    except (RuntimeError, AttributeError):
+        return _square_pixel_crs(source_crs, bounds) or source_crs
+    if not _crs_holds_ground_scale(candidate, source_crs, extent):
+        return _square_pixel_crs(source_crs, bounds) or source_crs
+    return candidate
+
+
+def _square_pixel_crs(source_crs, bounds):
+    """A frame with square GROUND pixels for a zone no local projected CRS fits.
+
+    ``bounds`` is the zone as (lon_min, lat_min, lon_max, lat_max) in WGS84.
+    Returns None when the frame cannot be PROVED square over that zone, which
+    leaves the caller with the CRS it came in with.
+
+    Mercator is the frame because it is valid worldwide and stretches both axes
+    by the same factor, so a pixel of it covers the same ground distance each
+    way. Its units are not ground metres and nothing here pretends they are:
+    the run measures on the ellipsoid, exactly as it does for the web basemap
+    runs that are already in this CRS.
+
+    Two things are checked rather than assumed. The zone must sit inside the
+    frame's own declared bounds, because Mercator runs to infinity at the poles
+    and a transform past its band still answers, with a clamped coordinate that
+    is not the zone. And the frame must measure square at the zone's centre,
+    which is the property being bought.
+    """
+    from qgis.core import QgsCoordinateTransform
+
+    lon_min, lat_min, lon_max, lat_max = bounds
+    try:
+        candidate = QgsCoordinateReferenceSystem(RUN_CRS_SQUARE_PIXEL_FALLBACK)
+        if not candidate.isValid() or candidate == source_crs:
+            return None
+        if not candidate.authid():
+            return None
+        valid = candidate.bounds()
+        if valid is None or valid.isEmpty():
+            return None
+        if not (valid.xMinimum() <= lon_min and lon_max <= valid.xMaximum()
+                and valid.yMinimum() <= lat_min and lat_max <= valid.yMaximum()):
+            return None
+        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+        centre = QgsCoordinateTransform(
+            wgs84, candidate, QgsProject.instance()
+        ).transform(QgsPointXY((lon_min + lon_max) / 2.0,
+                               (lat_min + lat_max) / 2.0))
+        if ground_unit_aspect(candidate, centre.x(), centre.y()) != 1.0:
+            return None
+        return candidate
+    except (RuntimeError, AttributeError, TypeError, ValueError):
+        return None
+
+
+def _wgs84_bounds(source_crs, extent):
+    """``extent`` as (lon_min, lat_min, lon_max, lat_max), or None.
+
+    None whenever the answer would be a guess: no extent, a failed transform,
+    or coordinates off the globe. A rectangle cannot straddle the antimeridian
+    (it would need xMin above xMax), so a zone drawn across it arrives here
+    spanning the long way round and is rejected by its width.
+
+    Every source is transformed, geographic ones included, because a CRS being
+    geographic says nothing about its numbers being degrees counted from
+    Greenwich: some national CRS count grads, or count from Paris or Rome.
+    """
+    from qgis.core import QgsCoordinateTransform
+
+    try:
+        if extent is None or extent.isEmpty():
+            return None
+        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+        rect = extent
+        if source_crs is not None and source_crs.isValid() and source_crs != wgs84:
+            rect = QgsCoordinateTransform(
+                source_crs, wgs84, QgsProject.instance()
+            ).transformBoundingBox(extent)
+        lon_min, lon_max = rect.xMinimum(), rect.xMaximum()
+        lat_min, lat_max = rect.yMinimum(), rect.yMaximum()
+        if not (-180.0 <= lon_min <= lon_max <= 180.0):
+            return None
+        if not (-90.0 <= lat_min <= lat_max <= 90.0):
+            return None
+        return lon_min, lat_min, lon_max, lat_max
+    except (RuntimeError, AttributeError, TypeError, ValueError):
+        return None
+
+
+def _crs_holds_ground_scale(candidate, source_crs, extent) -> bool:
+    """Whether one unit of ``candidate`` is one ground metre over ``extent``.
+
+    Asks the candidate itself rather than trusting its declared units, which is
+    what catches a metric CRS belonging to another part of the world: it still
+    reports metres, and its metres are still the wrong length here.
+    """
+    from qgis.core import QgsCoordinateTransform
+
+    try:
+        centre = QgsPointXY(extent.center())
+        if source_crs is not None and source_crs.isValid() and source_crs != candidate:
+            centre = QgsCoordinateTransform(
+                source_crs, candidate, QgsProject.instance()).transform(centre)
+        along_x, along_y = ground_unit_metres(candidate, centre.x(), centre.y())
+        tolerance = run_crs_scale_tolerance()
+        return (abs(along_x - 1.0) <= tolerance
+                and abs(along_y - 1.0) <= tolerance)
+    except (RuntimeError, AttributeError, TypeError, ValueError):
+        return False
+
+
 def round_measure(value) -> float | None:
     """One rounding rule for every area and perimeter written to a file.
 
@@ -146,7 +485,7 @@ def round_measure(value) -> float | None:
     if value is None:
         return None
     try:
-        return round(float(value), MEASURE_DECIMALS)
+        return round(float(value), measure_decimals())
     except (TypeError, ValueError):
         return None
 
@@ -164,7 +503,7 @@ def apply_export_field_aliases(layer) -> None:
     except (RuntimeError, AttributeError):
         return
     for index, field in enumerate(fields):
-        alias = EXPORT_FIELD_ALIASES.get(field.name().lower())
+        alias = export_field_alias(field.name())
         if not alias:
             continue
         try:
@@ -309,6 +648,54 @@ def make_area_measurer(crs) -> QgsDistanceArea:
     return measurer
 
 
+def ground_unit_metres(crs, ref_x: float, ref_y: float) -> tuple[float, float]:
+    """Ground metres covered by one x unit and one y unit of ``crs``, near (x, y).
+
+    (1.0, 1.0) on any failure, and on a CRS whose units are already ground
+    metres the two come back as 1.0 to within measurement noise. Both are
+    measured on the ellipsoid, so the answer holds wherever the point is.
+    """
+    try:
+        if crs is None or not crs.isValid():
+            return 1.0, 1.0
+        step = 0.001 if crs.isGeographic() else 1.0
+        measurer = make_area_measurer(crs)
+        along_x = float(measurer.measureLine(
+            QgsPointXY(ref_x, ref_y), QgsPointXY(ref_x + step, ref_y)))
+        along_y = float(measurer.measureLine(
+            QgsPointXY(ref_x, ref_y), QgsPointXY(ref_x, ref_y + step)))
+        if along_x > 0.0 and along_y > 0.0:
+            return along_x / step, along_y / step
+    except Exception:  # noqa: BLE001 -- an unusable CRS answers for nothing  # nosec B110
+        pass
+    return 1.0, 1.0
+
+
+def ground_unit_aspect(crs, ref_x: float, ref_y: float) -> float:
+    """How much longer one y unit of ``crs`` is than one x unit, near (x, y).
+
+    1.0 wherever the two axes cover the same ground distance, which is every
+    projected CRS this plugin meets. In a geographic CRS it climbs with
+    latitude, because a degree of longitude shrinks towards the poles while a
+    degree of latitude does not: around 1.6 at 52 degrees, over 2 in northern
+    Scandinavia. A local image supplied in degrees is common, so anything that
+    reads raw coordinates as if they were distances (squaring a footprint,
+    buffering by a width) is wrong there by exactly this factor.
+
+    Exactly 1.0 whenever the two axes measure within GROUND_ASPECT_DEAD_BAND of
+    each other, so a projected CRS costs its callers no correction at all: the
+    ellipsoidal measure lands a hair off 1 in Web Mercator, and a hair is not a
+    reason to move anybody's shapes. Also 1.0 on any failure, which is the
+    behaviour of code that never asked.
+    """
+    along_x, along_y = ground_unit_metres(crs, ref_x, ref_y)
+    if along_x > 0.0 and along_y > 0.0:
+        aspect = along_y / along_x
+        if abs(aspect - 1.0) >= ground_aspect_dead_band():
+            return aspect
+    return 1.0
+
+
 def write_vector_layer(layer, file_path: str, options, transform_context=None):
     """Write a layer to disk with the one writer every supported build has.
 
@@ -393,6 +780,15 @@ def to_multipolygon(geom: QgsGeometry) -> QgsGeometry | None:
     "Could not add feature with geometry type GeometryCollection" error), so
     every detection is funneled through here. Drops non-polygonal parts and
     returns None when nothing areal remains (the caller skips that feature).
+
+    RETURNS THE ARGUMENT ITSELF when it is already a MultiPolygon, so the
+    result is NOT the caller's to mutate. A caller that transforms, translates
+    or otherwise edits what comes back must clone the inner geometry first
+    (``QgsGeometry(g.constGet().clone())``; the plain ``QgsGeometry(g)`` copy is
+    shallow and shares the same abstract geometry). The autosave broke this
+    once: it reprojected the result and so moved the merger's live keepers into
+    another CRS, which the rest of the run then measured in the CRS it still
+    declared.
     """
     if geom is None or geom.isEmpty():
         return None

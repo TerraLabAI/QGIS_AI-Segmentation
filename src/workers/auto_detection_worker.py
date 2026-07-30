@@ -56,40 +56,38 @@ from qgis.PyQt.QtCore import (
     pyqtSignal,
 )
 
+from ..core.error_policy import (
+    BACKEND_UNAVAILABLE_CODES,
+    EXHAUSTED_CODES,
+    OFFLINE_STOP_CODE,
+    RUN_FATAL_CODES,
+    TRANSIENT_CODES,
+)
+from ..core.server_dials import dial_bool as _dial_bool
+from ..core.server_dials import feature_enabled as _feature_on
 from .adaptive_concurrency import AdaptiveConcurrency, OfflineFastFail
 from .tile_convert_pool import TileConvertPool
 from .tile_render_bridge import TileRenderBridge  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-# Transient error codes that trigger a per-tile retry (bounded by the same
-# _MAX_RATE_LIMIT_RETRIES=8 ceiling as rate-limit retries; see _run_streaming /
-# _run_batched, where both requeue a "retry" until n exceeds that bound).
-_TRANSIENT_CODES = {
-    "NO_INTERNET", "TIMEOUT", "DNS_ERROR", "PROXY_ERROR",
-    "SSL_ERROR", "SERVER_ERROR", "CONNECTION_REFUSED",
-    # A submit whose deadline passed with no HTTP answer at all: the backend
-    # instance is cold-starting or busy. Retried on the queue TIME budget (not
-    # an attempt count) and shown as the "your spot is held" waiting room,
-    # never blamed on the user's connection. See terralab_client._classify_qt_error.
-    "SERVICE_WARMING",
-}
+# The four code sets above all live in core/error_policy.py, where each one is a
+# shipped base the server may ADD to without a plugin release. Read them there,
+# including why each set exists and what it costs to get one wrong. What they
+# mean HERE:
+#
+# TRANSIENT_CODES     retry this tile, bounded by the same
+#                      _MAX_RATE_LIMIT_RETRIES ceiling as rate-limit retries
+#                      (see _run_streaming / _run_batched).
+# EXHAUSTED_CODES     end the run cleanly, it is not a tile failure.
+# BACKEND_UNAVAILABLE_CODES
+#                      retry on the small attempt count below, not on the
+#                      connectivity ladder, and never feed the offline
+#                      fast-fail: the link is fine, the service is warming.
+#                      Billing-safe, the rejection is raised before any charge.
+# RUN_FATAL_CODES     stop the whole run; anything else rejects one tile.
+# OFFLINE_STOP_CODE   client-side sentinel for the offline fast-fail.
 
-# Sentinel codes for exhausted credits: a clean end-of-run, not a tile failure.
-# QUOTA_EXCEEDED is the Pro-tier exhaustion code (monthly cap reached mid-run);
-# treating it as exhausted stops the run gracefully instead of as a fatal error.
-_EXHAUSTED_CODES = {"CREDITS_EXHAUSTED", "FREE_DETECTIONS_EXHAUSTED", "QUOTA_EXCEEDED"}
-
-# A cold instance whose auth backend is not reachable yet answers a submit with
-# this code (HTTP 503). It is a transient startup condition, NOT a per-tile
-# rejection: the instance stabilizes within seconds, so these are RETRYABLE.
-# Classified apart from the connectivity-side transient codes because they are a
-# server-side, not a link-side, failure: the retry is bounded by a small attempt
-# count with a short backoff, it is not fed to the offline fast-fail, and it is
-# not an AIMD link setback (see _retry_decision). Billing-safe: the rejection is
-# raised before any charge (fail-closed server side), so re-submitting the same
-# tile under the same run id cannot double-charge.
-_BACKEND_UNAVAILABLE_CODES = {"AUTH_BACKEND_UNAVAILABLE"}
 # A handful of attempts spaced a short beat apart cover the cold window without
 # stalling the run; the delay is jittered so the first tiles of a run (all
 # rejected at once) do not retry in one synchronized wave. Both are client
@@ -214,20 +212,12 @@ _MIN_POLL_BACKOFF_S = 0.5
 _AIMD_START = 3
 _AIMD_MIN = 1
 
-# Sentinel "fatal" code raised by the offline fast-fail so the terminal error
-# carries a clear connectivity message instead of a raw code (see
-# _submit_error_message and adaptive_concurrency.OfflineFastFail).
-_OFFLINE_STOP_CODE = "NO_CONNECTION"
-
-# Run-level fatal codes: stop the whole run at once (an auth or subscription
-# problem fails every tile identically, retrying per tile only burns time).
-# Any OTHER non-retryable code is a PER-TILE rejection: that one tile is
-# skipped and the run continues, because one bad tile (a 4xx for its image,
-# a code this client version does not know) must never kill a paid
-# multi-tile run. A streak of consecutive per-tile rejections with no
-# success in between still aborts the run, so a NEW run-level code the
-# server introduces later costs at most a handful of requests.
-_RUN_FATAL_CODES = {"AUTH_ERROR", "INVALID_KEY", "SUBSCRIPTION_INACTIVE"}
+# A code outside RUN_FATAL_CODES is a PER-TILE rejection: that one tile is
+# skipped and the run continues, because one bad tile (a 4xx for its image, a
+# code this client version does not know) must never kill a paid multi-tile
+# run. This streak of consecutive rejections with no success in between still
+# aborts the run, so a run-level code the plugin has not been told about costs
+# at most a handful of requests.
 _MAX_CONSECUTIVE_TILE_FATALS = 5
 
 # A tile whose JIT render comes back blank or empty is NOT dropped on the
@@ -247,6 +237,14 @@ _RENDER_RETRY_DELAY_S = 1.5
 # fetches into that window makes the burst worse. The tile in hand still
 # renders synchronously.
 _PREFETCH_HOLDOFF_S = 4.0
+# Seconds a tile may spend waiting on its own imagery before the run reads the
+# link as too narrow for the current number of concurrent fetches. N fetches
+# sharing one uplink each get a fraction of it, so they approach the render
+# deadline together, expire together, and every one of those tiles is retried
+# and then dropped as a coverage hole. Narrowing the window instead makes the
+# same tiles arrive later but whole. Above the delay a healthy link ever shows,
+# so nothing narrows on a good connection.
+_RENDER_SLOW_S = 8.0
 
 # Mid-run offline abort threshold. After the first successful tile the
 # offline fast-fail no longer trips at its small pre-success threshold; a
@@ -286,12 +284,14 @@ def _as_float(value, default: float) -> float:
         return default
 
 
-def _resolve_convert_workers(served: int, qgis_version_int: int) -> int:
+def _resolve_convert_workers(
+    served: int, qgis_version_int: int, ceiling: int = _CONVERT_WORKERS_CEILING
+) -> int:
     """Converter-pool worker count: the served dial, hard-capped regardless
     of version, then forced to a single worker below the QGIS version whose
     GEOS context is thread-local (see the module docstring). 0 (no server
     override) is passed through so the pool sizes itself from the machine."""
-    workers = min(_CONVERT_WORKERS_CEILING, max(0, served))
+    workers = min(max(1, ceiling), max(0, served))
     if qgis_version_int < _GEOS_THREAD_LOCAL_MIN_VERSION:
         return 1
     return workers
@@ -338,6 +338,11 @@ class AutoDetectionWorker(QThread):
             a real place in the server's fair queue, -1 means busy-but-unknown
             (old server / platform rejection / cold start), and (0, 0, 0)
             clears the state once tiles flow again.
+
+        run_phase(name)
+            Which half of the run the wait belongs to before the first tile
+            answers: "imagery" while the basemap is still being fetched,
+            "detecting" from the first submit on.
     """
 
     tile_completed = pyqtSignal(int, list)
@@ -358,6 +363,11 @@ class AutoDetectionWorker(QThread):
     # position == -1 -> server busy but no position known (old server / platform
     # 429 / cold start); (0, 0, 0) -> flowing again, clear any busy UI.
     queue_state = pyqtSignal(int, int, int)
+    # Which work the user is actually waiting on before the first tile answers.
+    # A run opens by fetching basemap imagery, which on a slow link is most of
+    # the wait; telling the user "waking up the AI" through it names the wrong
+    # cause and reads as a hang. "imagery" then "detecting", once each.
+    run_phase = pyqtSignal(str)
 
     def __init__(
         self,
@@ -385,6 +395,7 @@ class AutoDetectionWorker(QThread):
         mask_scale: int = 1,
         client_meta: dict | None = None,
         tile_renderer=None,
+        source_is_online: bool = False,
         parent=None,
     ):
         """Initialise the worker.
@@ -463,6 +474,27 @@ class AutoDetectionWorker(QThread):
         # Per-tile JIT render source (main-thread bridge callback): _encode_tile
         # renders each tile on demand. Always set on every live path.
         self._tile_renderer = tile_renderer
+        # Whether a rendered tile may be read as the source's "no image here"
+        # placeholder card. Online sources only: a local raster has no such
+        # card, and its neutral-grey tiles are real ground. Resolved once here,
+        # like the other policy dials, so one run keeps one behaviour; off is
+        # the pre-existing behaviour (the card is sent and billed), which is
+        # what makes the switch safe to pull.
+        self._skip_unavailable_tiles = bool(source_is_online) and _feature_on(
+            "unavailable_tile_skip")
+        # Run the per-tile hypothesis NMS in MAP mode too. OFF is what shipped:
+        # MAP takes coverage as the union of every hypothesis, so a tile that
+        # answers with BOTH a precise outline and a mask over the same ground
+        # contributes both, and the merger unions them across the whole run into
+        # one shape the review cannot take apart. Resolved once per run at
+        # construction, like every other dial the worker reads.
+        #
+        # NOT _feature_on: that helper is fail-OPEN, so an absent key would turn
+        # this ON for the whole fleet the moment the reader shipped, which is the
+        # opposite of a switch whose off state is the behaviour that exists.
+        # Read as a plain bool dial defaulting to False, so it takes an explicit
+        # served true to arm.
+        self._map_hypothesis_nms = _dial_bool("features.map_hypothesis_nms", False)
         # If the renderer is a TileRenderBridge bound method, keep its cancel()
         # so request_stop can unblock an in-progress render at once (the unload
         # deadlock guard: the main thread blocks in worker.wait() and can no
@@ -639,6 +671,10 @@ class AutoDetectionWorker(QThread):
         self._compact_min_fill = _dp.compact_min_fill(_COMPACT_MIN_FILL)
         self._tile_span_fraction = _dp.tile_span_fraction(_TILE_SPAN_FRACTION)
         self._min_keep_px = _dp.min_keep_px(_MIN_KEEP_PX)
+        # Confidence a whole-tile MAP mask must reach to be kept. 0.0 = off,
+        # which is what shipped. Server-overridable, so the value can be picked
+        # from the scores the run logs and retuned without a release.
+        self._map_cover_score_floor = _dp.map_cover_score_floor(0.0)
         # Per-mask vectorization dials (review block), resolved ONCE here for
         # the same reason: a mid-run policy refresh must not change the shape
         # of the polygons a single run produces. 0.0 means "no server value",
@@ -672,8 +708,26 @@ class AutoDetectionWorker(QThread):
         # time, whatever the service does. An explicit server value still wins.
         self._prefetch_depth = _dp.prefetch_depth(
             max(_PREFETCH_DEPTH, self._max_concurrent))
+        # Ceiling, not the live width: _render_window narrows it on a link that
+        # cannot feed that many basemap fetches at once (see the attribute).
+        self._render_window = AdaptiveConcurrency(
+            start=self._prefetch_depth, minimum=1, maximum=self._prefetch_depth)
+        # A render this slow means the imagery fetches are competing for one
+        # narrow uplink rather than each finishing. Server-tunable on the same
+        # network block.
+        self._render_slow_s = _dp.render_slow_s(_RENDER_SLOW_S)
         self._convert_workers = _resolve_convert_workers(
-            _dp.convert_workers(_CONVERT_WORKERS), Qgis.QGIS_VERSION_INT)
+            _dp.convert_workers(_CONVERT_WORKERS), Qgis.QGIS_VERSION_INT,
+            _dp.convert_workers_ceiling(_CONVERT_WORKERS_CEILING))
+        self._convert_backlog_per_worker = _dp.convert_backlog_per_worker(
+            _CONVERT_BACKLOG_PER_WORKER)
+        self._convert_drain_budget_s = _dp.convert_drain_budget_s(
+            _CONVERT_DRAIN_BUDGET_S)
+        self._stop_drain_budget_s = _dp.stop_drain_budget_s(_STOP_DRAIN_BUDGET_S)
+        self._poll_interval_s = _dp.poll_interval_s(_DEFAULT_POLL_INTERVAL_S)
+        self._poll_max_wait_s = _dp.poll_max_wait_s(_DEFAULT_MAX_WAIT_S)
+        self._min_poll_backoff_s = _dp.min_poll_backoff_s(_MIN_POLL_BACKOFF_S)
+        self._gate_render_cache_max = _dp.gate_render_cache_max(_GATE_RENDER_CACHE_MAX)
         self._prefetch_holdoff_s = _dp.prefetch_holdoff_s(_PREFETCH_HOLDOFF_S)
         self._max_tile_fatals = _dp.max_consecutive_tile_fatals(
             _MAX_CONSECUTIVE_TILE_FATALS)
@@ -708,7 +762,7 @@ class AutoDetectionWorker(QThread):
         # clean cycle up to max_concurrent, halves on a timeout/latency setback.
         # Drives effective_cap (_run_batched) and the window (_run_streaming).
         self._aimd = AdaptiveConcurrency(
-            start=_dp.aimd_start(_AIMD_START), minimum=_AIMD_MIN,
+            start=_dp.aimd_start(_AIMD_START), minimum=_dp.aimd_min(_AIMD_MIN),
             maximum=self._max_concurrent,
         )
         # Consecutive hard-connectivity failure counter: aborts a doomed offline
@@ -751,11 +805,57 @@ class AutoDetectionWorker(QThread):
         # near-uniform drop that still gets the render-retry ladder and is
         # surfaced as a load problem. Plain int, GIL-safe.
         self.tiles_prefiltered = 0
+        # Tiles the empty-tile scan gate decided held nothing, from a PACKED
+        # LOW-RES scan, and that therefore never got a detection pass. Unlike
+        # every other counter here these tiles were CHARGED (the scan they rode
+        # in is billed), and unlike the degenerate prefilter the decision is a
+        # judgement on downsampled pixels, not a proof. So a gate that reads a
+        # tile wrong costs the user a tile-shaped hole in a run they paid for,
+        # and until this counter existed the only trace was a logger.debug line
+        # no user or log reader ever sees. Plain int, GIL-safe.
+        self.tiles_gate_skipped = 0
+        # Masks the whole-tile blob guard dropped, run-wide, and the split by
+        # which test fired. The guard runs in SEPARATE/count mode only, where a
+        # near-whole-tile mask is normally an "everything" failure on uniform
+        # texture. A large real parcel is the false positive it cannot tell
+        # apart, and dropping one leaves a tile-shaped hole with nothing in it.
+        # The thresholds behind these are server dials (max_tile_coverage,
+        # hard_tile_coverage, tile_span_fraction, compact_min_fill), so what a
+        # retune needs is the count it moved. Written under _stat_lock.
+        self.masks_dropped_whole_tile = 0
+        self.masks_dropped_hard_cover = 0
+        self.masks_dropped_tile_span = 0
+        self.masks_dropped_not_compact = 0
+        # MAP-mode counterpart, counted and never acted on: masks past
+        # max_tile_coverage that MAP keeps by design. A run whose object outlines
+        # are correct can still come back as one shape covering everything,
+        # because the merger unions these with the good outlines and the review
+        # has no filter that separates them again. Written under _stat_lock.
+        self.masks_whole_tile_kept_map = 0
+        # Whole-tile MAP masks the score floor cut, and the scores of every one
+        # the tile produced. The count says how hard the floor bit; the scores
+        # are what the next floor is chosen from. Written under _stat_lock.
+        self.masks_dropped_map_lowscore = 0
+        self.map_cover_scores: list[float] = []
         # Tiles whose render returned nothing (provider error, WMS/WMTS timeout,
         # coverage hole): also never submitted or billed. Surfaced at run end as
         # "N tiles could not be loaded" so a slow-server run's blank regions are
         # not a silent coverage gap.
         self.tiles_render_failed = 0
+        # Tiles whose render came back as the online source's "no image here"
+        # placeholder card instead of imagery (zoomed past what the source
+        # serves, a gap in its coverage, a provider that answers with a card
+        # rather than an error). Never submitted, never billed, and reported
+        # separately from a render hole because the two have different fixes.
+        # Plain int, GIL-safe.
+        self.tiles_unavailable = 0
+        # Imagery-side health, read at the terminal so a run that felt slow can
+        # be told apart from one that was: how many tiles waited past
+        # _render_slow_s for their basemap, and how narrow the adaptive render
+        # window had to go. A floor of 1 on a wide ceiling means the link could
+        # feed exactly one fetch at a time. Plain ints, GIL-safe.
+        self.renders_slow = 0
+        self.render_window_floor = self._prefetch_depth
         # Backend-distress counters, read at the terminal via run_health_summary()
         # so a sick backend can be told apart from a healthy run in telemetry
         # (a stalled service that times out every submit used to read as a plain
@@ -836,11 +936,29 @@ class AutoDetectionWorker(QThread):
           submit_retries        total transient submit network-error requeues
           tiles_skipped_network tiles dropped after their submit-retry budget
                                 was exhausted (never reached the service)
+          renders_slow          tiles that waited past the slow-render mark for
+                                their basemap imagery
+          render_window_floor   narrowest the adaptive render window went; equal
+                                to the ceiling means the link never limited it
         """
         return {
             "submit_retries": int(self.submit_network_retries),
             "tiles_skipped_network": int(self.tiles_skipped_network),
+            "renders_slow": int(self.renders_slow),
+            "render_window_floor": int(self.render_window_floor),
         }
+
+    def _emit_run_phase(self, name: str) -> None:
+        """Announce which work the pre-first-tile wait belongs to, once per
+        phase. Deduped here rather than at every call site, so the submit loop
+        can say "detecting" on every tile without spamming the UI."""
+        if getattr(self, "_run_phase_sent", None) == name:
+            return
+        self._run_phase_sent = name
+        try:
+            self.run_phase.emit(name)
+        except RuntimeError:
+            pass  # the receiver went away mid-teardown
 
     def _emit_progress(self, completed: int, total: int) -> None:
         """Emit progress shifted by the resume offset (a resumed run keeps
@@ -886,7 +1004,7 @@ class AutoDetectionWorker(QThread):
             # Off the GUI thread: track() queues, the next main-thread flush
             # ships it. Never re-raise here.
             try:
-                from ..core.telemetry import report_exception
+                from ..core.telemetry_errors import report_exception
                 report_exception(exc, stage="segment", module="auto_detection_worker")
             except Exception:  # noqa: BLE001
                 pass  # nosec B110
@@ -901,6 +1019,21 @@ class AutoDetectionWorker(QThread):
                 pass
         finally:
             end_keep_awake(activity)
+            # Imagery-side summary, the counterpart of the plugin's run summary:
+            # it says whether a run that felt slow was slow on the imagery and
+            # how far the link forced the fetch window down. Counts only, so it
+            # is safe in a production log.
+            try:
+                from qgis.core import QgsMessageLog
+                QgsMessageLog.logMessage(
+                    f"Auto detection: imagery summary - {self.renders_slow} "
+                    f"slow render(s), fetch window narrowed to "
+                    f"{self.render_window_floor} of {self._prefetch_depth}, "
+                    f"{self.tiles_render_failed} tile(s) with no imagery",
+                    "AI Segmentation", level=Qgis.MessageLevel.Info,
+                )
+            except Exception:  # noqa: BLE001 - a log line must never end a run
+                pass  # nosec B110
             # Safety net: a crash above leaves the pool open, and its threads are
             # non-daemon, so the process would wait on them at exit. Quiet and
             # non-waiting: the terminal has already gone out on that path, and
@@ -949,6 +1082,12 @@ class AutoDetectionWorker(QThread):
         self._paid_tiles_done = 0
         self._resplit_deadline = 0.0
         self._resplit_dropped = 0
+
+        # Everything from here to the first submit is imagery work: stamps,
+        # the scan gate and the first tile renders. Say so, or the wait is
+        # labelled as the service warming up and a slow basemap reads as a
+        # hang on a component that is not even busy yet.
+        self._emit_run_phase("imagery")
 
         # Crop the reference-example stamps from the zone image once (off the GUI
         # thread); each tile's encode then composites them in.
@@ -1085,7 +1224,7 @@ class AutoDetectionWorker(QThread):
         """User-facing message for a fatal terminal error. The offline fast-fail
         sentinel gets a clear connectivity line (also classified NETWORK by the
         plugin) instead of a raw internal code."""
-        if code == _OFFLINE_STOP_CODE:
+        if code == OFFLINE_STOP_CODE:
             return "No internet connection. Check your connection and try again."
         return f"Tile submit failed: {code}"
 
@@ -1117,7 +1256,7 @@ class AutoDetectionWorker(QThread):
             # an offline run and not a link setback.
             self._fastfail.reset()
             return give_up, delay, False
-        if retry_code in _BACKEND_UNAVAILABLE_CODES:
+        if retry_code in BACKEND_UNAVAILABLE_CODES:
             # Cold-instance backend-unavailable (HTTP 503, pre-charge): bounded,
             # short-spaced retries, because the instance stabilizes within
             # seconds. Not a link setback (the service is warming, not the link),
@@ -1168,7 +1307,7 @@ class AutoDetectionWorker(QThread):
         if (
             self.tiles_succeeded == 0 or self._fastfail.streak >= self._midrun_offline_streak
         ):
-            return ("fatal", _OFFLINE_STOP_CODE)
+            return ("fatal", OFFLINE_STOP_CODE)
         return stop_payload
 
     def _emit_stop(self, stop_payload: tuple) -> None:
@@ -1292,7 +1431,7 @@ class AutoDetectionWorker(QThread):
         in_flight: dict = {}
         completed = 0
         # Consecutive per-tile rejections with no accepted submit in between
-        # (see _RUN_FATAL_CODES / _MAX_CONSECUTIVE_TILE_FATALS).
+        # (see RUN_FATAL_CODES / _MAX_CONSECUTIVE_TILE_FATALS).
         fatal_streak = 0
 
         # resubmit MUST be in the guard: a cycle where a whole batch comes back
@@ -1359,6 +1498,8 @@ class AutoDetectionWorker(QThread):
                             tile_idx, tile_spec, poll_interval, max_wait,
                             deadline, tile_transform,
                         )
+                        # A tile is on the wire: the wait is no longer imagery.
+                        self._emit_run_phase("detecting")
                         fatal_streak = 0  # server accepted a tile: not systematic
                     elif kind == "completed_inline":
                         # Sync fast path: masks came back in the submit response.
@@ -1437,7 +1578,7 @@ class AutoDetectionWorker(QThread):
             if submit_backoff is not None and not in_flight:
                 self._settle_concurrency(cycle_setback, cycle_progress)
                 self._interruptible_sleep(
-                    min(max(submit_backoff, _MIN_POLL_BACKOFF_S), 60.0)
+                    min(max(submit_backoff, self._min_poll_backoff_s), 60.0)
                 )
                 continue
 
@@ -1520,7 +1661,7 @@ class AutoDetectionWorker(QThread):
                 else:
                     # Network/server error from get_detection_status.
                     code = resp.get("code", "")
-                    if code in _TRANSIENT_CODES:
+                    if code in TRANSIENT_CODES:
                         # Transient poll error. Enforce the same deadline as the
                         # pending branch so a tile whose status keeps failing
                         # transiently times out instead of looping forever.
@@ -1560,7 +1701,7 @@ class AutoDetectionWorker(QThread):
             # sliced internally so a cancel still registers within ~0.25s.
             if in_flight and not finished_ids and next_backoff is not None and not self._stop_requested:
                 self._interruptible_sleep(
-                    min(max(next_backoff, _MIN_POLL_BACKOFF_S), 5.0)
+                    min(max(next_backoff, self._min_poll_backoff_s), 5.0)
                 )
 
         self._emit_terminal()
@@ -1740,7 +1881,7 @@ class AutoDetectionWorker(QThread):
         busy_since: dict[int, float] = {}  # see _run_batched: time-budget busy retries
         completed = 0
         # Consecutive per-tile rejections with no success in between
-        # (see _RUN_FATAL_CODES / _MAX_CONSECUTIVE_TILE_FATALS).
+        # (see RUN_FATAL_CODES / _MAX_CONSECUTIVE_TILE_FATALS).
         fatal_streak = 0
         # Qt6 (QGIS 4) scopes these enums under ProcessEventsFlag; Qt5 (our 3.x
         # floor) exposes them flat on QEventLoop. Resolve compatibly.
@@ -1804,6 +1945,9 @@ class AutoDetectionWorker(QThread):
                 )
                 reply = self._client.post_detection_async(nam, submission, self._auth)
                 in_flight[reply] = (tile_idx, tile_spec, tile_transform, png_bytes)
+                # Imagery is no longer what the user is waiting on: a tile is on
+                # the wire. Deduped, so this costs nothing on later tiles.
+                self._emit_run_phase("detecting")
                 # This tile's inference just started: use the wait for its
                 # result to render the NEXT tiles concurrently on the main thread.
                 self._request_render_prefetch(pending)
@@ -1815,6 +1959,15 @@ class AutoDetectionWorker(QThread):
         # inline stalled every socket in the window while it ran.
         self._convert_pool = TileConvertPool(self._convert_completed,
                                              workers=self._convert_workers)
+
+        # Ask for the first renders BEFORE priming the window. Every later
+        # prefetch is fired once a tile is already on the wire, so it hides
+        # behind that tile's inference; the first one has nothing to hide
+        # behind, and without this the very first tile rendered synchronously
+        # on the main thread while nothing at all was in flight. It only reads
+        # the head of the queue and records render tokens, so the tile order is
+        # the same either way.
+        self._request_render_prefetch(pending)
 
         # Prime the window at the current adaptive (AIMD) width, not the full
         # max_concurrent: it opens narrow and grows per clean cycle. Guarded
@@ -1854,6 +2007,13 @@ class AutoDetectionWorker(QThread):
 
             done = [r for r in in_flight if self._reply_is_finished(r)]
             if not done:
+                # Nothing finished on the wire this slice, so the converters own
+                # the cycle: hand over what they have instead of holding it
+                # until some reply completes. A response body arrives in
+                # chunks, so most wakes land here, and the geometry of a tile
+                # that converted early used to wait out a whole other tile's
+                # inference before it could reach the canvas.
+                self._settle_converted_batch(self._convert_pool.drain())
                 continue
 
             # Per-cycle AIMD signals for this drain (see _run_batched).
@@ -1950,7 +2110,7 @@ class AutoDetectionWorker(QThread):
             # firing more tiles only grows a backlog of undelivered masks in
             # memory; the run cannot finish sooner than they can convert. Past
             # the cap, spend the cycle draining instead of firing.
-            backlog_cap = max(1, self._convert_pool.workers * _CONVERT_BACKLOG_PER_WORKER)
+            backlog_cap = max(1, self._convert_pool.workers * self._convert_backlog_per_worker)
             if self._convert_pool.pending >= backlog_cap:
                 self._settle_converted_batch(
                     self._convert_pool.drain(timeout=0.25))
@@ -1985,7 +2145,7 @@ class AutoDetectionWorker(QThread):
         # are already charged, and nothing hands the credits back. The budget
         # below is what keeps Cancel prompt, not a precondition on success.
         if self._stop_reason == "user" and in_flight:
-            drain_deadline = time.monotonic() + _STOP_DRAIN_BUDGET_S
+            drain_deadline = time.monotonic() + self._stop_drain_budget_s
             while in_flight and time.monotonic() < drain_deadline:
                 QCoreApplication.processEvents(_wait, 100)
                 drained = [r for r in in_flight if self._reply_is_finished(r)]
@@ -2023,8 +2183,8 @@ class AutoDetectionWorker(QThread):
         # can too, for the same reason the reply drain above does, but on the
         # short budget so unload's join is never held.
         self._close_convert_pool(
-            _STOP_DRAIN_BUDGET_S if self._stop_requested
-            else _CONVERT_DRAIN_BUDGET_S)
+            self._stop_drain_budget_s if self._stop_requested
+            else self._convert_drain_budget_s)
 
         self._emit_terminal()
 
@@ -2246,12 +2406,31 @@ class AutoDetectionWorker(QThread):
         stats["prepaid"] = len(self._gate_prepaid)
         stats["prefiltered"] = len(self._prefilter_skip)
         stats["scan_ms"] = int((time.monotonic() - t0) * 1000)
+        self.tiles_gate_skipped = len(self._gate_skip)
         logger.debug(
             "AutoDetectionWorker: gate scan %d blocks -> %d scans, "
             "%d skipped, %d prepaid, %d prefiltered (%d ms)",
             stats["blocks"], stats["scans"], stats["skipped"],
             stats["prepaid"], stats["prefiltered"], stats["scan_ms"],
         )
+        # Same counts to the QGIS log, not just the Python logger. A gate skip
+        # is the one drop that leaves a tile-shaped hole in a run the user paid
+        # for, so it has to be readable from the message log alone: that is the
+        # only place a field report ever comes with.
+        if self._gate_skip:
+            try:
+                from qgis.core import QgsMessageLog
+
+                QgsMessageLog.logMessage(
+                    f"Auto detection: scan gate skipped "
+                    f"{len(self._gate_skip)} of {len(self._tiles)} tile(s) "
+                    f"as empty at 1/{group} resolution "
+                    f"({stats['scans']} scan(s), {stats['scan_ms']} ms). "
+                    f"These were charged and got no detection pass.",
+                    "AI Segmentation", level=Qgis.MessageLevel.Info,
+                )
+            except Exception:  # noqa: BLE001 - a log line must never end a run
+                pass  # nosec B110
         self._track_gate_scan(stats, group)
 
     def _track_gate_scan(self, stats: dict, group: int) -> None:
@@ -2259,7 +2438,7 @@ class AutoDetectionWorker(QThread):
         Off the GUI thread: track() only queues, the next main-thread flush
         ships it (same contract as run()'s crash reporting)."""
         try:
-            from ..core.telemetry import track_auto_gate_scan
+            from ..core.telemetry_run_events import track_auto_gate_scan
             track_auto_gate_scan(
                 run_id=self._run_id,
                 tiles=len(self._tiles),
@@ -2331,6 +2510,8 @@ class AutoDetectionWorker(QThread):
                         img,
                         self._prefilter["nodata_frac"],
                         self._prefilter["band_eps"],
+                        self._prefilter["nodata_rgb_eps"],
+                        self._prefilter["min_valid_px"],
                     ):
                         self._prefilter_skip.add(idx)
                         self.tiles_prefiltered += 1
@@ -2344,7 +2525,7 @@ class AutoDetectionWorker(QThread):
                     continue  # unscanned member: normal detect path later
                 # Reuse: encode the full-res render once for the detect phase
                 # (bounded; a miss just re-renders there).
-                if len(self._gate_tile_bytes) < _GATE_RENDER_CACHE_MAX:
+                if len(self._gate_tile_bytes) < self._gate_render_cache_max:
                     encoded = encode_tile_png(tile_img, 0, 0, tw, th)
                     if encoded is not None:
                         (_sx, _sy, cw, ch), data = encoded
@@ -2651,10 +2832,13 @@ class AutoDetectionWorker(QThread):
             return
         if time.monotonic() < getattr(self, "_prefetch_holdoff_until", 0.0):
             return
+        # The LIVE width, which the adaptive window narrows on a link that
+        # cannot feed the full depth (see _note_render_health).
+        width = self._render_window.cap
         # islice, not list(pending)[:n]: this runs once per tile and pending
         # can hold hundreds of entries; only the head is ever needed.
-        for tile_idx, spec in list(itertools.islice(pending, self._prefetch_depth)):
-            if len(self._prefetched) >= self._prefetch_depth:
+        for tile_idx, spec in list(itertools.islice(pending, width)):
+            if len(self._prefetched) >= width:
                 return
             if tile_idx in self._prefetched:
                 continue
@@ -2673,6 +2857,27 @@ class AutoDetectionWorker(QThread):
             if seq is None:
                 return
             self._prefetched[tile_idx] = seq
+
+    def _note_render_health(self, waited_s: float, got_pixels: bool) -> None:
+        """Feed one tile's imagery wait to the adaptive render window.
+
+        ``waited_s`` is how long the worker sat on this tile's render, which on
+        a prefetched tile is near zero (the pipeline was ahead) and rises the
+        moment the renders stop keeping up. A wait past ``_render_slow_s``, or a
+        render that came back with nothing, halves the number of basemap
+        fetches the run keeps in flight; a prompt one grows it back one step.
+        Nothing narrows on a link that answers quickly, so a good connection
+        runs at the full depth exactly as before.
+        """
+        window = getattr(self, "_render_window", None)
+        if window is None:
+            return
+        if not got_pixels or waited_s >= self._render_slow_s:
+            window.on_setback()
+            self.renders_slow += 1
+        else:
+            window.on_clean_cycle()
+        self.render_window_floor = min(self.render_window_floor, window.cap)
 
     def _discard_prefetch(self, tile_idx: int) -> None:
         """Release a render requested ahead of time for a tile that ends up not
@@ -2706,14 +2911,15 @@ class AutoDetectionWorker(QThread):
           ("skip", None)                    - permanently dropped (caller counts
                                               it done, exactly the old None path)
 
-        A blank or empty render is retried up to _RENDER_RETRY_MAX times with a
-        PER-ATTEMPT DOUBLING delay from _RENDER_RETRY_DELAY_S (an online
-        basemap usually just had not fetched that area yet, and a multi-second
-        provider hiccup must not swallow the whole ladder); only when the
-        ladder is exhausted is the tile counted in tiles_skipped_blank /
-        tiles_render_failed and skipped for good. A failure also holds the
-        render PREFETCH off for _PREFETCH_HOLDOFF_S so concurrent fetches stop
-        piling into a struggling provider.
+        A blank, unavailable or empty render is retried up to _RENDER_RETRY_MAX
+        times with a PER-ATTEMPT DOUBLING delay from _RENDER_RETRY_DELAY_S (an
+        online basemap usually just had not fetched that area yet, and a
+        multi-second provider hiccup must not swallow the whole ladder); only
+        when the ladder is exhausted is the tile counted in
+        tiles_skipped_blank / tiles_render_failed / tiles_unavailable and
+        skipped for good. A failure also holds the render PREFETCH off for
+        _PREFETCH_HOLDOFF_S so concurrent fetches stop piling into a struggling
+        provider.
         """
         # A kept tile whose full-res render was already produced (and encoded)
         # during the gate scan phase submits those bytes directly: render once,
@@ -2736,9 +2942,9 @@ class AutoDetectionWorker(QThread):
             self.tiles_prefiltered += 1
             self._render_attempts.pop(tile_idx, None)
             return ("empty", None)
-        if status in ("blank", "render"):
+        if status in ("blank", "render", "unavailable"):
             self._prefetch_holdoff_until = time.monotonic() + self._prefetch_holdoff_s
-        if status in ("blank", "render") and not self._stop_requested:
+        if status in ("blank", "render", "unavailable") and not self._stop_requested:
             attempts = self._render_attempts.get(tile_idx, 0)
             if attempts < self._render_retry_max:
                 self._render_attempts[tile_idx] = attempts + 1
@@ -2751,6 +2957,8 @@ class AutoDetectionWorker(QThread):
             self.tiles_skipped_blank += 1
         elif status == "render":
             self.tiles_render_failed += 1
+        elif status == "unavailable":
+            self.tiles_unavailable += 1
         self._render_attempts.pop(tile_idx, None)
         return ("skip", None)
 
@@ -2767,6 +2975,8 @@ class AutoDetectionWorker(QThread):
           prefilter: all no-data or per-band uniform at full res), so the tile
           settles as a completed empty result with no request;
           ("blank", None) when the render is a uniform/nodata fill;
+          ("unavailable", None) when an ONLINE source answered with its "no
+          image here" placeholder card instead of imagery;
           ("skip", None) for everything else (cancelled, no bridge, encode
           failure). The caller (_encode_or_defer) owns the retry ladder and the
           skip counters, so this method never counts.
@@ -2782,6 +2992,7 @@ class AutoDetectionWorker(QThread):
             encode_tile_png,
             tile_is_blank,
             tile_is_degenerate,
+            tile_is_unavailable,
             tile_png_to_base64,
         )
 
@@ -2806,11 +3017,14 @@ class AutoDetectionWorker(QThread):
             # flight) is collected here; it is usually already done. Tiles
             # never prefetched take the synchronous request+wait path.
             prefetch_seq = self._prefetched.pop(tile_idx, None)
+            render_t0 = time.monotonic()
             if prefetch_seq is not None and self._render_collect is not None:
                 tile_img = self._render_collect(prefetch_seq)
             else:
                 tile_img = self._tile_renderer(tx, ty, tw, th, out_w, out_h)
-            if tile_img is None or tile_img.isNull():
+            got_pixels = tile_img is not None and not tile_img.isNull()
+            self._note_render_health(time.monotonic() - render_t0, got_pixels)
+            if not got_pixels:
                 # The render produced nothing: a provider/WMS hole or timeout,
                 # not real ground. Retryable (the caller's ladder decides when
                 # it becomes a counted coverage hole); never submitted, so
@@ -2828,6 +3042,8 @@ class AutoDetectionWorker(QThread):
                     tile_img,
                     self._prefilter["nodata_frac"],
                     self._prefilter["band_eps"],
+                    self._prefilter["nodata_rgb_eps"],
+                    self._prefilter["min_valid_px"],
                 )
             ):
                 return ("empty", None)
@@ -2839,6 +3055,12 @@ class AutoDetectionWorker(QThread):
             # raw render, before any example stamp is composited in.
             if tile_is_blank(tile_img):
                 return ("blank", None)
+            # "No image here" placeholder card from an online source: real
+            # pixels, so nothing above catches it, and sending it buys a
+            # picture of a grey card. Retryable like a blank (a card can also
+            # mean the source has not caught up yet), then dropped unbilled.
+            if self._skip_unavailable_tiles and tile_is_unavailable(tile_img):
+                return ("unavailable", None)
             src_x, src_y = 0, 0
 
             if out_w and out_h:
@@ -2982,7 +3204,7 @@ class AutoDetectionWorker(QThread):
         Pure: no network, no sleeping."""
         code = response.get("code", "")
         if "error" in response:
-            if code in _EXHAUSTED_CODES:
+            if code in EXHAUSTED_CODES:
                 return ("exhausted", _as_int(response.get("credits_remaining"), 0))
             if code == "RATE_LIMITED":
                 try:
@@ -3000,7 +3222,7 @@ class AutoDetectionWorker(QThread):
                 # 4th slot = code: the caller resets the offline fast-fail on a
                 # busy answer (the server was reached, so the run is not offline).
                 return ("retry", delay if delay > 0 else 5.0, True, "RATE_LIMITED")
-            if code in _TRANSIENT_CODES:
+            if code in TRANSIENT_CODES:
                 if code == "SERVICE_WARMING":
                     # Submit deadline passed with no answer: the backend
                     # instance is cold-starting or busy. Surface the waiting
@@ -3024,7 +3246,7 @@ class AutoDetectionWorker(QThread):
                 # which advances only on hard-connectivity codes (DNS/refused/proxy)
                 # and resets on a pure timeout / server-busy.
                 return ("retry", 2.0, False, code)
-            if code in _BACKEND_UNAVAILABLE_CODES:
+            if code in BACKEND_UNAVAILABLE_CODES:
                 # A cold instance's auth backend is not reachable yet (HTTP 503,
                 # pre-charge / fail-closed): retry rather than skip, because it
                 # stabilizes within seconds. Surface the waking-up state (same
@@ -3037,7 +3259,7 @@ class AutoDetectionWorker(QThread):
             # Non-retryable error. Run-level codes end the run; anything else
             # rejects only THIS tile (the caller skips it and keeps going,
             # with a consecutive-rejection guard for systematic failures).
-            if code in _RUN_FATAL_CODES:
+            if code in RUN_FATAL_CODES:
                 return ("fatal", code)
             return ("tile_fatal", code)
 
@@ -3057,8 +3279,8 @@ class AutoDetectionWorker(QThread):
             )
             return ("skip",)
 
-        poll_interval = _as_float(response.get("poll_interval"), _DEFAULT_POLL_INTERVAL_S)
-        max_wait = _as_float(response.get("max_wait"), _DEFAULT_MAX_WAIT_S)
+        poll_interval = _as_float(response.get("poll_interval"), self._poll_interval_s)
+        max_wait = _as_float(response.get("max_wait"), self._poll_max_wait_s)
         # Defensive: an early server build shipped max_wait in milliseconds.
         # A ceiling above one hour can only be ms; normalize to seconds.
         if max_wait > 3600:
@@ -3638,6 +3860,20 @@ class AutoDetectionWorker(QThread):
         # being read-modify-written per mask from several threads at once.
         clip_geom, clip_engine = self._clip_for_thread()
         observed_cell = 0.0
+        # Masks the whole-tile blob guard threw away, by which of its three
+        # tests fired. Folded run-wide under _stat_lock beside
+        # raw_detections_total, for the same reason: several converter threads
+        # reach this and += would lose counts. The guard drops a mask the user
+        # PAID for and left no trace at all, so a legitimate parcel that fills
+        # its tile vanished into a tile-shaped hole with nothing to read.
+        n_blob_hard = 0
+        n_blob_span = 0
+        n_blob_shape = 0
+        n_blob_kept_map = 0
+        n_blob_map_lowscore = 0
+        # Scores of every whole-tile mask this tile produced in MAP mode, kept
+        # or cut. The floor above can only be chosen from the spread.
+        map_cover_scores: list[float] = []
         out = []
         # Prepared crops, in the order the masks arrived: (crop, (row0, col0)),
         # keyed by the polygonize parameters they share, plus a parallel list of
@@ -3685,6 +3921,7 @@ class AutoDetectionWorker(QThread):
             # applies them later if it re-merges as SEPARATE.
             if self._merge_separate and not self._collect_raw and coverage > self._max_tile_coverage:
                 if coverage > self._hard_tile_coverage:
+                    n_blob_hard += 1
                     continue
                 # A mask the TILE bounds is not an object: the grid drew its
                 # outline, and in count mode it has no edge of its own to be
@@ -3694,8 +3931,36 @@ class AutoDetectionWorker(QThread):
                 # test runs first, and the rescue never gets to look at it.
                 span = self._tile_span_fraction
                 if (col1 - col0 + 1 >= span * full_w and row1 - row0 + 1 >= span * full_h):
+                    n_blob_span += 1
                     continue
                 blob_check = True
+            elif coverage > self._max_tile_coverage and (
+                    self._map_cover_score_floor > 0.0
+                    and float(score) < self._map_cover_score_floor):
+                # MAP mode, the one cut that survives the "it might be a real
+                # lake" objection: the bigger the claim, the more confident it
+                # has to be. A mask over most of a tile is the largest claim the
+                # model can make there, and when it is also among the least
+                # confident it is the fill-everything answer, not the lake.
+                # Nothing about this is class-specific, so it holds for every
+                # continuous prompt (forest, water, road, grass) at once.
+                # OFF at 0.0, which is the behaviour that shipped.
+                n_blob_map_lowscore += 1
+                map_cover_scores.append(float(score))
+                continue
+            elif coverage > self._max_tile_coverage:
+                # MAP mode, where the guard above is off on purpose so a real
+                # whole-tile lake or field survives. COUNT ONLY, nothing is
+                # dropped: the same mask that is a genuine lake here is also how
+                # a "fill everything" answer looks, and in MAP the merger then
+                # unions it with the correct outlines from its neighbours, so
+                # one bad tile can swallow a whole run into a single object that
+                # no review filter can take apart. Whether to arm anything here
+                # is a behaviour change on a paid path, and this number is what
+                # it should be decided on. Their SCORES ride along: picking the
+                # floor above needs the spread, not the count.
+                n_blob_kept_map += 1
+                map_cover_scores.append(float(score))
             sub = mask[row0:row1 + 1, col0:col1 + 1]
             # Pad 1px of background on every side BEFORE fill_holes. binary_fill_holes
             # floods inward from the array border: an object touching the crop edge
@@ -3769,6 +4034,7 @@ class AutoDetectionWorker(QThread):
                     # texture blob.
                     if blob_check and not self._is_compact_shape(
                             geom, self._compact_min_fill):
+                        n_blob_shape += 1
                         continue
                     out.append((geom, score))
         # Raw (pre-NMS/pre-merge) detection count, for the run-summary log: the
@@ -3779,6 +4045,14 @@ class AutoDetectionWorker(QThread):
         # loses counts when two land together.
         with self._stat_lock:
             self.raw_detections_total += len(out)
+            self.masks_dropped_whole_tile += (
+                n_blob_hard + n_blob_span + n_blob_shape)
+            self.masks_dropped_hard_cover += n_blob_hard
+            self.masks_dropped_tile_span += n_blob_span
+            self.masks_dropped_not_compact += n_blob_shape
+            self.masks_whole_tile_kept_map += n_blob_kept_map
+            self.masks_dropped_map_lowscore += n_blob_map_lowscore
+            self.map_cover_scores.extend(map_cover_scores)
             if observed_cell > self.observed_mask_gsd:
                 self.observed_mask_gsd = observed_cell
         # SEPARATE/count mode: resolve the model's overlapping same-region
@@ -3788,7 +4062,16 @@ class AutoDetectionWorker(QThread):
         # max constituent score, so a low-score complex-wide mask (shadow
         # fringe included) surfaces at its best roof's confidence. MAP mode is
         # left untouched: coverage there is the union of hypotheses by design.
-        if self._merge_separate or self._collect_raw:
+        # The same NMS, in MAP mode, when the server switch is on. OFF ships the
+        # behaviour above unchanged. It is the one test that separates the two
+        # readings of a whole-tile mask WITHOUT a threshold: a tile that returned
+        # precise outlines AND a mask covering the same ground is a hypothesis
+        # stack, and NMS picks one; a tile that is genuinely all lake returns the
+        # big mask ALONE, so there is nothing to suppress and it survives. A
+        # coverage cut cannot tell those apart, and re-arming one here would
+        # punch a hole in the middle of every real lake, since the neighbours
+        # only reach one overlap band into a dropped tile.
+        if self._merge_separate or self._collect_raw or self._map_hypothesis_nms:
             # NMS also runs in raw-collect mode: it resolves the model's
             # overlapping same-region hypothesis stacks (not distinct instances),
             # so the fragments the client keeps are already free of that
@@ -3797,7 +4080,7 @@ class AutoDetectionWorker(QThread):
             sup_kwargs = {k: ms[k] for k in (
                 "ios_threshold", "dup_ios_floor", "dup_centroid_frac") if k in ms}
             out = suppress_redundant_hypotheses(out, **sup_kwargs)
-        else:
+        if not (self._merge_separate or self._collect_raw):
             # MAP/continuous mode has no per-tile hypothesis NMS (coverage is
             # the union of hypotheses by design), so a dense continuous prompt
             # (roads, forest) ships hundreds of raw overlapping fragments per

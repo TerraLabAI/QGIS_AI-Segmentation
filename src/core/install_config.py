@@ -35,10 +35,11 @@ the tests can all import it.
 from __future__ import annotations
 
 import re
-from typing import Sequence
+from typing import Iterable, Sequence
 
 from .server_dials import (
     dial_in_range,
+    dial_list,
     dial_str,
     dial_url,
     parse_version,
@@ -192,6 +193,22 @@ def package_timeout_s(package_name: str, shipped: int) -> int:
         return shipped
     return int(dial_in_range(
         f"install.timeouts.{package_name}", shipped, 60, 21_600))
+
+
+def verify_timeout_s(package_name: str, shipped: int) -> int:
+    """How long one package's post-install check may run before it is killed.
+
+    ``install.verify_timeouts`` is a ``{package_name: seconds}`` map, keyed the
+    same way as ``install.timeouts``. A check that runs out of time is read as
+    a broken package, and that verdict escalates to a full reinstall, so the
+    floor exists to stop a merely slow machine from repeating that reinstall
+    for ever.
+    """
+    served = _served_map("install.verify_timeouts").get(package_name)
+    if served is None:
+        return shipped
+    return int(dial_in_range(
+        f"install.verify_timeouts.{package_name}", shipped, 10, 1800))
 
 
 def network_retry_attempts(shipped: int) -> int:
@@ -368,6 +385,20 @@ def uv_download_timeout_ms(shipped: int) -> int:
         "install.uv.download_timeout_ms", shipped, 10_000, 1_800_000))
 
 
+def uv_http_timeout_s(shipped: int) -> int:
+    """Seconds the installer waits on one stalled transfer before it gives up.
+
+    The wheels it fetches are large, so the tool's own default is short enough
+    to fail a slow link that would have finished.
+    """
+    return int(dial_in_range("install.uv.http_timeout_s", shipped, 30, 1800))
+
+
+def uv_http_retries(shipped: int) -> int:
+    """How many times the installer re-sends a transfer that failed."""
+    return int(dial_in_range("install.uv.http_retries", shipped, 1, 20))
+
+
 def python_release_tag(shipped: str) -> str:
     """The standalone-Python release the interpreter is fetched from."""
     served = dial_str("install.python.release_tag", "")
@@ -402,3 +433,35 @@ def python_digests(shipped: dict[str, str], shipped_tag: str) -> dict[str, str]:
     """Asset name to digest for the interpreter release in force."""
     return _digest_table(
         "install.python.sha256", shipped, shipped_tag, python_release_tag(shipped_tag))
+
+
+# -- installer-error classifier vocabularies -------------------------------
+# Which remedy a failed install offers is decided by matching the installer's
+# own output against a keyword table. The installer is written in Rust and does
+# its own TLS, so its wording is neither pip's nor OpenSSL's, and a tool version
+# or a system language we have not seen can print a phrase the shipped table
+# does not carry. A phrase we do not carry costs the user the right remedy and
+# costs us the class the failure is reported under, since that class is the
+# branch that matched.
+#
+# Union-only, like every other served list: a deploy may ADD a phrase and can
+# never drop a shipped one, so no configuration can take a remedy away. The
+# ORDER the classifiers run in stays in code, because that order carries meaning
+# the server has no way to express.
+
+
+def classifier_markers(name: str, shipped: Iterable[str]) -> tuple[str, ...]:
+    """The phrases one installer-error classifier matches on, served extras included.
+
+    ``install.classifier.<name>`` is a list of EXTRA phrases for the classifier
+    called ``name``. Both sides come back lower-cased, because every caller
+    matches against lower-cased installer output.
+
+    Resolved per call rather than at import, so a configuration a later session
+    mirrors to disk reaches a classifier that was imported before it existed.
+    """
+    return tuple(dial_list(
+        f"install.classifier.{name}",
+        tuple(item.lower() for item in shipped),
+        normalize=str.lower,
+    ))

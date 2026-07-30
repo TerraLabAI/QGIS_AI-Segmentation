@@ -136,7 +136,13 @@ class _PresetCard(QFrame):
             self.slider.set_after(pixmap)
 
     def mark_missing(self, which: str) -> None:
+        if which not in ("before", "after"):
+            return
         self._missing.add(which)
+        # Settle the failed half now. Waiting for both to fail leaves a card
+        # whose other half arrived stuck on "Loading..." for the life of the
+        # dialog, with the slider holding an empty side.
+        self.slider.mark_unavailable(which)
         if {"before", "after"} <= self._missing and not self.slider.has_images():
             self.slider.set_placeholder_text(tr("No preview"))
 

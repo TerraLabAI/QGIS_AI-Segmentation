@@ -17,6 +17,7 @@ from __future__ import annotations
 #: Cap on a pack's raster side, in pixels of the tile grid. Batching every mask
 #: of a tile into one raster would trade the per-call cost for a full-tile scan
 #: and gain nothing, so a pack closes once its union box would grow past this.
+#: Shipped value, and the fallback :func:`pack_max_side` returns.
 PACK_MAX_SIDE = 320
 
 #: Row band used to visit crops in roughly row-major order. Members of a pack
@@ -24,7 +25,24 @@ PACK_MAX_SIDE = 320
 _ROW_BAND = 64
 
 
-def pack_disjoint_crops(boxes: list, max_side: int = PACK_MAX_SIDE) -> list:
+def pack_max_side() -> int:
+    """Cap on a pack's raster side, in pixels of the tile grid.
+
+    Bounded on both sides: below the floor a pack holds barely one crop and the
+    batching buys nothing, above the ceiling one pack scans more background
+    than the calls it saves are worth. Cache-only and never raises, so it is
+    safe to read from the detection worker's thread.
+    """
+    try:
+        from .server_dials import dial_in_range
+
+        return int(dial_in_range("detection_policy.exemplar.pack_max_side",
+                                 PACK_MAX_SIDE, 64, 1024))
+    except Exception:  # noqa: BLE001 -- packing is an optimisation  # nosec B110
+        return PACK_MAX_SIDE
+
+
+def pack_disjoint_crops(boxes: list, max_side: int | None = None) -> list:
     """Group crop bounding boxes into packs that can share one label raster.
 
     ``boxes`` are ``(row0, row1, col0, col1)``, inclusive, in the tile's pixel
@@ -35,7 +53,12 @@ def pack_disjoint_crops(boxes: list, max_side: int = PACK_MAX_SIDE) -> list:
     Returns a list of ``(indices, union_box)``. Order within a pack follows the
     visit order, not the input order, so callers must key results by the label
     they painted rather than by position.
+
+    ``max_side`` defaults to the cap in force, read here rather than at import
+    time so a configuration refresh moves it.
     """
+    if max_side is None:
+        max_side = pack_max_side()
     packs: list = []
     order = sorted(
         range(len(boxes)),

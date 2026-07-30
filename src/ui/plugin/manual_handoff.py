@@ -79,6 +79,20 @@ class ManualHandoffMixin:
                   self._startup_check_worker):
             if w is not None and w.isRunning():
                 return True
+        # The local model packages must be there. get_venv_status below no
+        # longer covers them: it answers "can the plugin run", and a venv with
+        # no model still runs Automatic. Without this check the install could
+        # finish without the model, the venv would read ready, and the failure
+        # would surface as a traceback on the first click instead of the
+        # one-time-setup offer.
+        try:
+            from ...core.venv_manager import local_model_ready
+            model_ok, _why = local_model_ready()
+            if not model_ok:
+                self._env_ready = False
+                return False
+        except Exception:  # nosec B110 -- fail-open on a probe error
+            pass
         # The model checkpoint must exist too, else the predictor can never load.
         try:
             from ...core.checkpoint_manager import checkpoint_exists
@@ -115,8 +129,9 @@ class ManualHandoffMixin:
         into its canonical row and its det_id skips the gates, so a later
         confidence change re-filters only the untouched detections and never
         drops the hand work. When the local AI is not installed, a one-time
-        install runs in the BACKGROUND while the review stays usable; the
-        reshape opens itself once the AI is ready (see _on_predictor_loaded)."""
+        setup runs first and holds the review still while it does
+        (local_ai_install_lock); the fix opens itself once the AI is ready
+        (see _on_predictor_loaded)."""
         review = self._auto_review
         if not review or not self.dock_widget:
             return
@@ -145,32 +160,38 @@ class ManualHandoffMixin:
             self._reshape_open_anchor = (pt.x(), pt.y())
         else:
             self._reshape_open_anchor = None
-        # Env gate: without the local AI the predictor never arrives. Offer to
-        # install it in the background; the review stays on screen and the
-        # reshape opens itself when the predictor is ready.
+        # Env gate: without the local AI the predictor never arrives. Offer the
+        # one-time setup, which takes the review until it ends and then opens
+        # this polygon itself.
         if not self._manual_env_ready():
-            if self._refine_install_pending:
-                return  # a background install is already running for this reshape
+            if self._local_ai_install_pending():
+                return  # a setup is already running for this review
+            # A setup already ran this session and the model still would not
+            # load. Re-offering it on every polygon click is a modal the user
+            # cannot get rid of, so say it once and leave them on Manual. With
+            # no attempt behind it the offer still stands: it is what fixes a
+            # truncated model file.
+            if (getattr(self, "_local_ai_load_failed", False)
+                    and getattr(self, "_local_ai_install_attempted", False)):
+                self._warn_local_ai_unavailable_once()
+                return
             box = QMessageBox(self.iface.mainWindow())
-            box.setWindowTitle(tr("Reshape needs a one-time setup"))
+            box.setWindowTitle(tr("Fixing needs a one-time setup"))
             box.setText(tr(
-                "Reshaping uses the free on-device AI, which is not installed "
-                "yet. Install it now (a few minutes, in the background)? You "
-                "can keep reviewing, and reshaping will open automatically when "
-                "it is ready."))
+                "Fixing a polygon uses the free on-device AI, which is not "
+                "installed yet. Install it now? It runs once and takes a few "
+                "minutes. The review waits for it, then opens this polygon "
+                "for you."))
             install_btn = box.addButton(tr("Install now"), QMessageBox.ButtonRole.AcceptRole)
             box.addButton(tr("Cancel"), QMessageBox.ButtonRole.RejectRole)
             box.setDefaultButton(install_btn)
             box.exec()
             if box.clickedButton() is not install_btn:
                 return  # review untouched
-            self._refine_install_pending = True
-            try:
-                self.dock_widget.enter_ai_reshape_state()
-                self.dock_widget.set_auto_review_installing(True)
-            except (RuntimeError, AttributeError):
-                pass
-            self._on_install_requested()
+            # No reshape state here: nothing is being reshaped yet, and a panel
+            # showing Save and Undo over an install is a session that does not
+            # exist. The install lock is what holds the review still.
+            self._begin_local_ai_install("reshape")
             return
         # Drop the resting select tool before the Manual session takes the canvas.
         self._disarm_shape_tool()
@@ -181,9 +202,9 @@ class ManualHandoffMixin:
         try:
             import time as _time
 
-            from ...core import telemetry
+            from ...core import telemetry_run_events
             self._refine_handoff_t0 = _time.monotonic()
-            telemetry.track_refine_in_manual_entered(
+            telemetry_run_events.track_refine_in_manual_entered(
                 run_id=self._auto_run_id or "",
                 instances=len(review.get("geoms", [])),
             )
@@ -231,13 +252,26 @@ class ManualHandoffMixin:
             return
         from qgis.core import QgsPointXY
         pt = QgsPointXY(anchor[0], anchor[1])
+        # The anchor was read off a canonical object, so it is in the run CRS,
+        # while the imported seeds live in the raster CRS. Same conversion the
+        # geometries got at import, and the same no-op when the two CRS match.
+        pair = getattr(self, "_handoff_crs_pair", None)
+        if pair:
+            xform = self._handoff_crs_xform(pair[0], pair[1])
+            if xform is not None:
+                try:
+                    pt = xform.transform(pt)
+                except Exception:  # noqa: BLE001 -- keep the raw anchor  # nosec B110
+                    pass
         idx = self._hit_test_saved_polygon(pt)
         if idx is not None:
             self._open_saved_polygon_for_edit(idx, pt)
 
     def _clear_refine_install_pending(self) -> None:
-        """Drop the pending background-install-then-refine intent and hide its
-        inline review banner. Idempotent; safe to call from any review teardown."""
+        """Drop the pending install-then-fix intent and hide its review banner.
+
+        Idempotent, and never called on its own: `_release_local_ai_install`
+        is the one door out of an install, and it clears both lanes."""
         if not getattr(self, "_refine_install_pending", False):
             return
         self._refine_install_pending = False
@@ -246,12 +280,6 @@ class ManualHandoffMixin:
                 self.dock_widget.set_auto_review_installing(False)
             except (RuntimeError, AttributeError):
                 pass
-
-    def _abort_refine_install(self) -> None:
-        """A background install started from the review failed: clear the pending
-        refine intent and re-enable the Refine button (the review is unharmed; the
-        install's own error report already told the user what went wrong)."""
-        self._clear_refine_install_pending()
 
     def _enter_manual_refine_session(self) -> None:
         """Start a Manual session on the run's raster and load the reviewed
@@ -365,9 +393,98 @@ class ManualHandoffMixin:
                 continue
         self._load_predictor()
 
+    # --- the one CRS boundary between the review and the Manual session ------
+    # The review carries its geometries in the RUN CRS. Manual works end to end
+    # in the RASTER CRS: the canvas transform, the crop bounds every rasterize
+    # reads, and the raster-CRS points a click produces. The two CRS are the
+    # same on every raster whose own CRS the run kept, so the conversion below
+    # is a no-op there. Where they differ, converting here (and back on the
+    # harvest) is what keeps one CRS on each side instead of two inside Manual.
+
+    def _handoff_crs_xform(self, src_authid, dst_authid):
+        """ONE transform between two CRS authids, built at a handoff boundary
+        and reused for every geometry crossing it. None when either authid is
+        missing, the two are equal, or the transform cannot be built: each of
+        those means leave the geometries alone."""
+        if not src_authid or not dst_authid or src_authid == dst_authid:
+            return None
+        try:
+            from qgis.core import (
+                QgsCoordinateReferenceSystem,
+                QgsCoordinateTransform,
+            )
+            src = QgsCoordinateReferenceSystem(src_authid)
+            dst = QgsCoordinateReferenceSystem(dst_authid)
+            if not src.isValid() or not dst.isValid():
+                return None
+            xform = QgsCoordinateTransform(src, dst, QgsProject.instance())
+            return xform if xform.isValid() else None
+        except (RuntimeError, AttributeError, TypeError):
+            return None
+
+    @staticmethod
+    def _handoff_reproject(geom, xform):
+        """A COPY of `geom` in the transform's destination CRS, None when the
+        transform refuses it. Never mutates the input: an entry geometry is
+        shared with the seed layers and the hit index."""
+        try:
+            out = QgsGeometry(geom)
+            out.transform(xform)
+            return None if out.isEmpty() else out
+        except Exception:  # noqa: BLE001 -- caller keeps the original shape
+            return None
+
+    @staticmethod
+    def _handoff_layer_authid(layer):
+        """A raster layer's CRS authid, or None when it has no valid one."""
+        try:
+            if layer is None:
+                return None
+            crs = layer.crs()
+            return crs.authid() if crs is not None and crs.isValid() else None
+        except (RuntimeError, AttributeError):
+            return None
+
+    def _handoff_entries_to_run_crs(self, entries: list) -> list:
+        """Harvested (geom, det_id, score, touched) rows moved from the raster
+        CRS Manual worked in back to the run CRS the review and the canonical
+        objects are stored in, so the Automatic review stays in one CRS.
+
+        Returns `entries` unchanged when the import found the two CRS equal,
+        which is every raster whose own CRS the run kept. A geometry the
+        transform refuses is passed through as it is: a shape in the wrong CRS
+        can still be moved by hand, a dropped one is gone."""
+        pair = getattr(self, "_handoff_crs_pair", None)
+        self._handoff_crs_pair = None
+        if not pair or not entries:
+            return entries
+        run_authid, raster_authid = pair
+        xform = self._handoff_crs_xform(raster_authid, run_authid)
+        if xform is None:
+            QgsMessageLog.logMessage(
+                "Refine handoff: no transform back to the run CRS; "
+                f"{len(entries)} shape(s) kept in {raster_authid}.",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            return entries
+        out, failed = [], 0
+        for g, det_id, score, touched in entries:
+            moved = self._handoff_reproject(g, xform)
+            if moved is None:
+                failed += 1
+                moved = g
+            out.append((moved, det_id, score, touched))
+        if failed:
+            QgsMessageLog.logMessage(
+                f"Refine handoff: {failed} shape(s) kept in {raster_authid}, "
+                "the transform back refused them.",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        return out
+
     def _import_review_geoms_as_saved(self, review) -> None:
-        """Load review geometries (raster CRS) into saved_polygons as 'pending'
-        seeds rendered by ONE in-memory layer (blue), NOT a rubber band each: a
+        """Load the review geometries into saved_polygons as 'pending' seeds,
+        converting them from the run CRS into the raster CRS Manual works in
+        (see the boundary note above; a no-op when the two match). They are
+        rendered by ONE in-memory layer (blue), NOT a rubber band each: a
         1000-object handoff used to create 1000 canvas items and freeze QGIS.
         saved_rubber_bands gets a None per entry (kept index-
         locked with saved_polygons); the ACTIVE object is the only band. Refine-
@@ -384,23 +501,43 @@ class ManualHandoffMixin:
         scores = review.get("scores") or []
         ids = review.get("ids") or []
         crs = review.get("crs")
-        authid = crs.authid() if crs is not None and crs.isValid() else None
-        # The seed layers live in the SOURCE RASTER CRS (the run CRS the geoms are
-        # already in), so geoms are pushed directly with no per-object canvas
-        # transform (the layer reprojects for display).
-        layer_crs = authid
-        src = getattr(self, "_handoff_source_layer", None)
-        if src is not None:
-            try:
-                layer_crs = src.crs().authid() or authid
-            except (RuntimeError, AttributeError):
-                layer_crs = authid
-        if layer_crs:
-            self._ensure_handoff_layers(layer_crs)
+        run_authid = crs.authid() if crs is not None and crs.isValid() else None
+        raster_authid = self._handoff_layer_authid(
+            getattr(self, "_handoff_source_layer", None))
+        # Convert the seeds into the raster CRS once, here, so everything inside
+        # Manual keeps reading one CRS. None when the two already match (the
+        # usual case) or when one of them is unusable, and then nothing moves.
+        self._handoff_crs_pair = None
+        xform = self._handoff_crs_xform(run_authid, raster_authid)
+        if xform is not None:
+            self._handoff_crs_pair = (run_authid, raster_authid)
+        # The seed layers are declared in the CRS the entries end up in: the
+        # raster CRS whenever the raster has one, else the run CRS the review
+        # carried. Geoms are pushed directly with no per-object canvas transform
+        # (the layer reprojects for display).
+        authid = raster_authid or run_authid
+        if authid:
+            self._ensure_handoff_layers(authid)
+        else:
+            # Neither side named a usable CRS, so there is nothing to declare a
+            # memory layer in and the handoff runs with no seeds on the canvas.
+            # Say so: this used to fail silently.
+            QgsMessageLog.logMessage(
+                "Refine handoff: neither the run nor the raster has a valid "
+                "CRS; no seed layers were created.",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
         # Synthetic det_id sequence for objects with no canonical id (hand-drawn
         # saves, legacy reviews without ids): keeps every entry hue-stable and
-        # the return arrays free of NULLs. Starts above the largest real id.
+        # the return arrays free of NULLs. Seeded above every CANONICAL id, not
+        # just the ones this review carries: the review holds the VISIBLE set,
+        # so a detection the confidence or size filter is hiding keeps an id
+        # that seeding from the review alone would hand to the next object the
+        # user adds. The fold then matches that object to the hidden row and
+        # writes over it, and the added shape gets no row of its own.
         max_id = max((int(i) for i in ids if i is not None), default=-1)
+        for fid in (getattr(self, "_auto_object_fids", None) or ()):
+            if isinstance(fid, int) and fid > max_id:
+                max_id = fid
         self._handoff_det_id_seq = max_id + 1
         # Carry the "hand edited" mark across repeat refine visits: an object
         # whose det_id was folded/exempted on an earlier pass re-imports already
@@ -411,9 +548,16 @@ class ManualHandoffMixin:
         # hiding was never on the user's canvas and they cannot have deleted it.
         # _removed_canonical_objects reads this to scope the deletion diff.
         imported_ids: set[int] = set()
+        failed = 0
         for n, g in enumerate(geoms):
             if g is None or g.isEmpty():
                 continue
+            if xform is not None:
+                moved = self._handoff_reproject(g, xform)
+                if moved is None:
+                    failed += 1  # kept as it is: never lose the user's shape
+                else:
+                    g = moved
             det_id = ids[n] if n < len(ids) and ids[n] is not None else None
             if det_id is None:
                 det_id = self._next_handoff_det_id()
@@ -452,6 +596,11 @@ class ManualHandoffMixin:
             # None placeholder keeps the two lists index-locked; the geometry is
             # drawn by _handoff_pending_layer, not a per-object band.
             self.saved_rubber_bands.append(None)
+        if failed:
+            QgsMessageLog.logMessage(
+                f"Refine handoff: {failed} shape(s) kept in {run_authid}, "
+                f"the transform to {raster_authid} refused them.",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
         self._handoff_imported_det_ids = imported_ids
         self._rebuild_handoff_layers()
         if self.dock_widget:
@@ -489,9 +638,9 @@ class ManualHandoffMixin:
         try:
             import time as _time
 
-            from ...core import telemetry
+            from ...core import telemetry_run_events
             t0 = getattr(self, "_refine_handoff_t0", None)
-            telemetry.track_refine_in_manual_back(
+            telemetry_run_events.track_refine_in_manual_back(
                 run_id=self._auto_run_id or "",
                 validated_count=len((self._auto_review or {}).get("geoms", [])),
                 duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None,
@@ -519,6 +668,10 @@ class ManualHandoffMixin:
         """
         if getattr(self, "_auto_review", None) is None:
             return  # Manual mode owns its own points; not ours to clear
+        # The canvas focus is part of that leftover state: without this, an exit
+        # that never reached _restore_auto_review_after_handoff would leave the
+        # map grey and the busy cursor on.
+        self._end_correct_focus()
         tool = getattr(self, "map_tool", None)
         if tool is not None:
             try:
@@ -547,10 +700,14 @@ class ManualHandoffMixin:
         # held review untouched so Back to review restores it intact.
         if self._pending_refine_import:
             self._pending_refine_import = False
+            self._handoff_crs_pair = None
             self._teardown_manual_session()
             return
         review = self._auto_review
-        if review is not None:
+        if review is None:
+            # Nothing to fold back into, so no CRS boundary to cross either.
+            self._handoff_crs_pair = None
+        else:
             # Fold any in-progress (unsaved) mask into saved_polygons via the
             # normal save path so all edits are captured uniformly.
             try:
@@ -573,6 +730,10 @@ class ManualHandoffMixin:
                 if g is not None and not g.isEmpty():
                     entries.append((g, pg.get("det_id"), pg.get("score"),
                                     bool(pg.get("manual_touched"))))
+            # Back to the run CRS the review and the canonical objects speak,
+            # before anything downstream compares areas or overlaps against
+            # them. No-op unless the import had to convert on the way in.
+            entries = self._handoff_entries_to_run_crs(entries)
             # Dissolve any remaining overlaps so the committed output is uniform
             # (never stacked layers), while distinct touching objects stay split.
             # Identity-aware: a dissolved group keeps its first member's det_id
@@ -689,9 +850,22 @@ class ManualHandoffMixin:
         fids = list(getattr(self, "_auto_object_fids", None) or [])
         measurer = self._make_auto_area_measurer()
         manual_ids = self._auto_manual_object_ids
+        imported = getattr(self, "_handoff_imported_det_ids", None) or set()
         for index, geom in enumerate(geoms or []):
             det_id = ids[index] if index < len(ids) else None
-            if (not isinstance(det_id, int) or det_id in known or geom is None or geom.isEmpty()):
+            if not isinstance(det_id, int) or geom is None or geom.isEmpty():
+                continue
+            if det_id in known:
+                # An id this session imported is a detection the user reshaped:
+                # the caller overwrites its canonical row, so not appending it
+                # is right. Any other known id is a clash, and the shape behind
+                # it would take a row that belongs to another object without a
+                # word. Say so rather than let it pass as an ordinary skip.
+                if det_id not in imported:
+                    QgsMessageLog.logMessage(
+                        f"Refine handoff: det_id {det_id} is already taken by "
+                        f"another object; the added shape got no row of its own.",
+                        "AI Segmentation", level=Qgis.MessageLevel.Warning)
                 continue
             score = scores[index] if isinstance(scores, list) and index < len(scores) else 1.0
             try:
@@ -785,6 +959,9 @@ class ManualHandoffMixin:
         # target to push onto).
         self._refresh_auto_review_preview()
         self._start_auto_reslice()
+        # Every polygon gets its colour and its clicks back. Last, so the
+        # repaint lands on the layer that was just rebuilt.
+        self._end_correct_focus()
 
     # _teardown_manual_session lives in ManualWorkflowMixin (the session
     # owner); the harvest paths above call it through the assembled class.
@@ -816,10 +993,18 @@ class ManualHandoffMixin:
         return None
 
     def _hit_test_saved_entry(self, raster_pt):
-        """The topmost saved ENTRY containing raster_pt, else None. Last-drawn
-        wins overlaps. Uses the token-keyed handoff spatial index when present
+        """The topmost saved ENTRY under raster_pt that the fix session allows,
+        else None. Last-drawn wins overlaps, and a blocked entry on top is
+        stepped over rather than eating the click (see the loop below).
+        Uses the token-keyed handoff spatial index when present
         so hover stays cheap over thousands of seeds; falls back to the plain
-        scan outside the handoff."""
+        scan outside the handoff.
+
+        This is also the gate for "one polygon at a time": while a fix session
+        owns one, every other entry reads as a miss, so neither the hover
+        outline nor the click-to-switch can leave the polygon under edit. The
+        session's own polygon still answers, which is how the AI path opens it
+        (`_open_reshape_target` comes through here too)."""
         pt = QgsGeometry.fromPointXY(raster_pt)
         # The click must land on what the USER SEES on top. In the handoff the
         # kept layer is created after (so renders above) the pending layer, so
@@ -830,17 +1015,19 @@ class ManualHandoffMixin:
         # the z-order.
         prefer_kept = bool(self._refine_handoff_active)
 
-        def _pick(cands):
-            best = None
+        def _ranked(cands):
+            """Every entry under the point, topmost first. `intersects` rather
+            than `contains` so a click on a shared edge hits both neighbours
+            instead of missing both."""
+            hits = []
             for order, pg in cands:
                 g = self._entry_geom(pg)
-                if g is None or g.isEmpty() or not g.contains(pt):
+                if g is None or g.isEmpty() or not g.intersects(pt):
                     continue
                 kept = 1 if (prefer_kept and pg.get("validated")) else 0
-                key = (kept, order)
-                if best is None or key > best[0]:
-                    best = (key, pg)
-            return None if best is None else best[1]
+                hits.append(((kept, order), pg))
+            hits.sort(key=lambda h: h[0], reverse=True)
+            return [pg for _key, pg in hits]
 
         index = getattr(self, "_handoff_hit_index", None)
         if index is not None:
@@ -852,8 +1039,18 @@ class ManualHandoffMixin:
                 pg = tok2entry.get(tok)
                 if pg is not None:
                     cands.append((pg.get("_hfid", -1), pg))
-            return _pick(cands)
-        return _pick(enumerate(self.saved_polygons))
+            ranked = _ranked(cands)
+        else:
+            ranked = _ranked(enumerate(self.saved_polygons))
+        # A blocked entry sitting on top must not swallow the click. Walk down
+        # to the first entry the fix session allows: during a session that is
+        # its own polygon, so an overlapping neighbour can no longer make it
+        # unclickable. Outside a session nothing blocks, so the topmost wins
+        # exactly as before.
+        for pg in ranked:
+            if not self._correct_focus_blocks_det_id(pg.get("det_id")):
+                return pg
+        return None
 
     def _hit_test_saved_polygon(self, raster_pt):
         """Index wrapper over _hit_test_saved_entry for the callers that need
@@ -1044,7 +1241,18 @@ class ManualHandoffMixin:
         """The panel armed line during an AI fix session: an honest loading note
         while the imagery around the polygon is being read, then the keep/trim
         gesture help once the crop is ready. Handoff-only; add mode has its own
-        lane line, so it is left untouched there."""
+        lane line, so it is left untouched there.
+
+        The waiting outline and the busy cursor ride this same signal, because
+        every path that starts a model wait and every path that ends one
+        (completion, read failure, teardown) already passes here. They move
+        BEFORE the two guards below: a session torn down mid-read still has to
+        get its cursor back, and a line nobody shows is not a reason to keep
+        QGIS looking busy."""
+        if loading:
+            self._begin_correct_wait()
+        else:
+            self._end_correct_wait()
         if not getattr(self, "_refine_handoff_active", False) or self.dock_widget is None:
             return
         if getattr(self, "_refine_add_mode_active", False):
@@ -1270,11 +1478,21 @@ class ManualHandoffMixin:
         stack.append(unit)
         del stack[:-25]  # bounded: 25 undo units is plenty for a review pass
 
-    # Fraction of the SMALLER object's area that must overlap for a new save to
-    # be treated as "completing" an existing detection (vs a distinct object).
-    # A real completion overlaps a lot; two distinct neighbours that merely touch
-    # share ~zero area, so they stay separate (the instance count is preserved).
+    # Fraction of the SMALLER object's area that must overlap for two entries of
+    # the SAME run to be treated as one object when the entry list is merged.
+    # Tile fragments of one object overlap on the seam; distinct neighbours that
+    # merely touch share ~zero area, so they stay separate (the instance count
+    # is preserved).
     _COMPLETE_OVERLAP_FRAC = 0.1
+
+    # Same ratio, but for absorbing an EXISTING saved detection into a shape the
+    # user is drawing now. It has to mean "one of the two is essentially inside
+    # the other", because absorbing deletes the neighbour outside the Ctrl+Z
+    # history: _snapshot_mask_state carries neither _frozen_sessions nor
+    # saved_polygons, so a wrongly eaten polygon cannot be undone. A big new
+    # shape clipping a corner off a small old one is a neighbour, not a
+    # completion, and must leave it alone and reachable.
+    _ABSORB_COVER_FRAC = 0.8
 
     def _absorb_overlapping_saved(self, geom):
         """Refine handoff only: union `geom` with any already-saved detections it
@@ -1317,7 +1535,7 @@ class ManualHandoffMixin:
                 inter = merged.intersection(g)
                 if inter is not None and not inter.isEmpty():
                     smaller = min(merged.area(), g.area())
-                    if smaller > 0 and inter.area() / smaller >= self._COMPLETE_OVERLAP_FRAC:
+                    if smaller > 0 and inter.area() / smaller >= self._ABSORB_COVER_FRAC:
                         union = merged.combine(g)
                         if union is not None and not union.isEmpty():
                             merged = union
@@ -1351,10 +1569,18 @@ class ManualHandoffMixin:
 
     def _next_handoff_det_id(self) -> int:
         """Next synthetic per-instance id for entries with no canonical det_id
-        (hand-drawn saves, legacy reviews). Monotonic within the session."""
+        (hand-drawn saves, legacy reviews). Monotonic within the session, and
+        never an id a canonical object already holds: the fold matches a
+        harvested shape to a canonical row BY det_id, so a reused id reads as
+        an object the review already knows, and the user's new shape overwrites
+        that row instead of getting one."""
         seq = getattr(self, "_handoff_det_id_seq", None)
         if seq is None:
             seq = 100000  # clear of any plausible canonical id range
+        taken = {fid for fid in (getattr(self, "_auto_object_fids", None) or ())
+                 if isinstance(fid, int)}
+        while seq in taken:
+            seq += 1
         self._handoff_det_id_seq = seq + 1
         return seq
 
@@ -1462,7 +1688,7 @@ class ManualHandoffMixin:
                 inter = active.intersection(g)
                 if inter is not None and not inter.isEmpty():
                     smaller = min(active.area(), g.area())
-                    if smaller > 0 and inter.area() / smaller >= self._COMPLETE_OVERLAP_FRAC:
+                    if smaller > 0 and inter.area() / smaller >= self._ABSORB_COVER_FRAC:
                         absorb = True
             if absorb:
                 self._frozen_sessions.append(FrozenCropSession(polygon=g))
@@ -1712,9 +1938,13 @@ class ManualHandoffMixin:
         #   - the predictor already HOLDS this window (a neighbour opened it, or
         #     the hover warm-up did): ready for keep/trim clicks right now;
         #   - a read for this exact window is in flight: attach to it rather
-        #     than starting a second one, and say so;
-        #   - otherwise start it, without the application busy cursor, so hover
-        #     and the next pick stay alive while the imagery is read.
+        #     than starting a second one, and put the busy cursor on it, since
+        #     a wait the hover warm-up started cursor-less is now a wait the
+        #     user asked for;
+        #   - otherwise start it, with the busy cursor: the panel line names
+        #     the wait, and the cursor is what says it is still running. The
+        #     line alone left the pointer looking idle over a dead canvas for
+        #     the seconds the read takes, which reads as a crash.
         # The comparison is against windows that were actually encoded or are
         # actually being read, never against an intent, so a failed read can
         # never pass as a warm crop.
@@ -1725,10 +1955,11 @@ class ManualHandoffMixin:
             self._set_ai_session_armed_line(loading=False)
             return
         if (spec == getattr(self, "_inflight_crop_window", None) and self._encoding_in_progress):
+            self._wear_busy_cursor_for_crop()
             self._set_ai_session_armed_line(loading=True)
             return
         if self._extract_and_encode_crop(
-                QgsPointXY(cx, cy), mupp_override=scale, show_busy=False):
+                QgsPointXY(cx, cy), mupp_override=scale, show_busy=True):
             # Honest wait: the imagery is being read; the gesture help returns
             # when the encode completes (_on_manual_encode_done).
             self._set_ai_session_armed_line(loading=True)

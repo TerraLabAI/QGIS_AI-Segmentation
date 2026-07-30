@@ -37,13 +37,14 @@ class ExemplarsMixin:
     # ------------------------------------------------------------------
 
     def _on_add_exemplar_requested(self, label: int) -> None:
-        """Arm the example-box draw tool (label 1 positive / 0 exclude).
+        """Arm the example draw tool (label 1 positive / 0 exclude).
 
-        The user drags a box around ONE object (green for a positive example /
-        red for an exclude). On finish it is stored as that rectangle's polygon
-        plus its bounding box; the worker sends the cloud model a box tight to
-        the object. No-op without a zone, once the store is full, or while a
-        run/review is active.
+        The user traces ONE object point by point (green for a positive
+        example / red for an exclude), the same gesture as the zone draw, and
+        closes with a double-click. On finish the DRAWN polygon is stored with
+        its bounding box; the worker sends the cloud model a box tight to the
+        object, so nothing downstream changes. No-op without a zone, once the
+        store is full, or while a run/review is active.
         """
         # Already armed: the button is a toggle, a second click disarms. This
         # also prevents re-capturing _maptool_before_exemplar from the CURRENT
@@ -57,15 +58,23 @@ class ExemplarsMixin:
             return
         if self._auto_zone is None or self._auto_exemplar_store.is_full_for(int(label)):
             return
-        from ..box_draw_maptool import BoxDrawMapTool
+        from ..polygon_zone_maptool import PolygonZoneMapTool
         canvas = self.iface.mapCanvas()
         # Remember the tool to restore after the one-shot draw (usually the zone tool).
         self._maptool_before_exemplar = canvas.mapTool()
         self._pending_exemplar_label = int(label)
         color = EXEMPLAR_STROKE if label == 1 else EXCLUDE_STROKE
-        tool = BoxDrawMapTool(canvas, color)
-        tool.box_selected.connect(self._on_exemplar_box_drawn)
-        tool.cancelled.connect(self._on_exemplar_cancelled)
+        # Same point-by-point tool as the zone draw, in the example green or
+        # the exclude red: the user traces the object itself instead of a box
+        # around it, and the box the model needs is that shape's bounding box.
+        tool = PolygonZoneMapTool(canvas, color)
+        tool.zone_selected.connect(self._on_exemplar_polygon_drawn)
+        # The example sketch is throwaway, so BOTH of the tool's give-up routes
+        # disarm: Escape with points placed (zone_cleared) and Escape or
+        # Ctrl+Z on an empty draw (back_requested). That keeps Escape
+        # single-stage here, as _route_escape promises.
+        tool.zone_cleared.connect(self._on_exemplar_cancelled)
+        tool.back_requested.connect(self._on_exemplar_cancelled)
         # The user picking another QGIS tool mid-draw deactivates ours; reset
         # the armed UI without fighting their new tool choice.
         try:
@@ -99,18 +108,12 @@ class ExemplarsMixin:
         except (RuntimeError, AttributeError):
             pass
 
-    def _on_exemplar_box_drawn(self, rect) -> None:
-        """Adapt the drag-box tool's rectangle to the stored polygon contract.
-
-        The example/exclude gesture is a drag rectangle now, but everything
-        downstream (crop mask, pixel box, stamps, chips, telemetry) still works
-        on a polygon geometry. Build the rectangle polygon and hand it to the
-        unchanged storage path. rect is a QgsRectangle in canvas CRS."""
-        self._on_exemplar_polygon_drawn(QgsGeometry.fromRect(rect))
-
     def _on_exemplar_polygon_drawn(self, geom) -> None:
         """Store a drawn example polygon (clipped to the zone), mark it on the
-        map, refresh the dock. geom is a polygon in canvas CRS.
+        map, refresh the dock. geom is the polygon the user traced, in canvas
+        CRS; its bounding box is what the store keeps as ``map_rect`` and what
+        the worker turns into the model's box, so everything downstream (crop
+        mask, pixel box, stamps, chips, size guards, telemetry) is unchanged.
 
         An example drawn ENTIRELY outside the zone is refused with a notification:
         there is no imagery to learn from there and it cannot match anything
@@ -157,8 +160,8 @@ class ExemplarsMixin:
             # so Detect never blocks on a per-exemplar render.
             self._prebuild_exemplar_stamp(eid)
             try:
-                from ...core import telemetry
-                telemetry.track_exemplar_added(
+                from ...core import telemetry_run_events
+                telemetry_run_events.track_exemplar_added(
                     count_after=self._auto_exemplar_store.count(),
                     label="include" if label == 1 else "exclude")
             except Exception:
@@ -235,7 +238,7 @@ class ExemplarsMixin:
         too_small = False
         for ex in store.list():
             try:
-                rect = self._reproject_zone_to_layer_crs(ex.map_rect, layer)
+                rect = self._reproject_zone_to_run_crs(ex.map_rect, layer)
             except (RuntimeError, AttributeError):
                 continue
             any_valid = True
@@ -339,8 +342,8 @@ class ExemplarsMixin:
         # warning; re-check the remaining set (clears it once none are small).
         self._refresh_exemplar_size_warning()
         try:
-            from ...core import telemetry
-            telemetry.track_exemplar_removed(count_after=self._auto_exemplar_store.count())
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_exemplar_removed(count_after=self._auto_exemplar_store.count())
         except Exception:
             pass  # nosec B110
         # The example count dropped, so re-evaluate the identical-re-run note.
@@ -459,6 +462,13 @@ class ExemplarsMixin:
                 canvas.unsetMapTool(tool)
         except (RuntimeError, AttributeError):
             pass
+        # A fresh tool is built on every arm, so take its rubber bands off the
+        # canvas scene (after the switch, so its own deactivate ran on live
+        # items) rather than leaving three empty ones behind per draw.
+        try:
+            tool.remove_bands_from_canvas()
+        except (RuntimeError, AttributeError):
+            pass
         try:
             tool.deleteLater()
         except (RuntimeError, AttributeError):
@@ -472,9 +482,16 @@ class ExemplarsMixin:
         new choice."""
         if getattr(self, "_suspend_exemplar_deactivate", False):
             return
-        if self._exemplar_maptool is None:
+        tool = self._exemplar_maptool
+        if tool is None:
             return
         self._exemplar_maptool = None
+        # Same one-shot cleanup as the restore path: the tool is dropped here,
+        # so its rubber bands must leave the canvas scene with it.
+        try:
+            tool.remove_bands_from_canvas()
+        except (RuntimeError, AttributeError):
+            pass
         self._maptool_before_exemplar = None
         self._auto_exemplar_arming = False
         self._disconnect_exemplar_undo_shortcut()
@@ -567,7 +584,7 @@ class ExemplarsMixin:
         self, ex, layer, geo_bbox: tuple, pixel_w: int, pixel_h: int
     ) -> list[float] | None:
         """One exemplar's drawn rect as an UNCLAMPED xyxy pixel box on the
-        rendered zone grid (geo_bbox = actual rendered extent, layer CRS).
+        rendered zone grid (geo_bbox = actual rendered extent, run CRS).
         Unclamped on purpose: a consumer testing whether a tile fully contains
         the box must see the true extent, so a draw overflowing the zone image
         can never pass as contained. None when the grid is degenerate or the
@@ -578,14 +595,14 @@ class ExemplarsMixin:
         if ext_w <= 0 or ext_h <= 0 or pixel_w <= 0 or pixel_h <= 0:
             return None
         try:
-            rect_layer = self._reproject_zone_to_layer_crs(ex.map_rect, layer)
+            rect_run = self._reproject_zone_to_run_crs(ex.map_rect, layer)
         except (RuntimeError, AttributeError):
             return None
-        x0 = (rect_layer.xMinimum() - ext_minx) / ext_w * pixel_w
-        x1 = (rect_layer.xMaximum() - ext_minx) / ext_w * pixel_w
+        x0 = (rect_run.xMinimum() - ext_minx) / ext_w * pixel_w
+        x1 = (rect_run.xMaximum() - ext_minx) / ext_w * pixel_w
         # y flip: map y grows up, pixel y grows down.
-        y0 = (ext_maxy - rect_layer.yMaximum()) / ext_h * pixel_h
-        y1 = (ext_maxy - rect_layer.yMinimum()) / ext_h * pixel_h
+        y0 = (ext_maxy - rect_run.yMaximum()) / ext_h * pixel_h
+        y1 = (ext_maxy - rect_run.yMinimum()) / ext_h * pixel_h
         return [x0, y0, x1, y1]
 
     def _exemplar_polygon_px(self, ex, layer, geo_bbox, pixel_w, pixel_h):
@@ -603,10 +620,18 @@ class ExemplarsMixin:
         g = QgsGeometry(poly)  # canvas CRS copy
         try:
             canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
-            layer_crs = layer.crs()
-            if canvas_crs.isValid() and layer_crs.isValid() and canvas_crs != layer_crs:
+            # geo_bbox is the rendered zone in the run CRS, so the ring has to
+            # land in that same CRS before it is divided into pixels.
+            # The RUN's CRS, not one resolved from this exemplar's own box: a
+            # run has one CRS, anchored on the drawn zone. Asking per exemplar
+            # can answer a different projected zone from the grid the ring is
+            # divided by, and it overwrites the run's memo with this box's key.
+            run_crs = self._run_crs_now(layer)
+            if run_crs is None:
+                run_crs = layer.crs()
+            if canvas_crs.isValid() and run_crs.isValid() and canvas_crs != run_crs:
                 g.transform(QgsCoordinateTransform(
-                    canvas_crs, layer_crs, QgsProject.instance()))
+                    canvas_crs, run_crs, QgsProject.instance()))
         except Exception:  # noqa: BLE001
             return []
         try:
@@ -714,7 +739,13 @@ class ExemplarsMixin:
                 rupp_x = float(layer.rasterUnitsPerPixelX())
                 rupp_y = float(layer.rasterUnitsPerPixelY())
                 if rupp_x > 0 and rupp_y > 0:
-                    src_gsd = max(rupp_x, rupp_y)
+                    # rasterUnitsPerPixel is layer units; run_mupp is run units.
+                    # On a geographic layer the run moved to metres those are
+                    # degrees against metres, so the max() always picked the
+                    # run and the "never upsample past the source" floor was
+                    # dead. (1.0, 1.0) whenever the run kept the layer's CRS.
+                    to_run_x, to_run_y = self._layer_units_to_run_units(layer, padded)
+                    src_gsd = max(rupp_x * to_run_x, rupp_y * to_run_y)
                     gsd = max(src_gsd, run_mupp) if run_mupp > 0 else src_gsd
                     longest = max(padded.width(), padded.height())
                     return gsd, longest, gsd > src_gsd
@@ -811,14 +842,18 @@ class ExemplarsMixin:
             return 0.0
 
     def _exemplar_run_mupp(self, layer) -> float:
-        """Layer-CRS ground units per pixel the CURRENT run renders tiles at
+        """RUN-CRS ground units per pixel the CURRENT run renders tiles at
         (zone + detail slider), so exemplar crops can be rendered at the same
         apparent scale as the tiles (the exemplar-quality fix, see
         _exemplar_stamp_longest_side). Falls back to the last run's captured
-        gsd, then 0.0 (= size at source-finest, the legacy behaviour)."""
+        gsd, then 0.0 (= size at source-finest, the legacy behaviour).
+
+        RUN CRS, not the layer's: the two part company as soon as a run is
+        moved to ground metres, and anything compared against this has to be
+        brought to run units first."""
         try:
             if self._auto_zone is not None and layer is not None:
-                zone_in_layer = self._reproject_zone_to_layer_crs(
+                zone_in_layer = self._reproject_zone_to_run_crs(
                     self._auto_zone, layer)
                 sized = self._grid_for_detail(
                     layer, zone_in_layer, self._get_auto_detail_level())
@@ -885,7 +920,11 @@ class ExemplarsMixin:
             # resample_local: a fine local raster shrunk to the run resolution
             # must be averaged (as the tiles are), not decimated nearest, or the
             # stamp's texture statistics differ from the tiles it must match.
-            img, act = render_zone_to_image(layer, padded, pw, ph, resample_local=True)
+            # padded is in the run CRS, so the render has to target it too, or
+            # the stamp is cut from somewhere else entirely.
+            img, act = render_zone_to_image(
+                layer, padded, pw, ph, resample_local=True,
+                render_crs=self._run_crs_now(layer))
         except Exception:  # noqa: BLE001
             img, act = None, None
         if img is None or img.isNull() or act is None:
@@ -918,7 +957,7 @@ class ExemplarsMixin:
         the model then matches), so the margin never exceeds a thin ring."""
         from ...core.detection_policy import exemplar_context_pad, exemplar_context_pad_px_cap
         try:
-            rect = self._reproject_zone_to_layer_crs(ex.map_rect, layer)
+            rect = self._reproject_zone_to_run_crs(ex.map_rect, layer)
         except (RuntimeError, AttributeError):
             return None
         ew, eh = rect.width(), rect.height()

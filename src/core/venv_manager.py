@@ -72,6 +72,9 @@ from .pip_diagnostics import (
     is_hash_mismatch as _is_hash_mismatch,
 )
 from .pip_diagnostics import (
+    is_index_forbidden_error as _is_index_forbidden_error,
+)
+from .pip_diagnostics import (
     is_macos_intel_no_wheel as _is_macos_intel_no_wheel,
 )
 from .pip_diagnostics import (
@@ -103,6 +106,7 @@ from .uv_manager import (
 from .venv_network import (  # noqa: F401
     _get_effective_proxy_url,
     _get_pip_proxy_args,
+    _get_qgis_no_proxy_hosts,
     _get_qgis_proxy_settings,
     _get_system_proxy_settings,
     _insecure_install_opt_in,
@@ -151,11 +155,43 @@ def _with_upper_bound(spec: str, cap: str) -> str:
 REQUIRED_PACKAGES = [
     ("setuptools", ">=70.0,<100.0"),
     ("numpy", _numpy_version_spec()),
+    # numpy and rasterio first, and nothing else between them: they are the
+    # only two Automatic loads in process, so finishing them before the big
+    # local-model downloads means a cloud user is served whatever happens next.
+    ("rasterio", ">=1.3.0,<2.0.0"),
     ("torch", _with_upper_bound(TORCH_MIN, "<3.0.0")),
     ("torchvision", _with_upper_bound(TORCHVISION_MIN, "<1.0.0")),
     (SAM_PACKAGE[0], _with_upper_bound(SAM_PACKAGE[1], "<2.0.0")),
-    ("rasterio", ">=1.3.0,<2.0.0"),
 ]
+
+# Packages only Manual mode and the AI correction tool load. Automatic runs its
+# inference in the cloud and imports none of them (the only torch importers are
+# device_manager and the prediction subprocess). When one fails to install the
+# run records it and carries on instead of aborting, because ending the whole
+# install over a blocked download used to cost the user the modes that would
+# still have worked. torch is the one that matters most: it is by far the
+# largest download and the likeliest to be blocked or to time out.
+MANUAL_ONLY_PACKAGES = {"torch", "torchvision", SAM_PACKAGE[0]}
+
+
+def _failure_is_machine_level(error_text: str, returncode: int | None) -> bool:
+    """True when an install failure says the MACHINE is in a bad state, not
+    that the package could not be obtained.
+
+    A blocked index or a missing wheel takes one package away. A full disk, a
+    locked file, an antivirus block or a crashed process will hit every other
+    package too, including the ones Automatic needs, so those must keep the
+    abort ladder and its guidance rather than being skipped as a Manual-only
+    package the user can live without.
+    """
+    if returncode is not None and _is_windows_process_crash(returncode):
+        return True
+    checks = [_is_file_locked_error, _is_disk_full,
+              _is_app_control_error, _is_antivirus_error]
+    if sys.platform == "win32":
+        checks += [_is_dll_init_error, _is_rename_or_record_error]
+    return any(check(error_text) for check in checks)
+
 
 # Packages older venvs contain but the plugin never imports. pandas was
 # installed up to 1.1.0 as a leftover (44 MB on disk, zero imports in src/,
@@ -171,6 +207,19 @@ TORCH_CPU_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 # Shipped pip network settings. Both are handed to the installer per package.
 PIP_RETRIES = 10  # more than pip's default 5, for unstable networks
 PIP_TIMEOUT_S = 30  # longer than pip's default 15, per connection attempt
+
+# Shipped uv network settings, passed through the environment because uv reads
+# them there rather than from the command line. The tool's own timeout default
+# is short enough to fail a slow link on a multi-gigabyte wheel.
+UV_HTTP_TIMEOUT_S = 300
+UV_HTTP_RETRIES = 5
+
+# Shipped ceilings on one package's post-install check, in seconds. The first
+# import of a native package loads its libraries, and a scanner reads each one,
+# so the heavy packages get more room than the rest.
+VERIFY_TIMEOUT_TORCH_S = 120
+VERIFY_TIMEOUT_HEAVY_S = 180
+VERIFY_TIMEOUT_DEFAULT_S = 30
 
 # Shipped per-package install ceilings, in seconds. Large downloads need more
 # time than the rest; the default covers everything else.
@@ -221,7 +270,11 @@ PENDING_DELETE_DIR = os.path.join(PLUGIN_CACHE_DIR, ".pending_delete")
 #     finish deleting, every package carries an upper bound, and the wheel
 #     caches are cleared once the environment verifies; re-run so existing
 #     environments get the bounded specs and give their cache disk back.
-_INSTALL_LOGIC_VERSION = "6"
+# v7: rasterio installs right after numpy, and a failure on a Manual-only
+#     package (torch, torchvision, the local model) no longer ends the run;
+#     re-run so an environment left half-built by one blocked download comes
+#     back usable for Automatic.
+_INSTALL_LOGIC_VERSION = "7"
 
 
 def resolved_packages() -> list[tuple[str, str]]:
@@ -460,7 +513,10 @@ def _is_download_network_error(text: str) -> bool:
     if _QT_HOST_NOT_FOUND_RE.search(text):
         return True
     lower = text.lower()
-    return any(p in lower for p in _QT_NETWORK_ERROR_PATTERNS)
+    return any(
+        p in lower
+        for p in install_config.classifier_markers(
+            "qt_network", _QT_NETWORK_ERROR_PATTERNS))
 
 
 def get_venv_dir() -> str:
@@ -647,7 +703,11 @@ def _ensure_venv_packages_available_locked():
         _log(f"Venv site-packages not found: {site_packages}", Qgis.MessageLevel.Warning)
         return False
 
-    if site_packages not in sys.path:
+    # normcase: a differently-cased spelling of the same Windows directory is
+    # the same directory, and appending it twice puts a second entry in
+    # sys.path that the numpy surgery below then fails to recognise as ours.
+    _sp_key = os.path.normcase(site_packages)
+    if all(os.path.normcase(p) != _sp_key for p in sys.path):
         sys.path.append(site_packages)
         _log(f"Added venv site-packages to sys.path: {site_packages}", Qgis.MessageLevel.Info)
 
@@ -743,7 +803,10 @@ def _ensure_venv_packages_available_locked():
         # 2. Temporarily remove QGIS Python paths that contain numpy
         #    so the reimport finds the venv copy first
         for p in sys.path[:]:
-            if p == site_packages:
+            # normcase, or a differently-cased spelling of our own venv slips
+            # past this guard and gets removed one line before the numpy
+            # reimport below, which is exactly what the guard exists to stop.
+            if os.path.normcase(p) == os.path.normcase(site_packages):
                 continue
             np_init = os.path.join(p, "numpy", "__init__.py")
             if os.path.exists(np_init):
@@ -833,7 +896,13 @@ def _get_qgis_python() -> str | None:
 
     # Verify it can execute
     try:
-        env = os.environ.copy()
+        # Same helper as the Linux twin below. A raw os.environ.copy() carries
+        # an inherited PYTHONHOME (Anaconda, ArcGIS Pro, a hand-set machine
+        # variable) into the probe, and an interpreter started with a foreign
+        # PYTHONHOME dies on "no codec search functions registered" before it
+        # runs a line. The probe would report this Python as broken, and it is
+        # the only fallback when the standalone download is blocked.
+        env = _get_clean_env_for_venv()
         env["PYTHONIOENCODING"] = "utf-8"
 
         result = subprocess.run(  # nosec B603
@@ -1757,20 +1826,44 @@ def _repin_numpy(venv_dir: str):
         _log(f"numpy version check failed: {e}", Qgis.MessageLevel.Warning)
 
 
+def _sleep_unless_cancelled(seconds: float, cancel_check) -> bool:
+    """Wait in slices, answering Cancel while the clock runs. True if cancelled.
+
+    A plain sleep of the network retry backoff left the Cancel button dead for
+    the whole wait, and the ladder doubles, so the last one is long enough that
+    the install reads as frozen. The slice is short enough to feel immediate
+    and long enough not to spin.
+    """
+    deadline = time.monotonic() + max(0.0, float(seconds))
+    while True:
+        if cancel_check and cancel_check():
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(0.25, remaining))
+
+
 def _get_verification_timeout(package_name: str) -> int:
     """
     Get verification timeout in seconds for a given package.
 
     torch needs extra time because the first import loads native DLLs on Windows,
     which can take >30s. torchvision also loads heavy native libraries.
+
+    Server dial, per package: a check that runs out of time is read as a broken
+    package, and that verdict escalates to a multi-gigabyte reinstall the same
+    slow machine would then repeat.
     """
     if package_name == "torch":
-        return 120
-    if package_name in ("torchvision", "pandas"):
+        shipped = VERIFY_TIMEOUT_TORCH_S
+    elif package_name in ("torchvision", "pandas"):
         # pandas loads many .pyd C extensions on first import;
         # antivirus (Windows Defender) scans each one, easily exceeding 120s
-        return 180
-    return 30
+        shipped = VERIFY_TIMEOUT_HEAVY_S
+    else:
+        shipped = VERIFY_TIMEOUT_DEFAULT_S
+    return install_config.verify_timeout_s(package_name, shipped)
 
 
 class _PipResult:
@@ -2210,6 +2303,10 @@ def install_dependencies(
         # install does not pay one slow doomed attempt per package.
         learned_ssl_env: dict | None = None
 
+        # Manual-only packages that failed. The install still succeeds for
+        # Automatic; the caller names these so the user knows what is short.
+        degraded_packages: list[str] = []
+
         for i, (package_name, version_spec) in enumerate(packages):
             if cancel_check and cancel_check():
                 _log("Installation cancelled by user", Qgis.MessageLevel.Warning)
@@ -2548,7 +2645,15 @@ def install_dependencies(
                 if result.returncode != 0 and not _is_windows_process_crash(result.returncode):
                     error_output = result.stderr or result.stdout or ""
 
-                    if _is_network_error(error_output) and not _is_antivirus_error(error_output):
+                    # A 403 is excluded like an antivirus block: the request
+                    # arrived and was refused, so the backoff only makes the
+                    # user wait longer for the same answer. uv words its
+                    # download failures in terms the network classifier
+                    # matches, so without this a blocked index burns every
+                    # retry first.
+                    if (_is_network_error(error_output)
+                            and not _is_antivirus_error(error_output)
+                            and not _is_index_forbidden_error(error_output)):
                         _attempts = install_config.network_retry_attempts(
                             NETWORK_RETRY_ATTEMPTS)
                         for attempt in range(1, _attempts + 1):
@@ -2564,8 +2669,7 @@ def install_dependencies(
                                     pkg_start,
                                     f"Network error, retry {attempt}/{_attempts} in {wait}s..."
                                 )
-                            time.sleep(wait)
-                            if cancel_check and cancel_check():
+                            if _sleep_unless_cancelled(wait, cancel_check):
                                 return False, "Installation cancelled"
                             result = _run_pip_install(
                                 cmd=base_cmd,
@@ -2680,6 +2784,34 @@ def install_dependencies(
                 install_failed = True
                 install_error_msg = f"Error installing {package_name}: {str(e)[:200]}"
 
+            if (install_failed and package_name in MANUAL_ONLY_PACKAGES
+                    and not _failure_is_machine_level(
+                        install_error_msg, last_returncode)):
+                # Only Manual needs this one. Record it, keep installing, and
+                # let the caller say which mode is short. Automatic is a cloud
+                # mode, so a paying user must not lose it to a blocked download
+                # of the local model.
+                install_error_msg = _scrub_credentials(install_error_msg)
+                _log(
+                    f"{package_name} failed to install, so Manual mode stays "
+                    f"unavailable. Automatic mode does not need it and is "
+                    f"unaffected. Reason: {install_error_msg[-300:]}",
+                    Qgis.MessageLevel.Warning,
+                )
+                if _is_index_forbidden_error(install_error_msg):
+                    _log(
+                        "The package index refused that download (HTTP 403), "
+                        "which is usually a company or campus network "
+                        "filtering it. Ask your IT administrator to allow "
+                        "pypi.org and files.pythonhosted.org, then install "
+                        "again to turn Manual mode on.",
+                        Qgis.MessageLevel.Warning,
+                    )
+                degraded_packages.append(package_name)
+                if progress_callback:
+                    progress_callback(pkg_end, f"{package_name} unavailable")
+                continue
+
             if install_failed:
                 # Log the END of pip output: that is where the real error is.
                 # This line lands in the log buffer that error telemetry and
@@ -2740,6 +2872,23 @@ def install_dependencies(
                         Qgis.MessageLevel.Warning
                     )
                     return False, f"Failed to install {package_name}: proxy authentication required (407)"
+
+                # A 403 from the package index. Runs before the network branch
+                # below, which would tell the user to check a connection that
+                # is working: the request arrived and was refused.
+                if _is_index_forbidden_error(install_error_msg):
+                    _log(
+                        "The package index refused the download (HTTP 403). "
+                        "This is usually a company or campus network filtering "
+                        "downloads. Ask your IT administrator to allow "
+                        "pypi.org and files.pythonhosted.org, or run the "
+                        "install from another network.",
+                        Qgis.MessageLevel.Warning,
+                    )
+                    return False, (
+                        f"Failed to install {package_name}: the package index "
+                        "refused the download (403). Your network is blocking it."
+                    )
 
                 # An application-control policy (AppLocker/WDAC) needs the
                 # IT allow-rule guidance, not the antivirus advice below.
@@ -2830,6 +2979,25 @@ def install_dependencies(
         # Post-install numpy version safety net:
         # Check and force-downgrade if needed.
         _repin_numpy(venv_dir)
+
+        if degraded_packages:
+            short = ", ".join(degraded_packages)
+            if progress_callback:
+                progress_callback(100, "✓ Automatic mode ready")
+            _log("=" * 50, Qgis.MessageLevel.Warning)
+            _log(
+                f"Installed everything except {short}. Automatic (cloud) mode "
+                "is ready. Manual mode and the AI correction tool stay off "
+                "until that package installs.",
+                Qgis.MessageLevel.Warning,
+            )
+            _log(f"Virtual environment: {venv_dir}", Qgis.MessageLevel.Info)
+            _log("=" * 50, Qgis.MessageLevel.Warning)
+            return True, (
+                f"Automatic mode is ready. {short} could not be installed, so "
+                "Manual mode and the AI correction tool are unavailable. "
+                "Everything else works."
+            )
 
         if progress_callback:
             progress_callback(100, "✓ All dependencies installed")
@@ -2923,7 +3091,7 @@ def _get_clean_env_for_venv() -> dict:
     env["CUDA_VISIBLE_DEVICES"] = ""
 
     # Increase uv download timeout (default 30s too short for large wheels)
-    env["UV_HTTP_TIMEOUT"] = "300"
+    env["UV_HTTP_TIMEOUT"] = str(install_config.uv_http_timeout_s(UV_HTTP_TIMEOUT_S))
 
     # Corporate MITM proxies re-sign TLS with a company CA that uv's bundled
     # Mozilla roots reject (pip >= 24.2 already trusts the OS store via
@@ -2932,8 +3100,9 @@ def _get_clean_env_for_venv() -> dict:
     env.setdefault("UV_NATIVE_TLS", "1")
 
     # More retries with backoff for unstable home/corporate connections
-    # (uv default is 3).
-    env.setdefault("UV_HTTP_RETRIES", "5")
+    # (uv default is 3). setdefault so a user override wins.
+    env.setdefault(
+        "UV_HTTP_RETRIES", str(install_config.uv_http_retries(UV_HTTP_RETRIES)))
 
     # Propagate QGIS or system proxy settings to environment for pip/uv.
     # This is the ONLY channel that carries proxy credentials (the command
@@ -2943,6 +3112,14 @@ def _get_clean_env_for_venv() -> dict:
     if proxy_url:
         env["HTTP_PROXY"] = proxy_url
         env["HTTPS_PROXY"] = proxy_url
+        # Carry over the hosts the user told QGIS to reach directly. Forcing a
+        # proxy on every address without them sends an internal package index,
+        # which is exactly the kind of host people exclude, through a proxy
+        # that refuses it. setdefault so an existing setting wins.
+        no_proxy = _get_qgis_no_proxy_hosts()
+        if no_proxy:
+            env.setdefault("NO_PROXY", no_proxy)
+            env.setdefault("no_proxy", no_proxy)
 
     return env
 
@@ -3033,6 +3210,10 @@ def verify_venv(
     subprocess_kwargs = _get_subprocess_kwargs()
 
     packages = resolved_packages()
+    # Manual-only packages that did not verify. They do not fail the venv:
+    # Automatic never loads them, so the caller is told which mode is short
+    # instead of the user losing a cloud mode over a local one.
+    unavailable_manual: list[str] = []
     total_packages = len(packages)
     for i, (package_name, _) in enumerate(packages):
         if progress_callback:
@@ -3082,6 +3263,29 @@ def verify_venv(
                         "QGIS.",
                         Qgis.MessageLevel.Warning
                     )
+                    continue
+
+                # Only Manual mode needs this one, and the install is allowed
+                # to finish without it (see MANUAL_ONLY_PACKAGES). Failing the
+                # whole verification here would hand a paying user a dead
+                # Automatic mode over a package Automatic never loads. Record
+                # it so the caller can say which mode is short, and continue.
+                #
+                # ABSENT only. A package that is installed but broken keeps the
+                # ladder below: it is the state a rebuild fixes, and swallowing
+                # it here would leave the files on disk, the quick check
+                # passing, and a reinstall a no-op, so nothing could ever
+                # repair it.
+                if (package_name in MANUAL_ONLY_PACKAGES
+                        and "no module named" in full_error.lower()
+                        and not _failure_is_machine_level(full_error, None)):
+                    _log(
+                        f"Package {package_name} did not verify, so Manual mode "
+                        "and the AI correction tool stay unavailable. Automatic "
+                        "(cloud) mode does not use it and is unaffected.",
+                        Qgis.MessageLevel.Warning
+                    )
+                    unavailable_manual.append(package_name)
                     continue
 
                 # Security-policy / antivirus block (AppLocker, WDAC, corporate
@@ -3246,12 +3450,15 @@ def verify_venv(
 
                 # Detect broken C extensions (antivirus may have quarantined .pyd files)
                 error_lower = full_error.lower()
-                broken_markers = [
-                    "no module named", "_libs",
-                    "dll load failed", "importerror",
-                    "applocker", "application control",
-                    "blocked by your organization",
-                ]
+                broken_markers = install_config.classifier_markers(
+                    "broken_extension",
+                    [
+                        "no module named", "_libs",
+                        "dll load failed", "importerror",
+                        "applocker", "application control",
+                        "blocked by your organization",
+                    ],
+                )
                 is_broken = any(m in error_lower for m in broken_markers)
 
                 if is_broken:
@@ -3424,6 +3631,18 @@ def verify_venv(
     if progress_callback:
         progress_callback(100, "Verification complete")
 
+    if unavailable_manual:
+        short = ", ".join(unavailable_manual)
+        _log(
+            f"Virtual environment verified for Automatic mode. {short} did not "
+            "verify, so Manual mode and the AI correction tool stay off.",
+            Qgis.MessageLevel.Warning,
+        )
+        return True, (
+            f"Ready for Automatic mode. {short} is unavailable, so Manual mode "
+            "and the AI correction tool are off."
+        )
+
     _log("✓ Virtual environment verified successfully", Qgis.MessageLevel.Success)
     return True, "Virtual environment ready"
 
@@ -3576,10 +3795,14 @@ def _create_venv_and_install(
     # Early writability check on PLUGIN_CACHE_DIR
     try:
         os.makedirs(PLUGIN_CACHE_DIR, exist_ok=True)
-        test_file = os.path.join(PLUGIN_CACHE_DIR, ".write_test")
-        with open(test_file, "w", encoding="utf-8") as f:
-            f.write("ok")
-        os.remove(test_file)
+        # A real temp file, the same probe output_store._probe_writable uses,
+        # for the reason given there: the OS removes it on close, so our own
+        # cleanup stays out of the answer. An on-write scanner or a sync client
+        # can hold a freshly written file for a moment, and reading that as
+        # "not writable" would refuse the install into a writable directory. A
+        # fixed probe name also collides between two QGIS windows.
+        with tempfile.TemporaryFile(dir=PLUGIN_CACHE_DIR, suffix=".tmp") as probe:
+            probe.write(b"ok")
     except OSError as e:
         hint = (
             f"Cannot write to install directory: {PLUGIN_CACHE_DIR}\n"
@@ -3800,10 +4023,16 @@ def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
     # this check can never drift from what install_dependencies installs
     # (a hardcoded copy of the list once kept demanding pandas after it was
     # dropped). setuptools is skipped: not an install health signal.
+    # Manual-only packages are excluded on purpose: this answers "can the
+    # plugin run", and Automatic runs on numpy and rasterio alone. Including
+    # them made an environment that is perfectly good for a paying cloud user
+    # report "incomplete", which offers a bare Install button that reinstalls
+    # four healthy packages and ends in the same state, forever. Whether the
+    # local model is usable is a separate question: local_model_ready().
     package_markers = {
         name: name.replace("-", "_")
         for name, _spec in resolved_packages()
-        if name != "setuptools"
+        if name != "setuptools" and name not in MANUAL_ONLY_PACKAGES
     }
 
     # Installed-distribution metadata present in site-packages. A package dir
@@ -3842,6 +4071,32 @@ def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
     _log(f"Quick check: all packages found in {site_packages}",
          Qgis.MessageLevel.Info)
     return True, "All packages found"
+
+
+def local_model_ready(venv_dir: str = None) -> tuple[bool, str]:
+    """Are the packages Manual mode and the AI correction tool need installed?
+
+    Separate from get_venv_status on purpose. That one answers "can the plugin
+    run at all", and an environment missing only the local model still runs
+    Automatic, which is a cloud mode. This one gates the two features that do
+    load the model, so a user whose model download was blocked keeps everything
+    else instead of being told the whole environment is broken.
+
+    Filesystem-only, no subprocess: safe to call on the GUI thread from a click
+    path. Says nothing about the model checkpoint, which callers check
+    separately through checkpoint_manager.
+    """
+    if venv_dir is None:
+        venv_dir = VENV_DIR
+    site_packages = get_venv_site_packages(venv_dir)
+    if not os.path.exists(site_packages):
+        return False, "site-packages directory not found"
+    for name, _spec in resolved_packages():
+        if name not in MANUAL_ONLY_PACKAGES:
+            continue
+        if not os.path.exists(os.path.join(site_packages, name.replace("-", "_"))):
+            return False, f"Package {name} not found"
+    return True, "Local model packages found"
 
 
 def get_venv_status(allow_subprocess_probe: bool = True) -> tuple[bool, str]:
@@ -3933,12 +4188,34 @@ def get_venv_status(allow_subprocess_probe: bool = True) -> tuple[bool, str]:
                 try:
                     env = _get_clean_env_for_venv()
                     kwargs = _get_subprocess_kwargs()
-                    probe = subprocess.run(  # nosec B603
-                        [python_path, "-c", "import torch"],
-                        capture_output=True, text=True,
-                        encoding="utf-8", errors="replace", timeout=60,
-                        env=env, **kwargs,
-                    )
+                    # The shared budget, not a local 60: a first torch import
+                    # on Windows loads native DLLs that an on-access scanner
+                    # reads one by one, which _get_verification_timeout already
+                    # allows for. A timeout here used to land in the handler
+                    # below and report a working environment as broken, which
+                    # sends the user through a multi-gigabyte reinstall.
+                    torch_timeout = _get_verification_timeout("torch")
+                    try:
+                        probe = subprocess.run(  # nosec B603
+                            [python_path, "-c", "import torch"],
+                            capture_output=True, text=True,
+                            encoding="utf-8", errors="replace",
+                            timeout=torch_timeout, env=env, **kwargs,
+                        )
+                    except subprocess.TimeoutExpired:
+                        # One retry, as verify_venv does: the second import
+                        # reads a warm cache and a scanner that has already
+                        # seen those files.
+                        _log(
+                            "get_venv_status: torch probe timed out, retrying once",
+                            Qgis.MessageLevel.Warning
+                        )
+                        probe = subprocess.run(  # nosec B603
+                            [python_path, "-c", "import torch"],
+                            capture_output=True, text=True,
+                            encoding="utf-8", errors="replace",
+                            timeout=torch_timeout, env=env, **kwargs,
+                        )
                     if probe.returncode != 0:
                         _log(
                             "get_venv_status: torch import failed "

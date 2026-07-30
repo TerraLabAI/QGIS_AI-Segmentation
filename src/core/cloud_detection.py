@@ -6,9 +6,23 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-import numpy as np
+# Automatic is a cloud mode, but it still decodes masks and encodes tiles in
+# process, so it needs the venv's numpy. polygon_exporter is the only other
+# module that sets the venv path up before importing numpy, and nothing on the
+# Automatic path imports it, so a session that only ever used Automatic reached
+# the import below with the venv still off sys.path.
+try:
+    from .venv_manager import ensure_venv_packages_available
+except ImportError:
+    # venv_manager needs qgis. Outside QGIS (tests, tooling) there is no venv
+    # to add and numpy is already importable, so there is nothing to set up.
+    pass
+else:
+    ensure_venv_packages_available()
 
-from .review_defaults import HOLE_NOISE_CEILING_M
+import numpy as np  # noqa: E402
+
+from .review_defaults import HOLE_NOISE_CEILING_M  # noqa: E402
 
 if TYPE_CHECKING:
     from qgis.core import QgsRasterLayer, QgsRectangle
@@ -231,6 +245,48 @@ _BLANK_TILE_DOMINANT_FRAC: float = 0.995
 # (render antialiasing, a faint gradient) collapse into one bucket while a real
 # scene still spreads across several. 16 keeps the top 4 bits per channel.
 _BLANK_TILE_QUANT: int = 16
+
+# Degenerate-tile prefilter, no-data by COLOUR. _tile_render_settings paints an
+# OPAQUE black background (setBackgroundColor(QColor(0, 0, 0))), so ground the
+# layer does not cover comes back as RGB (0, 0, 0) at alpha 255, never as a
+# transparent pixel. Measured on a window half off a real ortho: alpha == 0 over
+# 0.0% of the render, pure black over 50.0%. So an alpha-only no-data rule reads
+# every tile as fully valid and can never fire.
+#
+# EXACT black is what separates no-data from dark ground, which is why the
+# tolerance is 0 and not a margin. Over the 727 archived tiles of the benchmark
+# corpus: a no-data tile holds 93.7% of its pixels at exactly (0, 0, 0) and
+# 94.1% at a tolerance of 48, so the region is flat black and widening the
+# tolerance adds nothing. The darkest genuinely dark tiles (deep water, shadow,
+# mean luminance 45) hold 0.0% at exactly black and up to 77% at a tolerance of
+# 48. No tile that is not no-data reaches 0.71% of exact black. A dark roof,
+# night water and deep shadow all carry sensor noise; a background fill does not.
+_PREFILTER_NODATA_RGB_EPS: int = 0
+# Valid (non-no-data) pixel count under which a tile provably cannot produce a
+# shipped object, so it settles as empty with no request. The pipeline's own
+# noise floor is MIN_SIZE_NOISE_MASK_PX (3) mask pixels across, and a detection
+# smaller than that is dropped as noise at ANY review setting, so a valid region
+# under 3 x 3 pixels cannot survive whatever the user does with the Min size
+# spinbox. Deliberately the provable bound and nothing wider: on the same 727
+# archived tiles the SMALLEST valid region is 2057 m2 (392600 px), and the tile
+# holding it returned real objects, so the corpus offers no evidence for any cut
+# above the floor. The server can raise it once evidence exists.
+_PREFILTER_MIN_VALID_PX: float = 9.0
+
+# Unavailable-imagery skip. An online tile source that holds no image for a
+# tile does not fail the request: it answers with a placeholder card, a flat
+# neutral-grey tile carrying a line of grey text. Those pixels reach the render
+# like any others, so nothing downstream can tell them from ground, and the
+# blank test above misses them because the text breaks the single-bucket rule.
+# The signature is the combination the blank test cannot use on its own: every
+# pixel neutral (R, G and B within a few levels of each other) AND one coarse
+# bucket still covering most of the tile. Real imagery fails one or the other,
+# because an aerial scene is neither perfectly neutral nor that flat. Applied
+# to ONLINE sources only (the caller decides), so a grey local ortho is never
+# read as a load failure.
+_UNAVAILABLE_NEUTRAL_EPS: int = 6
+_UNAVAILABLE_NEUTRAL_FRAC: float = 0.98
+_UNAVAILABLE_DOMINANT_FRAC: float = 0.80
 
 logger = logging.getLogger(__name__)
 
@@ -532,6 +588,7 @@ def render_zone_to_image(
     height: int,
     timeout_ms: int = _RENDER_ZONE_TIMEOUT_MS,
     resample_local: bool = False,
+    render_crs=None,
 ):
     """Render a whole zone to one QImage, waiting on a nested event loop.
 
@@ -564,11 +621,13 @@ def render_zone_to_image(
                      the run resolution is smoothed, not decimated nearest, and
                      carries the SAME texture statistics as the tiles it must
                      match. No-op for online providers (already resampled).
+        render_crs:  CRS to render into, which ``extent`` must be expressed in.
+                     None renders in the layer's own CRS, as it always did.
 
     Returns:
         (QImage, QgsRectangle actual_extent) on success, or (None, None).
     """
-    from qgis.core import QgsMapRendererParallelJob, QgsMapSettings
+    from qgis.core import QgsMapRendererParallelJob, QgsMapSettings, QgsProject
     from qgis.PyQt.QtCore import QEventLoop, QSize, QTimer
     from qgis.PyQt.QtGui import QColor
 
@@ -582,6 +641,9 @@ def render_zone_to_image(
         settings = QgsMapSettings()
         settings.setOutputSize(QSize(width, height))
         settings.setExtent(extent)
+        # Same reason as the tile render: the destination CRS can differ from
+        # the layer's, so the project's datum transforms have to travel with it.
+        settings.setTransformContext(QgsProject.instance().transformContext())
         # A local raster is decimated nearest when shrunk to the run resolution
         # by default; render through the resampling clone so the stamp matches
         # the tiles' averaged texture. None (and unchanged behaviour) for online
@@ -590,7 +652,7 @@ def render_zone_to_image(
             render_clone = _local_raster_render_clone(layer)
         render_layer = render_clone if render_clone is not None else layer
         settings.setLayers([render_layer])
-        settings.setDestinationCrs(layer.crs())
+        settings.setDestinationCrs(_render_crs_or_layer(layer, render_crs))
         settings.setBackgroundColor(QColor(0, 0, 0))
         _set_quality_render_flags(settings)
         # Fetch remote imagery synchronously so uncached areas render with
@@ -829,25 +891,55 @@ def _local_raster_render_clone(layer: QgsRasterLayer):
     return clone
 
 
-def _tile_render_settings(layer, tile_extent, width: int, height: int):
+def _render_crs_or_layer(layer, render_crs):
+    """The CRS a render targets: the run's when it is usable, else the layer's.
+
+    The layer CRS is the answer for every run whose axes already agree on the
+    ground, and it is the answer whenever the run CRS is missing or unusable,
+    so a caller that passes nothing renders exactly as it always did.
+    """
+    try:
+        if render_crs is not None and render_crs.isValid():
+            return render_crs
+    except (RuntimeError, AttributeError):
+        pass
+    return layer.crs()
+
+
+def _tile_render_settings(layer, tile_extent, width: int, height: int,
+                          render_clone=None, render_crs=None):
     """The QgsMapSettings recipe for one tile render.
 
     Returns (settings, render_clone). The clone (None for online providers)
     MUST be kept referenced until the job has finished: it backs the layer the
     job reads. Render a fine LOCAL raster through a resampling-configured
     clone so the coarse detection-resolution tile is cleanly averaged, not
-    decimated nearest (which aliases object edges)."""
-    from qgis.core import QgsMapSettings
+    decimated nearest (which aliases object edges).
+
+    Pass ``render_clone`` to reuse one the caller already built and owns.
+    Building one reopens the GDAL dataset on the MAIN thread, which is also
+    the thread that paints, so it belongs once per run and not once per tile.
+    Sharing one layer object across the overlapping tile jobs is what the
+    online path below already does: it takes the ``else layer`` branch and
+    hands every concurrent job the user's single layer."""
+    from qgis.core import QgsMapSettings, QgsProject
     from qgis.PyQt.QtCore import QSize
     from qgis.PyQt.QtGui import QColor
 
     settings = QgsMapSettings()
     settings.setOutputSize(QSize(int(width), int(height)))
     settings.setExtent(tile_extent)
-    render_clone = _local_raster_render_clone(layer)
+    # The destination CRS is the run CRS, which is no longer always the layer's
+    # own, so this render can now reproject for real. Without the project's
+    # context that happens outside the datum transforms the user configured,
+    # and the imagery is sampled from ground shifted against the coordinates
+    # the detections are stamped with.
+    settings.setTransformContext(QgsProject.instance().transformContext())
+    if render_clone is None:
+        render_clone = _local_raster_render_clone(layer)
     render_layer = render_clone if render_clone is not None else layer
     settings.setLayers([render_layer])
-    settings.setDestinationCrs(layer.crs())
+    settings.setDestinationCrs(_render_crs_or_layer(layer, render_crs))
     settings.setBackgroundColor(QColor(0, 0, 0))
     _set_quality_render_flags(settings)
     # Online basemaps MUST download their imagery tiles before the job
@@ -865,6 +957,8 @@ def start_tile_render_job(
     height: int,
     on_done,
     timeout_ms: int = 60000,
+    render_clone=None,
+    render_crs=None,
 ) -> bool:
     """Start ONE tile render as an ASYNC job and return immediately. MAIN THREAD.
 
@@ -884,7 +978,7 @@ def start_tile_render_job(
         return False
     try:
         settings, render_clone = _tile_render_settings(
-            layer, tile_extent, width, height)
+            layer, tile_extent, width, height, render_clone, render_crs)
         job = QgsMapRendererParallelJob(settings)
     except Exception as exc:  # noqa: BLE001
         logger.warning("start_tile_render_job: failed for %dx%d: %s", width, height, exc)
@@ -969,32 +1063,53 @@ def tile_is_blank_array(
 
 
 def tile_is_degenerate_array(
-    arr: np.ndarray, nodata_frac: float = 1.0, band_eps: float = 2.0
+    arr: np.ndarray, nodata_frac: float = 1.0, band_eps: float = 2.0,
+    nodata_rgb_eps: int = _PREFILTER_NODATA_RGB_EPS,
+    min_valid_px: float = _PREFILTER_MIN_VALID_PX,
 ) -> bool:
     """True when a FULL-RESOLUTION tile array provably cannot contain an
     object, so it can settle as an empty result with no model pass at all.
 
-    Two rules, both zero-loss by construction:
+    A pixel is NO-DATA when it is fully transparent (alpha channel 0) or when
+    all three of its channels sit at or below ``nodata_rgb_eps``. The colour
+    half is what makes the rule work at all on the tile path: the render paints
+    an opaque black background, so ground the layer does not cover arrives as
+    black at alpha 255 and an alpha-only test sees a fully valid tile (see
+    _PREFILTER_NODATA_RGB_EPS for the measurement). Every other pixel is VALID.
 
-    - No-data: the fraction of fully transparent pixels (alpha channel 0)
-      reaches ``nodata_frac``. There is no imagery there to detect on.
-    - Uniform: over the remaining (valid) pixels, every band's full spread
-      (max - min) stays within ``band_eps``. A truly uniform region has no
-      edges, and an object would create at least one.
+    Three rules, all zero-loss by construction:
+
+    - No-data: the no-data fraction reaches ``nodata_frac``. There is no
+      imagery there to detect on.
+    - Too small: fewer than ``min_valid_px`` valid pixels. Anything the model
+      could return from this tile is confined to that region, and a detection
+      under the pipeline's own noise floor is dropped at any review setting.
+    - Uniform: over the VALID pixels, every band's full spread (max - min)
+      stays within ``band_eps``. A truly uniform region has no edges, and an
+      object would create at least one.
 
     This is deliberately NOT a low-variance / low-texture test: a calm lake
     with one boat or a plain roof carrying panels has low variance but real
     content, and must never be settled here (the broader dominant-bucket
     ``tile_is_blank`` covers the retry-then-drop path for near-uniform
-    renders). The zero-loss claim also requires FULL-RES input: a downsampled
-    sample can lose a small object entirely, so it can never prove absence.
+    renders). Nor is it a mostly-black test: a tile can be 94% no-data and
+    still hold the objects the run is looking for along the footprint edge, and
+    over the benchmark corpus that tile returned real detections while a 91%
+    one returned none, so no fraction separates them and none is used.
+
+    The zero-loss claim also requires FULL-RES input: a downsampled sample can
+    lose a small object entirely, so it can never prove absence.
 
     Args:
         arr: (H, W, 3) RGB or (H, W, 4) RGBA uint8-ish array. With 4 channels
-             the last one is read as alpha; with 3 every pixel counts as valid.
-        nodata_frac: transparent fraction at/above which the tile settles.
-             Only fractions in (0, 1] are honoured (anything else disables the
+             the last one is read as alpha; with 3 opacity is assumed.
+        nodata_frac: no-data fraction at/above which the tile settles. Only
+             fractions in (0, 1] are honoured (anything else disables the
              no-data rule, never loosens it).
+        nodata_rgb_eps: max channel value for a pixel to count as no-data by
+             colour. Negative disables the colour half (alpha only).
+        min_valid_px: valid-pixel count under which the tile settles. Negative
+             values are clamped to 0, which disables the rule.
         band_eps: max per-band spread (negative values are clamped to 0).
 
     Returns:
@@ -1004,30 +1119,44 @@ def tile_is_degenerate_array(
     if arr is None or arr.ndim != 3 or arr.shape[2] < 3 or arr.size == 0:
         return False
     eps = max(0.0, float(band_eps))
+    floor_px = max(0.0, float(min_valid_px))
     # Keep the tile's own dtype: widening a full-resolution tile to int64 costs
     # 8x its size for a max-min that only ever needs the per-band extremes. The
     # subtraction below is the one place that must not wrap, and it runs on 3
     # values, so it takes the wide type there instead.
     rgb = arr[:, :, :3].reshape(-1, 3)
+    n_px = int(arr.shape[0] * arr.shape[1])
+    valid = None
     if arr.shape[2] >= 4:
         valid = arr[:, :, 3].reshape(-1) != 0
-        n_nodata = int(arr.shape[0] * arr.shape[1] - int(valid.sum()))
-        frac = n_nodata / float(arr.shape[0] * arr.shape[1])
+    if int(nodata_rgb_eps) >= 0:
+        lit = rgb.max(axis=1) > int(nodata_rgb_eps)
+        valid = lit if valid is None else (valid & lit)
+    if valid is not None:
+        n_valid = int(valid.sum())
+        frac = (n_px - n_valid) / float(n_px)
         if 0.0 < float(nodata_frac) <= 1.0 and frac >= float(nodata_frac):
             return True
-        if not valid.any():
-            return True  # nothing but transparency, whatever the threshold
+        if n_valid == 0:
+            return True  # nothing but no-data, whatever the threshold
+        if n_valid < floor_px:
+            return True  # too little ground to hold anything shippable
         rgb = rgb[valid]
     spread = np.subtract(rgb.max(axis=0), rgb.min(axis=0), dtype=np.float64)
     return bool((spread <= eps).all())
 
 
-def tile_is_degenerate(img, nodata_frac: float = 1.0, band_eps: float = 2.0) -> bool:
-    """True when a rendered tile QImage is provably empty (all no-data or
-    uniform in every band), per tile_is_degenerate_array. Unlike
-    tile_is_blank this reads the FULL-resolution pixels (required for the
-    zero-loss guarantee) including the alpha channel. Reentrant (QImage),
-    safe on the worker thread; returns False on any conversion failure."""
+def tile_is_degenerate(
+    img, nodata_frac: float = 1.0, band_eps: float = 2.0,
+    nodata_rgb_eps: int = _PREFILTER_NODATA_RGB_EPS,
+    min_valid_px: float = _PREFILTER_MIN_VALID_PX,
+) -> bool:
+    """True when a rendered tile QImage is provably empty (all no-data, too
+    little ground to hold anything, or uniform in every band), per
+    tile_is_degenerate_array. Unlike tile_is_blank this reads the
+    FULL-resolution pixels (required for the zero-loss guarantee) including the
+    alpha channel. Reentrant (QImage), safe on the worker thread; returns False
+    on any conversion failure."""
     try:
         from qgis.PyQt.QtGui import QImage
 
@@ -1044,7 +1173,8 @@ def tile_is_degenerate(img, nodata_frac: float = 1.0, band_eps: float = 2.0) -> 
         arr = arr[:, :w, :]
         # Qt BGRA byte order -> RGBA.
         rgba = arr[:, :, [2, 1, 0, 3]]
-        return tile_is_degenerate_array(rgba, nodata_frac, band_eps)
+        return tile_is_degenerate_array(
+            rgba, nodata_frac, band_eps, nodata_rgb_eps, min_valid_px)
     except Exception as exc:  # noqa: BLE001 - a failed check must never skip a tile
         logger.debug("tile_is_degenerate: check failed: %s", exc)
         return False
@@ -1099,6 +1229,160 @@ def tile_is_blank(img) -> bool:
     except Exception as exc:  # noqa: BLE001 - a failed check must never skip a tile
         logger.debug("tile_is_blank: check failed: %s", exc)
         return False
+
+
+def tile_is_unavailable_array(
+    arr: np.ndarray,
+    neutral_eps: int = _UNAVAILABLE_NEUTRAL_EPS,
+    neutral_frac: float = _UNAVAILABLE_NEUTRAL_FRAC,
+    dominant_frac: float = _UNAVAILABLE_DOMINANT_FRAC,
+    quant: int = _BLANK_TILE_QUANT,
+) -> bool:
+    """True when a small RGB sample looks like an online source's "no image
+    here" placeholder card rather than ground.
+
+    Two conditions, both required (see the _UNAVAILABLE_* constants):
+
+    - Neutral: at least ``neutral_frac`` of the pixels have their three
+      channels within ``neutral_eps`` levels of each other. A placeholder card
+      is drawn in greys; an aerial scene carries colour almost everywhere.
+    - Flat: one coarse colour bucket still covers ``dominant_frac`` of the
+      sample. The card's text is the only thing breaking its single colour.
+
+    ONLINE SOURCES ONLY. A panchromatic local raster is neutral by nature, and
+    the flatness rule alone is not enough to tell one from a placeholder.
+
+    Args:
+        arr: (H, W, 3+) uint8-ish array. Extra channels beyond RGB are ignored.
+        neutral_eps: max spread between a pixel's three channels.
+        neutral_frac: share of pixels that must be neutral.
+        dominant_frac: share the top quantized bucket must reach.
+        quant: colour quantization step (bucket width per channel).
+
+    Returns:
+        True only when both conditions hold; False for anything it cannot
+        classify, so it never over-skips.
+    """
+    if arr is None or arr.ndim != 3 or arr.shape[2] < 3 or arr.size == 0:
+        return False
+    rgb = arr[:, :, :3].astype(np.int16)
+    spread = rgb.max(axis=2) - rgb.min(axis=2)
+    neutral = float((spread <= max(0, int(neutral_eps))).mean())
+    if neutral < float(neutral_frac):
+        return False
+    return tile_is_blank_array(arr, float(dominant_frac), quant)
+
+
+def _unavailable_tile_dials() -> tuple[int, int, float, float]:
+    """(sample side, neutral eps, neutral fraction, dominant fraction) resolved
+    from the cached server policy when present, else the built-in defaults.
+    Cache-only (no network), safe on any thread; fails to the constants so an
+    offline plugin and an older server skip exactly what they skip today."""
+    try:
+        from .detection_policy import (  # noqa: PLC0415
+            blank_sample_px,
+            unavailable_dominant_frac,
+            unavailable_neutral_eps,
+            unavailable_neutral_frac,
+        )
+        return (
+            blank_sample_px(_BLANK_TILE_SAMPLE_PX),
+            unavailable_neutral_eps(_UNAVAILABLE_NEUTRAL_EPS),
+            unavailable_neutral_frac(_UNAVAILABLE_NEUTRAL_FRAC),
+            unavailable_dominant_frac(_UNAVAILABLE_DOMINANT_FRAC),
+        )
+    except Exception:  # noqa: BLE001 - policy is optional, never break the check
+        return (
+            _BLANK_TILE_SAMPLE_PX,
+            _UNAVAILABLE_NEUTRAL_EPS,
+            _UNAVAILABLE_NEUTRAL_FRAC,
+            _UNAVAILABLE_DOMINANT_FRAC,
+        )
+
+
+def tile_is_unavailable(img) -> bool:
+    """True when a rendered tile QImage is an online source's "no image here"
+    placeholder, per tile_is_unavailable_array, so the tile can be re-rendered
+    and then dropped before submit instead of billed for a picture of nothing.
+    Cheap: downsamples to a small sample first. Reentrant (QImage), so safe on
+    the worker thread. Returns False on any conversion failure."""
+    try:
+        from qgis.PyQt.QtCore import QSize, Qt
+        from qgis.PyQt.QtGui import QImage
+
+        if img is None or img.isNull():
+            return False
+        sample_px, neutral_eps, neutral_frac, dominant_frac = _unavailable_tile_dials()
+        small = img.scaled(
+            QSize(sample_px, sample_px),
+            Qt.AspectRatioMode.IgnoreAspectRatio,
+            Qt.TransformationMode.FastTransformation,
+        ).convertToFormat(QImage.Format.Format_RGB32)
+        w, h = small.width(), small.height()
+        if w <= 0 or h <= 0:
+            return False
+        ptr = small.bits()
+        ptr.setsize(h * w * 4)
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(h, w, 4)
+        # Qt BGRA byte order -> RGB.
+        rgb = arr[:, :, [2, 1, 0]]
+        return tile_is_unavailable_array(
+            rgb, neutral_eps, neutral_frac, dominant_frac, _BLANK_TILE_QUANT)
+    except Exception as exc:  # noqa: BLE001 - a failed check must never skip a tile
+        logger.debug("tile_is_unavailable: check failed: %s", exc)
+        return False
+
+
+# Side (px) and time budget of the pre-run imagery probe. Small on purpose: it
+# has to render at the RUN's ground resolution to ask the right question, but
+# it only needs enough pixels to recognise a placeholder card, and the user is
+# waiting on it before the run starts.
+_IMAGERY_PROBE_PX: int = 256
+_IMAGERY_PROBE_TIMEOUT_MS: int = 12000
+
+
+def probe_imagery_availability(
+    layer,
+    extent,
+    render_crs=None,
+    width: int = _IMAGERY_PROBE_PX,
+    height: int = _IMAGERY_PROBE_PX,
+    timeout_ms: int = _IMAGERY_PROBE_TIMEOUT_MS,
+):
+    """Render one small window at the run's resolution and say what came back.
+
+    Answers the question a run cannot ask afterwards: does this source actually
+    hold a picture of this ground at this level of detail? Asked BEFORE any
+    billable work, and the pixels it fetches warm the provider cache for the
+    first real tile, so the cost is close to free.
+
+    ``extent`` must already be in ``render_crs`` (the run CRS), and must span
+    the ground of one probe window at the run's resolution, not the whole zone:
+    a whole-zone probe renders at a coarser zoom, where a source usually does
+    have imagery even when it has none at the run's.
+
+    Returns one of:
+        "ok"           - real imagery came back
+        "unavailable"  - the source answered with a "no image here" card
+        "blank"        - a single flat colour (nodata, out of footprint)
+        "failed"       - nothing rendered (timeout, provider error)
+
+    MAIN THREAD ONLY (it waits on a nested event loop, see render_zone_to_image).
+    """
+    try:
+        img, _actual = render_zone_to_image(
+            layer, extent, int(width), int(height),
+            timeout_ms=int(timeout_ms), render_crs=render_crs)
+    except Exception as exc:  # noqa: BLE001 - a probe must never block a run
+        logger.debug("probe_imagery_availability: render failed: %s", exc)
+        return "failed"
+    if img is None:
+        return "failed"
+    if tile_is_unavailable(img):
+        return "unavailable"
+    if tile_is_blank(img):
+        return "blank"
+    return "ok"
 
 
 def encode_tile_png(

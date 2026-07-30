@@ -7,7 +7,7 @@ REGISTRY_VERSION together.
 """
 from __future__ import annotations
 
-REGISTRY_VERSION = 13
+REGISTRY_VERSION = 18
 
 # --- Lifecycle ------------------------------------------------------------
 PLUGIN_FIRST_OPEN = "plugin_first_open"
@@ -92,13 +92,20 @@ FREE_TASTE_CONSUMED = "free_taste_consumed"
 LOW_CREDIT_BANNER_VIEWED = "low_credit_banner_viewed"
 DETECT_BLOCKED = "detect_blocked"
 
+# --- Account dialog ---------------------------------------------------------
+# Sign out is the clearest churn signal the plugin can send. The dashboard open
+# marks the handoff to the browser, where checkout lives. telemetry_opt_changed
+# is the only event that may fire while the user is turning telemetry OFF: it
+# goes out just before the flag flips, and nothing follows it.
+ACCOUNT_SIGNED_OUT = "account_signed_out"
+ACCOUNT_DASHBOARD_OPENED = "account_dashboard_opened"
+TELEMETRY_OPT_CHANGED = "telemetry_opt_changed"
+
 # --- Library / run history --------------------------------------------------
 LIBRARY_OPENED = "library_opened"
 HISTORY_SYNCED = "history_synced"
 HISTORY_RESTORED = "history_restored"
 HISTORY_EXPORTED = "history_exported"
-HISTORY_DELETED = "history_deleted"
-HISTORY_UNDELETED = "history_undeleted"
 HISTORY_FAVORITE_TOGGLED = "history_favorite_toggled"
 HISTORY_PAGE_LOADED = "history_page_loaded"
 # One-click re-run from a Recent card: kind = "same_zone" | "new_zone".
@@ -120,6 +127,9 @@ FLUSH_NOW = frozenset({
     # Leaving the review (Discard && exit, unload) is often the last act of the
     # session; without an immediate flush the abandonment signal dies with it.
     REVIEW_ABANDONED,
+    # The telemetry flag flips to off immediately after this one. A batched
+    # send would be dropped by the very opt-out it reports.
+    TELEMETRY_OPT_CHANGED,
 })
 
 # Lifecycle events with no user-generated content; they ship as long as the
@@ -193,12 +203,13 @@ ALL_EVENTS = frozenset({
     FREE_TASTE_CONSUMED,
     LOW_CREDIT_BANNER_VIEWED,
     DETECT_BLOCKED,
+    ACCOUNT_SIGNED_OUT,
+    ACCOUNT_DASHBOARD_OPENED,
+    TELEMETRY_OPT_CHANGED,
     LIBRARY_OPENED,
     HISTORY_SYNCED,
     HISTORY_RESTORED,
     HISTORY_EXPORTED,
-    HISTORY_DELETED,
-    HISTORY_UNDELETED,
     HISTORY_FAVORITE_TOGGLED,
     HISTORY_PAGE_LOADED,
     HISTORY_RERUN,
@@ -271,12 +282,13 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     FREE_TASTE_CONSUMED: ("remaining",),
     LOW_CREDIT_BANNER_VIEWED: ("remaining",),
     DETECT_BLOCKED: ("reason",),
+    ACCOUNT_SIGNED_OUT: (),
+    ACCOUNT_DASHBOARD_OPENED: (),
+    TELEMETRY_OPT_CHANGED: ("enabled",),
     LIBRARY_OPENED: ("tab",),
     HISTORY_SYNCED: ("runs",),
     HISTORY_RESTORED: ("run_id", "tiles", "objects"),
     HISTORY_EXPORTED: ("format", "objects"),
-    HISTORY_DELETED: ("run_id",),
-    HISTORY_UNDELETED: ("run_id",),
     HISTORY_FAVORITE_TOGGLED: ("run_id", "is_favorite"),
     HISTORY_PAGE_LOADED: ("page",),
     HISTORY_RERUN: ("kind",),
