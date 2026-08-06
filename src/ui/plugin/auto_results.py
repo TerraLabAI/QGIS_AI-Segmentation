@@ -283,8 +283,14 @@ class AutoResultsMixin:
         # so the canvas connection outlives the run. Drop it with the layer it
         # paints, or a finished review leaves a slot firing on every frame for
         # the rest of the session. Any later repaint re-connects it.
-        self._disconnect_live_repaint_pacer()
-        self._clear_auto_rescan_band()
+        # Guarded like the two above: nothing here may skip the removal below.
+        # A leaked selection layer is Private, so it keeps painting detections
+        # the user cannot reach in the Layers panel to delete.
+        try:
+            self._disconnect_live_repaint_pacer()
+            self._clear_auto_rescan_band()
+        except Exception:  # nosec B110 -- the layer goes even if a step fails
+            pass
         layer = self._auto_selection_layer
         self._auto_selection_layer = None
         self._review_fid_map = {}

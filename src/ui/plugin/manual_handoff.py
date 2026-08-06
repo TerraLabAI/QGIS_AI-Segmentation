@@ -692,6 +692,56 @@ class ManualHandoffMixin:
         # instead of landing on whatever tool the canvas kept.
         self._arm_correct_select()
 
+    def _abandon_fix_session_for_discard(self) -> None:
+        """End a fix session open on a review that is being THROWN AWAY, without
+        folding its edits back: they belong to the output the user just chose to
+        drop, so there is nothing to fold them into.
+
+        The seed layers are the reason this exists. They are Private layers, so
+        a leaked one paints hand-edited polygons on the canvas that the user
+        cannot reach in the Layers panel to remove. Exit used to leave them
+        there: it dropped the review and the blue layer, and nothing on that
+        path ever ended the session that owned them.
+
+        Idempotent, and a no-op when no session is open. Must run BEFORE
+        _auto_review is cleared: the canvas sweep keys on it.
+        """
+        if getattr(self, "_qgis_bridge_active", False):
+            try:
+                self._abort_qgis_edit_bridge_if_active()
+            except (RuntimeError, AttributeError):
+                pass
+        if getattr(self, "_refine_add_mode_active", False):
+            try:
+                self._exit_ai_add_mode()
+            except (RuntimeError, AttributeError):
+                pass
+        was_active = bool(getattr(self, "_refine_handoff_active", False))
+        had_seeds = (getattr(self, "_handoff_pending_layer", None) is not None
+                     or getattr(self, "_handoff_kept_layer", None) is not None)
+        self._refine_handoff_active = False
+        self._handoff_source_layer = None
+        self._pending_refine_import = False
+        self._handoff_crs_pair = None
+        # Only when this review actually opened a session: the teardown resets
+        # the whole Manual session, and Manual's own parked work is not ours to
+        # clear when nothing was ever handed off.
+        if was_active or had_seeds:
+            try:
+                self._teardown_manual_session()   # takes the seed layers with it
+            except Exception:
+                pass  # nosec B110 -- teardown must never block the exit
+            # Belt and braces: a session that died before its import completed
+            # can still hold seed layers the teardown above did not see.
+            self._remove_handoff_layers()
+        # Takes the point markers, the canvas focus and the dock's reshape
+        # sub-state with it. The select tool it re-arms on the way out is
+        # disarmed a few lines later, when the review layer goes.
+        try:
+            self._sweep_stale_refine_canvas()
+        except Exception:  # nosec B110 -- nothing here may block the exit
+            pass
+
     def _collect_manual_refine_into_review(self) -> None:
         """Fold every manual edit (saved + any in-progress mask) back into
         _auto_review["geoms"], then tear the manual session down."""

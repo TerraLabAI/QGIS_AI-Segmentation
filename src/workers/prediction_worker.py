@@ -95,8 +95,14 @@ try:
     from sam2.build_sam import build_sam2
     from sam2.sam2_image_predictor import SAM2ImagePredictor
     _USE_SAM2 = True
-except ImportError:
+    _SAM2_IMPORT_ERROR = None
+except ImportError as e:
+    # Keep the reason. Discarding it sent three users (2026-08-02, 2026-08-04,
+    # v2.3.0) into the SAM1 branch below, where the only thing they were told
+    # was that segment_anything is missing, a package their install never had
+    # to lay down. Whatever stopped sam2 from importing is the real report.
     _USE_SAM2 = False
+    _SAM2_IMPORT_ERROR = str(e)
 
 # Restore real stdout now that imports are done
 sys.stdout = _real_stdout
@@ -113,8 +119,23 @@ def build_sam2_model(checkpoint, device):
 
 
 def build_sam1_model(checkpoint, device):
-    """Build SAM ViT-B model (Python 3.9 fallback)."""
-    from segment_anything import sam_model_registry
+    """Build SAM ViT-B model (Python 3.9 fallback).
+
+    Reached either because this venv is a 3.9 one, where SAM1 is the intended
+    model, or because sam2 failed to import on a venv built for it. Only the
+    second case can find no segment_anything, and it is not the user's to fix
+    by hand, so say what is actually missing and where the trail starts.
+    """
+    try:
+        from segment_anything import sam_model_registry
+    except ImportError as e:
+        detail = (f"sam2 did not import either ({_SAM2_IMPORT_ERROR}). "
+                  if _SAM2_IMPORT_ERROR else "")
+        raise RuntimeError(
+            f"The on-device AI is not installed in this environment: "
+            f"segment_anything is missing ({e}). {detail}"
+            f"Reinstall the AI components from the plugin panel."
+        ) from e
     model = sam_model_registry["vit_b"](checkpoint=checkpoint)
     model.to(device)
     model.eval()

@@ -543,6 +543,34 @@ def get_venv_site_packages(venv_dir: str = None) -> str:
     return os.path.join(venv_dir, "lib", py_version, "site-packages")
 
 
+def site_packages_python_version(site_packages: str) -> str | None:
+    """The 'pythonX.Y' the directory was built for, or None when it says nothing.
+
+    Windows venvs use a flat 'Lib/site-packages' carrying no version, so they
+    answer None and the caller has to fall back to another signal.
+    """
+    parent = os.path.basename(os.path.dirname(site_packages))
+    if parent.startswith("python") and "." in parent:
+        return parent
+    return None
+
+
+def site_packages_loadable_in_process(site_packages: str) -> bool:
+    """True when this interpreter can import that directory's compiled modules.
+
+    Under Rosetta the standalone interpreter is deliberately newer than QGIS's
+    own (3.10 against 3.9) so SAM2 can run in its subprocess. The subprocess is
+    fine either way, but numpy and rasterio are imported IN-PROCESS, and a C
+    extension built for another minor version cannot load: it fails as a
+    missing 'numpy.core._multiarray_umath' with no hint of the real cause.
+    """
+    built_for = site_packages_python_version(site_packages)
+    if built_for is None:
+        return True
+    running = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    return built_for == running
+
+
 def _add_windows_dll_directories(site_packages: str) -> None:
     """Register torch/torchvision DLL directories on Windows.
 
@@ -701,6 +729,18 @@ def _ensure_venv_packages_available_locked():
             contents = os.listdir(lib_dir)
             _log(f"Venv lib/ contents: {contents}", Qgis.MessageLevel.Warning)
         _log(f"Venv site-packages not found: {site_packages}", Qgis.MessageLevel.Warning)
+        return False
+
+    # Stop before sys.path: loading a foreign-ABI directory cannot work, and
+    # the numpy surgery further down would run its module deletions for nothing
+    # and leave this QGIS session without numpy at all.
+    if not site_packages_loadable_in_process(site_packages):
+        _log(
+            f"Packages were installed for {site_packages_python_version(site_packages)} "
+            f"but QGIS runs python{sys.version_info.major}.{sys.version_info.minor}. "
+            "Reinstall the dependencies from the plugin panel to rebuild them "
+            "for this QGIS.",
+            Qgis.MessageLevel.Warning)
         return False
 
     # normcase: a differently-cased spelling of the same Windows directory is
@@ -1758,8 +1798,15 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
                 skip_next = True
                 continue
             if arg == "--constraint" and i + 1 < len(pip_args):
-                cmd.append(arg)
-                cmd.append(_win_short_path(pip_args[i + 1]))
+                # Never hand uv the constraints FILE. Two field reports
+                # (2026-08-01, 2026-08-04, both Windows homes with a space,
+                # e.g. "C:\Users\Gustavo GB\...") show uv parsing garbage in
+                # place of that file ("Couldn't parse requirement in ...",
+                # "no such comparison operator"), killing the install at step
+                # 1/6. The bound the file carries is one line, so pass it
+                # inline as a requirement instead: same resolver outcome, no
+                # file, no path, nothing to mis-read. pip keeps the file.
+                cmd.append("numpy" + _numpy_version_spec())
                 skip_next = True
                 continue
             cmd.append(arg)
@@ -4003,6 +4050,28 @@ def _create_venv_and_install(
     return True, "Virtual environment ready"
 
 
+def _normalize_dist_name(name: str) -> str:
+    """Fold a package name to the spelling its *.dist-info carries."""
+    return re.sub(r"[-_.]+", "_", name).lower()
+
+
+def _installed_dist_names(site_packages: str) -> set:
+    """Names pip believes are installed in site_packages, normalized.
+
+    A package directory can survive while its *.dist-info was quarantined by
+    antivirus or lost to an interrupted install; pip then no longer knows the
+    package exists and the import is usually broken too. Requiring the
+    dist-info is what catches that "phantom ready" state while staying
+    filesystem-only. Raises OSError when the directory cannot be listed, which
+    is itself a broken environment.
+    """
+    return {
+        _normalize_dist_name(entry.split("-", 1)[0])
+        for entry in os.listdir(site_packages)
+        if entry.endswith(".dist-info")
+    }
+
+
 def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
     """
     Fast filesystem-based check that packages exist in the venv site-packages.
@@ -4035,21 +4104,10 @@ def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
         if name != "setuptools" and name not in MANUAL_ONLY_PACKAGES
     }
 
-    # Installed-distribution metadata present in site-packages. A package dir
-    # can survive while its *.dist-info was quarantined by antivirus or lost
-    # to an interrupted install; pip then no longer knows the package exists
-    # and the import is usually broken too. Requiring the dist-info catches
-    # that "phantom ready" state (panel says ready, first crop fails with
-    # "rasterio is not available") while staying filesystem-only.
-    def _norm(name: str) -> str:
-        return re.sub(r"[-_.]+", "_", name).lower()
-
+    # Installed-distribution metadata present in site-packages. See
+    # _installed_dist_names for why the dist-info is required.
     try:
-        dist_names = {
-            _norm(entry.split("-", 1)[0])
-            for entry in os.listdir(site_packages)
-            if entry.endswith(".dist-info")
-        }
+        dist_names = _installed_dist_names(site_packages)
     except OSError as e:
         _log(f"Quick check: cannot list site-packages: {e}",
              Qgis.MessageLevel.Warning)
@@ -4060,7 +4118,7 @@ def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
         if not os.path.exists(pkg_dir):
             _log(f"Quick check: {package_name} not found at {pkg_dir}", Qgis.MessageLevel.Warning)
             return False, f"Package {package_name} not found"
-        if _norm(package_name) not in dist_names:
+        if _normalize_dist_name(package_name) not in dist_names:
             _log(
                 f"Quick check: {package_name} has no dist-info in "
                 f"{site_packages} (broken install, e.g. antivirus quarantine)",
@@ -4091,11 +4149,32 @@ def local_model_ready(venv_dir: str = None) -> tuple[bool, str]:
     site_packages = get_venv_site_packages(venv_dir)
     if not os.path.exists(site_packages):
         return False, "site-packages directory not found"
+    # Same dist-info requirement as _quick_check_packages, for the same
+    # reason. Looking only for the import directory let a half-installed SAM
+    # package read as ready: the panel said "Dependencies ready", Manual
+    # started, and the prediction worker died on an import the user could do
+    # nothing about (three field reports on 2026-08-02 and 2026-08-04, v2.3.0,
+    # "Worker initialization failed: No module named 'segment_anything'").
+    # This gate answers "can the local model load", so a package pip cannot
+    # account for counts as not installed.
+    try:
+        dist_names = _installed_dist_names(site_packages)
+    except OSError as e:
+        _log(f"Local model check: cannot list site-packages: {e}",
+             Qgis.MessageLevel.Warning)
+        return False, "site-packages directory not readable"
     for name, _spec in resolved_packages():
         if name not in MANUAL_ONLY_PACKAGES:
             continue
         if not os.path.exists(os.path.join(site_packages, name.replace("-", "_"))):
             return False, f"Package {name} not found"
+        if _normalize_dist_name(name) not in dist_names:
+            _log(
+                f"Local model check: {name} has no dist-info in "
+                f"{site_packages} (broken install, e.g. antivirus quarantine)",
+                Qgis.MessageLevel.Warning,
+            )
+            return False, f"Package {name} is damaged"
     return True, "Local model packages found"
 
 

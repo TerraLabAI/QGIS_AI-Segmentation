@@ -34,7 +34,6 @@ from qgis.PyQt.QtGui import QGuiApplication
 from qgis.PyQt.QtWidgets import (
     QApplication,
     QDialog,
-    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -62,7 +61,6 @@ from ....core.presets.template_favorites import (
     toggle_favorite_template,
 )
 from ....core.qt_compat import safe_disconnect
-from ...dock.font_scale import scale_px_length
 from ...plugin.shared import park_orphaned_worker
 from ...template_demo_loader import TemplateDemoLoader
 from .cards import _PresetCard, _RecentCard, _RunCard
@@ -71,15 +69,12 @@ from .common import (
     _EMPTY_MSG,
     _GHOST_BTN_QSS,
     _META_QSS,
+    _RAIL_FAVORITES_TARGET,
+    _RAIL_HISTORY_VIEWS,
+    _RAIL_POPULAR_TARGET,
     _SEARCH_QSS,
-    _SECTION_HEADER,
-    _SIDEBAR_ITEM,
-    _SIDEBAR_ITEM_ACTIVE,
     _fmt_count,
     _run_key,
-    _sidebar_icon_html,
-    _SidebarButton,
-    _tab_label_html,
 )
 from .detail import (
     _ExportRunDialog,
@@ -87,6 +82,7 @@ from .detail import (
     _RunDetailDialog,
     _RunProgressDialog,
 )
+from .rail import LibraryRailMixin
 from .recent_local import merge_local_recents, recent_view, restore_recent_on_map
 from .workers import (
     _HistoryFetchWorker,
@@ -95,15 +91,6 @@ from .workers import (
     _RunZoneFetchWorker,
 )
 
-# Sidebar keys for the synthetic (non-category) tabs. History views map onto
-# the server-side view names via _HISTORY_VIEWS.
-_RECENT_KEY = "__recent__"
-_FAVORITES_KEY = "__favorites__"
-_TOP_KEY = "__top__"
-_HISTORY_VIEWS = {
-    _RECENT_KEY: "all",
-    _FAVORITES_KEY: "favorites",
-}
 # The grid follows the dialog width instead of pinning a column count: three
 # columns squeeze on a narrow dialog and over-stretch on a wide one. The bounds
 # keep a preview big enough to read and stop the cards turning into a contact
@@ -118,7 +105,7 @@ _GRID_COLS_DEFAULT = 3
 _EVENT_RESIZE = QtC.resolve_qt_enum(QEvent, "Type", "Resize")
 
 
-class SegmentLibraryDialog(QDialog):
+class SegmentLibraryDialog(LibraryRailMixin, QDialog):
     """The gallery. ``get_selected_prompt()`` returns the chosen English token.
 
     The catalogue and the recent list are read non-blocking (cache / QSettings):
@@ -161,7 +148,7 @@ class SegmentLibraryDialog(QDialog):
         # Rich local run history (zone extent + exported layer + thumbnail),
         # recorded at Finish. Read is fail-safe ([] on any problem).
         self._history_local = detection_history.get_entries()
-        self._active_key = _TOP_KEY
+        self._active_key = _RAIL_POPULAR_TARGET
         self._query = ""
         self._cards_by_id: dict[str, _PresetCard] = {}
         # Grid ownership: the widgets currently on show, and how many columns
@@ -213,7 +200,7 @@ class SegmentLibraryDialog(QDialog):
         from ...dock.font_scale import apply_font_scale_to_tree
 
         apply_font_scale_to_tree(self)
-        self._select_tab(_TOP_KEY)
+        self._select_tab(_RAIL_POPULAR_TARGET)
         self._track_tab_opened("detect")
 
     # ---- UI scaffold -----------------------------------------------------
@@ -272,46 +259,17 @@ class SegmentLibraryDialog(QDialog):
 
         body = QHBoxLayout()
         body.setSpacing(8)
+        # The rail carries its own right border, so there is no separate
+        # separator line beside it.
+        body.addWidget(self._build_library_rail())
 
-        # Sidebar: the user's own detections first, curated templates below
-        # (AI Edit's "Your prompts / Templates" grouping).
-        sidebar_host = QWidget()
-        sidebar_host.setFixedWidth(scale_px_length(220))
-        self._sidebar = QVBoxLayout(sidebar_host)
-        self._sidebar.setContentsMargins(0, 0, 0, 0)
-        self._sidebar.setSpacing(2)
-        self._tab_buttons: dict[str, _SidebarButton] = {}
-        self._add_section(tr("Your detections"))
-        self._add_tab(_RECENT_KEY, tr("Recent"))
-        self._add_tab(_FAVORITES_KEY, tr("Favorites"))
-        sep_wrap = QWidget()
-        sep_wrap.setFixedHeight(13)
-        sep_inner = QVBoxLayout(sep_wrap)
-        sep_inner.setContentsMargins(12, 6, 12, 6)
-        sep_line = QFrame()
-        sep_line.setFixedHeight(1)
-        sep_line.setStyleSheet("background: rgba(128,128,128,0.3); border: none;")
-        sep_inner.addWidget(sep_line)
-        self._sidebar.addWidget(sep_wrap)
-        self._add_section(tr("Templates"))
-        self._add_tab(_TOP_KEY, tr("Popular"))
-        for cat in self._categories:
-            self._add_tab(cat["key"], pick_label(cat.get("label"), cat.get("key", "")))
-        self._sidebar.addStretch()
-        self._hist_older_btn = QPushButton(tr("Load older runs"))
-        self._hist_older_btn.setStyleSheet(_GHOST_BTN_QSS)
-        self._hist_older_btn.setCursor(QtC.PointingHandCursor)
-        self._hist_older_btn.setVisible(False)
-        self._hist_older_btn.clicked.connect(self._load_older_runs)
-        self._sidebar.addWidget(self._hist_older_btn)
-        body.addWidget(sidebar_host)
-
-        vsep = QFrame()
-        vsep.setFrameShape(QtC.FrameVLine)
-        vsep.setFrameShadow(QtC.FrameSunken)
-        body.addWidget(vsep)
-
-        # Card grid in a scroll area (shared by every tab + search).
+        # Card grid in a scroll area (shared by every tab + search), with the
+        # history paging button under it. The button used to sit at the foot of
+        # the sidebar, a column it has nothing to do with; it belongs at the end
+        # of the list it extends.
+        content = QVBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(8)
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QtC.FrameNoFrame)
@@ -323,7 +281,18 @@ class SegmentLibraryDialog(QDialog):
         for c in range(self._cols):
             self._grid.setColumnStretch(c, 1)
         self._scroll.setWidget(self._grid_host)
-        body.addWidget(self._scroll, 1)
+        content.addWidget(self._scroll, 1)
+
+        # Added straight to the column, not wrapped in a row: a QVBoxLayout
+        # skips a hidden widget's spacing, but never a nested layout's, so a
+        # wrapper would leave a permanent gap under the grid.
+        self._hist_older_btn = QPushButton(tr("Load older runs"))
+        self._hist_older_btn.setStyleSheet(_GHOST_BTN_QSS)
+        self._hist_older_btn.setCursor(QtC.PointingHandCursor)
+        self._hist_older_btn.setVisible(False)
+        self._hist_older_btn.clicked.connect(self._load_older_runs)
+        content.addWidget(self._hist_older_btn, 0, QtC.AlignCenter)
+        body.addLayout(content, 1)
 
         root.addLayout(body, 1)
 
@@ -337,52 +306,13 @@ class SegmentLibraryDialog(QDialog):
         self._scroll.viewport().installEventFilter(self)
         self._cols = self._column_count()
 
-    def _add_section(self, label: str) -> None:
-        # Sentence case: the design system bans uppercase across the plugin.
-        lbl = QLabel(label)
-        lbl.setStyleSheet(_SECTION_HEADER)
-        self._sidebar.addWidget(lbl)
-
-    def _add_tab(self, key: str, label: str) -> None:
-        btn = _SidebarButton(
-            _sidebar_icon_html(key),
-            _tab_label_html(label, self._tab_count(key)))
-        btn.setStyleSheet(_SIDEBAR_ITEM)
-        btn.setCursor(QtC.PointingHandCursor)
-        btn.setSizePolicy(QtC.SizePolicyExpanding, QtC.SizePolicyFixed)
-        btn.clicked.connect(lambda _c=False, k=key: self._on_sidebar_click(k))
-        self._sidebar.addWidget(btn)
-        self._tab_buttons[key] = btn
-
-    def _tab_count(self, key: str) -> int | None:
-        """Muted '(N)' badge: only the personal tabs carry a count."""
-        if key == _RECENT_KEY:
-            runs = self._hist_runs.get("all") or []
-            return len(runs) if runs else len(self._local_recent_entries())
-        if key == _FAVORITES_KEY:
-            return (len(self._hist_runs.get("favorites") or []) + len(self._favorite_template_presets()))
-        return None
-
-    def _tab_labels(self) -> dict[str, str]:
-        labels = {
-            _RECENT_KEY: tr("Recent"),
-            _FAVORITES_KEY: tr("Favorites"),
-            _TOP_KEY: tr("Popular"),
-        }
-        for cat in self._categories:
-            labels[cat["key"]] = pick_label(cat.get("label"), cat.get("key", ""))
-        return labels
-
-    def _refresh_sidebar_counts(self) -> None:
-        labels = self._tab_labels()
-        for key in (_RECENT_KEY, _FAVORITES_KEY):
-            btn = self._tab_buttons.get(key)
-            if btn is not None:
-                btn.set_label_html(
-                    _sidebar_icon_html(key),
-                    _tab_label_html(labels[key], self._tab_count(key)))
+    def _refresh_library_chrome(self) -> None:
+        """Re-read everything the rail and the paging button show. Called after
+        any change to the history lists or the favorites."""
+        self._refresh_rail_counts()
+        view = _RAIL_HISTORY_VIEWS.get(self._active_key)
         self._hist_older_btn.setVisible(
-            self._active_key in _HISTORY_VIEWS and bool(self._hist_has_more.get(_HISTORY_VIEWS[self._active_key])))
+            view is not None and bool(self._hist_has_more.get(view)))
 
     def _track_tab_opened(self, tab: str) -> None:
         if tab in self._tabs_tracked:
@@ -396,31 +326,21 @@ class SegmentLibraryDialog(QDialog):
 
     # ---- navigation ------------------------------------------------------
 
-    def _on_sidebar_click(self, key: str) -> None:
-        # Sidebar click is an explicit "leave search": clear the box quietly.
-        if self._search.text().strip():
-            self._search.blockSignals(True)
-            self._search.clear()
-            self._search.blockSignals(False)
-            self._query = ""
-        self._select_tab(key)
-
     def _select_tab(self, key: str) -> None:
         self._active_key = key
-        for k, btn in self._tab_buttons.items():
-            btn.setStyleSheet(_SIDEBAR_ITEM_ACTIVE if k == key else _SIDEBAR_ITEM)
+        self._set_rail_active(key)
         self._rebuild_current_grid()
-        view = _HISTORY_VIEWS.get(key)
+        view = _RAIL_HISTORY_VIEWS.get(key)
         if view is not None:
             self._track_tab_opened("history")
             self._sync_history_view(view)
-        self._refresh_sidebar_counts()
+        self._refresh_library_chrome()
 
     def _rebuild_current_grid(self) -> None:
         if self._query:
             self._rebuild_grid(self._search_matches(self._query))
             return
-        view = _HISTORY_VIEWS.get(self._active_key)
+        view = _RAIL_HISTORY_VIEWS.get(self._active_key)
         if view is not None:
             self._rebuild_history_grid(view)
         else:
@@ -428,6 +348,9 @@ class SegmentLibraryDialog(QDialog):
 
     def _apply_search(self) -> None:
         self._query = self._search.text().strip().lower()
+        # Search results are their own view, so no rail row is "you are here"
+        # while one is showing; clearing the box lights the row back up.
+        self._set_rail_active(None if self._query else self._active_key)
         self._rebuild_current_grid()
 
     def _search_matches(self, query: str) -> list[dict]:
@@ -439,7 +362,7 @@ class SegmentLibraryDialog(QDialog):
                     p, query, self._cat_label_by_id.get(p.get("id", ""), ""))]
 
     def _presets_for_tab(self, key: str) -> list[dict]:
-        if key == _TOP_KEY:
+        if key == _RAIL_POPULAR_TARGET:
             return [self._by_id[i] for i in self._top_picks if i in self._by_id]
         for cat in self._categories:
             if cat["key"] == key:
@@ -760,7 +683,7 @@ class SegmentLibraryDialog(QDialog):
         worker.start()
 
     def _load_older_runs(self) -> None:
-        view = _HISTORY_VIEWS.get(self._active_key)
+        view = _RAIL_HISTORY_VIEWS.get(self._active_key)
         if view is None:
             return
         runs = self._hist_runs.get(view) or []
@@ -772,7 +695,7 @@ class SegmentLibraryDialog(QDialog):
         self._sync_history_view(view, before=str(oldest))
 
     def _displayed_view(self) -> str | None:
-        return _HISTORY_VIEWS.get(self._active_key) if not self._query else None
+        return _RAIL_HISTORY_VIEWS.get(self._active_key) if not self._query else None
 
     def _on_history_page(self, view: str, runs: list, has_more: bool,
                          first: bool) -> None:
@@ -800,7 +723,7 @@ class SegmentLibraryDialog(QDialog):
         self._hist_has_more[view] = has_more
         if view == self._displayed_view():
             self._rebuild_history_grid(view)
-        self._refresh_sidebar_counts()
+        self._refresh_library_chrome()
 
     def _on_history_failed(self, view: str, code: str) -> None:
         """A failed sync (including the endpoints not deployed yet) degrades to
@@ -933,8 +856,8 @@ class SegmentLibraryDialog(QDialog):
         if not pid:
             return
         toggle_favorite_template(pid)
-        self._refresh_sidebar_counts()
-        if self._active_key == _FAVORITES_KEY and not self._query:
+        self._refresh_library_chrome()
+        if self._active_key == _RAIL_FAVORITES_TARGET and not self._query:
             # Same Qt6 rule as the run star: never destroy the emitting card
             # from inside its own signal.
             QtC.safe_single_shot(0, self, self._rebuild_current_grid)
@@ -970,7 +893,7 @@ class SegmentLibraryDialog(QDialog):
                 self._detail_dlg.set_favorite(is_favorite)
             except RuntimeError:
                 pass
-        self._refresh_sidebar_counts()
+        self._refresh_library_chrome()
 
     def _on_favorite_done(self, run_id: str, is_favorite: bool, ok: bool) -> None:
         if ok:

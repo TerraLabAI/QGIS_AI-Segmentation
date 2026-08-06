@@ -222,14 +222,18 @@ class ManualCropsMixin:
 
     def _binary_mask_to_logits(self, mask, target: int = 256):
         """Convert a binary mask (H x W, 0/1 or bool) to SAM low-res logits of
-        shape (1, 1, target, target): foreground=+6, background=-6. Shared by the
+        shape (1, target, target): foreground=+6, background=-6. Shared by the
         zoom mask-transfer and the Refine-in-Manual polygon seeding so both seed
-        SAM the same way."""
+        SAM the same way.
+
+        Must stay 3D like the low_res_masks a predict returns: the SAM
+        predictors add the batch dimension themselves, so a 4D mask_input
+        reaches conv2d as 5D and crashes the prompt encoder."""
         import numpy as np
         m = np.asarray(mask, dtype=np.float32)
         logits = (m * 2.0 - 1.0) * 6.0
         logits_t = self._resize_nearest(logits, target, target)
-        return logits_t[None, None, :, :]
+        return logits_t[None, :, :]
 
     def _build_mask_input_from_previous(
         self, old_mask, old_bounds, old_shape, new_bounds, new_shape
@@ -299,7 +303,7 @@ class ManualCropsMixin:
         new_mask = np.zeros((new_h, new_w), dtype=np.float32)
         new_mask[n_r0:n_r1, n_c0:n_c1] = resized_patch
 
-        # Convert to SAM's low-res logits (1, 1, 256, 256): foreground=+6, bg=-6.
+        # Convert to SAM's low-res logits (1, 256, 256): foreground=+6, bg=-6.
         return self._binary_mask_to_logits(new_mask)
 
     def _get_native_pixel_size(self):

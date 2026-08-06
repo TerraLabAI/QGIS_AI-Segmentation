@@ -105,6 +105,18 @@ class AutoLifecycleMixin:
         # unload) funnels through here, so this is the one place that guarantees
         # no leaked global editing aid.
         self._abort_qgis_edit_bridge_if_active()
+        # A fix session open on the review dies here too, and this path SAVES,
+        # so its edits are folded in first rather than dropped. The fold ends
+        # the session, which is what takes its seed layers off the canvas: they
+        # are Private layers, so a leaked one paints polygons the user cannot
+        # reach in the Layers panel to remove.
+        try:
+            if getattr(self, "_refine_handoff_active", False) and self.saved_polygons:
+                self._collect_manual_refine_into_review()
+            else:
+                self._abandon_fix_session_for_discard()
+        except Exception:  # nosec B110 -- teardown must never propagate
+            pass
         self._autosave_pending_auto_review(exit_path)
         self._auto_review = None
         # Supersede any in-flight cooperative finalize/reslice (same gen-bump +

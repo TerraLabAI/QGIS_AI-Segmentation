@@ -1,23 +1,28 @@
 """Shared constants, styles, and small helpers for the Segment library.
 
 The visual language mirrors AI Edit's prompt-templates dialog component for
-component (sidebar buttons, cards, detail popup, buttons), with the accents
+component (navigation rail, cards, detail popup, buttons), with the accents
 swapped to AI Segmentation's brand green.
 """
 from __future__ import annotations
 
 import calendar
-import html
 import time
 
 from qgis.PyQt.QtCore import QLocale
-from qgis.PyQt.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
+from qgis.PyQt.QtWidgets import QLabel, QWidget
 
 from ....core import qt_compat as QtC
 from ....core.i18n import tr
 from ....core.presets.segmentation_presets_client import absolute_demo_url
 from ...dock.font_scale import scale_qss_font_px as _scale_qss_font_px
-from ...dock.styles import BRAND_BLUE, BRAND_BLUE_HOVER, BTN_GREEN, BTN_GREEN_HOVER
+from ...dock.styles import (
+    BRAND_BLUE,
+    BRAND_BLUE_HOVER,
+    BRAND_GREEN,
+    BTN_GREEN,
+    BTN_GREEN_HOVER,
+)
 
 _BRAND_GREEN = BTN_GREEN       # AI Segmentation primary (Detect / Use)
 
@@ -25,26 +30,20 @@ _BRAND_GREEN = BTN_GREEN       # AI Segmentation primary (Detect / Use)
 # here rather than in styles.py since nothing outside this dialog uses it.
 _FAVORITE_STAR_GOLD = "#f6b100"
 
+# Rail targets for the rows that are not a catalogue category. The two history
+# rows map onto the server-side view names via _RAIL_HISTORY_VIEWS.
+_RAIL_RECENT_TARGET = "__recent__"
+_RAIL_FAVORITES_TARGET = "__favorites__"
+_RAIL_POPULAR_TARGET = "__top__"
+_RAIL_HISTORY_VIEWS = {
+    _RAIL_RECENT_TARGET: "all",
+    _RAIL_FAVORITES_TARGET: "favorites",
+}
+
 # ---------------------------------------------------------------------------
 # QSS (mirrors AI Edit prompt_templates/common.py + generation_detail/styles.py)
 # ---------------------------------------------------------------------------
 
-_SIDEBAR_ITEM = (
-    "QPushButton { text-align: left; border: none; border-radius: 4px;"
-    " padding: 10px 10px; font-size: 13px; color: palette(text);"
-    " background: transparent; }"
-    "QPushButton:hover { background: rgba(128,128,128,0.12); }"
-)
-_SIDEBAR_ITEM_ACTIVE = (
-    "QPushButton { text-align: left; border: none; border-radius: 4px;"
-    " padding: 10px 10px; font-size: 13px; font-weight: bold;"
-    " color: palette(text); background: rgba(128,128,128,0.18); }"
-)
-_SECTION_HEADER = (
-    "color: rgba(128,128,128,0.95); font-size: 10px; font-weight: 700;"
-    " letter-spacing: 0.8px; background: transparent; border: none;"
-    " padding: 6px 12px 2px 12px;"
-)
 _SEARCH_QSS = (
     "QLineEdit { border: 1px solid rgba(128,128,128,0.3);"
     " border-radius: 4px; padding: 6px 10px; font-size: 13px;"
@@ -183,75 +182,66 @@ _DETAIL_STAR_BTN = (
 )
 
 # ---------------------------------------------------------------------------
-# Sidebar glyphs: tinted TEXT-presentation Unicode (never color emoji, which
-# render inconsistently in Qt buttons - AI Edit's proven approach). Keys cover
-# both the offline taxonomy and the server taxonomy.
+# Navigation rail (left of the card grid). Mirrors AI Edit's library rail: the
+# rows are deliberately plain (label + muted count, no glyph column and no
+# per-entry hue) so the rail reads as a quiet index instead of a rainbow. The
+# per-category tinted glyphs it replaces were the loudest thing in the dialog.
 # ---------------------------------------------------------------------------
 
-_SIDEBAR_GLYPHS: dict[str, tuple[str, str]] = {
-    "__recent__": ("◷", "#5ca0c0"),
-    "__favorites__": ("☆", "#e57373"),
-    "__top__": ("★", "#d4a548"),
-    # offline taxonomy
-    "buildings": ("⌂", "#b08858"),
-    "vehicles_transport": ("➤", "#b07878"),
-    "aircraft_vessels": ("✈", "#7aa0c4"),
-    "energy_industrial": ("☀", "#d4a548"),
-    "sport_recreation": ("⚑", "#c08fa0"),
-    "land_water": ("◉", "#68a868"),
-    # server taxonomy
-    "transport": ("❖", "#9880b0"),
-    "vehicles": ("➤", "#b07878"),
-    "aircraft_maritime": ("✈", "#7aa0c4"),
-    "energy": ("☀", "#d4a548"),
-    "water": ("≈", "#3b8fb0"),
-    "vegetation": ("✺", "#4d8c3f"),
-    "agriculture": ("✿", "#c4a548"),
-    "sports": ("⚑", "#c08fa0"),
-    "land": ("◉", "#68a868"),
-}
-_GLYPH_DEFAULT = ("◈", "#8c6a4b")
+_RAIL_PANEL = (
+    "QFrame#librail { border: none;"
+    " border-right: 1px solid rgba(128,128,128,0.22); background: transparent; }"
+)
+# Group label above a cluster of rail rows. Sentence case, never uppercase:
+# the design system bans uppercase across the plugin, so this is the one place
+# the rail deviates from AI Edit's own sheet.
+_RAIL_GROUP = (
+    "QLabel { color: rgba(128,128,128,0.85); font-size: 10px; font-weight: 700;"
+    " letter-spacing: 0.9px; background: transparent; border: none; }"
+)
+_RAIL_ITEM_LABEL = (
+    "QLabel { color: palette(text); font-size: 13px;"
+    " background: transparent; border: none; }"
+)
+# Muted count on the right of a rail row.
+_RAIL_ITEM_COUNT = (
+    "QLabel { color: rgba(128,128,128,0.85); font-size: 11px;"
+    " background: transparent; border: none; }"
+)
 
 
-def _sidebar_icon_html(key: str) -> str:
-    glyph, color = _SIDEBAR_GLYPHS.get(key, _GLYPH_DEFAULT)
-    return f'<span style="color:{color}; font-size:15px;">{glyph}</span>'
-
-
-def _tab_label_html(label: str, count: int | None = None) -> str:
-    """Sidebar label HTML - name with an optional muted count badge. The
-    label is HTML-escaped ("Buildings & structures" needs &amp; in rich
-    text, the sip mnemonic problem's rich-text cousin)."""
-    label = html.escape(str(label or ""))
-    count_html = ""
-    if count is not None and count > 0:
-        count_html = (
-            f' <span style="color:rgba(128,128,128,0.8); font-size:11px;">'
-            f'({count})</span>'
+def _rail_item_style(active: bool) -> str:
+    """QSS for one rail row. At rest: flat, transparent, hover tint. Active: a
+    filled block, a bold label and a 3px left bar in the lime accent, so the
+    selection reads as "you are here" rather than as a pressed button. The
+    inactive row reserves the same 3px so the labels never shift sideways."""
+    if active:
+        qss = (
+            "QPushButton#railitem { text-align: left; border: none;"
+            f" border-left: 3px solid {BRAND_GREEN}; border-radius: 4px;"
+            " padding: 8px 10px 8px 9px; font-size: 13px; font-weight: 700;"
+            " color: palette(text); background: rgba(128,128,128,0.16); }"
         )
-    return (
-        f'<span style="font-size:13px; color:palette(text);">{label}</span>'
-        f'{count_html}'
+    else:
+        qss = (
+            "QPushButton#railitem { text-align: left; border: none;"
+            " border-left: 3px solid transparent; border-radius: 4px;"
+            " padding: 8px 10px 8px 9px; font-size: 13px;"
+            " color: palette(text); background: transparent; }"
+            "QPushButton#railitem:hover { background: rgba(128,128,128,0.10); }"
+        )
+    return _scale_qss_font_px(qss)
+
+
+def _rail_label_style(active: bool) -> str:
+    """QSS for a rail row's text. QSS does not cascade the button's color and
+    weight into a child QLabel, so the active row restyles its label too."""
+    if not active:
+        return _RAIL_ITEM_LABEL
+    return _scale_qss_font_px(
+        "QLabel { color: palette(text); font-size: 13px; font-weight: 700;"
+        " background: transparent; border: none; }"
     )
-
-
-class _SidebarButton(QPushButton):
-    """Sidebar tab entry: colored HTML glyph + label (+ optional count)."""
-
-    def __init__(self, icon_html: str, label_html: str, parent=None):
-        super().__init__(parent)
-        self.setText("")
-        self._label = QLabel(f"{icon_html}&nbsp;&nbsp;{label_html}")
-        self._label.setTextFormat(QtC.RichText)
-        self._label.setAttribute(QtC.WA_TransparentForMouseEvents)
-        self._label.setStyleSheet(
-            "background: transparent; border: none; padding: 0px;")
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.addWidget(self._label)
-
-    def set_label_html(self, icon_html: str, label_html: str) -> None:
-        self._label.setText(f"{icon_html}&nbsp;&nbsp;{label_html}")
 
 
 def _build_use_hint(parent) -> QLabel:
@@ -423,9 +413,9 @@ def _history_error(resp) -> str | None:
 # would snap back to the base size mid-session. Growing them here, once, covers
 # both. A no-op on the default text size, and outside QGIS.
 for _qss_name in (
-    "_SIDEBAR_ITEM",
-    "_SIDEBAR_ITEM_ACTIVE",
-    "_SECTION_HEADER",
+    "_RAIL_GROUP",
+    "_RAIL_ITEM_LABEL",
+    "_RAIL_ITEM_COUNT",
     "_SEARCH_QSS",
     "_OVERLAY_BADGE_QSS",
     "_USE_HINT_REST",

@@ -628,6 +628,13 @@ class SamPredictor:
 
             # Add mask_input if provided (for iterative refinement with negative points)
             if mask_input is not None:
+                # SAM adds the batch axis itself, so the seed mask is (1, H, W).
+                # A rank the model cannot use only shows up deep inside torch as
+                # a conv2d shape complaint, with nothing naming the caller.
+                if mask_input.ndim != 3 or mask_input.shape[0] != 1:
+                    raise ValueError(
+                        "Invalid mask seed for prediction: expected (1, H, W), "
+                        f"got shape {tuple(mask_input.shape)}")
                 request["mask_input"] = base64.b64encode(mask_input.tobytes()).decode("utf-8")
                 request["mask_input_shape"] = list(mask_input.shape)
                 request["mask_input_dtype"] = str(mask_input.dtype)

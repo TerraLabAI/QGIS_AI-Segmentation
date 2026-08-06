@@ -79,10 +79,14 @@ class AutoRunTerminalMixin:
             # a run really got full-resolution masks.
             ratio = (self._auto_mask_gsd / self._auto_gsd
                      if self._auto_mask_gsd > 0 and self._auto_gsd > 0 else 0.0)
+            # "processed", not "billed": the count includes re-split quadrants,
+            # which are free (RESPLIT_CHARGE_EVERY=0). The charged number is the
+            # quoted base grid, shown by the dock's count row. Logging it as
+            # "billed" read as a 2-3x overcharge in a 2026-08-04 field report.
             QgsMessageLog.logMessage(
                 "Auto detection: run summary - render {} ms, detect {} ms, "
-                "{} tile(s) billed, {} raw detection(s), mask/render px ratio "
-                "{:.2f}, {} saturated tile(s) re-split, {} tile(s) gate-skipped"
+                "{} tile(s) processed, {} raw detection(s), mask/render px ratio "
+                "{:.2f}, {} saturated tile(s) re-split (free), {} tile(s) gate-skipped"
                 .format(
                     self._auto_render_ms, detect_ms, tiles_succeeded,
                     self._auto_raw_count, ratio,

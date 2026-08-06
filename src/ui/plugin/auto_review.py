@@ -954,6 +954,10 @@ class AutoReviewMixin:
         canonical objects, the selection layer, the protected/handoff markers,
         and supersedes any in-flight cooperative finalize/reslice."""
         self._track_review_abandoned(exit_path)
+        # A fix session open on this review dies with it, and dies WITHOUT
+        # folding: its edits belong to the output being dropped. Runs while
+        # _auto_review is still set, because the canvas sweep keys on it.
+        self._abandon_fix_session_for_discard()
         # An explicit discard also drops this run's crash-net autosave pointer:
         # the user chose to throw the results away, so the next start must not
         # offer them back (the disk table itself is left in place).
